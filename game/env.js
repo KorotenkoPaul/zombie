@@ -44,9 +44,9 @@ float hfN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hfH(
 #endif`;
  THREE.ShaderChunk.fog_fragment=`#ifdef USE_FOG
 #ifdef FOG_EXP2
-float fogFactor=1.0-exp(-fogDensity*fogDensity*vFogDepth*vFogDepth);float hk=1.;
+float fogFactor=1.0-exp(-fogDensity*fogDensity*vFogDepth*vFogDepth);float hk=1.;float hz0=20.;
 #else
-float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.,fogFar-fogNear);
+float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.,fogFar-fogNear);float hz0=fogNear+4.;
 #endif
 {float HH=1.7;float yc=cameraPosition.y,yp=vFogW.y;float d=length(vFogW-cameraPosition);
  float dy=yp-yc;float ec=exp(-max(yc,0.)/HH),ep=exp(-max(yp,-1.)/HH);
@@ -54,7 +54,9 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  float n=hfN(vFogW.xz*.11)*.65+hfN(vFogW.xz*.31+7.)*.35;
  float clear=mix(.08,1.,smoothstep(5.,13.,length(vFogW.xz)));float tau=(.012+.085*hk)*(.45+1.1*n)*od*min(d,60.)*clear;
  float hf=1.-exp(-tau);
- fogFactor=max(fogFactor,0.)+hf*(1.-fogFactor);
+ // aerial haze: the forest behind the oak dissolves into blue mist at dusk/night, as in the painting
+ fogFactor=max(fogFactor,smoothstep(hz0,hz0+50.,d)*.6*hk);
+ fogFactor=fogFactor+hf*(1.-fogFactor);
  vec3 haze=mix(fogColor,vec3(dot(fogColor,vec3(.33)))*1.5+vec3(.05,.09,.11),.45);gl_FragColor.rgb=mix(gl_FragColor.rgb,mix(fogColor,haze,hf),fogFactor);}
 #endif`;
 
@@ -219,7 +221,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
  const PN=MOBILE?46:80;const puffU={t:U.t,col:fogU.col,op:{value:.5},night:{value:1},lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
  const pg=new THREE.InstancedBufferGeometry();pg.copy(new THREE.PlaneGeometry(1,1));pg.instanceCount=PN;
- {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
+ {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}else if(i<PN*.55){ang=rr(3.6,5.9);r=rr(6,13);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
    const sz=rr(2.6,6)*(r<10?.8:1.15);a.set([Math.cos(ang)*r,rr(.15,.9)*sz*.32,Math.sin(ang)*r,sz],i*4);b.set([rr(0,100),rr(.6,1.4)*(R()<.5?-1:1),rr(.55,1),rr(0,6.28)],i*4);}
   pg.setAttribute('iA',new THREE.InstancedBufferAttribute(a,4));pg.setAttribute('iB',new THREE.InstancedBufferAttribute(b,4));}
  const puffMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:false,uniforms:puffU,
@@ -262,7 +264,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  // ================= cool night fill =================
  // a soft blue light from the front-left and a rim from behind, no shadows: the bark and leaves pick up the moonlit blue of the reference
  const fill=new THREE.DirectionalLight(0x86AEDC,0);fill.position.set(-8,14,26);const sky=new THREE.HemisphereLight(0x9CC2E0,0x35584E,0);scene.add(sky);scene.add(fill);
- const rim=new THREE.DirectionalLight(0x6FA0D0,0);rim.position.set(10,14,-20);scene.add(rim);
+ const rim=new THREE.DirectionalLight(0x6FA0D0,0);rim.position.set(-16,10,-10);scene.add(rim);
 
  // ================= per-frame =================
  const tmp=new THREE.Color(),tmpV=V();
@@ -276,7 +278,9 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
   bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
   for(const h of halos){const on=h.l.intensity>.05;h.s.visible=on;if(on){h.l.getWorldPosition(h.s.position);const k=Math.min(1,h.l.intensity/6);h.s.material.opacity=k*.85;h.s.scale.setScalar(h.size*(.85+k*.3));}}
   env.shroomGlow.value=eve*1.8;
-  fill.intensity=eve*1.6*(1-rainK*.4);sky.intensity=eve*.9;rim.intensity=eve*1.4;
+  // dusk: thicken the distance fog once the lamps are on (the painting's 19:20 look); index.html sets near/far each frame before this
+  if(scene.fog&&scene.fog.isFog){const f=scene.fog;f.far=Math.max(f.near+34,f.far-eve*(1-nightK)*26);}
+  fill.intensity=eve*1.9*(1-rainK*.4);sky.intensity=eve*.9;rim.intensity=eve*2.6;
   const g=env.gradePass.uniforms;g.night.value=eve;g.sat.value=1.18+nightK*.08;};
  env.sheets=sheets;env.puffs=puffs;window.__env=env;
  return env;
