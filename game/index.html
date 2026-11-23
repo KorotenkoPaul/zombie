@@ -44,6 +44,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { buildTree, TREE_AXIS } from './tree.js';
 import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
 
 const $=id=>document.getElementById(id);
@@ -98,19 +99,13 @@ ground.receiveShadow=true;scene.add(ground);
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
 function placeTree(x,z,h,ry){const t=treeG.scene.clone(true);const b=new THREE.Box3().setFromObject(t);const k=h/(b.max.y-b.min.y);t.scale.setScalar(k);const c=b.getCenter(V());t.position.set(x-c.x*k,-b.min.y*k,z-c.z*k);t.rotation.y=ry;t.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;if(o.material){o.material.metalness=0;o.material.roughness=.9;o.material.color&&o.material.color.multiplyScalar(1.25);}}});scene.add(t);return {t,k,b};}
-const main=placeTree(0,0,TREE_H,0);main.t.updateMatrixWorld(true);
 for(const [x,z,h,r] of [[-17,-15,14,1.3],[19,-18,15,2.4],[1,-34,16,5]])placeTree(x,z,h,r);
-const barkTris=[];const leafInfo=[];
-main.t.traverse(o=>{if(!o.isMesh)return;const g=o.geometry;const pos=g.attributes.position,uv=g.attributes.uv,idx=g.index;let data=null,W=0,H=0;const img=o.material&&o.material.map&&o.material.map.image;
- if(img&&uv){try{const c=document.createElement('canvas');W=c.width=256;H=c.height=256;const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(img,0,0,W,H);data=cx.getImageData(0,0,W,H).data;}catch(e){}}
- const n=idx?idx.count:pos.count;const va=V(),vb=V(),vc=V();const leaf=new Uint8Array(n/3);const cent=new Float32Array(n);
- for(let i=0;i<n;i+=3){const a=idx?idx.getX(i):i,b=idx?idx.getX(i+1):i+1,c=idx?idx.getX(i+2):i+2;let lf=false;
-  if(data){const u=(uv.getX(a)+uv.getX(b)+uv.getX(c))/3,v=(uv.getY(a)+uv.getY(b)+uv.getY(c))/3;const px=Math.min(W-1,Math.floor(((u%1)+1)%1*W)),py=Math.min(H-1,Math.floor(((v%1)+1)%1*H));const k=(py*W+px)*4;lf=data[k+1]>data[k]*1.02&&data[k+1]>data[k+2]*1.05;}
-  va.fromBufferAttribute(pos,a).applyMatrix4(o.matrixWorld);vb.fromBufferAttribute(pos,b).applyMatrix4(o.matrixWorld);vc.fromBufferAttribute(pos,c).applyMatrix4(o.matrixWorld);
-  leaf[i/3]=lf?1:0;cent[i]=(va.x+vb.x+vc.x)/3;cent[i+1]=(va.y+vb.y+vc.y)/3;cent[i+2]=(va.z+vb.z+vc.z)/3;
-  if(!lf)barkTris.push(va.x,va.y,va.z,vb.x,vb.y,vb.z,vc.x,vc.y,vc.z);}
- leafInfo.push({o,leaf,cent,n});});
-
+// the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
+const TREE_AVOID=[[-4.5,-.8,4.85,7.45,1.0,4.7],[-4.3,.5,7.25,9.75,.93,4.2],[-4.6,.8,9.6,11.1,.55,4.2],[.8,4.7,3.45,5.95,1.18,5.4],[.5,5.0,5.85,7.05,.75,4.4],[.7,4.35,8.75,10.3,.2,3.1]];
+const TREE=buildTree(THREE,{barkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:Math.atan2(1.0-TREE_AXIS[1],1.45-TREE_AXIS[0]),y0:1.62,y1:3.0,w:1.0,depth:.95},
+ avoidLeaves:[[-4.8,-.7,4.7,7.7,.3,4.9],[-4.6,.8,7.1,11.2,.3,4.3],[.5,5.0,3.3,7.1,.5,5.2],[.6,4.6,8.7,10.6,0,3.4],[-3.6,3.4,1.2,4.0,0,4.4]]});
+scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
+const barkTris=TREE.tris;
 // ================= physics world =================
 const world=new RAPIER.World({x:0,y:-9.81,z:0});world.timestep=1/60;
 world.createCollider(RAPIER.ColliderDesc.cuboid(80,.5,80).setTranslation(0,-.5,0).setFriction(.9));
@@ -119,27 +114,14 @@ world.createCollider(RAPIER.ColliderDesc.cuboid(80,.5,80).setTranslation(0,-.5,0
 const SL=[];for(let s=0;s<=130;s++){const y=s*.1;const segs=[];for(let i=0;i<barkTris.length;i+=9){const ya=barkTris[i+1],yb=barkTris[i+4],yc=barkTris[i+7];if((ya<y&&yb<y&&yc<y)||(ya>y&&yb>y&&yc>y))continue;const P=[];
   for(const [p,q] of [[0,3],[3,6],[6,0]]){const y1=barkTris[i+p+1],y2=barkTris[i+q+1];if((y1-y)*(y2-y)<0||(y1===y&&y2!==y)){const t=(y-y1)/(y2-y1);P.push(barkTris[i+p]+(barkTris[i+q]-barkTris[i+p])*t,barkTris[i+p+2]+(barkTris[i+q+2]-barkTris[i+p+2])*t);}}
   if(P.length>=4)segs.push(P[0],P[1],P[2],P[3]);}SL.push(segs);}
-const TAX=(()=>{let sx=0,sz=0,n=0;for(let i=0;i<barkTris.length;i+=3){const y=barkTris[i+1];if(y>1.5&&y<5){sx+=barkTris[i];sz+=barkTris[i+2];n++;}}return [sx/n,sz/n];})();
+const TAX=TREE.axis;
 function inTrunk(x,y,z,m=.06){const s=SL[clamp(Math.round(y*10),0,SL.length-1)];let cr=0;const nearAxis=Math.hypot(x-TAX[0],z-TAX[1])<2.4;for(let i=0;i<s.length;i+=4){const x1=s[i],z1=s[i+1],x2=s[i+2],z2=s[i+3];
   if((z1>z)!==(z2>z)){const xi=x1+(z-z1)/(z2-z1)*(x2-x1);if(xi>x)cr++;}
   const dx=x2-x1,dz=z2-z1,L=dx*dx+dz*dz;let t=L?((x-x1)*dx+(z-z1)*dz)/L:0;t=clamp(t,0,1);const ex=x1+dx*t-x,ez=z1+dz*t-z;if(ex*ex+ez*ez<m*m)return true;}
  return nearAxis&&(cr&1)===1;}
 function runs(ok,a0,a1,step=.04,min=.1){const out=[];let s=null;for(let a=a0;a<=a1+1e-6;a+=step){const g=ok(Math.min(a,a1));if(g&&s===null)s=a;if((!g||a+step>a1+1e-6)&&s!==null){const e=g?a1:a-step;if(e-s>=min)out.push([s,e]);s=null;}}return out;}
-// hide leaf triangles that would poke into the rooms
-const barkMat=new THREE.MeshStandardMaterial({map:barkT,roughness:.95,color:0xFFEEDD});
-barkMat.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vWP;varying vec3 vWN;').replace('#include <worldpos_vertex>','#include <worldpos_vertex>\nvWP=(modelMatrix*vec4(transformed,1.)).xyz;vWN=normalize(mat3(modelMatrix)*objectNormal);');
- sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vWP;varying vec3 vWN;').replace('#include <map_fragment>',`vec3 bw=pow(abs(vWN),vec3(4.));bw/=bw.x+bw.y+bw.z;float S=.55;vec4 tx=texture2D(map,vec2(vWP.z,vWP.y*.6)*S),ty=texture2D(map,vWP.xz*S),tz=texture2D(map,vec2(vWP.x,vWP.y*.6)*S);vec4 sampledDiffuseColor=tx*bw.x+ty*bw.y+tz*bw.z;float ao=mix(.55,1.,smoothstep(0.,3.5,vWP.y));diffuseColor*=sampledDiffuseColor;diffuseColor.rgb*=ao;`);};
-barkT.wrapS=barkT.wrapT=THREE.RepeatWrapping;barkT.repeat.set(1,1);
-let barkMesh=null;
-function buildBark(keep){const out=[];for(let i=0;i<barkTris.length;i+=9){const cx=(barkTris[i]+barkTris[i+3]+barkTris[i+6])/3,cy=(barkTris[i+1]+barkTris[i+4]+barkTris[i+7])/3,cz=(barkTris[i+2]+barkTris[i+5]+barkTris[i+8])/3;if(keep(cx,cy,cz))for(let k=0;k<9;k++)out.push(barkTris[i+k]);}
- const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(out,3));g.computeVertexNormals();if(barkMesh){scene.remove(barkMesh);barkMesh.geometry.dispose();}barkMesh=new THREE.Mesh(g,barkMat);barkMesh.castShadow=true;barkMesh.receiveShadow=true;scene.add(barkMesh);}
-function cullLeaves(boxes){for(const L of leafInfo){const g=L.o.geometry;const idx=g.index;if(!idx)continue;const keep=[];for(let i=0;i<L.n;i+=3){{const x=L.cent[i],y=L.cent[i+1],z=L.cent[i+2];if(!L.leaf[i/3])continue;if(boxes.some(b=>x>b[0]&&x<b[1]&&y>b[2]&&y<b[3]&&z>b[4]&&z<b[5]))continue;}keep.push(idx.getX(i),idx.getX(i+1),idx.getX(i+2));}g.setIndex(keep);}leafCards(boxes);main.t.visible=false;buildBark((x,y,z)=>!(Math.hypot(x-TAX[0],z-TAX[1])>2.1&&ROOMS.some(b=>x>b[0]&&x<b[1]&&y>b[2]&&y<b[3]&&z>b[4]&&z<b[5])));}
-// extra leaf clusters over the canopy, like the painted oak in the concept
-function leafCards(boxes){const inB=(x,y,z,p)=>boxes.some(b=>x>b[0]-p&&x<b[1]+p&&y>b[2]-p&&y<b[3]+p&&z>b[4]-p&&z<b[5]+p);const pts=[];for(const L of leafInfo)for(let i=0;i<L.n;i+=3)if(L.leaf[i/3]&&!inB(L.cent[i],L.cent[i+1],L.cent[i+2],.7))pts.push(L.cent[i],L.cent[i+1],L.cent[i+2]);
- const n=Math.min(MOBILE?1700:2600,pts.length/3|0);leafT.wrapS=leafT.wrapT=THREE.ClampToEdgeWrapping;leafT.repeat.set(1,1);const g=new THREE.PlaneGeometry(1,1);const mat=new THREE.MeshStandardMaterial({map:leafT,alphaTest:.5,side:THREE.DoubleSide,roughness:.8});const im=new THREE.InstancedMesh(g,mat,n);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),sc=V();const col=new THREE.Color();
- for(let i=0;i<n;i++){const k=(Math.random()*(pts.length/3)|0)*3;q.setFromEuler(new THREE.Euler(rnd(-.55,.55),rnd(-.8,.8),rnd(0,6.3),'YXZ'));sc.setScalar(rnd(1.3,2.3));m.compose(V(pts[k]+rnd(-.25,.25),pts[k+1]+rnd(-.2,.25),pts[k+2]+rnd(-.25,.25)),q,sc);im.setMatrixAt(i,m);const r=rnd(.72,1.08);col.setRGB(r,r*rnd(.97,1.03),r*rnd(.9,1));im.setColorAt(i,col);}
- im.castShadow=!MOBILE;im.receiveShadow=true;scene.add(im);}
-function frontZ(x,y){const rc=new THREE.Raycaster(V(x,y,20),V(0,0,-1));const h=rc.intersectObject(main.t,true)[0];return h?h.point.z:1;}
+function cullLeaves(){}
+function frontZ(x,y){const rc=new THREE.Raycaster(V(x,y,20),V(0,0,-1));const h=rc.intersectObject(TREE.bark,false)[0];return h?h.point.z:1;}
 
 // ================= wood: every board is its own body =================
 const BOARD_ROWS=8;
@@ -278,10 +260,9 @@ prop('telescope',3.5,DK,1.3,{h:1.45,ry:-.6});prop('basket',1.4,DK,.95,{h:.4,brig
 // low landings
 prop('barrel',-2.6,LL,1.4,{h:.75,bright:1.4});prop('bucket',-1.9,LL,1.8,{h:.35,bright:1.4});
 // the glowing doorway in the trunk (bottom right)
-const doorZ=frontZ(1.0,LG+.7);{const sh=new THREE.Shape();sh.moveTo(-.36,0);sh.lineTo(-.36,.85);sh.absarc(0,.85,.36,Math.PI,0,true);sh.lineTo(.36,0);sh.lineTo(-.36,0);
- const dm=new THREE.Mesh(new THREE.ShapeGeometry(sh,16),new THREE.MeshBasicMaterial({color:0xFFB45C}));dm.position.set(1.0,LG+.02,doorZ+.03);scene.add(dm);
- const fr=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(-.4,0,0),V(-.4,.85,0),V(-.28,1.13,0),V(0,1.25,0),V(.28,1.13,0),V(.4,.85,0),V(.4,0,0)]),30,.05,6),darkBoard);fr.position.copy(dm.position);fr.castShadow=true;scene.add(fr);}
-const doorLight=new THREE.PointLight(0xFF9A40,0,4,1.6);doorLight.position.set(1.0,LG+.7,doorZ+.6);scene.add(doorLight);
+// the glowing hollow in the trunk (bottom right) is carved into the tree mesh itself (game/tree.js)
+const doorDir=V(Math.cos(TREE.doorAngle),0,Math.sin(TREE.doorAngle)),doorZ=TAX[1]+doorDir.z*TREE.R(LG+.7);
+const doorLight=new THREE.PointLight(0xFF9A40,0,4,1.6);doorLight.position.set(TAX[0]+doorDir.x*(TREE.R(LG+.7)-.3),LG+.75,TAX[1]+doorDir.z*(TREE.R(LG+.7)-.3));scene.add(doorLight);
 // lanterns
 const lanterns=[];
 function lantern(x,y,z,hang,noLight){const g=new THREE.Group();g.position.set(x,y,z);scene.add(g);if(!hang){const cage=new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,.22,8,1,true),iron);g.add(cage);const cap=new THREE.Mesh(new THREE.ConeGeometry(.11,.08,8),iron);cap.position.y=.15;g.add(cap);}
@@ -568,7 +549,7 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  for(const L of lanterns){const f=.86+Math.sin(T*9+L.seed)*.06+Math.sin(T*23+L.seed*2)*.05;L.l.intensity=lampOn*6*f;L.bulbM.emissiveIntensity=lampOn*5*f;}
- ambL.intensity=dayK*(1-rainK*.3)*.55+.12;doorLight.intensity=(1+lampOn*3)*(.9+Math.sin(T*7)*.08);
+ ambL.intensity=dayK*(1-rainK*.3)*.55+.12;doorLight.intensity=(1+lampOn*3)*(.9+Math.sin(T*7)*.08);TREE.bark.material.userData.doorGlow.value=(.35+lampOn*.9)*(.9+Math.sin(T*7)*.08);
  const cooking=hero.task==='cook'&&hero.state==='work';stoveLight.intensity=(cooking?3.5:.6+lampOn*1.5)*(.85+Math.sin(T*11)*.1);
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
