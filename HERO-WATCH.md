@@ -19,6 +19,7 @@ Severity: **P1** visible at normal play; **P2** noticeable when watching; **P3**
 | W6 | P1 | bolt (master 708e4b2) | Bolting is mimed in the air: he stands side-on with his back half to the door, open palm raised 30+ cm from the bolt, head turned away; the bolt never gets a hand | f4790–f4920 (hy_bolt) | r2-708e4b2/bolt_mimed_in_air_legs_in_chair_f4790-5040.jpg | Character / hand contact |
 | W7 | P1 | bolt (708e4b2) | Legs stand inside the chair placed in front of the door: thighs and knees through the chair back and seat | f4790–f4920, f4970, f5010–f5040 | same | collide.js (+ Props: a chair should not block the door) |
 | W8 | P2 | hatch (708e4b2) | Run-to-run difference: in the filmed run the lid falls shut by itself from upright while both hands hang at his sides (f2100–f2130); in the replay his hand holds the ring at f2100–f2110. Also stands 2 s with the right foot over the open hole edge (f1970–f2090) | f1970–f2130 | r2-708e4b2/hatch_*.jpg | Character (hatch) |
+| W9 | P1 | telescope (708e4b2) | Looks through an invisible telescope: both hands held up at his eye miming a spyglass while the real telescope stands on its tripod about 1 m to his side, untouched, for the whole 30 s | f5940–f7740 (hy_telescope) | r2-708e4b2/telescope_mimed_1m_from_telescope_f5890-7740.jpg | Character / hand contact (stand at the eyepiece, hands on the tube) |
 | W3 | P3 | pot | Mid-stir pause (hy_idle) turns him away from the stove with the ladle dangling from the fist for 2.5 s | f2160–f2310 | same sheet | Brain / Character |
 
 ## Fixed and re-verified
