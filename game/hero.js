@@ -1091,11 +1091,11 @@ export function createHero(ctx){
  // turned on the pillow). Turning over blends from one pose to the next. Only breathing moves; the head rests still.
  const SLP={rest:null};const _sq=new THREE.Quaternion(),_sm=new THREE.Matrix4();
  function slpInit(){if(SLP.rest)return true;let sk=null;root.traverse(o=>{if(o.isSkinnedMesh&&!sk)sk=o;});if(!sk||!bones.Hips||!bones.Head)return false;const S=sk.skeleton;
-  const sq=S.bones.map(b=>b.quaternion.clone()),spp=S.bones.map(b=>b.position.clone());const rq=root.quaternion.clone();root.quaternion.identity();S.pose();root.updateMatrixWorld(true);
+  const sq=S.bones.map(b=>b.quaternion.clone()),spp=S.bones.map(b=>b.position.clone()),ssc=S.bones.map(b=>b.scale.clone());/* pose() also resets the bind SCALE (Hips 1.25): restore it or the legs grow 25% and fold on every step */const rq=root.quaternion.clone();root.quaternion.identity();S.pose();root.updateMatrixWorld(true);
   SLP.rest=POSEBONES.map(b=>b.quaternion.clone());SLP.hipsW=bones.Hips.getWorldQuaternion(new THREE.Quaternion());
   const w=n=>bones[n].getWorldPosition(V());SLP.headHips=w('Head').distanceTo(w('Hips'));SLP.l1=w('LeftUpLeg').distanceTo(w('LeftLeg'));SLP.l2=w('LeftLeg').distanceTo(w('LeftFoot'));
   SLP.toe=w('LeftFoot').distanceTo(w('LeftToeBase'));SLP.foot={};for(const sd of ['Left','Right']){const t=w(sd+'ToeBase').sub(w(sd+'Foot')).normalize();const u=V(0,1,0).addScaledVector(t,-t.y).normalize();SLP.foot[sd]={q:bones[sd+'Foot'].getWorldQuaternion(new THREE.Quaternion()),t,u};}SLP.hipW=w('LeftUpLeg').distanceTo(w('RightUpLeg'));
-  S.bones.forEach((b,i)=>{b.quaternion.copy(sq[i]);b.position.copy(spp[i]);});root.quaternion.copy(rq);root.updateMatrixWorld(true);return true;}
+  S.bones.forEach((b,i)=>{b.quaternion.copy(sq[i]);b.position.copy(spp[i]);b.scale.copy(ssc[i]);});root.quaternion.copy(rq);root.updateMatrixWorld(true);return true;}
  const SLEEP_SHAPE={back:{hip:.085,head:.2},sideL:{hip:.105,head:.215},sideR:{hip:.105,head:.215},bellyL:{hip:.09,head:.185},bellyR:{hip:.09,head:.185}};
  function sleepPose(name,out){const B=FIT.bed;const hd=B.headDir||1;const mat=B.mat;const bz=B.bz;const sh=SLEEP_SHAPE[name]||SLEEP_SHAPE.back;
   const Y=V(hd,0,0);const Z=name==='back'?V(0,1,0):name==='sideL'?V(0,0,hd):name==='sideR'?V(0,0,-hd):V(0,-1,0);const X=V().crossVectors(Y,Z);// X = body left
@@ -1272,7 +1272,7 @@ export function createHero(ctx){
   if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);
   if(H.reach){const R=H.reach;R.t+=dt;const k=R.t/R.d;const w=smooth(0,.4,k)*(1-smooth(.62,1,k));if(w>.01)reachTo(R.side,R.pt,w);H.look=R.pt;H.lookW=.9;}
   if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */
-  runSlot('contacts',dt);
+  runSlot('contacts',dt);if(!H.inBed&&!H.bedB)headRoll();/* the head stays level whatever the hands and the ladder did to the chest */
   if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */
   if(act&&act.fr)fridgePost(act);/* GRAB HOOK */
   try{window.__grab&&window.__grab.tick&&window.__grab.tick(dt,H);}catch(e){}/* GRAB HOOK: hands close round what they hold */}
