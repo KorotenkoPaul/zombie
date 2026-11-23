@@ -52,6 +52,14 @@ const ACTS = {
   window: { room: null,       node: null,        gives: { curiosity: -.05 },                        dur: [7, 13],  label: 'смотрит в окно' },
   sleep:  { room: 'bedroom',  node: 'bed_app',   gives: {},                                         dur: [1e9, 1e9], label: 'спит' },
 };
+// the household economy (when hero.js offers the tasks): food only through the full cycle
+// hunt -> meat into the fridge -> cook (takes meat out, burns a log) -> eat. Logs come from the forest to the woodpile.
+// Jobs end by themselves (like a switch); the brain books the result when hero.js reports the task ended.
+const JOBS = {
+  hunt: { task: 'trip', opts: { kind: 'hunt' }, label: 'идёт на охоту', top: 'hunger' },
+  wood: { task: 'trip', opts: { kind: 'wood' }, label: 'идёт за брёвнами', top: 'comfort' },
+  eat:  { task: 'eat',  opts: {},               label: 'ест', top: 'hunger' },
+};
 // graph node -> room (for lights and "where am I")
 const ROOM_OF = n => {
   if (!n) return 'outside';
@@ -72,6 +80,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
   const raining = () => { try { const w = window.__wind; return !!(w && w.raining && w.raining()); } catch (e) { return false; } };
   const H = HH.hero || HH.H;
   const has = c => !!(HH.actions && HH.actions[c]);
+  // stocks: meat in the fridge (portions), logs in the woodpile, a cooked meal waiting
+  const stock = { meat: 2, logs: 4, meal: 0 };
+  const ECON = !!(HH.hasTask && HH.hasTask('trip') && HH.hasTask('eat'));
+  const showStock = () => { try { const P = window.__props; P && P.fridge && P.fridge.setStock && P.fridge.setStock(stock.meat); P && P.woodpile && P.woodpile.setCount && P.woodpile.setCount(stock.logs); } catch (e) {} };
   const need = { hunger: .35, energy: .8, fun: .4, tidy: .25, comfort: .3, curiosity: .3 };
   let mood = .6;
   let lastH = hour();
@@ -107,7 +119,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // the activity pays out only while he is really doing it (not on the way)
     if (cur && v.step && v.step !== 'go' && ACTS[cur.name]) {
       const g = ACTS[cur.name].gives;
-      for (const k in g) need[k] = clamp(need[k] + g[k] * dt);
+      for (const k in g) { if (ECON && cur.name === 'cook' && k === 'hunger') continue; need[k] = clamp(need[k] + g[k] * dt); }
     }
     // mood: slowly follows the average comfort of all needs
     const bad = (need.hunger ** 2 + (1 - need.energy) ** 2 + need.fun ** 2 + need.tidy ** 2 * .5 + need.comfort ** 2 + need.curiosity ** 2 * .5) / 5;
@@ -157,8 +169,21 @@ export function createBrain({ HH, lights, hour, isNight }) {
     s += rnd(0, .3);
     return { name, s, top };
   }
+  function jobScore(n, h) {
+    const day = h >= 7 && h < 17.5, dawnDusk = h >= 6.3 && h < 19;
+    const emergency = need.hunger > .85 && !stock.meat && !stock.meal;
+    let s = -9;
+    if (n === 'hunt') { if (stock.meat === 0 && !stock.meal) s = .9 + need.hunger * 1.2; else if (stock.meat === 1) s = .3; if (!day && !(emergency && !raining())) s -= 3; else if (!day && !dawnDusk) s -= .4; }
+    if (n === 'wood') { if (stock.logs === 0) s = 1.3; else if (stock.logs <= 2) s = .45; if (!day) s -= 3; }
+    if (n === 'eat') s = stock.meal ? .4 + need.hunger ** 2 * 3 + (recent[0] === 'cook' ? 2 : 0) : -9;   // cooked: sits down to eat while it is hot
+    if (raining() && JOBS[n].task === 'trip') s -= 1;
+    const i = recent.indexOf(n); if (i === 0 && n !== 'eat') s -= .6;
+    return { name: n, s: s + rnd(0, .25), top: JOBS[n].top };
+  }
   function decide(h) {
-    scores = Object.keys(ACTS).map(n => score(n, h)).sort((a, b) => b.s - a.s);
+    scores = Object.keys(ACTS).map(n => score(n, h));
+    if (ECON) { for (const x of scores) if (x.name === 'cook') { if (!stock.meat || !stock.logs || stock.meal) x.s -= 9; } for (const n in JOBS) scores.push(jobScore(n, h)); }
+    scores.sort((a, b) => b.s - a.s);
     if (h >= bedTime || h < 5) return scores.find(x => x.name === 'sleep');   // past bedtime: bed, no lottery
     // weighted lottery among the three best (softmax with a mood-dependent temperature)
     const best = scores.slice(0, 3);
@@ -172,7 +197,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // ---------- plan an activity: lights first, a pause maybe, then the thing ----------
   function planFor(name, h, reason) {
     plan.length = 0;
-    const from = ROOM_OF(H.node), A = ACTS[name];
+    const from = ROOM_OF(H.node), A = ACTS[name] || { room: name === 'eat' ? 'kitchen' : 'outside' };
     const to = A.room || from;
     // leaving a lit room in the dark: usually switch it off (sometimes he forgets)
     if (from !== to && ROOM_LAMP[from] && lampOn(ROOM_LAMP[from]) && dark(h) && Math.random() < .8)
@@ -185,13 +210,18 @@ export function createBrain({ HH, lights, hour, isNight }) {
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[to], on: true }, why: 'темно — включает свет' });
     // the candle on the reading table: he blows it out when he stops reading, and lights it to read in the dark
     if (name !== 'read' && from === 'bedroom' && candleOn()) plan.unshift({ task: 'switch', opts: { light: 'candle', on: false }, why: 'задувает свечу' });
-    plan.push({ task: name, opts: {}, why: reason });
+    // trips: the bow from the workshop for the hunt; the jacket from the hook when it rains or is chilly (sometimes he skips it)
+    if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, lantern: dark(h), bow: name === 'hunt', jacket: raining() || ((h < 9 || h > 17) && Math.random() < .7) || Math.random() < .2 }, why: reason, job: name });
+    else plan.push({ task: name, opts: ECON && name === 'cook' ? { fromFridge: true } : {}, why: reason });
   }
 
   function startNext() {
     const st = plan.shift();
     if (!st) return false;
     why = st.why || why;
+    // he leaves the stove after really cooking: a portion of meat and a log are used, a meal waits
+    if (st.task !== 'cook') bookCook();
+    job = st.job || null;
     // he stops reading: from now on the candle is his to blow out (or to forget)
     if (cur && cur.name === 'read' && st.task !== 'read' && hasCandle) lights.set('candle', candleOn());
     expected = st.task;
@@ -232,7 +262,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   }
 
   // ---------- the per-frame tick (called by hero.js) ----------
-  let pausing = 0, expected, cmdNext = false;
+  let pausing = 0, expected, cmdNext = false, job = null;
   function tick(dt, v) {
     const dh = gameHours();
     drift(dt, dh, v);
@@ -301,9 +331,11 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (done) choose(h);
   }
   function reasonOf(d) { return d.top ? NEEDS[d.top].label.toLowerCase() : 'привычка'; }
+  function bookCook() { if (ECON && cur && cur.name === 'cook' && !cur.booked && cur.t > 6) { cur.booked = true; stock.meat = Math.max(0, stock.meat - 1); stock.logs = Math.max(0, stock.logs - 1); stock.meal = 1; showStock(); } }
   function choose(h) {
+    bookCook();
     const d = decide(h);
-    planFor(d.name, h, ACTS[d.name].label + ' (' + reasonOf(d) + ')');
+    planFor(d.name, h, (ACTS[d.name] || JOBS[d.name]).label + ' (' + reasonOf(d) + ')');
     if (cur && ACTS[cur.name] && cur.name !== 'sleep' && d.name !== 'sleep') micro(h);
     // a short thoughtful pause before setting off (longer when tired)
     pausing = Math.random() < .3 ? rnd(.4, 1.2) * (1 + (1 - need.energy)) : 0;
@@ -336,12 +368,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
     let h = `<b>Мысли героя</b><div class="now">${H.task === 'sleep' ? 'спит' : why || '…'}</div>`;
     for (const k in NEEDS) { const v = k === 'energy' ? 1 - need[k] : need[k]; h += row(k === 'energy' ? 'Усталость' : NEEDS[k].label, v, col(v)); }
     h += row('Настроение', mood, mood > .6 ? '#7FC08A' : mood > .35 ? '#E3B55A' : '#E0705A');
-    h += `<div class="s">Шаг: ${(HH.gait ? HH.gait.speed : 1).toFixed(2)} · варианты:<br>` + scores.slice(0, 4).map(s => `${ACTS[s.name].label} ${s.s.toFixed(2)}`).join('<br>') + '</div>';
+    h += `<div class="s">Шаг: ${(HH.gait ? HH.gait.speed : 1).toFixed(2)} · варианты:<br>` + scores.slice(0, 4).map(s => `${(ACTS[s.name] || JOBS[s.name]).label} ${s.s.toFixed(2)}`).join('<br>') + '</div>';
+    if (ECON) h += `<div class="s">Мясо: ${stock.meat} · брёвна: ${stock.logs}${stock.meal ? ' · обед готов' : ''}</div>`;
     panel.innerHTML = h;
   }
 
   const brain = {
-    need, get mood() { return mood; }, get why() { return why; }, plan, scores: () => scores,
+    need, stock, get econ() { return ECON; }, get mood() { return mood; }, get why() { return why; }, plan, scores: () => scores,
     tick(dt, v) { tick(dt, v); draw(dt); },
     // the game starts at any hour: needs that fit the hour (as if the day had been lived), and the next bed/wake times
     prime(h) {
@@ -350,6 +383,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       const sinceMeal = h >= 19 ? h - 19 : h >= 13 ? h - 13 : h >= 7.5 ? h - 7.5 : h + 5;
       need.hunger = clamp(.1 + sinceMeal * .12 + rnd(-.05, .05));
       need.fun = rnd(.2, .6); need.tidy = rnd(.1, .5); need.comfort = clamp((isNight(h) ? .45 : .2) + rnd(-.1, .1)); need.curiosity = rnd(.2, .6);
+      stock.meat = Math.floor(rnd(0, 3)); stock.logs = Math.floor(rnd(1, 6)); stock.meal = 0; showStock();
       mood = rnd(.5, .75); lastH = h; cur = null; plan.length = 0; expected = undefined;
       if (h >= 21.5 || h < 5.6) bedTime = Math.min(h, 21), wake = rnd(5.6, 6.6);
     },
@@ -359,7 +393,15 @@ export function createBrain({ HH, lights, hour, isNight }) {
     show(on = true) { shown = on; if (panel) panel.style.display = on ? 'block' : 'none'; },
   };
   ui();
-  if (HH.onTaskEnd) HH.onTaskEnd(() => { /* tick() picks up the next step when task is null */ });
+  // a job ended: book what it brought (hero.js may pass a result; a missing result counts as success)
+  if (HH.onTaskEnd) HH.onTaskEnd((name, res) => {
+    if (!ECON || !job || res === false || (res && res.ok === false)) { job = null; return; }
+    if (job === 'hunt') { stock.meat += 2; plan.unshift({ task: 'store', opts: { item: 'meat' }, why: 'кладёт мясо в холодильник' }); }
+    else if (job === 'wood') stock.logs += 3;
+    else if (job === 'eat') { stock.meal = 0; need.hunger = clamp(need.hunger - .75); need.comfort = clamp(need.comfort - .15); }
+    job = null; showStock();
+  });
+  showStock();
   if (HH.setBrain) HH.setBrain(brain);
   return brain;
 }
