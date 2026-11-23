@@ -1114,6 +1114,12 @@ export function createHero(ctx){
   if(out){for(let i=0;i<POSEBONES.length;i++)(out.q[i]||(out.q[i]=new THREE.Quaternion())).copy(POSEBONES[i].quaternion);out.hp=(out.hp||V()).copy(Hp.position);}}
  const SPA={q:[],hp:null},SPB={q:[],hp:null},SPC={q:[],hp:null};
  function sleepTick(dt){if(window.__oldSleep||!FIT.bed||!slpInit())return sleepTickOld(dt);
+  // POSE: getting in / out of bed goes straight between the seated pose and the measured lying pose (the sleep clip's own lying
+  // frames bent the knees backwards and left the feet and head in the air over the mattress); bedTick's per-group weights still lead
+  const bb=H.bedB;if(bb&&bb.W&&SEATQ){SP.from=null;SP.to=null;if(bb.dir>0&&!SP.pre){SP.name=window.__sleepPose||'back';SP.pre=true;}
+   sleepPose(SP.name,SPA);const W=bb.W;for(let i=0;i<POSEBONES.length;i++)POSEBONES[i].quaternion.copy(SEATQ.q[i]).slerp(SPA.q[i],W[BED_GROUP[i]]);
+   bones.Hips.position.lerp(SPA.hp,W.core);root.updateMatrixWorld(true);SP.w=bb.u;return;}
+  SP.pre=false;
   const on=H.inBed&&!H.bedB&&!H.trans;if(!on)SP.covered=false;SP.w+=((on?1:0)-SP.w)*Math.min(1,dt*(on?1.2:3));if(SP.w<.002){SP.w=0;if(!on){SP.name='back';SP.to=null;}return;}
   let k=1;if(on){if(SP.to){SP.t+=dt;k=smooth(0,1,SP.t/SP.dur);if(SP.t>=SP.dur){SP.from=null;SP.to=null;k=1;bedPress(true);}}
    else if((SP.next-=dt)<=0||(window.__sleepPose&&window.__sleepPose!==SP.name)){const n=window.__sleepPose||sleepPick();SP.from=SP.name;SP.to=n;SP.name=n;SP.t=0;SP.dur=rnd(2.2,3);SP.next=rnd(45,140);k=0;sfx&&sfx.rustle&&sfx.rustle();}}
