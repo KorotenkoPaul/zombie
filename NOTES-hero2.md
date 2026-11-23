@@ -1,5 +1,7 @@
 # Hero redesign (2026-11-23)
 
+**Status: Pavel rejected the new hero (too adult) the same evening. The ORIGINAL hero is the default again (game/hero-glb.txt); the redesign loads with `?hero=new` (game/hero-new-glb.txt, assets/models/hero-new.glb). File names below that say hero-old now mean the default hero.**
+
 Pavel: the first hero looked too cartoony for the world. New hero = concept 1 "quiet survivor" (rust knitted sweater, scarf, belt with pouch, fingerless gloves, canvas trousers, boots, no quiver/jacket on the body).
 
 ## Files
@@ -18,3 +20,13 @@ weights remapped by bone name, normals smoothed by welded position. So hero-move
 A separate skinned mesh `eyelids` (bound to Head, same material) with morph targets `blink` (both), `blinkL`, `blinkR`; 0 = open (lids collapsed under the brow, invisible), 1 = closed.
 `hero.root.getObjectByName('eyelids')` -> `m.morphTargetInfluences[m.morphTargetDictionary.blink] = v`. The old hero has no eyelids: check for null.
 Eye placement for a new face: run `facescan.mjs` (front texture render of the head, face.png) and pass eye centres/size to lids.mjs.
+
+## Eyelids on the original (default) hero
+Added the same way: `deq.mjs` (dequantize; mesh space is normalized, y -1..1 = 0..1.6 m) -> facescan (RES=.001 XW=.125 Y0=.75 Y1=1.03) ->
+`lids.mjs old-dq.glb out.glb '{"L":[-0.0535,0.7985,0.072,0.036],"R":[0.0515,0.797,0.068,0.037],"skin":[-0.05,0.765],"lash":[-0.06,0.82],"off":0.0028,"ymin":0.7,"pow":0.4,"flat":1}'` -> quant.mjs.
+Lid UVs must not be all identical (quantize breaks a zero-range attribute), hence the tiny jitter in flat mode.
+
+## Phone cost of the default hero (2026-11-23)
+`optim.mjs in.glb out.glb 0.66`: the metal/roughness map is gone (roughness was 0.66 ± 0.07 and metal 0 everywhere, so now it is a constant factor),
+and skin joints no vertex uses are dropped (body 28 -> 23: HeadTop_End, HandMiddle4 x2, Toe_End x2; eyelids 28 -> 1: Head). The bone NODES stay, so clips and hero.js lookups are unchanged.
+Before/after render diff: mean 0.1-0.4 of 255. Textures 3 -> 2 (base colour + normal map, 1024 webp).

@@ -2,7 +2,7 @@
 //   node tests/camera/profile.js
 const { chromium } = require('playwright');
 const { spawn } = require('child_process');
-const path = require('path');
+const path = require('path'), fs = require('fs');
 const PORT = 8129;
 (async () => {
   const srv = spawn('python3', ['-m', 'http.server', String(PORT)], { cwd: path.join(__dirname, '../../game'), stdio: 'ignore' });
@@ -28,6 +28,7 @@ const PORT = 8129;
     out.trunkSolid_us = +(time(i => trunkSolid(Math.sin(i) * 3, 2 + (i % 10), Math.cos(i) * 3, 0), 20000) * 1000).toFixed(2);
     // pick: first call rebuilds the pickable list
     const W = innerWidth, H = innerHeight;
+    for (let i = 0; i < 400; i++) rig.update(1 / 60);   // BVH warm-up (one mesh per frame)
     let t = performance.now(); rig.pick(W / 2, H / 2); out.pick_rebuild_ms = +(performance.now() - t).toFixed(1);
     out.pick_ms = +time(i => rig.pick(W * (0.2 + 0.6 * (i % 7) / 7), H * (0.2 + 0.6 * (i % 5) / 5)), 20).toFixed(1);
     let meshes = 0, tris = 0;
@@ -39,10 +40,27 @@ const PORT = 8129;
       out.slowRaycast = cost.sort((a, b) => b[1] - a[1]).slice(0, 15);
     }
     scene && scene.traverse(m => { if (m.isMesh && m.visible) { meshes++; const g = m.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.count || 1); } });
-    out.sceneMeshes = meshes; out.sceneTris = Math.round(tris);
+    out.sceneMeshes = meshes;
+    // anchoring dump: what the zoom pick hits on a grid of screen points from three views
+    out.anchors = [];
+    for (const [yw, pt, zf] of [[0.3, 0.25, 1], [-0.5, 0.1, 0.6], [0.6, 0.45, 0.25]]) {
+      window.__th.view(yw, pt, zf); for (let i = 0; i < 120; i++) rig.update(1 / 60);
+      for (let gx = 0; gx < 7; gx++) for (let gy = 0; gy < 9; gy++) {
+        const X = W * (gx + 0.5) / 7, Y = H * (gy + 0.5) / 9;
+        const h = rig.pick(X, Y), o = h.object;
+        // same pick with the plain raycast (BVH off) in the same frame: the anchor must not move
+        const ov = []; scene.traverse(m => { if (m.hasOwnProperty('raycast')) { ov.push([m, m.raycast]); delete m.raycast; } });
+        const h0 = rig.pick(X, Y); for (const [m, f] of ov) m.raycast = f;
+        const dd = h0.point.distanceTo(h.point); out.bvhMaxDiff = Math.max(out.bvhMaxDiff || 0, dd); if (dd > 1e-3) (out.bvhDiffs = out.bvhDiffs || []).push([h0.object && h0.object.name, h.object && h.object.name, +dd.toFixed(3)]);
+        let n = o; while (n && !n.name && n.parent) n = n.parent;
+        out.anchors.push([o ? (n && n.name) || o.type : 'sky', h.point.toArray().map(v => +v.toFixed(3))]);
+      }
+    } out.sceneTris = Math.round(tris);
     const cam = window.__camera; out.dof = cam.quality;
     return out;
   });
+  if (process.env.ANCHORS) fs.writeFileSync(process.env.ANCHORS, JSON.stringify(r.anchors));
+  delete r.anchors;
   console.log(JSON.stringify(r, null, 1));
   await b.close(); srv.kill();
 })();

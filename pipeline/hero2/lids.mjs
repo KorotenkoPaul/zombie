@@ -5,7 +5,7 @@ import {NodeIO} from '@gltf-transform/core';import {ALL_EXTENSIONS} from '@gltf-
 const io=new NodeIO().registerExtensions(ALL_EXTENSIONS);const [,,inP,outP,cfgS]=process.argv;const C=JSON.parse(cfgS);
 const d=await io.read(inP);const root=d.getRoot();const mesh0=root.listMeshes()[0];const p=mesh0.listPrimitives()[0];
 const P=p.getAttribute('POSITION').getArray(),UV=p.getAttribute('TEXCOORD_0').getArray(),I=p.getIndices().getArray();
-const tris=[];for(let t=0;t<I.length;t+=3){if(P[I[t]*3+1]>1.35&&P[I[t]*3+2]>0)tris.push(t);}
+const tris=[];for(let t=0;t<I.length;t+=3){if(P[I[t]*3+1]>(C.ymin??1.35)&&P[I[t]*3+2]>0)tris.push(t);}
 const va=new T.Vector3(),vb=new T.Vector3(),vc=new T.Vector3(),ray=new T.Ray(),tgt=new T.Vector3();
 function cast(x,y){ray.set(new T.Vector3(x,y,1),new T.Vector3(0,0,-1));let best=null;
  for(const t of tris){const a=I[t],b=I[t+1],c=I[t+2];va.fromArray(P,a*3);vb.fromArray(P,b*3);vc.fromArray(P,c*3);
@@ -18,10 +18,10 @@ const colUV=(x,y)=>{const ref=cast(C[x<0?'L':'R'][0],y+.003).uv;const h=cast(x,y
 const COLS=11,ROWS=[0,.25,.5,.75,.9,1];const OFF=C.off||.0013;
 const pos=[],nor=[],uv=[],idx=[],mT={blink:[],blinkL:[],blinkR:[]};
 for(const side of ['L','R']){const [cx,cy,w,h]=C[side];const base=pos.length/3;
- for(let r=0;r<ROWS.length;r++)for(let c=0;c<COLS;c++){const u=-1+2*c/(COLS-1);const k=Math.pow(Math.max(0,1-u*u),.55);
+ for(let r=0;r<ROWS.length;r++)for(let c=0;c<COLS;c++){const u=-1+2*c/(COLS-1);const k=Math.pow(Math.max(0,1-u*u),C.pow??.55);
   const x=cx+u*w/2, yTop=cy+k*h*.62, yBot=cy-k*h*.45; const y=yTop+(yBot-yTop)*ROWS[r];
   const top=cast(x,yTop),tg=cast(x,y);const pt=top.p.clone().addScaledVector(top.n,OFF),pc=tg.p.clone().addScaledVector(tg.n,OFF*(1+.3*Math.sin(Math.PI*ROWS[r])*k));
-  pos.push(pt.x,pt.y,pt.z);const nn=tg.n.clone().multiplyScalar(.7).add(new T.Vector3(0,.1,.45)).normalize();nor.push(nn.x,nn.y,nn.z);const U=r===ROWS.length-1?lashUV:colUV(x,yTop);uv.push(U[0],U[1]);
+  pos.push(pt.x,pt.y,pt.z);const nn=tg.n.clone().multiplyScalar(.7).add(new T.Vector3(0,.1,.45)).normalize();nor.push(nn.x,nn.y,nn.z);const U=r===ROWS.length-1?lashUV:(C.flat?[skinUV[0]+u*.004,skinUV[1]+ROWS[r]*.004]:colUV(x,yTop));uv.push(U[0],U[1]);
   const dlt=[pc.x-pt.x,pc.y-pt.y,pc.z-pt.z];mT.blink.push(...dlt);mT['blink'+side].push(...dlt);mT['blink'+(side==='L'?'R':'L')].push(0,0,0);}
  for(let r=0;r<ROWS.length-1;r++)for(let c=0;c<COLS-1;c++){const a=base+r*COLS+c,b=a+1,e=a+COLS,f=e+1;idx.push(a,e,b,b,e,f);}}
 const nv=pos.length/3;const buf=root.listBuffers()[0];const A=(t,a)=>d.createAccessor().setType(t).setArray(a).setBuffer(buf);
