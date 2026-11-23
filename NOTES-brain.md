@@ -74,3 +74,8 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - 30 h runs, seeds 1/2/3: hunger stays .1–.6 after breakfast, tiredness follows the day, wear gets repaired (down to .01), 20–25 different picks per game day.
 - Sleep no longer wipes boredom/curiosity to 0 (−.015/h asleep instead of −.05); awake drift fun .055, curiosity .045 so they keep pulling him to the deck and the radio.
 - Watchdog: 'hammer' is the open-ended craft clip and never ends by itself (QA: 8 h of hammering). EXTRA.hammer.dur [18,35] s; any EXTRA chore stuck at the spot past 90 s ends with its gives (trace 'watchdog:<name>').
+
+## HERO-RULES alignment (2026-11-23)
+- Brain only calls body tasks (HH.startTask) and books state; the shutters/curtains are no longer closed "by magic" when the body lacks a 'shutters' task (rule 3.3). Lockdown lift plans 'shutters' {close:false}.
+- Rule 3.7 (40-90 s at a place): a visit is "young" for its first 40 real seconds: same area +1.6, elsewhere -1.2. Runs (seeds 1, 3): area stays 66-180 s, only jobs (pond, dump) and in-place chores are shorter.
+- Durations: ACTS dur is the brain's stay; the executor's own dur is used for EXTRA chores, with the brain watchdog (90 s / EXTRA.dur) as a backstop.
