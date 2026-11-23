@@ -3,9 +3,9 @@
 const {open}=require('../anim/lib.js');const fs=require('fs');const path=require('path');const {execSync}=require('child_process');
 const arg=(k,d)=>{const i=process.argv.indexOf(k);return i>0?process.argv[i+1]:d;};
 (async()=>{const task=process.argv[2],out=process.argv[3];const opts=JSON.parse(arg('--opts','{}'));const at=arg('--at','4,6,8').split(',').map(Number);const hand=arg('--hand','Right');const dist=+arg('--dist','.75');
- const tmp=fs.mkdtempSync('/tmp/claude-0/look-');const {b,p,errs}=await open({seed:1,vp:{width:420,height:420},query:arg('--query','')});
+ const tmp=fs.mkdtempSync('/tmp/claude-0/look-');const {b,p,errs}=await open(Object.assign({seed:1},process.env.FULLVP?{}:{vp:{width:420,height:420}},arg('--query','')?{query:arg('--query','')}:{}));
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
- await p.evaluate(()=>__qa.start());await p.evaluate(([e])=>{__qa.reseed(7);__th.setHour(11);eval(e);},[arg('--eval','')]);
+ await p.evaluate(()=>__qa.start());await p.evaluate(([e])=>{__qa.reseed(7);__th.setHour(11);__dbg.HH.setBrain({tick(){}});eval(e);},[arg('--eval','')]);
  await p.evaluate(([t,o])=>{__dbg.HH.setBrain({tick(){}});__dbg.HH.startTask(t,o);},[task,opts]);
  const until=arg('--until',null);if(until)await p.evaluate(u=>{for(let i=0;i<6000;i++){__qa.step(1,1/60);const a=__dbg.HH.act;if(a&&a.step===u)break;}},until);
  let t=0,files=[];

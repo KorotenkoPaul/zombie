@@ -550,10 +550,9 @@ export function createHero(ctx){
     if(a.step==='reach'){H.face=wrapA(N.bench.face+clamp(wrapA(Math.atan2(hp.x-root.position.x,hp.z-root.position.z)-N.bench.face),-.6,.6));H.look=hp;H.lookW=1;
      a.ik=[['Right',hp.clone().add(V(0,.05,0)),smooth(.1,.9,a.t)-smooth(1.0,1.7,a.t)]];if(a.t>.95&&!a.got){a.got=true;grabTool('benchHammer','Right');}
      if(a.t>1.6){a.step='work';a.t=0;H.face=N.bench.face;const bt=(P3&&P3.surfaces&&P3.surfaces.benchTop)||floorTop(WS,N.bench.p.x,N.bench.p.z)+.9;const f=fwd(N.bench.face);
-      plank.visible=true;plank.position.copy(root.position).addScaledVector(f,.5).setY(bt+.015);plank.rotation.set(0,N.bench.face+rnd(-.2,.2),0);play('hy_hammer',{fade:.7});}}
-    else if(a.step==='work'){H.face=N.bench.face;H.look=plank.position.clone();H.lookW=.8;a.ik=null;
-     const y=bones.RightHand.getWorldPosition(V()).y;if(a.py!=null){const v=(y-a.py)/Math.max(dt,1e-3);if(a.pv!=null&&a.pv<-.4&&v>=-.05&&(a.lastHit??-9)<a.t-.3){a.lastHit=a.t;sfx&&sfx.hammer&&sfx.hammer();}a.pv=v;}a.py=y;}};
-   a.post=()=>ikList(a.ik);
+      plank.visible=true;plank.position.copy(root.position).addScaledVector(f,.5).setY(bt+.015);plank.rotation.set(0,N.bench.face+rnd(-.2,.2),0);play(IDLE(),{fade:.7});/* GRAB: the swing is all hand IK (hammerPost) */}}
+    else if(a.step==='work'){H.face=N.bench.face;a.nail=a.nail||plank.position.clone().addScaledVector(V(-fwd(N.bench.face).z,0,fwd(N.bench.face).x),-.06).add(V(0,.02,0));H.look=a.nail.clone();H.lookW=.9;a.ik=null;}};
+   a.post=dt=>{ikList(a.ik);if(a.step==='work'&&a.nail)hammerPost(a,dt,a.nail);};
    a.leave=cb=>{plank.visible=false;if(!H.hold.Right){cb();return;}a.step='putback';a.t=0;play(IDLE(),{fade:.5});a.update=dt=>{a.t+=dt;const hp=hammerHome();H.look=hp;H.lookW=1;
      a.ik=[['Right',hp.clone().add(V(0,.06,0)),smooth(0,.8,a.t)-smooth(1.0,1.6,a.t)]];if(a.t>.85&&H.hold.Right){releaseTool('Right');}if(a.t>1.6){a.ik=null;cb();}};};return a;},
   cook:()=>{const a={step:'go',t:0};goTo('stove',()=>{a.step='oven';a.t=0;pot.visible=true;pot.position.copy(potSpot());pot.rotation.y=rnd(0,6);
@@ -654,15 +653,37 @@ export function createHero(ctx){
    for(let k=0;k<3;k++){const e=gw.clone().sub(G.gripPoint(side));if(e.length()<.003)break;armIK(side,hb.getWorldPosition(V()).add(e),sidePole(side),1);}}}/* the fist back on its spot: wrist moves only, no new lean */
  // GRAB HOOK: put a held tool exactly: its grip point at gp, its working end toward tip. The hand's world rotation is solved first
  // (tool axis on the line gp->tip, knuckles along the forearm), then the wrist goes where that puts the fist on gp, then the arm IK.
- function holdToolAt(side,name,gp,tip,w){const P=PP();const o=P&&P.tools&&P.tools[name];const G=window.__grab;const sp=G&&G.GRIP&&G.GRIP[name];const hb=bones[side+'Hand'];if(!o||!sp||o.parent!==hb)return false;
+ function holdToolAt(side,name,gp,tip,w,bw){const P=PP();const o=P&&P.tools&&P.tools[name];const G=window.__grab;const sp=G&&G.GRIP&&G.GRIP[name];const hb=bones[side+'Hand'];if(!o||!sp||o.parent!==hb)return false;
   const ua=V(...sp.a).applyQuaternion(o.quaternion).normalize();const gl=V(...sp.g).multiplyScalar(o.scale.x).applyQuaternion(o.quaternion).add(o.position);// tool axis + grip point in hand space
   const W=tip.clone().sub(gp).normalize();const sh=bones[side+'Arm'].getWorldPosition(V());let Fw=gp.clone().sub(sh).normalize();
   const bas=(x,y)=>{const X=x.clone().normalize();const Y=y.clone().sub(X.clone().multiplyScalar(y.dot(X)));if(Y.lengthSq()<1e-6)Y.set(0,1,0).sub(X.clone().multiplyScalar(X.y));Y.normalize();return new THREE.Matrix4().makeBasis(X,Y,X.clone().cross(Y));};
-  for(let it=0;it<2;it++){const Ml=bas(ua,V(0,1,0)),Mw=bas(W,Fw);const Qh=new THREE.Quaternion().setFromRotationMatrix(Mw.multiply(Ml.transpose()));
+  for(let it=0;it<2;it++){let Qh;if(bw){/* the tool's whole orientation is given: hand = tool * (tool in hand)^-1 */const Qt=new THREE.Quaternion().setFromRotationMatrix(bas(W,bw).multiply(bas(V(...sp.a),V(...sp.b)).transpose()));Qh=Qt.multiply(o.quaternion.clone().invert());}
+   else{const Ml=bas(ua,V(0,1,0)),Mw=bas(W,Fw);Qh=new THREE.Quaternion().setFromRotationMatrix(Mw.multiply(Ml.transpose()));}
    const sc=hb.getWorldScale(V()).x;const wrist=gp.clone().sub(gl.clone().multiplyScalar(sc).applyQuaternion(Qh));
    armIK(side,wrist,sidePole(side),w);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cur=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(cur.slerp(Qh,w)));hb.updateMatrixWorld(true);
    Fw=hb.getWorldPosition(V()).sub(bones[side+'ForeArm'].getWorldPosition(V())).normalize();}
   return true;}
+ // hammering for real: the hammer swings up round the elbow and comes down so its face lands square on the nail (the hit, its
+ // sound and the nail sinking all happen on that frame), the other hand steadies the work beside the nail
+ const HFACE=[.102,.146,0];
+ function hammerPost(a,dt,nail,nrm){a.nail=a.nail||nail;const P=PP();const hm=P&&P.tools&&P.tools.benchHammer;if(!hm||hm.parent!==bones.RightHand||!nail)return;
+  if(bones.RightArm.getWorldPosition(V()).distanceTo(nail)>armLen+.2){a.hmFar=true;return;}a.hmFar=false;/* out of reach from this pose (a kneeling or roof clip): the clip swings, the timer sounds */
+  const S=a.hm||(a.hm={ph:Math.random()*.3,w:0,n:0,T:rnd(.72,.9)});S.w=Math.min(1,S.w+dt/.5);S.ph+=dt;if(S.ph>S.T){S.ph-=S.T;S.T=rnd(.72,.9);S.hit=0;S.n++;if(S.n%6===5)S.ph-=rnd(.6,1.1);/* now and then a breath / a look between blows */}
+  H.noPop={side:'Right',age:0};/* a hammer blow is meant to be sharp: keep the anti-pop pass off this arm */
+  const u=S.ph/S.T;const TH=.9;let th=u<0?0:u<.5?TH*smooth(0,.5,u):u<.6?TH:u<.7?TH*(1-Math.pow((u-.6)/.1,2)):0;
+  const sh=bones.RightArm.getWorldPosition(V());const up=nrm?nrm.clone().normalize():V(0,1,0);/* surface normal: up for a bench, board or rail, out of the wall for a wall */
+  const d=nail.clone().sub(sh);d.addScaledVector(up,-d.dot(up));if(d.lengthSq()<1e-4)d.set(0,1,0);d.normalize();const k=d.clone().cross(up).normalize();
+  const W0=d.clone(),B0=up.clone().negate();const R=new THREE.Quaternion().setFromAxisAngle(k,th);const W=W0.clone().applyQuaternion(R),Bw=B0.clone().applyQuaternion(R);
+  // strike pose: face on the nail; the swing pivots about a point a forearm behind the grip
+  const sc=hm.getWorldScale(V()).x;const Qt=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(W0,B0,W0.clone().cross(B0)).multiply(new THREE.Matrix4().makeBasis(V(0,1,0),V(1,0,0),V(0,1,0).cross(V(1,0,0))).transpose()));
+  const Fw=V(...HFACE).multiplyScalar(sc).applyQuaternion(Qt);const O=nail.clone().sub(Fw);const G0=O.clone().add(V(0,-.085,0).multiplyScalar(sc).applyQuaternion(Qt));
+  const piv=G0.clone().addScaledVector(d,-.22).add(V(0,-.04,0));const G=piv.clone().add(G0.clone().sub(piv).applyQuaternion(R));
+  // the other hand steadies the work a hand's width left of the nail, on the near side (first: it may lean the body)
+  {const ls=bones.LeftArm.getWorldPosition(V());let lp=nail.clone().addScaledVector(k,-.12).addScaledVector(d,-.08).addScaledVector(up,.01);const r=armLen*.9+PALM;if(ls.distanceTo(lp)>r){/* no leaning over for it: the hand settles on the plank where it reaches */const q=lp.clone().sub(ls);const h=Math.sqrt(Math.max(0,r*r-q.y*q.y));const hz=V(q.x,0,q.z);if(hz.length()>h)hz.setLength(h);lp=ls.clone().add(hz).setY(lp.y);}reachGrip('Left',lp,S.w*.9);}
+  const tip=G.clone().add(W);if(sh.distanceTo(G)>armLen*.95+.12)reachTo('Right',G,S.w);holdToolAt('Right','benchHammer',G,tip,S.w,Bw);
+  {const G2=window.__grab,w=S.w;if(G2&&G2.late)G2.late(()=>holdToolAt('Right','benchHammer',G,tip,w,Bw));}
+  if(u>=.7&&!S.hit&&S.w>.9){S.hit=1;try{window.__audio&&window.__audio.contact?window.__audio.contact({tool:'hammer',kind:'hit',pos:nail.toArray(),strength:rnd(.7,1)}):(sfx&&sfx.hammer&&sfx.hammer());}catch(e){}}
+}
  // stirring: the ladle's bowl goes round in the soup, the fist above the rim, the other hand steadies the pot by its handle
  function stirPost(a,dt){const P=PP();const pot=P&&P.tools&&P.tools.pot,la=P&&P.tools&&P.tools.ladle;if(!pot||!la||la.parent!==bones.RightHand)return;
   a.sw=Math.min(1,(a.sw||0)+dt/.6);a.sa=(a.sa||0)+dt*4.6;pot.updateMatrixWorld(true);const c=pot.localToWorld(V(0,.07,0));const sh=bones.RightArm.getWorldPosition(V());
@@ -786,7 +807,7 @@ export function createHero(ctx){
  // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
  const REPAIR={fix_shingle:{clip:'hy_shingle',tools:[['benchHammer','Right']],stand:.55,def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
   fix_board:{clip:'hy_nailboard',tools:[['benchHammer','Right']],stand:.5,def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
-  fix_wall:{clip:'hy_patchwall',tools:[['benchHammer','Right']],stand:.45,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
+  fix_wall:{clip:'hy_patchwall',tools:[['benchHammer','Right']],stand:.45,wall:true,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
   fix_rope:{clip:'hy_ropeknot',node:'gate',stand:.45,def:()=>N.gate&&N.gate.p.clone().add(V(0,.3,.6))},
   fix_hinge:{clip:'hy_oilhinge',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
   fix_window:{clip:'hy_window',stand:.4,def:()=>{const w=pick(WINDOWS);return N[w].p.clone().addScaledVector(fwd(N[w].face??0),.5).add(V(0,1.3,0));}},
@@ -794,8 +815,9 @@ export function createHero(ctx){
   clear_roof:{clip:'hy_clearleaves',stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
   fix_chimney:{clip:'hy_chimney',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.chimneyTop?P.chimneyTop.clone().setY(Math.min(P.chimneyTop.y,root.position.y+1.6)):null;}}};
  for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{const pos=o.pos?V(...o.pos):(R.def?R.def():null);
-  return job({pt:()=>pos,node:pos?null:R.node,stand:R.stand,clip:R.clip,loop:true,dur:[18,35],tools:R.tools||[],
-   tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});};
+  const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));
+  return job({pt:()=>pos,node:pos?null:R.node,stand:R.stand,clip:R.clip,loop:true,dur:[18,35],tools:R.tools||[],post:hamr?(a,dt)=>hammerPost(a,dt,pos,R.wall?V(root.position.x-pos.x,0,root.position.z-pos.z).normalize():null):undefined,vary:hamr?false:undefined,
+   tick:(a,dt)=>{if(hamr&&!a.hmFar)return;/* GRAB: hammer hits come from the swing itself */if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});};
  // ===================== gear: a skinned coat that really follows the body, bow and quiver from the workshop wall =====================
  // the coat is cut from the body mesh itself (torso + arms, pushed out 1.5 cm along the normals) and shares the skeleton
  const COAT=(()=>{let sk=null;root.traverse(o=>{if(o.isSkinnedMesh&&!sk)sk=o;});if(!sk)return null;const g0=sk.geometry;const S=sk.skeleton;
