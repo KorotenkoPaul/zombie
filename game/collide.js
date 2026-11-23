@@ -305,9 +305,9 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       // on a ladder only hands and feet are corrected (moving the body or bending the head pops on the pull-up)
       if (hero.lad) { pd[0] = 0; pd[1] = 0; anyP = pd.some(v => v > 0); }
       for (const c of [0, 1]) if (sumW[c] > 0) push[c].copy(sumN[c]).multiplyScalar(1 / sumW[c]).multiplyScalar(pd[c] + .001);
-      // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall) and no foot
-      // lift (it reads as sliding); only arms and head give way. Walking into things is the walk graph's job.
-      if (hero.path && hero.path.length && !hero.lad) { pd[0] = 0; pd[4] = pd[5] = 0; anyP = pd.some(v => v > 0); }
+      // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall); a sole is
+      // only lifted straight up out of a board (never moved sideways); arms and head give way. Walking into things is the walk graph's job.
+      if (hero.path && hero.path.length && !hero.lad) { pd[0] = 0; anyP = pd.some(v => v > 0); }
       { const X = window.__colOff; if (X) { if (X.root) pd[0] = 0; if (X.head) pd[1] = 0; if (X.arms) pd[2] = pd[3] = 0; if (X.legs) pd[4] = pd[5] = 0; anyP = pd.some(v => v > 0); } }
       if (!anyP) break; st.pushes++; for (let c = 0; c < 6; c++) if (pd[c] > 0) hold[c] = c >= 4 ? 0 : .35;
       // root: sideways (and up while seated / lying); a push straight down or up while standing goes to the head / spine instead

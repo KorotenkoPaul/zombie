@@ -248,12 +248,24 @@ export function createAudio(ctx) {
   // mist hushes the forest (softer, darker); a storm makes it rougher. Folded into the acoustics bus targets.
   let mistK = 0;
   // ---------- rooms: where the camera is decides what we hear ----------
-  const LV = ctx.lv || { KT: 5.0, BD: 7.4, WS: 3.6 };
+  const LV = ctx.lv || { KT: 6.0, BD: 8.4, WS: 4.6 };   // index.html levels include HY = 1.0
   const ROOMS = ctx.rooms || [
     { n: 'kitchen', c: { x: -2.65, y: LV.KT + 1.05, z: 2.5 }, r: 2.8 },
     { n: 'bedroom', c: { x: -1.9, y: LV.BD + 1.1, z: 2.3 }, r: 2.6 },
     { n: 'workshop', c: { x: 2.75, y: LV.WS + 1.1, z: 2.9 }, r: 2.8 },
   ];
+  // each room's own colour: the bedroom's quilts and bunks soak up the highs and the ring; the kitchen's pots, kettle and
+  // bare walls ring brightest; the workshop's tools and timber sit between. Outside a room (deck, landings, ladders,
+  // the roof) a sound is in the open air: forest bus and forest reverb, no room ring.
+  const ROOMC = { kitchen: { send: 1.3, lp: 16000 }, bedroom: { send: .5, lp: 4800 }, workshop: { send: 1, lp: 9000 } };
+  function roomOf(p) {
+    let best = null, bd = 1e9;
+    for (const R of ROOMS) { const dx = p.x - R.c.x, dy = (p.y - R.c.y) * 1.6, dz = p.z - R.c.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz) / R.r; if (d < bd) { bd = d; best = R; } }
+    return bd < 1.15 ? best : null;
+  }
+  // the two roofs (index.html buildTree roofs): x/z extent and base height; standing on one = shingles underfoot
+  const ROOFS = ctx.roofs || [{ x0: -4.65, x1: .85, z0: .45, z1: 4.15, yb: 10.7 }, { x0: .45, x1: 5.05, z0: .65, z1: 4.35, yb: 6.9 }];
+  const onRoof = p => ROOFS.some(R => p.x > R.x0 - .5 && p.x < R.x1 + .5 && p.z > R.z0 - .5 && p.z < R.z1 + .5 && p.y > R.yb - .3);
   function indoorK(p) {     // 0 outside .. 1 well inside a room
     let k = 0; for (const R of ROOMS) { const dx = p.x - R.c.x, dy = (p.y - R.c.y) * 1.6, dz = p.z - R.c.z; const d = Math.sqrt(dx * dx + dy * dy + dz * dz); k = Math.max(k, 1 - smooth(R.r * .8, R.r * 1.7, d)); }   // the rooms are open to the camera: being zoomed close counts as being in the room
     return k;
@@ -320,6 +332,7 @@ export function createAudio(ctx) {
 
   // play a buffer at a world position. o: {gain, rate, offset, dur, ref, rev, fadeIn, fadeOut, pos|null, pan}
   function voice(name, o) {
+    let room = null; if (o.indoor && o.pos && !o.bed) { room = roomOf(o.pos); if (!room) o = Object.assign({}, o, { indoor: false }); }
     if (!A || (!o.bed && voices.size >= (o.prio ? MAXV + 6 : MAXV))) return null;   // the hero's own sounds get extra room
     const buf = getBuf(name); if (!buf) return null;
     if (o.prio) { duckUntil = A.currentTime + 3; lastActT = now; }   // the music steps back for the hero's sounds
@@ -335,7 +348,7 @@ export function createAudio(ctx) {
     let dist = 10;
     if (o.pos) {
       const l = listener(); dist = Math.hypot(o.pos.x - l.x, o.pos.y - l.y, o.pos.z - l.z);
-      const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.max(1400, NYQ * Math.exp(-dist / (o.far ? 45 : 70))); lp.Q.value = .5;
+      const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.min(room ? Math.min(NYQ, ROOMC[room.n].lp) : NYQ, Math.max(1400, NYQ * Math.exp(-dist / (o.far ? 45 : 70)))); lp.Q.value = .5;
       const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = o.ref || 10; p.rolloffFactor = o.roll ?? .9; p.maxDistance = 400;
       if (p.positionX) { p.positionX.value = o.pos.x; p.positionY.value = o.pos.y; p.positionZ.value = o.pos.z; } else p.setPosition(o.pos.x, o.pos.y, o.pos.z);
       if (o.move) { const m = o.move; if (p.positionX) { p.positionX.setValueAtTime(o.pos.x, t); p.positionX.linearRampToValueAtTime(m.x, t + realDur); p.positionY.setValueAtTime(o.pos.y, t); p.positionY.linearRampToValueAtTime(m.y, t + realDur); p.positionZ.setValueAtTime(o.pos.z, t); p.positionZ.linearRampToValueAtTime(m.z, t + realDur); } }
@@ -344,12 +357,12 @@ export function createAudio(ctx) {
       const sp = A.createStereoPanner ? A.createStereoPanner() : null;
       const bus = o.indoor ? inBus : outBus; if (sp) { sp.pan.value = o.pan || 0; src.connect(g).connect(sp).connect(bus); } else src.connect(g).connect(bus);
     }
-    const sendAmt = o.rev ?? clamp01(.12 + dist / 60);
+    const sendAmt = (o.rev ?? clamp01(.12 + dist / 60)) * (room ? ROOMC[room.n].send : 1);
     if (sendAmt > .01) { const s = A.createGain(); s.gain.value = sendAmt; g.connect(s).connect(o.indoor ? roomIn : revIn); }
     src.start(t, off, dur);
     const v = { src, g, end: t + realDur, name };
     LOG.push([+now.toFixed(1), name]); if (LOG.length > 60) LOG.shift();
-    if (window.__audioTrace) window.__audioTrace.push([+t.toFixed(2), name, +(o.gain || 0).toFixed(3), +dist.toFixed(1), o.indoor ? 1 : 0]);   // mix QA only
+    if (window.__audioTrace) window.__audioTrace.push([+t.toFixed(2), name, +(o.gain || 0).toFixed(3), +dist.toFixed(1), o.indoor ? (room ? room.n : 1) : 0]);   // mix QA only
     voices.add(v); src.onended = () => { voices.delete(v); try { out.disconnect(); g.disconnect(); } catch (e) {} };
     return v;
   }
@@ -495,13 +508,13 @@ export function createAudio(ctx) {
   function critter(e) {
     if (!loaded || muted || !e || e.kind === 'butterfly' || !A) return;
     const C = CRIT[e.act]; if (!C) return; const q = e.pos || [0, 0, 8], p = { x: q[0] ?? q.x, y: q[1] ?? q.y, z: q[2] ?? q.z };
-    const l = listener(); if (Math.hypot(p.x - l.x, p.y - l.y, p.z - l.z) > 30) return;
+    const l = listener(); if (Math.hypot(p.x - l.x, p.y - l.y, p.z - l.z) > 45) return;
     const id = (e.id || e.kind) + e.act; if (now - (critLast[id] ?? -9) < C[2]) return; critLast[id] = now;
     let kind = C[0]; if (e.kind === 'squirrel' && e.act === 'flee') kind = 'claws';
     const name = 'syn_' + kind + '_' + Math.floor(Math.random() * C[3]);
     const dur = kind === 'claws' ? Math.min(2.1, e.dur || rnd(.6, 1.4)) : undefined;
     voice(name, { pos: p, gain: C[1] * rnd(.8, 1.15) * (e.act === 'land' ? .7 : 1), rate: rnd(.9, 1.12) * (e.kind === 'squirrel' && kind === 'flutter' ? .8 : 1), dur, offset: kind === 'claws' ? rnd(0, .4) : 0,
-      fadeIn: .004, fadeOut: kind === 'claws' ? .12 : .05, ref: 2.5, roll: 1.3, rev: .12 });
+      fadeIn: .004, fadeOut: kind === "claws" ? .12 : .05, ref: 4, roll: 1.2, rev: .12 });
   }
   function hookCritters() {
     if (critHooked) return; const G = window.__ground; if (!G || typeof G.on !== 'function') return; critHooked = true;
@@ -542,10 +555,11 @@ export function createAudio(ctx) {
   // the toe bones itself: a foot that comes down to the floor after being lifted is a step.
   let gnow = 0, breathNext = 0, clothNext = 0, moving = false, carrying = false, dbgF = null, autoFeet = true, ladderNext = 0, cadNext = 0, cadSide = 'L', frameDt = .016;
   const FT = { boards: ['step_wood_a', 'step_wood_b', 'step_wood_c'], dirt: ['fs_dirt_a', 'fs_dirt_b', 'fs_dirt_c'], wet: ['fs_wet_a', 'fs_wet_b', 'fs_wet_c'],
-    leaves: ['fs_leaves_a', 'fs_leaves_b', 'fs_leaves_c'], ladder: ['fs_ladder_a', 'fs_ladder_b'], rope: ['fs_rope_a', 'fs_rope_b'] };
-  const FV = { boards: .2, dirt: .2, wet: .22, leaves: .24, ladder: .22, rope: .24 };
+    leaves: ['fs_leaves_a', 'fs_leaves_b', 'fs_leaves_c'], ladder: ['fs_ladder_a', 'fs_ladder_b'], rope: ['fs_rope_a', 'fs_rope_b'], roof: ['step_wood_c', 'step_wood_a'] };
+  const FV = { boards: .2, dirt: .2, wet: .22, leaves: .24, ladder: .22, rope: .24, roof: .15 };
   const footSt = { L: { armed: false }, R: { armed: false } };
   function surfaceAt(p, env) {
+    if (onRoof(p)) return 'roof';
     if (p.y > .6) return 'boards';
     if (env.rain > .2 || rainMem > .3) return 'wet';
     if (env.season === 'autumn') return Math.random() < .65 ? 'leaves' : 'dirt';
@@ -554,7 +568,8 @@ export function createAudio(ctx) {
   function step(side, pos, surface, gain = 1) {
     if (!loaded || muted) return;
     const list = FT[surface] || FT.boards, q = toPos(pos);
-    const clip = pick(list), o = { pos: q, gain: (FV[surface] || .2) * gain * rnd(.75, 1.05), rate: rnd(.9, 1.1), ref: 3, roll: 1, rev: .15, prio: true, indoor: q.y > .6, fadeIn: .005, fadeOut: .08 };
+    if (surface === 'roof' && Math.random() < .45) { const o2 = { pos: q, gain: .035 * gain, rate: rnd(1.1, 1.4), fadeIn: .003, fadeOut: .05, ref: 3, roll: 1, rev: .15, delay: rnd(.03, .09) }; voice('syn_peck_' + (Math.random() < .5 ? 0 : 1), o2); }   // a loose shingle ticks
+    const clip = pick(list), o = { pos: q, gain: (FV[surface] || .2) * gain * rnd(.75, 1.05), rate: surface === 'roof' ? rnd(1.15, 1.3) : rnd(.9, 1.1), ref: 3, roll: 1, rev: .15, prio: true, indoor: q.y > .6, fadeIn: .005, fadeOut: .08 };
     if (B[clip]) voice(clip, o); else decode(clip).then(() => voice(clip, o));
   }
   const _w = { x: 0, y: 0, z: 0 };
