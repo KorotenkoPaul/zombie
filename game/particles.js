@@ -41,7 +41,7 @@ export function createParticles({ THREE, scene, wind, lights, rooms = [], hero =
     roomsDust.push({ b, U, pts, src: null }); api.dust.push(pts);
   }
   const inBox = (p, b) => p.x > b[0] && p.x < b[1] && p.y > b[2] - 0.3 && p.y < b[3] + 0.3 && p.z > b[4] && p.z < b[5];
-  let srcT = 0, dustOn = true;
+  let srcT = 0, dustOn = true, dustK = 1;
   const lv = {};
   function updateDust(dt, T) {
     if (!lights || !lights.list) return;
@@ -52,6 +52,7 @@ export function createParticles({ THREE, scene, wind, lights, rooms = [], hero =
         const r = roomsDust.find(r => inBox(p, r.b)); if (r && r.src.length < 3) r.src.push({ name: s.name, p: p.clone ? p.clone() : p }); } }
     // on/off with a short fade of our own (the sources' 'level' is a brightness scale, not 0..1)
     for (const s of LL) lv[s.name] = (lv[s.name] ?? 0) + ((s.on ? 1 : 0) - (lv[s.name] ?? 0)) * Math.min(1, dt / 0.6);
+    dustK += ((dustOn ? 1 : 0) - dustK) * Math.min(1, dt * 0.5);   // the quality step fades it over ~2 s
     for (const r of roomsDust) {
       let any = 0; for (let i = 0; i < 3; i++) { const s = r.src && r.src[i]; const L = s ? Math.max(0, Math.min(1, lv[s.name] || 0)) : 0;
         r.U.uL.value[i].set(s ? s.p.x : 0, s ? s.p.y : -99, s ? s.p.z : 0, L); any = Math.max(any, L); }
@@ -59,7 +60,8 @@ export function createParticles({ THREE, scene, wind, lights, rooms = [], hero =
       const m = r.src && r.src[0]; if (m) { const b = r.b;
         r.U.uB0.value.set(Math.max(b[0] + 0.3, m.p.x - 1.4), Math.max(b[2] + 0.2, m.p.y - 1.9), Math.max(b[4] + 0.3, m.p.z - 1.4));
         r.U.uB1.value.set(Math.min(b[1] - 0.3, m.p.x + 1.4), Math.min(b[3] - 0.2, m.p.y + 0.3), Math.min(b[5] - 0.3, m.p.z + 1.4)); }
-      r.pts.visible = dustOn && any > 0.03; r.U.uT.value = T;
+      r.U.uK.value = dustK;
+      r.pts.visible = dustK > 0.01 && any > 0.03; r.U.uT.value = T;
     }
   }
 

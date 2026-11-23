@@ -389,6 +389,7 @@ export function createCameraRig(o) {
   }
 
   // ---------- per frame ----------
+  const limbOff = new THREE.Vector3(), limbWant = new THREE.Vector3();
   let hitWhy = null, collK = 1, driftAmt = 0, breathT = 0;
   const gL = new THREE.Vector3(), cL = new THREE.Vector3(), fL = new THREE.Vector3();
   function toLocal(t, yaw, out) {     // inverse of the orbit rotation around AXIS by yaw
@@ -523,8 +524,7 @@ export function createCameraRig(o) {
       cur.dist = Math.exp(Math.log(cur.dist) + (Math.log(goal.dist) - Math.log(cur.dist)) * k);
     }
     fromLocal(cL, cur.yaw, cur.target);
-    outOfTrunk(cur.target);
-    outOfLimb(cur.target, cur.yaw, cur.pitch);
+    outOfTrunk(cur.target);           // (a focus pushed out of a limb moves the goal only: the view follows it softly)
 
     // idle breathing: the caller's slow drift fades in a few seconds after the last touch and fades out quickly on touch
     const still = idle > 3 && !ptrs.size && !inert.on && !fly;
@@ -565,12 +565,17 @@ export function createCameraRig(o) {
     if (solid(camPos.x, camPos.y, camPos.z)) { outOfTrunk(camPos); hitWhy = 'solid'; }
     // ... and never inside a wall, floor or roof of a room: out of the board to the side the focus is on
     if (outOfWalls(camPos, cur.target)) hitWhy = hitWhy || 'wall';
-    // never inside a limb: slide toward the focus until clear
+    // never inside a limb: slide toward the focus until clear. The slide is eased in over a few frames (a sudden
+    // push reads as a jump); it lets go just as softly.
+    limbWant.set(0, 0, 0);
     if (limb(camPos.x, camPos.y, camPos.z)) {
+      p.copy(camPos);
       tmp.copy(cur.target).sub(camPos); const L = tmp.length(); tmp.divideScalar(L || 1);
-      for (let s = 0; s < L && limb(camPos.x, camPos.y, camPos.z); s += 0.1) camPos.addScaledVector(tmp, Math.min(0.1, L - s));
-      hitWhy = 'limb';
+      for (let s = 0; s < L && limb(p.x, p.y, p.z); s += 0.1) p.addScaledVector(tmp, Math.min(0.1, L - s));
+      limbWant.subVectors(p, camPos); hitWhy = 'limb';
     }
+    limbOff.lerp(limbWant, damp(28, dt));
+    camPos.add(limbOff);
     if (extra.shake) camPos.add(extra.shake);
     focusU.value = camPos.distanceTo(cur.target);
     // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar
