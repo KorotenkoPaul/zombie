@@ -309,7 +309,9 @@ export function buildTree(THREE, o) {
   const LA = o.avoidLeaves || [];
   const inB = (x, y, z, p) => LA.some(b => x > b[0] - p && x < b[1] + p && y > b[2] - p && y < b[3] + p && z > b[4] - p && z < b[5] + p);
   const leafT = o.leafT; leafT.wrapS = leafT.wrapT = THREE.ClampToEdgeWrapping; leafT.repeat.set(1, 1);
-  const lmat = new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
+  // [PERF] phones: Lambert (per-pixel, no PBR) is a fraction of the fragment cost; the leaves are matte anyway
+  const lmat = MOB(o) ? new THREE.MeshLambertMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide })
+    : new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
   // soft, lit-from-above clumps: cards near the clump centre are darker (painted volume)
   lmat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\nvFacing=abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));vDep=-mvPosition.z;');
@@ -330,7 +332,7 @@ export function buildTree(THREE, o) {
     }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\nfloat ff=smoothstep(.18,.6,vFacing)*smoothstep(.8,3.,vDep);diffuseColor.a*=step(length(vMapUv-.5)*2.,ff*1.3);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
-  const total = MOB(o) ? 1400 : 2800; // [PERF] phones: fewer, slightly bigger cards (same coverage, less overdraw)
+  const total = MOB(o) ? (o.leafCards || 760) : 2800; // [PERF] phones: fewer, slightly bigger cards (same coverage, less overdraw)
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
   const qg = MOB(o) ? new THREE.PlaneGeometry(1, 1, 2, 2) : new THREE.PlaneGeometry(1, 1, 3, 3); // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
@@ -344,21 +346,24 @@ export function buildTree(THREE, o) {
     for (let i = 0; i < k && n < total; i++) {
       // points on a squashed sphere shell (more on top), facing out
       let dx, dy, dz; do { dx = rnd(-1, 1); dy = rnd(-0.45, 1); dz = rnd(-1, 1); } while (dx * dx + dy * dy + dz * dz > 1);
-      const dir = V(dx, dy, dz); const rr = Math.max(0.35, dir.length()); dir.normalize();
+      // [PERF] phones: only the outer shell of each clump (inner cards are hidden but still shaded: overdraw)
+      const dir = V(dx, dy, dz); const rr = MOB(o) ? rnd(0.8, 1.0) : Math.max(0.35, dir.length()); dir.normalize();
       const p = s.p.clone().add(V(dir.x * s.s * rr, dir.y * s.s * 0.7 * rr, dir.z * s.s * rr));
       if (inB(p.x, p.y, p.z, 0.8)) continue;
       // cards turned mostly towards the viewer, like the painted clumps in the photo
       const fw = rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
       const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
-      sc.setScalar(MOB(o) ? rnd(1.4, 2.15) : rnd(1.25, 2.0));
+      sc.setScalar(MOB(o) ? rnd(1.55, 2.3) : rnd(1.25, 2.0));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
+      // phones have no inner cards, so some shell cards take the darker inner shade to keep the clumps' depth
+      const rs = MOB(o) && rnd(0, 1) < 0.35 ? rnd(0.4, 0.78) : rr;
       const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1));
       // lighter, yellow-green leaves on the clump edges and the odd autumn-yellow card, like the photo
-      if (rr > 0.8 && dir.y > -0.2) col.multiply(new THREE.Color(1.18, 1.14, 0.8));
+      if (rs > 0.8 && (!MOB(o) || rnd(0, 1) < 0.75) && dir.y > -0.2) col.multiply(new THREE.Color(1.18, 1.14, 0.8));
       if (rnd(0, 1) < 0.07) col.setRGB(1.5, 1.25, 0.45);
       im.setColorAt(n, col);
-      shade[n] = (0.5 + 0.5 * Math.min(1, rr)) * (0.7 + 0.5 * Math.max(0, dir.y));
+      shade[n] = (0.5 + 0.5 * Math.min(1, rs)) * (0.7 + 0.5 * Math.max(0, dir.y));
       n++;
     }
   }
