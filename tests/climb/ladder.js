@@ -7,7 +7,7 @@ const arg=k=>{const i=process.argv.indexOf(k);return i>0?process.argv[i+1]:null;
 const OFF=process.argv.includes('--off'),SHOTS=arg('--shots'),ONLY=arg('--only');
 const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll_b','ll_t'],['ll_t','ll_b'],['g_foot','gate'],['gate','g_foot']].filter(r=>!ONLY||ONLY.split(',').includes(r.join('-')));
 (async()=>{const {b,p,errs}=await open({seed:5,vp:{width:560,height:700}});await p.evaluate(()=>__qa.start());
- await p.evaluate(off=>{window.__noClimb=off;const HH=__dbg.HH;HH.setBrain({tick(){}});},OFF);
+ await p.evaluate(([off,co])=>{window.__noClimb=off;if(co)window.__colOff={legs:true,arms:true};const HH=__dbg.HH;HH.setBrain({tick(){}});},[OFF,process.argv.includes('--coloff')]);
  if(SHOTS){fs.mkdirSync(SHOTS,{recursive:true});await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});}
  const res=[];
  for(const [a,z] of RUNS){
@@ -16,7 +16,7 @@ const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll
   let done=false,fr=0;const shots=[];
   while(!done&&fr<60*40){
    const r=await p.evaluate(()=>{__qa.step(2,1/60);const HH=__dbg.HH,H=HH.H,B=HH.bones,T=__dbg.THREE;const w=o=>o.getWorldPosition(new T.Vector3()).toArray();
-    const rec={lad:H.lad?H.lad.phase:null,root:HH.root.position.toArray(),LH:w(B.LeftHand),RH:w(B.RightHand),LT:w(B.LeftToeBase),RT:w(B.RightToeBase),LF:w(B.LeftFoot),RF:w(B.RightFoot),clip:H.cur&&H.cur.getClip().name,W:window.__climb?window.__climb.weight:0};
+    const rec={lad:H.lad?H.lad.phase:null,root:HH.root.position.toArray(),LH:w(B.LeftHand),RH:w(B.RightHand),LT:w(B.LeftToeBase),RT:w(B.RightToeBase),LF:w(B.LeftFoot),RF:w(B.RightFoot),LS:w(B.LeftArm),RS:w(B.RightArm),HP:w(B.Hips),clip:H.cur&&H.cur.getClip().name,W:window.__climb?window.__climb.weight:0,T:window.__climb&&window.__climb.targets()?Object.fromEntries(Object.entries(window.__climb.targets()).map(([k,v])=>[k,v.toArray()])):null,md:window.__climb&&window.__climb.state.act?window.__climb.state.act.mode:null};
     window.__rec.push(rec);return {path:H.path.length,lad:!!H.lad,n:window.__rec.length};});
    fr+=2;
    const EVERY=+(arg('--every')||14);
