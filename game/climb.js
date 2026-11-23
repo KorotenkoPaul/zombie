@@ -71,6 +71,7 @@ export function createClimb() {
       for (const k of LIMBS) A.limb[k].from = wp(B[{ LF: 'LeftFoot', RF: 'RightFoot', LH: 'LeftHand', RH: 'RightHand' }[k]]);
       A.y = o.up ? o.yBot : top(A, n); A.y0 = p.y;
     }
+    A.hl = C.H.lad; // this climb belongs to this ladder run only (a reset body / new route drops it)
     S.act = A; S.wTarget = 1; S.resid = null;
     return true;
   }
@@ -127,6 +128,7 @@ export function createClimb() {
 
   // ---- one frame of climbing (root height, gait). Returns 'off' (standing on the floor above) | 'bottom' | null ----
   function tick(dt) {
+    if (S.act && C.H.lad !== S.act.hl) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; }
     const A = S.act; if (!A) return null;
     const p = C.root.position;
     A.t += dt;
@@ -199,7 +201,7 @@ export function createClimb() {
   // ---- after the clip pose: hips to the ladder, limbs onto the rungs ----
   function post(dt) {
     // the body was reset (spawn / freeze guard / random start) while on a ladder: drop the climb at once
-    if (S.act && !C.H.lad) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; S.resid = null; }
+    if (S.act && C.H.lad !== S.act.hl) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; S.resid = null; }
     const A = S.act;
     // fade the IK weight (also after the climb ended, while the next clip takes over)
     const fadeT = A ? .3 : (S.fade || .3);
