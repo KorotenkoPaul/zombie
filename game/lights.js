@@ -118,7 +118,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     let lights = [];
     if (!MOBILE) { const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l); lights = [{ l, I: 1.6, sway: .012 }]; }
     add('candle', 'bedroom', 'candle', cPos, { lights, opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
-      autoFn: c => c.task === 'read' && c.lamps > .25 });
+      // lit for reading; after reading it keeps burning a while so the hero can blow it out himself
+      // (Brain/Character: lights.set('candle', false) at lights.pos('candle')); nobody comes -> it goes out on its own
+      autoFn: c => (c.task === 'read' || c.candleT > 0) && c.lamps > .25 });
   }
 
   // ---------- outside: lantern by the ladder landing (the deck lantern was removed: it read as a lantern on the bedroom roof) ----------
@@ -256,8 +258,23 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
 
   // ---------- the switching logic ----------
   function fire(name, on) { for (const cb of listeners) { try { cb(name, on); } catch (e) { console.error(e); } } }
-  function setOn(s, on) { if (s.on === on) return; s.on = on; if (on) s.flare = 1; fire(s.name, on); }
-  let cookT = 0, t = 0, frame = 0;
+  function setOn(s, on) { if (s.on === on) return; s.on = on; if (on) s.flare = 1; else if ((s.kind === 'candle' || s.kind === 'oil') && s.level > .3) wisp(s); fire(s.name, on); }
+  // a thin curl of smoke where a flame was just put out
+  const smokeTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const g = x.createRadialGradient(32, 32, 1, 32, 32, 31);
+    g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(.6, 'rgba(255,255,255,.25)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  const wisps = [];
+  function wisp(s) {
+    const top = s.pos.clone().add(V(0, s.kind === 'candle' ? .02 : .08, 0));
+    for (let i = 0; i < 5; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xB8B4AE, transparent: true, opacity: 0, depthWrite: false }));
+      sp.position.copy(top); sp.scale.setScalar(.03); scene.add(sp); wisps.push({ sp, age: -i * .25, life: 2.6, x0: top.x, z0: top.z, y0: top.y, ph: Math.random() * 6 }); }
+  }
+  function updateWisps(dt) {
+    for (let i = wisps.length - 1; i >= 0; i--) { const w = wisps[i]; w.age += dt; const a = Math.max(0, w.age) / w.life;
+      if (a >= 1) { scene.remove(w.sp); w.sp.material.dispose(); wisps.splice(i, 1); continue; }
+      w.sp.position.set(w.x0 + Math.sin(w.age * 2.2 + w.ph) * .03 * a, w.y0 + a * .38, w.z0 + Math.cos(w.age * 1.7 + w.ph) * .02 * a);
+      w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); }
+  }
+  let cookT = 0, candleT = 0, t = 0, frame = 0;
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
 
   // smooth 1D value noise in [-1, 1]: flames breathe instead of pulsing like a sine
@@ -278,7 +295,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     t += dt; frame++;
     const cooking = task === 'cook' && state === 'work';
     cookT = cooking ? 40 : Math.max(0, cookT - dt);     // the fire is fed while cooking and burns a while after
-    const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
+    candleT = task === 'read' ? 90 : Math.max(0, candleT - dt);
+    const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT, candleT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
       // once it is properly light, a lamp left burning goes out on its own after a while (the oil runs low,
@@ -310,7 +328,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
     for (const g of glows) { const v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
-    updateBeams(dayK, T);
+    updateBeams(dayK, T); updateWisps(dt);
     for (const w of windows) {
       // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
       // no warm self-glow (critic T14). The warm glow of a lit window lives outside: halo + spill light (room glow).

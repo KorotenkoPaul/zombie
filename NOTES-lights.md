@@ -28,3 +28,5 @@ Lamp housings near a source get castShadow=false and their own pane material (gl
 - A lamp left on by hand in full daylight goes out on its own after ~45 s and returns to auto.
 
 - T14 (critic): window panes are dark night glass seen from inside (navy pane + faint sky reflection, sky blue by day), never a warm self-glow; warm window light lives outside (halo + spill). lights.js skips panes that are transparent or have userData.ownGlass (Tree's real glass).
+
+- Candle: lit while reading, then keeps burning up to 90 s so the hero can blow it out himself (Brain: plan a 'switch' to lights.pos('candle') and call lights.set('candle', false)); otherwise it goes out on its own. Putting out a candle or oil lamp leaves a thin curl of smoke.
