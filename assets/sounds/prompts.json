@@ -662,5 +662,21 @@
 "snore_b": [
 "light quiet snore and slow sleepy breathing, peaceful, close",
 5
+],
+"rain_slate_a": [
+"steady rain pattering on a slate tile roof heard from inside a small wooden attic room, hard tapping drops, muffled, cosy, no thunder",
+12
+],
+"rain_slate_b": [
+"rain drumming on slate roof tiles above a cabin room, dense crisp patter with gutter trickle, heard from inside, no thunder",
+12
+],
+"fridge_hum": [
+"the gentle low hum of an old vintage refrigerator motor in a quiet kitchen, soft and steady, close, no clicks",
+8
+],
+"fridge_click": [
+"an old refrigerator compressor clicking on and starting to hum, close, natural recording",
+2
 ]
 }

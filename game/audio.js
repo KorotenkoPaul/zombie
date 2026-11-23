@@ -154,7 +154,8 @@ export function createAudio(ctx) {
   const voices = new Set();
   const LOG = [];
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) try { f(e); } catch (er) { console.error('audio', k, er); } };
-  const MAXV = 14;
+  const MOB = !!ctx.mobile;
+  const MAXV = MOB ? 9 : 14;   // phones: fewer simultaneous voices (each is a panner + filter + gain)
   let now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
   const ind = {};          // individuals per layer
   const mult = {};         // today's / tonight's personality per layer
@@ -171,7 +172,7 @@ export function createAudio(ctx) {
     const comp = A.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 3; comp.attack.value = .01; comp.release.value = .3;
     master.connect(comp).connect(A.destination);
     // one shared forest reverb: a soft decaying impulse response (only heard through the calls, never on its own)
-    const len = Math.floor(A.sampleRate * 2.6), ir = A.createBuffer(2, len, A.sampleRate);
+    const len = Math.floor(A.sampleRate * (MOB ? 1.7 : 2.6)), ir = A.createBuffer(2, len, A.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); let lp = 0; for (let i = 0; i < len; i++) { const t = i / len; lp += ((Math.random() * 2 - 1) - lp) * (0.5 - .42 * t); d[i] = lp * Math.pow(1 - t, 2.4) * (i < 300 ? i / 300 : 1); } }
     rev = A.createConvolver(); rev.buffer = ir; revIn = A.createGain(); revIn.gain.value = .55;
     // the forest goes through one low-pass + gain: from inside a room it is muffled and quieter
@@ -218,9 +219,19 @@ export function createAudio(ctx) {
     for (const k in pack) { const bin = atob(pack[k]), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); RAW[k] = u8; }
   }
 
+  // iOS (Safari and home-screen apps): audio only unlocks inside a real gesture (touchend/click count; touchstart and
+  // pointerdown not always), and it can come back 'suspended' or 'interrupted' after a call, Siri or the app switcher.
+  // So every gesture re-tries, and the first one also plays a silent sample, which is what actually opens the output on iOS.
+  function unlock() {
+    if (!A) return;
+    if (A.state !== 'running') A.resume().catch(() => {});
+    if (!unlock.done) { try { const b = A.createBuffer(1, 1, A.sampleRate), s0 = A.createBufferSource(); s0.buffer = b; s0.connect(A.destination); s0.start(0); unlock.done = true; } catch (e) {} }
+  }
+  const onGesture = () => { if (!started) start(); else unlock(); };
+  for (const ev of ['touchend', 'click', 'pointerup', 'keydown']) document.addEventListener(ev, onGesture, { capture: true, passive: true });
   function start() {
-    if (!A) { A = getAC(); if (!A) return; buildGraph(); }
-    if (A.state === 'suspended') A.resume();
+    if (!A) { A = getAC(); if (!A) return; buildGraph(); A.onstatechange = () => { if (A.state === 'interrupted') unlock.done = false; }; }
+    unlock();
     if (!loading) loading = load().catch(e => console.warn('audio load', e));
     started = true;
   }
@@ -372,6 +383,8 @@ export function createAudio(ctx) {
     gustSound(env.wind, env); gustNext = now + rnd(3, 9) / Math.max(.2, env.wind) + rnd(0, 4);
   }
 
+  const FRIDGE = ctx.fridge || { x: -1.43, y: (ctx.lv ? ctx.lv.KT : 5.0) + .8, z: 1.38 };
+  let fridgeOn = false, fridgeT = 0;
   let dripNext = 0, creakNext = 6, autoSleep = true, snoreNext = 0, turnNext = 0;
   // ---------- footsteps: surface under the foot, at the moment the foot lands ----------
   // Character can drive them exactly with __audio.footstep(side, pos?, {surface}); until it does, audio.js watches
@@ -445,13 +458,19 @@ export function createAudio(ctx) {
     const R = window.__rain, cp = ctx.camera ? ctx.camera.position : null;
     let roof = .35; if (R && typeof R.roofNear === 'function' && cp) { try { roof = clamp01(R.roofNear(cp)); } catch (e) {} }
     bed('rain', ['rain_a'], rain, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1 }));
-    bed('roof', ['rain_b'], rain * Math.min(1, .25 + .75 * roof + .5 * inK), l => ({ gain: .42 * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05 }));
+    // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
+    bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
     rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 60);
     if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
     // the oven fire, where the oven is
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
     const op = L2 && L2.pos ? L2.pos('oven') : null;
-    if (op) bed('fire', ['fire_a', 'fire_b'], fireLvl, l => ({ gain: .5 * l, pos: op, ref: 2.2, roll: 1.3, rev: .2, indoor: true, offset: rnd(0, 2) }));
+    const cam = ctx.camera ? ctx.camera.position : P0, near = (q, r) => q && Math.hypot(q.x - cam.x, q.y - cam.y, q.z - cam.z) < r;
+    // the stove crackles only for a listener near it (nothing is played at all from afar: no cost)
+    if (op) bed('fire', ['fire_a', 'fire_b'], near(op, 14) ? fireLvl : 0, l => ({ gain: .5 * l, pos: op, ref: 1.8, roll: 2, rev: .2, indoor: true, offset: rnd(0, 2) }));
+    // the old fridge hums in cycles (on 40-90 s, off 25-60 s), audible only up close in the kitchen
+    if (now > fridgeT) { fridgeOn = !fridgeOn; fridgeT = now + (fridgeOn ? rnd(40, 90) : rnd(25, 60)); }
+    bed('fridge', ['fridge_hum'], fridgeOn && near(FRIDGE, 7) ? 1 : 0, l => ({ gain: .32 * l, pos: FRIDGE, ref: 1, roll: 2.5, rev: .1, indoor: true, offset: rnd(0, 3) }));
     // the hero asleep: soft snores now and then, and turning over (Character/Brain can switch this off: __audio.autoSleep(false))
     if (autoSleep && asleep && hero.root && actLoaded) {
       const hp = hero.root.position, at = { x: hp.x, y: hp.y + .5, z: hp.z };
