@@ -36,3 +36,7 @@ Pavel: keep the original look but more detailed, less "anime". Concept: detail.p
 `KEEP_NORMAL=1 ROUGH=.65 node transplant.mjs old-dq.glb rig.glb out.glb` (keeps Meshy's normals + its normal map; smoothing normals breaks the normal map) -> slim 0.72 (18k tris) -> lids (L -0.0505/.8175, R .0475/.8175 in normalized space) ->
 `ktxtex.mjs in out 2048 1024` (base colour KTX2 ETC1S 2048, normal map webp 1024) -> quant -> optim. index.html now gives the GLTFLoader the KTX2 loader.
 GPU texture memory ~8.4 MB (vs 11.2 MB for the current default), download 2.79 MB (same as default). Body 18k tris (default 12.5k).
+Vest and boots are separate skinned meshes (`split.mjs`, after slim, before lids): nodes `vest` and `boots` (same skin + material) toggle with `.visible`.
+The body underneath has a knitted sweater layer (vest triangles inset 1.4 cm along welded normals, sweater texels) and wool socks (boot triangles pulled 36% toward the foot bones); both taper to zero where they meet the body, so no cracks.
+Classification: per-triangle texel colour + dominant bone (torso & not sweater/skin/green -> vest; feet, or shin & leather -> boots), majority smoothing over welded adjacency.
+Tris: body 18k (incl. layers), vest 2.8k, boots 3.1k.
