@@ -214,7 +214,7 @@ function chair() {
 }
 function table() { const g = new THREE.Group(); W(g, .82, .04, .56, 0, .72, 0, { mat: M.woodLight, r: .012 }); for (const [x, z] of [[-.35, -.22], [.35, -.22], [-.35, .22], [.35, .22]]) W(g, .05, .7, .05, x, .35, z, { mat: M.woodDark, grain: 1 }); for (const sz of [-1, 1]) W(g, .66, .08, .025, 0, .66, sz * .22, { mat: M.woodDark }); for (const sx of [-1, 1]) W(g, .025, .08, .4, sx * .35, .66, 0, { mat: M.woodDark }); return bake(g); }
 function mug(mat = M.glazeBlue) { const g = new THREE.Group(); add(g, lathe([[0, .002], [.035, 0], [.04, .01], [.042, .09], [.038, .09], [.036, .012], [0, .012]], 20), mat); add(g, new THREE.TorusGeometry(.024, .007, 8, 16, Math.PI), mat, .042, .05, 0, 0, 0, -Math.PI / 2); return g; }
-function candle() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.05, 0], [.055, .012], [.03, .016], [0, .016]]), M.brass); add(g, new THREE.CylinderGeometry(.018, .018, .09, 14), M.linen, 0, .06, 0); return g; }
+function candle() { const g = new THREE.Group(); const fm = new THREE.MeshBasicMaterial({ color: 0xFFB050, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); const fl = new THREE.Mesh(lathe([[0, 0], [.007, .006], [.008, .016], [.004, .03], [0, .038]], 10), fm); fl.position.y = .107; fl.userData.live = true; g.add(fl); g.userData.flame = fm; add(g, lathe([[0, 0], [.05, 0], [.055, .012], [.03, .016], [0, .016]]), M.brass); add(g, new THREE.CylinderGeometry(.018, .018, .09, 14), M.linen, 0, .06, 0); return g; }
 
 // a book: covers on a hinge, page blocks and one page that can turn
 function book({ w = .145, h = .205, cover = M.covers[1], open = 1 } = {}) {
@@ -289,7 +289,7 @@ function stove() {
   bake(g);
   let openK = 0, heatK = 0;
   g.userData.oven = {
-    door, handle: () => door.localToWorld(V(0, dh - .05, .075)),
+    door, handle: () => door.localToWorld(V(0, dh - .05, .075)), flameMat, fireGroup: fire,
     setOpen(k) { openK = clamp01(k); door.rotation.x = openK * 1.45; }, get open() { return openK; },
     setHeat(k) { M.fire.emissiveIntensity = .25 + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 + .6 * k; heatK = k; },
     flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; for (const f of flames) { const u = f.userData, n = Math.sin(t * 9 * u.k + u.ph) * .5 + Math.sin(t * 23 * u.k + u.ph * 2) * .3; f.scale.set(1 + n * .12, (.6 + heatK * .7) * (1 + n * .35), 1 + n * .12); f.rotation.z = Math.sin(t * 5 + u.ph) * .12; } flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
@@ -354,8 +354,8 @@ function lanternHousing(rod) { const g = new THREE.Group(); const s = .17, h = .
   for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) add(g, new THREE.BoxGeometry(.012, h, .012), M.iron, x * s * .35, 0, z * s * .35);
   for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; add(g, new THREE.PlaneGeometry(s * .7, h * .95), M.glass, Math.sin(a) * s * .35, 0, Math.cos(a) * s * .35, 0, a); }
   add(g, new THREE.TorusGeometry(.025, .005, 6, 16), M.iron, 0, h / 2 + .09, 0); add(g, new THREE.CylinderGeometry(.006, .006, rod, 6), M.iron, 0, h / 2 + .1 + rod / 2, 0); return g; }
-function domeShade(rod) { const g = new THREE.Group(); const m = add(g, lathe([[.2, 0], [.19, .03], [.14, .1], [.07, .15], [.035, .17], [0, .18]], 28), M.enamelDark); m.material = M.enamelDark; const inner = add(g, lathe([[.19, .002], [.14, .095], [.07, .145], [0, .17]], 28), new THREE.MeshStandardMaterial({ color: 0xF0E2C0, roughness: .6, side: THREE.BackSide }));
-  void inner; add(g, new THREE.CylinderGeometry(.006, .006, rod, 6), M.iron, 0, .18 + rod / 2, 0); add(g, new THREE.TorusGeometry(.2, .008, 6, 32), M.iron, 0, 0, 0, Math.PI / 2); return g; }
+function domeShade(rod) { const g = new THREE.Group(); const m = add(g, lathe([[.2, 0], [.19, .03], [.14, .1], [.07, .15], [.035, .17], [0, .18]], 28), M.enamelDark); m.material = M.enamelDark; const inner = add(g, lathe([[.19, .002], [.14, .095], [.07, .145], [0, .17]], 28), new THREE.MeshStandardMaterial({ color: 0xF0E2C0, roughness: .6, side: THREE.BackSide, emissive: 0xFFC27A, emissiveIntensity: 0 }));
+  g.userData.inner = inner.material; inner.userData.live = true; add(g, new THREE.CylinderGeometry(.006, .006, rod, 6), M.iron, 0, .18 + rod / 2, 0); add(g, new THREE.TorusGeometry(.2, .008, 6, 32), M.iron, 0, 0, 0, Math.PI / 2); return g; }
 function plankDoor(h = 2.0, w = .86) { const g = new THREE.Group(); const n = 5, pw = w / n; for (let i = 0; i < n; i++) W(g, pw - .008, h - .01, .045, -w / 2 + pw * (i + .5), h / 2, 0, { mat: M.wood, r: .01, grain: 1 });
   for (const y of [.35, h - .35]) W(g, w - .06, .12, .03, 0, y, -.035, { mat: M.woodDark }); for (const [ww, hh, x, y] of [[.09, h + .09, -w / 2 - .045, h / 2], [.09, h + .09, w / 2 + .045, h / 2], [w + .18, .09, 0, h + .045]]) W(g, ww, hh, .07, x, y, .01, { mat: M.woodDark });
   for (const y of [.35, h - .35]) { add(g, rb(.2, .035, .008, .004), M.iron, w / 2 - .1, y, .027); for (const k of [0, 1, 2]) screw(g, w / 2 - .17 + k * .06, y, .032); }
@@ -470,7 +470,7 @@ function telescope() {
 
 // ================= placement =================
 export function buildProps(ctx) {
-  let shiftRooms = () => {};
+  let shiftRooms = () => {}, candleObj = null;
   const { scene, renderer, OBST, floors = [], L } = ctx; const { KT, BD, WS, DK, LL } = L;
   makeMaterials(renderer);
   const rc = new THREE.Raycaster();
@@ -507,11 +507,11 @@ export function buildProps(ctx) {
   // ---------- bedroom ----------
   const bunk = place('bunkbed', bunkBed(), -2.4, BD, 1.71, { seat: true });
   place('slippers', slippers(), -2.95, BD, 2.32, { solid: false, ry: .2 });
-  place('basket', basket(), -3.75, BD, 2.95);
+  place('basket', basket(), -1.05, BD, 1.18); // by the bed head against the back wall, clear of the ladder exit and walkways
   const chairO = place('chair', chair(), -.58, BD, 2.3, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
   const tbl = place('table', table(), -.35, BD, 1.45); const tTop = tbl.userData.floorY + .74;
   const bk = book({ cover: M.covers[0] }); bk.position.set(-.33, tTop, 1.6); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
-  { const m = mug(M.glazeBlue); m.position.set(-.06, tTop, 1.35); scene.add(m); const c = candle(); c.position.set(-.62, tTop, 1.32); scene.add(c); const st2 = new THREE.Group(); st2.position.set(-.62, tTop, 1.6); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
+  { const m = mug(M.glazeBlue); m.position.set(-.06, tTop, 1.35); scene.add(m); const c = candle(); c.position.set(-.62, tTop, 1.32); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62, tTop, 1.6); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
   place('door', plankDoor(2.0), .33, BD, 1.82, { ry: -Math.PI / 2, solid: false });
   { const s = switchPlate(); s.position.set(.37, BD + 1.15, 2.5); s.rotation.y = -Math.PI / 2; scene.add(s); }
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
@@ -558,6 +558,18 @@ export function buildProps(ctx) {
     out.oven.setHeat(Math.max(heat, cooking ? .85 : 0)); tAcc += dt; out.oven.flicker(tAcc);
   };
   shiftRooms();
+  // ---------- light sources for lights.js: world positions + the emissive materials to switch ----------
+  // each: { pos: Vector3 (world), obj, mats: [materials whose emissive/opacity show the source is on] }
+  { const wp = (o, x = 0, y = 0, z = 0) => { o.updateMatrixWorld(true); return o.localToWorld(V(x, y, z)); };
+    const st = placed.stove, kl = placed.klamp, wl = placed.wlamp;
+    out.lights = {
+      oven: { pos: wp(st, 0, .3, .05), obj: st, mats: [M.fire, M.ovenGlass, out.oven.flameMat], setHeat: out.oven.setHeat },
+      kitchenLamp: { pos: wp(kl, 0, 0, 0), obj: kl, mats: [M.glass] },
+      workshopLamp: { pos: wp(wl, 0, .06, 0), obj: wl, mats: [wl.userData.inner] },
+      candle: { pos: wp(candleObj, 0, .13, 0), obj: candleObj, mats: [candleObj.userData.flame] },
+    };
+    out.materials = { fire: M.fire, ovenGlass: M.ovenGlass, flame: out.oven.flameMat, lampGlass: M.glass, domeInner: wl.userData.inner, candleFlame: candleObj.userData.flame };
+  }
   out.surfaces.bed = bunk.userData.info.levels.map(l => ({ top: bunk.userData.floorY + l.top, x0: bunk.position.x + l.x0, x1: bunk.position.x + l.x1, z0: bunk.position.z + l.z0, z1: bunk.position.z + l.z1, headDir: '+x' }));
   return out;
 }

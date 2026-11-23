@@ -1,0 +1,18 @@
+{
+ "hy_idle":    {"src":"idle-11","loop":true,"step":2,"close":1.0},
+ "hy_read":    {"src":"readturn-11","loop":true,"close":0.8},
+ "hy_read2":   {"src":"read-23","loop":true,"step":2,"close":1.0},
+ "hy_sitidle": {"src":"sitidle-23","loop":true,"step":2,"close":1.0},
+ "hy_sitdown": {"src":"sitdown-11","rm":true},
+ "hy_standup": {"src":"standup-11","rm":true},
+ "hy_oven":    {"src":"oven-11"},
+ "hy_stir":    {"src":"stir-11","loop":true,"close":0.8},
+ "hy_take":    {"src":"taketool-23"},
+ "hy_hammer":  {"src":"hammer-11","loop":true,"close":0.6},
+ "hy_saw":     {"src":"saw-11","loop":true,"close":0.6},
+ "hy_wash":    {"src":"wash-23","loop":true,"close":0.8},
+ "hy_drink":   {"src":"drink-11"},
+ "hy_sleep":   {"src":"sleep-11","loop":true,"step":2,"close":1.5},
+ "hy_stretch": {"src":"stretch-11"},
+ "hy_inspect": {"src":"inspect-11"}
+}

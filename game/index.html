@@ -44,6 +44,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createHero } from './hero.js';
 import { buildTree, TREE_AXIS } from './tree.js';
 import { buildProps } from './props.js';
 import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
@@ -102,6 +103,8 @@ const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0
 const TREE=buildTree(THREE,{model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
  avoidLeaves:[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]]});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
+// ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
+const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;
 const barkTris=TREE.tris;
 // ================= physics world =================
 const world=new RAPIER.World({x:0,y:-9.81,z:0});world.timestep=1/60;
@@ -352,107 +355,27 @@ function prepChar(g,h){g.scene.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.cast
    for(const tr of c.tracks){if(/Hips\.position$/.test(tr.name)){const v=tr.values;const n=v.length;if(h)HIPS[name]={s:V(v[0],v[1],v[2]),e:V(v[n-3],v[n-2],v[n-1])};if(RMC.has(name))continue;const x0=v[0],z0=v[2];const climb=['444','438','437'].includes(name);const y0=v[1];for(let i=0;i<v.length;i+=3){v[i]=x0;v[i+2]=z0;if(climb)v[i+1]=y0;}}}
    clips[name]=c;}
  return clips;}
-const heroClips=prepChar(heroG,true),zClips=prepChar(zombG,false);
+const zClips=prepChar(zombG,false);
 // bow and quiver for the hero
 function makeBow(){const g=new THREE.Group();const curve=new THREE.CatmullRomCurve3([V(0,-.55,0),V(.09,-.28,0),V(.12,0,0),V(.09,.28,0),V(0,.55,0)]);const limb=new THREE.Mesh(new THREE.TubeGeometry(curve,24,.018,6),new THREE.MeshStandardMaterial({color:0x6B4528,roughness:.6}));limb.castShadow=true;g.add(limb);
  const str=new THREE.Mesh(new THREE.CylinderGeometry(.003,.003,1.1,4),new THREE.MeshBasicMaterial({color:0xE8E2D0}));g.add(str);const grip=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.12,8),new THREE.MeshStandardMaterial({color:0x3A2414,roughness:.9}));g.add(grip);return g;}
-const hero={root:heroG.scene,mixer:new THREE.AnimationMixer(heroG.scene),actions:{},cur:null,pos:V(-2.3,L1,ZB+2.3),face:0,state:'idle',task:null,path:[],hp:3};
-scene.add(hero.root);
-for(const k in heroClips)hero.actions[k]=hero.mixer.clipAction(heroClips[k]);
-const heroBones={};hero.root.traverse(o=>{if(o.isBone)heroBones[o.name.replace('mixamorig','').replace(':','')]=o;});
+// the hero lives in hero.js (body, navigation, daily life)
+const tableO=OBST.find(o=>o.n==='table');
+const heroMoves=await fetch(ASSET+'hero-moves.txt').then(r=>r.ok?r.json():null).catch(()=>null);
+const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{LC,WS,KT,BD,DK},sfx,OBST,chair:chairO,chairFace:Math.PI,bunk,bedHead:1,
+ table:tableO?{x0:tableO.x0,x1:tableO.x1,z0:tableO.z0,z1:tableO.z1,top:BD+.765}:null,
+ ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
+ mode:()=>{if(isNight(hour)&&zombies.some(z=>z.alive))return 'guard';if(B.some(b=>b.breakable&&b.loose))return 'repair';return null;},
+ guardSpot:()=>guardSpot(),brokenBoard:()=>B.find(b=>b.breakable&&b.loose),repairBoard:b=>repairBoard(b),get WIN_NODE(){return WIN_NODE;}});
+const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
 const bow=makeBow();heroBones.LeftHand.add(bow);bow.position.set(0,.07,.03);bow.rotation.set(0,0,0);bow.scale.setScalar(1/Math.max(.001,heroBones.LeftHand.getWorldScale(V()).x));
 function play(c,name,{loop=true,fade=.25,speed=1}={}){const a=c.actions[name];if(!a||c.cur===a)return a;a.reset();a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);a.clampWhenFinished=!loop;a.timeScale=speed;a.enabled=true;if(c.cur)c.cur.crossFadeTo(a,fade,false);a.play();c.cur=a;return a;}
 
-// ---------- navigation graph: walkways keep clear of the furniture ----------
-const N={
- kh_b:{p:V(-1.22,LC,3.77)},land:{p:V(-.4,LC,2.85)},gate:{p:V(0,LC,3.35),face:0},wstep:{p:V(1.15,WS,3.15)},
- wmid:{p:V(2.4,WS,3.45)},bench:{p:V(2.75,WS,2.68),face:Math.PI},wwin:{p:V(3.0,WS,3.95),face:0},
- kh_t:{p:V(-1.22,KT,2.75)},kmid:{p:V(-2.5,KT,3.35)},stove:{p:V(-3.2,KT,2.05),face:Math.PI},sink:{p:V(-2.28,KT,2.05),face:Math.PI},kwin:{p:V(-3.0,KT,3.45),face:0},kl_b:{p:V(-4.0,KT,1.68)},
- bl_t:{p:V(-4.0,BD,2.35)},bmid:{p:V(-2.3,BD,3.05)},bed:{p:V(-2.4,BD+.42,1.5),face:Math.PI/2},bwin:{p:V(-3.6,BD,3.6),face:0},bread:{p:V(-.35,BD,2.2),face:Math.PI},bdoor:{p:V(-.1,BD,2.78)},
- ledge:{p:V(1.25,BD,3.5),face:0},ll_b:{p:V(1.35,BD,3.47)},ll_t:{p:V(1.35,DK,2.7)},deckm:{p:V(1.9,DK,2.5)},deck:{p:V(3.13,DK,2.82),face:0},
-};
-const E=[['kh_b','land'],['land','gate'],['land','wstep'],['wstep','wmid'],['wmid','bench'],['wmid','wwin'],['kh_b','kh_t','ladder',3.45,1],['kh_t','kmid'],['kmid','stove'],['kmid','sink'],['kmid','kwin'],['kmid','kl_b'],
- ['kl_b','bl_t','ladder',2.0,-1],['bl_t','bmid'],['bmid','bed'],['bmid','bwin'],['bmid','bread'],['bmid','bdoor'],['bdoor','ledge'],['ledge','ll_b'],['ll_b','ll_t','ladder',3.15,1],['ll_t','deckm'],['deckm','deck']];
-// ladder top: where the hands grab the floor edge (hz) and where the hero stands after pulling up (ez)
-const LAD={'kh_b>kh_t':{lz:3.45,side:1,hz:2.97,ez:2.75},'kl_b>bl_t':{lz:2.0,side:-1,hz:2.1,ez:2.35},'ll_b>ll_t':{lz:3.15,side:1,hz:2.95,ez:2.7}};
-const adj={};for(const [a,b,t,lz,side] of E){(adj[a]=adj[a]||[]).push({to:b,t,lz,side});(adj[b]=adj[b]||[]).push({to:a,t,lz,side});}
-function route(a,b){const prev={[a]:null},q=[a];while(q.length){const n=q.shift();if(n===b)break;for(const e of adj[n]||[])if(!(e.to in prev)){prev[e.to]={n,t:e.t,lz:e.lz,side:e.side};q.push(e.to);}}const out=[];let c=b;while(c&&c!==a){out.unshift({node:c,t:prev[c].t,lz:prev[c].lz,side:prev[c].side,from:prev[c].n});c=prev[c].n;}return out;}
-// fit poses to the furniture: find the seat and mattress surfaces with a ray
-{const rc=new THREE.Raycaster();const top=(o,x,z,y0)=>{rc.set(V(x,y0,z),V(0,-1,0));const h=rc.intersectObject(o,true)[0];return h?h.point.y:null;};
- const cb=chairO.userData.box,cx=(cb.min.x+cb.max.x)/2,cz=(cb.min.z+cb.max.z)/2;const seat=top(chairO,cx,cz-.04,BD+.7)??BD+.46;
- // sitting clip: hips sit 0.19 right and 0.28 behind the root, 0.55 up; hero faces the table (-z)
- N.bread.p.set(cx+.19,seat+.08-.55,cz-.04-.28);N.bread.face=Math.PI;
- const bb=bunk.userData.box,bx=(bb.min.x+bb.max.x)/2,bz=(bb.min.z+bb.max.z)/2;const mat=top(bunk,bx,bz,BD+1.0)??BD+.45;
- // sleeping clip: lies along its z axis, head at -z; turn so the head points to the pillows (+x)
- N.bed.p.set(bb.min.x+.38,BD,bz);N.bed.face=-Math.PI/2;
- N.bread_app={p:N.bread.p.clone().add(RV(hipsOf('33','s').sub(hipsOf('57','e')),Math.PI)).setY(BD),face:Math.PI};E.push(['bmid','bread_app']);(adj.bmid=adj.bmid||[]).push({to:'bread_app'});adj.bread_app=[{to:'bmid'}];window.__fit={seat,mat,cx,cz,bx,bz};}
-function pushOut(p){const r=.2;for(const o of OBST){if(o.seat||Math.abs(o.y-p.y)>.6)continue;if(p.x>o.x0-r&&p.x<o.x1+r&&p.z>o.z0-r&&p.z<o.z1+r){const dl=p.x-(o.x0-r),dr=o.x1+r-p.x,db=p.z-(o.z0-r),df=o.z1+r-p.z;const m=Math.min(dl,dr,db,df);if(m===dl)p.x=o.x0-r;else if(m===dr)p.x=o.x1+r;else if(m===db)p.z=o.z0-r;else p.z=o.z1+r;}}}
-function navCheck(){const bad=[];for(const [a,b,t] of E){if(t==='ladder')continue;const A=N[a].p,Bp=N[b].p;for(let k=0;k<=20;k++){const q=A.clone().lerp(Bp,k/20);for(const o of OBST){if(o.seat||Math.abs(o.y-q.y)>.6)continue;if(q.x>o.x0-.18&&q.x<o.x1+.18&&q.z>o.z0-.18&&q.z<o.z1+.18){bad.push(a+'-'+b+':'+o.n+'@'+k);break;}}}}return [...new Set(bad.map(x=>x.split('@')[0]))];}
-function walkStep(step,target,p,d){const nxt=hero.path[1];const isLast=!nxt||nxt.t==='ladder';
- const dx=target.x-p.x,dz=target.z-p.z;const L=Math.hypot(dx,dz);const want=Math.atan2(dx,dz);let cur=hero.root.rotation.y;let da=want-cur;while(da>Math.PI)da-=2*Math.PI;while(da<-Math.PI)da+=2*Math.PI;
- hero.face=want;const align=Math.max(0,Math.cos(da));const vmax=1.1*(isLast?clamp(L/.8,.22,1):1);hero.v=hero.v||0;hero.v+=clamp(vmax*align*align-hero.v,-3.2*d,2.0*d);
- const turning=(hero.v||0)<.25&&Math.abs(da)>1.0&&L>.3;if(turning){hero.v=0;hero.state='walk';play(hero,da>0?'576':'586',{fade:.25,speed:1.1});return;}
- const stepLen=Math.min(L,hero.v*d);const hx=Math.sin(cur),hz=Math.cos(cur);const ux=L>1e-4?dx/L:0,uz=L>1e-4?dz/L:0;const mx=lerp(ux,hx,L>.5?.3:0),mz=lerp(uz,hz,L>.5?.3:0);const ml=Math.hypot(mx,mz)||1;
- const before=L;p.x+=mx/ml*stepLen;p.z+=mz/ml*stepLen;
- if(step.t==='ramp'){const a=N[step.from].p;const tot=Math.hypot(target.x-a.x,target.z-a.z);const rem=Math.hypot(target.x-p.x,target.z-p.z);p.y=lerp(target.y,a.y,clamp(rem/tot,0,1));}else p.y=lerp(p.y,target.y,Math.min(1,d*8));
- hero.state='walk';if(hero.v>.1){play(hero,'30',{fade:.35});hero.actions['30'].timeScale=clamp(hero.v/1.0,.5,1.3);}else play(hero,'0',{fade:.35});
- pushOut(p);const rem=Math.hypot(target.x-p.x,target.z-p.z);
- if(rem<(isLast?.05:.3)){if(isLast){p.x=target.x;p.z=target.z;hero.v=Math.min(hero.v,.3);}p.y=target.y;heroNode=step.node;hero.path.shift();}}
-// plays a root-motion clip once (or backwards); onEnd runs when it finishes
-function rmPlay(name,{reverse=false,fade=.2,speed=1,onEnd}={}){const a=hero.actions[name];if(!a){onEnd&&onEnd();return;}hero.root.rotation.y=hero.face;
- a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=reverse?-speed:speed;if(reverse)a.time=a.getClip().duration;a.enabled=true;if(hero.cur&&hero.cur!==a)hero.cur.crossFadeTo(a,fade,false);a.play();hero.cur=a;hero.rm={a,reverse,onEnd,dur:a.getClip().duration};}
-function rmTick(){const r=hero.rm;if(!r)return;const done=r.reverse?r.a.time<=1e-3:r.a.time>=r.dur-1e-3;if(done){hero.rm=null;const f=r.onEnd;f&&f();}}
-function snapPlay(name,opts={}){const a=hero.actions[name];if(!a)return;if(hero.cur&&hero.cur!==a){hero.cur.stop();}a.reset();a.setLoop(opts.loop===false?THREE.LoopOnce:THREE.LoopRepeat,opts.loop===false?1:Infinity);a.timeScale=opts.speed||1;a.enabled=true;a.setEffectiveWeight(1);a.play();hero.cur=a;}
-function ladderStep(step,target,p,d){const key=step.from+'>'+step.node,rkey=step.node+'>'+step.from;const c=LAD[key]||LAD[rkey];
- if(!hero.lad){const up=target.y>p.y+.01;const a=N[step.from].p;hero.lad={up,phase:up?'mount':'unfinish',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};hero.v=0;}
- const Ld=hero.lad;const cz=c.lz+.32*c.side;hero.face=c.side>0?Math.PI:0;hero.state='walk';const F=hero.face;
- const done=()=>{hero.lad=null;hero.path.shift();heroNode=step.node;};
- if(Ld.phase==='mount'){p.x=lerp(p.x,Ld.x,Math.min(1,d*6));p.z=lerp(p.z,cz,Math.min(1,d*6));play(hero,'0',{fade:.3});if(Math.hypot(p.x-Ld.x,p.z-cz)<.04){hero.root.rotation.y=F;Ld.phase='climb';}}
- else if(Ld.phase==='climb'){hero.root.rotation.y=F;p.x=Ld.x;p.z=cz;play(hero,'437',{speed:1.35,fade:.3});const v=.31*1.35*d;
-  if(Ld.up){p.y+=v;if(p.y>=Ld.yTop-1.44){Ld.phase='finish';p.y=Ld.yTop-1.44;p.add(RV(hipsOf('437','s').sub(hipsOf('435','s')),F));
-    rmPlay('435',{fade:.25,onEnd:()=>{p.add(RV(hipsOf('435','e').sub(hipsOf('0','s')),F));p.y=Ld.yTop;snapPlay('0');done();}});}}
-  else{p.y-=v;if(p.y<=Ld.yBot){p.y=Ld.yBot;play(hero,'0',{fade:.3});done();}}}
- else if(Ld.phase==='unfinish'){// back down over the edge: the same move played in reverse
-  Ld.phase='unfinishing';hero.root.rotation.y=F;p.sub(RV(hipsOf('435','e').sub(hipsOf('0','s')),F));
-  rmPlay('435',{reverse:true,fade:.25,onEnd:()=>{p.add(RV(hipsOf('435','s').sub(hipsOf('437','s')),F));Ld.phase='climb';}});}}
-// two-bone arm IK: puts the hands on the floor edge during the pull-up
-const _a=V(),_b=V(),_c=V(),_q=new THREE.Quaternion(),_pq=new THREE.Quaternion();
-function aimBone(bone,from,to,w){const cur=to.clone().sub(from).normalize();return cur;}
-function rotateBoneToward(bone,childPos,goal,w){const bp=bone.getWorldPosition(V());const v1=childPos.clone().sub(bp).normalize(),v2=goal.clone().sub(bp).normalize();const dq=new THREE.Quaternion().setFromUnitVectors(v1,v2);if(w<1)dq.slerp(new THREE.Quaternion(),1-w);
- bone.getWorldQuaternion(_q);bone.parent.getWorldQuaternion(_pq);const nw=dq.multiply(_q);bone.quaternion.copy(_pq.invert().multiply(nw));bone.updateMatrixWorld(true);}
-function armIK(side,target,pole,w){const U=heroBones[side+'Arm'],F=heroBones[side+'ForeArm'],H=heroBones[side+'Hand'];if(!U||!F||!H)return;
- const a=U.getWorldPosition(V()),b=F.getWorldPosition(V()),c=H.getWorldPosition(V());const l1=a.distanceTo(b),l2=b.distanceTo(c);const tv=target.clone().sub(a);let dd=clamp(tv.length(),.05,l1+l2-.01);const dir=tv.normalize();
- const ca=clamp((l1*l1+dd*dd-l2*l2)/(2*l1*dd),-1,1);const sa=Math.sqrt(1-ca*ca);const pp=pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir))).normalize();const elbow=a.clone().addScaledVector(dir,ca*l1).addScaledVector(pp,sa*l1);
- rotateBoneToward(U,b,elbow,w);const b2=F.getWorldPosition(V()),c2=H.getWorldPosition(V());const goal=a.clone().addScaledVector(dir,dd);rotateBoneToward(F,c2,goal,w);}
-let heroNode='bread';hero.root.position.copy(N.bread.p);
-function goTo(node,then){if(node===heroNode){hero.path=[];then&&then();return;}hero.path=route(heroNode,node);hero.then=then;}
 const WIN_NODE={'Забор кухни':'kwin','Забор мастерской':'wwin','Калитка':'gate'};
 const GUARD={'Забор кухни':'bwin','Калитка':'ledge','Забор мастерской':'deck'};
 // stand where the most advanced zombie can be shot
 function guardSpot(){if(typeof aimTarget!=='undefined'&&aimTarget&&aimTarget.alive)return GUARD[aimTarget.group];const zs=zombies.filter(z=>z.alive&&z.stage!=='walk');const pool=zs.length?zs:zombies.filter(z=>z.alive);if(!pool.length)return hero.guardAt||'ledge';
  const rank=z=>(z.stage==='attack'?10:0)+z.root.position.y;pool.sort((a,b)=>rank(b)-rank(a));return GUARD[pool[0].group];}
-// ---------- hero daily life ----------
-const TASKS={tea:{node:'sink',anim:'342',dur:8,label:'пьёт чай'},wash:{node:'sink',anim:'276',dur:7,label:'моет посуду'},cook:{node:'stove',anim:'276',dur:9,label:'готовит'},read:{node:'bread',anim:'33',dur:12,label:'читает'},craft:{node:'bench',anim:'128',dur:8,label:'мастерит'},sleep:{node:'bed',anim:'267',dur:999,label:'спит'},look:{node:'deck',anim:'336',dur:11,label:'смотрит вдаль'},guard:{node:'deck',anim:'231',dur:999,label:'на страже'},repair:{label:'чинит доски'}};
-let taskT=0;
-function pickTask(){if(isNight(hour)){if(zombies.some(z=>z.alive))return 'guard';return (hour>=20&&hour<21.6)?'read':'sleep';}
- const broken=B.filter(b=>b.breakable&&b.loose);if(broken.length)return 'repair';
- if(hour<8.5)return 'cook';if(hour>17.5&&hour<19)return 'cook';const r=Math.random();return r<.3?'read':r<.6?'craft':r<.72?'look':r<.82?'tea':r<.9?'wash':'cook';}
-function sitDown(){const p=hero.root.position;hero.face=Math.PI;hero.root.rotation.y=Math.PI;p.copy(N.bread_app.p);hero.state='trans';
- rmPlay('57',{fade:.3,onEnd:()=>{p.add(RV(hipsOf('57','e').sub(hipsOf('33','s')),Math.PI));p.y=N.bread.p.y;snapPlay('33');hero.seated=true;hero.state='work';heroNode='bread_app';}});}
-function standUp(then){const p=hero.root.position;hero.state='trans';hero.seated=false;p.copy(N.bread.p).add(RV(hipsOf('33','s').sub(hipsOf('53','s')),Math.PI));
- rmPlay('53',{fade:.25,speed:1.5,onEnd:()=>{p.add(RV(hipsOf('53','e').sub(hipsOf('0','s')),Math.PI));p.y=BD;snapPlay('0');hero.state='idle';heroNode='bread_app';then&&then();}});}
-function lieDown(){const p=hero.root.position;hero.face=-Math.PI/2;hero.root.rotation.y=hero.face;p.copy(N.bed.p);const a=hero.actions['371'];if(!a)return;
- if(hero.cur&&hero.cur!==a)hero.cur.crossFadeTo(a,.4,false);a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=.9;a.play();hero.cur=a;hero.inBed=true;hero.state='work';hero.bedHold=a.getClip().duration*.6;}
-function getUp(then){const a=hero.actions['371'];const p=hero.root.position;hero.state='trans';hero.bedHold=null;a.paused=false;a.timeScale=1.1;
- hero.rm={a,reverse:false,dur:a.getClip().duration,onEnd:()=>{p.add(RV(hipsOf('371','e').sub(hipsOf('53','s')),hero.face));rmPlay('53',{fade:.2,speed:1.5,onEnd:()=>{p.add(RV(hipsOf('53','e').sub(hipsOf('0','s')),hero.face));p.y=BD;snapPlay('0');hero.inBed=false;hero.state='idle';heroNode='bed';then&&then();}});}};}
-function startTask(name){if(hero.rm){hero.pending=name;return;}if(hero.seated){hero.task=name;standUp(()=>startTask(name));return;}if(hero.inBed&&name!=='sleep'){hero.task=name;getUp(()=>startTask(name));return;}
- if(name==='sleep'){hero.task='sleep';taskT=0;if(hero.inBed)return;goTo('bed',()=>lieDown());return;}
- if(name==='read'){hero.task='read';taskT=0;goTo('bread_app',()=>sitDown());return;}
- hero.task=name;taskT=0;
- if(name==='repair'){const b=B.find(b=>b.breakable&&b.loose);goTo(WIN_NODE[b.group],()=>{hero.state='work';play(hero,'128');hero.repairing=b;hero.repairT=0;});return;}
- if(name==='guard'){const sp=guardSpot();hero.guardAt=sp;goTo(sp,()=>{hero.state='work';play(hero,'231');hero.face=N[sp].face;});return;}
- const T=TASKS[name];goTo(T.node,()=>{hero.state='work';play(hero,T.anim,{speed:name==='sleep'?.5:1});if(N[T.node].face!==undefined)hero.face=N[T.node].face;});}
-
 // ---------- zombies ----------
 const zombies=[];
 // physical approach routes: walk on the ground, climb a ladder or a stilt, step onto the platform, then hit the barricade
@@ -515,7 +438,7 @@ const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15],[4.5,0x183A52,0x356
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.8,.95],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.6,1.0],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,1.05,1.12],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.75,1.0,1.15],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15]];
 function pal(h){let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=smooth(0,1,(h-a[0])/(b[0]-a[0]));const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 function fmt(h){const hh=Math.floor(h),mm=Math.floor((h-hh)*6)*10;return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');}
-function hud(){$('ic').textContent=isNight(hour)?'☾':(hour<8||hour>18?'◐':'☀︎');$('tod').textContent=(isNight(hour)?'Ночь ':'День ')+dayNo+' · '+fmt(hour)+(hero.task&&TASKS[hero.task]?' · '+TASKS[hero.task].label:hero.task==='repair'?' · чинит доски':'');
+function hud(){$('ic').textContent=isNight(hour)?'☾':(hour<8||hour>18?'◐':'☀︎');$('tod').textContent=(isNight(hour)?'Ночь ':'День ')+dayNo+' · '+fmt(hour)+(HH.label()?' · '+HH.label():'');
  $('hearts').textContent='♥'.repeat(Math.max(0,hero.hp))+'♡'.repeat(Math.max(0,3-hero.hp));$('zn').textContent=zombies.filter(z=>z.alive).length;$('bN').disabled=isNight(hour)||hour>19||over;}
 function toast(t,sub){const e=$('toast');e.innerHTML=t+(sub?`<small>${sub}</small>`:'');e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2400);}
 function hint(h){const e=$('hint');e.innerHTML=h;e.classList.remove('off');hintT=5;}
@@ -538,10 +461,10 @@ function zChest(z){return z.bones.Spine2?z.bones.Spine2.getWorldPosition(V()):z.
 let aimTarget=null,reload=0,queued=null;
 function nearestZombie(){let b=null,bd=1e9;const hp=hero.root.position;for(const z of zombies){if(!z.alive||z.stage==='flee')continue;const d=zChest(z).distanceTo(hp);if(d<bd){bd=d;b=z;}}return b;}
 function pickZombie(x,y){let b=null,bd=80;for(const z of zombies){if(!z.alive)continue;for(const k of ['Hips','Spine2','Head']){const bn=z.bones[k];if(!bn)continue;const s=bn.getWorldPosition(V()).project(camera);if(s.z>1)continue;const px=(s.x*.5+.5)*innerWidth,py=(-s.y*.5+.5)*innerHeight;const d=Math.hypot(px-x,py-y);if(d<bd){bd=d;b=z;}}}return b;}
-function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guard'&&!hero.path.length&&heroNode!==GUARD[z.group]){queued=z;startTask('guard');hint('Герой бежит на позицию…');return false;}if(hero.task!=='guard'||hero.path.length){hint('Герой бежит на позицию…');queued=z;return false;}if(reload>0){queued=z;return false;}
- aimTarget=z;reload=1.15;play(hero,'224',{loop:false,fade:.08,speed:1.5});
+function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guard'&&!hero.path.length&&HH.node()!==GUARD[z.group]){queued=z;startTask('guard');hint('Герой бежит на позицию…');return false;}if(hero.task!=='guard'||hero.path.length){hint('Герой бежит на позицию…');queued=z;return false;}if(reload>0){queued=z;return false;}
+ aimTarget=z;reload=1.15;HH.play('224',{loop:false,fade:.08,speed:1.5});
  setTimeout(()=>{if(!z.alive){reload=Math.min(reload,.3);return;}const t=zChest(z);const p0=arrowOrigin(t);const v=solveShot(p0,t,z);if(v)shoot(p0,v);else{shoot(p0,t.clone().sub(p0).normalize().multiplyScalar(22).add(V(0,2,0)));}},330);
- setTimeout(()=>{if(hero.task==='guard')play(hero,'231',{fade:.2});},1050);return true;}
+ setTimeout(()=>{if(hero.task==='guard')HH.play('231',{fade:.2});},1050);return true;}
 let yaw=.05,pitch=.13,zoom=1;const ptrs=new Map();let mode=null,pinch0=null,last=null,down=null;
 cv.addEventListener('pointerdown',e=>{ac();startAmb();if(over){location.reload();return;}ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});cv.setPointerCapture(e.pointerId);
  if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch0={d:Math.hypot(a.x-b.x,a.y-b.y),z:zoom};mode='pinch';return;}
@@ -580,35 +503,17 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  for(const L of lanterns){const f=.86+Math.sin(T*9+L.seed)*.06+Math.sin(T*23+L.seed*2)*.05;L.l.intensity=lampOn*6*f;L.bulbM.emissiveIntensity=lampOn*5*f;}
  ambL.intensity=dayK*(1-rainK*.3)*.55+.12;doorLight.intensity=(1+lampOn*3)*(.9+Math.sin(T*7)*.08);TREE.bark.material.userData.doorGlow.value=(.35+lampOn*.9)*(.9+Math.sin(T*7)*.08);
- const cooking=hero.task==='cook'&&hero.state==='work';P3.update(dt,{reading:hero.task==='read'&&hero.state==='work',cooking,heat:lampOn*.35});stoveLight.intensity=(cooking?3.5:.6+lampOn*1.5)*(.85+Math.sin(T*11)*.1);
+ const cooking=hero.task==='cook'&&hero.state==='work';P3.update(dt,{reading:false/* the hero turns the pages himself (hero.js) */,cooking,heat:lampOn*.35});stoveLight.intensity=(cooking?3.5:.6+lampOn*1.5)*(.85+Math.sin(T*11)*.1);
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
- ENV.update({T,P,nightK,mornK,rainK,lampOn,camera});
+ ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
  rain.m.opacity=rainK*.5;if(rainK>.02){const a=rain.pos;for(let i=0;i<rain.n;i++){const j=i*6;a[j+1]-=dt*14;a[j+4]-=dt*14;a[j]+=dt*.7;a[j+3]+=dt*.7;if(a[j+4]<0){const x=rnd(-16,16),y=rnd(20,24),z=rnd(-6,10);a.set([x,y,z,x+.04,y-.5,z],j);}}rain.l.geometry.attributes.position.needsUpdate=true;}
  if(amb){amb.wind.gain.value=.012+nightK*.01;amb.rain.gain.value=rainK*.05;}
  // --- spawn ---
  if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}
- // --- hero brain ---
- if(!over){if(!hero.task||(hero.state==='work'&&hero.task!=='sleep'&&hero.task!=='guard'&&hero.task!=='repair'&&(taskT+=dt*TS)>((TASKS[hero.task]||{dur:8}).dur))){startTask(pickTask());}
-  if(nowN&&zombies.some(z=>z.alive)&&hero.task!=='guard'){startTask('guard');}
-  if(!nowN&&(hero.task==='guard'||hero.task==='sleep')&&!zombies.some(z=>z.alive)){startTask(pickTask());}
-  if(hero.task==='guard'&&!hero.path.length&&!drag&&(hero.gT=(hero.gT||0)-dt*TS)<=0){hero.gT=2;const sp=guardSpot();if(sp!==hero.guardAt)startTask('guard');}
-  if(nowN&&hero.task==='guard'&&!zombies.some(z=>z.alive)&&spawnLeft===0&&(hour>21||hour<5)){startTask('sleep');}}
- // walking the path: smooth starts and stops, curved turns; ladders with a real pull-up at the top
- if(hero.path.length){const step=hero.path[0];const target=N[step.node].p;const p=hero.root.position;
-  if(step.t==='ladder')ladderStep(step,target,p,dt*TS);else walkStep(step,target,p,dt*TS);
-  if(!hero.path.length&&hero.then){const f=hero.then;hero.then=null;f();}}
- else if(hero.state==='walk'){hero.state='idle';hero.v=0;play(hero,Math.random()<.5?'0':'11',{fade:.4});}
- // repairing: hammer for a moment, then the board goes back on
- if(hero.repairing){hero.repairT+=dt*TS;if(Math.floor(hero.repairT*2.2)!==Math.floor((hero.repairT-dt*TS)*2.2))sfx.hammer();if(hero.repairT>2.4){repairBoard(hero.repairing);hero.repairing=null;hero.task=null;}}
- // facing
- {const want=hero.face;let cur=hero.root.rotation.y;let d=want-cur;while(d>Math.PI)d-=Math.PI*2;while(d<-Math.PI)d+=Math.PI*2;hero.root.rotation.y=cur+d*Math.min(1,dt*6);}
- // bow only shows when on guard
+ // --- hero: body, routine, walking (hero.js) ---
+ if(!over)HH.update(dt*TS);
  bow.visible=hero.task==='guard';
- hero.mixer.update(dt*TS);
- if(hero.ik&&hero.ik.w>.01){hero.root.updateMatrixWorld(true);const th=hero.root.rotation.y;const r=V(Math.cos(th),0,-Math.sin(th));const ik=hero.ik;const back=V(-Math.sin(th),0,-Math.cos(th));
-  for(const [sd,sg] of [['Left',1],['Right',-1]]){const tgt=V(ik.x,ik.y,ik.z).addScaledVector(r,sg*.24);armIK(sd,tgt,r.clone().multiplyScalar(sg).add(V(0,-.6,0)).add(back.multiplyScalar(.3)),ik.w);}}
- {const a=hero.actions['371'];if(hero.bedHold!=null&&a&&a.time>=hero.bedHold){a.time=hero.bedHold;a.paused=true;}}rmTick();if(!hero.rm&&hero.pending){const n=hero.pending;hero.pending=null;startTask(n);}
  reload=Math.max(0,reload-dt*TS);if(aimTarget&&!aimTarget.alive)aimTarget=null;
  if(queued&&(!queued.alive))queued=null;if(queued&&reload<=0&&hero.task==='guard'&&!hero.path.length){const q=queued;queued=null;fireAt(q);}
  if(hero.task==='guard'&&!hero.path.length){const tz=aimTarget||nearestZombie();if(tz){const tp=zChest(tz),hp=hero.root.position;hero.face=Math.atan2(tp.x-hp.x,tp.z-hp.z);
@@ -655,9 +560,9 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  hud();composer.render();
  fr++;ft+=dt;if(fr>=90){const fps=fr/ft;fr=0;ft=0;if(fps<40){if(bloom.enabled&&MOBILE)bloom.enabled=false;else if(PR>1.01){PR=Math.max(1,PR-.2);renderer.setPixelRatio(PR);resize();}else if(ENV.degrade)ENV.degrade();}}
  }
-resize();hero.task='read';hero.state='work';hero.seated=true;heroNode='bread_app';hero.face=Math.PI;hero.root.rotation.y=Math.PI;snapPlay('33');hud();$('load').classList.add('hide');
-window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode,path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>startTask(n),
+resize();hud();$('load').classList.add('hide');
+window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>startTask(n),
  view:(y,p,z)=>{yaw=y;pitch=p;zoom=z;},cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
-window.__dbg={hero,heroBones,play,N,THREE,PROPS,inTrunk,E};
+window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,E:HH.E};
 requestAnimationFrame(frame);
 </script>
