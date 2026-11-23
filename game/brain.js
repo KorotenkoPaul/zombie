@@ -604,6 +604,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     },
     get locked() { return locked; },
     command(name, opts) {
+      // asked again while already on the way to it (or doing it): keep going, do not restart the chain
+      if (!opts && ((cur && cur.cmd && cur.name === ((JOBS[name] && JOBS[name].task) || name)) || plan.some(p => p.cmd && (p.task === name || p.extra === name || p.job === name)))) return;
       plan.length = 0; pausing = 0; cmdNext = false;
       // a known activity, job or chore: plan it like his own (lamps off when leaving, the lantern at night, hatch, job -> body task),
       // and the last step is the request itself, which the brain then does not overrule

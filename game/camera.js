@@ -119,7 +119,11 @@ export function createCameraRig(o) {
   function orbit(dx, dy) {
     cancelFly();
     rec(dx, dy, 0, 0, 0, null);
-    const ny = clamp(goal.yaw - dx * 0.006, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
+    // ease into the rotation limits: the last 0.15 rad get gradually stiffer, so the view slows down instead of stopping dead
+    const ease = (room, toward) => toward ? clamp(room / 0.15, 0.12, 1) : 1;
+    let ddy = -dx * 0.006;
+    ddy *= ease(home.yaw + YAW_LIM - goal.yaw, ddy > 0) * ease(goal.yaw - (home.yaw - YAW_LIM), ddy < 0);
+    const ny = clamp(goal.yaw + ddy, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
     const a = ny - goal.yaw;
     if (a) {
       const x = goal.target.x - AXIS[0], z = goal.target.z - AXIS[1], c = Math.cos(a), sn = Math.sin(a);
@@ -127,7 +131,9 @@ export function createCameraRig(o) {
       goal.yaw = ny;
       limitOut(goal.target);
     }
-    goal.pitch = clamp(goal.pitch + dy * 0.004, PMIN, PMAX);
+    let ddp = dy * 0.004;
+    ddp *= ease(PMAX - goal.pitch, ddp > 0) * ease(goal.pitch - PMIN, ddp < 0);
+    goal.pitch = clamp(goal.pitch + ddp, PMIN, PMAX);
     endFly(); atHome = false;
   }
   function flyTo(point, dist) {

@@ -6,7 +6,11 @@ const { spawn } = require('child_process');
 const path = require('path');
 const OUT = process.argv[2] || path.join(__dirname, 'out'), PORT = 8129;
 require('fs').mkdirSync(OUT, { recursive: true });
-const VIEWS = process.env.POST ? [
+const VIEWS = process.env.LEAF ? [
+  ['leaf-close-a', { target: [1.5, 12.8, 2.5], yaw: 0.3, pitch: 0.1, dist: 1.43 }],
+  ['leaf-close-b', { target: [-2.5, 13, 1.0], yaw: -0.4, pitch: 0.2, dist: 1.43 }],
+  ['leaf-mid', { target: [3, 11.5, 1.5], yaw: 0.6, pitch: 0.15, dist: 4 }],
+] : process.env.POST ? [
   ['post-a', { target: [3.5, 6.0, 3.0], yaw: 0.75, pitch: 0.12, dist: 4 }],
   ['post-b', { target: [4.0, 5.6, 4.0], yaw: 0.6, pitch: 0.1, dist: 3 }],
   ['post-c', { target: [2.6, 5.8, 2.6], yaw: 0.75, pitch: 0.25, dist: 6 }],

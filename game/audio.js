@@ -484,7 +484,7 @@ export function createAudio(ctx) {
   const SYN = {};
   function synth(kind, v) {
     const sr = A.sampleRate, R = Math.random;
-    const len = { peck: .5, hop: .7, flutter: .9, claws: 2.2, chitter: 1.4, sniff: 1.6, squeak: .3 }[kind], n = Math.floor(sr * len), d = new Float32Array(n);
+    const len = { peck: .5, hop: .7, flutter: .9, claws: 2.2, chitter: 1.4, sniff: 1.6, squeak: .3, rings: .7, breath: 3.9 }[kind], n = Math.floor(sr * len), d = new Float32Array(n);
     // RBJ band-pass, run in place over a segment
     const bp = (x, f, Q) => { const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * Q), a0 = 1 + al, b0 = al / a0, a1 = -2 * Math.cos(w) / a0, a2 = (1 - al) / a0; let x1 = 0, x2 = 0, y1 = 0, y2 = 0; for (let i = 0; i < x.length; i++) { const y = b0 * x[i] - b0 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[i]; y2 = y1; y1 = y; x[i] = y; } return x; };
     const burst = (at, ms, f, Q, amp, tau) => { const m = Math.floor(sr * ms / 1000), s = Math.floor(at * sr); if (s >= n) return; const x = new Float32Array(m); for (let i = 0; i < m; i++) x[i] = (R() * 2 - 1) * Math.exp(-i / (sr * tau / 1000)); bp(x, f, Q); for (let i = 0; i < m && s + i < n; i++) d[s + i] += x[i] * amp; };
@@ -500,6 +500,9 @@ export function createAudio(ctx) {
         t += gap * (k > m * .6 ? .7 : 1) + R() * .012; } }
     else if (kind === 'sniff') { let t = .02; while (t < len - .1) { const m = 2 + Math.floor(R() * 3); for (let j = 0; j < m; j++) burst(t + j * (.07 + R() * .03), 45, 1800 + R() * 1400, 1.2, .5 + R() * .5, 14); t += .25 + R() * .35; } }   // a hedgehog snuffling through the leaves
     else if (kind === 'squeak') { const s0 = Math.floor(.01 * sr), L = Math.floor(sr * (.06 + v * .03)), f0 = 3800 + R() * 500; let ph = 0; for (let i = 0; i < L; i++) { const u = i / L; ph += 2 * Math.PI * (f0 + 900 * Math.sin(Math.PI * u)) / sr; d[s0 + i] += Math.sin(ph) * Math.sin(Math.PI * u) * .8; } }
+    else if (kind === 'rings') { let t = .01; const m = 6 + Math.floor(R() * 5); for (let k = 0; k < m; k++) { burst(t, 30, 2600 + R() * 1600, 16, .4 + R() * .6, 7); t += .03 + R() * .06; } }   // curtain rings sliding on the rod
+    else if (kind === 'breath') { const x = new Float32Array(n); let lp = 0; for (let i = 0; i < n; i++) { lp += ((R() * 2 - 1) - lp) * .16; x[i] = lp; } bp(x, 520 + v * 90, .6);   // a slow, quiet breath: in, a pause, a longer out
+      const iA = .1, iB = 1.5, oA = 1.75, oB = 3.75; for (let i = 0; i < n; i++) { const t = i / sr; let e = 0; if (t > iA && t < iB) e = .45 * Math.sin(Math.PI * (t - iA) / (iB - iA)) ** 2; else if (t > oA && t < oB) e = Math.sin(Math.PI * Math.pow((t - oA) / (oB - oA), .7)) ** 2; d[i] = x[i] * e; } }
     { let y = 0; const a = 1 - Math.exp(-2 * Math.PI * 6500 / sr); for (let i = 0; i < n; i++) { y += a * (d[i] - y); d[i] = y; } }   // soften the edges: nothing synthetic-bright
     let pk = 0; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(d[i])); const k = pk > 0 ? .9 / pk : 0; for (let i = 0; i < n; i++) d[i] *= k;
     const b = A.createBuffer(1, n, sr); b.getChannelData(0).set(d); return b;
@@ -557,6 +560,8 @@ export function createAudio(ctx) {
     if (swayHooked) return; const W = window.__wind; if (!W || typeof W.on !== 'function') return; swayHooked = true;
     W.on('sway', swaySound);
   }
+  let sleepNight = { snorer: false, spellEnd: 0, snoring: false }, wasAsleepS = false, idleBreath = 0;
+  const nearCam = (p, r) => { const l = listener(); return Math.hypot(p.x - l.x, p.y - l.y, p.z - l.z) < r; };
   let dripNext = 0, creakNext = 6, autoSleep = true, snoreNext = 0, turnNext = 0;
   // ---------- footsteps: surface under the foot, at the moment the foot lands ----------
   // Character can drive them exactly with __audio.footstep(side, pos?, {surface}); until it does, audio.js watches
@@ -658,9 +663,14 @@ export function createAudio(ctx) {
     // the hero asleep: soft snores now and then, and turning over (Character/Brain can switch this off: __audio.autoSleep(false))
     if (autoSleep && asleep && hero.root && actLoaded) {
       const hp = hero.root.position, at = { x: hp.x, y: hp.y + .5, z: hp.z };
-      if (now > snoreNext) { if (snoreNext > 0) playAct('snore', at); snoreNext = now + rnd(7, 16); }
+      // a night has its own sleeper: some nights he snores in spells, some nights only breathes; between snores, slow breaths
+      if (!wasAsleepS) { sleepNight = { snorer: Math.random() < .55, spellEnd: now + rnd(60, 200), snoring: false }; }
+      const SN = sleepNight; if (now > SN.spellEnd) { SN.snoring = SN.snorer && !SN.snoring && Math.random() < .7; SN.spellEnd = now + (SN.snoring ? rnd(90, 300) : rnd(120, 420)); }
+      if (now > snoreNext) { if (snoreNext > 0) { if (SN.snoring) playAct('snore', at); else if (nearCam(at, 8)) voice('syn_breath_' + Math.floor(Math.random() * 2), { pos: at, gain: .07, rate: rnd(.92, 1.05), ref: 1.5, roll: 1.4, rev: .1, indoor: true, fadeIn: .05, fadeOut: .3 }); }
+        snoreNext = now + (SN.snoring ? rnd(4.5, 7) : rnd(4.2, 5.6)); }
       if (now > turnNext) { if (turnNext > 0) playAct('bed_turn', at); turnNext = now + rnd(35, 90); }
     } else { snoreNext = now + rnd(4, 9); turnNext = now + rnd(25, 60); }
+    wasAsleepS = asleep;
     // old planks creak under the hero now and then
     if (hero && hero.root) {
       const p = hero.root.position, mv = Math.hypot(p.x - lastHero.x, p.z - lastHero.z) / gdt, vy = (p.y - lastHero.y) / gdt;
@@ -669,6 +679,7 @@ export function createAudio(ctx) {
       dbgF = [+mv.toFixed(2), +vy.toFixed(2), +frameDt.toFixed(3), +p.y.toFixed(2)];
       if (autoFeet) feet(p, mv, vy, env);
       houseWatch(hero, mv);
+      if (!asleep && mv < .1 && Math.abs(vy) < .1 && now > idleBreath) { idleBreath = now + rnd(3, 4.2); const at = { x: p.x, y: p.y + 1.5, z: p.z }; if (nearCam(at, 3.5)) voice('syn_breath_' + Math.floor(Math.random() * 2), { pos: at, gain: .045, rate: rnd(1.3, 1.45), ref: 1, roll: 1.6, rev: .08, indoor: true, fadeIn: .05, fadeOut: .25 }); }
       if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
     }
   }
@@ -740,6 +751,8 @@ export function createAudio(ctx) {
     sizzle: { c: ['sizzle', 'meat_pan'], v: .3 },
     bucket_fill: { c: ['bucket_fill'], v: .45, out: 1 }, slosh: { c: ['slosh_a', 'slosh_b'], v: .26, rate: .08 }, tap: { c: ['tap_stream'], v: .32 },
     drip_bucket: { c: ['drip_bucket_a', 'drip_bucket_b'], v: .22, rate: .12 }, bucket_dump: { c: ['bucket_dump'], v: .45, out: 1 },
+    curtain: { c: ['cloth_a', 'cloth_b'], v: .3, rings: 1 }, curtain_close: { c: ['cloth_a', 'cloth_b'], v: .3, rings: 1 }, curtain_open: { c: ['cloth_b', 'cloth_c'], v: .28, rings: 1 },
+    shutter_close: { c: ['shutter'], v: .45 }, shutter_open: { c: ['window_open'], v: .4 }, board_up: { c: ['plank_place'], v: .45, nails: 1 },
     hatch_open: { c: ['hatch_open'], v: .45 }, hatch_close: { c: ['hatch_close'], v: .5 },
     nails: { c: ['nail_a', 'nail_b', 'hammer_b'], v: .48, out: 1 }, saw_shingle: { c: ['saw_shingle'], v: .42, out: 1 },
     bed_turn: { c: ['bed_turn_a', 'bed_turn_b', 'blanket'], v: .3 },
@@ -782,6 +795,8 @@ export function createAudio(ctx) {
     const opts = actOpts(a || { v: .4 }, pos, Object.assign({ outdoor: a && a.out }, o));
     if (a && (a.body || a === ACT.cloth)) opts.prio = false;   // a breath is the first thing to give up its voice
     if (a && a.body) bodyUntil = A.currentTime + 1.6;
+    if (a && a.rings) voice('syn_rings_' + Math.floor(Math.random() * 2), Object.assign({}, opts, { gain: .05, rate: rnd(.9, 1.1), delay: (opts.delay || 0) + .05, fadeIn: .003, fadeOut: .1 }));   // the rings run along the rod
+    if (a && a.nails) for (let i = 0; i < 3; i++) playAct('nails', pos, { delay: .9 + i * rnd(.5, .8) });
     const h = { v: null, dead: false, stop: (f = .15) => { h.dead = true; stopVoice(h.v, f); } };
     if (B[clip]) h.v = voice(clip, opts);
     else decode(clip).then(() => { if (!h.dead && !muted) h.v = voice(clip, opts); });   // first use: decoded in a few ms, then played
