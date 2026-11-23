@@ -233,6 +233,9 @@ export function buildTree(THREE, o) {
   const mat = modelMap ? new THREE.MeshStandardMaterial({ map: modelMap, roughness: 0.92, color: 0xE8D2C0 })
     : new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 1.4, roughness: 0.9, color: 0xF0B080 });
   mat.onBeforeCompile = sh => {
+    // [WIND] the far limbs and the top of the crown sway slowly with the wind (game/wind.js); trunk and house stay still
+    const W = o.wind || window.__wind;
+    if (W) { W.hook(sh); sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\ntransformed+=windBranch(transformed,vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));`); }
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float glow;varying float vGlow;varying float vY;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGlow=glow;vY=(modelMatrix*vec4(transformed,1.)).y;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlow;varying float vY;uniform float doorGlow;')
@@ -263,7 +266,7 @@ export function buildTree(THREE, o) {
  float h=fract(sin(dot(ip,vec3(12.99,78.23,37.71)))*4375.5);
  float a=sin(uWT*(6.+h*5.)+h*30.)*(.04+.25*s),b=sin(uWT*(4.7+h*4.)+h*17.)*(.03+.15*s);
  transformed.z+=a*position.x+b*position.y;
- transformed+=windLocal(vec3(wv.x,wv.x*.15,wv.y));}`);
+ transformed+=windLocal(vec3(wv.x,wv.x*.15,wv.y)+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)})));}`);
     }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;').replace('#include <alphatest_fragment>', 'diffuseColor.a*=smoothstep(.12,.5,vFacing);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
