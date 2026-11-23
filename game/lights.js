@@ -337,9 +337,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     curtains.push({ w, W, mat, panels, closed: 0 });
     w.leak = 1;
   }
-  let lockK = 0;
+  let lockK = 0, curForce = false;
   function updateCurtains(dt, dayK) {
-    const locked = !!(window.__brain && window.__brain.locked);
+    const locked = curForce || !!(window.__brain && window.__brain.locked);
     lockK += ((locked ? 1 : 0) - lockK) * Math.min(1, dt * .6);
     for (const c of curtains) {
       const want = locked ? 1 : dayK > .55 ? 0 : .42;
@@ -666,6 +666,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     toggle: n => { const s = src.get(n); if (!s) return false; return api.set(n, !s.on); },
     auto: n => { for (const s of src.values()) if (!n || s.name === n) s.manual = null; },
     room: roomLevel,
+    // Brain at lockdown start/end: curtains(true) draws every curtain shut and dims the rooms; curtains(false) hands
+    // them back to the clock (open by day, half drawn at night). __brain.locked does the same on its own.
+    curtains: on => { curForce = !!on; return curForce; },
     onChange: cb => listeners.push(cb),
     level: n => src.has(n) ? src.get(n).level : 0,
     // hand lantern: attachHand(bone, offset?) shows it in the hero's hand (then set('hand', true) lights it);
