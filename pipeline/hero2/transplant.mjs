@@ -46,7 +46,7 @@ for(let i=0;i<nv;i++){pre(v.fromArray(P,i*3));acc.set(0,0,0);accN.set(0,0,0);
  acc.toArray(out,i*3);accN.normalize().toArray(outN,i*3);}
 if(miss.size)console.log('remapped missing joints to parents:',[...miss].join(','));
 // smooth normals across UV seams/facets: weld by position, area-weighted face normals
-{const key=i=>Math.round(out[i*3]*2e4)+','+Math.round(out[i*3+1]*2e4)+','+Math.round(out[i*3+2]*2e4);const grp={},gi=new Int32Array(nv);let ng=0;
+if(!process.env.KEEP_NORMAL){const key=i=>Math.round(out[i*3]*2e4)+','+Math.round(out[i*3+1]*2e4)+','+Math.round(out[i*3+2]*2e4);const grp={},gi=new Int32Array(nv);let ng=0;
  for(let i=0;i<nv;i++){const k=key(i);if(!(k in grp))grp[k]=ng++;gi[i]=grp[k];}
  const acc=new Float32Array(ng*3);const I=rp.getIndices().getArray();const a=new T.Vector3(),b=new T.Vector3(),c=new T.Vector3();
  for(let t=0;t<I.length;t+=3){a.fromArray(out,I[t]*3);b.fromArray(out,I[t+1]*3);c.fromArray(out,I[t+2]*3);const n=b.clone().sub(a).cross(c.clone().sub(a));
@@ -63,6 +63,7 @@ op.setIndices(A('SCALAR',new Uint32Array(rp.getIndices().getArray())));
 // material: new base colour texture, matte
 const om=op.getMaterial(),rm=rp.getMaterial();const rt=rm.getBaseColorTexture();
 const tex=od.createTexture('hero2_base').setImage(rt.getImage()).setMimeType(rt.getMimeType());
-om.setBaseColorTexture(tex).setMetallicRoughnessTexture(null).setNormalTexture(null).setMetallicFactor(0).setRoughnessFactor(.9).setBaseColorFactor([1,1,1,1]);
-for(const t of od.getRoot().listTextures())if(t!==tex&&!t.listParents().some(p=>p.propertyType==='Material'))t.dispose();
+const rn=process.env.KEEP_NORMAL&&rm.getNormalTexture();const ntex=rn?od.createTexture('hero_normal').setImage(rn.getImage()).setMimeType(rn.getMimeType()):null;
+om.setBaseColorTexture(tex).setMetallicRoughnessTexture(null).setNormalTexture(ntex).setEmissiveTexture(null).setEmissiveFactor([0,0,0]).setMetallicFactor(0).setRoughnessFactor(+(process.env.ROUGH||.9)).setBaseColorFactor([1,1,1,1]);
+for(const t of od.getRoot().listTextures())if(t!==tex&&t!==ntex&&!t.listParents().some(p=>p.propertyType==='Material'))t.dispose();
 await io.write(outP,od);console.log('wrote',outP,fs.statSync(outP).size);
