@@ -124,15 +124,15 @@ export function createHero(ctx){
  const N={
   kh_b:{p:V(-1.22,LC,3.77)},land:{p:V(-.4,LC,2.85)},gate:{p:V(0,LC,3.35),face:0},wstep:{p:V(1.15,WS,3.15)},
   wmid:{p:V(2.4,WS,3.45)},bench:{p:V(2.55,WS,2.62),face:Math.PI},wwin:{p:V(3.0,WS,3.95),face:0},
-  kh_t:{p:V(-1.22,KT,2.75)},kmid:{p:V(-2.5,KT,3.3)},kl_m:{p:V(-3.75,KT,2.3)},stove:{p:V(-3.25,KT,2.42),face:Math.PI},sink:{p:V(-2.3,KT,2.15),face:Math.PI},kwin:{p:V(-3.0,KT,3.45),face:0},kl_b:{p:V(-4.0,KT,1.68)},
-  bl_t:{p:V(-4.0,BD,2.35)},bl_m:{p:V(-3.25,BD,2.45)},bmid:{p:V(-2.3,BD,3.05)},bwin:{p:V(-3.6,BD,3.6),face:0},bdoor:{p:V(-.1,BD,2.78)},
+  kh_t:{p:V(-1.22,KT,2.75)},kmid:{p:V(-2.5,KT,3.3)},kl_m:{p:V(-3.75,KT,2.3)},stove:{p:V(-3.25,KT,2.42),face:Math.PI},sink:{p:V(-2.3,KT,2.15),face:Math.PI},kwin:{p:V(-3.0,KT,3.45),face:0},kl_b:{p:V(-4.0,KT,2.32)},
+  bl_t:{p:V(-4.0,BD,1.62)},bl_m:{p:V(-3.25,BD,2.45)},bmid:{p:V(-2.3,BD,3.05)},bwin:{p:V(-3.6,BD,3.6),face:0},bdoor:{p:V(-.1,BD,2.78)},
   ledge:{p:V(1.25,BD,3.5),face:0},ll_b:{p:V(1.35,BD,3.47)},ll_t:{p:V(1.35,DK,2.7)},deckm:{p:V(1.9,DK,2.5)},deck:{p:V(3.13,DK,2.62),face:0},
  };
  const E=[['kh_b','land'],['land','gate'],['land','wstep'],['wstep','wmid'],['wmid','bench'],['wmid','wwin'],['kh_b','kh_t','ladder'],['kh_t','kmid'],['kmid','stove'],['kmid','sink'],['kmid','kwin'],['kmid','kl_m'],['kl_m','kl_b'],
   ['kl_b','bl_t','ladder'],['bl_t','bl_m'],['bl_m','bmid'],['bmid','bwin'],['bmid','bdoor'],['bdoor','ledge'],['ledge','ll_b'],['ll_b','ll_t','ladder'],['ll_t','deckm'],['deckm','deck']];
  // the rooms can be shifted sideways as a block (lv.XL: left rooms, lv.XR: right rooms); landings at LC stay
  {const XL=lv.XL||0,XR=lv.XR||0;if(XL||XR)for(const k in N){const n=N[k];if(n.p.y<LC+.3)continue;n.p.x+=n.p.x<0?XL:XR;}}
- const LAD={'kh_b>kh_t':{lz:3.45,side:1},'kl_b>bl_t':{lz:2.0,side:-1},'ll_b>ll_t':{lz:3.15,side:1}};
+ const LAD={'kh_b>kh_t':{lz:3.45,side:1},'kl_b>bl_t':{lz:2.0,side:1},'ll_b>ll_t':{lz:3.15,side:1}};
 
  // ---------- fit to the real furniture ----------
  const rc=new THREE.Raycaster();
@@ -168,7 +168,8 @@ export function createHero(ctx){
   N.bed_app={p:V(N.bededge.p.x-sdEnd.x,BD,N.bededge.p.z-sdEnd.z),face:0,tight:true};
   E.push(['bmid','bed_app']);}
  const adj={};for(const [a,b,t] of E){(adj[a]=adj[a]||[]).push({to:b,t});(adj[b]=adj[b]||[]).push({to:a,t});}
- function route(a,b){const prev={[a]:null},q=[a];while(q.length){const n=q.shift();if(n===b)break;for(const e of adj[n]||[])if(!(e.to in prev)){prev[e.to]={n,t:e.t};q.push(e.to);}}
+ function edgeShut(a,b){const hc=window.__house&&window.__house.hatch;if(!hc||!hc.ladder||!hc.isOpen)return false;const L=hc.ladder;return ((a===L.bottom&&b===L.top)||(a===L.top&&b===L.bottom))&&!hc.isOpen();}
+ function route(a,b){const prev={[a]:null},q=[a];while(q.length){const n=q.shift();if(n===b)break;for(const e of adj[n]||[])if(!(e.to in prev)&&!edgeShut(n,e.to)){prev[e.to]={n,t:e.t};q.push(e.to);}}
   if(!(b in prev))return [];const out=[];let c=b;while(c&&c!==a){out.unshift({node:c,t:prev[c].t,from:prev[c].n});c=prev[c].n;}return out;}
  // furniture footprints: the hero never walks into them
  const OBST=ctx.OBST||[];
@@ -365,6 +366,14 @@ export function createHero(ctx){
      if(a.t>tE)endTask();}};
    a.post=()=>{if(a.step!=='reach')return;const w=smooth(0,.4,a.t)*(1-smooth(.6,.95,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
     const v=a.knob.clone().sub(from);const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);if(!a.low)ikList([['Right',from.add(v),w]]);};
+   return a;},
+  // open or close the floor hatch over the kitchen ladder: go to its top or bottom, reach for the ring, it moves at the touch
+  hatch:(o={})=>{const a={step:'go',t:0};const hc=window.__house&&window.__house.hatch;if(!hc){a.update=()=>endTask();return a;}
+   const want=o.open!=null?!!o.open:!hc.isOpen();const L=hc.ladder||{top:'bl_t',bottom:'kl_b'};const up=root.position.y>(lv.KT+lv.BD)/2-.3;const node=up?L.top:L.bottom;
+   goTo(node,()=>{a.step='reach';a.t=0;const g=hc.grab;const p=root.position;H.face=Math.atan2(g.x-p.x,g.z-p.z);a.low=g.y-p.y<.8;if(a.low&&has('hy_take'))once('hy_take',{fade:.35,then:()=>play(IDLE(),{fade:.4})});});
+   a.update=dt=>{if(a.step!=='reach')return;a.t+=dt;const g=hc.grab;H.look=g.clone();H.lookW=1;const tT=a.low&&has('hy_take')?durOf('hy_take')*.45:.45;
+    if(a.t>tT&&!a.done){a.done=true;try{want?hc.open():hc.close();}catch(e){}}if(a.t>(a.low&&has('hy_take')?durOf('hy_take'):1.0))endTask();};
+   a.post=()=>{if(a.step!=='reach'||a.low)return;const w=smooth(0,.4,a.t)*(1-smooth(.65,1,a.t));const from=bones.RightArm.getWorldPosition(V());const v=hc.grab.clone().sub(from);if(v.length()>armLen*.97)v.setLength(armLen*.97);ikList([['Right',from.add(v),w]]);};
    return a;},
   // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
   micro:(o={})=>{const a={step:'do',t:0};const c=o.clip&&has(o.clip)?o.clip:IDLE();const one=['hy_stretch','hy_inspect','hy_take','hy_drink'].includes(c);
