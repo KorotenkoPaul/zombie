@@ -84,7 +84,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
   while(frames<60*MAXS){
    const s=await p.evaluate(()=>__watch.st());
    if(s.task===t)seen=true;
-   if(!seen&&frames>0&&frames%120===0){if(frames>=900)break;await ask();}
+   if(!seen&&frames>0&&frames%120===0){if(frames>=2400)break;await ask();}
    // dense while moving / changing pose / on ladders, sparse while steady
    const moving=s.path>0||s.lad||s.swing||s.trans||!last||s.clip!==last.clip||s.state!==last.state||Math.hypot(s.root[0]-last.root[0],s.root[1]-last.root[1],s.root[2]-last.root[2])>.01;
    const gap=moving?EVERY:CALM;
