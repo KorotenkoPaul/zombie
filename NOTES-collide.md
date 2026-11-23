@@ -3,7 +3,26 @@
 Goal (Pavel, 2026-11-23): the hero's body and the things in the house have clear boundaries; he must not walk or reach through them,
 and his feet never go below the floor.
 
-## How it works
+## How it works (current, 2026-11-23 late)
+- Runs in the pose pipeline slot `collide` (`HH.stage`, HERO-RULES.md), after contacts, before grab and the guard.
+- World: instanced boards = boxes; Box/Cylinder/Sphere meshes exact; other meshes voxelised at 2 cm in a Web Worker (never on the
+  main thread in the game; tests build all up front). An unbuilt prop stands in as its box. Big merged meshes (props.js
+  `propsStatic`: fridge body, cupboards, stove...) are cut into 0.4 m z-slabs and separate x-pieces after load, one mesh per frame.
+  Shapes > 12 m, NaN, grass/foliage are skipped. Spatial hash 0.4 m; moved props leave their old cells; swaying props hashed once.
+- Body: ~1100 CPU-skinned skin points. Per-chain broadphase (shapes gathered once per frame); quiet frames probed every other
+  frame, a still pose not at all.
+- Response: root sideways only (<= 0.3 m/s, persistent, never while walking/seated/lying/ladder); head = spine bend (<= 12 cm);
+  arms = 2-bone IK (offset <= 7 cm); legs = vertical lift only, never against floor boards (hero.js owns the floor), never kneeling.
+  Limits are on the correction velocity vector (size and change per frame), so nothing flips or pops.
+- Floor guard (root under the boards for 0.4 s, house only) as before.
+- Lessons: pushing a standing leg sideways (step aside) flips knees in hero.js; lifting soles out of plank boxes made him hover.
+
+## Checking
+- `node tests/anim/gate.js` (both heroes) vs the same build with collide off (`__collide.enable(false)` after load): on 9bf4810
+  jumps 4246 vs 4178 off, penetrations 2170 vs 2514 off.
+- `__collide.touching()` lists what the body is in right now; `__collide.dbg()` per-chain push and offsets; `bench(n)` cost.
+
+## How it works (first version, outdated)
 - `createCollide({scene, HH, P3, trunk:{SL,TAX}})` is called at the end of index.html (after `window.__dbg`). It wraps `HH.update`:
   the root correction is taken off before hero.js runs and put back after, so hero.js logic (walking, nav, fit) never sees it.
   hero.js itself is untouched.
