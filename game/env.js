@@ -52,7 +52,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  float dy=yp-yc;float ec=exp(-max(yc,0.)/HH),ep=exp(-max(yp,-1.)/HH);
  float od=abs(dy)>.01?HH*(ec-ep)/dy:ep;
  float n=hfN(vFogW.xz*.11)*.65+hfN(vFogW.xz*.31+7.)*.35;
- float clear=mix(.2,1.,smoothstep(4.5,11.,length(vFogW.xz)));float tau=(.012+.14*hk)*(.45+1.1*n)*od*min(d,60.)*clear;
+ float clear=mix(.08,1.,smoothstep(5.,13.,length(vFogW.xz)));float tau=(.012+.085*hk)*(.45+1.1*n)*od*min(d,60.)*clear;
  float hf=1.-exp(-tau);
  fogFactor=max(fogFactor,0.)+hf*(1.-fogFactor);
  vec3 haze=mix(fogColor,vec3(dot(fogColor,vec3(.33)))*1.5+vec3(.05,.09,.11),.45);gl_FragColor.rgb=mix(gl_FragColor.rgb,mix(fogColor,haze,hf),fogFactor);}
@@ -178,30 +178,35 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
   fragmentShader:`uniform float t,op;uniform vec3 col,cam;varying vec3 vW;${GLSL_NOISE}
    void main(){vec2 p=vW.xz*.075+vec2(vW.y*1.7,0.);vec2 q=vec2(fbm(p+vec2(t*.018,t*.007)),fbm(p+vec2(5.2,1.3)-vec2(t*.013,0.)));
     vec2 r=vec2(fbm(p+3.*q+vec2(1.7,9.2)+t*.021),fbm(p+3.*q+vec2(8.3,2.8)-t*.016));float d=fbm(p+3.4*r);
-    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*smoothstep(4.5,10.,length(vW.xz));
+    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*smoothstep(5.,13.,length(vW.xz));
     float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze;gl_FragColor=vec4(col*(.82+.4*d),a);}`});
  const sheets=[];[[.25,1],[.7,.8],[1.3,.6]].forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(200,200).rotateX(-Math.PI/2),sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
- const PN=MOBILE?46:80;const puffU={t:U.t,col:fogU.col,op:{value:.5},night:{value:1}};
+ const PN=MOBILE?46:80;const puffU={t:U.t,col:fogU.col,op:{value:.5},night:{value:1},lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
  const pg=new THREE.InstancedBufferGeometry();pg.copy(new THREE.PlaneGeometry(1,1));pg.instanceCount=PN;
  {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
    const sz=rr(2.6,6)*(r<10?.8:1.15);a.set([Math.cos(ang)*r,rr(.15,.9)*sz*.32,Math.sin(ang)*r,sz],i*4);b.set([rr(0,100),rr(.6,1.4)*(R()<.5?-1:1),rr(.55,1),rr(0,6.28)],i*4);}
   pg.setAttribute('iA',new THREE.InstancedBufferAttribute(a,4));pg.setAttribute('iB',new THREE.InstancedBufferAttribute(b,4));}
  const puffMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:false,uniforms:puffU,
-  vertexShader:`attribute vec4 iA,iB;uniform float t;varying vec2 vUv;varying float vS,vA;varying float vFade;
+  vertexShader:`attribute vec4 iA,iB;uniform float t;varying vec2 vUv;varying float vS,vA;varying float vFade;varying vec3 vW;varying float vWy;
    void main(){vUv=uv;vS=iB.x;vA=iB.z;
     // slow orbit around the oak plus a lazy wobble
     float ang=t*.006*iB.y+iB.w;float c=cos(ang),s=sin(ang);vec3 cpos=vec3(c*iA.x-s*iA.z,iA.y,s*iA.x+c*iA.z);
     cpos.x+=sin(t*.05+iB.x)*1.2;cpos.z+=cos(t*.04+iB.x*1.7)*1.;cpos.y+=sin(t*.07+iB.x)*.15;
-    vec4 mv=viewMatrix*vec4(cpos,1.);float sz=iA.w*(1.+.08*sin(t*.11+iB.x));mv.xy+=position.xy*vec2(sz*1.6,sz);
-    vFade=smoothstep(2.,8.,-mv.z);gl_Position=projectionMatrix*mv;}`,
-  fragmentShader:`uniform float t,op;uniform vec3 col;varying vec2 vUv;varying float vS,vA,vFade;${GLSL_NOISE}
+    vec4 mv=viewMatrix*vec4(cpos,1.);vW=cpos+vec3(0.,iA.w*.3,0.);float sz=iA.w*(1.+.08*sin(t*.11+iB.x));mv.xy+=position.xy*vec2(sz*1.6,sz);vWy=(inverse(viewMatrix)*mv).y;
+    vFade=smoothstep(2.,8.,-mv.z);
+    // keep the trunk base and roots clear: puffs between the camera side and the trunk fade out (fog stays around and behind them, as in the photo)
+    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*.9;gl_Position=projectionMatrix*mv;}`,
+  fragmentShader:`uniform float t,op;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${GLSL_NOISE}
    void main(){vec2 p=vUv-.5;float r=length(p*vec2(1.,1.25));
     // swirl: rotate the noise domain by an amount that depends on radius and time, so the clump churns
     float sw=(1.-r)*2.2+t*.05*sign(vS-50.);float cs=cos(sw),sn=sin(sw);vec2 rp=mat2(cs,-sn,sn,cs)*p;
     float n=fbm(rp*3.+vS)*.65+fbm(rp*6.-t*.03+vS*2.)*.35;
     float a=smoothstep(.5,.05,r)*smoothstep(.25,.7,n+.15)*smoothstep(0.,.25,vUv.y);
-    gl_FragColor=vec4(col*(.85+.35*n+.12*(vUv.y)),a*op*vA*vFade);}`});
+    // fog lit by the lamps, the stove and the glowing door: warm light soaks into the nearby mist
+    vec3 warm=vec3(0.);for(int i=0;i<6;i++){vec3 d=vW-lp[i].xyz;warm+=lp[i].w/(1.+dot(d,d)*.12);}
+    vec3 cc=col*(.85+.35*n+.12*(vUv.y))+vec3(1.,.55,.22)*min(warm,1.)*(.18+.3*n);
+    gl_FragColor=vec4(cc,a*op*vA*vFade*smoothstep(-.1,1.1,vWy)*(1.+min(warm,1.)*.25));}`});
  const puffs=new THREE.Mesh(pg,puffMat);puffs.frustumCulled=false;puffs.renderOrder=6;scene.add(puffs);
 
  // ================= lamp halos (glow around lamps; works on phones where bloom is off) =================
@@ -225,15 +230,18 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const rim=new THREE.DirectionalLight(0x6FA0D0,0);rim.position.set(10,14,-20);scene.add(rim);
 
  // ================= per-frame =================
- const tmp=new THREE.Color(),dark=new THREE.Color(0x0E1C28);
+ const tmp=new THREE.Color(),tmpV=V();
  env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera}=s;U.t.value=T;U.wind.value=1+rainK*1.5;
   const fc=tmp.copy(P.fog);
   fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),.3+nightK*.3);const eve=Math.max(nightK,lampOn||0);const dens=.15+eve*.85+mornK*.5+rainK*.25;fogU.cam.value.copy(camera.position);
-  for(const m of sheets){m.material.uniforms.op.value=.3*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
-  puffU.op.value=.42*dens;
+  for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
+  puffU.op.value=.3*dens;
+  {const L=halos.filter(h=>h.l.intensity>.05).map(h=>{h.l.getWorldPosition(tmpV);return [tmpV.x,tmpV.y,tmpV.z,Math.min(1,h.l.intensity/5)*h.size/1.6];}).sort((a,b)=>a[1]-b[1]);
+   for(let i=0;i<6;i++){const v=puffU.lp.value[i];const l=L[i];if(l)v.set(l[0],l[1],l[2],l[3]*.9);else v.set(0,-99,0,0);}}
   bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
   for(const h of halos){const on=h.l.intensity>.05;h.s.visible=on;if(on){h.l.getWorldPosition(h.s.position);const k=Math.min(1,h.l.intensity/6);h.s.material.opacity=k*.85;h.s.scale.setScalar(h.size*(.85+k*.3));}}
   fill.intensity=eve*1.6*(1-rainK*.4);sky.intensity=eve*.9;rim.intensity=eve*1.4;
   const g=env.gradePass.uniforms;g.night.value=eve;g.sat.value=1.18+nightK*.08;};
+ env.sheets=sheets;env.puffs=puffs;window.__env=env;
  return env;
 }
