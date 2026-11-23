@@ -158,7 +158,7 @@ export function createCameraRig(o) {
     onUser(e);
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { dom.setPointerCapture(e.pointerId); } catch (_) {}
-    idle = 0; stopInertia(); recording = true;
+    idle = 0; stopCine(); stopInertia(); recording = true;
     if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -228,7 +228,7 @@ export function createCameraRig(o) {
   }
 
   dom.addEventListener('wheel', e => {
-    e.preventDefault(); idle = 0;
+    e.preventDefault(); idle = 0; stopCine();
     let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
     const f = Math.exp(clamp(dy, -200, 200) * (e.ctrlKey ? 0.01 : 0.0016)); // ctrlKey = trackpad pinch
     zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null);
@@ -242,12 +242,60 @@ export function createCameraRig(o) {
 
   addEventListener('keydown', e => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    idle = 0; stopCine();
     const s = 24;
     if (e.key === 'ArrowLeft') orbit(-s, 0); else if (e.key === 'ArrowRight') orbit(s, 0);
     else if (e.key === 'ArrowUp') orbit(0, -s); else if (e.key === 'ArrowDown') orbit(0, s);
     else if (e.key === '+' || e.key === '=') zoomAt(0.8, null); else if (e.key === '-') zoomAt(1.25, null);
     else if (e.key === 'Home' || e.key === 'h') goHome();
   });
+
+  // ---------- cinematic idle mode ----------
+  // After CINE_IDLE s without a touch the camera drifts on its own between calm shots (windows, the hero,
+  // the roots, the crown), slow push-ins and arcs; any touch hands control straight back from where it is.
+  const CINE_IDLE = o.cineIdle || 30;
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const SHOTS = o.shots || [
+    { name: 'bedroom',  t: V3(-2.0, 9.4, 1.6), yaw: 0.25, pitch: 0.10, dist: 5.6, arc: -0.025, push: 0.012 },
+    { name: 'hero',     hero: true, yaw: 0.15, pitch: 0.16, dist: 3.4, arc: 0.03, push: 0.01 },
+    { name: 'roots',    t: V3(0.9, 0.6, 2.2), yaw: 0.5, pitch: 0.32, dist: 8, arc: 0.03, push: 0.015 },
+    { name: 'kitchen',  t: V3(-2.1, 6.9, 1.3), yaw: -0.2, pitch: 0.08, dist: 3.8, arc: 0.025, push: 0.012 },
+    { name: 'crown',    t: V3(0, 14.5, 0), yaw: 0.35, pitch: 0.06, dist: 16, arc: -0.02, push: 0.008 },
+    { name: 'workshop', t: V3(2.4, 6.2, 1.6), yaw: 0.35, pitch: 0.12, dist: 4, arc: -0.03, push: 0.012 },
+    { name: 'telescope',t: V3(2.9, 10.8, 2.4), yaw: -0.4, pitch: 0.18, dist: 4, arc: 0.03, push: 0.01 },
+    { name: 'house',    t: V3(0, 7.4, 2.4), yaw: -0.3, pitch: 0.08, dist: 18, arc: 0.012, push: 0.006 },
+  ];
+  const cine = { on: false, i: -1, t: 0, hold: 11, shot: null };
+  function stopCine() {
+    if (!cine.on) return;
+    cine.on = false; flyK = 0;
+    goal.target.copy(cur.target); goal.yaw = cur.yaw; goal.pitch = cur.pitch; goal.dist = cur.dist;  // freeze where it is
+    o.onCine && o.onCine(false);
+  }
+  function nextShot() {
+    cine.i = (cine.i + 1) % SHOTS.length;
+    const sh = SHOTS[cine.i];
+    if (sh.hero && !follow()) { cine.i = (cine.i + 1) % SHOTS.length; }
+    cine.shot = SHOTS[cine.i]; cine.t = 0;
+    const tg = cine.shot.hero ? follow() : cine.shot.t;
+    goal.target.copy(tg);
+    goal.yaw = cine.shot.yaw + Math.round((cur.yaw - cine.shot.yaw) / (Math.PI * 2)) * Math.PI * 2;
+    goal.pitch = cine.shot.pitch; goal.dist = cine.shot.dist;
+    flyK = 0.55;                                    // a slow, floating move between shots
+  }
+  function stepCine(dt) {
+    if (!cine.on) {
+      if (idle > CINE_IDLE && !ptrs.size && !inert.on && !followOn) { cine.on = true; stopFollowSilent(); o.onCine && o.onCine(true); nextShot(); }
+      return;
+    }
+    cine.t += dt;
+    const sh = cine.shot;
+    if (sh.hero) { const f = follow(); if (f) goal.target.lerp(f, damp(1.5, dt)); }
+    goal.yaw += sh.arc * dt;                        // slow arc
+    goal.dist *= 1 - sh.push * dt;                  // slow push-in
+    if (cine.t > cine.hold) nextShot();
+  }
+  function stopFollowSilent() { if (followOn) stopFollow(); }
 
   // ---------- per frame ----------
   const camPos = new THREE.Vector3(), dir = new THREE.Vector3(), p = new THREE.Vector3();
@@ -269,6 +317,7 @@ export function createCameraRig(o) {
     pickAge += dt; idle += dt;
     if (followOn) { const f = follow(); if (f) goal.target.lerp(f, damp(6, dt)); }
     stepInertia(dt);
+    stepCine(dt);
     for (const U of fadeU) U.u.value = clamp(cur.dist * U.k, U.min, U.max);
     const dragging = ptrs.size > 0 || inert.on;
     keepOut(goal.target, dt, dragging);
@@ -279,7 +328,7 @@ export function createCameraRig(o) {
     cur.yaw += (goal.yaw - cur.yaw) * k;
     cur.pitch += (goal.pitch - cur.pitch) * k;
     cur.dist = Math.exp(Math.log(cur.dist) + (Math.log(goal.dist) - Math.log(cur.dist)) * k);
-    if (flyK && Math.abs(cur.dist - goal.dist) < 0.01 && cur.target.distanceTo(goal.target) < 0.01) flyK = 0;
+    if (flyK && !cine.on && Math.abs(cur.dist - goal.dist) < 0.01 && cur.target.distanceTo(goal.target) < 0.01) flyK = 0;
 
     const yw = cur.yaw + (extra.drift || 0);
     dir.set(Math.sin(yw) * Math.cos(cur.pitch), Math.sin(cur.pitch), Math.cos(yw) * Math.cos(cur.pitch));
@@ -370,6 +419,8 @@ export function createCameraRig(o) {
     nearFade,
     update, setHome, goHome, setFollow, flyTo, zoomAt, pan, orbit, pick, set, snap,
     get following() { return followOn; },
+    get cinematic() { return cine.on ? (cine.shot && cine.shot.name) : null; },
+    cine: (on) => { if (on) { idle = CINE_IDLE + 1; } else { idle = 0; stopCine(); } },
     get dist() { return cur.dist; },
     get target() { return cur.target; },
     get state() { return { target: cur.target.toArray().map(v => +v.toFixed(2)), yaw: +cur.yaw.toFixed(3), pitch: +cur.pitch.toFixed(3), dist: +cur.dist.toFixed(2), follow: followOn, cam: camera.position.toArray().map(v => +v.toFixed(2)) }; },
