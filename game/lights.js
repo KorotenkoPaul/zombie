@@ -15,6 +15,7 @@
 //   room(roomName)         -> 0..1, how lit a room is right now (kitchen, bedroom, workshop, outside)
 //   onChange(cb)           -> cb(name, on) whenever a source is switched
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const clamp01 = x => Math.max(0, Math.min(1, x));
@@ -69,22 +70,49 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // nothing floats: a lantern hangs on a chain from whatever is above it (ceiling, roof, floor of the room above);
   // if nothing is above, an iron bracket comes out of the nearest wall, post or trunk and the chain hangs from its tip
   const ironM = new THREE.MeshStandardMaterial({ color: 0x2C2F35, metalness: .7, roughness: .45 });
-  const linkGeo = new THREE.TorusGeometry(.016, .0045, 5, 10);
+  // links: a 3-sided ring of 4 segments (24 tris) reads as a chain link at any distance the camera gets; the old 5x10 ring
+  // was 100 tris x ~55 links = 5.5k tris for one chain (Optimization)
+  const linkGeo = new THREE.TorusGeometry(.016, .0045, 3, 4);
+  // one static mesh out of several (world-space) meshes of one material: the chain, its hook, a bracket = one draw
+  const _m4 = new THREE.Matrix4();
+  function bakeGeo(meshes, into = null) {
+    const gs = meshes.map(m => { m.updateMatrixWorld(true); const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(m.matrixWorld);
+      if (into) g.applyMatrix4(_m4.copy(into.matrixWorld).invert()); for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal') g.deleteAttribute(k); return g; });
+    return mergeGeometries(gs, false);
+  }
+  // fold the chain/bracket mesh into the lantern body's iron mesh (Props' housing is already one mesh per material)
+  function fuse(hg, extra) {
+    if (!hg || !extra) return false; let body = null, n = -1;
+    hg.traverse(o => { if (!o.isMesh || (o.material && o.material.emissive && o.material.emissive.getHex() !== 0) || (o.material && o.material.transparent)) return;
+      const c = o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count; if (c > n) { n = c; body = o; } });
+    if (!body) return false; hg.updateMatrixWorld(true);
+    // Props draws the body with a shared vertex-coloured material (colour + roughness in alpha, metalness in 'vmet'):
+    // the chain takes the body's first vertex values for every extra attribute, so it is the same iron
+    const mine = body.geometry.index ? body.geometry.toNonIndexed() : body.geometry.clone();
+    const add = bakeGeo([extra], body), cnt = add.attributes.position.count;
+    for (const [k, a] of Object.entries(mine.attributes)) { if (add.attributes[k]) continue;
+      const arr = new a.array.constructor(cnt * a.itemSize); for (let i = 0; i < cnt; i++) for (let j = 0; j < a.itemSize; j++) arr[i * a.itemSize + j] = a.array[j];
+      add.setAttribute(k, new THREE.BufferAttribute(arr, a.itemSize, a.normalized)); }
+    const g = mergeGeometries([mine, add], false); if (!g) return false;
+    body.geometry = g; body.castShadow = false; extra.parent && extra.parent.remove(extra); extra.geometry.dispose(); return true;
+  }
   const rc = new THREE.Raycaster();
   function solids() { const out = []; scene.traverse(o => { const m = o.material; if ((o.isMesh || o.isInstancedMesh) && o.visible && !o.isSprite && m && !Array.isArray(m) && !m.transparent && !(m.alphaTest > 0) && !m.isShaderMaterial && !o.userData.noHang) out.push(o); }); return out; }
   const postM = new THREE.MeshStandardMaterial({ color: 0x5E3B24, roughness: .85 });
   function chain(a, b) {      // links from a (bottom) to b (top)
-    const L = a.distanceTo(b), n = Math.max(1, Math.round(L / .042));
-    const im = new THREE.InstancedMesh(linkGeo, ironM, n); im.userData.noHang = true; im.castShadow = false;
+    const L = a.distanceTo(b), n = Math.max(1, Math.round(L / .058));
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = b.clone().sub(a).normalize(), base = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), up);
-    for (let i = 0; i < n; i++) { q.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (i % 2) * Math.PI / 2, Math.PI / 2))); m.compose(a.clone().lerp(b, (i + .5) / n), q, V(1, 1.25, 1)); im.setMatrixAt(i, m); }
+    const gs = [];
+    for (let i = 0; i < n; i++) { q.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (i % 2) * Math.PI / 2, Math.PI / 2))); m.compose(a.clone().lerp(b, (i + .5) / n), q, V(1, 1.75, 1)); gs.push(linkGeo.clone().applyMatrix4(m)); }
+    const im = new THREE.Mesh(mergeGeometries(gs, false), ironM); im.userData.noHang = true; im.castShadow = false;
     scene.add(im); lastChain = im; return im;
   }
   let lastChain = null, lastHang = null;  // [WIND] what the last hang() built, so a lantern outside can swing in the wind
   function hang(pos, topOff = .23) {
     const top = pos.clone().add(V(0, topOff, 0)), list = solids();
     rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = rc.intersectObjects(list, false)[0];
-    if (up) { chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 6, 12), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); hook.userData.noHang = true; scene.add(hook); lastHang = { top: up.point.clone(), chain: lastChain }; return 'chain'; }
+    if (up) { const ch = chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 4, 10), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); scene.add(hook);
+      ch.geometry = bakeGeo([ch, hook]); ch.position.set(0, 0, 0); ch.quaternion.identity(); ch.scale.set(1, 1, 1); scene.remove(hook); lastHang = { top: up.point.clone(), chain: ch }; return 'chain'; }
     // bracket: find the nearest vertical surface around the lantern's top
     let best = null;
     for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, d = V(Math.cos(a), 0, Math.sin(a)); const o = top.clone().add(V(0, .25, 0)); rc.set(o, d); rc.far = 1.3; const h = rc.intersectObjects(list, false)[0]; if (h && (!best || h.distance < best.h.distance)) best = { h, d }; }
@@ -108,7 +136,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
 
   function bulbMesh(pos, r, col = 0xFFE0A0) {
     const m = new THREE.MeshStandardMaterial({ color: col, emissive: 0xFF9A30, emissiveIntensity: 0, roughness: .4 });
-    const b = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), m); b.position.copy(pos); scene.add(b); return m;
+    const b = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 7), m); b.position.copy(pos); scene.add(b); return m;
   }
 
   // a source: lights (with their full intensity), emissive materials (with full emissiveIntensity / opacity)
@@ -149,10 +177,18 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
   const bPos = V(-2.0, BD + 1.95, 2.95);   // over the aisle in front of the bunk (Props moved it), not over the top bunk
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
-    housing(bPos); hang(bPos); const panes = claimHousing(bPos);
+    // Pavel: cosy, not bright. A warm, muted lantern whose main light is a shadowed cone falling down and back onto the
+    // bunk, so the upper bunk throws its shadow over the lower one (one 512/1024 spot map, redrawn only while the hero
+    // is in the room); a weak unshadowed fill keeps the corners and the walls above the cone from going black.
+    const l = new THREE.PointLight(0xFFA54E, 0, MOBILE ? 5.5 : 5, MOBILE ? 1.4 : 1.6); l.position.copy(bPos); scene.add(l);
+    const bs = new THREE.SpotLight(0xFFA54E, 0, 6, 1.12, .65, 1.4); bs.position.copy(bPos).add(V(0, -.08, 0));
+    bs.target.position.set(-2.25, BD + .35, 1.75); scene.add(bs, bs.target);
+    bs.castShadow = true; bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
+    bs.shadow.bias = -.0015; bs.shadow.normalBias = .03; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
+    const hg = housing(bPos); lastHang = null; hang(bPos); const panes = claimHousing(bPos);
+    if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: MOBILE ? 7 : 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 3.6 : 3.4 }, { l, I: MOBILE ? .8 : .6 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -171,6 +207,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.SpotLight(0xFFB25E, 0, 5.5, 1.1, .7, 1.6); l.position.copy(p);
     l.target.position.copy(p).add(V(0, -3, .2)); scene.add(l, l.target);
     const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
+    if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;
     add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
     // [WIND] the whole lantern (body, bulb, light, chain) hangs from one pivot at the chain's top: game/housewind.js swings it
     if (lastHang) { const piv = new THREE.Group(); piv.position.copy(lastHang.top); scene.add(piv); piv.updateMatrixWorld(true);
@@ -310,7 +347,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // Light also leaves through the back windows onto the trunk (desktop: a small spill light; phones: halo only).
   const ROOMS = {
     kitchen:  { c: V(-2.65, KT + 1.05, 2.5), bounce: 2.0 },
-    bedroom:  { c: V(-1.9, BD + 1.1, 2.3), bounce: 1.6 },
+    bedroom:  { c: V(-1.9, BD + 1.1, 2.3), bounce: .9 },   // cosy: little bounce, the corners stay dusky
     workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
   };
   const glows = [];
@@ -351,18 +388,83 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const CUR_COL = { kitchen: 0xB0473A, bedroom: 0xD8B886, workshop: 0x6F7C55 };
   const curGeo = (() => { const g = new THREE.PlaneGeometry(1, 1, 14, 1); g.translate(.5, 0, 0); const P = g.attributes.position;
     for (let i = 0; i < P.count; i++) P.setZ(i, Math.sin(P.getX(i) * Math.PI * 7) * .018); g.computeVertexNormals(); return g; })();
-  const curtains = [];
+  // All curtains and rods of the house are ONE mesh (was 3 draws per window): vertex colours give each room its cloth and
+  // the rods their iron; the panels are moved on the CPU when they draw (a few hundred vertices, only while moving);
+  // aGlow (per vertex, per frame) is the lamp shining through the cloth; the hem sway in a draught is in the vertex
+  // shader with one slot per window (aWin), fed from Wind's own per-window uniforms (see windSlots below).
+  const curtains = [], CUR_MAX = 8;
+  const curParts = [];   // {c, side (0 = rod), base geometry (panel-local), start index in the merged buffer}
   for (const w of windows) {
     const glassM = w.g && w.g.children.find(c => c.geometry && c.geometry.type === 'PlaneGeometry');
-    if (!glassM || !w.n) continue;
+    if (!glassM || !w.n || curtains.length >= CUR_MAX) continue;
     const { width: W, height: H } = glassM.geometry.parameters;
     const inL = w.n.clone().negate().applyQuaternion(w.g.quaternion.clone().invert()); const sz = Math.sign(inL.z) || 1;
-    const mat = new THREE.MeshStandardMaterial({ color: CUR_COL[w.room] || 0xC9A57A, roughness: .95, side: THREE.DoubleSide, emissive: CUR_COL[w.room] || 0xC9A57A, emissiveIntensity: 0 });
-    const panels = [-1, 1].map(side => { const m = new THREE.Mesh(curGeo, mat); m.position.set(side * (W / 2 + .03), .02, sz * .075);
-      m.scale.set(-side * .2, H + .12, 1); m.castShadow = true; m.receiveShadow = true; m.userData.noHang = true; w.g.add(m); return { m, side }; });
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, W + .16, 6), ironM); rod.rotation.z = Math.PI / 2; rod.position.set(0, H / 2 + .085, sz * .075); rod.userData.noHang = true; w.g.add(rod);
-    curtains.push({ w, W, mat, panels, closed: 0 });
+    // Wind's hook (housewind.js) wants a material per curtain: a stand-in that is never drawn; its uniforms are read back
+    const c = { w, W, H, sz, idx: curtains.length, mat: new THREE.MeshStandardMaterial(), closed: 0, dirty: true, col: new THREE.Color(CUR_COL[w.room] || 0xC9A57A) };
+    c.pos = w.g.getWorldPosition(V());
+    curtains.push(c);
+    for (const side of [-1, 1]) curParts.push({ c, side, geo: curGeo });
+    const rg = new THREE.CylinderGeometry(.008, .008, W + .16, 6).toNonIndexed(); rg.rotateZ(Math.PI / 2); rg.translate(0, H / 2 + .085, sz * .075);
+    curParts.push({ c, side: 0, geo: rg });
     w.leak = 1;
+  }
+  let curMesh = null, curPosA = null, curNorA = null, curGlowA = null;
+  const curU = { uCT: { value: 0 }, uCK: { value: new Array(CUR_MAX).fill(0) }, uCS: { value: new Array(CUR_MAX).fill(0) },
+    uCN: { value: Array.from({ length: CUR_MAX }, () => V()) }, uCX: { value: Array.from({ length: CUR_MAX }, () => V()) } };
+  if (curParts.length) {
+    const pg = curGeo.index ? curGeo.toNonIndexed() : curGeo; const pN = pg.attributes.position.count;
+    let n = 0; for (const p of curParts) { p.g = p.side ? pg : p.geo; p.start = n; n += p.g.attributes.position.count; }
+    const geo = new THREE.BufferGeometry();
+    curPosA = new THREE.BufferAttribute(new Float32Array(n * 3), 3); curNorA = new THREE.BufferAttribute(new Float32Array(n * 3), 3);
+    curGlowA = new THREE.BufferAttribute(new Float32Array(n), 1);
+    const col = new Float32Array(n * 3), win = new Float32Array(n), loc = new Float32Array(n * 2), iron = new THREE.Color(0x2C2F35);
+    for (const p of curParts) { const P = p.g.attributes.position, k = p.c.col, cc = p.side ? k : iron;
+      for (let i = 0; i < P.count; i++) { const j = p.start + i; col.set([cc.r, cc.g, cc.b], j * 3); win[j] = p.side ? p.c.idx : -1;
+        loc[j * 2] = p.side ? P.getX(i) : 0; loc[j * 2 + 1] = p.side ? P.getY(i) : .5; } }
+    geo.setAttribute('position', curPosA); geo.setAttribute('normal', curNorA); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('aGlow', curGlowA); geo.setAttribute('aWin', new THREE.BufferAttribute(win, 1)); geo.setAttribute('aLoc', new THREE.BufferAttribute(loc, 2));
+    curPosA.setUsage(THREE.DynamicDrawUsage); curNorA.setUsage(THREE.DynamicDrawUsage); curGlowA.setUsage(THREE.DynamicDrawUsage);
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, side: THREE.DoubleSide });
+    mat.onBeforeCompile = sh => { Object.assign(sh.uniforms, curU);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+attribute float aGlow, aWin; attribute vec2 aLoc; varying float vGlow;
+uniform float uCT, uCK[${CUR_MAX}], uCS[${CUR_MAX}]; uniform vec3 uCN[${CUR_MAX}], uCX[${CUR_MAX}];`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+vGlow = aGlow;
+if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
+  float hw = clamp(.5 - aLoc.y, 0., 1.); hw *= hw;     // the hem moves, the rod end stays (same draught as housewind.js)
+  float wv = sin(uCT * 2.1 + aLoc.x * 5. + sd) * .6 + sin(uCT * 3.3 - aLoc.x * 8. + sd * 2.) * .4;
+  transformed += uCN[wi] * (k * hw * (.04 + .05 * wv)) + uCX[wi] * (k * hw * .02 * sin(uCT * 1.7 + sd)); }`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlow;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vGlow;'); };
+    mat.customProgramCacheKey = () => 'curtainsMerged';
+    curMesh = new THREE.Mesh(geo, mat); curMesh.castShadow = true; curMesh.receiveShadow = true; curMesh.userData.noHang = true; curMesh.name = 'curtains';
+    scene.add(curMesh);
+  }
+  const _cm = new THREE.Matrix4(), _cn = new THREE.Matrix3(), _cv = V(), _pm = new THREE.Matrix4();
+  function layCurtain(c) {      // panel transforms in the window's frame -> world, written into the merged buffer
+    c.w.g.updateMatrixWorld(true);
+    const half = c.W / 2 + .05, wd = .1 + (half - .1) * c.closed;     // each panel: bunched 10 cm .. meets in the middle
+    for (const p of curParts) { if (p.c !== c) continue;
+      if (p.side) _pm.compose(V(p.side * (c.W / 2 + .03), .02, c.sz * .075), new THREE.Quaternion(), V(-p.side * wd, c.H + .12, 1)); else _pm.identity();
+      _cm.multiplyMatrices(c.w.g.matrixWorld, _pm); _cn.getNormalMatrix(_cm);
+      const P = p.g.attributes.position, N = p.g.attributes.normal;
+      for (let i = 0; i < P.count; i++) { const j = p.start + i;
+        _cv.fromBufferAttribute(P, i).applyMatrix4(_cm); curPosA.setXYZ(j, _cv.x, _cv.y, _cv.z);
+        _cv.fromBufferAttribute(N, i).applyMatrix3(_cn).normalize(); curNorA.setXYZ(j, _cv.x, _cv.y, _cv.z); } }
+    curPosA.needsUpdate = true; curNorA.needsUpdate = true; c.dirty = false;
+    // sway axes for the shader: the window's in/out direction and its width direction, in world space
+    curU.uCN.value[c.idx].set(0, 0, 1).transformDirection(c.w.g.matrixWorld); curU.uCX.value[c.idx].set(1, 0, 0).transformDirection(c.w.g.matrixWorld);
+  }
+  for (const c of curtains) layCurtain(c);
+  if (curMesh) { curMesh.geometry.computeBoundingSphere(); curMesh.geometry.boundingSphere.radius += .3; }
+  // Wind hooks each stand-in material (onBeforeCompile + uniforms uCurK/uCurT/uCurS). They are never compiled, so we
+  // run that hook once on a dummy shader to get Wind's uniform objects, then copy their values into our arrays.
+  function windSlots() {
+    for (const c of curtains) {
+      if (!c.wu && c.mat.userData.windCur && c.mat.onBeforeCompile) { const sh = { uniforms: {}, vertexShader: '', fragmentShader: '' }; try { c.mat.onBeforeCompile(sh); } catch (e) {} c.wu = sh.uniforms.uCurK ? sh.uniforms : null; }
+      if (c.wu) { curU.uCK.value[c.idx] = c.wu.uCurK.value; curU.uCS.value[c.idx] = c.wu.uCurS.value; curU.uCT.value = c.wu.uCurT.value; }
+    }
   }
   window.__curtains = curtains;   // [WIND] housewind.js lets them stir in a draught on gusty days
   let lockK = 0, curForce = false;
@@ -377,12 +479,12 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       }
       c.want = want;
       c.closed += (want - c.closed) * Math.min(1, dt * .5);
-      const half = c.W / 2 + .05, wd = .1 + (half - .1) * c.closed;     // each panel: bunched 10 cm .. meets in the middle
-      for (const { m, side } of c.panels) m.scale.x = -side * wd;
-      const wr = Math.min(1, warm[c.w.room] || 0) * (1 - dayK);
-      c.mat.emissiveIntensity = wr * .55;
+      if (Math.abs(c.closed - (c.laid ?? -1)) > .002) { c.laid = c.closed; layCurtain(c); }
+      const wr = Math.min(1, warm[c.w.room] || 0) * (1 - dayK) * .55;
+      if (Math.abs(wr - (c.glow ?? -1)) > .003) { c.glow = wr; for (const p of curParts) if (p.c === c && p.side) curGlowA.array.fill(wr, p.start, p.start + p.g.attributes.position.count); curGlowA.needsUpdate = true; }
       c.w.leak = 1 - .3 * Math.min(1, c.closed / .5) - .62 * Math.max(0, (c.closed - .5) / .5);
     }
+    if (curMesh) windSlots();
   }
 
   // ---------- lit windows warm the leaves and branches right next to them (photo) ----------
@@ -413,8 +515,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
 {vec3 wg=vec3(0.);vec3 nW=normalize((vec4(normal,0.)*viewMatrix).xyz);for(int i=0;i<${WG_N};i++){vec3 dv=wgP[i].xyz-vWGp;float d=length(dv)/max(wgP[i].w,.001);float k=clamp(1.-d,0.,1.);float wr=clamp(dot(nW,dv/max(length(dv),.001))*.6+.4,0.,1.);wg+=wgC[i]*k*k*wr;}
  totalEmissiveRadiance+=wg*diffuseColor.rgb;}`);
     };
-    const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => key() + (wgOn ? '|winglow' : '');
+    // explicit program key: the material's own key if it had one, else the source of the hook we wrapped (three's default
+    // key is onBeforeCompile.toString(), which after wrapping would be OUR wrapper for every material -> shared programs)
+    const own = Object.prototype.hasOwnProperty.call(mat, 'customProgramCacheKey') ? mat.customProgramCacheKey.bind(mat) : null, prevSrc = prev ? prev.toString() : '';
+    mat.customProgramCacheKey = () => (own ? own() : prevSrc) + (wgOn ? '|winglow' : '');
     mat.needsUpdate = true;
   }
   if (TREE && wgSrc.length) { if (TREE.bark) treeGlow(TREE.bark.material); if (TREE.leaves) treeGlow(TREE.leaves.material); }
@@ -527,7 +631,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     t += dt; frame++;
     // cooking, or stoking (the log goes in while the little door is open): the fire is fed
     const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
-    cookT = cooking ? 23 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (8-minute day: a night hour is 18 s)
+    cookT = cooking ? 78 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s)
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {

@@ -153,6 +153,8 @@ export function createAudio(ctx) {
   const RAW = {}, B = {}, USED = {}, PENDING = {};
   const BUDGET_S = 140;   // seconds of decoded audio kept at most (~27 MB at 48 kHz, ~18 MB at 32 kHz)
   let decodedS = 0;
+  // play now if decoded, else right after decoding (a first use must not be lost)
+  function vplay(k, o) { if (B[k] || k.startsWith('syn_')) return voice(k, o); decode(k).then(b => { if (b && !muted) voice(k, o); }); return null; }
   function getBuf(k) { if (k.charCodeAt(0) === 115 && k.startsWith('syn_')) return synBuf(k); const b = B[k]; if (b) { USED[k] = now; return b; } decode(k); return null; }
   function decode(k) {
     if (B[k]) return Promise.resolve(B[k]); if (PENDING[k]) return PENDING[k]; if (!RAW[k] || !A) return Promise.resolve(null);
@@ -173,7 +175,7 @@ export function createAudio(ctx) {
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) try { f(e); } catch (er) { console.error('audio', k, er); } };
   const MOB = !!ctx.mobile;
   const MAXV = MOB ? 9 : 14;   // phones: fewer simultaneous voices (each is a panner + filter + gain)
-  let pondSig = null, pondFar = false, layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
+  let gameDay = 0, pondSig = null, pondFar = false, layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
   const ind = {};          // individuals per layer
   const mult = {};         // today's / tonight's personality per layer
   const center = { x: 0, z: 0 };
@@ -530,6 +532,10 @@ export function createAudio(ctx) {
   function hookCritters() {
     if (critHooked) return; const G = window.__ground; if (!G || typeof G.on !== 'function') return; critHooked = true;
     G.on('critter', critter);
+    // the bucket dips into the pond: a splash, then the water rushing in (the hero's own bucket_fill gurgle follows)
+    G.on('pond', e => { if (!e || !loaded || muted || (e.act && e.act !== 'splash')) return; const k = clamp01(e.k ?? .7), q = toPos(e.pos);
+      vplay(pick(['slosh_a', 'slosh_b']), { pos: q, gain: .22 + .3 * k, rate: rnd(1.05, 1.2), dur: rnd(.45, .7), offset: 0, fadeIn: .004, fadeOut: .2, ref: 3, roll: 1, rev: .25, prio: true });
+      if (k > .4) vplay('drip_bucket_a', { pos: q, gain: .18 * k, rate: rnd(.6, .75), delay: rnd(.08, .16), fadeIn: .003, fadeOut: .15, ref: 3, roll: 1, rev: .3, prio: true }); });
   }
 
   // ---------- house sway (Wind): ropes strain, lantern hooks squeak, hinges creak, a loose shutter knocks ----------
@@ -566,7 +572,7 @@ export function createAudio(ctx) {
   // ---------- footsteps: surface under the foot, at the moment the foot lands ----------
   // Character can drive them exactly with __audio.footstep(side, pos?, {surface}); until it does, audio.js watches
   // the toe bones itself: a foot that comes down to the floor after being lifted is a step.
-  let gnow = 0, breathNext = 0, clothNext = 0, moving = false, carrying = false, dbgF = null, autoFeet = true, ladderNext = 0, cadNext = 0, cadSide = 'L', frameDt = .016;
+  let frameDtG = .016, gameRate = 1, gnow = 0, breathNext = 0, clothNext = 0, moving = false, carrying = false, dbgF = null, autoFeet = true, ladderNext = 0, cadNext = 0, cadSide = 'L', frameDt = .016;
   const FT = { boards: ['step_wood_a', 'step_wood_b', 'step_wood_c'], dirt: ['fs_dirt_a', 'fs_dirt_b', 'fs_dirt_c'], wet: ['fs_wet_a', 'fs_wet_b', 'fs_wet_c'],
     leaves: ['fs_leaves_a', 'fs_leaves_b', 'fs_leaves_c'], ladder: ['fs_ladder_a', 'fs_ladder_b'], rope: ['fs_rope_a', 'fs_rope_b'], roof: ['step_wood_c', 'step_wood_a'] };
   const FV = { boards: .2, dirt: .2, wet: .22, leaves: .24, ladder: .22, rope: .24, roof: .15 };
@@ -578,32 +584,59 @@ export function createAudio(ctx) {
     if (env.season === 'autumn') return Math.random() < .65 ? 'leaves' : 'dirt';
     return 'dirt';
   }
-  function step(side, pos, surface, gain = 1) {
+  function step(side, pos, surface, gain = 1, delay = 0, shuffle = false) {
     if (!loaded || muted) return;
     const list = FT[surface] || FT.boards, q = toPos(pos);
     if (surface === 'roof' && Math.random() < .45) { const o2 = { pos: q, gain: .035 * gain, rate: rnd(1.1, 1.4), fadeIn: .003, fadeOut: .05, ref: 3, roll: 1, rev: .15, delay: rnd(.03, .09) }; voice('syn_peck_' + (Math.random() < .5 ? 0 : 1), o2); }   // a loose shingle ticks
-    const clip = pick(list), o = { pos: q, gain: (FV[surface] || .2) * gain * rnd(.75, 1.05), rate: surface === 'roof' ? rnd(1.15, 1.3) : rnd(.9, 1.1), ref: 3, roll: 1, rev: .15, prio: true, indoor: q.y > .6, fadeIn: .005, fadeOut: .08 };
+    const clip = pick(list), o = { pos: q, gain: (FV[surface] || .2) * gain * rnd(.75, 1.05), rate: surface === 'roof' ? rnd(1.15, 1.3) : rnd(.9, 1.1), ref: 3, roll: 1, rev: .15, prio: true, indoor: q.y > .6, fadeIn: .005, fadeOut: .08, delay };
+    if (shuffle) { o.gain *= .3; o.rate *= 1.08; o.dur = rnd(.1, .16); o.offset = rnd(.02, .06); o.fadeIn = .02; o.fadeOut = .06; o.prio = false; }   // a soft scuff
     if (B[clip]) voice(clip, o); else decode(clip).then(() => voice(clip, o));
   }
   const _w = { x: 0, y: 0, z: 0 };
   function feet(p, mv, vy, env) {
     const B2 = ctx.bones; if (!B2) return;
-    // climbing: a rung every ~0.45 s
+    const FL = window.__feetLog;                                            // QA only: per-frame foot heights and step times
+    // climbing: a rung sound when a foot settles on the next rung (its world speed drops after a lift), from the bones
     if (Math.abs(vy) > .25 && mv < .35) { if (vy > 0 && gnow > breathNext) { playAct('breath_climb'); breathNext = gnow + rnd(2.2, 3.4); }
-      if (gnow > ladderNext) { step('L', { x: p.x, y: p.y + .2, z: p.z }, ctx.ropeAt && ctx.ropeAt(p) ? 'rope' : 'ladder'); ladderNext = gnow + rnd(.4, .55); } return; }
-    if (mv < .25) { footSt.L.armed = footSt.R.armed = false; moving = false; return; }
+      const surf = ctx.ropeAt && ctx.ropeAt(p) ? 'rope' : 'ladder', fdt = Math.max(1e-3, frameDtG);
+      for (const [side, bn] of [['L', B2.LeftFoot || B2.LeftToeBase], ['R', B2.RightFoot || B2.RightToeBase]]) {
+        if (!bn) continue; const w = bn.getWorldPosition(ctx.v3 || (ctx.v3 = new bn.position.constructor())), st = footSt[side];
+        const fv = st.ly == null ? 0 : (w.y - st.ly) / fdt; st.ly = w.y;
+        if (Math.abs(fv) > .55) st.rung = Math.sign(fv);                         // the foot is travelling to the next rung
+        else if (st.rung && Math.abs(fv) < .12) { st.rung = 0; if (gnow > ladderNext) { step(side, w, surf); ladderNext = gnow + .18; if (FL) FL.push(['S', +gnow.toFixed(3), side, 'rung']); } }
+      }
+      if (gnow > ladderNext + 1.2) { step('L', { x: p.x, y: p.y + .2, z: p.z }, surf); ladderNext = gnow + rnd(.4, .55); }   // no bone signal (an old clip): a rung by cadence
+      footSt.L.lx = footSt.R.lx = null; return; }
+    footSt.L.rung = footSt.R.rung = 0; footSt.L.ly = footSt.R.ly = null;
+    if (mv < .12) { footSt.L.armed = footSt.R.armed = false; footSt.L.lx = footSt.R.lx = footSt.L.lsp = footSt.R.lsp = footSt.L.lsp2 = footSt.R.lsp2 = null; moving = false; return; }
     // clothes rustle as he sets off, and now and then on the way; heavier breath when carrying something
     if (!moving || gnow > clothNext) { if (!moving && Math.random() < .55 || moving) playAct('cloth', { x: p.x, y: p.y + 1.1, z: p.z }); clothNext = gnow + rnd(4, 9); }
     moving = true;
     if (carrying && gnow > breathNext) { playAct('breath_heavy'); breathNext = gnow + rnd(2.8, 4.5); }
     // slow frames (a weak phone, a background tab): the toe lift falls between frames, so walk by cadence instead
-    if (frameDt > .08) { if (gnow > cadNext) { cadSide = cadSide === 'L' ? 'R' : 'L'; step(cadSide, p, surfaceAt(p, env), Math.min(1.2, .6 + mv * .4)); cadNext = gnow + .62 / Math.max(.6, mv); } return; }
-    for (const [side, bn] of [['L', B2.LeftToeBase || B2.LeftFoot], ['R', B2.RightToeBase || B2.RightFoot]]) {
-      if (!bn) continue; const w = bn.getWorldPosition(ctx.v3 || (ctx.v3 = new bn.position.constructor()));
-      const hgt = w.y - p.y, st = footSt[side];
-      st.base = Math.min(hgt, (st.base ?? hgt) + frameDt * .03);          // the planted height of this foot (adapts to the clip)
-      if (hgt > st.base + .05) st.armed = true;
-      else if (st.armed && hgt < st.base + .018) { st.armed = false; step(side, w, surfaceAt(w, env), Math.min(1.2, .6 + mv * .4)); }
+    if (frameDt > .08 && !window.__feetBones) { if (gnow > cadNext) { cadSide = cadSide === 'L' ? 'R' : 'L'; step(cadSide, p, surfaceAt(p, env), Math.min(1.2, .6 + mv * .4)); cadNext = gnow + .62 / Math.max(.6, mv); } return; }
+    // foot contact from the bones: a foot in swing travels at 2-3x walking speed, a planted foot stands still. The strike is
+    // the moment the swinging foot stops (its world speed drops through a threshold scaled to the walk). It is predicted
+    // from the deceleration, so the sound is scheduled inside the frame, not a frame late. (The new hero lifts the heel
+    // only 4-6 cm, so height alone misses steps.)
+    const fdt = Math.max(1e-3, frameDtG);
+    for (const [side, hb, tb] of [['L', B2.LeftFoot, B2.LeftToeBase], ['R', B2.RightFoot, B2.RightToeBase]]) {
+      const bn = hb || tb; if (!bn) continue; const w = bn.getWorldPosition(ctx.v3 || (ctx.v3 = new bn.position.constructor()));
+      const st = footSt[side]; const sp = st.lx == null ? 0 : Math.hypot(w.x - st.lx, w.z - st.lz) / fdt; st.lx = w.x; st.lz = w.z;
+      const rx = w.x - p.x, rz = w.z - p.z, still = st.rx != null && Math.hypot(rx - st.rx, rz - st.rz) < 2e-4; st.rx = rx; st.rz = rz;
+      if (still && sp > .2) continue;                                          // the pose was not advanced this frame (the foot only rode along with the root)
+      const prev = st.lsp ?? sp; st.lsp = sp;
+      if (FL) FL.push(['H', +gnow.toFixed(3), side, +sp.toFixed(3), +mv.toFixed(3)]);
+      const up = Math.max(1.1, 1.5 * mv), thr = Math.max(.3, .3 * mv);
+      const med = Math.max(Math.min(sp, prev), Math.min(Math.max(sp, prev), st.lsp2 ?? sp)); st.lsp2 = prev;   // median of 3: a one-frame foot snap is not a swing
+      if (med > up && gnow - (st.last ?? -9) > .3) { if (!st.armed) st.peak = 0; st.armed = true; }        // one strike per stride: never twice within .3 s
+      if (st.armed) st.peak = Math.max(st.peak || 0, med);
+      const shuf = (st.peak || 0) < Math.max(1.6, 1.9 * mv);                    // a small re-plant (turning, starting, stopping): a soft shuffle, not a footstep
+      if (st.armed && !(med > up)) {
+        const next = sp + (sp - prev);                                          // the speed one frame on
+        if (sp < thr) { st.armed = false; st.last = gnow; step(side, w, surfaceAt(w, env), Math.min(1.2, .6 + mv * .4), 0, shuf); if (FL) FL.push(['S', +gnow.toFixed(3), side, shuf ? 'shuffle' : 'now']); }
+        else if (sp < prev && sp < 2.2 * thr && next < thr) { st.armed = false; st.last = gnow; const dl = Math.min(fdt, fdt * (sp - thr) / Math.max(1e-3, sp - next)) / Math.max(.25, gameRate); step(side, w, surfaceAt(w, env), Math.min(1.2, .6 + mv * .4), dl, shuf); if (FL) FL.push(['S', +(gnow + dl * gameRate).toFixed(3), side, shuf ? 'shuffle' : 'pred']); }
+      }
     }
   }
   const lastHero = { x: 0, y: 0, z: 0 };
@@ -614,7 +647,7 @@ export function createAudio(ctx) {
     if (!loaded || muted || A.state !== 'running') return;
     // real seconds from the audio clock: the frame dt is clamped and slows down on weak devices
     const pn = performance.now() / 1000, rawDt = update.pn ? pn - update.pn : .016; update.pn = pn;
-    const gdt = Math.max(1e-3, dt); gnow += gdt;   // game-time frame step (the hero's animation runs on it)
+    const gdt = Math.max(1e-3, dt); gnow += gdt; frameDtG = gdt; gameRate = gameRate * .9 + Math.min(4, gdt / Math.max(1e-3, rawDt)) * .1;   // game-time frame step (the hero's animation runs on it)
     const t = A.currentTime; dt = clamp01(t - (update.t ?? t)); update.t = t; now += dt;
     acoustics(dt);
     if (loops.size) tickLoops();
@@ -630,12 +663,13 @@ export function createAudio(ctx) {
     if (wState === 'storm' && !wHooked && now > thunderNext) { if (thunderNext > 0) thunder(rnd(1200, 4000), rnd(.4, .8)); thunderNext = now + rnd(25, 60); }
     // the hero getting up in the morning wakes the garden
     if (wasAsleep && !asleep && h > 4 && h < 10.5) kick = 1;
-    wasAsleep = asleep; kick = Math.max(0, kick - dt / 70);
+    wasAsleep = asleep; kick = Math.max(0, kick - dt / 180);   // the wake-up chorus fades over ~3 game hours (1 game hour = 1 real minute)
     // a new night / a new day: new personalities, new territories
     if (lastH === null) { populate(Object.keys(L), env); }
     else {
       if (lastH < 18 && h >= 18) populate(NIGHT, env);
       if (lastH < 4 && h >= 4) populate(DAY, env);
+      if (h < lastH - 12) gameDay++;                                    // midnight
     }
     lastH = h;
     { const P = pondGeo(), sig = P.x + P.z * 7 + P.r * 13; if (sig !== pondSig) { if (pondSig !== null) for (const k in L) if (L[k].pondy && ind[k]) for (const I of ind[k]) I.pos = place('pond'); pondSig = sig; } }
@@ -649,7 +683,7 @@ export function createAudio(ctx) {
     bed('rain', ['rain_a'], rain * rk, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
     // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
     bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
-    rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 60);
+    rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 120);   // the ground stays wet ~2 game hours after rain
     if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
     // the oven fire, where the oven is
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
@@ -678,9 +712,61 @@ export function createAudio(ctx) {
       frameDt = frameDt * .8 + Math.min(.5, rawDt) * .2;
       dbgF = [+mv.toFixed(2), +vy.toFixed(2), +frameDt.toFixed(3), +p.y.toFixed(2)];
       if (autoFeet) feet(p, mv, vy, env);
-      houseWatch(hero, mv);
+      houseWatch(hero, mv); toolSync(hero);
       if (!asleep && mv < .1 && Math.abs(vy) < .1 && now > idleBreath) { idleBreath = now + rnd(3, 4.2); const at = { x: p.x, y: p.y + 1.5, z: p.z }; if (nearCam(at, 3.5)) voice('syn_breath_' + Math.floor(Math.random() * 2), { pos: at, gain: .045, rate: rnd(1.3, 1.45), ref: 1, roll: 1.6, rev: .08, indoor: true, fadeIn: .05, fadeOut: .25 }); }
       if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
+    }
+  }
+
+  // ---------- tool contact (hammer hits, saw strokes, stir scrapes) ----------
+  // Character can send exact contacts: __audio.contact({tool, kind:'hit'|'stroke'|'scrape', pos, strength, dur, dir}).
+  // Until it does, they are read from the right hand while it holds a tool: a hammer hits when the downward swing stops,
+  // a saw stroke starts at each reversal along the facing direction (and lasts as long as the last one did), a stir scrape
+  // plays at each peak of hand speed. While this runs, hero.js's timer-based hammer / nails / saw calls are muted.
+  let toolAuto = true; const TS = { tool: null, lx: 0, ly: 0, lz: 0, vy: 0, vs: 0, s: 0, ls: null, lt: 0, strokeT: .45, sp: 0, lsp: 0, last: -9 };
+  const TOOLK = n => !n ? null : /hammer/i.test(n) ? 'hammer' : /saw/i.test(n) ? 'saw' : /ladle|spoon/i.test(n) ? 'spoon' : null;
+  function contact(e, internal) {
+    if (!e || !loaded || muted) return; if (!internal) toolAuto = false;
+    if (window.__feetLog) window.__feetLog.push(['TC', +gnow.toFixed(3), e.tool || e.kind, +(e.dur || 0).toFixed(2)]);
+    const q = toPos(e.pos), k = clamp01(e.strength ?? .8), t = e.tool;
+    if (t === 'hammer' || e.kind === 'hit') { TS.last = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); if (Math.random() < .5) playAct('nails', q, { gain: .35 * k, delay: .012, internal: 1 }); return; }
+    if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); vplay(c, o); TS.last = now; return; }
+    if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); vplay(c, o); TS.last = now; }
+  }
+  function toolSync(hero) {
+    if (!toolAuto || !hero || !hero.hold || !ctx.bones || !ctx.bones.RightHand) { TS.tool = null; return; }
+    const h = hero.hold.Right, tool = TOOLK(h && (h.tool || h.name || (typeof h === 'string' ? h : '')));
+    if (tool !== TS.tool) { TS.tool = tool; TS.ls = null; TS.vy = 0; TS.sp = TS.lsp = 0; TS.ext = TS.ext0 = null; TS.lt = 0; TS.pk = 0; }
+    if (!tool) return;
+    const fdt = Math.max(1e-3, frameDtG), r = hero.root, w = ctx.bones.RightHand.getWorldPosition(ctx.v6 || (ctx.v6 = new r.position.constructor()));
+    const x = w.x - r.position.x, y = w.y - r.position.y, z = w.z - r.position.z;
+    if (TS.ls === null) { TS.lx = x; TS.ly = y; TS.lz = z; TS.ls = 0; TS.lt = gnow; return; }
+    const vx = (x - TS.lx) / fdt, vy = (y - TS.ly) / fdt, vz = (z - TS.lz) / fdt; TS.lx = x; TS.ly = y; TS.lz = z;
+    const at = { x: w.x, y: w.y - .05, z: w.z };
+    if (window.__feetLog) window.__feetLog.push(['TH', +gnow.toFixed(3), tool, +y.toFixed(3), +vy.toFixed(2), +(vx * Math.sin(r.rotation.y) + vz * Math.cos(r.rotation.y)).toFixed(2), +Math.hypot(vx, vz).toFixed(2)]);
+    if (tool === 'hammer') {                                        // the head comes down fast, then stops on the nail
+      // impact: after a downswing (peak < -1 m/s) the hand brakes hard on the nail; the hit is when its speed falls under
+      // 40 % of the peak, interpolated inside the frame
+      if (vy < -1) TS.pk = Math.min(TS.pk || 0, vy);
+      if ((TS.pk || 0) < -1 && vy > .4 * TS.pk) { const k = clamp01((.4 * TS.pk - TS.vy) / Math.max(1e-3, vy - TS.vy)), dl = Math.max(0, (1 - k) * fdt) * 0;
+        if (gnow - (TS.hitG ?? -9) > .25) { TS.hitG = gnow; contact({ tool: 'hammer', kind: 'hit', pos: at, strength: clamp01(-TS.pk / 3) }, true); } TS.pk = 0; }
+      if (vy > .3) TS.pk = 0;                                        // lifted again without a hit
+      TS.vy = vy; return;
+    }
+    if (tool === 'saw') {                                           // strokes along the way he faces: a reversal is 1.5 cm back from the last extreme
+      const f = r.rotation.y, sx = x * Math.sin(f) + z * Math.cos(f);
+      if (TS.ext == null) { TS.ext = TS.ext0 = sx; TS.dir = 1; }
+      if (TS.dir > 0 ? sx > TS.ext : sx < TS.ext) TS.ext = sx;             // follow the stroke to its end
+      if (Math.abs(sx - TS.ext) > .008) {                                   // it came back 8 mm: the stroke turned
+        const nd = -TS.dir, half = TS.lt ? Math.min(1, Math.max(.2, gnow - TS.lt)) : TS.strokeT; TS.strokeT = half; TS.lt = gnow;
+        const amp = Math.abs(TS.ext - TS.ext0); TS.ext0 = TS.ext; TS.ext = sx; TS.dir = nd;
+        if (amp > .012) contact({ tool: "saw", kind: 'stroke', pos: at, strength: clamp01(.35 + amp / .15), dur: half / Math.max(.25, gameRate), dir: nd }, true);
+      }
+      return;
+    }
+    if (tool === 'spoon') {                                         // a scrape at each peak of the stirring hand's speed
+      const sp = Math.hypot(vx, vz); if (TS.lsp > TS.sp && TS.lsp > sp && TS.lsp > .15 && gnow - (TS.scrG ?? -9) > .45) { TS.scrG = gnow; contact({ tool: 'spoon', kind: 'scrape', pos: at, strength: clamp01(TS.lsp / .5), dur: .5 / Math.max(.25, gameRate) }, true); }
+      TS.sp = TS.lsp; TS.lsp = sp;
     }
   }
 
@@ -706,6 +792,10 @@ export function createAudio(ctx) {
     if (D && D.boltKnob) { const b = D.bolt > .5; if (HW.bolt !== null && b !== HW.bolt) playAct(b ? 'bolt_lock' : 'bolt_open', D.boltKnob(new (ctx.camera.position.constructor)())); HW.bolt = b; }
     if (P && P.dishes && P.dishes.state) {   // a plate put away from the rack onto the shelf: a soft clack each, staggered
       const r = P.dishes.state().rack; if (HW.rack !== null && r < HW.rack && P.point) { const sp = P.point('sink'); for (let i = 0; i < HW.rack - r; i++) playAct(i % 2 ? 'cup' : 'plate', sp, { delay: .35 + i * rnd(.45, .7), gain: .8 }); } HW.rack = r; }
+    if (P && P.oven && P.oven.handle) {             // the oven door: a hand on the iron latch, then the hinge
+      const k = P.oven.open; if (HW.oven != null) { if (HW.oven < .15 && k >= .15) playAct('oven_open', P.oven.handle()); else if (HW.oven > .08 && k <= .08) playAct('oven_close', P.oven.handle()); } HW.oven = k; }
+    if (hero && hero.hold) {                          // a tool taken from its hook or shelf, and hung back
+      for (const hd of ['Left', 'Right']) { const o = hero.hold[hd] || null, was = HW['h' + hd]; if (was !== undefined && o !== was) { const hp = hero.root.position; playAct('tool', { x: hp.x, y: hp.y + 1.1, z: hp.z }, o ? {} : { gain: .6, rate: .92 }); } HW['h' + hd] = o; } }
     const task = HW.force || hero && hero.task || null;
     if (task !== HW.task) { HW.task = task; HW.taskT = now; HW.next = {}; if (HW.loop) { HW.loop.stop(.8); HW.loop = null; } }
     const working = task && mv < .15 && now - HW.taskT > 1.5;
@@ -786,7 +876,8 @@ export function createAudio(ctx) {
   function playAct(name, pos, o = {}) {
     if (!A || muted || !loaded) return null;
     if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
-    if (name === 'bolt') return null;                                  // houseWatch plays lock / unlock from the door's real bolt
+    if (name === 'bolt') return null;
+    if (!o.internal && TS.tool && toolAuto && ((TS.tool === 'hammer' && /^(hammer|nails)$/.test(name)) || (TS.tool === 'saw' && name === 'saw') || (TS.tool === 'spoon' && name === 'stir'))) return null;   // contact-synced instead                                  // houseWatch plays lock / unlock from the door's real bolt
     if (/^hatch_/.test(name)) { if (now - HW.hatchT < 1.5) return null; HW.hatchT = now; }
     const a = ACT[name] || ACT[ALIAS[name]];
     const clip = a ? pick(a.c) : RAW[name] ? name : null;
@@ -872,7 +963,7 @@ export function createAudio(ctx) {
     const dk = t < duckUntil; if (mDuck && dk !== tickMusic.dk) { tickMusic.dk = dk; holdGain(mDuck.gain, t); mDuck.gain.setTargetAtTime(dk ? .3 : 1, t, dk ? .15 : 1.2); }
     if (!mSession) {
       if (now < mRestUntil) return;
-      const dusk = h >= 18.3 && h < 20.6, day = Math.floor(gnow / 180);
+      const dusk = h >= 18.3 && h < 20.6, day = gameDay;   // one dusk session at most per game day
       let start = !!tickMusic.force; tickMusic.force = false;
       if (dusk && mDuskDay !== day && Math.random() < .7) { start = true; mDuskDay = day; }
       else if (quietMoment(h) && Math.random() < dt / 90) start = true;                // in a quiet moment: about once in a minute and a half
@@ -917,7 +1008,7 @@ export function createAudio(ctx) {
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
       const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
-    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter, _task: t => { HW.force = t || null; },
+    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter, contact: e => contact(e), _task: t => { HW.force = t || null; },
   };
   window.__audio = api;
   return api;

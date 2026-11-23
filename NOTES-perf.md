@@ -46,3 +46,15 @@
 
 ## Цена пикселя (overdraw, `node tests/perf_overdraw.js 21.5`, слоёв экрана)
 master 948efd6, ночь: листья дуба 2.83 (PBR + alphaTest, 1396 карточек) · forestCanopy 0.96 · листы тумана ≈3.8 при полном разрешении (собраны в half-res проход Wind) · свет в каждом шейдере на телефоне: 3 dir + 2 hemi + 6 point + 2 spot. Предложения переданы владельцам (Tree, Env, Lights).
+
+## 2026-11-23 evening: heat round (phones)
+- Fixed 30 FPS on phones from the start (`__perf.minMs = 1000/30`, also on 120 Hz screens; `?fps60` turns it off). px starts at 1.5, ceiling 1.75. Slow climbing: `calmWins` 5 (10 s), `downHold` 60 s, so quality doesn't pop.
+- No canvas MSAA on phones: the scene renders into the composer target, which has no MSAA, so canvas AA only smoothed the final copy.
+- Startup: the loading screen stays up until textures are uploaded (initTexture), shaders are compiled against the composer target (compileAsync; hidden objects made visible, lights untouched or programs double), every shadow map is drawn, collide.js is built, and 2 frames have rendered. Check: 0 new programs after the reveal across an hour sweep, tasks and rain.
+- Render CPU rules:
+  - A transparent DoubleSide material draws twice and rebuilds its program key each frame; flat ones now use `forceSinglePass` automatically.
+  - A material shared by an InstancedMesh and a plain Mesh flips variants every frame; the instanced users now get a copy (with the hook).
+  - Any pass that renders `scene` with a narrowed layer mask must enable that layer on the lights (Wind 8ffc95e), or every lit material re-runs getProgram.
+  - On phones, opaque draws are sorted by program (TBDR does not need front-to-back).
+- Rapier steps only while something can move (`physWake`).
+- 15-min phone-profile run (87228b3): heap 111-120 MB, objects, geometries and textures flat.

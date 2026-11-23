@@ -35,7 +35,7 @@
 //   gust(amp)    send one gust through the scene now
 //   level()      overall strength at the tree, 0..~2 (for sound, fog drift, ...)
 //   rustle()     0..1 how loud the leaves should rustle now
-//   raining() / setRain(on)  rare rain spells, 2-5 min (on('rain', e) with e.on)
+//   raining() / setRain(on)  rare rain spells (every 18-54 game hours), 3-10 real min (on('rain', e) with e.on)
 //   on('gust'|'creak'|'mode'|'rain', fn) -> off()   events for sound: gust start/end at the tree, branch creaks (strength, pos), weather spell changes
 
 const MODES = {
@@ -117,21 +117,22 @@ export function createWind(opt = {}) {
   // events for sound and anything else that wants to react (W.on)
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) { try { f(e); } catch (er) { console.error('wind', k, er); } } };
   let gustIn = false, creakWait = 3, lastMode = 'breeze';
-  // rain spells: rare (one every ~6-18 min), 2-5 min long, they bring a livelier wind with them
+  // rain spells: rare (the gap between them is counted in GAME hours, 18-54 h, so the rain per game day stays the same
+  // whatever the day length; 24 real min since d2b77b3), 3-10 real minutes long, they bring a livelier wind with them
   // morning fog bank: on most mornings a light breeze carries a bank of mist in from the forest, it rolls through the
   // clearing along the wind and lifts as the sun comes up. fogBank = {front (m along dir), k 0..1}
   const fb = { front: -1e4, k: 0, on: false, tried: false };
-  let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(360, 1080), rainKind = 'none';
+  let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(18, 54), rainKind = 'none', rainHr = null;
   // three kinds of rain: a fine drizzle (light, long, no wind change), a proper rain, and a rare storm (windy, heavy,
   // distant thunder and lightning lighting up the fog)
-  const RAIN = { drizzle: { p: 0.45, dur: [180, 420], amt: 0.35 }, rain: { p: 0.4, dur: [120, 300], amt: 0.75 }, storm: { p: 0.15, dur: [150, 330], amt: 1 } };
+  const RAIN = { drizzle: { p: 0.45, dur: [270, 630], amt: 0.35 }, rain: { p: 0.4, dur: [180, 450], amt: 0.75 }, storm: { p: 0.15, dur: [225, 500], amt: 1 } };   // real s (x1.5 for the 24-min day)
   function setRain(on, quiet, kind) {
     if (on === rainOn && (!on || !kind || kind === rainKind)) return; rainOn = on;
     if (on) { if (!RAIN[kind]) { const r = R(); kind = r < RAIN.drizzle.p ? 'drizzle' : r < RAIN.drizzle.p + RAIN.rain.p ? 'rain' : 'storm'; }
       rainKind = kind; rainLeft = rr(...RAIN[kind].dur);
       if (!forced) { if (kind === 'storm') { mode = 'windy'; target = rr(0.75, 0.95); spellLeft = rainLeft; nextStrike = rr(6, 20); }
         else if (kind === 'rain' && mode === 'calm') { mode = 'breeze'; target = rr(...MODES.breeze.base); spellLeft = rainLeft * 0.6; } } }
-    else { rainWait = rr(360, 1080); rainKind = 'none'; }
+    else { rainWait = rr(18, 54); rainKind = 'none'; }
     if (!quiet) emit('rain', { on, kind: rainKind });
   }
   // lightning: a storm strikes every 15-50 s, kilometres away. Each strike is two or three quick flickers (W.flash()),
@@ -200,7 +201,7 @@ export function createWind(opt = {}) {
         // the evening settles: soon after sunset the current spell gives way (mostly to calm, see pickNext)
         if (evening() && eveDone !== dayN && !rainOn && !forced) { eveDone = dayN; spellLeft = Math.min(spellLeft, rr(8, 30)); } }
       // rain spells
-      if (rainOn) { rainLeft -= dt; if (rainLeft <= 0) setRain(false); } else { rainWait -= dt; if (rainWait <= 0) setRain(true); }
+      if (rainOn) { rainLeft -= dt; if (rainLeft <= 0) setRain(false); } else { /* game hours: from the clock when index gives it, else the old 20 s per hour */ let dh = dt / 20; if (hour != null) { dh = rainHr == null ? 0 : hour - rainHr; if (dh < -12) dh += 24; if (dh < 0 || dh > 2) dh = 0; rainHr = hour; } rainWait -= dh; if (rainWait <= 0) setRain(true); }
       // lightning and thunder
       if (rainOn && rainKind === 'storm') { nextStrike -= dt; if (nextStrike <= 0) { strike(); nextStrike = rr(15, 50); } }
       else if (rainOn && rainKind === 'rain') { rumbleWait -= dt; if (rumbleWait <= 0) { rumbleWait = rr(120, 300); if (R() < 0.35) { const d = rr(8, 14); emit('lightning', { dist: d * 1000, distKm: d, strength: 0.1, k: 0, dir: [-Math.cos(ang), -Math.sin(ang)], unseen: true }); thunders.push({ t: T + d / 0.343, dist: d, loud: 0.15, dir: [-Math.cos(ang), -Math.sin(ang)] }); } } }
@@ -333,7 +334,7 @@ export function createWind(opt = {}) {
       const im = new THREE.InstancedMesh(geo, mat, N); im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       const cols = [0x6E8A3A, 0x8C9A3C, 0xB49A3A, 0xA8742E, 0x7A5A2E];
       const c = new THREE.Color(); for (let i = 0; i < N; i++) im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.8, 1.1)));
-      o.scene.add(im);
+      o.scene.add(im); im.matrixAutoUpdate = false;   // per-instance matrices move, the mesh itself never does
       // spawn points: the leaf cards of the crown (their centres)
       const spots = []; const m4 = new THREE.Matrix4(), v = new THREE.Vector3();
       if (o.crown) for (let i = 0; i < o.crown.count; i += 3) { o.crown.getMatrixAt(i, m4); v.setFromMatrixPosition(m4); if (v.y > 6) spots.push(v.toArray()); }
@@ -414,7 +415,7 @@ export function createWind(opt = {}) {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
     const cols = [0x8A5A26, 0xA0682A, 0x7A4E22, 0xB0823A, 0x6E5A2C, 0x94602C], c = new THREE.Color();
     for (let i = 0; i < LN; i++) { im.setMatrixAt(i, zero); im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.7, 1.0))); }
-    o.scene.add(im);
+    o.scene.add(im); im.matrixAutoUpdate = false;
     const put = (i, x, y, z, yaw) => {
       P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z; on[i] = 1;
       // flat on the boards with a little curl (a dry oak leaf never lies dead flat), random turn and size

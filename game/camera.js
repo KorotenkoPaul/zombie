@@ -30,6 +30,15 @@ export function createCameraRig(o) {
   let followOn = false, atHome = true, flyK = 0, idle = 0;
   const MIN_D = 1.43, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
   const AXIS = o.axis || [0, -0.6];
+  // CLASSIC camera (Pavel, 2026-11-23 21:57): the camera as it was before the free camera. Zoom goes only toward the hero
+  // (the focus slides from the whole house to him as you zoom in), no pan, no zoom to any spot, no double-tap flights,
+  // no inertia; one finger turns the view within the old limits. Zoom range as originally: 0.32..1 of the home distance.
+  // Safety stays (never inside the trunk, walls or limbs, no auto-movement). The free camera is kept behind ?cam=free.
+  const CLASSIC = o.classic !== undefined ? !!o.classic : !/[?&]cam=free\b/.test(typeof location !== 'undefined' ? location.search : '');
+  const ZMIN = 0.32, ZMAX = 1.2;     // Pavel 22:16: zoom out a little further than the home view (+20%)
+  let zoomK = 1;
+  const look = new THREE.Vector3(0, 7.4, 2.4), lookT = new THREE.Vector3();
+  function classicZoom(f) { zoomK = clamp(zoomK * f, ZMIN, ZMAX); atHome = Math.abs(zoomK - 1) < 0.001; }
   // zoom-out as it was originally (Pavel 20:52): soft limit 1.25x home with a rubber band up to 1.5x
   const maxD = () => home.dist * 1.25, hardD = () => home.dist * 1.5;
 
@@ -43,7 +52,7 @@ export function createCameraRig(o) {
   // is there (or if the CDN fails) picking works exactly as before.
   const NOPICK = /^(forest|litter)/;
   let BVH = null, bvhWarm = false;
-  import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js').then(m => { BVH = m; bvhWarm = true; }).catch(() => {});
+  if (!CLASSIC) import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js').then(m => { BVH = m; bvhWarm = true; }).catch(() => {});
   const bvhQueue = [];
   function wantBVH(m) {
     const g = m.geometry;
@@ -150,7 +159,8 @@ export function createCameraRig(o) {
     ddy *= ease(home.yaw + YAW_LIM - goal.yaw, ddy > 0) * ease(goal.yaw - (home.yaw - YAW_LIM), ddy < 0);
     const ny = clamp(goal.yaw + ddy, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
     const a = ny - goal.yaw;
-    if (a) {
+    if (a && CLASSIC) goal.yaw = ny;
+    else if (a) {
       const x = goal.target.x - AXIS[0], z = goal.target.z - AXIS[1], c = Math.cos(a), sn = Math.sin(a);
       goal.target.x = AXIS[0] + x * c + z * sn; goal.target.z = AXIS[1] - x * sn + z * c;
       goal.yaw = ny;
@@ -168,6 +178,7 @@ export function createCameraRig(o) {
     startFly(); atHome = false;
   }
   function goHome() {
+    if (CLASSIC) { zoomK = 1; goal.yaw = home.yaw; goal.pitch = home.pitch; atHome = true; return; }
     stopFollow(); stopInertia(); atHome = true;
     goal.target.copy(home.target); goal.dist = home.dist; goal.pitch = home.pitch;
     // shortest way back around
@@ -175,6 +186,7 @@ export function createCameraRig(o) {
     startFly();
   }
   function setFollow(on) {
+    if (CLASSIC) { zoomK = ZMIN; atHome = false; return; }    // the follow button zooms in on the hero
     followOn = on; atHome = false;
     if (on) {   // look at him from the open (front) side of the house
       stopInertia(); if (cine.on) stopCine();
@@ -230,6 +242,10 @@ export function createCameraRig(o) {
     try { dom.setPointerCapture(e.pointerId); } catch (_) {}
     idle = 0; stopCine(); stopInertia(); recording = true;
     stopFollow();                      // following the hero ends on any touch: the fingers take over from where it is
+    if (ptrs.size === 2 && CLASSIC) {
+      const [a, b] = [...ptrs.values()];
+      pinch = { d: Math.max(10, Math.hypot(a.x - b.x, a.y - b.y)) }; mode = 'pinch'; down = null; return;
+    }
     if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -239,13 +255,18 @@ export function createCameraRig(o) {
     }
     if (ptrs.size > 2) return;
     panBtn = e.button === 1 || e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey;
-    mode = panBtn ? 'pan' : 'orbit';
+    mode = panBtn && !CLASSIC ? 'pan' : 'orbit';
     last = { x: e.clientX, y: e.clientY };
     down = { x: e.clientX, y: e.clientY, t: performance.now() };
   });
   dom.addEventListener('pointermove', e => {
     if (!ptrs.has(e.pointerId)) return;
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (mode === 'pinch' && ptrs.size >= 2 && CLASSIC) {
+      const [a, b] = [...ptrs.values()];
+      const d = Math.max(10, Math.hypot(a.x - b.x, a.y - b.y));
+      classicZoom(pinch.d / d); pinch.d = d; return;
+    }
     if (mode === 'pinch' && ptrs.size >= 2) {
       const [a, b] = [...ptrs.values()];
       const d = Math.max(10, Math.hypot(a.x - b.x, a.y - b.y));
@@ -268,15 +289,15 @@ export function createCameraRig(o) {
     if (mode === 'pinch') {
       if (ptrs.size === 1) {               // one finger left: continue as orbit without a jump
         const p = [...ptrs.values()][0]; last = { x: p.x, y: p.y }; mode = 'orbit'; down = null;
-      } else if (ptrs.size === 0) { mode = null; startInertia(); }
+      } else if (ptrs.size === 0) { mode = null; if (CLASSIC) stopInertia(); else startInertia(); }
       return;
     }
     if (ptrs.size) return;
     mode = null; last = null;
-    if (e.type === 'pointerup') startInertia(); else stopInertia();
+    if (e.type === 'pointerup' && !CLASSIC) startInertia(); else stopInertia();
     if (down && e.type === 'pointerup' && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12 && performance.now() - down.t < 350) {
       const now = performance.now();
-      if (lastTap && now - lastTap.t < 420 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
+      if (!CLASSIC && lastTap && now - lastTap.t < 420 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40) {
         lastTap = null; doubleTap(e.clientX, e.clientY);
       } else {
         lastTap = { x: e.clientX, y: e.clientY, t: now };
@@ -302,6 +323,7 @@ export function createCameraRig(o) {
     e.preventDefault(); idle = 0; stopCine(); stopFollow();
     let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
     const f = Math.exp(clamp(dy, -200, 200) * (e.ctrlKey ? 0.01 : 0.0016)); // ctrlKey = trackpad pinch
+    if (CLASSIC) { classicZoom(f); return; }
     zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null);
   }, { passive: false });
 
@@ -309,7 +331,7 @@ export function createCameraRig(o) {
   let gs = 1;
   dom.addEventListener('gesturestart', e => { e.preventDefault(); gs = 1; });
   // (on iPhone/iPad a two-finger touch pinch also fires gesture events: the pointer pinch already handles it, so skip)
-  dom.addEventListener('gesturechange', e => { e.preventDefault(); if (ptrs.size >= 2) { gs = e.scale; return; } const f = gs / e.scale; gs = e.scale; zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null); });
+  dom.addEventListener('gesturechange', e => { e.preventDefault(); if (ptrs.size >= 2) { gs = e.scale; return; } const f = gs / e.scale; gs = e.scale; if (CLASSIC) { classicZoom(f); return; } zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null); });
   dom.addEventListener('gestureend', e => e.preventDefault());
 
   addEventListener('keydown', e => {
@@ -318,7 +340,8 @@ export function createCameraRig(o) {
     const s = 24;
     if (e.key === 'ArrowLeft') orbit(-s, 0); else if (e.key === 'ArrowRight') orbit(s, 0);
     else if (e.key === 'ArrowUp') orbit(0, -s); else if (e.key === 'ArrowDown') orbit(0, s);
-    else if (e.key === '+' || e.key === '=') zoomAt(0.8, null); else if (e.key === '-') zoomAt(1.25, null);
+    else if (e.key === '+' || e.key === '=') { if (CLASSIC) classicZoom(0.8); else zoomAt(0.8, null); }
+    else if (e.key === '-') { if (CLASSIC) classicZoom(1.25); else zoomAt(1.25, null); }
     else if (e.key === 'Home' || e.key === 'h') goHome();
   });
 
@@ -524,6 +547,13 @@ export function createCameraRig(o) {
     stepInertia(dt);
     stepCine(dt);
     for (const U of fadeU) U.u.value = clamp(cur.dist * U.k, U.min, U.max);
+    if (CLASSIC) {
+      // focus: the whole house when zoomed out, the hero when zoomed in (as the original camera did)
+      const k = clamp(1 - (zoomK - ZMIN) / (1 - ZMIN), 0, 1), f = follow();
+      lookT.copy(home.target); if (f) lookT.lerp(f, k);
+      look.lerp(lookT, Math.min(1, dt * 2.5));
+      goal.target.copy(look); goal.dist = home.dist * zoomK;
+    }
     const dragging = ptrs.size > 0 || inert.on;
     keepOut(goal.target, dt, dragging, goal.yaw);
     goal.dist = clamp(goal.dist, MIN_D, hardD());
@@ -623,6 +653,7 @@ export function createCameraRig(o) {
     if (v.yaw !== undefined) goal.yaw = v.yaw;
     if (v.pitch !== undefined) goal.pitch = v.pitch;
     if (v.dist !== undefined) goal.dist = v.dist;
+    if (CLASSIC) { if (v.dist !== undefined) zoomK = clamp(v.dist / home.dist, ZMIN, ZMAX); if (v.target) look.copy(v.target); }
     atHome = !!v.home; stopFollow();
     if (v.snap) snap();
   }
