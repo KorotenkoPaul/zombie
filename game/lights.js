@@ -309,7 +309,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   function updateBeams(dayK, T) {
     beamU.uT.value = T;
     let on = 0;
-    if (sunL && dayK > .05) { sunV.copy(sunL.position).sub(sunL.target.position).normalize(); on = dayK * Math.min(1, sunL.intensity / 2.2); }
+    // the scene's directional light swaps from moon to sun at dayK .5: beams only appear well after that, so they never jump
+    const dk = Math.max(0, Math.min(1, (dayK - .6) / .3)), dkS = dk * dk * (3 - 2 * dk);
+    if (sunL && dkS > 0) { sunV.copy(sunL.position).sub(sunL.target.position).normalize(); on = dkS * Math.min(1, sunL.intensity / 2.2); }
     const low = 1 - Math.min(1, Math.max(0, sunV.y - .15) / .7);      // low sun: long golden beams
     for (const b of beams) {
       const face = on > 0 ? sunV.x * b.w.n.x + sunV.z * b.w.n.z : 0;     // sun on the outer side of this window?
