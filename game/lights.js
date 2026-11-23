@@ -186,12 +186,39 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // not up through the ceiling boards into the bedroom (no shadow map on this one)
     const l = new THREE.SpotLight(0xFF7A2A, 0, 4.2, Math.PI / 2 * .97, .35, 1.8); l.position.copy(p).add(V(.05, .1, .55));
     l.target.position.copy(l.position).add(V(0, -.55, 1)); scene.add(l, l.target);
-    add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: k => {
+    const aim = l.target.position.clone();
+    // door open: the firelight falls out over the open door onto the floorboards. The door (hinged at the bottom,
+    // lying almost flat when open) shades the boards right in front, so the warm patch starts past its edge and
+    // widens away from the stove. An additive decal on the floor: no extra light, works the same on phones.
+    let patch = null;
+    const door = P3 && P3.oven && P3.oven.door;
+    if (door && door.parent) {
+      door.parent.updateMatrixWorld(true);
+      const fwd = V(0, 0, 1).applyQuaternion(door.parent.getWorldQuaternion(new THREE.Quaternion())); fwd.y = 0; fwd.normalize();
+      const d0 = door.getWorldPosition(V());
+      const mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        uniforms: { uK: { value: 0 }, uC: { value: new THREE.Color(0xFF7A2A) } },
+        vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
+        // u across, v away from the stove: a soft trapezoid, bright near the door edge, fading out by ~1.3 m
+        fragmentShader: 'uniform float uK; uniform vec3 uC; varying vec2 vU; void main(){ float w = .32 + .68 * vU.y; float x = abs(vU.x - .5) * 2. / w;' +
+          ' float a = smoothstep(1., .55, x) * smoothstep(0., .12, vU.y) * pow(1. - vU.y, 1.6); gl_FragColor = vec4(uC * a * uK, 1.); }' });
+      patch = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.25).rotateX(-Math.PI / 2), mat);   // uv v runs along -z ...
+      patch.rotation.y = Math.atan2(fwd.x, fwd.z) + Math.PI;                                         // ... which now points away from the stove
+      patch.position.copy(d0).addScaledVector(fwd, .42 + .62).setY(KT + .028);   // above the kitchen rug (it lies over the boards here)
+      patch.name = 'ovenFloorGlow'; patch.renderOrder = 2; patch.visible = false; patch.userData.noHang = true; scene.add(patch);
+    }
+    add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: (k, f) => {
       // index.html passes this level to props.update(), which calls oven.setHeat once per frame
-      // Props keeps a faint ember glow at heat 0; a cold oven shows nothing
-      if (pm.fire) pm.fire.emissiveIntensity = 2.45 * k;
-      if (pm.ovenGlass) pm.ovenGlass.emissiveIntensity = .7 * k;
       const open = P3.oven ? P3.oven.open || 0 : 0; l.userData.open = open;
+      // embers: as the fire dies the bed of coals keeps breathing (slow, uneven), until it is cold
+      const emb = smooth(0, .25, k) * (1 - smooth(.3, .7, k)) * (.55 + .45 * noise(t * .5 + 3) * noise(t * 1.3 + 9));
+      if (pm.fire) pm.fire.emissiveIntensity = 2.45 * k * (f || 1) + .9 * emb;
+      if (pm.ovenGlass) pm.ovenGlass.emissiveIntensity = .7 * k * (f || 1) + .25 * emb;
+      // firelight on the walls: with the door open the flames throw a restless light, so the lit patch drifts a few
+      // centimetres on the boards (target wobble); shut, it only breathes with the fire
+      const wob = .04 + .1 * open;
+      l.target.position.set(aim.x + (noise(t * 2.3 + 1) - .5) * wob, aim.y + (noise(t * 3.1 + 5) - .5) * wob * .5, aim.z + (noise(t * 1.9 + 7) - .5) * wob);
+      if (patch) { const v = open * k * (f || 1) * (.85 + .3 * (noise(t * 7 + 2) - .5)); patch.visible = v > .01; patch.material.uniforms.uK.value = .55 * v; }
     }, autoFn: c => c.cookT > 0 });
   }
 
@@ -498,8 +525,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
 
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
     t += dt; frame++;
-    const cooking = task === 'cook' && state === 'work';
-    cookT = cooking ? 9 : Math.max(0, cookT - dt);      // fed while cooking, then burns down in ~1.3 game hours (a night hour is ~7 s)
+    // cooking, or stoking (the log goes in while the little door is open): the fire is fed
+    const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
+    cookT = cooking ? 23 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (8-minute day: a night hour is 18 s)
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
@@ -521,6 +549,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       let f = k > 0 ? flick(s, T) : 0;
       // he is at the stove feeding it: the fire is livelier, its glow dances on him and the kitchen
       if (s.name === 'oven' && cooking) f = .82 + (f - .8) * 2.2;
+      if (s.name === 'oven' && s.lights[0] && s.lights[0].l.userData.open) f += s.lights[0].l.userData.open * ((noise(T * 9 + 4) - .5) * .12 + (noise(T * 23 + 8) - .5) * .05);
       // outdoor flames feel the wind (game/wind.js): a gust makes the flame duck and stutter, then it steadies again.
       // Indoor flames stay calm. The glass of a lantern shelters it, so the dip is small.
       if (f > 0 && (s.name === 'landing' || (s.name === 'hand' && hand.outdoors)) && window.__wind && window.__wind.sample) {
@@ -529,9 +558,12 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       }
       const open = s.extra && s.lights[0] && s.lights[0].l.userData.open || 0;
       for (const L of s.lights) {
-        L.l.intensity = L.I * k * f * (1 + open * 1.2);
+        L.l.intensity = L.I * k * f * (s.name === "oven" ? .45 + 1.2 * open : 1 + open * 1.2);   // oven shut: only what the small glass lets out
         if (L.sway) { if (!L.home) L.home = L.l.position.clone(); const a = T * 1.7 + s.seed * 5; L.l.position.set(L.home.x + noise(a) * L.sway, L.home.y + noise(a + 40) * L.sway * .6, L.home.z + noise(a + 80) * L.sway); }
-        if (L.l.castShadow) { const lit = k > .01; if (lit && (!L.wasLit || (frame + s.idx) % shadowEvery === 0)) L.l.shadow.needsUpdate = true; L.wasLit = lit; }
+        if (L.l.castShadow) { const lit = k > .01;
+          // the lamp's shadows only change when the hero (the one thing that moves) is in its reach: an empty lit room keeps its map
+          const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root, near = !hr || hr.position.distanceTo(L.l.position) < (L.l.shadow.camera.far || 6) + .5;
+          if (lit && (!L.wasLit || (near && (frame + s.idx) % shadowEvery === 0))) L.l.shadow.needsUpdate = true; L.wasLit = lit; }
       }
       for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);

@@ -7,11 +7,11 @@ const {open}=require('./lib');const {simulate}=require('./simulate');const {anal
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const OUT=path.resolve(arg('out','/tmp/anim-qa'));const SEED=+arg('seed',1);const HOURS=+arg('hours',25);const MAXP=+arg('max-p',2);
 (async()=>{fs.mkdirSync(OUT,{recursive:true});const t0=Date.now();
- const {b,p,errs}=await open({seed:SEED});
+ const QUERY=arg('query','');const {b,p,errs}=await open({seed:SEED,query:QUERY});
  const sim=await simulate(p,{hours:HOURS,tour:!process.argv.includes('--no-tour')});
- const D=await p.evaluate(()=>({...__A.out,names:__A.collNames()}));await b.close();
+ const D=await p.evaluate(()=>({...__A.out,names:__A.collNames(),mov:__A.movNames()}));await b.close();
  const git=(()=>{try{return require('child_process').execSync('git -C '+path.resolve(__dirname,'../..')+' rev-parse --short HEAD').toString().trim();}catch(e){return '?';}})();
- D.meta={git,seed:SEED,hours:HOURS,at:new Date().toISOString(),coll:sim.info};
+ D.meta={git,query:QUERY,seed:SEED,hours:HOURS,at:new Date().toISOString(),coll:sim.info};
  fs.writeFileSync(OUT+'/frames.json.gz',zlib.gzipSync(JSON.stringify(D)));
  const R=analyze(D);R.meta=D.meta;R.pageErrors=errs;fs.writeFileSync(OUT+'/issues.json',JSON.stringify(R,null,1));
  const cnt={};for(const q of R.issues){const k='P'+q.P+' '+q.type;cnt[k]=(cnt[k]||0)+1;}

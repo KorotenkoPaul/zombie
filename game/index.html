@@ -100,8 +100,10 @@ let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(l
 
 await RAPIER.init();prog();
 // ================= renderer =================
-const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
+const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);
+/* [PERF] the scene is drawn into the composer's own (non-MSAA) target, so canvas MSAA only smoothed the final full-screen copy: off on phones, same picture, less memory and bandwidth */
+const renderer=new THREE.WebGLRenderer({antialias:!MOBILE,powerPreference:'high-performance'});
+let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
 renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();const l=$('load');if(l){l.classList.remove('hide');$('loadTx').textContent='Перезапускаем картинку…';}setTimeout(()=>location.reload(),1500);});
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -123,7 +125,7 @@ const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('k
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(new URLSearchParams(location.search).get('hero')==='old'?'hero-old-glb.txt':'hero-glb.txt')/* ?hero=old = the first (cartoony) hero, kept as a fallback */]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(new URLSearchParams(location.search).get('hero')==='new'?'hero-new-glb.txt':'hero-glb.txt')/* ?hero=new = the adult survivor redesign (Pavel kept the original hero) */]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -594,12 +596,12 @@ const BX0=-4.2,BX1=.4;
 floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]]});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
-const HATCH=(()=>{const x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+const HATCH=(()=>{const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
  // the opening reads as a real hole (Pavel): a dark trim frame round it on the bedroom floor, and the floor's thickness lined
  // with boards inside it, so from the kitchen below it is a framed square hole with the ladder going up through it
- {const fr=new THREE.Group();scene.add(fr);const W=x1-x0,D=z1-z0,cx=(x0+x1)/2,cz=(z0+z1)/2;
+ {const fr=new THREE.Group();scene.add(fr);const W=x1-hx0,D=z1-z0,cx=(hx0+x1)/2,cz=(z0+z1)/2;
   const bx=(sx,sy,sz,px,py,pz,mat)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(px,py,pz);m.castShadow=m.receiveShadow=true;fr.add(m);};
-  for(const sd of [-1,1]){bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,darkBoard);bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),darkBoard);
+  for(const sd of [-1,1]){if(sd>0)bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,darkBoard);/* -x: the wall is the edge */bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),darkBoard);
    bx(.035,.26,D,cx+sd*(W/2-.017),y-.15,cz,boardMat);bx(W-.07,.26,.035,cx,y-.15,cz+sd*(D/2-.017),boardMat);}
   bakeStatic(fr);}
  const lid=new THREE.Group();g.add(lid);const L=z1-z0;
@@ -613,7 +615,7 @@ const HATCH=(()=>{const x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.
  return {update(dt){if(fall){fall+=dt*7;ang-=fall*dt;if(ang<=0){ang=0;target=0;fall=0;try{window.__audio&&window.__audio.play('hatch_close',grab);}catch(e){}}}else if(!held){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;}lid.rotation.x=ang;ring.getWorldPosition(grab);},
   drive(a){held=true;fall=0;ang=target=Math.max(0,Math.min(OPEN,a));lid.rotation.x=ang;lid.updateMatrixWorld(true);ring.getWorldPosition(grab);},letGo(open){held=false;if(open)target=OPEN;else{target=0;fall=fall||.01;}},ringAt(a,out){const k=lid.rotation.x;lid.rotation.x=a;lid.updateMatrixWorld(true);ring.getWorldPosition(out);lid.rotation.x=k;lid.updateMatrixWorld(true);return out;},OPEN,
   open(){target=OPEN;},close(){target=0;},toggle(){target=target===0?OPEN:0;},isOpen(){return target!==0;},
-  get angle(){return ang;},grab,box:[x0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
+  get angle(){return ang;},grab,box:[hx0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]],-1);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]],1);
@@ -629,6 +631,39 @@ wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]],1);wallSide(WX0,1.
 roof(WX0,WX1,WS+2.3,1.0,4.0,.95);post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
 brace(V(2.0,WS-2.2,frontZ(2.0,WS-2.2)-.1),V(4.2,WS-.15,4.6),.16);brace(V(1.6,WS-2,1.4),V(4.0,WS-.15,1.5),.17);
 if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
+// ---- lockdown shutters (for the zombie nights): each open room front has folding plank shutters. Open, they are folded up
+// under the eave like an awning (two panels stacked, hinged at the top); in lockdown (window.__brain.locked) they swing down
+// and the lower panel unfolds, so the house reads sealed. Close to the camera they turn see-through so the hero stays visible.
+// API: window.__house.shutters {k:{kitchen,bedroom,workshop} 0 open..1 closed, set(room,on), auto (follow the brain)}
+const SHUT=(()=>{let tq=[];const rooms={kitchen:[KX0+.02,KX1,KT+.03,BD-.15,3.97],bedroom:[BX0,BX1,BD+.03,BD+2.28,3.93],workshop:[WX0,WX1,WS+.03,WS+2.28,4.13]};
+ const R={},api={k:{},auto:true,set(room,on){const r=R[room];if(!r)return;const w=on?1:0;if(r.want===w)return;r.want=w;try{window.__audio&&window.__audio.play&&window.__audio.play(on?'shutter_close':'shutter_open',r.c);}catch(e){}},
+ // Brain: close()/open() all rooms one after another (or one room by name); a call takes over from the auto follow
+ close(room){api.auto=false;if(room)return api.set(room,1);tq=['kitchen','workshop','bedroom'].map((r,i)=>[r,i*1.6,true]);},
+ open(room){api.auto=false;if(room)return api.set(room,0);tq=['bedroom','workshop','kitchen'].map((r,i)=>[r,i*1.2,false]);},snap(room,on){if(R[room])R[room].want=R[room].k=on?1:0;},state:room=>R[room]&&R[room].k};
+ for(const [name,[x0,x1,y0,y1,z]] of Object.entries(rooms)){
+  const mat=boardMat.clone();plankShader(mat);const bat=boardMat.clone();plankShader(bat);bat.color.setScalar(.62);
+  const H=y1-y0,h1=H*.5,np=Math.max(1,Math.round((x1-x0)/2.3)),PW=(x1-x0)/np,ups=[],los=[];
+  const panel=(g,w,h,flip)=>{for(let x=-w/2+.15;x<w/2-.05;x+=.3){const m=new THREE.Mesh(new THREE.BoxGeometry(rnd(.275,.29),h-.01,.04),mat);m.position.set(x+rnd(-.004,.004),-h/2,rnd(-.004,.004));g.add(m);}
+   for(const yy of [-.16,-h+.16]){const m=new THREE.Mesh(new THREE.BoxGeometry(w-.14,.11,.03),bat);m.position.set(0,yy,flip*.035);g.add(m);}
+   const L=Math.hypot(w-.3,h-.32),m=new THREE.Mesh(new THREE.BoxGeometry(L,.1,.028),bat);m.position.set(0,-h/2,flip*.034);m.rotation.z=Math.atan2(h-.32,w-.3)*(rnd(0,1)<.5?1:-1);g.add(m);
+   g.traverse(m=>{if(m.isMesh){m.castShadow=!MOBILE;m.receiveShadow=true;}});};
+  for(let i=0;i<np;i++){const up=new THREE.Group();up.position.set(x0+PW*(i+.5),y1,z);scene.add(up);panel(up,PW-.02,h1,1);
+   const lo=new THREE.Group();lo.position.set(0,-h1,0);up.add(lo);panel(lo,PW-.02,H-h1,1);bakeStatic(lo);bakeStatic(up,m=>m===lo||lo.children.includes(m));up.visible=false;ups.push(up);los.push(lo);
+   /* moving, outside the rooms: not furniture for collide.js (its scan skips 'Shape' geometry; the merged panels broke its hash) */up.traverse(m=>{if(m.isMesh)m.geometry.type='ShutterShapeGeometry';});}
+  R[name]={ups,los,mat,bat,k:0,want:0,c:V((x0+x1)/2,(y0+y1)/2,z)};api.k[name]=0;}
+ let lastLock=false;
+ api.update=(dt)=>{const B=window.__brain,lk=!!(B&&B.locked);
+  if(api.auto&&lk!==lastLock){lastLock=lk;tq=['kitchen','workshop','bedroom'].map((r,i)=>[r,i*1.6,lk]);}
+  tq=tq.filter(q=>{q[1]-=dt;if(q[1]<=0){api.set(q[0],q[2]);return false;}return true;});
+  for(const [name,r] of Object.entries(R)){const k0=r.k;r.k+=Math.sign(r.want-r.k)*Math.min(Math.abs(r.want-r.k),dt/2.6);api.k[name]=r.k;
+   if(k0<1&&r.k>=1){try{window.__audio&&window.__audio.play&&window.__audio.play('board_up',r.c);}catch(e){}}
+   const e=t=>t*t*(3-2*t),a=e(Math.min(1,r.k/.55)),b=e(Math.max(0,(r.k-.4)/.6));
+   for(const up of r.ups){up.rotation.x=-1.42*(1-a);up.visible=r.k>.002;}/* open: stowed out of sight (Pavel saw the raised awnings as black slabs over the leaves) */for(const lo of r.los)lo.rotation.x=-(Math.PI-.06)*(1-b);
+   // close to the camera a closed front turns see-through (the hero inside stays visible); from afar the house reads sealed
+   const d=camera.position.distanceTo(r.c),f=Math.min(1,Math.max(0,(13-d)/6))*b,op=1-.75*f*f*(3-2*f);
+   for(const m of [r.mat,r.bat]){m.opacity=op;m.transparent=op<.98;m.depthWrite=op>.98;}}};
+ api._R=R;return api;})();
+window.__house=Object.assign(window.__house||{},{shutters:SHUT});
 // lookout deck (right, top)
 floorBoards(.8,4.25,DK,.3,3.0);rail(.8,3.0,4.25,3.0,DK,[.84,1.86]);/* the gap at the rope-ladder top is wider than the hero (collide.js) */rail(4.25,.6,4.25,3.0,DK);
 brace(V(1.6,DK-2.4,1.0),V(2.6,DK-.13,1.6),.17);brace(V(4.0,WS+3.5,1.6),V(4.0,DK-.13,1.6),.16);
@@ -706,7 +741,7 @@ vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=(
 {const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;WIND.hookRaw(motesMat);scene.add(p);}
 // [WIND] fireflies drift and leaves fall with the wind (game/wind.js)
 if(ENV.fireflies)WIND.hookRaw(ENV.fireflies.material);
-{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE,surfaceH:(x,z)=>window.__rain&&__rain.ready?__rain.heightAt(x,z):null});}
+{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE,surfaceH:(x,z)=>window.__rain&&__rain.ready?__rain.heightAt(x,z):null,hero:()=>({pos:hero.root.position,task:hero.task,still:!hero.path.length})});}
 // god rays: soft beams through the canopy
 const rayMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{t:{value:0},o:{value:0},col:{value:new THREE.Color(1,.86,.6)}},
  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
@@ -838,7 +873,7 @@ let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSE
 if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=Math.random()*24;BRAIN.prime(hour);const t0=performance.now(),dt=1/30;let n=0;const N=Math.floor(rnd(900,2400));
  while(n<N&&performance.now()-t0<2500){hour+=dt*hps();if(hour>=24)hour-=24;HH.update(dt);n++;}}catch(e){console.error('prewarm',e);}}
 function isNight(h){return !(h>=6&&h<20);}
-function hps(){return isNight(hour)?10/70:14/110;}// a day of ~3 minutes
+function hps(){return isNight(hour)?10/180:14/300;}// a day of 8 minutes (Pavel 2026-11-23): 5 min of daylight, 3 min of night
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
 const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.68,.6,.94],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98]];
@@ -907,16 +942,23 @@ if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.
 if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LIGHTS.winGlow(true),45);
 // fog simplification can't be undone: last resort
 // [PERF] thermal guard: when even px 1.5 can't keep up, hold a steady 30 FPS instead of thrashing (phones heat up fast)
-PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
+// [PERF] phones: a steady 30 FPS from the start (half the GPU work of 60, the main source of heat), slow climbing (10 s calm,
+// no climb for 60 s after a drop) so quality doesn't pop. ?fps60 turns the phone cap off.
+if(MOBILE&&!/[?&]fps60/.test(location.search)){PERF.minMs=1000/30;PERF.calmWins=5;PERF.downHold=60;}
+if(!PERF.minMs)PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
 if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+i);
 // [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
-let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
-PERF.addStep('sunShadow',()=>{if(sunEvery>=3)return false;sunEvery=3;},()=>{sunEvery=MOBILE?2:1;},30);
+// (at the phones' 30 FPS cap it is redrawn every frame again, so the hero's shadow never steps; every 2nd under load)
+const SUN0=MOBILE&&!PERF.minMs?2:1;let sunEvery=SUN0,sunF=0,sunN=0;const sunHP=new THREE.Vector3(),sunLD=new THREE.Vector3();window.__sunShadowN=()=>sunN;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
+PERF.addStep('sunShadow',()=>{if(sunEvery>=SUN0+1)return false;sunEvery=SUN0+1;},()=>{sunEvery=SUN0;},30);
 const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
 // [WIND] shared half-resolution fog pass (game/fogpass.js): Environment's fog sheets, puffs and mist bands plus the
 // morning fog bank are drawn into a quarter-pixel target and blended over the frame once. __fogpass.setEnabled(false) = old way.
 const FOGPASS=await (async()=>{try{const {Pass,FullScreenQuad}=await import('three/addons/postprocessing/Pass.js');const fp=(await import(new URL(ASSET+'fogpass.js',document.baseURI).href)).createFogPass({THREE,renderer,scene,camera,composer,FullScreenQuad,Pass,MOBILE});
  composer.insertPass(fp.pass,1);fp.add([...(MOBILE?rays.children:[]),...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),...((typeof FOGBANK!=='undefined'&&FOGBANK.sheets)||[])]);return fp;}catch(e){console.error('fogpass',e);return null;}})();window.__fogpass=FOGPASS;
+// [ENV] phones: the output pass composites the half-res fog itself (one full-screen pass less) whenever nothing runs between them
+if(FOGPASS&&MOBILE)FOGPASS.scale=.4;/* [ENV] the fog is soft: 0.4 res (16% of the pixels) looks the same as 0.5 on the phone */
+if(FOGPASS&&MOBILE&&ENV.outU)FOGPASS.merge=()=>{if(DOF.active||window.__fogMergeOff)return false;ENV.outU.tFog.value=FOGPASS.fogTexture;ENV.outU.fogOn.value=1;return true;};
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
 // [PERF] GPU cost finder (perf.js; 5 quick taps on the clock or ?perfdebug): each test switches ONE thing off.
@@ -938,6 +980,16 @@ let noPost=false;
  let lv=[];PERF.addTest('лампы',()=>{lv=[];scene.traverse(o=>{if((o.isPointLight||o.isSpotLight)&&o.visible){lv.push(o);o.visible=false;}});},()=>{lv.forEach(o=>o.visible=true);lv=[];});
  let dofW=false;PERF.addTest('DOF',()=>{dofW=DOF.enabled;DOF.enabled=false;},()=>{DOF.enabled=dofW;});
  PERF.addTest('постобработка',()=>{noPost=true;},()=>{noPost=false;});
+ /* [ENV] the environment's layers one by one */
+ {const E=ENV,vis=(list,on)=>list.filter(Boolean).forEach(o=>o.visible=on);let ck=0;
+  PERF.addTest('env: полосы тумана',()=>vis(E.sheets,false),()=>vis(E.sheets,true));
+  PERF.addTest('env: клубы тумана',()=>vis([E.puffs],false),()=>vis([E.puffs],true));
+  PERF.addTest('env: дымка',()=>vis(E.mist||[],false),()=>vis(E.mist||[],true));
+  PERF.addTest('env: дальние кольца',()=>vis(E.farRings||[],false),()=>vis(E.farRings||[],true));
+  PERF.addTest('env: фон-картина',()=>vis([E.backdrop],false),()=>vis([E.backdrop],true));
+  PERF.addTest('env: кроны леса',()=>vis([E.canopy,E.forestTrunks],false),()=>vis([E.canopy,E.forestTrunks],true));
+  PERF.addTest('env: облака неба',()=>{ck=1;},()=>{ck=0;});window.__skyNoCloud=()=>ck;
+  PERF.addTest('env: цветокоррекция',()=>{E.gradePass.uniforms.gOn.value=0;},()=>{E.gradePass.uniforms.gOn.value=1;});}
  let prW=1;PERF.addTest('пикселей ×¼',()=>{prW=PR;renderer.setPixelRatio(PR/2);resize();},()=>{renderer.setPixelRatio(prW);resize();});}
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
@@ -955,7 +1007,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  {const ph=((MOON0+dayNo/8)%1)*Math.PI*2;moonU.ph.value=ph;moonIll=.5-.5*Math.cos(ph);}
  const P=pal(hour);rainK=lerp(rainK,weather==='rain'?WIND.rainAmt():0,dt*.6);/* [WIND] drizzle .35, rain .75, storm 1 */const dim=1-rainK*.45;
  const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));
- skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
+ skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
  sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)));sun.shadow.radius=3+nightK*3;/* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI;hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp;
@@ -1015,18 +1067,31 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  trauma=Math.max(0,trauma-dt*1.8);const tr=trauma*trauma;
  if(camOv){look.set(camOv[0],camOv[1],camOv[3]);camera.position.set(look.x+Math.sin(.05)*camOv[2],look.y+Math.sin(.13)*camOv[2],look.z+Math.cos(.05)*camOv[2]);camera.lookAt(look);}
  else rig.update(dt,{drift:RM?0:Math.sin(T*.07)*.03,shake:(RM||tr<1e-4)?null:V(Math.sin(T*47)*.12*tr,Math.cos(T*41)*.12*tr,0)});
+ SHUT.update(dt);/* after the camera moved: the fade reads its distance */
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  if(!camOv)DOF.update(dt,rig.focusDist);
- if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
- hud();if(noPost)renderer.render(scene,camera);else composer.render();
+ {/* [LIGHTS] phone heat: redraw the sun/moon shadow map only as often as its content changes. Hero walking/climbing or the light
+    direction turning by >0.3 deg -> every sunEvery frames (as before); hero standing at a task -> half as often; at night the moon
+    shadow is soft (radius 6) and faint -> half again (walking: at most every 4th); at the 30 FPS cap the base is every frame; a thin moon or rain clouds -> standing, every 16th. Desktop unchanged. */
+  let ev=sunEvery;
+  if(MOBILE){const hp=hero.root.position,mv=sunHP.distanceTo(hp)>Math.max(dt,1/60)*.25;sunHP.copy(hp);
+   if(sunLD.dot(sun.position)<sun.position.length()*sunLD.length()*.999986)sunF=ev;           // the light turned: redraw now
+   const moonPow=(.28+.72*moonIll)*(1-rainK*.85);
+   ev=mv?Math.min(4,ev*(nightK>.5?2:1)):Math.min(16,ev*2*(nightK>.5?2:1)*(nightK>.5&&moonPow<.45?2:1));}   /* walking: never under ~8 redraws/s */
+  if(++sunF>=ev){sunF=0;sun.shadow.needsUpdate=true;sunLD.copy(sun.position);sunN++;}}
+ hud();if(ENV.outU)ENV.outU.fogOn.value=0;/* the fog pass turns it on when it hands its fog to the output pass */if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
 // [PERF] phones: objects smaller than 20 cm stop casting the sun/moon shadow (~100 of 256 casters, each one a draw call
 // in the shadow pass; their shadow is a few texels of a 1024 map over 24 m). They still receive shadows. Runs again later
 // for things built after loading.
 if(MOBILE){const _b=new THREE.Box3(),_v=V();const tiny=()=>{let n=0;scene.traverse(o=>{if(!o.isMesh||!o.castShadow||o.isInstancedMesh||o.isSkinnedMesh||o.userData.keepShadow)return;_b.setFromObject(o);_b.getSize(_v);if(Math.max(_v.x,_v.y,_v.z)<.2){o.castShadow=false;n++;}});return n;};PERF.tinyCasters=tiny();setTimeout(()=>{PERF.tinyCasters+=tiny();},8000);}
-// [PERF] phones start at pixel ratio 1.5 and climb to 2.2 while frames keep vsync (perf.js)
-if(MOBILE)PERF.preset([PX[1],PX[2],PX[3]]);
+// [PERF] phones start at pixel ratio 1.5 and climb while frames keep their interval (perf.js)
+// at the 30 FPS cap the ceiling is 1.75 (one rung up): above that the extra pixels mostly turn into heat on a 3x screen
+if(MOBILE){PERF.preset([PX[1],PX[2],PX[3]]);if(PERF.minMs){PX[1].up=null;PX[2].up=null;}}
+// [PERF] compile every shader now, behind the loading screen: hidden things (night sprites, sun rays, rain, fog layers)
+// otherwise compile the first time they show up, a visible stall of 50-200 ms on a phone (e.g. at dawn)
+{const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);try{renderer.compile(scene,camera);}catch(e){console.warn('prewarm',e);}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;PERF.prewarmed=renderer.info.programs.length;window.__pw=new Set();scene.traverse(o=>__pw.add(o));}
 resize();hud();$('load').classList.add('hide');PERF.openDebugWhenReady();
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>BRAIN?BRAIN.command(n):startTask(n),
  view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
