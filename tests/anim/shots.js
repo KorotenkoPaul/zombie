@@ -27,13 +27,18 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  let drift=0;const t0=Date.now();
  await simulate(p,{hours:D.meta.hours,tour:true,log:()=>{},capture:{frames:new Set(want.keys()),fn:async fr=>{
-  const rec=byF.get(fr);const now=await p.evaluate(()=>__dbg.hero.root.position.toArray());if(rec)drift=Math.max(drift,Math.hypot(now[0]-rec.root[0],now[1]-rec.root[1],now[2]-rec.root[2]));
+  const rec=byF.get(fr);const now=await p.evaluate(()=>__dbg.hero.root.position.toArray());if(rec){const d=Math.hypot(now[0]-rec.root[0],now[1]-rec.root[1],now[2]-rec.root[2]);if(d>.01&&drift<=.01)console.log('replay drifts from frame',fr,(d*100).toFixed(1),'cm');drift=Math.max(drift,d);}
   for(const j of want.get(fr)){const q=pick[j.n];const f=rec||byF.get(q.f);const c=focus(q,f);
-   const views=j.kind==='sheet'?[[-.55,.22,1.7],[.6,.3,1.9]]:[[-.45,.22,1.8]];let vi=0;
+   const views=j.kind==='sheet'?[[-.45,.2,2.2],[.5,.28,2.4]]:[[-.4,.2,2.3]];let vi=0;
    for(const [yaw,pitch,dist] of views){const file=`${DIR}/raw/${j.kind}_${String(j.n).padStart(2,'0')}_${j.kind==='sheet'?j.k+'_'+vi:String(j.k+100).padStart(3,'0')}.png`;
-    await p.evaluate(([c,yaw,pitch,dist])=>{const cam=__qaCamera;cam.position.set(c[0]+Math.sin(yaw)*Math.cos(pitch)*dist,c[1]+Math.sin(pitch)*dist,c[2]+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(c[0],c[1],c[2]);cam.updateMatrixWorld();
-     __noRender(false);__qaComposer.render();__noRender(true);},[c,yaw,pitch,dist]);
-    await p.locator('canvas').first().screenshot({path:file});vi++;}}}}});
+    // through the game's own camera rig (it cuts holes in walls between the camera and the target, and its near-fade
+    // radius follows the rig distance); depth of field off so the close-up stays sharp
+    await p.evaluate(([c,yaw,pitch,dist])=>{const T=__dbg.THREE;const R=window.__camera&&window.__camera.rig;
+     if(R&&R.set){__th.cam();if(__th.rig&&__th.rig.cine)__th.rig.cine(false);R.set({target:new T.Vector3(c[0],c[1],c[2]),yaw,pitch,dist,snap:true});for(let i=0;i<8;i++)R.update(.25,{});if(window.__camera.dof)window.__camera.dof(false);}
+     else{const cam=__qaCamera;cam.position.set(c[0]+Math.sin(yaw)*Math.cos(pitch)*dist,c[1]+Math.sin(pitch)*dist,c[2]+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(c[0],c[1],c[2]);}
+     __qaCamera.updateMatrixWorld();__noRender(false);__qaComposer.render();__noRender(true);},[c,yaw,pitch,dist]);
+    for(let tr=0;tr<3;tr++){await p.locator('canvas').first().screenshot({path:file});if(fs.statSync(file).size>15000)break;
+     await p.evaluate(()=>{__noRender(false);__qaComposer.render();__noRender(true);});await p.waitForTimeout(200);}vi++;}}}}});
  await b.close();console.log('rendered',[...want.values()].flat().length,'jobs in',((Date.now()-t0)/1000).toFixed(0),'s; replay drift',(drift*100).toFixed(2),'cm');
  fs.writeFileSync(DIR+'/picked.json',JSON.stringify({pick,drift}));
  execSync(`python3 ${__dirname}/sheets.py ${DIR}`,{stdio:'inherit'});

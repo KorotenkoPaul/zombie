@@ -73,3 +73,4 @@
 - `dishes`: 4 pieces, sink/rack/shelf. `setDirty(n)`, `wash()`, `putAway()`, `state()`, `setState({dirty, rack})`; points sink, rack, dishShelf.
 - `water`: `setClean(0..1)` tap bucket level (tap only runs > 0), `setDirty(0..1)` drain bucket, `tap(on)`, `pour(name, on)` (stream from the held bucket's lowest rim point, drains it), `update` auto-runs. Tools `waterBucket` (home on the shelf right of the kitchen window, hose to the tap) and `drainBucket` (home in the open bay under the sink). Water surface stays level and sloshes while carried. Points waterShelf, tap, drainBay.
 - Logs: `logGeo(variant)` natural unit logs (7 variants, 3..6 split); outside: logpile, chopblock with `axe` tool.
+- `bedCover(worldHip | null)`: he lies UNDER the quilt; the quilt rises over a body shape (feet toward -x of the bunk, head at the pillow), normals follow. `bedPress` stays for sitting/lying on top.

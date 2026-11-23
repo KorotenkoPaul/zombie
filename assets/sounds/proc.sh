@@ -1,8 +1,8 @@
 for f in ${FILES:-raw/*.mp3}; do k=$(basename $f .mp3);
-dn=""; case $k in fox_a|grasshopper_a|nightjar_a|rustle_b|tit_b|blackbird_a|woodpecker_a|branch_a|bullfinch_a|cricket_b|bcreak_*|edge_sit|firewood_carry|wetdrip_a|telescope|kettle_whistle|bow_draw) dn=",afftdn=nf=-45:nr=10";; esac
-hp="highpass=f=90"; case $k in wolf*|owl*|frog*|toad*|rain*|fire*|windw*|rustle*|step*|creak*|dove*|raven*|bcreak*|deer*|elk*|axe*|log*|firewood*|plank*|bolt*|stove*|step*|ladder*|rope*|edge*|chair*|bed*) hp="highpass=f=45";; esac
-th=-50; case $k in branch*|drip*|wetdrip*|sip) th=-62;; step*|cup*|edge_sit|kettle_whistle|stretch|yawn) th=-75;; esac
-bed=0; case $k in rain*|fire*|radio_music|sizzle) bed=1;; esac
+dn=""; case $k in fox_a|grasshopper_a|nightjar_a|rustle_b|tit_b|blackbird_a|woodpecker_a|branch_a|bullfinch_a|cricket_b|bcreak_*|edge_sit|firewood_carry|wetdrip_a|telescope|kettle_whistle|bow_draw|un_metal|un_thud|un_moan|fs_rope_b|drip_bucket_a|snore_a|bed_turn_a) dn=",afftdn=nf=-45:nr=10";; esac
+hp="highpass=f=90"; case $k in wolf*|owl*|frog*|toad*|rain*|fire*|windw*|rustle*|step*|creak*|dove*|raven*|bcreak*|deer*|elk*|axe*|log*|firewood*|plank*|bolt*|stove*|step*|ladder*|rope*|edge*|chair*|bed*|fridge_hum) hp="highpass=f=30";; esac
+th=-50; case $k in branch*|drip*|wetdrip*|sip) th=-62;; fs_*|step*|cup*|bed_turn*|drip_bucket*|edge_sit|kettle_whistle|stretch|yawn) th=-75;; esac
+bed=0; case $k in rain*|fire*|radio_music|sizzle|tap_stream|snore*|rain_slate*|fridge_hum) bed=1;; esac
 if [ $bed = 1 ]; then trim=""; else trim=",silenceremove=start_periods=1:start_threshold=${th}dB,areverse,silenceremove=start_periods=1:start_threshold=${th}dB,areverse"; fi
 ffmpeg -v error -y -i $f -ac 1 -af "$hp$dn$trim" -ar 32000 tmp.wav
 peak=$(ffmpeg -hide_banner -i tmp.wav -af volumedetect -f null - 2>&1 | grep max_volume | awk '{print $5}')

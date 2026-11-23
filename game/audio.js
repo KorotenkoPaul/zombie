@@ -102,6 +102,11 @@ const L = {
   insects: { clips: ['fly_a', 'grasshopper_a'], n: 2, place: 'ground', vol: .12, pitch: .06, p: .8,
     act: (h, e) => win(h, 11, 17, 1.2) * SEASON_K(e.season, { summer: 1, spring: .3, autumn: .2, winter: 0 }) * (1 - e.rain),
     texture: [3, 6], gap: [4, 14], rest: [4, 14] },
+  // ---- the shelter at night: rare, distant, unexplained (Little Nightmares mood). More often when the hero is anxious
+  // (Brain's need.safety); listeners get __audio.on('unease') so the hero can stop and listen.
+  unease: { clips: ['un_crack', 'un_cry', 'un_metal', 'un_thud', 'un_moan', 'un_rustle'], n: 1, place: 'far', vol: .3, pitch: .07, p: .9, rev: .8, uneasy: true,
+    act: (h, e) => nightW(h, 21, 4.6, 1) * (.2 + 1.1 * (e.anx ?? .3)) * (1 - .4 * e.rain),
+    bout: [1, 1], rest: [70, 170] },
   // ---- autumn ----
   geese: { clips: ['geese_a', 'geese_b', 'cranes_a'], n: 1, place: 'far', vol: .42, pitch: .04, p: .8, fly: true,
     act: (h, e) => (win(h, 6.5, 11, 1) + .8 * win(h, 15, 19.5, 1)) * SEASON_K(e.season, { autumn: 1, spring: .5, summer: 0, winter: 0 }),
@@ -123,7 +128,7 @@ const SONG = Object.keys(L).filter(k => L[k].song);
 
 export function createAudio(ctx) {
   const getAC = ctx.ac || (() => null);
-  let A = null, master = null, rev = null, revIn = null, outBus = null, outLP = null, inBus = null, roomIn = null, loaded = false, loading = null, started = false;
+  let NYQ = 15000, A = null, master = null, rev = null, revIn = null, outBus = null, outLP = null, inBus = null, roomIn = null, loaded = false, loading = null, started = false;
   let muted = false; try { muted = localStorage.getItem('th_mute') === '1'; } catch (e) {}
   let season0 = null;
   // Memory: the packs stay compressed (RAW, ~3 MB); a clip is decoded the first time it is needed and the
@@ -148,7 +153,9 @@ export function createAudio(ctx) {
   }
   const voices = new Set();
   const LOG = [];
-  const MAXV = 14;
+  const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) try { f(e); } catch (er) { console.error('audio', k, er); } };
+  const MOB = !!ctx.mobile;
+  const MAXV = MOB ? 9 : 14;   // phones: fewer simultaneous voices (each is a panner + filter + gain)
   let now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
   const ind = {};          // individuals per layer
   const mult = {};         // today's / tonight's personality per layer
@@ -165,11 +172,11 @@ export function createAudio(ctx) {
     const comp = A.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 12; comp.ratio.value = 3; comp.attack.value = .01; comp.release.value = .3;
     master.connect(comp).connect(A.destination);
     // one shared forest reverb: a soft decaying impulse response (only heard through the calls, never on its own)
-    const len = Math.floor(A.sampleRate * 2.6), ir = A.createBuffer(2, len, A.sampleRate);
+    const len = Math.floor(A.sampleRate * (MOB ? 1.7 : 2.6)), ir = A.createBuffer(2, len, A.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); let lp = 0; for (let i = 0; i < len; i++) { const t = i / len; lp += ((Math.random() * 2 - 1) - lp) * (0.5 - .42 * t); d[i] = lp * Math.pow(1 - t, 2.4) * (i < 300 ? i / 300 : 1); } }
     rev = A.createConvolver(); rev.buffer = ir; revIn = A.createGain(); revIn.gain.value = .55;
     // the forest goes through one low-pass + gain: from inside a room it is muffled and quieter
-    outLP = A.createBiquadFilter(); outLP.type = 'lowpass'; outLP.frequency.value = 20000; outLP.Q.value = .4;
+    NYQ = A.sampleRate / 2 - 100; outLP = A.createBiquadFilter(); outLP.type = 'lowpass'; outLP.frequency.value = NYQ; outLP.Q.value = .4;
     outBus = A.createGain(); outBus.connect(outLP).connect(master); revIn.connect(rev).connect(outBus);
     // sounds in the house: dry bus + a short wooden-room reverb (early reflections off the planks)
     inBus = A.createGain(); inBus.connect(master);
@@ -193,7 +200,7 @@ export function createAudio(ctx) {
     const c = ctx.camera; if (!c || !outLP) return;
     inK += (indoorK(c.position) - inK) * Math.min(1, dt * 2.5);
     if (Math.abs(inK - inKa) < .01) return; inKa = inK; const t = A.currentTime;
-    outLP.frequency.setTargetAtTime(20000 * Math.pow(1500 / 20000, inK), t, .15);   // 20 kHz -> 1.5 kHz
+    outLP.frequency.setTargetAtTime(NYQ * Math.pow(1500 / NYQ, inK), t, .15);   // open -> 1.5 kHz
     outBus.gain.setTargetAtTime(1 - .55 * inK, t, .15);
     roomIn.gain.setTargetAtTime(.35 + .5 * inK, t, .15);                                 // the room rings more when we are in it
   }
@@ -204,6 +211,7 @@ export function createAudio(ctx) {
     loaded = true; console.log('audio: ' + Object.keys(RAW).length + ' forest clips ready');
     await loadPack('sounds-act-mp3.txt').catch(e => console.warn('audio actions', e));   // the hero's foley comes second
     actLoaded = true;
+    for (const k in FT) for (const c of FT[k]) decode(c);   // footsteps are short and frequent: keep them warm
   }
   async function loadPack(file) {
     const url = new URL((ctx.asset || '') + file, document.baseURI).href;
@@ -211,9 +219,19 @@ export function createAudio(ctx) {
     for (const k in pack) { const bin = atob(pack[k]), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); RAW[k] = u8; }
   }
 
+  // iOS (Safari and home-screen apps): audio only unlocks inside a real gesture (touchend/click count; touchstart and
+  // pointerdown not always), and it can come back 'suspended' or 'interrupted' after a call, Siri or the app switcher.
+  // So every gesture re-tries, and the first one also plays a silent sample, which is what actually opens the output on iOS.
+  function unlock() {
+    if (!A) return;
+    if (A.state !== 'running') A.resume().catch(() => {});
+    if (!unlock.done) { try { const b = A.createBuffer(1, 1, A.sampleRate), s0 = A.createBufferSource(); s0.buffer = b; s0.connect(A.destination); s0.start(0); unlock.done = true; } catch (e) {} }
+  }
+  const onGesture = () => { if (!started) start(); else unlock(); };
+  for (const ev of ['touchend', 'click', 'pointerup', 'keydown']) document.addEventListener(ev, onGesture, { capture: true, passive: true });
   function start() {
-    if (!A) { A = getAC(); if (!A) return; buildGraph(); }
-    if (A.state === 'suspended') A.resume();
+    if (!A) { A = getAC(); if (!A) return; buildGraph(); A.onstatechange = () => { if (A.state === 'interrupted') unlock.done = false; }; }
+    unlock();
     if (!loading) loading = load().catch(e => console.warn('audio load', e));
     started = true;
   }
@@ -248,7 +266,7 @@ export function createAudio(ctx) {
     let dist = 10;
     if (o.pos) {
       const l = listener(); dist = Math.hypot(o.pos.x - l.x, o.pos.y - l.y, o.pos.z - l.z);
-      const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.max(1400, 16000 * Math.exp(-dist / (o.far ? 45 : 70))); lp.Q.value = .5;
+      const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.max(1400, NYQ * Math.exp(-dist / (o.far ? 45 : 70))); lp.Q.value = .5;
       const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = o.ref || 10; p.rolloffFactor = o.roll ?? .9; p.maxDistance = 400;
       if (p.positionX) { p.positionX.value = o.pos.x; p.positionY.value = o.pos.y; p.positionZ.value = o.pos.z; } else p.setPosition(o.pos.x, o.pos.y, o.pos.z);
       if (o.move) { const m = o.move; if (p.positionX) { p.positionX.setValueAtTime(o.pos.x, t); p.positionX.linearRampToValueAtTime(m.x, t + realDur); p.positionY.setValueAtTime(o.pos.y, t); p.positionY.linearRampToValueAtTime(m.y, t + realDur); p.positionZ.setValueAtTime(o.pos.z, t); p.positionZ.linearRampToValueAtTime(m.z, t + realDur); } }
@@ -281,11 +299,13 @@ export function createAudio(ctx) {
       ind[k] = Array.from({ length: n }, () => ({ pos: place(S.place), pitch: 1 + rnd(-S.pitch, S.pitch), next: now + rnd(0, 2), bout: 0, lazy: rnd(.7, 1.3) }));
     }
   }
-  const NIGHT = ['cricket', 'frog', 'owl', 'wolf', 'fox', 'nightjar', 'twig', 'deer'];
+  const NIGHT = ['cricket', 'frog', 'owl', 'wolf', 'fox', 'nightjar', 'twig', 'deer', 'unease'];
   const DAY = Object.keys(L).filter(k => !NIGHT.includes(k));
 
   function call(k, I, act, env) {
-    const S = L[k], name = pick(S.clips), buf = getBuf(name); if (!buf) return;
+    const S = L[k]; let name = pick(S.clips); if (S.uneasy && name === S.last) name = pick(S.clips); S.last = name;
+    const buf = getBuf(name); if (!buf) return;
+    if (S.uneasy) { const q = I.pos; emit('unease', { name, pos: [q.x, q.y, q.z], anx: env.anx ?? 0 }); }
     const rate = I.pitch * (1 + rnd(-.025, .025));
     const o = { pos: I.pos, rate, gain: S.vol * rnd(.6, 1.05) * (.55 + .45 * Math.min(1, act)), rev: S.rev, far: S.place === 'veryfar', ref: S.place === 'house' ? 4 : 10 };
     if (S.texture) { o.dur = rnd(S.texture[0], S.texture[1]); o.offset = rnd(0, Math.max(0, buf.duration - o.dur)); o.fadeIn = rnd(.4, 1.2); o.fadeOut = rnd(.6, 1.5); }
@@ -363,7 +383,45 @@ export function createAudio(ctx) {
     gustSound(env.wind, env); gustNext = now + rnd(3, 9) / Math.max(.2, env.wind) + rnd(0, 4);
   }
 
-  let dripNext = 0, creakNext = 6;
+  const FRIDGE = ctx.fridge || { x: -1.43, y: (ctx.lv ? ctx.lv.KT : 5.0) + .8, z: 1.38 };
+  let fridgeOn = false, fridgeT = 0;
+  let dripNext = 0, creakNext = 6, autoSleep = true, snoreNext = 0, turnNext = 0;
+  // ---------- footsteps: surface under the foot, at the moment the foot lands ----------
+  // Character can drive them exactly with __audio.footstep(side, pos?, {surface}); until it does, audio.js watches
+  // the toe bones itself: a foot that comes down to the floor after being lifted is a step.
+  let gnow = 0, dbgF = null, autoFeet = true, ladderNext = 0, cadNext = 0, cadSide = 'L', frameDt = .016;
+  const FT = { boards: ['step_wood_a', 'step_wood_b', 'step_wood_c'], dirt: ['fs_dirt_a', 'fs_dirt_b', 'fs_dirt_c'], wet: ['fs_wet_a', 'fs_wet_b', 'fs_wet_c'],
+    leaves: ['fs_leaves_a', 'fs_leaves_b', 'fs_leaves_c'], ladder: ['fs_ladder_a', 'fs_ladder_b'], rope: ['fs_rope_a', 'fs_rope_b'] };
+  const FV = { boards: .2, dirt: .2, wet: .22, leaves: .24, ladder: .22, rope: .24 };
+  const footSt = { L: { armed: false }, R: { armed: false } };
+  function surfaceAt(p, env) {
+    if (p.y > .6) return 'boards';
+    if (env.rain > .2 || rainMem > .3) return 'wet';
+    if (env.season === 'autumn') return Math.random() < .65 ? 'leaves' : 'dirt';
+    return 'dirt';
+  }
+  function step(side, pos, surface, gain = 1) {
+    if (!loaded || muted) return;
+    const list = FT[surface] || FT.boards, q = toPos(pos);
+    const clip = pick(list), o = { pos: q, gain: (FV[surface] || .2) * gain * rnd(.75, 1.05), rate: rnd(.9, 1.1), ref: 3, roll: 1, rev: .15, prio: true, indoor: q.y > .6, fadeIn: .005, fadeOut: .08 };
+    if (B[clip]) voice(clip, o); else decode(clip).then(() => voice(clip, o));
+  }
+  const _w = { x: 0, y: 0, z: 0 };
+  function feet(p, mv, vy, env) {
+    const B2 = ctx.bones; if (!B2) return;
+    // climbing: a rung every ~0.45 s
+    if (Math.abs(vy) > .25 && mv < .35) { if (gnow > ladderNext) { step('L', { x: p.x, y: p.y + .2, z: p.z }, ctx.ropeAt && ctx.ropeAt(p) ? 'rope' : 'ladder'); ladderNext = gnow + rnd(.4, .55); } return; }
+    if (mv < .25) { footSt.L.armed = footSt.R.armed = false; return; }
+    // slow frames (a weak phone, a background tab): the toe lift falls between frames, so walk by cadence instead
+    if (frameDt > .08) { if (gnow > cadNext) { cadSide = cadSide === 'L' ? 'R' : 'L'; step(cadSide, p, surfaceAt(p, env), Math.min(1.2, .6 + mv * .4)); cadNext = gnow + .62 / Math.max(.6, mv); } return; }
+    for (const [side, bn] of [['L', B2.LeftToeBase || B2.LeftFoot], ['R', B2.RightToeBase || B2.RightFoot]]) {
+      if (!bn) continue; const w = bn.getWorldPosition(ctx.v3 || (ctx.v3 = new bn.position.constructor()));
+      const hgt = w.y - p.y, st = footSt[side];
+      st.base = Math.min(hgt, (st.base ?? hgt) + frameDt * .03);          // the planted height of this foot (adapts to the clip)
+      if (hgt > st.base + .05) st.armed = true;
+      else if (st.armed && hgt < st.base + .018) { st.armed = false; step(side, w, surfaceAt(w, env), Math.min(1.2, .6 + mv * .4)); }
+    }
+  }
   const lastHero = { x: 0, y: 0, z: 0 };
 
   function update(dt) {
@@ -371,6 +429,8 @@ export function createAudio(ctx) {
     syncListener();
     if (!loaded || muted || A.state !== 'running') return;
     // real seconds from the audio clock: the frame dt is clamped and slows down on weak devices
+    const pn = performance.now() / 1000, rawDt = update.pn ? pn - update.pn : .016; update.pn = pn;
+    const gdt = Math.max(1e-3, dt); gnow += gdt;   // game-time frame step (the hero's animation runs on it)
     const t = A.currentTime; dt = clamp01(t - (update.t ?? t)); update.t = t; now += dt;
     acoustics(dt);
     if (loops.size) tickLoops();
@@ -378,7 +438,8 @@ export function createAudio(ctx) {
     const rain = clamp01(ctx.rain ? ctx.rain() : 0);
     wind = windLevel(dt);
     const hero = ctx.hero, asleep = !!(hero && hero.inBed);
-    const env = envNow = { season: season(), rain, wind, awake: !asleep };
+    let anx = .3; try { const nb = window.__brain && window.__brain.need; if (nb && nb.safety != null) anx = clamp01(nb.safety); } catch (e) {}
+    const env = envNow = { season: season(), rain, wind, awake: !asleep, anx };
     hookWind();
     // the hero getting up in the morning wakes the garden
     if (wasAsleep && !asleep && h > 4 && h < 10.5) kick = 1;
@@ -397,17 +458,32 @@ export function createAudio(ctx) {
     const R = window.__rain, cp = ctx.camera ? ctx.camera.position : null;
     let roof = .35; if (R && typeof R.roofNear === 'function' && cp) { try { roof = clamp01(R.roofNear(cp)); } catch (e) {} }
     bed('rain', ['rain_a'], rain, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1 }));
-    bed('roof', ['rain_b'], rain * Math.min(1, .25 + .75 * roof + .5 * inK), l => ({ gain: .42 * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05 }));
+    // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
+    bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
     rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 60);
     if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
     // the oven fire, where the oven is
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
     const op = L2 && L2.pos ? L2.pos('oven') : null;
-    if (op) bed('fire', ['fire_a', 'fire_b'], fireLvl, l => ({ gain: .5 * l, pos: op, ref: 2.2, roll: 1.3, rev: .2, indoor: true, offset: rnd(0, 2) }));
+    const cam = ctx.camera ? ctx.camera.position : P0, near = (q, r) => q && Math.hypot(q.x - cam.x, q.y - cam.y, q.z - cam.z) < r;
+    // the stove crackles only for a listener near it (nothing is played at all from afar: no cost)
+    if (op) bed('fire', ['fire_a', 'fire_b'], near(op, 14) ? fireLvl : 0, l => ({ gain: .5 * l, pos: op, ref: 1.8, roll: 2, rev: .2, indoor: true, offset: rnd(0, 2) }));
+    // the old fridge hums in cycles (on 40-90 s, off 25-60 s), audible only up close in the kitchen
+    if (now > fridgeT) { fridgeOn = !fridgeOn; fridgeT = now + (fridgeOn ? rnd(40, 90) : rnd(25, 60)); }
+    bed('fridge', ['fridge_hum'], fridgeOn && near(FRIDGE, 7) ? 1 : 0, l => ({ gain: .32 * l, pos: FRIDGE, ref: 1, roll: 2.5, rev: .1, indoor: true, offset: rnd(0, 3) }));
+    // the hero asleep: soft snores now and then, and turning over (Character/Brain can switch this off: __audio.autoSleep(false))
+    if (autoSleep && asleep && hero.root && actLoaded) {
+      const hp = hero.root.position, at = { x: hp.x, y: hp.y + .5, z: hp.z };
+      if (now > snoreNext) { if (snoreNext > 0) playAct('snore', at); snoreNext = now + rnd(7, 16); }
+      if (now > turnNext) { if (turnNext > 0) playAct('bed_turn', at); turnNext = now + rnd(35, 90); }
+    } else { snoreNext = now + rnd(4, 9); turnNext = now + rnd(25, 60); }
     // old planks creak under the hero now and then
     if (hero && hero.root) {
-      const p = hero.root.position, mv = Math.hypot(p.x - lastHero.x, p.z - lastHero.z) / Math.max(dt, 1e-3);
+      const p = hero.root.position, mv = Math.hypot(p.x - lastHero.x, p.z - lastHero.z) / gdt, vy = (p.y - lastHero.y) / gdt;
       lastHero.x = p.x; lastHero.y = p.y; lastHero.z = p.z;
+      frameDt = frameDt * .8 + Math.min(.5, rawDt) * .2;
+      dbgF = [+mv.toFixed(2), +vy.toFixed(2), +frameDt.toFixed(3), +p.y.toFixed(2)];
+      if (autoFeet) feet(p, mv, vy, env);
       if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
     }
   }
@@ -437,14 +513,21 @@ export function createAudio(ctx) {
     jacket: { c: ['jacket_on'], v: .38 }, backpack: { c: ['backpack'], v: .38 }, fridge_open: { c: ['fridge_open'], v: .42 }, fridge_close: { c: ['fridge_close'], v: .42 },
     meat_pan: { c: ['meat_pan'], v: .42 }, eat: { c: ['eat'], v: .32 }, plate: { c: ['plate_set'], v: .38 },
     forest_steps: { c: ['forest_steps'], v: .32, out: 1 }, door_open: { c: ['trunk_door'], v: .42 }, door_close: { c: ['trunk_door_close'], v: .42 }, woodpile: { c: ['logs_stack', 'firewood_drop'], v: .42 },
-    sizzle: { c: ['sizzle', 'meat_pan'], v: .3 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
+    sizzle: { c: ['sizzle', 'meat_pan'], v: .3 },
+    bucket_fill: { c: ['bucket_fill'], v: .45, out: 1 }, slosh: { c: ['slosh_a', 'slosh_b'], v: .26, rate: .08 }, tap: { c: ['tap_stream'], v: .32 },
+    drip_bucket: { c: ['drip_bucket_a', 'drip_bucket_b'], v: .22, rate: .12 }, bucket_dump: { c: ['bucket_dump'], v: .45, out: 1 },
+    hatch_open: { c: ['hatch_open'], v: .45 }, hatch_close: { c: ['hatch_close'], v: .5 },
+    nails: { c: ['nail_a', 'nail_b', 'hammer_b'], v: .48, out: 1 }, saw_shingle: { c: ['saw_shingle'], v: .42, out: 1 },
+    bed_turn: { c: ['bed_turn_a', 'bed_turn_b', 'blanket'], v: .3 }, snore: { c: ['snore_a', 'snore_b'], v: .16, rate: .05 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
   };
   // the 20 approved actions by their plain names (Character may call either)
   const ALIAS = { tea: 'tea_pour', kettle_tea: 'kettle', chopping: 'chop_veg', vegetables: 'chop_veg', stir_pot: 'stir', stove_wood: 'firewood_oven', dishes: 'wash',
     sawing: 'saw', nail: 'hammer', hammering: 'hammer', sharpening: 'sharpen', fix_lantern: 'lantern_fix', diary: 'write', writing: 'write', sweeping: 'sweep',
     water_plant: 'water', watering: 'water', door_bolt: 'bolt', check_bolt: 'bolt', count_supplies: 'supplies', radio: 'radio_tune', ledge_sit: 'edge_sit',
     carry_firewood: 'firewood_carry', armful: 'firewood_carry', listen: 'window',
-    bow: 'bow_release', shoot: 'bow_release', fridge: 'fridge_open', meat: 'meat_pan', fry: 'meat_pan', eating: 'eat', forest: 'forest_steps', forest_walk: 'forest_steps', logs_to_pile: 'woodpile', put_on_jacket: 'jacket' };
+    bow: 'bow_release', shoot: 'bow_release', fridge: 'fridge_open', meat: 'meat_pan', fry: 'meat_pan', eating: 'eat', forest: 'forest_steps', forest_walk: 'forest_steps', logs_to_pile: 'woodpile', put_on_jacket: 'jacket',
+    pond: 'bucket_fill', fill_bucket: 'bucket_fill', carry_water: 'slosh', water_tap: 'tap', drain_drip: 'drip_bucket', dump_water: 'bucket_dump', hatch: 'hatch_open', trapdoor: 'hatch_open',
+    repair_nail: 'nails', roof_nail: 'nails', shingle: 'saw_shingle', turn_over: 'bed_turn', snoring: 'snore' };
   const P0 = { x: 0, y: 0, z: 0 };
   function toPos(p) {
     if (!p) { const r = ctx.hero && ctx.hero.root; return r ? { x: r.position.x, y: r.position.y + 1, z: r.position.z } : P0; }
@@ -495,9 +578,12 @@ export function createAudio(ctx) {
 
   const api = {
     start, update, mute: setMute, muted: () => muted, started: () => started, loaded: () => loaded, actionsReady: () => actLoaded, actions: () => Object.keys(ACT).concat(Object.keys(ALIAS)),
-    loop: loopAct,
+    loop: loopAct, autoSleep: b => { autoSleep = !!b; },
+    footstep: (side, pos, o = {}) => { autoFeet = false; const q = toPos(pos); step(side, q, o.surface || surfaceAt(q, envNow), o.gain ?? 1); },
+    on: (k, f) => { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     setSeason: s => { season0 = s || null; populate(Object.keys(L), { season: season(), rain: 0, wind }); },
-    state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const ext = { indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
+    state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
+      const ext = { toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
     play: playAct,
   };

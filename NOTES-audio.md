@@ -27,3 +27,21 @@
 - Acoustics: forest/weather sounds go through `outBus` (low-pass + gain); hero/fire/creak sounds through `inBus` with a short wooden-room reverb. `indoorK(camera)` (room centres from lights.js ROOMS, radius ~2.7 m; zoomed close counts as inside) muffles the forest to 1.5 kHz and -55%, rings the room more, and makes the roof rain louder. `__audio.state().indoor`.
 - Memory/CPU: packs stay compressed in RAM (~2.4 MB); clips decode on first use and LRU-evict beyond 140 s of PCM (~18 MB at 32 kHz instead of ~70 MB). AudioContext runs at 32 kHz (index.html ac()). mp3 at 48 kbps: packs 2.2 MB + 1.1 MB.
 - A first call of a not-yet-decoded action plays a few ms late (decode), then it is cached.
+
+## Round 4: footsteps by surface, night unease
+- Footsteps: boards (step_wood_*), dirt, wet (rain or <1 min after), leaves (autumn ground, 65%), ladder rungs, rope rungs (if `ctx.ropeAt(p)` is given). Surface from height (y > 0.6 = boards) + weather + season.
+- Auto mode (default): watches the toe bones (`bones` passed from index.html); a foot that lifts > 5 cm above its planted height and comes back is a step, at the toe position. On slow frames (>80 ms real) it switches to cadence (0.62 s/m in game time). Climbing (|vy| > 0.25, little horizontal motion) = a rung every ~0.45 s.
+- `__audio.footstep(side, pos?, {surface, gain})`: Character can drive exact contacts; the first call turns auto mode off.
+- Footstep clips are decoded as soon as the foley pack arrives (they must never be late).
+- Night unease layer `unease`: distant branch crack, unclear cry, metal clank, thud, wail, bushes; night only, ~0.3-1 per night, rate x (0.2 + 1.1 * __brain.need.safety). Never the same one twice in a row. `__audio.on('unease', e => …)` with {name, pos, anx}: Brain can make the hero stop and listen.
+
+## Round 5: water, hatch, repair, sleep
+- New foley (names / aliases): bucket_fill (pond, fill_bucket), slosh (carry_water; call on each step while carrying), tap (water_tap; use loop()), drip_bucket (drain_drip), bucket_dump (dump_water), hatch_open / hatch_close (hatch, trapdoor), nails (repair_nail, roof_nail), saw_shingle (shingle), bed_turn (turn_over), snore (snoring).
+- Automatic while `hero.inBed`: a soft snore every 7-16 s and turning over every 35-90 s at the bed. `__audio.autoSleep(false)` hands it to Character/Brain.
+- Live build: master auto-deploys to Railway (https://game-production-8358051a.up.railway.app/); the claude.ai artifact has a 200 publishes/day limit.
+
+## Round 6: interior mix, phone cost, iOS unlock
+- Roof rain is slate now (rain_slate_a/b): routed through the house bus (not muffled with the forest); level rain × max(__rain.roofNear(camera), indoorK).
+- Stove crackle (fire bed) and old fridge hum (fridge_hum at ctx.fridge or (-1.43, KT+0.8, 1.38)) are steep-rolloff positional beds that are not played at all when the camera is further than 14 m / 7 m. Fridge cycles on 40-90 s / off 25-60 s.
+- Phones (`mobile: MOBILE` from index.html): max 9 voices, 1.7 s forest reverb; 32 kHz context; lazy decode with LRU.
+- iOS unlock: document-level touchend/click/pointerup/keydown (capture) start or resume the context and play a 1-sample silent buffer the first time; re-armed after an 'interrupted' state (calls, Siri). Works the same in Safari and home-screen (standalone) mode. The ring/silent switch still mutes Web Audio on iOS (system behaviour).

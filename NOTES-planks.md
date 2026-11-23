@@ -16,3 +16,8 @@ Code: index.html, block "wood: every board is its own body" (`plankShader`, `bev
 
 ## Test
 `tests/planks/shots2.js outdir [hour] [dpr]`: orbit-rig close-ups (kitchen floor, kitchen and bedroom walls, landing, deck, overview) with all lights on. `count.js` prints board counts and triangles. Don't use `__th.cam()` for close-ups: the near-fade dithers everything between the camera and the focus point.
+
+## Roofs (owned by Planks since 2026-11-23, round 2)
+- Shingles `SHING`: the same `bevelBoxGeo` with an 18 mm rounded edge, and its own shader (`SHING_GLSL`). Each slate has its own patch of the Fal scan `game/slate.jpg` (1024) and its own tone (bluer, greener or rust-stained), flaky relief from the scan, a crack groove on 16% of them, and rare dark lichen specks. Moss comes from world-space patches (`game/moss.jpg`, 512), denser on the back half (z<2.3), raised a few mm in the normal. 3.5% of slates are missing above the bottom row, so the dark slab shows. Treedress still scatters moss cushions on SHING by reading its matrices.
+- [PERF] SHING sits on layer 5: the main camera and the sun shadow camera see it, but lamp (point/spot) shadow cameras don't, since the roof slab already stops lamp light.
+- [PERF] `meshesToBeams(g)`: roof slabs, ridges, gable trims and window frames (5 windows × 6 boxes) are now `beams` instances instead of ~40 separate meshes, so they add no draw calls. Use `beamInst(matrix)` for any new static dark-wood box.
