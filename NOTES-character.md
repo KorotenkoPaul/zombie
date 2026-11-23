@@ -30,3 +30,7 @@
 - Book page text faces the reader but small hand/cover overlap is possible when the clip's hands drift.
 - Ladder down still uses the pull-up played backwards.
 - Headless SwiftShader renders this scene at < 1 fps: fast-forward the hero with `__dbg.HH.update(1/30)` in a loop, then screenshot.
+
+## Hooks from other areas (to use in tasks)
+- Lantern fix (Lights): __lights.attachHand(heroBones.RightHand); __lights.set('hand',true) ... when done __lights.set('hand',false); __lights.detachHand().
+- Hatch (Tree): __house.hatch {ladder:{top,bottom},grab,isOpen(),open(),close()}; route() blocks the ladder edge while closed. MAKE.hatch({open}).

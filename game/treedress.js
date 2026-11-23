@@ -74,7 +74,7 @@ export function createTreeDress(C) {
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
     D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
-    D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.35, rain); };
+    D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.08, rain); /* dew is only a faint sheen; really wet only in the rain */ };
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
       sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdRimK = D.barkU.rimK;
@@ -108,7 +108,12 @@ uniform float tdCool;` + NOISE)
           // the sculpted model's own painted texture has long vertical streaks: keep only its broad colour (a blurred mip),
           // the bark detail comes from the relief below
           { vec4 mb=texture2D(map,vMapUv,5.);
-            diffuseColor.rgb=diffuseColor.rgb/max(sampledDiffuseColor.rgb,vec3(.004))*mix(sampledDiffuseColor.rgb,mb.rgb,.85); }
+            #ifdef TD_LITE
+            float mute=.6;
+#else
+            float mute=.85;
+#endif
+            diffuseColor.rgb=diffuseColor.rgb/max(sampledDiffuseColor.rgb,vec3(.004))*mix(sampledDiffuseColor.rgb,mb.rgb,mute); }
 #endif
           // ---- bark relief: light worn crust on the ridges, deep dark furrows, fibrous detail up close ----
           { vec2 rv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float r=length(rv); vec3 rad=r>1e-3?vec3(rv.x/r,0.,rv.y/r):vec3(1.,0.,0.);
@@ -178,17 +183,18 @@ uniform float tdCool;` + NOISE)
           if(brk>.01)dn=mix(dn,tdTriN(tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
           if(tdFade>.01)dn+=tdTriN(tdP+7.3,wn,tdScale*3.3,1.1)*tdFade;
 #endif
+          dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.32,tdWM);')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.32,tdWM); // dry bark is fully matte')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
           vec3 wn=normalize(tdN), wv=normalize(cameraPosition-tdP);
           float fr=pow(1.-max(dot(wn,wv),0.),3.);
-          float rim=fr*max(dot(wn,normalize(tdRimD)),0.)*tdRimS*tdRimK;
+          float rim=fr*max(dot(wn,normalize(tdRimD)),0.)*tdRimS*tdRimK*(1.-.7*smoothstep(.5,.9,wn.y)); // an edge light, not a sheen on the tops
           totalEmissiveRadiance+=tdRimC*rim*(.12+tdL*1.6)*(1.-tdMM*.5)*(1.+tdWM*.8);
         }`);
     };
