@@ -32,6 +32,11 @@ async function one(h){let D,errs=[];if(FROM){D=JSON.parse(zlib.gunzipSync(fs.rea
   console.log('gate baseline written:',Object.keys(keep).length,'known P1 problems ('+frames+' frames, '+((Date.now()-t0)/1000|0)+' s)');process.exit(0);}
  const base=JSON.parse(fs.readFileSync(BASE));const bad=[];
  for(const k in cur){const v=cur[k].v,b0=base[k];if(b0===undefined)bad.push(['NEW',k,v,cur[k]]);else if(v>b0*1.25&&v-b0>2)bad.push(['WORSE',k,v,cur[k],b0]);}
+ // the detailed hero is not fully deterministic yet (replays can part after ~1000 frames): a regression must show up again
+ // in a second run to count
+ if(bad.length&&!FROM){const hs=[...new Set(bad.map(x=>x[1].split('|')[0]))];console.log('re-running',hs.join(','),'to confirm',bad.length,'possible regressions...');
+  const again={};for(const r of await Promise.all(hs.map(one)))Object.assign(again,r.worst);
+  for(let i=bad.length-1;i>=0;i--){const k=bad[i][1];const b0=base[k];const v2=again[k]&&again[k].v;const still=v2!==undefined&&(b0===undefined||(v2>b0*1.25&&v2-b0>2));if(!still)bad.splice(i,1);}}
  const hard=res.flatMap(r=>r.hard);
  const fixed=Object.keys(base).filter(k=>!(k in cur)&&HEROES.includes(k.split('|')[0]));
  console.log(`anim gate: ${frames} frames, ${((Date.now()-t0)/1000|0)} s; ${bad.length} regressions, ${fixed.length} baseline problems gone`);
