@@ -139,6 +139,17 @@ export function createBrain({ HH, lights, hour, isNight }) {
   let scores = [];          // for the panel
   let why = '';
   let lingerCool = 0, roomNow = null, roomT = 0;
+  // a visit: when he arrives somewhere he means to do 2-4 things there before moving on (Pavel: never up and straight back down)
+  const DECK = ['look', 'telescope', 'ledge', 'fix_railing', 'clear_roof', 'fix_shingle', 'fix_chimney'];
+  const area = n => DECK.includes(n) ? 'deck' : (JOBS[n] || ['chop', 'firewood', 'fix_rope'].includes(n)) ? 'ground' : ((ACTS[n] || EXTRA[n] || {}).room || null);
+  const visit = { area: null, left: 0 };
+  function visitBonus(n) {
+    const a = area(n);
+    if (!visit.left || !visit.area) return null;            // no visit going on: the usual room logic
+    if (a === visit.area) return 1.1;                       // more to do here
+    if (a === null) return .3;                              // small things that can be done anywhere
+    return -.5;                                             // elsewhere: later
+  }
   let wake = rnd(5.6, 6.6); // he does not wake at the same minute every day
   let bedTime = rnd(20.8, 21.6);
 
@@ -212,7 +223,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (locked && A.room === 'outside') s -= 9;      // lockdown: nobody goes out
     s -= travel(A.node) * (.15 + (1 - need.energy) * .25);
     // cabin fever: the longer he stays in one room, the more the other rooms call
-    if (A.room && A.room !== roomNow) s += Math.min(.7, roomT / 70);
+    const vb = name === 'sleep' ? null : visitBonus(name);
+    if (vb != null) s += vb;
+    else if (A.room && A.room !== roomNow) s += Math.min(.7, roomT / 70);
     else if (A.room && A.room === roomNow) s += Math.max(0, .4 - roomT / 120);   // first chain what is at hand in this room
     const i = recent.indexOf(name);
     if (i === 0) s -= .9; else if (i === 1) s -= .35; else if (i === 2) s -= .15;
@@ -248,7 +261,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
     for (const k in E.give) { const g = -E.give[k]; if (g <= 0) continue; const v = need[k] ** 2 * g * 4; s += v; if (v > topV) { topV = v; top = k; } }
     s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
     if (E.give.wear && need.wear > .55) s += (need.wear - .55) * 3;   // the house needs fixing: it nags him
-    if (E.room && E.room === roomNow) s += Math.max(0, .35 - roomT / 120); else if (!E.room) s += .15;   // things at hand first
+    const vb = visitBonus(n);
+    if (vb != null) s += vb;
+    else if (E.room && E.room === roomNow) s += Math.max(0, .35 - roomT / 120); else if (!E.room) s += .15;   // things at hand first
     if (E.room === 'outside' && roomNow !== 'outside' && h >= bedTime - 1.3 && h < 23.9) s -= 1;   // no setting off outdoors just before bed
     const i = recent.indexOf(n); if (i === 0) s -= 2; else if (i === 1) s -= .5; else if (i >= 2) s -= .2;
     return { name: n, s: s + rnd(0, .3), top: top || '' };
@@ -260,6 +275,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (WATER()) for (const x of scores) if (WET[x.name] && (stock.clean < WET[x.name] || stock.dirtyW > .95)) x.s -= 9;
     if (!ECON && WATER()) for (const n of ['fetch', 'dump']) scores.push(jobScore(n, h));
     if (ECON) { for (const x of scores) if (x.name === 'cook') { if (!stock.meat || !stock.logs || stock.meal) x.s -= 9; } for (const n in JOBS) scores.push(jobScore(n, h)); }
+    for (const x of scores) if (JOBS[x.name]) { const vb = visitBonus(x.name); if (vb != null) x.s += vb; }
     scores.sort((a, b) => b.s - a.s);
     if (h >= bedTime || h < 5 || need.energy < .06) return scores.find(x => x.name === 'sleep');   // past bedtime (or dead tired): bed, no lottery
     // weighted lottery among the three best (softmax with a mood-dependent temperature)
@@ -319,6 +335,12 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // he stops reading: from now on the candle is his to blow out (or to forget)
     if (cur && cur.name === 'read' && st.task !== 'read' && hasCandle) lights.set('candle', candleOn());
     expected = st.task;
+    { const n = st.extra || st.job || st.task;
+      if (ACTS[n] || EXTRA[n] || JOBS[n]) { const a = area(n);
+        if (n === 'sleep' || JOBS[n]) { visit.area = null; visit.left = 0; }
+        else if (a && a === visit.area) visit.left = Math.max(0, visit.left - 1);
+        else if (a) { visit.area = a; visit.left = 1 + Math.floor(Math.random() * 3); } } }
+    tr('start:' + (st.extra || st.job || st.task)); trace[trace.length - 1].room = roomOfTask(st.extra || st.job || st.task);
     if (st.task === 'tea') day.hadTea = true;
     // reading in the dark: the candle lights itself when he sits down (lights.js); only putting it out is his job
     if (st.task === 'read' && hasCandle && lights.auto) lights.auto('candle');
@@ -331,6 +353,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     return true;
   }
 
+  function roomOfTask(n) { const A = ACTS[n] || EXTRA[n]; if (A) return A.room || ROOM_OF(H.node); if (JOBS[n]) return 'outside'; return n === 'switch' || n === 'micro' ? '-' : ROOM_OF(H.node); }
   function micro(h) {
     if (lingerCool > 0) return false;
     const tired = 1 - need.energy;
@@ -508,7 +531,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   function bookCook() { if (ECON && cur && cur.name === 'cook' && !cur.booked && cur.t > 6) { cur.booked = true; stock.meat = Math.max(0, stock.meat - 1); stock.logs = Math.max(0, stock.logs - 1); stock.meal = 1; showStock(); } }
   // decision trace (debug / QA): why each new choice was made
   const trace = [];
-  function tr(kind) { trace.push({ h: +hour().toFixed(2), k: kind, cur: cur && cur.name, t: cur ? +cur.t.toFixed(1) : 0, task: H.task, plan: plan.map(p => p.task).join(',') }); if (trace.length > 400) trace.shift(); }
+  function tr(kind) { trace.push({ h: +hour().toFixed(2), k: kind, cur: cur && cur.name, t: cur ? +cur.t.toFixed(1) : 0, task: H.task, plan: plan.map(p => p.task).join(',') }); if (trace.length > 1500) trace.shift(); }
   function choose(h, kind = 'choose', pre) {
     tr(kind);
     bookCook();
