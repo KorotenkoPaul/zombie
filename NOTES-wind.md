@@ -10,3 +10,10 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - JS API: `__wind.sample(pos)`, `level()`, `state()`, `set('calm'|'breeze'|'windy'|'auto')`, `gust(amp)`.
 - Consumers (marked [WIND]): leaf cards in tree.js (clump drift + card flutter), grass/bushes/ferns SWAY in ground.js. Rope ladders: Tree & house uses windRope when it rebuilds them hanging.
 - Shadows do not sway (depth material untouched) on purpose: cheap, invisible at night.
+
+## Round 2 (2026-11-23, artifact v50)
+- Falling leaves: `W.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH,avoid:LEAF_AVOID,MOBILE})` in index.html. 16/30 instanced leaf cards with a tiny CPU step each; spawn rate 0.04 + 0.7*s² per second (rare in calm, flurries in gusts); they settle, lie 8-16 s, fade. A leaf entering a room box (LEAF_AVOID, + 0.6 m for the roof) is removed.
+- Fireflies (env.js) and floating motes (index.html): `#ifdef WIND` blocks, enabled by `W.hookRaw(shaderMaterial)`.
+- Oak limbs: `windBranch(p, trunkAxis)` on the bark (tree.js) and added to every leaf card at its centre, so leaves stay on their branch. Zero within 5.5 m of the trunk and below 14 m (house), ~3 cm in a breeze, ~15 cm in a strong gust at the far limbs.
+- `uDrift` uniform: metres the air has carried things (world xz). Fog: Environment does its own wind drift in env.js (windU).
+- No smoke exists yet (no chimney/oven smoke); no outdoor hanging plants, quilts on railings or lantern chains. Rope ladders: Tree & house (windRope).

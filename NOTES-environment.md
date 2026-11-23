@@ -20,6 +20,10 @@
 - Height fog: env.js patches THREE.ShaderChunk fog_* globally. Every fog:true material gets an analytic exponential ground fog (H=1.7 m) with static world noise. Strength comes from index.html's (fogFar-fogNear), so night/morning/rain are thicker. Clears within ~5-13 m of the trunk so the roots read dark (Tree thread ask).
 - Puffs: lit warm by the 6 lowest lamp/door halos (uniform lp[6]); fade near ground (no hard cut lines); fade in front of the trunk.
 - Ferns (canvas fronds, sway) and mushroom clusters (caps glow warm at night, uniform env.shroomGlow) at r 3.4-9 around the trunk.
+- Mist bands: 3 (mobile 2) inward-facing cylinder arcs at r 24/36/52 behind and beside the oak (front ±80° open), slow noise drifting with the wind.
+- Wind: fog reads window.__wind.sample(); noise drift + puff lean/churn.
+- Fireflies: 40 (mobile 22) additive points, dusk/night.
+- env.moonRim = {color,strength,dir} uniforms (moon rim light) for other threads to add a fresnel edge to bark/leaves/roofs: rim = pow(1-dot(N,V),3)*max(dot(N,dir),0)*color*strength.
 - Sheets fade when seen edge-on (no water look). `window.__env` exposes sheets/puffs for debugging.
 
 ## Testing in this cloud

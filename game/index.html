@@ -17,6 +17,7 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 .ib{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .ib:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .ib:disabled{opacity:.35}
+.ib.on{background:rgba(255,190,110,.45);border-color:rgba(255,210,150,.8)}
 .hint{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);transform:translateX(-50%);max-width:68%;background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:5px 10px;font-size:11px;line-height:1.35;text-align:center;transition:opacity .6s;pointer-events:none}
 .hint b{color:var(--amber)}
 .hint.off{opacity:0}
@@ -31,8 +32,8 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <div id="stage"></div>
 <div class="hud"><div class="grp"><span class="chip"><span id="ic">☀︎</span><span id="tod">День 1 · 08:00</span></span></div><div class="grp"><span class="chip" id="zc" hidden style="display:none">🧟 <span id="zn">0</span></span><span class="chip hearts" id="hearts" style="display:none">♥♥♥</span></div></div>
-<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button></div>
-<div class="hint" id="hint"><b>Веди пальцем</b> — повернуть домик, <b>щипок</b> — приблизить.</div>
+<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button></div>
+<div class="hint" id="hint"><b>Веди пальцем</b> — повернуть, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
 <div class="toast" id="toast"></div>
 <div class="load" id="load"><span id="loadTx">Загружаем лес…</span><i><b id="loadBar"></b></i></div>
 <script type="module">
@@ -47,6 +48,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createHero } from './hero.js';
 import { buildTree, TREE_AXIS } from './tree.js';
 import { buildProps } from './props.js';
+import { createCameraRig } from './camera.js';
 import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
 
 const $=id=>document.getElementById(id);
@@ -92,7 +94,7 @@ scene.add(new THREE.Mesh(new THREE.SphereGeometry(220,32,16),new THREE.ShaderMat
 const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.MeshBasicMaterial({color:0xF2F0E6,fog:false}));scene.add(moon);
 
 // ================= ground, forest, fog, grading: see env.js =================
-const ENV=(await import(new URL(ASSET+'env.js',document.baseURI).href)).createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});
+const ENVM=await import(new URL(ASSET+'env.js',document.baseURI).href);const ENV=ENVM.createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});
 // one global wind for leaves, grass, ferns, bushes and ropes (game/wind.js): calm spells, breezes, rolling gusts
 const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).createWind({THREE,legacy:ENV.U.wind});window.__wind=WIND;
 
@@ -102,8 +104,9 @@ function placeTree(x,z,h,ry){const t=treeG.scene.clone(true);const b=new THREE.B
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
+const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
 const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
- avoidLeaves:[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]]});
+ avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
 const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,wind:WIND,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;
@@ -343,6 +346,8 @@ win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+
 // all furniture and objects: props.js (bevelled, textured, interactive). P3.oven / P3.book / P3.tools / P3.surfaces
 const P3=buildProps({scene,renderer,OBST,floors:[boards,beams],L:{KT,BD,WS,DK,LL}});window.__props=P3;
 const chairO=P3.chairO,bunk=P3.bunk;
+// moss, soil, leaf litter, ivy and ferns on the oak itself: see treedress.js (after the boards, so nothing pokes through a floor)
+let TDRESS=null;try{TDRESS=(await import(new URL(ASSET+'treedress.js',document.baseURI).href)).createTreeDress({scene,TREE,MOBILE,leafT,U:ENV.U,rootD:GROUND.rootD,avoid:TREE_AVOID,blockers:[boards,beams]});window.__treedress=TDRESS;}catch(e){console.error('treedress',e);}
 // the glowing doorway in the trunk (bottom right)
 // the glowing hollow in the trunk (bottom right) is carved into the tree mesh itself (game/tree.js)
 // every warm light in the house comes from a real source (lanterns, dome lamp, candle, oven fire, trunk door): game/lights.js
@@ -356,9 +361,16 @@ const SOFT=(()=>{const c=document.createElement('canvas');c.width=c.height=64;co
 const puffs=[];function puff(p,n,col=0xCFC8BB,size=1){for(let i=0;i<n;i++){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:SOFT,color:col,transparent:true,opacity:0,depthWrite:false}));s.position.set(p.x+rnd(-.2,.2),p.y+rnd(-.1,.2),p.z+rnd(-.2,.2));scene.add(s);puffs.push({s,age:0,life:rnd(.7,1.3),v:V(rnd(-.6,.6),rnd(.2,.8),rnd(-.6,.6)),s0:.2*size,s1:rnd(.7,1.2)*size});}}
 const rain=(()=>{const n=2200,pos=new Float32Array(n*6);for(let i=0;i<n;i++){const x=rnd(-16,16),y=rnd(0,24),z=rnd(-6,10);pos.set([x,y,z,x+.04,y-.5,z],i*6);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));const m=new THREE.LineBasicMaterial({color:0xC2D2E8,transparent:true,opacity:0,depthWrite:false});const l=new THREE.LineSegments(g,m);l.frustumCulled=false;scene.add(l);return {pos,n,m,l};})();
 const motesMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{t:{value:0},night:{value:0},day:{value:1},px:{value:PR}},
- vertexShader:`attribute float ph;uniform float t,night,day,px;varying float a;varying vec3 col;void main(){vec3 p=position;p.x+=sin(t*.3+ph)*.8;p.y+=sin(t*.23+ph*2.)*.5;p.z+=cos(t*.27+ph)*.6;vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=night*bl+day*.3;col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=(day*2.+night*5.)*px*(26./-mv.z);gl_Position=projectionMatrix*mv;}`,
+ vertexShader:`attribute float ph;uniform float t,night,day,px;varying float a;varying vec3 col;void main(){vec3 p=position;p.x+=sin(t*.3+ph)*.8;p.y+=sin(t*.23+ph*2.)*.5;p.z+=cos(t*.27+ph)*.6;
+#ifdef WIND
+p.xz+=windSway(p,.5)*.6;
+#endif
+vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=night*bl+day*.3;col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=(day*2.+night*5.)*px*(26./-mv.z);gl_Position=projectionMatrix*mv;}`,
  fragmentShader:`varying float a;varying vec3 col;void main(){float k=smoothstep(.5,0.,length(gl_PointCoord-.5));gl_FragColor=vec4(col*1.8*k*a,k*a);}`});
-{const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;scene.add(p);}
+{const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;WIND.hookRaw(motesMat);scene.add(p);}
+// [WIND] fireflies drift and leaves fall with the wind (game/wind.js)
+if(ENV.fireflies)WIND.hookRaw(ENV.fireflies.material);
+{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE});}
 // god rays: soft beams through the canopy
 const rayMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{t:{value:0},o:{value:0},col:{value:new THREE.Color(1,.86,.6)}},
  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
@@ -499,23 +511,24 @@ function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guar
  aimTarget=z;reload=1.15;HH.play('224',{loop:false,fade:.08,speed:1.5});
  setTimeout(()=>{if(!z.alive){reload=Math.min(reload,.3);return;}const t=zChest(z);const p0=arrowOrigin(t);const v=solveShot(p0,t,z);if(v)shoot(p0,v);else{shoot(p0,t.clone().sub(p0).normalize().multiplyScalar(22).add(V(0,2,0)));}},330);
  setTimeout(()=>{if(hero.task==='guard')HH.play('231',{fade:.2});},1050);return true;}
-let yaw=.05,pitch=.13,zoom=1;const ptrs=new Map();let mode=null,pinch0=null,last=null,down=null;
-cv.addEventListener('pointerdown',e=>{ac();startAmb();if(over){location.reload();return;}ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});cv.setPointerCapture(e.pointerId);
- if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch0={d:Math.hypot(a.x-b.x,a.y-b.y),z:zoom};mode='pinch';return;}
- mode='orbit';last={x:e.clientX,y:e.clientY};down={x:e.clientX,y:e.clientY,t:performance.now()};});
-cv.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
- if(mode==='pinch'&&ptrs.size===2){const [a,b]=[...ptrs.values()];zoom=clamp(pinch0.z*pinch0.d/Math.max(10,Math.hypot(a.x-b.x,a.y-b.y)),.32,1);return;}
- if(mode==='orbit'){yaw=clamp(yaw-(e.clientX-last.x)*.006,-.75,.75);pitch=clamp(pitch+(e.clientY-last.y)*.004,.02,.6);last={x:e.clientX,y:e.clientY};}});
-function endPtr(e){ptrs.delete(e.pointerId);if(mode==='pinch'){if(ptrs.size===0)mode=null;return;}if(ptrs.size)return;mode=null;
- if(down&&e.type==='pointerup'&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<12&&performance.now()-down.t<350){const z=pickZombie(e.clientX,e.clientY);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}down=null;}
-cv.addEventListener('pointerup',endPtr);cv.addEventListener('pointercancel',endPtr);
-cv.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*(1+e.deltaY*.001),.32,1);},{passive:false});
+// camera input lives in camera.js (free orbit / pinch-to-point / pan / double-tap fly-to / hero follow)
+const isHeroObj=o=>{for(;o;o=o.parent)if(o===hero.root)return true;return false;};
+const rig=createCameraRig({camera,dom:cv,scene,
+ solid:(x,y,z)=>y>0&&y<16&&inTrunk(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
+ isHero:isHeroObj,follow:()=>hero.root.position.clone().add(V(0,1,0)),
+ onUser:()=>{ac();startAmb();if(over)location.reload();},
+ onFollow:on=>{$('bF').classList.toggle('on',on);},
+ onTap:(x,y)=>{const z=pickZombie(x,y);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}});
+// whatever sits between the camera and the focus dithers away (leaves up to 2.2 m, bark/walls/props up to 1.2 m, scaled by zoom): the free camera never shows the inside of a board
+{const solidMat=mt=>mt.isMeshStandardMaterial||mt.isMeshLambertMaterial||mt.isMeshPhongMaterial;const nf=()=>{rig.nearFade(scene,2.2,undefined,.7);rig.nearFade(TREE.group,1.2,()=>true,.45);rig.nearFade(scene,1.2,solidMat,.45,.25);};nf();setTimeout(nf,8000);}
+$('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
+$('bH').onclick=()=>{ac();rig.goHome();};
 
 // ================= post & camera =================
 const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;composer.addPass(new OutputPass());composer.addPass(ENV.gradePass);
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
-function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));}
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
 addEventListener('resize',resize);
 
 // ================= main loop =================
@@ -532,7 +545,7 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
  sun.color.copy(P.sun);sun.intensity=P.sunI*dim;hemi.intensity=P.hemiI;hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp;
- scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4);scene.fog.near=camDist*zoom*.95-mornK*12-rainK*6;scene.fog.far=camDist*zoom+70-mornK*30-rainK*25-nightK*35;
+ scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4);scene.fog.near=rig.dist*.95-mornK*12-rainK*6;scene.fog.far=rig.dist+70-mornK*30-rainK*25-nightK*35;
  moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  // no warm room fill: daylight only; at night rooms are lit by their lamps alone (game/lights.js)
@@ -584,21 +597,17 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  for(let i=arrows.length-1;i>=0;i--){const a=arrows[i];a.age+=dt;if(a.rb){const t=a.rb.translation();a.g.position.set(t.x,t.y,t.z);if(!a.stuck){const v=a.rb.linvel();const dir=V(v.x,v.y,v.z);if(dir.lengthSq()>.01)a.g.quaternion.setFromUnitVectors(V(1,0,0),dir.normalize());}}
   else if(a.hitZombie&&a.hitZombie.rag&&a.hitZombie.rag.Spine1){const r=a.hitZombie.rag.Spine1.rb.translation();a.g.position.lerp(V(r.x,r.y,r.z),.3);}
   if(a.age>12){scene.remove(a.g);if(a.rb)world.removeRigidBody(a.rb);arrows.splice(i,1);}}
- // camera: steady framing with a slight breathing drift
- {// focus: whole house when zoomed out; the hero (day) or the fight (night) when zoomed in
-  const k=1-(zoom-.32)/.68;let f=hero.root.position.clone().add(V(0,1,0));const zs=zombies.filter(z=>z.alive&&z.stage!=='walk');
-  if(zs.length&&hero.task==='guard'){f=zs.reduce((a,z)=>a.add(z.root.position),V()).multiplyScalar(1/zs.length).add(hero.root.position).multiplyScalar(.5).add(V(0,1,0));}
-  const tgt=V(0,7.4,2.4).lerp(f,k);look.lerp(tgt,Math.min(1,dt*2.5));}
- if(camOv){look.set(camOv[0],camOv[1],camOv[3]);}const cd=camOv?camOv[2]:camDist*zoom;
- trauma=Math.max(0,trauma-dt*1.8);const tr=trauma*trauma;const drift=RM?0:Math.sin(T*.07)*.03;const yw=yaw+drift;
- camera.position.set(look.x+Math.sin(yw)*Math.cos(pitch)*cd+(RM?0:Math.sin(T*47)*.12*tr),look.y+Math.sin(pitch)*cd+(RM?0:Math.cos(T*41)*.12*tr),look.z+Math.cos(yw)*Math.cos(pitch)*cd);camera.lookAt(look);
+ // camera (camera.js): damped free camera + hit shake + a slight breathing drift
+ trauma=Math.max(0,trauma-dt*1.8);const tr=trauma*trauma;
+ if(camOv){look.set(camOv[0],camOv[1],camOv[3]);camera.position.set(look.x+Math.sin(.05)*camOv[2],look.y+Math.sin(.13)*camOv[2],look.z+Math.cos(.05)*camOv[2]);camera.lookAt(look);}
+ else rig.update(dt,{drift:RM?0:Math.sin(T*.07)*.03,shake:(RM||tr<1e-4)?null:V(Math.sin(T*47)*.12*tr,Math.cos(T*41)*.12*tr,0)});
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  hud();composer.render();
  fr++;ft+=dt;if(fr>=90){const fps=fr/ft;fr=0;ft=0;if(fps<40){if(bloom.enabled&&MOBILE)bloom.enabled=false;else if(PR>1.01){PR=Math.max(1,PR-.2);renderer.setPixelRatio(PR);resize();}else if(ENV.degrade)ENV.degrade();}}
  }
 resize();hud();$('load').classList.add('hide');
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>startTask(n),
- view:(y,p,z)=>{yaw=y;pitch=p;zoom=z;},cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
+ view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
 window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,E:HH.E};
 requestAnimationFrame(frame);
 </script>
