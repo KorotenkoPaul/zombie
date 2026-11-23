@@ -210,6 +210,29 @@ export function buildTree(THREE, o) {
     for (const c of top) { if (crown.length >= 10) break; if ([...crown, ...picked].some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.2)) continue; crown.push(c); }
     for (const c of crown) leafSpots.push({ p: V(c[0], c[1] + 1.0, c[2] + 0.4), s: rnd(2.3, 2.9) });
   }
+  // roofs (critic T15): a limb crossing a roof is lifted clear of it as a whole (a smooth height field over the
+  // roof's footprint), so it arches over the roof instead of being squashed flat onto the shingles
+  for (const rf of o.roofs || []) {
+    const CS = 0.4, PAD = 2.4, gx0 = rf.x0 - PAD, gz0 = rf.z0 - PAD, nx = Math.ceil((rf.x1 - rf.x0 + 2 * PAD) / CS) + 1, nz = Math.ceil((rf.z1 - rf.z0 + 2 * PAD) / CS) + 1;
+    let L = new Float32Array(nx * nz); const xc = (rf.x0 + rf.x1) / 2, hw = (rf.x1 - rf.x0) / 2;
+    const surf = x => rf.yb + rf.h * Math.max(0, 1 - Math.abs(x - xc) / hw) + rf.top;
+    const wood = (x, y, z) => Math.hypot(x - AX, z - AZ) > R(Math.min(Math.max(y, 0), 14)) + 0.35;
+    for (let i = 0; i < P.length; i += 3) { const x = P[i], y = P[i + 1], z = P[i + 2];
+      if (x < rf.x0 || x > rf.x1 || z < rf.z0 || z > rf.z1 || y < rf.yb - 0.25 || !wood(x, y, z)) continue;
+      const need = surf(x) + rf.clear - y; if (need <= 0) continue;
+      const k = Math.floor((x - gx0) / CS) + nx * Math.floor((z - gz0) / CS); L[k] = Math.max(L[k], need); }
+    // spread: dilate, then blur, so the lift eases in over a couple of metres
+    for (let pass = 0; pass < 9; pass++) { const N = new Float32Array(nx * nz);
+      for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { let m = 0, sm = 0, c = 0;
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= nx || b >= nz) continue; const v = L[a + nx * b]; m = Math.max(m, v); sm += v; c++; }
+        N[i + nx * j] = pass < 3 ? m : sm / c; }
+      L = N; }
+    const at = (x, z) => { const fx = (x - gx0) / CS - .5, fz = (z - gz0) / CS - .5; const i = Math.floor(fx), j = Math.floor(fz); if (i < 0 || j < 0 || i >= nx - 1 || j >= nz - 1) return 0;
+      const u = fx - i, v = fz - j; return (L[i + nx * j] * (1 - u) + L[i + 1 + nx * j] * u) * (1 - v) + (L[i + nx * (j + 1)] * (1 - u) + L[i + 1 + nx * (j + 1)] * u) * v; };
+    for (let i = 0; i < P.length; i += 3) { const x = P[i], y = P[i + 1], z = P[i + 2];
+      if (y < rf.yb - 1.2 || !wood(x, y, z)) continue;
+      const w = Math.min(1, (y - (rf.yb - 1.2)) / 1.0); P[i + 1] = y + at(x, z) * w; }
+  }
   const M = 0.1;
   for (let i = 0; i < P.length; i += 3) {
     let x = P[i], y = P[i + 1], z = P[i + 2];

@@ -568,7 +568,9 @@ export function buildProps(ctx) {
   place('door', plankDoor(2.0), .33, BD, 1.82, { ry: -Math.PI / 2, solid: false });
   place('hooks', bake(coatHooks()), .17, BD + 1.6, .97, { solid: false, wall: true });
   { const b = closedBook(.035, .2, .15, M.covers[4]); b.rotation.set(0, .6, Math.PI / 2); b.position.set(.25, 1.07 + .045 + .15 + .03, .12); bunk.add(b); }
-  { /* on the bedroom's right wall beside the door (the door opening is z 2.3..3.25), at hand height */ const s = switchPlate(); s.position.set(.372, BD + 1.15, 2.12); s.rotation.y = -Math.PI / 2; scene.add(s); s.name = 'switch'; out.switches = { bedroom: s }; }
+  // light switch: flush on the solid wall just inside the room, right of the door opening (the opening is z 2.3..3.25),
+  // ~15 cm past the frame at 1.15 m (Pavel: it used to float in the opening). hero.js reads out.switches for the 'switch' task.
+  { const s = switchPlate(); s.position.set(.372, BD + 1.15, 3.5); s.rotation.y = -Math.PI / 2; scene.add(s); out.switches = { bedroom: s.position.clone() }; }
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const b = closedBook(bw, rr(.16, .22), .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12); s.add(b); x += bw + .003; } const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
 

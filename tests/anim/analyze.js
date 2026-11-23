@@ -1,0 +1,129 @@
+// Turns the per-frame log into a list of issues. Every threshold lives in LIMITS so the numbers are explicit.
+const LIMITS={
+ dt:1/60,
+ // penetration of the skin into solid things, cm (soft = mattress/quilt/pillow, seat = chair/stool top)
+ pen:{head:1,handL:1.5,handR:1.5,feet:1,shins:1.5,hips:1.5,arms:1.5,torso:1.5},
+ penSoft:3,penSeat:2,penPillow:6, // lying: head/body sinking into pillow and mattress
+ jumpCm:2.5,       // a joint moves this much more in one frame than its neighbours' trend (second difference)
+ rootJumpCm:1.2,   // same for the root
+ yawStepDeg:6,     // root turns more than this in one frame (>360 deg/s)
+ hipsRotDeg:9,     // pelvis orientation changes more than this in one frame
+ kneeMin:20,       // knee angle (180 = straight) below this is over-folded
+ footHeadM:.55,    // a foot closer than this to the head (legs folded up next to the head)
+ footUpM:.05,      // foot this far ABOVE the hip joint, along the pelvis axis => leg folded up
+ slideCm:2.5,      // planted foot drifting more than this during one contact
+ jitterMm:1.5,     // RMS of the high-frequency part of a joint path while seated / idle
+ jitterHz:5,       // ... and it must oscillate (direction reversals) at least this often
+ turnRateDeg:240,  // heading change of the walking direction per second
+ crabDeg:40,       // body facing vs walking direction
+ detour:1.35,      // walked length / straight distance for one walk
+ // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
+ // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
+ walkMin:.85,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+};
+const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const qrot=(q,v)=>{const [x,y,z,w]=q;const u=[x,y,z];const t=cross(u,v).map(c=>2*c);const c2=cross(u,t);return [v[0]+w*t[0]+c2[0],v[1]+w*t[1]+c2[1],v[2]+w*t[2]+c2[2]];};
+const ang=(a,b)=>Math.acos(Math.max(-1,Math.min(1,dot(a,b)/(len(a)*len(b)+1e-9))))*180/Math.PI;
+const wrap=a=>{while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a;};
+const SOFT=/quilt|mattress|pillow|blanket|bunk|bed|rug/i,SEAT=/chair|stool|bench/i;
+function bone(f,n){const i=BI[n]*3;return [f.b[i],f.b[i+1],f.b[i+2]];}
+function activity(f){if(f.fl.includes('L'))return 'ladder';if(f.fl.includes('W'))return 'bed swing';if(f.fl.includes('B'))return 'in bed';if(f.fl.includes('Fs'))return 'sitting down';if(f.fl.includes('Fr'))return 'standing up';if(f.fl.includes('S'))return 'seated:'+f.task;if(f.fl.includes('P'))return 'walking';return f.state+':'+f.task;}
+function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=[];const T=f=>f*lim.dt;
+ const add=(type,i,o)=>iss.push({type,f:F[i].f,i,t:+T(F[i].f).toFixed(2),hour:F[i].hour,act:activity(F[i]),clip:F[i].clip,...o});
+ const speed=i=>i>0?len(sub(F[i].root,F[i-1].root))/lim.dt:0;
+ // ---- per-frame metrics ----
+ const M=F.map((f,i)=>{const hip=bone(f,'Hips'),head=bone(f,'HeadTop_End');const up=qrot(f.hq,[0,1,0]),right=qrot(f.hq,[1,0,0]);const m={};
+  for(const s of ['Left','Right']){const U=bone(f,s+'UpLeg'),K=bone(f,s+'Leg'),A=bone(f,s+'Foot'),Tt=bone(f,s+'ToeBase');const th=sub(K,U),sh=sub(A,K);
+   m[s]={knee:180-ang(th,sh),bend:dot(cross(th,sh),right)/(len(th)*len(sh)+1e-9),footUp:dot(sub(A,U),up),footHead:Math.min(len(sub(A,head)),len(sub(Tt,head)))};}
+  return m;});
+ // calibrate the natural knee-bend direction from walking frames
+ let sgn=0;F.forEach((f,i)=>{if(f.fl.includes('P'))for(const s of ['Left','Right'])if(M[i][s].knee<160)sgn+=Math.sign(M[i][s].bend);});sgn=Math.sign(sgn)||1;
+ // ---- 1. penetration ----
+ const pen=[];F.forEach((f,i)=>f.pen.forEach((p,g)=>{if(!p)return;const [cm,ci,pos]=p;const nm=names[ci]||'?';const G=GN[g];
+  let tol=lim.pen[G];if(SOFT.test(nm))tol=Math.max(tol,lim.penSoft);if(SOFT.test(nm)&&(f.fl.includes('B')||f.fl.includes('W'))&&pos&&pos[1]<f.root[1]+.6)tol=Math.max(tol,lim.penPillow);if(SEAT.test(nm)&&(G==='hips'||G==='shins'))tol=Math.max(tol,lim.penSeat);
+  if(cm>tol)pen.push({i,G,nm,cm,pos,tol});}));
+ // merge into events: same body part + same object, gaps < 0.3 s
+ const ev={};for(const q of pen){const k=q.G+'|'+q.nm.replace(/#\d+/,'#');const e=ev[k]&&ev[k][ev[k].length-1];
+  if(e&&q.i-e.i1<=18){e.i1=q.i;if(q.cm>e.cm){e.cm=q.cm;e.ip=q.i;e.pos=q.pos;e.nm=q.nm;}e.n++;}else (ev[k]=ev[k]||[]).push({i0:q.i,i1:q.i,ip:q.i,cm:q.cm,pos:q.pos,G:q.G,nm:q.nm,tol:q.tol,n:1});}
+ for(const k in ev)for(const e of ev[k])add('penetration',e.ip,{bone:e.G,into:e.nm,value:+e.cm.toFixed(1),unit:'cm',limit:e.tol,dur:+((e.i1-e.i0+1)*lim.dt).toFixed(2),from:F[e.i0].f,to:F[e.i1].f,at:e.pos});
+ // ---- 2. jumps (second difference spikes) ----
+ const J=['Hips','Head','HeadTop_End','LeftHand','RightHand','LeftFoot','RightFoot','LeftLeg','RightLeg'];
+ for(let i=2;i<F.length;i++){if(F[i].tag!==F[i-1].tag)continue;
+  for(const n of J){const a=bone(F[i],n),b=bone(F[i-1],n),c=bone(F[i-2],n);const d2=len([a[0]-2*b[0]+c[0],a[1]-2*b[1]+c[1],a[2]-2*b[2]+c[2]])*100;
+   if(d2>lim.jumpCm)add('jump',i,{bone:n,value:+d2.toFixed(1),unit:'cm/frame²',limit:lim.jumpCm,step:+(len(sub(a,b))*100).toFixed(1)});}
+  const r2=len([F[i].root[0]-2*F[i-1].root[0]+F[i-2].root[0],F[i].root[1]-2*F[i-1].root[1]+F[i-2].root[1],F[i].root[2]-2*F[i-1].root[2]+F[i-2].root[2]])*100;
+  if(r2>lim.rootJumpCm)add('jump',i,{bone:'root',value:+r2.toFixed(1),unit:'cm/frame²',limit:lim.rootJumpCm});
+  const dy=Math.abs(wrap(F[i].ry-F[i-1].ry))*180/Math.PI;if(dy>lim.yawStepDeg)add('snap-turn',i,{bone:'root',value:+dy.toFixed(1),unit:'deg/frame',limit:lim.yawStepDeg});
+  const qa=F[i].hq,qb=F[i-1].hq;const dq=2*Math.acos(Math.min(1,Math.abs(qa[0]*qb[0]+qa[1]*qb[1]+qa[2]*qb[2]+qa[3]*qb[3])))*180/Math.PI;if(dq>lim.hipsRotDeg)add('jump',i,{bone:'Hips rotation',value:+dq.toFixed(1),unit:'deg/frame',limit:lim.hipsRotDeg});}
+ // ---- 3. joints ----
+ F.forEach((f,i)=>{for(const s of ['Left','Right']){const m=M[i][s];
+  if(m.knee<lim.kneeMin)add('joint',i,{bone:s+'Leg',value:+m.knee.toFixed(0),unit:'deg knee',limit:lim.kneeMin,what:'knee folded too far'});
+  if(m.knee<150&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
+  if(m.footHead<lim.footHeadM&&!f.fl.includes('B'))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
+  if(m.footUp>lim.footUpM)add('joint',i,{bone:s+'Foot',value:+(m.footUp*100).toFixed(0),unit:'cm along body above hip',limit:lim.footUpM*100,what:'leg folded up past the hip'});}});
+ // ---- 4. foot sliding while planted ----
+ for(const [s,fi,ti,gi] of [['Left','LeftFoot','LeftToeBase',0],['Right','RightFoot','RightToeBase',2]]){let c=null;
+  for(let i=1;i<F.length;i++){const f=F[i];const a=bone(f,fi),tt=bone(f,ti);const g=f.gnd[gi]??f.gnd[gi+1];const vz=Math.abs(a[1]-bone(F[i-1],fi)[1])/lim.dt;
+   const planted=g!=null&&Math.min(a[1]-g,tt[1]-g)<.03&&vz<.12&&!f.fl.includes('L')&&!f.fl.includes('B')&&!f.fl.includes('W');
+   if(planted){if(!c)c={i0:i,p0:tt,max:0,im:i};const d=Math.hypot(tt[0]-c.p0[0],tt[2]-c.p0[2]);if(d>c.max){c.max=d;c.im=i;}}
+   else if(c){if(i-c.i0>=6&&c.max*100>lim.slideCm)add('foot-slide',c.im,{bone:s+'Foot',value:+(c.max*100).toFixed(1),unit:'cm drift while planted',limit:lim.slideCm,dur:+((i-c.i0)*lim.dt).toFixed(2),from:F[c.i0].f,to:F[i-1].f});c=null;}}}
+ // ---- 5. jitter while seated / idle / working in place ----
+ const W=30;const JB=['HeadTop_End','LeftHand','RightHand','LeftFoot','RightFoot','LeftLeg','RightLeg'];
+ for(let i0=0;i0+W<F.length;i0+=W){const seg=F.slice(i0,i0+W);if(seg.some(f=>f.fl.includes('P')||f.fl.includes('L')||f.fl.includes('W')||f.tag!==seg[0].tag))continue;
+  const still=seg.every((f,k)=>k===0||len(sub(f.root,seg[k-1].root))<.002);if(!still)continue;
+  for(const n of JB){let ss=0,c=0;for(let k=3;k<W-3;k++){const p=bone(seg[k],n);let m=[0,0,0];for(let j=-3;j<=3;j++){const q=bone(seg[k+j],n);m[0]+=q[0]/7;m[1]+=q[1]/7;m[2]+=q[2]/7;}const r=len(sub(p,m));ss+=r*r;c++;}
+   const rms=Math.sqrt(ss/c)*1000;
+   // real jitter oscillates: count direction reversals of the per-frame step (steps > 0.25 mm) on the main axis
+   let rev=0;for(const ax of [0,1,2]){let prev=0,r=0;for(let k=1;k<W;k++){const d=bone(seg[k],n)[ax]-bone(seg[k-1],n)[ax];if(Math.abs(d)<.00025)continue;const sg=Math.sign(d);if(prev&&sg!==prev)r++;prev=sg;}rev=Math.max(rev,r);}
+   const hz=rev/2/(W*lim.dt);
+   if(rms>lim.jitterMm&&hz>=lim.jitterHz)add('jitter',i0+W/2,{bone:n,value:+rms.toFixed(1),unit:'mm RMS (7-frame high-pass)',hz:+hz.toFixed(1),limit:lim.jitterMm,dur:W*lim.dt,from:seg[0].f,to:seg[W-1].f});}}
+ // ---- 6. walks: sharp turns, crab-walking, detours ----
+ const walks=[];let w=null;for(let i=1;i<F.length;i++){const mv=F[i].fl.includes('P')&&!F[i].fl.includes('L');if(mv&&!w)w={i0:i};if(!mv&&w){w.i1=i-1;walks.push(w);w=null;}}
+ for(const wk of walks){const pts=F.slice(wk.i0,wk.i1+1).map(f=>f.root);if(pts.length<10)continue;let L=0;for(let k=1;k<pts.length;k++)L+=Math.hypot(pts[k][0]-pts[k-1][0],pts[k][2]-pts[k-1][2]);
+  const Dd=Math.hypot(pts[pts.length-1][0]-pts[0][0],pts[pts.length-1][2]-pts[0][2]);const dy=Math.abs(pts[pts.length-1][1]-pts[0][1]);
+  wk.L=L;wk.D=Dd;wk.from=F[wk.i0].node;wk.to=F[wk.i1].node;wk.task=F[wk.i1].task;wk.pts=pts.filter((_,k)=>k%3===0).map(p=>[+p[0].toFixed(3),+p[2].toFixed(3),+p[1].toFixed(2)]);
+  if(Dd>.8&&dy<.5&&L/Dd>lim.detour)add('detour',wk.i0,{bone:'root',value:+(L/Dd).toFixed(2),unit:'walked/straight',limit:lim.detour,walked:+L.toFixed(2),straight:+Dd.toFixed(2),dur:+((wk.i1-wk.i0)*lim.dt).toFixed(2),from:F[wk.i0].f,to:F[wk.i1].f,task:wk.task});
+  // initial direction vs straight line to the goal
+  const k0=pts.findIndex(p=>Math.hypot(p[0]-pts[0][0],p[2]-pts[0][2])>.35);if(k0>0&&Dd>.8){const a1=Math.atan2(pts[k0][0]-pts[0][0],pts[k0][2]-pts[0][2]),a2=Math.atan2(pts[pts.length-1][0]-pts[0][0],pts[pts.length-1][2]-pts[0][2]);const da=Math.abs(wrap(a1-a2))*180/Math.PI;
+   if(da>45&&dy<.5)add('detour',wk.i0+k0,{bone:'root',value:+da.toFixed(0),unit:'deg first steps off the straight line to the goal',limit:45,from:F[wk.i0].f,to:F[wk.i1].f,task:wk.task});}
+  // heading rate and crab walking
+  for(let k=wk.i0+6;k<=wk.i1-6;k++){const a=F[k-6].root,b=F[k].root,c=F[k+6].root;const v1=[b[0]-a[0],b[2]-a[2]],v2=[c[0]-b[0],c[2]-b[2]];if(Math.hypot(...v1)<.04||Math.hypot(...v2)<.04)continue;
+   const h1=Math.atan2(v1[0],v1[1]),h2=Math.atan2(v2[0],v2[1]);const rate=Math.abs(wrap(h2-h1))*180/Math.PI/(6*lim.dt);
+   if(rate>lim.turnRateDeg)add('sharp-turn',k,{bone:'root',value:+rate.toFixed(0),unit:'deg/s heading change while walking',limit:lim.turnRateDeg});
+   const crab=Math.abs(wrap(F[k].ry-h2))*180/Math.PI;if(crab>lim.crabDeg)add('crab-walk',k,{bone:'root',value:+crab.toFixed(0),unit:'deg between facing and walking direction',limit:lim.crabDeg});}}
+ // ---- 7. tempo (slow motion) ----
+ const tempo={walks:[],sit:[],stand:[],swing:[],ladder:[],clipScale:{}};
+ for(const wk of walks){const n=wk.i1-wk.i0;if(n<40)continue;let L=0;for(let k=wk.i0+1;k<=wk.i1;k++)L+=Math.hypot(F[k].root[0]-F[k-1].root[0],F[k].root[2]-F[k-1].root[2]);
+  const v=L/(n*lim.dt);// cadence: count foot-height minima (contacts) of each foot
+  let steps=0;for(const fi of [BI.LeftFoot,BI.RightFoot]){let prevDown=false;for(let k=wk.i0+2;k<=wk.i1;k++){const y=F[k].b[fi*3+1]-F[k].root[1],y1=F[k-1].b[fi*3+1]-F[k-1].root[1],y2=F[k-2].b[fi*3+1]-F[k-2].root[1];if(y1<y&&y1<=y2&&y1<.13){steps++;}}}
+  const cad=steps/(n*lim.dt);tempo.walks.push({f:F[wk.i0].f,task:wk.task,speed:+v.toFixed(2),cadence:+cad.toFixed(2),dur:+(n*lim.dt).toFixed(1)});
+  if(v<lim.walkMin)add('slow',wk.i0+(n>>1),{bone:'root',value:+v.toFixed(2),unit:'m/s walking speed',limit:lim.walkMin,what:'walk slower than a normal person ('+cad.toFixed(2)+' steps/s)'});}
+ const spans=(flag,arr)=>{let s0=-1;for(let i=0;i<F.length;i++){const on=F[i].fl.includes(flag);if(on&&s0<0)s0=i;if(!on&&s0>=0){arr.push({f:F[s0].f,dur:+((i-s0)*lim.dt).toFixed(2),task:F[s0].task,clip:F[s0].clip});s0=-1;}}};
+ spans('Fs',tempo.sit);spans('Fr',tempo.stand);spans('W',tempo.swing);
+ for(const s of tempo.sit)if(s.dur>lim.sitMax)add('slow',F.findIndex(f=>f.f===s.f),{bone:'Hips',value:s.dur,unit:'s to sit down',limit:lim.sitMax,what:'sitting down too slow'});
+ for(const s of tempo.stand)if(s.dur>lim.sitMax)add('slow',F.findIndex(f=>f.f===s.f),{bone:'Hips',value:s.dur,unit:'s to stand up',limit:lim.sitMax,what:'standing up too slow'});
+ {let s0=-1;for(let i=0;i<F.length;i++){const on=F[i].fl.includes('L');if(on&&s0<0)s0=i;if(!on&&s0>=0){const dy=Math.abs(F[i-1].root[1]-F[s0].root[1]),dur=(i-s0)*lim.dt;if(dy>.5){const v=dy/dur;tempo.ladder.push({f:F[s0].f,dy:+dy.toFixed(2),dur:+dur.toFixed(2),v:+v.toFixed(2)});if(v<lim.ladderMin)add('slow',s0,{bone:'root',value:+v.toFixed(2),unit:'m/s on the ladder',limit:lim.ladderMin,what:'ladder too slow'});}s0=-1;}}}
+ for(const f of F){if(!f.clip)continue;const c=tempo.clipScale[f.clip]||(tempo.clipScale[f.clip]={n:0,sum:0,min:9});c.n++;c.sum+=f.ts;c.min=Math.min(c.min,f.ts);}
+ for(const k in tempo.clipScale){const c=tempo.clipScale[k];c.avg=+(c.sum/c.n).toFixed(2);c.sec=+(c.n*lim.dt).toFixed(1);delete c.sum;c.min=+c.min.toFixed(2);}
+ for(const k in tempo.clipScale){const c=tempo.clipScale[k];if(c.sec>2&&c.avg<lim.clipScaleMin&&c.avg>0){const i=F.findIndex(f=>f.clip===k);add('slow',i,{bone:'clip '+k,value:c.avg,unit:'x playback speed (average)',limit:lim.clipScaleMin,what:'animation played slowed down for '+c.sec+' s in total'});}}
+ // ---- merge repeated flags of the same kind (same type+bone within 0.5 s) keeping the worst ----
+ iss.sort((a,b)=>a.i-b.i);const merged=[];const last={};
+ for(const q of iss){const k=q.type+'|'+q.bone+'|'+(q.into||'').replace(/#\d+.*/,'')+'|'+(q.what||'');const m=last[k];
+  if(m&&q.i-m.i1<=30){m.i1=q.i;m.count++;if(q.value>m.value&&q.type!=='detour'){Object.assign(m,{...q,i1:q.i,count:m.count,first:m.first});}}else{const n={...q,i1:q.i,count:1,first:q.f};merged.push(n);last[k]=n;}}
+ // priority
+ for(const q of merged){const r=q.limit?q.value/q.limit:2;let P=3;
+  if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2))?1:q.value>=2?2:3;
+  else if(q.type==='joint')P=/broken|next to the head|past the hip/.test(q.what)?1:2;
+  else if(q.type==='jump'||q.type==='snap-turn')P=r>=3?1:r>=1.6?2:3;
+  else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;
+  else if(q.type==='foot-slide')P=q.value>=8?1:q.value>=4?2:3;
+  else if(q.type==='detour')P=q.unit.startsWith('deg')?(q.value>80?1:2):(q.value>1.7?1:2);
+  else if(q.type==='slow')P=(q.limit&&q.value<q.limit*.7)||q.value>q.limit*1.5?1:2;
+  else if(q.type==='sharp-turn')P=r>=2?1:2;else if(q.type==='crab-walk')P=q.value>70?1:2;
+  q.P=P;}
+ merged.sort((a,b)=>a.P-b.P||b.value/(b.limit||1)-a.value/(a.limit||1));
+ return {issues:merged,tempo,walks:walks.map(({i0,i1,pts,L,D,from,to,task})=>({f0:F[i0].f,f1:F[i1].f,from,to,task,L,D,pts})),kneeSign:sgn,frames:F.length};
+}
+module.exports={analyze,LIMITS,activity};
