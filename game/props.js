@@ -507,7 +507,7 @@ export function buildProps(ctx) {
   // ---------- bedroom ----------
   const bunk = place('bunkbed', bunkBed(), -2.4, BD, 1.71, { seat: true });
   place('slippers', slippers(), -2.95, BD, 2.32, { solid: false, ry: .2 });
-  place('basket', basket(), -3.75, BD, 2.95);
+  place('basket', basket(), -1.05, BD, 1.18); // by the bed head against the back wall, clear of the ladder exit and walkways
   const chairO = place('chair', chair(), -.58, BD, 2.3, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
   const tbl = place('table', table(), -.35, BD, 1.45); const tTop = tbl.userData.floorY + .74;
   const bk = book({ cover: M.covers[0] }); bk.position.set(-.33, tTop, 1.6); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
