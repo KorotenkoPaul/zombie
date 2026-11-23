@@ -836,15 +836,16 @@ export function createHero(ctx){
   // out to the forest for meat or wood; gear from the workshop, out of sight for a while, back with the haul, gear off again
   trip:(o={})=>{const a={step:'go',t:0};const kind=o.kind||'hunt';const away=o.away||rnd(40,90);let res={ok:true};
    if(!N.g_out){a.update=()=>endTask({ok:false});return a;}
-   const home=()=>{a.step='home';root.visible=true;H.node='g_out';
+   const OUT=N.g_exit1?'g_exit1':'g_out';/* out of the camera's view already there: no walk to g_out and back */
+   const home=()=>{a.step='home';root.visible=true;H.node=OUT;
     const haul=kind==='hunt'?(res.ok?'meatBag':null):'logArmful';if(haul){if(haul==='meatBag'){onBack('meatBag',V(.1,.18,-.14),[0,0,0]);/* GRAB: the sack over his back, not dangling from a loose hand */}else{try{PP().grab(haul,bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}H.carry='hy_carrylogs';}try{window.__audio.carry(true);}catch(e){}a.haul=haul;}
     const unload=next=>{if(!a.haul){next();return;}const P=PP();
      if(a.haul==='meatBag')visit(a,PT('fridge'),.5,'hy_fridgein',[[.12,()=>{try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}}],[.15,()=>{try{P.fridge.openTo(1,.5);}catch(e){}}],[.55,()=>{try{P.release('meatBag');window.__audio.carry(false);}catch(e){}H.carry=null;}],[.85,()=>{try{P.fridge.openTo(0,.5);}catch(e){}}]],next);
      else visit(a,PT('woodpile'),.5,'hy_droplogs',[[.6,()=>{try{P.release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],next);};
     unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);},{jacket:!!o.keepJacket}));};
-   gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{a.step='out';goTo('g_out',()=>{a.step='away';a.t=0;root.visible=false;
+   gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{a.step='out';goTo(OUT,()=>{a.step='away';a.t=0;root.visible=false;
      if(kind==='hunt'&&Math.random()<.3)res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};});});
-   a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='away'){if(a.t>away){H.face=N.g_out.face!=null?N.g_out.face+Math.PI:H.face;root.rotation.y=H.face;home();}}};
+   a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='away'){if(a.t>away){const back=N.g_fork||N.g_path1||N.g_foot;const p=root.position;H.face=back?Math.atan2(back.p.x-p.x,back.p.z-p.z):(N[OUT].face??H.face)+Math.PI;root.rotation.y=H.face;home();}}};
    a.leave=cb=>{root.visible=true;dropGearNow();cb();};return a;},
   store:(o={})=>{const a={step:'go',t:0};const P=PP();try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}H.carry='hy_carrysack';
    visit(a,PT('fridge'),.5,'hy_fridgein',[[.15,()=>{try{P.fridge.openTo(1,.5);}catch(e){}}],[.55,()=>{try{P.release('meatBag');}catch(e){}H.carry=null;}],[.85,()=>{try{P.fridge.openTo(0,.5);}catch(e){}}]],()=>endTask({ok:true}));
