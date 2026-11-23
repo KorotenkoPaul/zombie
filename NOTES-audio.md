@@ -119,3 +119,13 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
   The existing hero.js nails every 1.3 s still play on top of this. For tests, `__audio._task(name)` forces a task.
 - Night critters (Ground): hedgehog step, sniff, curl, uncurl, appear and leave; mouse step, flee, dash, appear and leave. The mouse squeaks half the times it flees. Two synth sounds were added: sniff (snuffling puffs) and squeak (a short 3.8–4.7 kHz chirp). The blind QA heard both as intended.
 - Sway: each object now creaks at most once every 2.5–5 s. At 1.3–2.4 s the ladders creaked too often in a normal breeze.
+
+## Round 17: curtains, lockdown boards and sleep
+- New actions for Tree, Props and Brain to call with `__audio.play(name, pos)`:
+  - `curtain`, `curtain_close`, `curtain_open`: cloth, plus a synth "rings" run of metallic ticks along the rod.
+  - `shutter_close` (the shutter clip) and `shutter_open` (window_open).
+  - `board_up`: a plank, then three nails.
+- When Tree adds lockdown shutters or boards, call these at the moment each one moves.
+- Sleep: each night has its own sleeper. On 55 % of nights he snores, in spells of 1.5–5 minutes with quiet stretches of 2–7 minutes between. Outside the snoring spells he takes a slow synth breath every 4–5.5 s (in 1.4 s, a pause, out 2 s, band-passed around 520 Hz, very quiet), and only when the camera is within 8 m of the bed. He still turns over every 35–90 s.
+- Awake: when he stands still and the camera is within 3.5 m of him, he breathes softly, a faster version of the same breath every 3–4 s.
+- The blind QA heard the rings as curtain rings on a rod and the breath as slow, soft breathing.
