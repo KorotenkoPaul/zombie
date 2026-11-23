@@ -366,32 +366,54 @@ export function buildTree(THREE, o) {
   qg.setAttribute('shade', new THREE.InstancedBufferAttribute(shade, 1));
   im.castShadow = !MOB(o); im.receiveShadow = true; group.add(im);
 
-  // ---------- the cave behind the glowing hollow: a warm little room carved into the trunk ----------
+  // ---------- the hollow: a real cavity in the wood behind the arched opening (critic N4) ----------
+  // A closed ellipsoid seen from inside, big enough that no line of sight through the opening reaches the trunk's
+  // open shell (so nothing behind the tree shows through). Anything of it outside the bark is discarded in the
+  // shader, so the bark lip is the edge. Inside: rough end-grain wood with growth rings and fibres, darker further in;
+  // warm light only from the cave lamp (Lights) and the faint door glow.
   {
-    const yc0 = door.y0 - 0.02, hh = door.y1 - door.y0, cr = door.w * 0.62, dep = door.depth || 0.95;
-    const cd = 1.25, dist = R(yc0 + hh / 2) - cd + 0.12;
-    const cx = AX + Math.cos(doorAng) * dist, cz = AZ + Math.sin(doorAng) * dist;
-    const cmat = new THREE.MeshStandardMaterial({ map: barkT, color: 0xC88A5A, roughness: 0.95, side: THREE.BackSide });
+    const hh = door.y1 - door.y0, Rm = R(door.y0 + hh / 2);
+    const dirx = Math.cos(doorAng), dirz = Math.sin(doorAng);
+    const A = 1.55, B = hh * 0.95, Cl = Math.max(1.0, door.w * 1.0), off = Rm - 1.25;
+    const cx = AX + dirx * off, cz = AZ + dirz * off, cy = door.y0 + hh * 0.38; // tall: wide at the floor, no gap under the walls
+    const U = { doorGlow: mat.userData.doorGlow, cAx: { value: new THREE.Vector2(AX, AZ) }, cDir: { value: new THREE.Vector2(dirx, dirz) }, cR: { value: Rm - 0.04 },
+      cC: { value: new THREE.Vector3(cx, cy, cz) }, cS: { value: new THREE.Vector3(A, B, Cl) } };
+    const clip = sh => {
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvCW=(modelMatrix*vec4(transformed,1.)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vCW;uniform float doorGlow;uniform vec2 cAx;uniform vec2 cDir;uniform float cR;uniform vec3 cC;uniform vec3 cS;
+float cH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i),cH(i+vec2(1,0)),f.x),mix(cH(i+vec2(0,1)),cH(i+vec2(1,1)),f.x),f.y);}`)
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif(dot(vCW.xz-cAx,cDir)>cR)discard;');
+    };
+    const cmat = new THREE.MeshStandardMaterial({ color: 0x6E4A32, roughness: 1, side: THREE.BackSide });
     cmat.onBeforeCompile = sh => {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float doorGlow;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.45;');
-      sh.uniforms.doorGlow = mat.userData.doorGlow;
+      clip(sh);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+ {vec3 q=vCW-cC;vec2 dd=cDir;float u=dot(q.xz,dd);float v=-q.x*dd.y+q.z*dd.x;
+  float inn=clamp((cS.x*.55-u)/(cS.x*1.4),0.,1.);              // 0 at the mouth .. 1 at the back
+  float r=length(vec2(v,q.y))*7.+cN(vec2(v,q.y)*3.)*1.4;        // growth rings round the hollow's axis
+  float ring=smoothstep(.35,.5,abs(fract(r)-.5));
+  float fib=cN(vec2(atan(q.y,v)*9.,u*2.5))*.6+cN(vec2(atan(q.y,v)*31.,u*7.))*.4; // fibres running in
+  float crack=smoothstep(.08,.0,abs(cN(vec2(atan(q.y,v)*4.,u*1.3))-.5));
+  vec3 c=mix(vec3(.2,.12,.07),vec3(.34,.22,.13),fib)*(.78+.3*ring)*(1.-.5*crack);
+  diffuseColor.rgb=c*mix(1.,.15,pow(inn,.8));}`)
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.3*smoothstep(-.6,1.2,u2);}');
     };
-    const cave = new THREE.Group(); cave.position.set(cx, yc0, cz); cave.rotation.y = -doorAng; group.add(cave);
-    const sh0 = new THREE.Group(); sh0.scale.set(cd / cr, 1, door.w * 0.8 / cr); cave.add(sh0);
-    const wall = new THREE.Mesh(new THREE.CylinderGeometry(cr, cr * 1.08, hh * 0.65, 20, 1, true), cmat); wall.position.y = hh * 0.325; sh0.add(wall);
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(cr, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), cmat); dome.scale.y = hh * 0.35 / cr / 0.95; dome.position.y = hh * 0.65; sh0.add(dome);
-    // plank floor, slightly worn, lit by the glow
-    const fmat = new THREE.MeshStandardMaterial({ color: 0x9A6238, roughness: 0.85 });
-    fmat.onBeforeCompile = sh => {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float doorGlow;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.4;');
-      sh.uniforms.doorGlow = mat.userData.doorGlow;
-    };
-    const fl = new THREE.Mesh(new THREE.CircleGeometry(cr * 1.07, 20), fmat); fl.rotation.x = -Math.PI / 2; fl.position.y = 0.035; sh0.add(fl);
-    const seamM = new THREE.MeshBasicMaterial({ color: 0x3A2214 });
-    for (let i = -2; i <= 2; i++) { const g = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.004, cd * 2 * Math.sqrt(Math.max(0.01, 1 - (i * 0.11 / (door.w * 0.56)) ** 2))), seamM); g.rotation.y = Math.PI / 2; g.position.set(0, 0.038, i * 0.11); cave.add(g); }
-    cave.traverse(m => { if (m.isMesh) m.receiveShadow = true; });
+    cmat.customProgramCacheKey = () => 'hollow';
+    const cav = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 22), cmat);
+    cav.position.set(cx, cy, cz); cav.rotation.y = -doorAng; cav.scale.set(A, B, Cl); cav.receiveShadow = true; group.add(cav);
+    // a floor of packed, rotten wood and leaf litter in the bottom of the hollow
+    const fmat = new THREE.MeshStandardMaterial({ color: 0x5A3A24, roughness: 1 });
+    fmat.onBeforeCompile = sh => { clip(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+ {vec3 q=vCW-cC;float inn=clamp((cS.x*.55-dot(q.xz,cDir))/(cS.x*1.4),0.,1.);float n=cN(vCW.xz*9.)*.6+cN(vCW.xz*31.)*.4;
+  diffuseColor.rgb=mix(vec3(.13,.085,.05),vec3(.24,.16,.09),n)*mix(1.,.3,inn);}`)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.25;'); };
+    fmat.customProgramCacheKey = () => 'hollowfloor';
+    const fy = door.y0 + 0.03, k = Math.sqrt(Math.max(0, 1 - ((fy - cy) / B) ** 2));
+    const fl = new THREE.Mesh(new THREE.CircleGeometry(1, 32), fmat); fl.rotation.x = -Math.PI / 2; fl.scale.set(A * k, Cl * k, 1);
+    const flg = new THREE.Group(); flg.position.set(cx, fy, cz); flg.rotation.y = -doorAng; flg.add(fl); fl.receiveShadow = true; group.add(flg);
   }
 
   // world-space triangle soup for physics / slicing
