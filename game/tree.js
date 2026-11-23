@@ -408,7 +408,7 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
     const fmat = new THREE.MeshStandardMaterial({ color: 0x5A3A24, roughness: 1 });
     fmat.onBeforeCompile = sh => { clip(sh); sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
  {vec3 q=vCW-cC;float inn=clamp((cS.x*.55-dot(q.xz,cDir))/(cS.x*1.4),0.,1.);float n=cN(vCW.xz*9.)*.6+cN(vCW.xz*31.)*.4;
-  diffuseColor.rgb=mix(vec3(.3,.2,.12),vec3(.5,.36,.22),n)*mix(1.,.3,inn);}`)
+  diffuseColor.rgb=mix(vec3(.13,.085,.05),vec3(.24,.16,.09),n)*mix(1.,.3,inn);}`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.25;'); };
     fmat.customProgramCacheKey = () => 'hollowfloor';
     const fy = door.y0 + 0.03, k = Math.sqrt(Math.max(0, 1 - ((fy - cy) / B) ** 2));
