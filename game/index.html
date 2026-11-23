@@ -225,6 +225,12 @@ const boards=new THREE.InstancedMesh(boardGeo,boardMat,MAXB);boards.castShadow=t
 const aRow=new THREE.InstancedBufferAttribute(new Float32Array(MAXB),1),aTile=new THREE.InstancedBufferAttribute(new Float32Array(MAXB),1);boardGeo.setAttribute('aRow',aRow);boardGeo.setAttribute('aTile',aTile);
 const darkGeo=bevelBoxGeo();const dRow=new THREE.InstancedBufferAttribute(new Float32Array(900),1),dTile=new THREE.InstancedBufferAttribute(new Float32Array(900),1);darkGeo.setAttribute('aRow',dRow);darkGeo.setAttribute('aTile',dTile);
 const beams=new THREE.InstancedMesh(darkGeo,darkBoard,900);beams.castShadow=true;beams.receiveShadow=true;beams.count=0;scene.add(beams);
+// [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
+// `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
+const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
+function beamInst(m){const i=beams.count++;beams.setMatrixAt(i,m);dRow.setX(i,rnd(0,97));beams.setColorAt(i,new THREE.Color().setScalar(rnd(.9,1.04)));beams.instanceMatrix.needsUpdate=true;dRow.needsUpdate=true;if(beams.instanceColor)beams.instanceColor.needsUpdate=true;}
+function meshesToBeams(g){g.updateMatrixWorld(true);for(const o of [...g.children]){if(!o.isMesh||o.material!==darkBoard||!o.geometry.parameters||o.geometry.parameters.width===undefined)continue;const p=o.geometry.parameters;
+ beamInst(_bm.copy(o.matrixWorld).multiply(_bs.makeScale(p.width,p.height,p.depth)));g.remove(o);o.geometry.dispose();}}
 const B=[];// all boards {rb, size, q, inst, breakable, hp, group, loose}
 const tM=new THREE.Matrix4(),tQ=new THREE.Quaternion(),tP=V(),tS=V();
 // add a board centred at c with size (len,w,t) and rotation; long axis = local x
@@ -245,10 +251,56 @@ const L1=3.0,L2=5.9,L3=8.0;const ZB=1.5,ZF=4.1;// back and front of the rooms
 const groups={};
 // roofs like the photo: a thick wooden slab with a big overhang, covered by chunky, staggered slate-blue shingles
 const roofMat=new THREE.MeshStandardMaterial({map:roofT,roughness:.75});
-const shingleMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.88});
-shingleMat.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vSL;').replace('#include <begin_vertex>','#include <begin_vertex>\nvSL=position;');
- sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vSL;').replace('#include <map_fragment>','float se=min(.5-abs(vSL.x),.5-abs(vSL.z));diffuseColor.rgb*=mix(.55,1.,smoothstep(0.,.08,se))*mix(.7,1.,step(.49,vSL.y));diffuseColor.rgb*=.9+.2*smoothstep(-.5,.5,vSL.z);');};
-const SHING=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),shingleMat,2000);SHING.count=0;SHING.castShadow=true;SHING.receiveShadow=true;scene.add(SHING);
+const shingleMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.8});
+// Real slates, not paint: each shingle is a rounded-edge solid (bevelBoxGeo) with its own random patch of a Fal slate
+// scan (slate.jpg), its own tone, flaky relief from the scan, the odd crack, pale lichen specks, and moss (moss.jpg)
+// creeping over in world-space patches, thicker on the shady back half and low on the slope. A few shingles are missing.
+const [slateT,mossT]=await Promise.all([tex('slate.jpg'),tex('moss.jpg')]);
+const SHING_GLSL=`float sH(float n){return fract(sin(n*127.1)*43758.5453);}
+float sH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float sN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(sH2(i),sH2(i+vec2(1,0)),f.x),mix(sH2(i+vec2(0,1)),sH2(i+vec2(1,1)),f.x),f.y);}
+uniform sampler2D tSlate,tMoss;
+vec2 sDH=vec2(0.);float sRgh=.8;
+vec3 snArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);return normalize(abs(det)*sn-g);}
+// moss amount at a world point: soft patches, more on the back (shady, trunk) half and lower down each slope
+float sMoss(vec3 w,float sd){float n=sN(w.xz*1.3+sd*.0)*.65+sN(w.xz*4.1+3.)*.35;return smoothstep(.55,.78,n+(w.z<2.3?.12:-.1)+sH(sd+9.)*.12-.06);}
+// crack line height (metres, negative = groove) on the top face
+float sCrack(vec2 mm,vec3 sz,float sd){if(sH(sd+3.)>.16)return 0.;vec2 c=vec2((sH(sd+4.)-.5)*sz.x*.5,(sH(sd+5.)-.5)*sz.z*.4);float a=sH(sd+6.)*3.14;vec2 dir=vec2(cos(a),sin(a));
+ float d=abs(dot(mm-c,vec2(-dir.y,dir.x))+.012*(sN(vec2(dot(mm,dir)*25.,sd))-.5));float along=abs(dot(mm-c,dir));return -.003*smoothstep(.005,.0,d)*smoothstep(sz.z*.55,sz.z*.2,along);}
+vec3 slate(vec3 lp,vec3 sz,float sd){
+ vec3 m=lp*sz;vec3 an=abs(vN0);float top=step(an.x,an.y)*step(an.z,an.y)*step(0.,vN0.y);
+ vec2 off=vec2(sH(sd+.7),sH(sd+1.9))*5.;
+ vec2 uv=(top>.5?m.xz:(an.x>an.z?m.zy:m.xy))/.9+off;
+ vec3 tx=texture2D(tSlate,uv).rgb;float lum=dot(tx,vec3(.3,.6,.1));
+ vec3 col=pow(tx,vec3(1.1))*vec3(.5,.5,.5);
+ // each slate its own tone: some bluer, some greener-grey, some rust-brown stained, a few pale weathered
+ float t=sH(sd+2.2);col*=mix(vec3(.72,.76,.86),vec3(1.12,1.08,1.02),t);
+ if(sH(sd+7.)<.12)col*=vec3(1.18,1.02,.86);
+ sRgh=.62+.3*(1.-lum*3.);
+ vec2 ux=dFdx(uv),uy=dFdy(uv);float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
+ vec2 dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004;
+ if(top>.5){
+  vec2 mx=dFdx(m.xz),my=dFdy(m.xz);float c0=sCrack(m.xz,sz,sd);dH+=vec2(sCrack(m.xz+mx,sz,sd)-c0,sCrack(m.xz+my,sz,sd)-c0);col*=1.-.75*smoothstep(0.,-.003,c0);
+  // pale lichen rosettes
+  float li=smoothstep(.9,.95,sN(m.xz*90.+sd))*smoothstep(.55,.8,sN(m.xz*6.+sd*2.))*step(.6,sH(sd+11.));col=mix(col,vec3(.16,.17,.13),li*.6);
+ }else col*=.8; // split edges: a little darker, rougher
+ // moss, raised a few mm over the stone
+ float mo=sMoss(vW,sd)*mix(.5,1.,top);
+ if(mo>.001){vec3 wx=dFdx(vW),wy=dFdy(vW);dH+=vec2(sMoss(vW+wx,sd)-sMoss(vW,sd),sMoss(vW+wy,sd)-sMoss(vW,sd))*.006*mix(.5,1.,top);
+  vec3 mc=texture2D(tMoss,vW.xz*1.7+vec2(vW.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
+ sDH=dH;return col;}`;
+shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT}});
+ sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow;attribute vec3 aBev;varying float vSeed;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
+  .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
+  .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.018,.3*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;\n#endif\nvSeed=aRow;vLP=transformed;');
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+SHING_GLSL)
+  .replace('#include <map_fragment>','diffuseColor.rgb*=slate(vLP,vSz,vSeed);')
+  .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=sRgh;')
+  .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=snArb(-vViewPosition,normal,sDH,faceDirection);');};
+const shingGeo=bevelBoxGeo();const sRow=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aRow',sRow);
+const SHING=new THREE.InstancedMesh(shingGeo,shingleMat,2000);SHING.count=0;SHING.castShadow=true;SHING.receiveShadow=true;scene.add(SHING);
+// [PERF] shingles live on layer 5: the main camera and the sun's shadow camera see it, lamp (point) shadow cameras don't
+SHING.layers.set(5);camera.layers.enable(5);sun.shadow.camera.layers.enable(5);
 function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
@@ -263,12 +315,14 @@ function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const 
     const slip=rnd(0,1)<.08?rnd(.04,.09):0;
     const lp=V(along+slip,.15+.06+rnd(-.008,.012),zc);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
     q.setFromEuler(new THREE.Euler(rnd(-.07,.07),rnd(-.12,.12),-s*ang+s*(.1+rnd(-.04,.04)),'ZYX'));
+    // a few slates have slipped out over the years: the dark wood underlay shows (never in the bottom row, it would leak)
+    if(r<rows-1&&rnd(0,1)<.035)continue;
     const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.1,.13),ww));SHING.setMatrixAt(SHING.count,m4);
-    const k=rnd(.75,1.2)*(rnd(0,1)<.12?.7:1);c.setRGB(.07*k,.075*k,.095*k*rnd(.92,1.1));SHING.setColorAt(SHING.count,c);SHING.count++;}}}
+    const k=rnd(.8,1.15)*(rnd(0,1)<.12?.75:1);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));SHING.count++;}}}
  const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
  // gable trim boards on the front like the photo's dark fascia
  for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
- SHING.instanceMatrix.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
+ meshesToBeams(g); SHING.instanceMatrix.needsUpdate=true;sRow.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
  world.createCollider(RAPIER.ColliderDesc.cuboid((x1-x0)/2,h*.45,(z1-z0)/2).setTranslation((x0+x1)/2,y+h*.45,(z0+z1)/2));}
 function post(x,y0,y1,z){board(V(x,(y0+y1)/2,z),y1-y0,.2,.2,new THREE.Euler(0,0,Math.PI/2),{dark:true});}
 // ---- boards that respect the trunk: every run is cut where wood would go through bark ----
@@ -405,7 +459,7 @@ function prop(n,x,y,z,{h,w,ry=0,bright=1,solid=true,seat=false}={}){const o=PROP
 function rug(x,y,z,w,d,c1,c2){const cv=document.createElement('canvas');cv.width=128;cv.height=128;const g=cv.getContext('2d');g.fillStyle=c1;g.fillRect(0,0,128,128);g.strokeStyle=c2;g.lineWidth=6;g.strokeRect(8,8,112,112);g.lineWidth=3;g.strokeRect(20,20,88,88);for(let i=0;i<6;i++){g.fillStyle=c2;g.fillRect(28+i*13,58,7,12);}const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshStandardMaterial({map:t,roughness:1}));m.rotation.x=-Math.PI/2;m.position.set(x,y+.035,z);m.receiveShadow=true;scene.add(m);}
 
 const WINS=[];function win(x0,x1,y0,y1,z,side,room){const g=new THREE.Group();const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;WINS.push({mat:gm,room,g});const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),gm);p.renderOrder=2;g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}
- if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);}
+ if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);meshesToBeams(g);}
 win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
 // all furniture and objects: props.js (bevelled, textured, interactive). P3.oven / P3.book / P3.tools / P3.surfaces
 const P3=buildProps({scene,renderer,OBST,floors:[boards,beams],L:{KT,BD,WS,DK,LL}});window.__props=P3;
