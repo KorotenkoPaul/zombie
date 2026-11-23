@@ -235,6 +235,8 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
   // worn, lighter along the rounded edges
   float ew=sz.y*.5-abs(m.y),el=sz.x*.5-abs(m.x);col*=1.+.1*smoothstep(.012,.0,min(ew,el));
   if(vN0.z<0.&&wall<.5){col*=vec3(.68,.6,.55);pRgh=.95;}
+  // a batten's face seen from inside through the 1–3 cm slot between two planks: in the slot's shadow
+  if(sd>199.5){float inr=sd>299.5?-vN0.z:vN0.z;if(inr>.5)col*=vec3(.27,.25,.24);}
   if(uNails>.5&&sz.y>.12&&(vN0.z>0.||wall>.5)){vec3 nl=pNail(m.xy,sz,wall);col=mix(col,col*vec3(.55,.42,.33),nl.y*.6);float nh=smoothstep(.0055,.0035,nl.z);
    col=mix(col,vec3(.035,.032,.03)+vec3(.05,.03,.02)*pN(m.xy*900.),nh);pRgh=mix(pRgh,.45,nh);}
   // beams, braces and posts: a coach bolt through each end (square-ish iron head on a washer, rust bleeding into the wood)
@@ -321,7 +323,7 @@ const tM=new THREE.Matrix4(),tQ=new THREE.Quaternion(),tP=V(),tS=V();
 function board(c,len,w,t,rot,opt={}){const q=new THREE.Quaternion().setFromEuler(rot||new THREE.Euler());
  const rb=world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(c.x,c.y,c.z).setRotation({x:q.x,y:q.y,z:q.z,w:q.w}));
  const col=world.createCollider(RAPIER.ColliderDesc.cuboid(len/2,w/2,t/2).setDensity(600).setFriction(.8).setRestitution(.15),rb);
- const dark=!!opt.dark;const mesh=dark?beams:boards;const i=mesh.count++;const rowA=dark?dRow:aRow,tileA=dark?dTile:aTile;rowA.setX(i,rnd(0,97)+(opt.wall?100:0));tileA.setX(i,Math.max(.04,len/3.84));mesh.setColorAt(i,new THREE.Color().setScalar(opt.tint??rnd(.9,1.04)));
+ const dark=!!opt.dark;const mesh=dark?beams:boards;const i=mesh.count++;const rowA=dark?dRow:aRow,tileA=dark?dTile:aTile;rowA.setX(i,rnd(0,97)+(opt.wall?100:0)+(opt.bat?(opt.bat<0?100:200):0));tileA.setX(i,Math.max(.04,len/3.84));mesh.setColorAt(i,new THREE.Color().setScalar(opt.tint??rnd(.9,1.04)));
  PL.push({mesh,i,kind:dark?'beam':(opt.wall?'wall':'floor'),c:c.clone(),q:q.clone()});const b={rb,col,size:V(len,w,t),mesh,i,dark,breakable:!!opt.breakable,hp:opt.hp||4,group:opt.group||null,loose:false,home:{c:c.clone(),q:q.clone()}};B.push(b);col.userData=b;syncBoard(b);return b;}
 function syncBoard(b){const p=b.rb.translation(),q=b.rb.rotation();tM.compose(tP.set(p.x,p.y,p.z),tQ.set(q.x,q.y,q.z,q.w),b.size);b.mesh.setMatrixAt(b.i,tM);}
 const colToBoard=new Map();
@@ -444,12 +446,28 @@ function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z)
    board(V(cx+Math.cos(am)*(R-.12),y-.1,cz+Math.sin(am)*(R-.12)),2*R*Math.sin(Math.PI/nr)+.02,.2,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
   for(let z=cz+.25;z<cz+R-.2;z+=.8)for(const [a2,b2] of runs(x=>ok(x,z)&&ok(x,z+.1),cx-R,cx+R,.05,.3))board(V((a2+b2)/2,y-.115,z),b2-a2-.1,.14,.12,null,{dark:true});
   return;}
- for(let x=x0+.125;x<x1;x+=.25)for(const [a,b2] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e=b2>=z1-.05?b2+rnd(-.05,.05):b2;const L=lay();board(V(x+rnd(-.004,.004),y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}
+ // long runs are laid as 0.8–1.9 m boards butted end to end, joints staggered row to row (real end grain and joint lines)
+ for(let x=x0+.125;x<x1;x+=.25){const xo=rnd(-.004,.004);for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e0=b0>=z1-.05?b0+rnd(-.05,.05):b0;for(const [a,e] of cutRun(a0,e0,.8,1.9,.004)){const L=lay();L.lift=Math.min(L.lift,.0035);L.roll=Math.max(-.02,Math.min(.02,L.roll));/* rugs lie flat on top */board(V(x+xo,y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}}}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
  if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
-function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.16;x<x1;x+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.005,.005)),b2-a,rnd(.288,.303),rnd(.045,.055),new THREE.Euler(rnd(-.004,.004),rnd(-.03,.03),Math.PI/2+rnd(-.003,.003)),{tint:rnd(.93,1.07),wall:true});}
-function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.16;z<z1;z+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.005,.005),(a+b2)/2,z),b2-a,rnd(.288,.303),rnd(.045,.055),new THREE.Euler(0,Math.PI/2+rnd(-.02,.02),Math.PI/2+rnd(-.004,.004)),{tint:rnd(.88,1.0),wall:true});}
+// split a run [a,b] into pieces lo..hi long with a gap g between them (first piece random, so joints stagger)
+function cutRun(a,b,lo,hi,g){const out=[];let s=a;if(b-a>hi){s=a+rnd(lo*.4,hi*.8);out.push([a,s-g/2]);s+=g/2;}while(b-s>hi){const e=s+rnd(lo,hi);if(b-e<lo*.5)break;out.push([s,e-g/2]);s=e+g/2;}out.push([s,b]);return out;}
+// wall planks: some full height, some two pieces butted at a random height; each board sits at its own depth (pushed in,
+// away from the outside), and a narrow batten covers every joint on the outside (board-on-batten), so from inside each gap
+// shows a shadowed board behind it instead of the room beyond, and from outside the wall has real steps of relief.
+// out: which side is the outside (-1 = toward -z/-x).
+function wallPlank(c,len,t,rot,o){board(c,len,rnd(.282,.3),t,rot,o);}
+function wallBack(x0,x1,y0,y1,z,holes=[],out=-1){const ok=x=>y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05);
+ for(let x=x0+.16;x<x1;x+=.31){const dz=-out*rnd(0,.01),t=rnd(.045,.055),tn=rnd(.93,1.07);
+  for(const [a0,b0] of runs(ok(x),y0,y1,.05,.12))for(const [a,b2] of (b0-a0>1.4&&Math.random()<.45?cutRun(a0,b0,.6,1.5,.006):[[a0,b0]]))
+   wallPlank(V(x,(a+b2)/2,z+dz+out*(.05-t)/2),b2-a,t,new THREE.Euler(rnd(-.004,.004),rnd(-.03,.03),Math.PI/2+rnd(-.003,.003)),{tint:tn*rnd(.97,1.03),wall:true});
+  const xb=x+.155;if(xb<x1-.05)for(const [a,b2] of runs(ok(xb),y0+.02,y1-.02,.05,.12))board(V(xb,(a+b2)/2,z+out*.035),b2-a,rnd(.065,.08),.022,new THREE.Euler(0,0,Math.PI/2+rnd(-.004,.004)),{tint:rnd(.82,.95),wall:true,bat:out});}}
+function wallSide(x,z0,z1,y0,y1,holes=[],out=-1){const ok=z=>y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05);
+ for(let z=z0+.16;z<z1;z+=.31){const dx=-out*rnd(0,.01),t=rnd(.045,.055),tn=rnd(.88,1.0);
+  for(const [a0,b0] of runs(ok(z),y0,y1,.05,.12))for(const [a,b2] of (b0-a0>1.4&&Math.random()<.45?cutRun(a0,b0,.6,1.5,.006):[[a0,b0]]))
+   wallPlank(V(x+dx+out*(.05-t)/2,(a+b2)/2,z),b2-a,t,new THREE.Euler(0,Math.PI/2+rnd(-.02,.02),Math.PI/2+rnd(-.004,.004)),{tint:tn*rnd(.97,1.03),wall:true});
+  const zb=z+.155;if(zb<z1-.05)for(const [a,b2] of runs(ok(zb),y0+.02,y1-.02,.05,.12))board(V(x+out*.035,(a+b2)/2,zb),b2-a,rnd(.065,.08),.022,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.004,.004)),{tint:rnd(.8,.92),wall:true,bat:out});}}
 const disc=(cx,cz,r,zmin)=>(x,z)=>(x-cx)**2+(z-cz)**2<=r*r&&z>=zmin;
 function brace(a,b2,w=.16){a=a.clone().addScaledVector(b2.clone().sub(a).normalize(),-.14);const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),{dark:true});}
 function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.42));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;post(x,y,y+.95,z);}
@@ -534,7 +552,7 @@ ropeLadder(0,0,LC+.05,4.0);
 const KX0=-4.4,KX1=-.9;
 floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]]});
 wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
-wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]]);wallSide(KX1,.8,2.2,KT+.03,BD-.15);
+wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]],-1);wallSide(KX1,.8,2.2,KT+.03,BD-.15,[],1);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start above the centre landing (they used to pass through it) */brace(V(-2.3,LC+.4,frontZ(-2.3,LC+.4)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,LC+.45,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
@@ -555,7 +573,7 @@ const HATCH=(()=>{const x0=-4.28,x1=-3.68,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.
   get angle(){return ang;},grab,box:[x0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
-wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
+wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]],-1);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]],1);
 roof(BX0,BX1-.32,BD+2.3,.8,3.8,1.15,BX1);/* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
 // outside ledge between the bedroom door and the rope ladder to the deck
 floorBoards(BX1,1.8,BD,2.1,3.65,{noEdge:true});brace(V(.5,BD-1.6,2.3),V(1.6,BD-.12,2.9),.12);
@@ -564,7 +582,7 @@ ropeLadder(1.35,BD,DK+.05,3.15);
 const WX0=.9,WX1=4.6;
 floorBoards(WX0,WX1+.15,WS,.8,5.3);
 wallBack(WX0,WX1,WS+.03,WS+2.3,1.2,[[3.2,3.95,WS+1.05,WS+1.75]]);
-wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]]);wallSide(WX0,1.0,2.3,WS+.03,WS+2.3);
+wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]],1);wallSide(WX0,1.0,2.3,WS+.03,WS+2.3,[],-1);
 roof(WX0,WX1,WS+2.3,1.0,4.0,.95);post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
 brace(V(2.0,WS-2.2,frontZ(2.0,WS-2.2)-.1),V(4.2,WS-.15,4.6),.16);brace(V(1.6,WS-2,1.4),V(4.0,WS-.15,1.5),.17);
 if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}

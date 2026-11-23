@@ -43,3 +43,8 @@ Code: index.html, block "wood: every board is its own body" (`plankShader`, `bev
 - surf()/at() raycast TREE.bark radially so the frame sits in the bark; piece() makes oriented instances.
 - Jambs, a 7-piece arch, and the keystone are `beams` instances (kind 'door'); the threshold and 5 cave floor planks are `boards` instances (kind 'door'). No new draw calls.
 - The lantern bracket belongs to Lights. Test: tests/planks/door.js.
+
+## Round 8: work tops + room walls/floors (Critic N1/N2)
+- props.js workTops(M.woodLight): a world-space layer on the upward faces of the counter, workbench and side bench tops (WTOPS, set by setTop() after shiftRooms). It adds knife cuts, saw kerfs, dents, scorch rings, oil/tea stains, water-darkened wood by the sink, paint spots, pencil ticks, and a hand-worn front edge. Fine marks bend the normal and fade to a mean darkening at distance. It chains onto varyWood, and the proxMat clone chains onto it.
+- Walls: wallBack/wallSide(..., out) put each plank at its own depth (pushed inward ≤1 cm), sometimes split in two at a random height (cutRun), with a batten over every joint on the outside. Battens carry seed +200/+300 (bat), and the shader darkens their inner face, seen through the slot.
+- Floors: runs are split into 0.8–1.9 m boards with staggered butt joints. Lift is capped at 3.5 mm and roll at ±.02 so rugs don't get poked through.
