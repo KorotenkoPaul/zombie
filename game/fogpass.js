@@ -17,7 +17,7 @@
 //   -> {pass, add(meshes), setEnabled(on), enabled, scale}   (scale 0.5 = half resolution; 0.35 is even cheaper)
 // Toggle for comparisons: __fogpass.setEnabled(false) draws the fog the old way (full resolution, in the scene).
 
-export const FOG_LAYER = 5;
+export const FOG_LAYER = 7;  // [ENV] was 5, which the roof shingles also use (index: SHING.layers.set(5) to skip lamp shadows): the fog pass drew the roofs into its depth-less target, black over everything
 
 export function createFogPass({ THREE, renderer, scene, camera, composer, FullScreenQuad, Pass, MOBILE = false }) {
   const rt = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });

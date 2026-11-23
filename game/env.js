@@ -106,7 +106,22 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
     q.setFromEuler(new THREE.Euler(rr(-1.2,1.2),rr(0,6.28),rr(-1.2,1.2)));const sz=rr(1.6,2.6)*t.s*csz;m.compose(p,q,V(sz,sz,sz));im.setMatrixAt(n,m);
     // deeper in the forest the leaves turn bluer and darker, like the painted reference
     const far=smooth(16,60,t.d);c.setRGB(.78-far*.25,.88-far*.25,.82-far*.1);im.setColorAt(n,c);n++;}}
-  im.count=n;im.castShadow=!MOBILE;im.name='forestCanopy';scene.add(im);env.canopy=im;}
+  im.count=n;im.castShadow=!MOBILE;im.name='forestCanopy';scene.add(im);env.canopy=im;
+  // phones: impostors. One leaf clump (48 cards) is rendered once into a 256px texture, and every branch tip gets a single
+  // upright camera-facing quad with it instead of 18 cards: the far crowns were stacking ~23 alpha-tested layers per pixel.
+  if(MOBILE&&renderer){try{const S=256,rt=new THREE.WebGLRenderTarget(S,S,{depthBuffer:true});rt.texture.generateMipmaps=true;rt.texture.minFilter=THREE.LinearMipmapLinearFilter;
+   const bs=new THREE.Scene(),bm=new THREE.MeshBasicMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide}),NB=48,bim=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),bm,NB);const rb=rng(91);
+   for(let k=0;k<NB;k++){const d=V(rb()*2-1,(rb()*2-1)*.75+.1,rb()*2-1).normalize().multiplyScalar(Math.pow(rb(),.5)*3.4);q.setFromEuler(new THREE.Euler((rb()-.5)*2.4,rb()*6.28,(rb()-.5)*2.4));const sz=1.6+rb()*1.1;
+    m.compose(d,q,V(sz,sz,sz));bim.setMatrixAt(k,m);const sh=.62+.45*((d.y+3.4)/6.8)+(d.z>0?.08:-.08)+(rb()-.5)*.12;bim.setColorAt(k,c.setRGB(sh,sh,sh));}// lighter on top and front: the clump keeps its volume
+   bs.add(bim);const oc=new THREE.OrthographicCamera(-4.8,4.8,4.8,-4.8,.1,30);oc.position.set(0,0,12);oc.lookAt(0,0,0);
+   const prev=renderer.getRenderTarget(),cc=renderer.getClearColor(new THREE.Color()),ca=renderer.getClearAlpha();renderer.setRenderTarget(rt);renderer.setClearColor(0x000000,0);renderer.clear();renderer.render(bs,oc);
+   renderer.setRenderTarget(prev);renderer.setClearColor(cc,ca);bim.geometry.dispose();bm.dispose();
+   const imat=new THREE.MeshBasicMaterial({map:rt.texture,alphaTest:.45});
+   imat.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <project_vertex>',`vec3 ctr=instanceMatrix[3].xyz;float isz=length(instanceMatrix[0].xyz);
+     vec3 rgt=normalize(vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]));vec4 mvPosition=viewMatrix*vec4(ctr+rgt*transformed.x*isz+vec3(0.,transformed.y*isz,0.),1.);gl_Position=projectionMatrix*mvPosition;`);};
+   const NI=tips.length,iq=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),imat,NI);let j=0;
+   for(const t of tips){const far=smooth(16,60,t.d);m.compose(t.p,q.identity(),V(9.6*t.s*1.08,9.6*t.s*1.08,1));iq.setMatrixAt(j,m);iq.setColorAt(j,c.setRGB(.78-far*.25,.88-far*.25,.82-far*.1));j++;}
+   iq.frustumCulled=false;iq.name='forestCanopyImpostors';scene.add(iq);scene.remove(im);im.dispose();env.canopy=iq;env.canopyTex=rt.texture;}catch(e){console.warn('canopy impostors',e);}}}
 
  // far forest: a painted backdrop (Fal, from the reference: gnarled oak silhouettes in blue fog) on a cylinder around the scene.
  // Mirrored-repeat so there is no seam; at night the painting shows as is, by day it is re-tinted with the fog colour.
@@ -189,10 +204,11 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     vec2 r=nz2(p+3.*q+vec2(1.7,9.2)+t*.02);float d=fbm(p+3.4*r);
     float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK,1.,smoothstep(4.,12.,length(vW.xz)));
     float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6)*smoothstep(.35,1.8,cam.y-vW.y);/* a sheet near eye height reads as a hard horizontal line: it fades out as the camera comes down to it */gl_FragColor=vec4(col*(.82+.4*d),a);}`});
- const sheets=[];(MOBILE?[[.3,1.1],[.9,.85]]:[[.25,1],[.7,.8],[1.3,.6]]).forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(200,200).rotateX(-Math.PI/2),sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
+ const sheets=[];(MOBILE?[[.3,1.1],[.9,.85]]:[[.25,1],[.7,.8],[1.3,.6]]).forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.CircleGeometry(97,40).rotateX(-Math.PI/2)/* the sheets fade out by r 95: a disc, not a 200 m square */,sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
  const PB=MOBILE?12:22;/* low billows at the root feet (photo: fog in soft heaps between the roots, moss showing) */const PN=(MOBILE?46:80)+PB;const puffU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},night:{value:1},frontK:{value:.7},...softU,...windU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
- const pg=new THREE.InstancedBufferGeometry();pg.copy(new THREE.PlaneGeometry(1,1));pg.instanceCount=PN;
+ const pg=new THREE.InstancedBufferGeometry();{/* an ellipse just around where the puff has any alpha (x .5, y .4 of the quad) instead of the full quad: ~35% less to rasterise */
+  const eg=new THREE.CircleGeometry(.5/Math.cos(Math.PI/12),12),ep=eg.attributes.position,eu=eg.attributes.uv;for(let i=0;i<ep.count;i++){const y=ep.getY(i)*.82;ep.setY(i,y);eu.setXY(i,ep.getX(i)+.5,y+.5);}pg.copy(eg);}pg.instanceCount=PN;
  {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}else if(i<PN*.55){ang=rr(3.6,5.9);r=rr(6,13);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
    let sz=rr(2.6,6)*(r<10?.8:1.15),y=rr(.15,.9)*sz*.32,va=rr(.55,1);
    if(i>=PN-PB){const k=i-(PN-PB);ang=(k+rr(.15,.85))/PB*6.28;r=rr(3.6,7.5);sz=rr(1.3,2.4);y=sz*.18;va=1+rr(.6,1);}// billows: flagged by alpha>1, no orbit, kept even in front of the trunk

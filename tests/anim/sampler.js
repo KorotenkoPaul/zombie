@@ -13,6 +13,8 @@ module.exports=function install(cfg){
   const e=mw.elements;const ax=[V(e[0],e[1],e[2]),V(e[4],e[5],e[6]),V(e[8],e[9],e[10])];const sc=ax.map(a=>a.length());if(sc.some(s=>s<1e-6))return;ax.forEach((a,i)=>a.multiplyScalar(1/sc[i]));
   const lc=bb.getCenter(V()),lh=bb.getSize(V()).multiplyScalar(.5);
   const h=[lh.x*sc[0],lh.y*sc[1],lh.z*sc[2]];if(Math.min(...h)<.003)return; // flat: no volume
+  if(Math.max(...h)>6)return; // > 12 m: backdrop (forest ring, sky), never a solid he could touch (collide.js does the same)
+  if(t==='CylinderGeometry'&&pr.openEnded)return; // an open tube is a shell, not a solid
   const c=lc.clone().applyMatrix4(mw);
   let shape='box',r=0;
   if(t==='CylinderGeometry'&&Math.abs(sc[0]-sc[2])<1e-3&&Math.abs((pr.radiusTop||0)-(pr.radiusBottom||0))<.02){shape='cyl';r=Math.max(pr.radiusTop,pr.radiusBottom)*sc[0];}
@@ -108,14 +110,36 @@ module.exports=function install(cfg){
  const GN=['head','handL','handR','feet','shins','hips','arms','torso'];const VS=[];const step=cfg.vertStep||10;
  for(let i=0;i<pos.count;i+=step){let bi=0,bw=-1;for(let k=0;k<4;k++){const w=GC(sw2,i,k);if(w>bw){bw=w;bi=GC(si,i,k);}}VS.push([i,GN.indexOf(GROUP(M.skeleton.bones[bi].name))]);}
  const BN=['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'];
- const BB=BN.map(n=>heroBones[n]);
- const out={frames:[],GN,BN,nColl:C.length,skipped,verts:VS.length};
+ // the old hero's skeleton has no end bones: put them where they would be (head top 18 cm on from the neck, toe tip 7 cm on from the ankle)
+ const EXT={HeadTop_End:['Neck','Head',.18],LeftToe_End:['LeftFoot','LeftToeBase',.07],RightToe_End:['RightFoot','RightToeBase',.07]};
+ const BB=BN.map(n=>heroBones[n]||{getWorldPosition(v){const [a,b,l]=EXT[n];const pa=heroBones[a].getWorldPosition(new THREE.Vector3());heroBones[b].getWorldPosition(v);return v.add(v.clone().sub(pa).setLength(l));}});
+ // ladder rungs: thin horizontal bars among the solid boxes (board ladders) + the lashed round rungs of the rope ladders (merged mesh)
+ const RUNGS=[];
+ for(const sh of C){if(sh.shape==='vox'||sh.shape==='none'||!sh.h)continue;const o=[0,1,2].sort((a,b)=>sh.h[b]-sh.h[a]);const L=sh.h[o[0]];
+  if(L>.18&&L<.38&&sh.h[o[1]]<.045&&Math.abs(sh.ax[o[0]].y)<.3)RUNGS.push({c:[sh.c.x,sh.c.y,sh.c.z],d:[sh.ax[o[0]].x,sh.ax[o[0]].y,sh.ax[o[0]].z],h:L,k:'board'});}
+ scene.traverse(o=>{if(!o.isMesh||!o.material||!o.material.color||o.material.color.getHex()!==0x7a5236)return;const P=o.geometry.attributes.position;if(!P)return;o.updateMatrixWorld();
+  const cl=new Map();const w=V();for(let i=0;i<P.count;i++){w.fromBufferAttribute(P,i).applyMatrix4(o.matrixWorld);const k=Math.round(w.y/.06)+'|'+Math.round(w.x/1.2)+'|'+Math.round(w.z/1.2);
+   let c=cl.get(k);if(!c){c={mn:w.clone(),mx:w.clone()};cl.set(k,c);}c.mn.min(w);c.mx.max(w);}
+  for(const c of cl.values()){const sz=c.mx.clone().sub(c.mn);const L=Math.max(sz.x,sz.z);if(L>.45&&L<.8&&sz.y<.12){const cc=c.mn.clone().add(c.mx).multiplyScalar(.5);RUNGS.push({c:[cc.x,cc.y,cc.z],d:sz.x>sz.z?[1,0,0]:[0,0,1],h:L/2,k:'rope'});}}});
+ // moving objects (door, hatch lid, bolt, oven door, fridge, buckets, dishes, gear): every object whose world matrix changes
+ // names for the props the game registers (window.__props / __house): door, hatch, oven, fridge, bucket...
+ const PN=new Map();for(const [src,O] of [['props',window.__props],['house',window.__house],['ground',window.__ground]]){if(!O)continue;for(const k of Object.keys(O)){const v=O[k];if(!v||typeof v!=='object')continue;
+   if(v.isObject3D){if(!PN.has(v))PN.set(v,k);continue;}for(const kk of Object.keys(v)){const w=v[kk];if(w&&w.isObject3D&&!PN.has(w))PN.set(w,k+'.'+kk);}}}
+ const propName=o=>{for(let x=o,d=0;x&&d<6;x=x.parent,d++)if(PN.has(x))return PN.get(x)+(d?'/'+d:'');return null;};
+ const MOV=[];const heroRoot=hero.root;const isHero=o=>{for(let x=o;x;x=x.parent)if(x===heroRoot)return true;return false;};
+ scene.traverse(o=>{if(o===scene||o.isLight||o.isCamera||isHero(o)||o.isInstancedMesh||o.isPoints||o.isSprite)return;if(o.isMesh&&o.geometry){if(!o.geometry.boundingSphere)o.geometry.computeBoundingSphere();if(o.geometry.boundingSphere.radius>2.5)return;}
+  if(!o.isMesh&&!o.isGroup&&o.type!=='Object3D')return;const nm=propName(o)||[o.name,o.parent&&o.parent.name,o.parent&&o.parent.parent&&o.parent.parent.name].filter(Boolean).join('<')||(o.geometry?o.geometry.type:o.type);
+  const wp=new THREE.Vector3();o.getWorldPosition(wp);let kids=0;o.traverse(()=>kids++);MOV.push({o,last:o.matrixWorld.elements.slice(),nm,id:MOV.length,n:0,at:[+wp.x.toFixed(2),+wp.y.toFixed(2),+wp.z.toFixed(2)],kids});});
+ const BX=new THREE.Box3(),HP=[V(),V()],FA=V();const MI=new Map(MOV.map(m=>[m.o,m]));
+ const QB=['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase'].map(n=>heroBones[n]);
+ const out={frames:[],GN,BN,nColl:C.length,skipped,verts:VS.length,rungs:RUNGS,QN:['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase']};
  const vp=V(),q=new THREE.Quaternion();
  function sample(f,dt,hour,tag){scene.updateMatrixWorld();const H=hero;
   const r={f,tag,hour:+hour.toFixed(3),task:H.task,state:H.state,clip:H.cur?H.cur.getClip().name:'',fl:(H.seated?'S':'')+(H.inBed?'B':'')+(H.swing?'W':'')+(H.lad?'L':'')+(H.trans?'T':'')+(H.path&&H.path.length?'P':'')+(H.fit?'F'+H.fit.mode[0]:''),
    node:H.node,ts:H.cur?+(H.cur.getEffectiveTimeScale()*(H.mixer?H.mixer.timeScale:1)).toFixed(3):0,root:H.root.position.toArray().map(v=>+v.toFixed(4)),ry:+H.root.rotation.y.toFixed(4),b:[]};
   for(const b of BB){b.getWorldPosition(vp);r.b.push(+vp.x.toFixed(4),+vp.y.toFixed(4),+vp.z.toFixed(4));}
   heroBones.Hips.getWorldQuaternion(q);r.hq=[q.x,q.y,q.z,q.w].map(v=>+v.toFixed(4));
+  r.q=[];for(const b of QB){b.getWorldQuaternion(q);r.q.push(+q.x.toFixed(4),+q.y.toFixed(4),+q.z.toFixed(4),+q.w.toFixed(4));}
   // penetration: deepest vertex per group, and which shape
   const pen=GN.map(()=>[0,-1,null]);
   for(const [vi,g] of VS){vp.fromBufferAttribute(pos,vi);M.applyBoneTransform(vi,vp);vp.applyMatrix4(M.matrixWorld);
@@ -124,7 +148,15 @@ module.exports=function install(cfg){
   r.pen=pen.map(([d,ci,p])=>ci<0?0:[+(d*100).toFixed(2),ci,p]);
   // ground under each toe/ankle
   r.gnd=[7,8,12,13].map(i=>{const p=V(r.b[i*3],r.b[i*3+1],r.b[i*3+2]);const u=floorUnder(p,.25,1.0);return u?+u[0].toFixed(4):null;});
+  // which objects moved this frame (topmost moved one only), and how far the nearer palm is from it
+  {const pr=[];heroBones.LeftHand.getWorldPosition(HP[0]);heroBones.LeftForeArm.getWorldPosition(FA);HP[0].add(HP[0].clone().sub(FA).setLength(.07));
+   heroBones.RightHand.getWorldPosition(HP[1]);heroBones.RightForeArm.getWorldPosition(FA);HP[1].add(HP[1].clone().sub(FA).setLength(.07));const hp=H.root.position;
+   const moved=new Set();for(const m of MOV){const e=m.o.matrixWorld.elements;let d=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-m.last[k]);if(x>d)d=x;}if(d>2e-4){moved.add(m.o);for(let k=0;k<16;k++)m.last[k]=e[k];}}
+   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
+    BX.setFromObject(o);if(BX.isEmpty())continue;const dh=Math.min(BX.distanceToPoint(HP[0]),BX.distanceToPoint(HP[1]));pr.push([m.id,+(dh*100).toFixed(1)]);}
+   if(pr.length)r.mv=pr;}
   out.frames.push(r);}
- window.__A={sample,out,C,depth,query,floorUnder,collNames:()=>C.map(s=>s.name)};
+
+ window.__A={sample,out,movNames:()=>MOV.map(m=>[m.nm,m.n,m.at,m.kids]),C,depth,query,floorUnder,collNames:()=>C.map(s=>s.name)};
  return {n:C.length,vox:VOX,skipped,verts:VS.length,global:GLOBAL.length,cells:G.size};
 };
