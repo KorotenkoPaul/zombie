@@ -54,3 +54,12 @@ Debug: `__treedress.stats()`.
   where tdJ.z > 0. Crushed dark bark under the end, a callus roll round it (normal), rubbed grey ridges without moss, a water stain below.
 - Frost: `__weather.state().temp` (Wind). Target = (5.3 - temp) / 1.1 on dry nights (~1-5 am), forms over 90 s, melts in 60 s.
   A light dusting on root-top ridges near the ground, not snow.
+
+## Round 7 (phone cost after rounds 5-6)
+- Bench: scratchpad-style bark-only render timing on the iPhone 13 profile (swiftshader, relative only), old treedress (257c9cd)
+  vs new with everything else equal. Rounds 5-6 had made the bark ~1.6x dearer: the beam-bite loop over 72 uniforms (~300 ms of
+  ~800 in the bench) and textureGrad (~90 ms).
+- Fixes: the two nearest bites are baked per vertex (attributes tdB1/tdB2, flat varyings), no uniform array or loop over all;
+  phones use one. Phones read with plain texture2D and pick the angle coordinate whose wrap is not in this pixel quad
+  (Tarini's trick, one turn = whole tiles), so no textureGrad and no seam. Phones blend trunk/root coordinates in a narrower band.
+- Result: back to the lite-pass level within bench noise (roots ~595 vs 598, trunk ~480 vs 482, frame ~555 vs 550).
