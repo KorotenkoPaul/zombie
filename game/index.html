@@ -542,9 +542,11 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   rungs.push(placed(new THREE.CylinderGeometry(.03,.035,.16,6),V(x+sx*1.05,top+.06,z-.34)));
   for(const y of rungY){const t=(top-y)/H;ropes.push(placed(knotGeo,V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1)));}}
  // round rungs, a little uneven like hand-lashed sticks
- for(const y of rungY){const t=(top-y)/H;rungs.push(placed(new THREE.CylinderGeometry(.022,.022,.64,6),V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t)),new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
+ const LR=[];for(const y of rungY){const t=(top-y)/H;const c=V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t));LR.push({x:c.x,y:c.y,z:c.z,r:.022,half:.32,sw:t});rungs.push(placed(new THREE.CylinderGeometry(.022,.022,.64,6),c,new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
+ (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:true,rungs:LR,len:H});/* climb.js: hands and feet on these rungs */
  for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;scene.add(me);}}
-function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});for(let y=y0+.3;y<y1;y+=.32)board(V(x,y,z),.5,.06,.05,null,{dark:true});}
+function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});const LR=[];for(let y=y0+.3;y<y1;y+=.32){board(V(x,y,z),.5,.06,.05,null,{dark:true});LR.push({x,y,z,r:.03,half:.21,sw:0});}
+ (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:false,rungs:LR});/* climb.js: hands and feet on these rungs */}
 // the photo is an open cutaway: no plank fences across the room fronts while there are no zombies (BARRICADES=false)
 const BARRICADES=false;
 function barricade(name,center,len){const g={name,boards:[],center};groups[name]=g;if(!BARRICADES)return g;
@@ -783,6 +785,7 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
  mode:()=>{if(isNight(hour)&&zombies.some(z=>z.alive))return 'guard';if(B.some(b=>b.breakable&&b.loose))return 'repair';return null;},
  guardSpot:()=>guardSpot(),brokenBoard:()=>B.find(b=>b.breakable&&b.loose),repairBoard:b=>repairBoard(b),get WIN_NODE(){return WIN_NODE;}});
 // motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
+try{const {createClimb}=await import(new URL(ASSET+'climb.js',document.baseURI).href);if(HH.setClimb){window.__climb=createClimb();HH.setClimb(window.__climb);}}catch(e){console.error('climb',e);}
 try{const mdb=await fetch(ASSET+'motion-db.txt').then(r=>r.ok?r.text():null).catch(()=>null);if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
 // ---- age (round 3): wear paths seeded from his walking graph, then stamped wherever he actually walks; repair API for Brain
