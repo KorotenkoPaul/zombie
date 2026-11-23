@@ -295,7 +295,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // the candle on the reading table: he blows it out when he stops reading, and lights it to read in the dark
     if (name !== 'read' && from === 'bedroom' && candleOn()) plan.unshift({ task: 'switch', opts: { light: 'candle', on: false }, why: 'задувает свечу' });
     // trips: the bow from the workshop for the hunt; the jacket from the hook when it rains or is chilly (sometimes he skips it)
-    if (EXTRA[name]) { const E = EXTRA[name]; plan.push({ task: E.task || name, opts: {}, why: reason, extra: name }); }
+    if (EXTRA[name]) { const E = EXTRA[name]; plan.push({ task: E.task || name, opts: repairTarget(name), why: reason, extra: name }); }
     else if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, lantern: dark(h), bow: name === 'hunt', jacket: raining() || ((h < 9 || h > 17) && Math.random() < .7) || Math.random() < .2 }, why: reason, job: name });
     else plan.push({ task: name, opts: ECON && name === 'cook' ? { fromFridge: true } : {}, why: reason });
   }
@@ -308,7 +308,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     why = st.why || why;
     // he leaves the stove after really cooking: a portion of meat and a log are used, a meal waits
     if (st.task !== 'cook' && !(st.task === 'switch' && plan.some(p => p.task === 'cook'))) bookCook();
-    job = st.job || null; extra = st.extra || null;
+    job = st.job || null; extra = st.extra || null; lastOpts = st.opts;
     // using water: the tap bucket goes down, the drain bucket fills
     { const w = WET[st.extra || st.task]; if (w && WATER() && !propsWater()) { stock.clean = clamp(stock.clean - w); stock.dirtyW = clamp(stock.dirtyW + w * .9); showStock(); } }
     if (extra) { recent.unshift(extra); recent.length = 4; }
@@ -354,6 +354,29 @@ export function createBrain({ HH, lights, hour, isNight }) {
 
   // ---------- the per-frame tick (called by hero.js) ----------
   let locked = false;
+  // real parts of the house (index.html window.__planks): a repair picks an actual old board / slate / beam,
+  // the hero goes there (opts.target, opts.pos), and the parts he fixed look new, fading back to old over ~3 game days
+  const PLANK_KIND = { fix_shingle: 'shingle', fix_board: 'floor', fix_wall: 'wall', fix_railing: 'beam' };
+  const planks = () => { try { return window.__planks || null; } catch (e) { return null; } };
+  const freshList = new Map();   // id -> fresh value we set
+  function repairTarget(name) {
+    const P = planks(), kind = PLANK_KIND[name];
+    if (!P || !kind || !P.list) return {};
+    const all = P.list(kind); if (!all.length) return {};
+    // the oldest of a few random candidates, a little biased toward the room he is in
+    let best = null, bs = 1e9; const hp = H.root ? H.root.position : null;
+    for (let i = 0; i < 12; i++) { const c = all[Math.floor(Math.random() * all.length)]; const d = hp ? Math.hypot(c.pos[0] - hp.x, c.pos[1] - hp.y, c.pos[2] - hp.z) : 0; const sc = c.fresh * 3 + d * .08 + Math.random() * .3; if (sc < bs) { bs = sc; best = c; } }
+    return best ? { target: best.id, pos: best.pos, kind } : {};
+  }
+  function markRepaired(opts) {
+    const P = planks(); if (!P || !opts || opts.target == null) return;
+    const ids = P.near ? P.near(opts.pos[0], opts.pos[1], opts.pos[2], .55, opts.kind) : [];
+    for (const id of new Set([opts.target, ...ids])) { const f = id === opts.target ? 1 : .75; P.setFresh(id, f); freshList.set(id, f); }
+  }
+  function ageParts(dh) {
+    if (!freshList.size || dh <= 0) return; const P = planks(); if (!P) return;
+    for (const [id, f] of freshList) { const n = f - dh / 72; if (n <= 0) { P.setFresh(id, 0); freshList.delete(id); } else { freshList.set(id, n); if (Math.random() < .02) P.setFresh(id, n); } }
+  }
   // a strange sound in the night: he startles, stops, turns toward it and listens; if it gets to him, he checks the bolt
   let uneaseOff = null, startleT = 0;
   function onUnease(e) {
@@ -370,9 +393,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // dirty dishes in the sink (props.js); -1 = unknown
   const dirty = () => { try { const D = window.__props && window.__props.dishes; return D && D.state ? D.state().dirty : -1; } catch (e) { return -1; } };
   const house = () => { try { return window.__house || null; } catch (e) { return null; } };
-  let pausing = 0, expected, cmdNext = false, job = null, extra = null;
+  let pausing = 0, expected, cmdNext = false, job = null, extra = null, lastOpts = null;
   function tick(dt, v) {
     const dh = gameHours();
+    ageParts(dh);
     // night noises (audio.js): subscribe once the sound system exists
     if (!uneaseOff) { try { const A = window.__audio; if (A && A.on) uneaseOff = A.on('unease', onUnease) || true; } catch (e) { uneaseOff = true; } }
     { const W = propsWater(); if (W) { stock.clean = W.clean; stock.dirtyW = W.dirty; } }
@@ -526,7 +550,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   ui();
   // a job ended: book what it brought (hero.js may pass a result; a missing result counts as success)
   if (HH.onTaskEnd) HH.onTaskEnd((name, res) => {
-    if (extra && EXTRA[extra] && res !== false) { const E = EXTRA[extra]; for (const k in E.give) need[k] = clamp(need[k] + E.give[k]);
+    if (extra && EXTRA[extra] && res !== false) { const E = EXTRA[extra]; if (PLANK_KIND[extra]) markRepaired(lastOpts); for (const k in E.give) need[k] = clamp(need[k] + E.give[k]);
       if (extra === 'bolt') day.bolted = true; if (extra === 'stretch') day.justWoke = false; if (extra === 'dishes') day.justAte = false;
       if (extra === 'stoke' && ECON) { stock.logs = Math.max(0, stock.logs - 1); showStock(); }
       if (extra === 'firewood' && ECON) { stock.logs += 2; showStock(); }

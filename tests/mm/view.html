@@ -1,0 +1,18 @@
+<!doctype html><html><body style="margin:0;background:#ddd"><canvas id=c></canvas>
+<script type="importmap">{"imports":{"three":"/three/build/three.module.js","three/addons/":"/three/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
+import {clone} from 'three/addons/utils/SkeletonUtils.js';
+const W=window.innerWidth,Hh=window.innerHeight;const R=new THREE.WebGLRenderer({canvas:document.getElementById('c'),antialias:true,preserveDrawingBuffer:true});R.setSize(W,Hh);
+const sc=new THREE.Scene();sc.background=new THREE.Color(0xe8e4dc);sc.add(new THREE.HemisphereLight(0xffffff,0x886644,2.2));const dl=new THREE.DirectionalLight(0xffffff,1.5);dl.position.set(2,4,3);sc.add(dl);
+const grid=new THREE.GridHelper(60,240,0xa09a90,0xc4beb4);sc.add(grid);
+const g=await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync('/hero.glb');
+window.show=(poses,opt={})=>{// poses: [{q:{Bone:[x,y,z,w]},hips:[x,y,z],x:offset}]
+ for(const o of [...sc.children])if(o.userData.h)sc.remove(o);
+ for(const p of poses){const m=clone(g.scene);m.userData.h=1;sc.add(m);const bn={};m.traverse(o=>{if(o.isBone)bn[o.name.replace('mixamorig','').replace(':','')]=o;});
+  for(const k in p.q)bn[k]&&bn[k].quaternion.fromArray(p.q[k]);bn.Hips.position.set(p.hips[0],p.hips[1],p.hips[2]);
+  m.position.set(p.x||0,p.y||0,p.z||0);m.rotation.y=p.ry||0;if(p.op!=null)m.traverse(o=>{if(o.isMesh){o.material=o.material.clone();o.material.transparent=true;o.material.opacity=p.op;o.material.depthWrite=p.op>.9;}});}
+ grid.position.y=opt.gy||0;
+ const cam=new THREE.PerspectiveCamera(opt.fov||22,W/Hh,.1,100);cam.position.set(...opt.cam);cam.lookAt(...opt.at);R.render(sc,cam);return true;};
+window.ready=true;
+</script></body></html>

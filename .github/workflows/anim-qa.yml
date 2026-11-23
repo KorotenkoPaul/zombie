@@ -5,7 +5,7 @@ name: anim-qa
 on:
   push:
     branches: [master]
-    paths: ['game/**', 'tests/anim/**']
+    paths: ['game/hero.js', 'game/brain.js', 'game/hero-moves.txt', 'game/props.js', 'game/tree.js', 'game/index.html', 'tests/anim/**']
   workflow_dispatch:
 concurrency:
   group: anim-qa-${{ github.ref }}
