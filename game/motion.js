@@ -268,8 +268,11 @@ export function createMotion({ hero, db, opts = {} }) {
     const off = !FP.on || window.__noPops;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
     let any = false, hit = 0;
+    // GRAB HOOK: a deliberately sharp move (a hammer blow) on one arm is not a pop; hero.js sets H.noPop each frame it swings
+    const NP = H.noPop && H.noPop.age < .25 ? H.noPop.side : null; if (H.noPop) H.noPop.age += dt;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const i3 = b*3;
-      if (!off && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
+      if (NP && /Arm|Hand|Shoulder/.test(names[b]) && names[b].includes(NP)) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; fV[i3] = fV[i3+1] = fV[i3+2] = 0; }
+      else if (!off && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
         if (dv > (FP.hot > 0 ? FP.thrHot : FP.thr)) { // start from what was on screen last frame
           const t = [0, 0, 0, 0]; qmul(fShown, b*4, [-fRaw[b*4], -fRaw[b*4+1], -fRaw[b*4+2], fRaw[b*4+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], fX, i3); fV[i3] = fV[i3+1] = fV[i3+2] = 0; hit++; } }
       if (off) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; }
@@ -279,10 +282,9 @@ export function createMotion({ hero, db, opts = {} }) {
     if (hit) { FP.n++; FP.bones += hit; }
     fr2.set(fr1); fr1.set(fRaw); fN++;
     if (any) root.updateMatrixWorld(true); }
-  // hook the final pass after everything else in the hero's update (collide.js wraps HH.update too, possibly later: stay outermost)
-  let fWrap = null;
-  function ensureFinal() { if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
-    fWrap = dt => { inner(dt); if (g === FP.gen) final(dt); }; hero.update = fWrap; }
+  // the final pass runs as the velocity limiter ("no snaps") of the 'guard' slot (HERO-RULES.md §1, #8), registered once; no HH.update wrapping
+  let fReg = false;
+  function ensureFinal() { if (fReg || typeof hero.stage !== 'function') return; fReg = true; hero.stage('guard', dt => final(dt)); }
   function stepOffsets(dt) {
     for (let i = 0; i < NB * 3; i++) { const y = yB[(i / 3) | 0], e = Math.exp(-y * dt); const j1 = offV[i] + offX[i] * y; offX[i] = e * (offX[i] + j1 * dt); offV[i] = e * (offV[i] - j1 * y * dt); }
     { const e = Math.exp(-yP * dt); for (let k = 0; k < 3; k++) { const j1 = offPV[k] + offP[k] * yP; offP[k] = e * (offP[k] + j1 * dt); offPV[k] = e * (offPV[k] - j1 * yP * dt); } } }
@@ -399,6 +401,6 @@ export function createMotion({ hero, db, opts = {} }) {
 
   // timing check: n full searches against random database frames as queries (Date.now: works under a frozen performance.now)
   function bench(n = 400) { let pr = 0; const t0 = Date.now(); for (let i = 0; i < n; i++) { const g = (Math.random() * total) | 0; for (let k = 0; k < NF; k++) Qv[k] = F[g*NF + k] + (Math.random() - .5) * .3; search(Qv, -1, 1e9); pr += S.pruned; } return { msPerSearch: (Date.now() - t0) / n, pruned: pr / n }; }
-  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
+  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones, reg: fReg, frames: fN }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
   return api;
 }

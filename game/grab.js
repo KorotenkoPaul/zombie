@@ -114,7 +114,10 @@ export function createGrab({ THREE, bones }) {
   // late fixes: hands that must stay exactly on something are put back after collide.js has moved the body (it wraps HH.update
   // before this does; motion.js's pop filter stays outermost). Callers queue a fix each frame with late(fn).
   let lateQ = [];
-  function attach(HH) { if (!HH || HH.__grabLate) return; const inner = HH.update; HH.update = dt => { lateQ = []; const r = inner(dt); const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } return r; }; HH.__grabLate = true; }
+  function attach(HH) { if (!HH || HH.__grabLate) return;
+    // HERO-RULES.md: the late holds run in the pipeline's 'grab' slot (after collide, before the guard)
+    if (typeof HH.stage === 'function') { HH.stage('grab', () => { const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } }); HH.__grabLate = true; return; }
+    const inner = HH.update; HH.update = dt => { lateQ = []; const r = inner(dt); const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } return r; }; HH.__grabLate = true; }
   const api = {
     attach, late(fn) { lateQ.push(fn); },
     gripPoint, toolGripHome, palmTarget, setProps(P) { PROPS = P; },
