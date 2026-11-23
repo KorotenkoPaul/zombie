@@ -741,6 +741,10 @@ if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+
 let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
 PERF.addStep('sunShadow',()=>{if(sunEvery>=3)return false;sunEvery=3;},()=>{sunEvery=MOBILE?2:1;},30);
 const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
+// [WIND] shared half-resolution fog pass (game/fogpass.js): Environment's fog sheets, puffs and mist bands plus the
+// morning fog bank are drawn into a quarter-pixel target and blended over the frame once. __fogpass.setEnabled(false) = old way.
+const FOGPASS=await (async()=>{try{const {Pass,FullScreenQuad}=await import('three/addons/postprocessing/Pass.js');const fp=(await import(new URL(ASSET+'fogpass.js',document.baseURI).href)).createFogPass({THREE,renderer,scene,camera,composer,FullScreenQuad,Pass,MOBILE});
+ composer.insertPass(fp.pass,1);fp.add([...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),...((typeof FOGBANK!=='undefined'&&FOGBANK.sheets)||[])]);return fp;}catch(e){console.error('fogpass',e);return null;}})();window.__fogpass=FOGPASS;
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
 // [PERF] GPU cost finder (perf.js; 5 quick taps on the clock or ?perfdebug): each test switches ONE thing off.

@@ -48,3 +48,9 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Shared baked noise: `__wind.noiseTexture(THREE)` 128² RGBA tiling fbm (R and an inverted variant in G). fogbank.js reads it twice instead of 3 octaves of procedural noise. Offered to Environment for its fog sheets/puffs/mist bands.
 - Smoke: 16 puffs on phones, point size capped (48 px × pixel ratio on phones) so a close camera can't fill the screen with smoke quads.
 - Overdraw (estimates from geometry, phone): rain streaks ~4 % of the screen, splashes/drips < 1 %, wet glass = window pixels only, fog bank 1 sheet ≈ 0.5 screen (dawn only, discards ahead of the front), smoke ≤ 16 × 72² px. None of it is on in a normal clear day/night.
+
+## Round 9: shared half-res fog pass (game/fogpass.js, `__fogpass`)
+- Fog meshes (ENV.sheets, ENV.puffs, ENV.mist, FOGBANK.sheets) move to layer 5; a pass right after the RenderPass draws them into a half-res target (no depth buffer) and blends it over the frame once (One / OneMinusSrcAlpha, premultiplied), with no swap so the frame keeps its depth for DOF.
+- Occlusion: each fog ShaderMaterial is patched (main renamed fpMain) to fade by the composer's depth texture (DOF already attaches depth textures). Environment's own softK is fed the same depth (tDepth/uRes/cNear/cFar) where soft=1; where soft=0 (phones) the patch does it.
+- On by default on phones only; `__fogpass.setEnabled(on)`, `scale` (0.5). Optimization registers the governor step.
+- Phone emulation before/after: same picture, the far haze a touch softer. Frame time in SwiftShader is noise (16.9 s vs 17.6 s per frame), so the gain must be measured on the real iPhone. On desktop Env's soft edge hides most puffs (soft=1 with its pre-pass depth); with fogpass the puffs show as on phones - one reason desktop stays on the old path.
