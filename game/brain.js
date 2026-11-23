@@ -323,7 +323,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // reading in the dark: the candle lights itself when he sits down (lights.js); only putting it out is his job
     if (st.task === 'read' && hasCandle && lights.auto) lights.auto('candle');
     const A = ACTS[st.task];
-    cur = { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? Math.max(8, A.dur[0] * .8) : 0 };
+    cur = st.cmd ? { name: st.task, t: 0, opts: st.opts, dur: A ? A.dur[1] * .7 : 0, min: A ? A.dur[0] * .7 : 0, cmd: true }
+      : { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? Math.max(8, A.dur[0] * .8) : 0 };
     if (A) { recent.unshift(st.task); recent.length = 4; }
     setGait();
     HH.startTask(st.task, st.opts);
@@ -580,7 +581,16 @@ export function createBrain({ HH, lights, hour, isNight }) {
     },
     get locked() { return locked; },
     command(name, opts) {
-      plan.length = 0; pausing = 0; cmdNext = false; expected = name;
+      plan.length = 0; pausing = 0; cmdNext = false;
+      // a known activity, job or chore: plan it like his own (lamps off when leaving, the lantern at night, hatch, job -> body task),
+      // and the last step is the request itself, which the brain then does not overrule
+      if (ACTS[name] || JOBS[name] || EXTRA[name]) {
+        const h = hour(); const lab = (ACTS[name] || JOBS[name] || EXTRA[name]).label + ' (попросили)';
+        planFor(name, h, lab);
+        const last = plan[plan.length - 1]; if (last) { last.cmd = true; if (opts) last.opts = { ...last.opts, ...opts }; }
+        cur = null; tr('command:' + name); why = lab; startNext(); return;
+      }
+      expected = name;
       if (!opts && EXTRA[name]) opts = repairTarget(name);
       extra = EXTRA[name] ? name : null; job = JOBS[name] ? name : null; lastOpts = opts || {};
       // a direct request is his task from now on: the brain does not overrule it (only falling asleep on his feet does)
