@@ -1,33 +1,61 @@
+<!doctype html>
+<html lang="ru">
 <meta charset="utf-8">
 <title>Домик на дереве</title>
+<!-- [UI] phone / home-screen app: real device width (no 980px desktop layout), no page zoom, full screen under the notch -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0B1020">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Домик">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700&display=swap">
 <style>
-/* A real 3D treehouse at the edge of a foggy forest; UI stays small and out of the way */
-:root{--amber:#FFB54D;--glass:rgba(12,16,30,.45);--body:"Rubik",system-ui,sans-serif;color-scheme:dark}
-html,body{height:100%}
-body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:none}
+/* A real 3D treehouse at the edge of a foggy forest; UI stays out of the way but is easy to hit with a thumb.
+   [UI] Sizes scale with the short screen side: buttons never under 46px (Apple asks 44pt), text 14px+. */
+:root{--amber:#FFB54D;--glass:rgba(12,16,30,.5);--body:"Rubik",system-ui,-apple-system,sans-serif;color-scheme:dark;
+ --ib:clamp(46px,12.5vmin,58px);--gap:clamp(8px,2.4vmin,12px);--edge:clamp(10px,3vmin,16px);
+ --sl:max(var(--edge),env(safe-area-inset-left,0px));--sr:max(var(--edge),env(safe-area-inset-right,0px));
+ --st:calc(env(safe-area-inset-top,0px) + var(--edge));--sb:calc(max(env(safe-area-inset-bottom,0px),4px) + var(--edge));
+ --fs:clamp(14px,3.7vmin,16px)}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{position:fixed;inset:0;margin:0;background:#0B1020;color:#fff;font-family:var(--body);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 #stage{position:fixed;inset:0}
-#stage canvas{display:block;width:100%!important;height:100%!important}
-.hud{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));display:flex;justify-content:space-between;pointer-events:none;gap:6px}
-.chip{background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:5px;white-space:nowrap}
-.grp{display:flex;gap:5px}
-.hearts{color:#FF7A6A;letter-spacing:1px}
-.tools{position:fixed;right:max(10px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 10px);display:flex;flex-direction:column;gap:6px}
-.ib{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+#stage canvas{display:block;width:100%!important;height:100%!important;touch-action:none}
+.hud{position:fixed;top:var(--st);left:var(--sl);right:var(--sr);display:flex;justify-content:space-between;pointer-events:none;gap:var(--gap)}
+.chip{background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:999px;min-height:36px;box-sizing:border-box;padding:6px 14px;font-size:var(--fs);font-weight:700;line-height:1.2;display:flex;align-items:center;gap:7px;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.45);font-variant-numeric:tabular-nums}
+.grp{display:flex;gap:var(--gap)}
+.hearts{color:#FF7A6A;letter-spacing:2px}
+.tools{position:fixed;right:var(--sr);bottom:var(--sb);display:flex;flex-direction:column;gap:var(--gap)}
+.ib{width:var(--ib);height:var(--ib);border-radius:50%;border:1px solid rgba(255,255,255,.24);background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;font-family:var(--body);font-size:calc(var(--ib) * .44);line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;margin:0;touch-action:manipulation;-webkit-appearance:none;appearance:none;box-shadow:0 2px 10px rgba(0,0,0,.25);transition:transform .12s,background-color .2s}
+.ib:active{transform:scale(.9);background:rgba(255,190,110,.3)}
+.ib:focus{outline:none}
 .ib:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .ib:disabled{opacity:.35}
 .ib.on{background:rgba(255,190,110,.45);border-color:rgba(255,210,150,.8)}
-.hint{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);transform:translateX(-50%);max-width:68%;background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:5px 10px;font-size:11px;line-height:1.35;text-align:center;transition:opacity .6s;pointer-events:none}
+/* hint sits bottom-centre and keeps clear of the button column on both sides, so it stays centred */
+.hint{position:fixed;left:50%;bottom:var(--sb);transform:translateX(-50%);box-sizing:border-box;width:max-content;max-width:min(520px,calc(100% - 2 * (var(--ib) + var(--gap) + max(var(--sl),var(--sr)))));background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:8px 12px;font-size:var(--fs);line-height:1.4;text-align:center;transition:opacity .6s;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.45)}
 .hint b{color:var(--amber)}
 .hint.off{opacity:0}
-.toast{position:fixed;left:50%;top:20%;transform:translate(-50%,-50%) scale(.85);opacity:0;font-weight:700;font-size:18px;text-align:center;text-shadow:0 2px 10px rgba(0,0,0,.7);transition:opacity .5s,transform .6s cubic-bezier(.2,1.3,.4,1);pointer-events:none;white-space:nowrap}
-.toast small{display:block;font-size:11px;font-weight:500;opacity:.85;margin-top:2px}
+.toast{position:fixed;left:50%;top:22%;max-width:88vw;transform:translate(-50%,-50%) scale(.85);opacity:0;font-weight:700;font-size:clamp(22px,6.4vmin,30px);line-height:1.2;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.75);transition:opacity .5s,transform .6s cubic-bezier(.2,1.3,.4,1);pointer-events:none}
+.toast small{display:block;font-size:var(--fs);font-weight:500;opacity:.9;margin-top:4px}
 .toast.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
-.load{position:fixed;inset:0;display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;font-size:13px;background:#0B1020;transition:opacity .8s}
-.load i{display:block;width:140px;height:3px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}
+.load{position:fixed;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;font-size:clamp(16px,4.2vmin,18px);background:#0B1020;transition:opacity .8s}
+.load i{display:block;width:min(220px,60vw);height:4px;border-radius:4px;background:rgba(255,255,255,.15);overflow:hidden}
 .load i b{display:block;height:100%;width:0;background:var(--amber);transition:width .3s}
 .load.hide{opacity:0;pointer-events:none}
+/* the hero's-thoughts button and panel come from brain.js; these selectors win over its own small sizes */
+button.brainB{left:var(--sl);bottom:var(--sb);width:var(--ib);height:var(--ib);border-radius:50%;border:1px solid rgba(255,255,255,.24);background:var(--glass);font-size:calc(var(--ib) * .44);padding:0;touch-action:manipulation;-webkit-backdrop-filter:blur(8px)}
+div.brainP{left:var(--sl);bottom:calc(var(--sb) + var(--ib) + var(--gap));width:min(250px,calc(100vw - 2 * var(--ib) - 4 * var(--gap)));font-size:14px;-webkit-backdrop-filter:blur(8px)}
+/* phone on its side: little height, so the column of buttons gets a bit tighter */
+@media (orientation:landscape) and (max-height:500px){:root{--ib:clamp(44px,11.5vmin,52px);--gap:7px;--edge:10px}}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <div id="stage"></div>
@@ -36,6 +64,11 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 <div class="hint" id="hint"><b>Веди пальцем</b> — повернуть вокруг дерева, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
 <div class="toast" id="toast"></div>
 <div class="load" id="load"><span id="loadTx">Загружаем лес…</span><i><b id="loadBar"></b></i></div>
+<script>/* [UI] iOS ignores user-scalable=no: stop pinch page zoom and rubber-band scroll (buttons use touch-action:manipulation against double-tap zoom). The canvas keeps its own gestures (camera.js). */
+(function(){var cv=function(e){return e.target&&e.target.tagName==='CANVAS';};
+['gesturestart','gesturechange','gestureend'].forEach(function(n){document.addEventListener(n,function(e){if(!cv(e))e.preventDefault();},{passive:false});});
+document.addEventListener('touchmove',function(e){if(!cv(e))e.preventDefault();},{passive:false});
+document.addEventListener('dblclick',function(e){e.preventDefault();},{passive:false});})();</script>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
