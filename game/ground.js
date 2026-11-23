@@ -110,9 +110,11 @@ export function createGround(C){
     const ww=w*(1-t)*(1-t*.15)+.002;
     // normal: across the blade face, bent strongly to the sky
     const fn=dir.clone().multiplyScalar(-1).lerp(V(0,1,0),.75).normalize();
-    for(const sd of [-1,1]){P.push(pc.x+side.x*ww*sd,pc.y,pc.z+side.z*ww*sd);N.push(fn.x+side.x*sd*.25,fn.y,fn.z+side.z*sd*.25);
-     const k=Math.pow(t,.8);Cc.push((.08+k*.3)*tint,(.13+k*.42)*tint,(.08+k*.22)*tint);UV.push(sd<0?0:1,t);}}
-   for(let s=0;s<seg;s++){const a=base+s*2;I.push(a,a+1,a+2,a+1,a+3,a+2);}}
+    // three vertices across: the middle one is pushed out along the face, so every blade has a folded midrib (a V in
+    // cross-section) and never reads as a flat card, whatever the viewing angle
+    for(const sd of [-1,0,1]){const cr=sd===0?ww*.9*(1-t*.6):0;P.push(pc.x+side.x*ww*sd+fn.x*cr,pc.y+fn.y*cr*.3,pc.z+side.z*ww*sd+fn.z*cr);N.push(fn.x+side.x*sd*.45,fn.y,fn.z+side.z*sd*.45);
+     const k=Math.pow(t,.8),ed=sd===0?1.08:.92;Cc.push((.08+k*.3)*tint*ed,(.13+k*.42)*tint*ed,(.08+k*.22)*tint*ed);UV.push((sd+1)/2,t);}}
+   for(let s=0;s<seg;s++){const a=base+s*3;I.push(a,a+1,a+3, a+1,a+4,a+3, a+1,a+2,a+4, a+2,a+5,a+4);}}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));g.normalizeNormals?.();
   g.setAttribute('color',new THREE.Float32BufferAttribute(Cc,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(UV,2));g.setIndex(I);return g;}
  const grassMat=swayMat(new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:.85,metalness:0}),U,.07,'uv.y');
@@ -150,7 +152,7 @@ export function createGround(C){
 
  // ================= stones =================
  {const base=smoothIco(MOBILE?3:4);const p=base.attributes.position;
-  for(let i=0;i<p.count;i++){const v=V(p.getX(i),p.getY(i),p.getZ(i));const k=1+(vnoise(v.x*1.7+v.z,v.y*1.9+2)-.5)*.45+(vnoise(v.x*5,v.z*5+v.y*3)-.5)*.08;p.setXYZ(i,v.x*k*1.15,(v.y<0?v.y*.35:v.y*.62)*k,v.z*k);}
+  for(let i=0;i<p.count;i++){const v=V(p.getX(i),p.getY(i),p.getZ(i));const k=1+(vnoise(v.x*1.7+v.z,v.y*1.9+2)-.5)*.45+(vnoise(v.x*5,v.z*5+v.y*3)-.5)*.08;p.setXYZ(i,v.x*k*1.15,(v.y<0?v.y*.5:v.y*.92)*k,v.z*k);}
   base.computeVertexNormals();const nr=base.attributes.normal;const col=new Float32Array(p.count*3);
   for(let i=0;i<p.count;i++){const up=nr.getY(i);const c=new THREE.Color(0x4A4F50).lerp(new THREE.Color(0x3A5434),smooth(.4,.8,up)*.9).multiplyScalar(.85+vnoise(p.getX(i)*4,p.getZ(i)*4)*.25);col.set([c.r,c.g,c.b],i*3);}
   base.setAttribute('color',new THREE.BufferAttribute(col,3));
@@ -159,7 +161,7 @@ export function createGround(C){
    s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.rgb*=.78+.4*fbm(vMW.xz*6.+vMW.y*4.);');};
   const N=MOBILE?40:75;const im=new THREE.InstancedMesh(base,mat,N);let n=0;
   for(let i=0;i<N*20&&n<N;i++){const near=n<N*.5;const s=pick(near?ring(2.6,9):ring(9,45),(x,z)=>rootD(x,z)>.15,8);if(!s)continue;const [x,z]=s;const r=Math.hypot(x,z);
-   const sz=rr(.06,.22)*(n%9===0?2.2:1)*(r>12?1.8:1);E.set(rr(-.2,.2),rr(0,6.28),rr(-.2,.2));Q.setFromEuler(E);M.compose(V(x,groundH(x,z)+sz*.05,z),Q,Sc.set(sz*rr(.9,1.5),sz,sz*rr(.9,1.4)));im.setMatrixAt(n,M);
+   const sz=rr(.06,.22)*(n%9===0?2.2:1)*(r>12?1.8:1);E.set(rr(-.2,.2),rr(0,6.28),rr(-.2,.2));Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.12,z),Q,Sc.set(sz*rr(.9,1.3),sz*rr(.85,1.25),sz*rr(.85,1.2)));im.setMatrixAt(n,M);
    Col.setScalar(rr(.85,1.1));im.setColorAt(n,Col);n++;
    // grass and moss like to gather at a stone's foot
    G._stones=(G._stones||[]);G._stones.push([x,z,sz]);}
@@ -258,9 +260,13 @@ export function createGround(C){
    return mergeGeometries(parts);};
   const mat=swayMat(new THREE.MeshStandardMaterial({map:leafT,alphaTest:.5,side:THREE.DoubleSide,roughness:.85,vertexColors:true}),U,.025,'clamp(position.y,0.,1.5)');
   const NB=MOBILE?24:40;[mkBush(1,MOBILE?16:22),mkBush(2,MOBILE?12:16)].forEach((bg,vi)=>{const im=new THREE.InstancedMesh(bg,mat,NB);let n=0;
-   for(let b=0;b<NB*40&&n<NB;b++){const a=rr(0,6.28),r=rr(10,42);const x=Math.cos(a)*r,z=Math.sin(a)*r;
+   const NS=MOBILE?3:5;// the first few frame the clearing on the left and right edges of the main view, like the photo
+   for(let b=0;b<NB*40&&n<NB;b++){let x,z,r;
+    if(n<NS){const sd=(n+vi)%2?1:-1;x=sd*rr(8.5,13);z=rr(-6,5);r=Math.hypot(x,z);}
+    else{const a=rr(0,6.28);r=rr(10,42);x=Math.cos(a)*r;z=Math.sin(a)*r;
     // keep the view to the house open (camera looks from +z), crowd the sides and the back
-    if((z>-3&&Math.abs(x)<15)||rootD(x,z)<1)continue;
+    if((z>-3&&Math.abs(x)<15))continue;}
+    if(rootD(x,z)<1)continue;
     const sz=rr(1.1,2.2)*(r>25?1.4:1);M.compose(V(x,groundH(x,z)-.15,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(.9,1.4),sz*rr(.7,1),sz*rr(.9,1.3)));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.38),rr(.2,.35),rr(.48,.6));im.setColorAt(n,Col);n++;}
    im.count=n;im.receiveShadow=true;scene.add(im);});}
