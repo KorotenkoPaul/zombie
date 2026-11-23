@@ -30,3 +30,9 @@ Lamp housings near a source get castShadow=false and their own pane material (gl
 - T14 (critic): window panes are dark night glass seen from inside (navy pane + faint sky reflection, sky blue by day), never a warm self-glow; warm window light lives outside (halo + spill). lights.js skips panes that are transparent or have userData.ownGlass (Tree's real glass).
 
 - Candle: lit while reading, then keeps burning up to 90 s so the hero can blow it out himself (Brain: plan a 'switch' to lights.pos('candle') and call lights.set('candle', false)); otherwise it goes out on its own. Putting out a candle or oil lamp leaves a thin curl of smoke.
+
+## Round 4 (2026-11-23): nothing floats, door spill, hand lantern, phone light budget
+- `hang(pos)`: every lantern lights.js places hangs on an iron chain from whatever is above it (raycast up, ignoring leaves/transparent/shader meshes); with nothing above, an iron bracket comes out of the nearest wall/trunk; with nothing near, a small wooden lamp post stands on the floor below. Bedroom and landing lanterns use it.
+- Door: the hollow has one light inside (reach 3.6) plus a soft SpotLight that throws a warm wedge out of the doorway onto the landing, roots and path. The old separate mouth light is gone.
+- Hand lantern (source 'hand'): `__lights.attachHand(bone, offset?)` shows a small lantern hanging upright from the bone, swinging with the walk; `set('hand', true)` lights it; `detachHand()` hides and puts it out. Character decides when (going down at night).
+- Phone light budget (Optimization): ≤8 point lights. Phones: kitchen and bedroom lanterns get a longer, softer falloff instead of separate bounce lights, no candle light, no window spill lights → 7 point + 2 spot lights (measured). Desktop keeps bounce + spill lights.

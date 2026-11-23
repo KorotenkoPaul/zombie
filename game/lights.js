@@ -61,7 +61,46 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   // a standing/wall lantern body (Props' lantern housing) at a point, for the lanterns Props doesn't place itself
-  function housing(pos) { if (!P3 || !P3.lanternHousing) return; const g = new THREE.Group(); g.position.copy(pos); scene.add(g); P3.lanternHousing(g, .2); g.updateMatrixWorld(true); }
+  function housing(pos, rod = .02) { if (!P3 || !P3.lanternHousing) return null; const g = new THREE.Group(); g.position.copy(pos); scene.add(g); P3.lanternHousing(g, rod); g.updateMatrixWorld(true); return g; }
+
+  // nothing floats: a lantern hangs on a chain from whatever is above it (ceiling, roof, floor of the room above);
+  // if nothing is above, an iron bracket comes out of the nearest wall, post or trunk and the chain hangs from its tip
+  const ironM = new THREE.MeshStandardMaterial({ color: 0x2C2F35, metalness: .7, roughness: .45 });
+  const linkGeo = new THREE.TorusGeometry(.016, .0045, 5, 10);
+  const rc = new THREE.Raycaster();
+  function solids() { const out = []; scene.traverse(o => { const m = o.material; if ((o.isMesh || o.isInstancedMesh) && o.visible && !o.isSprite && m && !Array.isArray(m) && !m.transparent && !(m.alphaTest > 0) && !m.isShaderMaterial && !o.userData.noHang) out.push(o); }); return out; }
+  const postM = new THREE.MeshStandardMaterial({ color: 0x5E3B24, roughness: .85 });
+  function chain(a, b) {      // links from a (bottom) to b (top)
+    const L = a.distanceTo(b), n = Math.max(1, Math.round(L / .042));
+    const im = new THREE.InstancedMesh(linkGeo, ironM, n); im.userData.noHang = true; im.castShadow = false;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = b.clone().sub(a).normalize(), base = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), up);
+    for (let i = 0; i < n; i++) { q.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (i % 2) * Math.PI / 2, Math.PI / 2))); m.compose(a.clone().lerp(b, (i + .5) / n), q, V(1, 1.25, 1)); im.setMatrixAt(i, m); }
+    scene.add(im); return im;
+  }
+  function hang(pos, topOff = .23) {
+    const top = pos.clone().add(V(0, topOff, 0)), list = solids();
+    rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = rc.intersectObjects(list, false)[0];
+    if (up) { chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 6, 12), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); hook.userData.noHang = true; scene.add(hook); return 'chain'; }
+    // bracket: find the nearest vertical surface around the lantern's top
+    let best = null;
+    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, d = V(Math.cos(a), 0, Math.sin(a)); const o = top.clone().add(V(0, .25, 0)); rc.set(o, d); rc.far = 1.3; const h = rc.intersectObjects(list, false)[0]; if (h && (!best || h.distance < best.h.distance)) best = { h, d }; }
+    let tip = top.clone().add(V(0, .25, 0)), wall;
+    if (best) wall = best.h.point;
+    else {
+      // nothing around: a little wooden lamp post on the floor below, with the iron arm reaching over
+      rc.set(pos, V(0, -1, 0)); rc.far = 4; const fl = rc.intersectObjects(list, false)[0]; if (!fl) return 'none';
+      const toAxis = V((LV.TAX ? LV.TAX[0] : 0) - pos.x, 0, (LV.TAX ? LV.TAX[1] : 0) - pos.z).normalize();
+      const base = V(pos.x + toAxis.x * .35, fl.point.y, pos.z + toAxis.z * .35), h = tip.y + .06 - base.y;
+      const post = new THREE.Mesh(new THREE.BoxGeometry(.09, h, .09), postM); post.position.set(base.x, base.y + h / 2, base.z); post.castShadow = post.receiveShadow = true; post.userData.noHang = true; scene.add(post);
+      wall = V(base.x, tip.y, base.z);
+    }
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, wall.distanceTo(tip), 6), ironM);
+    arm.position.copy(wall).lerp(tip, .5); arm.quaternion.setFromUnitVectors(V(0, 1, 0), tip.clone().sub(wall).normalize()); arm.userData.noHang = true; scene.add(arm);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(.03, .16, .08), ironM); plate.position.copy(wall); plate.lookAt(tip); plate.rotateY(Math.PI / 2); plate.userData.noHang = true; scene.add(plate);
+    const brace = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, 1, 5), ironM); const b0 = wall.clone().add(V(0, -.16, 0)), b1 = wall.clone().lerp(tip, .6);
+    brace.scale.y = b0.distanceTo(b1); brace.position.copy(b0).lerp(b1, .5); brace.quaternion.setFromUnitVectors(V(0, 1, 0), b1.clone().sub(b0).normalize()); brace.userData.noHang = true; scene.add(brace);
+    chain(top, tip); return 'bracket';
+  }
 
   function bulbMesh(pos, r, col = 0xFFE0A0) {
     const m = new THREE.MeshStandardMaterial({ color: col, emissive: 0xFF9A30, emissiveIntensity: 0, roughness: .4 });
@@ -84,10 +123,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- kitchen: hanging lantern over the counter (the old front lantern hung in mid-air and was removed) ----------
   const kPos = PL.kitchenLamp ? PL.kitchenLamp.pos.clone() : V(-2.3, KT + 1.78, 1.75);
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
+    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     const panes = claimHousing(kPos);
     const b = bulbMesh(kPos, .07);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: 6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 6.5 : 6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -106,10 +145,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
   const bPos = V(-2.0, BD + 1.95, 2.5);
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
-    housing(bPos); const panes = claimHousing(bPos);
+    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
+    housing(bPos); hang(bPos); const panes = claimHousing(bPos);
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: MOBILE ? 7 : 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -125,7 +164,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- outside: lantern by the ladder landing (the deck lantern was removed: it read as a lantern on the bedroom roof) ----------
   {
     const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.PointLight(0xFFB25E, 0, 5, 1.6); l.position.copy(p); scene.add(l);
-    housing(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
+    housing(p); hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
     add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
   }
 
@@ -142,18 +181,44 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     }, autoFn: c => c.cookT > 0 });
   }
 
+  // ---------- the hero's hand lantern (Character attaches it to a hand bone when he goes out at night) ----------
+  const hand = { g: new THREE.Group(), attached: null, swing: 0, prev: V() };
+  {
+    const g = hand.g; g.visible = false; scene.add(g);
+    if (P3 && P3.lanternHousing) { const hh = new THREE.Group(); hh.scale.setScalar(.62); hh.position.y = -.17; P3.lanternHousing(hh, .02); g.add(hh); hh.traverse(o => { if (o.isMesh) o.castShadow = false; }); }
+    const bm = new THREE.MeshStandardMaterial({ color: 0xFFE0A0, emissive: 0xFF9A30, emissiveIntensity: 0, roughness: .4 });
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 8), bm); bulb.position.y = -.17; g.add(bulb);
+    const l = new THREE.PointLight(0xFFB25E, 0, 4.5, 1.6); l.position.y = -.17; g.add(l);
+    hand.bulbPos = bulb;
+    add('hand', 'outside', 'oil', V(), { lights: [{ l, I: 2.6 }], emis: [[bm, 5]], haloSize: .9, autoFn: () => false });
+  }
+  function updateHand(dt) {
+    const g = hand.g, hs = src.get('hand');
+    if (!hand.attached) { if (hs && hs.manual) hs.manual = null; return; }     // nothing to light while nobody carries it
+    hand.bulbPos.getWorldPosition(hs.pos);
+    // hangs from the fingers, stays upright and swings a little with the walk
+    const pq = hand.attached.getWorldQuaternion(new THREE.Quaternion()).invert();
+    const wp = hand.attached.getWorldPosition(V()); const v = wp.clone().sub(hand.prev).divideScalar(Math.max(dt, 1e-3)); hand.prev.copy(wp);
+    hand.swing += (Math.max(-.35, Math.min(.35, v.x * .12)) - hand.swing) * Math.min(1, dt * 4);
+    g.quaternion.copy(pq).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.max(-.35, Math.min(.35, -v.z * .12)), 0, -hand.swing)));
+  }
+
   // ---------- the glowing door in the trunk ----------
   let doorLight = null;
   if (TREE && TREE.doorAngle !== undefined && TREE.R) {
     const dd = V(Math.cos(TREE.doorAngle), 0, Math.sin(TREE.doorAngle));
     const ax = LV.TAX; const r = TREE.R(LG + .7) - .3;
-    doorLight = new THREE.PointLight(0xFF9A40, 0, 4, 1.6); doorLight.position.set(ax[0] + dd.x * r, LG + .75, ax[1] + dd.z * r); scene.add(doorLight);
+    doorLight = new THREE.Object3D(); doorLight.position.set(ax[0] + dd.x * r, LG + .75, ax[1] + dd.z * r);
     // the lantern-lit cave inside the hollow: a warm light deep in it lights the carved walls, the one at the mouth spills onto the platform
     const rIn = TREE.R(LG + .7) - 1.0;
-    const cave = new THREE.PointLight(0xFFA850, 0, 2.4, 1.4); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave);
+    const cave = new THREE.PointLight(0xFFA850, 0, 3.6, 1.3); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave);
     doorLight.position.set(ax[0] + dd.x * (r + .25), LG + .8, ax[1] + dd.z * (r + .25));
     const glow = TREE.bark && TREE.bark.material.userData.doorGlow;
-    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: doorLight, I: 4 }, { l: cave, I: 5, sway: .02 }], haloSize: 2.4,
+    // the warm wedge that falls out of the doorway onto the landing, the roots and the path below it
+    const spill = new THREE.SpotLight(0xFFA650, 0, 9, .75, 1, 1.4);
+    spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
+    spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
+    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 6.5, sway: .02 }, { l: spill, I: 9 }], haloSize: 2.4,
       extra: (k, f) => { if (glow) glow.value = 1.6 * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
@@ -172,6 +237,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   };
   const glows = [];
   for (const [room, R] of Object.entries(ROOMS)) {
+    if (MOBILE && room !== 'workshop') continue;      // phones: the lantern itself has a softer, longer falloff instead (fewer lights)
     const b = new THREE.PointLight(0xFFBE80, 0, 3.8, 1.3); b.position.copy(R.c); scene.add(b);
     glows.push({ room, l: b, I: R.bounce });
   }
@@ -327,7 +393,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
     for (const g of glows) { const v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
-    updateBeams(dayK, T); updateWisps(dt);
+    updateBeams(dayK, T); updateWisps(dt); updateHand(dt);
     for (const w of windows) {
       // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
       // no warm self-glow (critic T14). The warm glow of a lit window lives outside: halo + spill light (room glow).
@@ -369,6 +435,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     room: roomLevel,
     onChange: cb => listeners.push(cb),
     level: n => src.has(n) ? src.get(n).level : 0,
+    // hand lantern: attachHand(bone, offset?) shows it in the hero's hand (then set('hand', true) lights it);
+    // detachHand() hides it again (and puts it out)
+    attachHand: (bone, off = V(0, -.04, .02)) => { if (!bone) return false; const ws = bone.getWorldScale(V()).x || 1; bone.add(hand.g); hand.g.scale.setScalar(1 / ws); hand.g.position.copy(off).multiplyScalar(1 / ws); hand.g.visible = true; hand.attached = bone; bone.getWorldPosition(hand.prev); return true; },
+    detachHand: () => { const s = src.get('hand'); if (s) { s.manual = null; setOn(s, false); } scene.add(hand.g); hand.g.visible = false; hand.attached = null; },
     update, degrade, upgrade, quality: q => q === undefined ? quality : setQuality(q),
   };
   return api;
