@@ -1147,6 +1147,8 @@ try{window.__grab&&window.__grab.attach(HH);}catch(e){console.error('grab attach
 // [PERF] the loading screen stays up until the heavy first work is done: every texture uploaded to the GPU, shaders linked
 // (parallel compile where the browser has it), collide.js built and two real frames drawn. Otherwise the first seconds after
 // it disappears are a frozen picture that ignores swipes.
+// [PERF] ?perfx: material split, program sort and texture pre-upload (off while the white-boards report on iPhone is checked)
+const PERFX=/[?&]perfx/.test(location.search);
 // [PERF] a transparent double-sided material is drawn twice per frame by three.js (back faces, then front) and rebuilds
 // its shader key each time (~2 draws + CPU per object). For flat things (window glass, rugs) one pass looks the same.
 {const _b=new THREE.Box3(),_v=V();const single=()=>scene.traverse(o=>{if(!o.isMesh)return;for(const m of [].concat(o.material||[])){if(!m.transparent||m.side!==THREE.DoubleSide||m.forceSinglePass)continue;if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();o.geometry.boundingBox.getSize(_v);if(Math.min(_v.x,_v.y,_v.z)<.01)m.forceSinglePass=true;}});single();setTimeout(single,9000);
@@ -1156,13 +1158,13 @@ try{window.__grab&&window.__grab.attach(HH);}catch(e){console.error('grab attach
  const split=()=>{const use=new Map();scene.traverse(o=>{if(!o.isMesh)return;for(const m of [].concat(o.material||[])){let u=use.get(m);if(!u)use.set(m,u={i:[],p:[]});(o.isInstancedMesh?u.i:u.p).push(o);}});
   const plainHook=THREE.Material.prototype.onBeforeCompile;let n=0;const left=[];
   for(const [m,u] of use){if(!u.i.length||!u.p.length)continue;const c=m.clone();if(m.onBeforeCompile!==plainHook){c.onBeforeCompile=m.onBeforeCompile;c.customProgramCacheKey=m.customProgramCacheKey;left.push(m.name||m.type);}for(const o of u.i)o.material=Array.isArray(o.material)?o.material.map(x=>x===m?c:x):c;n++;}
-  PERF.splitMats=n;PERF.sharedHooked=left;};split();setTimeout(split,9000);}
+  PERF.splitMats=n;PERF.sharedHooked=left;};if(PERFX){split();setTimeout(split,9000);}}
 // [PERF] phones: opaque draws sorted by shader program (then material) instead of front-to-back. Apple GPUs remove hidden
 // opaque pixels in hardware (TBDR), so depth order buys nothing there, while every program switch re-uploads lights and
 // shadow uniforms on the CPU.
-if(MOBILE){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
+if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
  renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
-{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
+{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,4000))]);}catch(e){}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
  PERF.startupMs=Math.round(performance.now()-T0);}
