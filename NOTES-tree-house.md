@@ -37,3 +37,9 @@
 - Trunk bark: game/bark3.jpg (Fal nano-banana-pro/edit from the photo trunk crop), tint 0xF0B080, view-angle shading for roundness, small moonlight fill.
 - Branches in tree.js BR traced from the photo; trunk to 14.6 m, forks into two limbs.
 - Next: warm window bounce light on the trunk, more contrast; roots visibility depends on Environment's fog.
+
+## Checkpoint 4 (artifact v26): oak is a model now
+- Pipeline: photo -> fal-ai/nano-banana-pro/edit "same oak, house and leaves removed" (concept/oak-bare-from-photo.png) -> fal-ai/meshy/v6/image-to-3d (target 60k, textured) -> gltf-transform optimize (webp 1024, simplify .6, meshopt) -> assets/models/oak.glb -> base64 game/oak-glb.txt.
+- tree.js buildTree({model}) : height 18 m, xz widened 1.3, roots sunk .35; R(y) measured from mesh along the hollow direction; hollow carved by doorMask; leaf clumps picked from limb tips (d>3.6) and crown (y>15.5), max 24, cards face the viewer.
+- Procedural trunk code remains as fallback when no model is passed.
+- Trellis tried too: lost the branches, not used.
