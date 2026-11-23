@@ -186,6 +186,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     s += habit(name, h);
     if (name === 'cook' && need.hunger > .75) s += 1;   // really hungry: food first
     if (A.room === 'outside' && raining()) s -= 2;   // nobody stands on the deck in the rain
+    if (locked && A.room === 'outside') s -= 9;      // lockdown: nobody goes out
     s -= travel(A.node) * (.15 + (1 - need.energy) * .25);
     // cabin fever: the longer he stays in one room, the more the other rooms call
     if (A.room && A.room !== roomNow) s += Math.min(.7, roomT / 70);
@@ -204,6 +205,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (n === 'wood') { if (stock.logs === 0) s = 1.3; else if (stock.logs <= 2) s = .45; if (!day) s -= 3; }
     if (n === 'eat') s = stock.meal ? .4 + need.hunger ** 2 * 3 + (recent[0] === 'cook' ? 2 : 0) : -9;   // cooked: sits down to eat while it is hot
     if (raining() && JOBS[n].task === 'trip') s -= 1;
+    if (locked && JOBS[n].task === 'trip') s -= 20;
     const i = recent.indexOf(n); if (i === 0 && n !== 'eat') s -= .6;
     return { name: n, s: s + rnd(0, .25), top: JOBS[n].top };
   }
@@ -244,6 +246,17 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // leaving a lit room in the dark: usually switch it off (sometimes he forgets)
     if (from !== to && ROOM_LAMP[from] && lampOn(ROOM_LAMP[from]) && dark(h) && Math.random() < .8)
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[from], on: false }, why: 'уходит — гасит свет' });
+    // the floor hatch is closed and the way goes through it: open it first (without a hatch task, it just opens, so he is never trapped)
+    { const H8 = house(); const up = r => r === 'bedroom';
+      if (!locked && H8 && H8.hatch && H8.hatch.isOpen && !H8.hatch.isOpen() && name !== 'sleep' && up(from) !== up(to) && !(A.node && /^(deck|ledge|ll_)/.test(A.node))) {
+        if (HH.hasTask && HH.hasTask('hatch')) plan.push({ task: 'hatch', opts: { open: true }, why: 'открывает люк' }); else H8.hatch.open(); } }
+    // going to bed: make the house safe first (Pavel): usually he closes the floor hatch and bolts the door, sometimes he forgets
+    if (name === 'sleep') {
+      const H8 = house();
+      if (H8 && H8.hatch && H8.hatch.isOpen && H8.hatch.isOpen() && HH.hasTask && HH.hasTask('hatch') && (locked || Math.random() < .7))
+        plan.push({ task: 'hatch', opts: { open: false }, why: 'на ночь закрывает люк' });
+      if (!day.bolted && HH.hasTask && HH.hasTask('bolt') && (locked || Math.random() < .75)) plan.push({ task: 'bolt', opts: { lock: true }, why: 'на ночь запирает дверь', extra: 'bolt' });
+    }
     // going to bed: the bedroom lamp off first, always
     if (name === 'sleep' && lampOn('bedroom'))
       plan.push({ task: 'switch', opts: { light: 'bedroom', on: false }, why: 'перед сном гасит свет' });
@@ -309,6 +322,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
   }
 
   // ---------- the per-frame tick (called by hero.js) ----------
+  let locked = false;
+  const house = () => { try { return window.__house || null; } catch (e) { return null; } };
   let pausing = 0, expected, cmdNext = false, job = null, extra = null;
   function tick(dt, v) {
     const dh = gameHours();
@@ -436,6 +451,18 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if (h >= 21.5 || h < 5.6) bedTime = Math.min(h, 21), wake = rnd(5.6, 6.6);
     },
     // a direct request (player / debug): it wins over needs; he only drops it when falling asleep on his feet or deep in the night
+    // lockdown (for the zombie nights to come): hatch closed, door bolted, lamps low (only the room he is in), nobody goes out.
+    // lockdown(false) lifts it; in the morning he reopens the hatch himself.
+    lockdown(on = true) {
+      locked = !!on; plan.length = 0; pausing = 0;
+      if (!locked) { why = 'отбой тревоги'; return; }
+      const H8 = house(), here = ROOM_OF(H.node);
+      if (H8 && H8.hatch && H8.hatch.isOpen && H8.hatch.isOpen() && HH.hasTask && HH.hasTask('hatch')) plan.push({ task: 'hatch', opts: { open: false }, why: 'запирается: люк' });
+      if (HH.hasTask && HH.hasTask('bolt')) plan.push({ task: 'bolt', opts: { lock: true }, why: 'запирается: засов', extra: 'bolt' });
+      for (const r in ROOM_LAMP) if (r !== here && lampOn(ROOM_LAMP[r])) plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'запирается: гасит свет' });
+      cur = null; why = 'запирается'; startNext();
+    },
+    get locked() { return locked; },
     command(name, opts) { plan.length = 0; pausing = 0; cur = null; cmdNext = !!ACTS[name]; expected = name; why = (ACTS[name] ? ACTS[name].label : name) + ' (попросили)'; HH.startTask(name, opts); },
     label: () => H.task === 'sleep' ? 'спит' : (cur && ACTS[cur.name] ? ACTS[cur.name].label : why),
     show(on = true) { shown = on; if (panel) panel.style.display = on ? 'block' : 'none'; },
