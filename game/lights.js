@@ -515,8 +515,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
 {vec3 wg=vec3(0.);vec3 nW=normalize((vec4(normal,0.)*viewMatrix).xyz);for(int i=0;i<${WG_N};i++){vec3 dv=wgP[i].xyz-vWGp;float d=length(dv)/max(wgP[i].w,.001);float k=clamp(1.-d,0.,1.);float wr=clamp(dot(nW,dv/max(length(dv),.001))*.6+.4,0.,1.);wg+=wgC[i]*k*k*wr;}
  totalEmissiveRadiance+=wg*diffuseColor.rgb;}`);
     };
-    const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => key() + (wgOn ? '|winglow' : '');
+    // explicit program key: the material's own key if it had one, else the source of the hook we wrapped (three's default
+    // key is onBeforeCompile.toString(), which after wrapping would be OUR wrapper for every material -> shared programs)
+    const own = Object.prototype.hasOwnProperty.call(mat, 'customProgramCacheKey') ? mat.customProgramCacheKey.bind(mat) : null, prevSrc = prev ? prev.toString() : '';
+    mat.customProgramCacheKey = () => (own ? own() : prevSrc) + (wgOn ? '|winglow' : '');
     mat.needsUpdate = true;
   }
   if (TREE && wgSrc.length) { if (TREE.bark) treeGlow(TREE.bark.material); if (TREE.leaves) treeGlow(TREE.leaves.material); }
