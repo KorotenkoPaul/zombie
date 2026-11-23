@@ -925,7 +925,7 @@ export function createHero(ctx){
  // legs over the bed's front rail (Pavel: they went through the left end of the bed): while getting in or out, any ankle that is over
  // the mattress or the rail is lifted to clear the mattress top, and kept off the foot board
  const legClr={Left:{l:0},Right:{l:0}};
- function bedLegClear(dt){if(window.__noLegClear)return;const b=H.bedB;const B=FIT.bed;if(!B||!(b||H.inBed)){legClr.Left.l=legClr.Right.l=0;return;}const railZ=B.z1+.08,yReq=B.mat+.1,xMin=B.x0+.07;
+ function bedLegClear(dt){if(window.__noLegClear)return;const b=H.bedB;if(H.inBed&&!b&&SP.w>.05&&!window.__oldSleep){legClr.Left.l=legClr.Right.l=0;return;}/* POSE: asleep the whole body is posed on the mattress (sleepPose) */const B=FIT.bed;if(!B||!(b||H.inBed)){legClr.Left.l=legClr.Right.l=0;return;}const railZ=B.z1+.08,yReq=B.mat+.1,xMin=B.x0+.07;
   for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());
    const k=smooth(railZ+.5,railZ+.03,a.z);const S=legClr[s];const want=Math.max(0,yReq-a.y)*k;S.l+=clamp(want-S.l,-1.1*dt,1.4*dt);S.l=Math.max(S.l,want*smooth(railZ+.12,railZ,a.z));
    const lift=S.l;const dx=Math.max(0,xMin-a.x)*k;if(lift<.002&&dx<.002)continue;
@@ -940,7 +940,7 @@ export function createHero(ctx){
  function rotW(b,axis,ang){if(!b||Math.abs(ang)<1e-4)return;b.parent.getWorldQuaternion(_qp);_qa.setFromAxisAngle(axis,ang);const pi=_qp.clone().invert();b.quaternion.premultiply(pi.multiply(_qa).multiply(_qp));b.updateMatrixWorld(true);}
  const wp=(b)=>b.getWorldPosition(V());
  function sleepPick(){const c=SP.name;const opts={back:['sideL','sideR','sideL','sideR'],sideL:['back','bellyL','sideR'],sideR:['back','bellyR','sideL'],bellyL:['sideL'],bellyR:['sideR']}[c];return pick(opts);}
- function sleepTick(dt){const on=H.inBed&&!H.bedB&&!H.trans;SP.w+= ((on?1:0)-SP.w)*Math.min(1,dt*(on?.8:3));if(SP.w<.002){SP.w=0;if(!on){SP.name='back';SP.cur={...SLEEP_POSES.back};SP.to=null;}return;}
+ function sleepTickOld(dt){const on=H.inBed&&!H.bedB&&!H.trans;SP.w+= ((on?1:0)-SP.w)*Math.min(1,dt*(on?.8:3));if(SP.w<.002){SP.w=0;if(!on){SP.name='back';SP.cur={...SLEEP_POSES.back};SP.to=null;}return;}
   if(on){if(SP.to){SP.t+=dt;const k=smooth(0,1,SP.t/SP.dur);for(const key in SP.cur)SP.cur[key]=lerp(SP.from[key],SP.to[key],k);
     const mid=Math.sin(Math.PI*Math.min(1,SP.t/SP.dur));SP.cur.flex+=.35*mid;SP.cur.knee+=.4*mid;SP.cur.lift+=.03*mid;// knees come up while he rolls
     if(SP.t>=SP.dur){SP.to=null;bedPress(true);}}
@@ -958,6 +958,62 @@ export function createHero(ctx){
   // breathing: about 13 breaths a minute, the chest rises a little
   SP.br+=dt*2*Math.PI/4.6;const lat=V().crossVectors(ax,front).normalize();rotW(bones.Spine1,lat,Math.sin(SP.br)*.025*w);rotW(bones.Spine2,lat,Math.sin(SP.br-.4)*.015*w);
   root.position.y+=c.lift*w;root.updateMatrixWorld(true);}
+ // ===== SLEEP POSE (poses thread, 2026-11-23) =====
+ // Pavel: the top leg hung in the air, the body floated over the mattress, the head twitched. The mocap sleep clip with a roll layer
+ // on top could not be kept on the mattress, so asleep the body is now posed outright in the bed's own frame: the pelvis set on the
+ // measured mattress, the spine along the bed, the head lifted onto the pillow, legs and arms placed with IK on the mattress
+ // (back: legs long, knees soft; side: both knees drawn up, the top knee resting on the lower leg; stomach: one knee out, head
+ // turned on the pillow). Turning over blends from one pose to the next. Only breathing moves; the head rests still.
+ const SLP={rest:null};const _sq=new THREE.Quaternion(),_sm=new THREE.Matrix4();
+ function slpInit(){if(SLP.rest)return true;let sk=null;root.traverse(o=>{if(o.isSkinnedMesh&&!sk)sk=o;});if(!sk||!bones.Hips||!bones.Head)return false;const S=sk.skeleton;
+  const sq=S.bones.map(b=>b.quaternion.clone()),spp=S.bones.map(b=>b.position.clone());const rq=root.quaternion.clone();root.quaternion.identity();S.pose();root.updateMatrixWorld(true);
+  SLP.rest=POSEBONES.map(b=>b.quaternion.clone());SLP.hipsW=bones.Hips.getWorldQuaternion(new THREE.Quaternion());
+  const w=n=>bones[n].getWorldPosition(V());SLP.headHips=w('Head').distanceTo(w('Hips'));SLP.l1=w('LeftUpLeg').distanceTo(w('LeftLeg'));SLP.l2=w('LeftLeg').distanceTo(w('LeftFoot'));
+  SLP.toe=w('LeftFoot').distanceTo(w('LeftToeBase'));SLP.hipW=w('LeftUpLeg').distanceTo(w('RightUpLeg'));
+  S.bones.forEach((b,i)=>{b.quaternion.copy(sq[i]);b.position.copy(spp[i]);});root.quaternion.copy(rq);root.updateMatrixWorld(true);return true;}
+ const SLEEP_SHAPE={back:{hip:.085,head:.2},sideL:{hip:.105,head:.215},sideR:{hip:.105,head:.215},bellyL:{hip:.09,head:.185},bellyR:{hip:.09,head:.185}};
+ function sleepPose(name,out){const B=FIT.bed;const hd=B.headDir||1;const mat=B.mat;const bz=B.bz;const sh=SLEEP_SHAPE[name]||SLEEP_SHAPE.back;
+  const Y=V(hd,0,0);const Z=name==='back'?V(0,1,0):name==='sideL'?V(0,0,hd):name==='sideR'?V(0,0,-hd):V(0,-1,0);const X=V().crossVectors(Y,Z);// X = body left
+  for(let i=0;i<POSEBONES.length;i++)POSEBONES[i].quaternion.copy(SLP.rest[i]);
+  _sm.makeBasis(X,Y,Z);_sq.setFromRotationMatrix(_sm).multiply(SLP.hipsW);const Hp=bones.Hips;Hp.parent.updateMatrixWorld(true);Hp.quaternion.copy(Hp.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(_sq));
+  const headX=B.x1-.2*hd;const side=/side/.test(name);const hip=V(headX-hd*SLP.headHips*.96,mat+sh.hip,bz-(side?Z.z*.04:0));
+  Hp.position.copy(Hp.parent.worldToLocal(hip.clone()));root.updateMatrixWorld(true);
+  // the head onto the pillow: the chest and neck bend so the head's centre sits at its height on the pillow
+  const goal=V(headX,mat+sh.head,bz-(side?Z.z*.02:0));
+  for(const [nm,f] of [['Spine1',.25],['Spine2',.35],['Neck',1]]){const b=bones[nm];if(!b)continue;const h=bones.Head.getWorldPosition(V());turnBone(b,h,h.clone().lerp(goal,f),1);}
+  if(/belly/.test(name)&&bones.Head)rotW(bones.Head,Y,(name==='bellyL'?1:-1)*1.15);// face turned to one side on the pillow
+  root.updateMatrixWorld(true);
+  const L=SLP.l1+SLP.l2;const wp_=n=>bones[n].getWorldPosition(V());
+  const down=X.y<-.5?'Left':X.y>.5?'Right':null;// which side is under him
+  for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],Lg=bones[s+'Leg'],Ft=bones[s+'Foot'],To=bones[s+'ToeBase'];if(!Ft)continue;const hp=U.getWorldPosition(V());const out_=X.clone().multiplyScalar(s==='Left'?1:-1);
+   let ank,pole,toe;
+   if(name==='back'){ank=hp.clone().addScaledVector(Y,-L*.95).addScaledVector(out_,.05);ank.y=mat+.07;pole=V(0,1,0).addScaledVector(out_,.35);toe=V(0,.85,0).addScaledVector(Y,-.35).addScaledVector(out_,.3);}
+   else if(side){const top=s!==down;ank=hp.clone().addScaledVector(Y,-L*(top?.52:.62)).addScaledVector(Z,L*(top?.5:.36));ank.y=mat+(top?.115:.07);pole=Z.clone().add(V(0,top?-.25:0,0));toe=Y.clone().multiplyScalar(-.8).addScaledVector(Z,.35).add(V(0,top?-.15:0,0));}
+   else{const bent=(name==='bellyL')===(s==='Left');ank=hp.clone().addScaledVector(Y,-L*(bent?.62:.96)).addScaledVector(out_,bent?.3:.04);ank.y=mat+.075;pole=bent?out_.clone().add(V(0,-.2,0)):V(0,-1,0);toe=V(0,-.55,0).addScaledVector(Y,-.85);}
+   ik2(U,Lg,Ft,ank,pole,1,false);if(To){const a=Ft.getWorldPosition(V());turnBone(Ft,To.getWorldPosition(V()),a.clone().addScaledVector(toe.normalize(),SLP.toe),1);}}
+  for(const s of ['Left','Right']){const A=bones[s+'Arm'],Fa=bones[s+'ForeArm'],Hn=bones[s+'Hand'];if(!Hn)continue;const sd=X.clone().multiplyScalar(s==='Left'?1:-1);const head=wp_('Head'),hips=wp_('Hips'),chest=bones.Spine2?wp_('Spine2'):hips;
+   let t,pole;
+   if(name==='back'){if(s==='Left'){t=hips.clone().addScaledVector(Y,.1).addScaledVector(sd,.21);t.y=mat+.07;pole=sd.clone().add(V(0,-.4,0));}else{t=hips.clone().addScaledVector(Y,.24).addScaledVector(sd,.02);t.y=mat+.21;pole=sd.clone().add(V(0,-.6,0));}}
+   else if(side){const under=s===down;if(under){t=head.clone().addScaledVector(Z,.16).addScaledVector(Y,-.1);t.y=mat+.12;pole=Y.clone().multiplyScalar(-1).add(V(0,-.6,0));}else{t=chest.clone().addScaledVector(Z,.24).addScaledVector(Y,-.12);t.y=mat+.07;pole=V(0,1,0).addScaledVector(Y,-.6);}}
+   else{t=head.clone().addScaledVector(sd,.26).addScaledVector(Y,-.04);t.y=mat+.05;pole=Y.clone().multiplyScalar(-1).add(V(0,.4,0)).addScaledVector(sd,.4);}
+   ik2(A,Fa,Hn,t,pole,1,false);}
+  if(out){for(let i=0;i<POSEBONES.length;i++)(out.q[i]||(out.q[i]=new THREE.Quaternion())).copy(POSEBONES[i].quaternion);out.hp=(out.hp||V()).copy(Hp.position);}}
+ const SPA={q:[],hp:null},SPB={q:[],hp:null},SPC={q:[],hp:null};
+ function sleepTick(dt){if(window.__oldSleep||!FIT.bed||!slpInit())return sleepTickOld(dt);
+  const on=H.inBed&&!H.bedB&&!H.trans;SP.w+=((on?1:0)-SP.w)*Math.min(1,dt*(on?1.2:3));if(SP.w<.002){SP.w=0;if(!on){SP.name='back';SP.to=null;}return;}
+  let k=1;if(on){if(SP.to){SP.t+=dt;k=smooth(0,1,SP.t/SP.dur);if(SP.t>=SP.dur){SP.from=null;SP.to=null;k=1;bedPress(true);}}
+   else if((SP.next-=dt)<=0||(window.__sleepPose&&window.__sleepPose!==SP.name)){const n=window.__sleepPose||sleepPick();SP.from=SP.name;SP.to=n;SP.name=n;SP.t=0;SP.dur=rnd(2.2,3);SP.next=rnd(45,140);k=0;sfx&&sfx.rustle&&sfx.rustle();}}
+  // the clip pose this frame (what is blended from while he settles in / gets up)
+  for(let i=0;i<POSEBONES.length;i++)(SPC.q[i]||(SPC.q[i]=new THREE.Quaternion())).copy(POSEBONES[i].quaternion);SPC.hp=(SPC.hp||V()).copy(bones.Hips.position);
+  sleepPose(SP.name,SPA);let Q=SPA;
+  if(SP.from&&k<1){sleepPose(SP.from,SPB);for(let i=0;i<POSEBONES.length;i++)SPB.q[i].slerp(SPA.q[i],k);SPB.hp.lerp(SPA.hp,k);Q=SPB;}
+  const w=smooth(0,1,SP.w);for(let i=0;i<POSEBONES.length;i++)POSEBONES[i].quaternion.copy(SPC.q[i]).slerp(Q.q[i],w);bones.Hips.position.copy(SPC.hp).lerp(Q.hp,w);
+  root.updateMatrixWorld(true);
+  // turning over: the hips lift a little mid-roll
+  if(SP.from&&k<1){const lift=Math.sin(Math.PI*k)*.05;const hw=bones.Hips.getWorldPosition(V()).add(V(0,lift,0));bones.Hips.position.copy(bones.Hips.parent.worldToLocal(hw));}
+  // breathing: about 13 breaths a minute, the chest rises a little (the head stays where it lies)
+  SP.br+=dt*2*Math.PI/4.6;if(bones.Spine1){const ax=V(1,0,0).applyQuaternion(bones.Hips.getWorldQuaternion(new THREE.Quaternion()));rotW(bones.Spine1,ax,Math.sin(SP.br)*.018*w*(SP.to?0:1));if(bones.Neck)rotW(bones.Neck,ax,-Math.sin(SP.br)*.018*w*(SP.to?0:1));}
+  root.updateMatrixWorld(true);}
  // eyes: shut while he sleeps (and as he lies down / until he sits up), a blink every few seconds when awake
  const BL={t:rnd(2,5),k:0};
  function lidTick(dt){let want=0;const b=H.bedB;if(H.inBed&&!b)want=1;else if(b)want=smooth(.55,.9,b.u)*(b.dir>0?1:smooth(.75,.95,b.u));
