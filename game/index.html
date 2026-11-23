@@ -122,10 +122,10 @@ const texSetup=(t,rep,srgb)=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoCol
 const texImg=n=>new Promise((res,rej)=>TL.load(ASSET+n,res,undefined,rej));
 const texKtx=n=>fetch(ASSET+n.replace(/\.(jpg|png)$/,'-ktx2.txt')).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(b=>{const u=URL.createObjectURL(new Blob([Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0))]));return ktx2.loadAsync(u).finally(()=>URL.revokeObjectURL(u));});
 const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('ktx2 fallback',n,e);return texImg(n);}):texImg(n)).then(t=>texSetup(t,rep,srgb));
-const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
+const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);loader.setKTX2Loader(ktx2);/* hero-detail has a KTX2 base colour */
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(new URLSearchParams(location.search).get('hero')==='new'?'hero-new-glb.txt':'hero-glb.txt')/* ?hero=new = the adult survivor redesign (Pavel kept the original hero) */]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(({new:'hero-new-glb.txt',detail:'hero-detail-glb.txt'})[new URLSearchParams(location.search).get('hero')]||'hero-glb.txt')/* ?hero=new = adult redesign (rejected), ?hero=detail = the same hero, more detailed (KTX2 base colour) */]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -1148,10 +1148,18 @@ try{const {createCollide}=await import(new URL(ASSET+'collide.js',document.baseU
   const plainHook=THREE.Material.prototype.onBeforeCompile;let n=0;const left=[];
   for(const [m,u] of use){if(!u.i.length||!u.p.length)continue;const c=m.clone();if(m.onBeforeCompile!==plainHook){c.onBeforeCompile=m.onBeforeCompile;c.customProgramCacheKey=m.customProgramCacheKey;left.push(m.name||m.type);}for(const o of u.i)o.material=Array.isArray(o.material)?o.material.map(x=>x===m?c:x):c;n++;}
   PERF.splitMats=n;PERF.sharedHooked=left;};split();setTimeout(split,9000);}
+// [PERF] phones: opaque draws sorted by shader program (then material) instead of front-to-back. Apple GPUs remove hidden
+// opaque pixels in hardware (TBDR), so depth order buys nothing there, while every program switch re-uploads lights and
+// shadow uniforms on the CPU.
+if(MOBILE){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
+ renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
 {const T0=performance.now();$('loadTx').textContent='Готовим картинку…';scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,4000))]);}catch(e){}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
  PERF.startupMs=Math.round(performance.now()-T0);}
-let _shown=0;const _reveal=()=>{if(++_shown<3){requestAnimationFrame(_reveal);return;}$('load').classList.add('hide');};
+// every shadow map is drawn during these hidden frames too, so the shadow/depth shader variants compile now and not when
+// the hero first walks up to a lamp
+const _shadowL=[];scene.traverse(o=>{if(o.isLight&&o.castShadow&&o.shadow)_shadowL.push(o);});
+let _shown=0;const _reveal=()=>{for(const l of _shadowL)l.shadow.needsUpdate=true;if(++_shown<3){requestAnimationFrame(_reveal);return;}$('load').classList.add('hide');};
 requestAnimationFrame(frame);requestAnimationFrame(_reveal);
 </script>
