@@ -289,13 +289,22 @@ export function createBrain({ HH, lights, hour, isNight }) {
   }
 
   // ---------- plan an activity: lights first, a pause maybe, then the thing ----------
+  const AREA_NODE = { kitchen: 'kmid', bedroom: 'bed_app', workshop: 'wmid', deck: 'deck', ground: 'g_foot', outside: 'deck' };
+  function roomsOnWay(node) {
+    if (!node || !HH.route || !H.node) return [];
+    let r; try { r = HH.route(H.node, node) || []; } catch (e) { return []; }
+    const out = []; for (const st of r) { const x = ROOM_OF(st.node); if (x && !out.includes(x)) out.push(x); } return out;
+  }
   function planFor(name, h, reason) {
     plan.length = 0;
     const from = ROOM_OF(H.node), A = ACTS[name] || EXTRA[name] || { room: name === 'eat' ? 'kitchen' : 'outside' };
     const to = A.room || from;
-    // leaving a lit room in the dark: usually switch it off (sometimes he forgets)
-    if (from !== to && ROOM_LAMP[from] && lampOn(ROOM_LAMP[from]) && dark(h) && Math.random() < .8)
-      plan.push({ task: 'switch', opts: { light: ROOM_LAMP[from], on: false }, why: 'уходит — гасит свет' });
+    // leaving a lit room: usually switch it off (sometimes he forgets, and the lamp burns on: lamps never go out by themselves)
+    if (from !== to && ROOM_LAMP[from] && lampOn(ROOM_LAMP[from]) && Math.random() < .8)
+      plan.push({ task: 'switch', opts: { light: ROOM_LAMP[from], on: false }, why: dark(h) ? 'уходит — гасит свет' : 'светло — уходя, гасит лампу' });
+    // a lamp forgotten earlier in a room he walks through: he notices it on the way and puts it out (usually)
+    for (const r of roomsOnWay(A.node || AREA_NODE[area(name)] || AREA_NODE[to])) if (r !== from && r !== to && ROOM_LAMP[r] && lampOn(ROOM_LAMP[r]) && Math.random() < .85)
+      plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'по пути: забытая лампа — гасит' });
     // the floor hatch is closed and the way goes through it: open it first (without a hatch task, it just opens, so he is never trapped)
     { const H8 = house(); const up = r => r === 'bedroom';
       if (!locked && H8 && H8.hatch && H8.hatch.isOpen && !H8.hatch.isOpen() && name !== 'sleep' && up(from) !== up(to) && !(A.node && /^(deck|ledge|ll_)/.test(A.node))) {
@@ -461,6 +470,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     startleT = 25;
     const p = e && e.pos ? { x: e.pos[0], y: e.pos[1], z: e.pos[2] } : null;
     const steps = [{ task: 'micro', opts: { clip: '336', dur: rnd(3, 5), look: p }, why: 'что это было? прислушивается' }];
+    { const H8 = house(); if (need.safety > .45 && H8 && H8.hatch && H8.hatch.isOpen && H8.hatch.isOpen() && ROOM_OF(H.node) === 'bedroom' && HH.hasTask && HH.hasTask('hatch')) steps.push({ task: 'hatch', opts: { open: false, side: 'top' }, why: 'люк остался открытым — закрывает' }); }
     if (need.safety > .55 && !day.bolted && HH.hasTask && HH.hasTask('bolt')) steps.push({ task: 'bolt', opts: { lock: true }, why: 'на всякий случай проверяет засов', extra: 'bolt' });
     if (cur && cur.name !== 'sleep' && !['switch', 'micro', 'hatch', 'bolt'].includes(cur.name)) steps.push({ task: cur.name, opts: ACTS[cur.name] ? {} : (cur.opts || lastOpts || {}), why: 'возвращается к делу', extra: extra || undefined, job: job || undefined });
     plan.unshift(...steps.concat(plan.splice(0)));
