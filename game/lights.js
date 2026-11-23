@@ -165,7 +165,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
 
   // ---------- outside: lantern by the ladder landing (the deck lantern was removed: it read as a lantern on the bedroom roof) ----------
   {
-    const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.PointLight(0xFFB25E, 0, 5, 1.6); l.position.copy(p); scene.add(l);
+    // it hangs below the kitchen floor: a downward cone (no light upward), so it lights the landing and the ladders but
+    // can't shine up through the boards into the kitchen and make it look lit (no shadow map on this one)
+    const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.SpotLight(0xFFB25E, 0, 5.5, 1.1, .7, 1.6); l.position.copy(p);
+    l.target.position.copy(p).add(V(0, -3, .2)); scene.add(l, l.target);
     housing(p); hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
     add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
   }
@@ -192,7 +195,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 8), bm); bulb.position.y = -.17; g.add(bulb);
     // a carried oil lantern lights a pool of ground ~3 m round him and the fog around it (the halo, and Environment's fog
     // puffs pick up the lowest lit halos). Indoors it is dimmer so it doesn't fight the room lamps.
-    const l = new THREE.PointLight(0xFFB25E, 0, 6, 1.5); l.position.y = -.17; g.add(l);
+    const l = new THREE.PointLight(0xFFB25E, 0, 3.8, 1.5); l.position.y = -.17; g.add(l);   // short reach: no shadow map, so it must not climb through the floors above
     hand.bulbPos = bulb; hand.light = l; hand.bulb = bulb;
     const s0 = add('hand', 'outside', 'oil', V(), { lights: [{ l, I: 3.4 }], emis: [[bm, 5]], haloSize: 1.5, autoFn: () => false });
     hand.L = s0.lights[0];
@@ -229,7 +232,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
         gl_FragColor=vec4(col*a*k*(.55+.45*edge),1.);}` });
     const m = new THREE.Mesh(geo, mat); m.position.set(cx, y, cz); m.renderOrder = 3; m.frustumCulled = false; m.visible = false; scene.add(m);
     let spot = null;
-    if (!MOBILE) { spot = new THREE.SpotLight(0xFFB060, 0, depth + 1.2, .5, .7, 1.4); spot.position.set(cx, y + .25, cz); spot.target.position.set(cx, LV.KT, cz + .15); scene.add(spot, spot.target); }
+    if (!MOBILE) { spot = new THREE.SpotLight(0xFFB060, 0, depth + 1.2, .3, .8, 1.4); spot.position.set(cx, y + .25, cz); spot.target.position.set(cx, LV.KT, cz + .15); scene.add(spot, spot.target); }
     return { m, u, spot, y };
   })();
   function updateHatch(dayK) {
@@ -239,7 +242,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const down = Math.max(0, bed - kit * .6), upK = Math.max(0, kit - bed * .6);
     const k = open * Math.max(down, upK) * (1 - dayK * .85);
     hatchFx.u.k.value = k * .5; hatchFx.u.up.value = upK > down ? 1 : 0; hatchFx.m.visible = k > .01;
-    if (hatchFx.spot) hatchFx.spot.intensity = open * down * 3.2 * (1 - dayK * .8);
+    if (hatchFx.spot) hatchFx.spot.intensity = open * down * 2.2 * (1 - dayK * .8);
   }
 
   // ---------- the glowing door in the trunk ----------
@@ -445,7 +448,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
     t += dt; frame++;
     const cooking = task === 'cook' && state === 'work';
-    cookT = cooking ? 40 : Math.max(0, cookT - dt);     // the fire is fed while cooking and burns a while after
+    cookT = cooking ? 9 : Math.max(0, cookT - dt);      // fed while cooking, then burns down in ~1.3 game hours (a night hour is ~7 s)
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
