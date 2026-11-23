@@ -36,10 +36,11 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  // ---- per-frame metrics ----
  const M=F.map((f,i)=>{const hip=bone(f,'Hips'),head=bone(f,'HeadTop_End');const up=qrot(f.hq,[0,1,0]),right=qrot(f.hq,[1,0,0]);const m={};
   for(const s of ['Left','Right']){const U=bone(f,s+'UpLeg'),K=bone(f,s+'Leg'),A=bone(f,s+'Foot'),Tt=bone(f,s+'ToeBase');const th=sub(K,U),sh=sub(A,K);
-   m[s]={knee:180-ang(th,sh),bend:dot(cross(th,sh),right)/(len(th)*len(sh)+1e-9),footUp:dot(sub(A,U),up),footHead:Math.min(len(sub(A,head)),len(sub(Tt,head)))};}
+   const sl=dot(sh,sh)||1e-9,pp=v=>sub(v,sh.map(x=>x*dot(v,sh)/sl)),o=pp(sub(U,K)),t=pp(sub(Tt,A));// a real knee: the hip sits on the calf side of the shin, the toes on the shin side (both measured perpendicular to the shin). No bone axes, facing or mirroring involved; holds for deep folds
+   m[s]={knee:180-ang(th,sh),bend:-dot(o,t)/((len(o)*len(t))+1e-9)*Math.min(1,len(t)/.03),footUp:dot(sub(A,U),up),footHead:Math.min(len(sub(A,head)),len(sub(Tt,head)))};}
   return m;});
  // calibrate the natural knee-bend direction from walking frames
- let sgn=0;F.forEach((f,i)=>{if(f.fl.includes('P'))for(const s of ['Left','Right'])if(M[i][s].knee<160)sgn+=Math.sign(M[i][s].bend);});sgn=Math.sign(sgn)||1;
+ let sgn=0;F.forEach((f,i)=>{if(f.fl.includes('P'))for(const s of ['Left','Right'])if(M[i][s].knee<160)sgn+=Math.sign(M[i][s].bend);});const sgnWalk=Math.sign(sgn)||1;sgn=1;// geometric (hip vs toes around the shin), no calibration; sgnWalk only reported
  // ---- 1. penetration ----
  const pen=[];F.forEach((f,i)=>f.pen.forEach((p,g)=>{if(!p)return;const [cm,ci,pos]=p;const nm=names[ci]||'?';const G=GN[g];if(/ (\d{4,})x/.test(nm)&&+nm.match(/ (\d+)x/)[1]>1200)return;
   let tol=lim.pen[G];if(SOFT.test(nm))tol=Math.max(tol,lim.penSoft);if(SOFT.test(nm)&&(f.fl.includes('B')||f.fl.includes('W'))&&pos&&pos[1]<f.root[1]+.6)tol=Math.max(tol,lim.penPillow);if(SEAT.test(nm)&&(G==='hips'||G==='shins'))tol=Math.max(tol,lim.penSeat);
@@ -233,6 +234,6 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   else if(q.type==='sharp-turn')P=r>=2?1:2;else if(q.type==='crab-walk')P=q.value>70?1:2;
   q.P=P;}
  merged.sort((a,b)=>a.P-b.P||b.value/(b.limit||1)-a.value/(a.limit||1));
- return {issues:merged,tempo,walks:walks.map(({i0,i1,pts,L,D,from,to,task})=>({f0:F[i0].f,f1:F[i1].f,from,to,task,L,D,pts})),kneeSign:sgn,frames:F.length};
+ return {issues:merged,tempo,walks:walks.map(({i0,i1,pts,L,D,from,to,task})=>({f0:F[i0].f,f1:F[i1].f,from,to,task,L,D,pts})),kneeSign:sgnWalk,frames:F.length};
 }
 module.exports={analyze,LIMITS,activity};
