@@ -129,6 +129,30 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
     }`});
   const mesh=new THREE.Mesh(g,mat);mesh.renderOrder=-1;mesh.frustumCulled=false;scene.add(mesh);env.backdrop=mesh;}
 
+ // ================= far tree lines: layered silhouettes between the forest and the painted backdrop =================
+ // Each ring is a cylinder seen from inside; the shader cuts it into trees (a trunk and a ragged round crown per cell, two
+ // offset rows per ring) and fills them with one flat colour that leans further into the fog the farther the ring is, so the
+ // rings read as aerial perspective and slide against each other as the camera turns. Opaque with discard: what they cover of
+ // the backdrop is never drawn. Phones: 2 rings.
+ const farRings=[];{const RINGS=MOBILE?[[60,.42,11],[80,.66,29]]:[[52,.34,11],[66,.52,29],[82,.7,47]];
+  for(const [rad,k,seed] of RINGS){const u={tNoise:{value:null}/* set once the noise is baked, below */,col:{value:new THREE.Color()},haze:{value:new THREE.Color()},k:{value:k},R:{value:rad},seed:{value:seed},t:U.t};
+   const g=new THREE.CylinderGeometry(rad,rad,40,MOBILE?72:112,1,true);g.translate(0,17,0);
+   const m=new THREE.Mesh(g,new THREE.ShaderMaterial({uniforms:u,side:THREE.BackSide,fog:false,
+    vertexShader:`varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
+    fragmentShader:`uniform sampler2D tNoise;uniform vec3 col,haze;uniform float k,R,seed,t;varying vec3 vW;
+     float hs(float n){return fract(sin(n*127.1+seed*31.7)*43758.5453);}
+     float tree(float u,float y,float sp,float off){float c=floor((u+off)/sp);float x=(u+off)-(c+.5)*sp;x+=(hs(c)-.5)*sp*.5;
+      float H=(.45+.55*hs(c+7.))*(10.+k*16.);float w=sp*(.32+.3*hs(c+3.));float cr=w*(1.1+.5*hs(c+5.));float yc=H-cr*.8;
+      float d=length(vec2(x/w,(y-yc)/cr));float e=texture2D(tNoise,vec2(u*.11,y*.09)+seed).r;
+      float crown=1.-step(1.+(e-.5)*.55,d);float trunk=step(abs(x),.25+.25*hs(c+9.))*step(y,yc);return max(crown,trunk);}
+     void main(){float u=atan(vW.z,vW.x)*R;float y=vW.y;
+      float s=max(tree(u,y,7.,0.),tree(u,y-1.5,5.3,2.7));if(s<.5||y>40.)discard;
+      // the bottom of each ring sinks into the ground fog; a faint vertical gradient and leaf noise keep the flat colour alive
+      float n=texture2D(tNoise,vec2(u*.05,y*.05)+seed*.3).g;vec3 c=col*(.9+.2*n)*(.92+.1*smoothstep(0.,25.,y));
+      c=mix(c,haze,k*.55+smoothstep(8.,-1.,y)*(1.-k*.4)*.6);gl_FragColor=vec4(c,1.);
+      #include <colorspace_fragment>
+     }`}));m.renderOrder=-2;m.frustumCulled=false;scene.add(m);farRings.push(m);}}
+ env.farRings=farRings;
  // ================= rolling ground fog =================
  // (1) horizontal sheets of domain-warped noise just above the ground
  // ---- baked fog noise: a 128x128 tiling texture with two independent 4-octave fbm channels (R, G), made once on load.
@@ -264,7 +288,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // leave out alpha-tested and transparent objects (list refreshed now and then, other threads add objects after load)
  let cutList=[],cutAge=1e9;const isCut=o=>{const m=o.material;if(!m||o===puffs)return false;const ms=Array.isArray(m)?m:[m];return ms.some(x=>x.alphaTest>0||x.transparent||x.isSpriteMaterial||x.isPointsMaterial||x.isLineBasicMaterial);};
  const fogObjs=()=>{if(cutAge++>120){cutAge=0;cutList=[];scene.traverse(o=>{if((o.isMesh||o.isPoints||o.isLine||o.isSprite)&&isCut(o))cutList.push(o);});}return [...sheets,puffs,env.backdrop,...(env.mist||[]),...cutList];};let frameN=0;const dbs=new THREE.Vector2();
- let lastT=null;const wTmp=V();const dawnC=new THREE.Color(0xF0BFA0),rainC=new THREE.Color(0x8E9EA8);
+ const wTmpC=new THREE.Color(),wTmpD=new THREE.Color(); let lastT=null;const wTmp=V();const dawnC=new THREE.Color(0xF0BFA0),rainC=new THREE.Color(0x8E9EA8);
  env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera,hour}=s;
   {const W=window.__wind;const dt=lastT===null?0:Math.min(.1,Math.max(0,T-lastT));lastT=T;
    if(W&&W.sample){const w=W.sample(wTmp.set(0,1,0))||{};const x=w.x||0,z=w.z||0,sp=w.s!==undefined?w.s:Math.hypot(x,z);const L=Math.hypot(x,z)||1;
@@ -278,12 +302,13 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
    const su=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;scene.background=null;renderer.setRenderTarget(depthRT);renderer.clear(false,true,false);renderer.render(scene,camera);
    renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;/* U.wind is driven by game/wind.js now */
   const fc=tmp.copy(P.fog);
-  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),(.2+nightK*.2)*(1-mornK)).lerp(dawnC,mornK*.45);const dusk=hour===undefined?0:smooth(17.6,19.0,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.15+eve*.85+mornK*.3+rainK*.25;fogU.cam.value.copy(camera.position);
+  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),(.2+nightK*.2)*(1-mornK)).lerp(dawnC,mornK*.45);const dusk=hour===undefined?0:smooth(17.3,19.5,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.15+eve*.85+mornK*.3+rainK*.25;fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
   puffU.op.value=.38*dens;for(const m of mistBands)m.material.uniforms.op.value=m.userData.k*(.25+.75*Math.min(1,dens));
   {const L=halos.filter(h=>h.l.intensity>.05).map(h=>{h.l.getWorldPosition(tmpV);return [tmpV.x,tmpV.y,tmpV.z,Math.min(1,h.l.intensity/5)*h.size/1.6];}).sort((a,b)=>a[1]-b[1]);
    for(let i=0;i<6;i++){const v=puffU.lp.value[i];const l=L[i];if(l)v.set(l[0],l[1],l[2],l[3]*.9);else v.set(0,-99,0,0);}}
   bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
+  {const dark=wTmpD.setRGB(.13,.2,.2).lerp(wTmpC.copy(P.fog).multiplyScalar(.3),eve);for(const m of farRings){const u=m.material.uniforms;u.col.value.copy(dark).lerp(P.fog,u.k.value*.35);u.haze.value.copy(P.fog).lerp(P.hor,.25);}}
   for(const h of halos){const on=h.l.intensity>.05;h.s.visible=on;if(on){h.l.getWorldPosition(h.s.position);const k=Math.min(1,h.l.intensity/6);h.s.material.opacity=k*.85;h.s.scale.setScalar(h.size*(.85+k*.3));}}
   env.shroomGlow.value=eve*1.8;
   // dusk: thicken the distance fog once the lamps are on (the painting's 19:20 look); index.html sets near/far each frame before this
@@ -291,10 +316,11 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   if(scene.fog&&scene.fog.isFog){const f=scene.fog;f.far=Math.max(f.near+34,f.far-eve*(1-nightK)*26);}
   fill.intensity=eve*1.25*(1-rainK*.4);sky.intensity=eve*.55;rim.intensity=eve*3.2;env.moonRim.strength.value=eve*(1-rainK*.5);
   // rain: wetness lags the rain, forest bark goes dark and glossy, fog turns grey-blue and thick, colours go muted
-  {const dt=lastT===null?0:.016;const w=env.wet.value;env.wet.value=rainK>w?Math.min(rainK,w+.006):Math.max(rainK,w-.0008);}
+  {const W=window.__wind;if(W&&W.wet)env.wet.value=W.wet();/* one wetness for everyone: Wind's (soaks in ~8 s, dries over ~2 min, real time) */else{const w=env.wet.value;env.wet.value=rainK>w?Math.min(rainK,w+.006):Math.max(rainK,w-.0008);}}
   const wt=env.wet.value;barkMat.roughness=1-wt*.55;barkMat.color.setRGB(.6*(1-wt*.35),.55*(1-wt*.35),.5*(1-wt*.3));
-  if(rainK>0){fogU.col.value.lerp(rainC,rainK*.5);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
-  ffU.on.value=eve*(1-rainK);const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.18);g.con.value=1.08+eve*.05;
+  if(rainK>0){fogU.col.value.lerp(rainC,rainK*.7);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
+  ffU.on.value=eve*(1-rainK);const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.3);g.con.value=1.08+eve*.05-rainK*.06;/* rain: greyer, flatter, like looking through wet air */
+  warmBounce(eve,rainK,nightK);
   if(MOBILE){phoneNight(eve,rainK);foldLights();}};
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
@@ -305,6 +331,19 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
   fill.intensity*=f(PH.fill);rim.intensity*=f(PH.rim);env.moonRim.strength.value*=f(PH.moonRim);
   bgU.bgHaze.value=.3+(PH.haze-.3)*k;fogU.trunkK.value=.45+(PH.trunk-.45)*k;puffU.frontK.value=.7+(PH.front-.7)*k;env.gradePass.uniforms.lift.value.copy(liftBase).lerp(liftTmp.copy(PH.lift),k*(1-rainK*.5));}
+ // dusk/night bark: the photo's oak is warm brown in the evening, lit by the house. The light that comes up from below (the
+ // hemisphere's ground colour) is pushed towards the amber of the lamps bouncing off the landings and roots, so the trunk's
+ // sides and the undersides of the branches pick it up while tops stay moonlit blue. Light only: the bark texture and its
+ // roughness are untouched.
+ env.duskWarm={col:new THREE.Color(0xB06C3A),k:.8,amb:.4};
+ // for the oak's bark shader (Tree): warm house light bouncing onto the trunk near the rooms. Suggested use in the bark material:
+ //   outgoingLight += diffuseColor.rgb * barkWarm.color * barkWarm.strength * (near the house: y 2..11, front of the trunk)
+ env.barkWarm={color:{value:new THREE.Color(0xFF9A50)},strength:{value:0}};let WH=null,WA=null;const wTmp2=new THREE.Color();
+ function warmBounce(eve,rainK,nightK){if(!WH){scene.traverse(o=>{if(o.isHemisphereLight&&o!==sky&&!WH)WH=o;else if(o.isAmbientLight&&!WA)WA=o;});if(!WH)return;}
+  if(WA)WA.color.set(0xFFE6C8);/* index sets the ambient's intensity each frame, not its colour: start from its own colour */
+  env.barkWarm.strength.value=eve*(1-rainK*.4)*.35;
+  const k=eve*env.duskWarm.k*(1-rainK*.5);if(k<=0)return;WH.groundColor.lerp(env.duskWarm.col,k);
+  if(WA){WA.color.lerp(wTmp2.copy(env.duskWarm.col),k*.5);WA.intensity+=eve*env.duskWarm.amb*(1-rainK*.5);}}
  // phones: the two non-shadow directional lights (fill, rim) and the second hemisphere (sky) are not in the scene, so every lit
  // shader has fewer lights to loop over. Their light is folded into index's hemisphere and ambient each frame instead
  // (directional -> ambient at about the average cosine it gives over all normals), and the forest canopy (unlit on phones)
@@ -314,14 +353,15 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   const hi=LH.intensity,si=sky.intensity,ht=hi+si;
   if(si>0&&ht>0){LH.color.multiplyScalar(hi/ht).add(cA.copy(sky.color).multiplyScalar(si/ht));LH.groundColor.multiplyScalar(hi/ht).add(cA.copy(sky.groundColor).multiplyScalar(si/ht));LH.intensity=ht;}
   const ai=LA.intensity,fi=fill.intensity*PH.foldF,ri=rim.intensity*PH.foldR,at=ai+fi+ri;
-  LA.color.copy(ambBase);if(at>0){LA.color.multiplyScalar(ai/at).add(cA.copy(fill.color).multiplyScalar(fi/at)).add(cB.copy(rim.color).multiplyScalar(ri/at));}LA.intensity=at;
+  if(at>0){LA.color.multiplyScalar(ai/at).add(cA.copy(fill.color).multiplyScalar(fi/at)).add(cB.copy(rim.color).multiplyScalar(ri/at));}LA.intensity=at;
   if(env.canopy){const c=env.canopy.material.color;// what a lit card gets on average (Lambert: albedo/pi x irradiance)
    cA.copy(LH.groundColor).lerp(LH.color,.6).multiplyScalar(LH.intensity);cA.add(cB.copy(LA.color).multiplyScalar(LA.intensity));
    if(LS)cA.add(cC.copy(LS.color).multiplyScalar(LS.intensity*.3));c.copy(cA).multiplyScalar(PH.leafK/Math.PI);}}
  // the grade folded into three's OutputPass (one full-screen pass less): same uniforms, run right after tone mapping + sRGB
  env.foldGrade=op=>{const gu=env.gradePass.uniforms;for(const k of ['sat','con','lift','warm','vig','night','morn'])op.uniforms[k]=gu[k];
   let fs=op.material.fragmentShader;fs=fs.replace('uniform sampler2D tDiffuse;','uniform sampler2D tDiffuse;uniform float sat,con,vig,night,morn;uniform vec3 lift,warm;float hi0(float l){return smoothstep(.25,.8,l);}');
-  const e=fs.lastIndexOf('}');fs=fs.slice(0,e)+'{vec3 x=gl_FragColor.rgb;'+GRADE_BODY+'gl_FragColor.rgb=clamp(x,0.,1.);}\n}';op.material.fragmentShader=fs;op.material.needsUpdate=true;env.gradeFolded=true;};
+  const e=fs.lastIndexOf('}');fs=fs.slice(0,e)+'{vec3 x=gl_FragColor.rgb;'+GRADE_BODY+'x+=(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.;/* dither after the 8-bit grade: no banding in the sky and fog gradients */gl_FragColor.rgb=clamp(x,0.,1.);}\n}';op.material.fragmentShader=fs;op.material.needsUpdate=true;env.gradeFolded=true;};
+ env.noiseTex=fogNoise;for(const m of farRings)m.material.uniforms.tNoise.value=fogNoise;/* the baked 128px tiling noise (R,G), also used by the sky clouds in index.html */
  env.sheets=sheets;env.puffs=puffs;window.__env=env;
  // called by index.html when FPS stays under 40 after pixel ratio is already at 1: fewer fog puffs, then no soft edges, then one fog sheet
  let qLevel=0;env.degrade=()=>{qLevel++;if(qLevel===1)pg.instanceCount=Math.round(PN*.6);else if(qLevel===2)softU.soft.value=0;else if(qLevel===3){sheets.slice(1).forEach(m=>m.visible=false);pg.instanceCount=Math.round(PN*.4);}return qLevel<=3;};

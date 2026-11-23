@@ -230,7 +230,7 @@ function makeMaterials(renderer) {
     brass: metal(0xD8AE55, .85, .28, 1.2),
     copper: metal(0xC0754A, .9, .32, 1),
     hood: metal(0x7E858D, .85, .34, 1.0),
-    fridge: metal(0xA8ADB2, .55, .3, 1.0),   // silver-grey retro fridge like the photo
+    fridge: metal(0xDAD4C4, .35, .3, 1.0) /* cream-silver like the photo (Critic P8) */,   // silver-grey retro fridge like the photo
     ceramic: metal(0xF2EDE3, 0, .22, .7),
     glazeBlue: metal(0x6F8FA8, 0, .25, .7),
     glazeCream: metal(0xE8D9B8, 0, .3, .7),
@@ -269,9 +269,10 @@ const PLAINV = new Map();
 // roughness rides in the vertex colour's alpha (opaque materials ignore alpha), so one material covers every roughness
 function plainOf(m) {
   if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.polygonOffset || m.alphaTest || m.map || m.bumpMap || m.normalMap || m.transparent || m.vertexColors || m.userData.keep || m.emissive.getHex() !== 0) return null;
-  const mt = m.metalness > .5 ? 1 : 0; const side = m.side === THREE.BackSide ? THREE.BackSide : THREE.DoubleSide; const key = `vc|${mt}|${side}`;
-  if (!PLAINV.has(key)) { const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: mt ? .85 : 0, side }); pm.userData.plainV = true;
-    pm.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);'); };
+  const env = m.envMap ? 1 : 0; const side = m.side === THREE.BackSide ? THREE.BackSide : THREE.DoubleSide; const key = `vc|${env}|${side}`;
+  if (!PLAINV.has(key)) { const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMap: env ? m.envMap : null, envMapIntensity: .9, side }); /* metalness and env reflections kept per band (Critic P8: enamel and the fridge went dark without them) */ pm.userData.plainV = true;
+    pm.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float vmet; varying float vMet;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMet = vmet;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;'); };
     pm.customProgramCacheKey = () => 'plainV'; PLAINV.set(key, pm); }
   return PLAINV.get(key); }
 // perf: round parts get as many sides as their real size needs (about one side per 6-7 mm of radius, at least 8), so a 4 cm jar
@@ -292,12 +293,12 @@ function lodGeo(o) { const g = o.geometry, P = g.parameters; if (!P || !g.attrib
   // only when the geometry is exactly what its generator made (not translated, scaled or bent afterwards)
   let ok = _lodOK.get(g); if (ok === undefined) { const ref = mk(n0), a = ref.attributes.position.array, b = g.attributes.position.array; ok = a.length === b.length; for (let k = 0; ok && k < a.length; k += 7) if (Math.abs(a[k] - b[k]) > 1e-6) ok = false; ref.dispose(); _lodOK.set(g, ok); }
   return ok ? mk(n1) : g; }
-function colorize(g, c, a) { const n = g.attributes.position.count, k = a === undefined ? 3 : 4, ca = new Float32Array(n * k); for (let i = 0; i < n; i++) { ca[i * k] = c.r; ca[i * k + 1] = c.g; ca[i * k + 2] = c.b; if (k === 4) ca[i * k + 3] = a; } g.setAttribute('color', new THREE.Float32BufferAttribute(ca, k)); }
+function colorize(g, c, a, met) { if (met !== undefined) g.setAttribute('vmet', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(met), 1)); const n = g.attributes.position.count, k = a === undefined ? 3 : 4, ca = new Float32Array(n * k); for (let i = 0; i < n; i++) { ca[i * k] = c.r; ca[i * k + 1] = c.g; ca[i * k + 2] = c.b; if (k === 4) ca[i * k + 3] = a; } g.setAttribute('color', new THREE.Float32BufferAttribute(ca, k)); }
 // bake(group, keepCast): merge the group's static meshes (not inside a userData.live node, not hidden) into one mesh per material.
 // keepCast: also split by each part's own castShadow flag (the late pass, after small parts were set not to cast).
 function bake(group, keepCast = false) {
   group.updateMatrixWorld(true); const inv = group.matrixWorld.clone().invert(); const by = new Map(); const kill = [];
-  group.traverse(o => { if (!o.isMesh || o === group || Array.isArray(o.material) || o.userData.live || (keepCast && o.material.userData.keep) || o.isInstancedMesh || o.isSkinnedMesh || !o.visible || o.userData.keepMesh) return; if (o.morphTargetInfluences) return; let p = o.parent; while (p && p !== group) { if (p.userData.live || !p.visible) return; p = p.parent; } let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); let mat = o.material; const pm = plainOf(mat); if (pm) { if (mat.flatShading) g.computeVertexNormals(); colorize(g, mat.color, mat.roughness); mat = pm; } else if (mat.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1)); const key = keepCast ? mat.uuid + (o.castShadow ? 's' : 'n') + (o.receiveShadow ? 'r' : '') : mat.uuid; if (!by.has(key)) by.set(key, { mat, cast: o.castShadow, rec: o.receiveShadow, gs: [], os: [] }); by.get(key).gs.push(g); by.get(key).os.push(o); });
+  group.traverse(o => { if (!o.isMesh || o === group || Array.isArray(o.material) || o.userData.live || (keepCast && o.material.userData.keep) || o.isInstancedMesh || o.isSkinnedMesh || !o.visible || o.userData.keepMesh) return; if (o.morphTargetInfluences) return; let p = o.parent; while (p && p !== group) { if (p.userData.live || !p.visible) return; p = p.parent; } let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); let mat = o.material; const pm = plainOf(mat); if (pm) { if (mat.flatShading) g.computeVertexNormals(); colorize(g, mat.color, mat.roughness, mat.metalness); mat = pm; } else if (mat.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1)); const key = keepCast ? mat.uuid + (o.castShadow ? 's' : 'n') + (o.receiveShadow ? 'r' : '') : mat.uuid; if (!by.has(key)) by.set(key, { mat, cast: o.castShadow, rec: o.receiveShadow, gs: [], os: [] }); by.get(key).gs.push(g); by.get(key).os.push(o); });
   for (const e of by.values()) { if (keepCast && e.gs.length < 2) { e.gs[0].dispose(); e.skip = true; continue; } e.os.forEach(o => o.removeFromParent()); }
   for (const { mat, cast, rec, gs, skip } of by.values()) { if (skip) continue; const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = keepCast ? cast : true; m.receiveShadow = keepCast ? rec : true; group.add(m); gs.forEach(g => g.dispose()); }
   return group;
@@ -843,7 +844,7 @@ function fridge() {
     meat.push(p); });
   // perf: all pieces in one mesh; each vertex knows its piece, setStock(n) masks the rest
   const meatU = { value: 6 }; { const by = new Map(); meat.forEach((p, i) => { p.updateMatrixWorld(true); p.traverse(o => { if (!o.isMesh) return; const m0 = o.material, pm = plainOf(m0) || m0; let q = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
-      for (const k of Object.keys(q.attributes)) if (!['position', 'normal', 'uv'].includes(k)) q.deleteAttribute(k); if (!q.attributes.uv) q.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(q.attributes.position.count * 2), 2)); q.applyMatrix4(o.matrixWorld); if (pm !== m0) colorize(q, m0.color, m0.roughness); q.setAttribute('slot', new THREE.Float32BufferAttribute(new Float32Array(q.attributes.position.count).fill(i), 1));
+      for (const k of Object.keys(q.attributes)) if (!['position', 'normal', 'uv'].includes(k)) q.deleteAttribute(k); if (!q.attributes.uv) q.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(q.attributes.position.count * 2), 2)); q.applyMatrix4(o.matrixWorld); if (pm !== m0) colorize(q, m0.color, m0.roughness, m0.metalness); q.setAttribute('slot', new THREE.Float32BufferAttribute(new Float32Array(q.attributes.position.count).fill(i), 1));
       if (!by.has(pm)) by.set(pm, []); by.get(pm).push(q); }); });
     for (const [pm, qs] of by) { const mm = maskMat(pm, 'slot', meatU); const me = new THREE.Mesh(mergeGeometries(qs, false), mm.mat); me.customDepthMaterial = mm.depth; me.customDistanceMaterial = mm.dist; me.userData.live = true; me.castShadow = false; me.receiveShadow = true; g.add(me); } }
   g.userData.fridge = { piv, meat, meatU, inside: V(0, (lb + split) / 2, z0 + bd / 2), handle: V(-dw + .065, split - .18, .11) };
@@ -993,13 +994,15 @@ export function buildProps(ctx) {
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
 
   // ---------- bedroom ----------
-  const bunk = place('bunkbed', bunkBed(), -2.4, BD, 1.71, { seat: true });
-  place('slippers', slippers(), -2.95, BD, 2.32, { solid: false, ry: .2 });
-  place('basket', basket(), -1.05, BD, 1.18); // by the bed head against the back wall, clear of the ladder exit and walkways
-  const chairO = place('chair', chair(), -.58, BD, 2.3, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
-  const tbl = place('table', table(), -.35, BD, 1.37); const tTop = tbl.userData.floorY + .74;
-  const bk = book({ cover: M.covers[0] }); bk.position.set(-.33, tTop, 1.6); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; bk.userData.noProxy = true; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
-  { const m = bake(mug(M.glazeBlue)); m.position.set(-.06, tTop, 1.35); scene.add(m); const c = bake(candle()); c.position.set(-.62, tTop, 1.32); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62, tTop, 1.6); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
+  // layout: bunk, reading table and chair sit 25 cm toward +x so the walk from the bedroom ladder top passes the bunk's end post
+  // with room to spare; the basket went under the right end of the table
+  const TX = .25, TZ = -.08; const bunk = place('bunkbed', bunkBed(), -2.4 + TX, BD, 1.71, { seat: true });
+  place('slippers', slippers(), -2.95 + TX, BD, 2.32, { solid: false, ry: .2 });
+  place('basket', basket(), -.28 + TX, BD, 1.33, { solid: false }); // under the right end of the reading table, between its legs
+  const chairO = place('chair', chair(), -.58 + TX, BD, 2.3, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
+  const tbl = place('table', table(), -.35 + TX, BD, 1.37); const tTop = tbl.userData.floorY + .74;
+  const bk = book({ cover: M.covers[0] }); bk.position.set(-.33 + TX, tTop, 1.6 + TZ); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; bk.userData.noProxy = true; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
+  { const m = bake(mug(M.glazeBlue)); m.position.set(-.06 + TX, tTop, 1.35 + TZ); scene.add(m); const c = bake(candle()); c.position.set(-.62 + TX, tTop, 1.32 + TZ); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62 + TX, tTop, 1.6 + TZ); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
   // door in Tree's opening of the right wall (z 2.3..3.25, up to BD+2.0); hinge at the front (z≈3.2), opens into the room.
   // It rests open (~95°) along z≈3.2 so the way in stays clear; __props.door.setOpen(k) swings it (0 shut), setBolt(k) slides the bolt (1 locked).
   { const dg = place('door', plankDoor(1.9, .77), .4, BD, 2.775, { ry: -Math.PI / 2, solid: false }); const D = dg.userData.door;
@@ -1176,9 +1179,9 @@ export function buildProps(ctx) {
     out.radio = { obj: rad, get on() { return rs.on; }, setOn(k) { rs.on = clamp01(k); R.dm.emissiveIntensity = rs.on * 1.6; }, setTune(k) { rs.tune = clamp01(k); R.needle.position.x = -.05 + .1 * rs.tune; R.knob.rotation.y = rs.tune * 5; }, knob(t = V()) { return rad.localToWorld(t.copy(R.knobLocal)); }, dialMat: R.dm };
     out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
   tool('broom', broom(), scene, -4.03, floorAt(-4.03, BD, 1.62), 1.62, [0, 0, .11]);
-  const plantO = place('plant', plant(), -3.97, BD, 2.62); PT.plant = [plantO, V(0, .3, 0)];
-  tool('wateringCan', wateringCan(), scene, -3.94, floorAt(-3.94, BD, 3.08), 3.08, [0, -.9, 0]);
-  tool('diary', diary(), scene, -.37, tTop, 1.31, [0, .22, 0]); tool('pencil', pencil(), scene, -.22, tTop, 1.3, [0, .5, 0]);
+  const plantO = place('plant', plant(), -3.47, BD, 1.17); /* against the back wall between the crate and the bunk, off the kitchen hatch */ PT.plant = [plantO, V(0, .3, 0)];
+  tool('wateringCan', wateringCan(), scene, -3.3, floorAt(-3.3, BD, 1.5), 1.5, [0, -.4, 0]);
+  tool('diary', diary(), scene, -.37 + TX, tTop, 1.31 + TZ, [0, .22, 0]); tool('pencil', pencil(), scene, -.22 + TX, tTop, 1.3 + TZ, [0, .5, 0]);
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
   // --- workshop: whetstone and a lantern to repair on the bench; jacket on a peg by the open side; bow and quiver on the left wall
   { const bt = wb.userData.floorY + .9; const ws = whetstone(); ws.position.set(2.63, bt, 1.62); ws.rotation.y = .08; scene.add(ws); PT.whetstone = [ws, V(0, .08, 0)];
@@ -1308,12 +1311,13 @@ export function buildProps(ctx) {
   // finds by position, tools, the open book, the candle flame). The emptied groups stay in place with their boxes.
   // perf: phones get a stricter shadow budget (only furniture-sized parts cast)
   const MOB = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); const CAST_R = MOB ? .35 : .2; out.mobile = MOB;
-  { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp']); /* stove merged too: its door, fire and pots are live */
+  const NOMERGE = /[?&]nomerge/.test(location.search); /* debug: keep every prop as built (support checks) */
+  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp']); /* stove merged too: its door, fire and pots are live */
     const roots = []; for (let i = nScene0; i < scene.children.length; i++) { const o = scene.children[i]; if (KEEP.has(o.name) || o.userData.live || o.userData.book || Object.values(out.tools).includes(o)) continue; roots.push(o); }
     const by = new Map(); const kill = []; const MST = out._mergeStats = {}; out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
-      let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
-      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0; const pm = out._liveMats.has(m0) ? null : plainOf(m0); if (pm) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness); mat = pm; key = pm.uuid + (cast ? 's' : 'n'); } else if (m0.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1));
+      let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
+      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0; const pm = out._liveMats.has(m0) ? null : plainOf(m0); if (pm) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness, m0.metalness); mat = pm; key = pm.uuid + (cast ? 's' : 'n'); } else if (m0.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1));
       if (!by.has(key)) by.set(key, { mat, cast, gs: [] }); by.get(key).gs.push(g); kill.push(o); const rn = r.name || ('@' + r.position.toArray().map(v => v.toFixed(1))); MST[rn] = (MST[rn] || 0) + g.attributes.position.count / 3 * (cast ? 2 : 1); }); }
     for (const o of kill) o.removeFromParent();
     // a material whose casting parts add up to a few hundred triangles is not worth its own shadow draw: fold it into the non-casting mesh
@@ -1327,13 +1331,13 @@ export function buildProps(ctx) {
   // perf: the same merge inside every object that stays separate (kept furniture, live objects, tools): static parts by material
   // (plain colours share one vertex-coloured material), keeping each part's shadow flags; anything the code moves or edits is a
   // userData.live node and stays as it is, and a material that has a single part is left alone too.
-  { for (const m of Object.values(out.materials || {})) if (m) m.userData.keep = true; if (quiltMesh) quiltMesh.userData.live = true;
+  if (!NOMERGE) { for (const m of Object.values(out.materials || {})) if (m) m.userData.keep = true; if (quiltMesh) quiltMesh.userData.live = true;
     const deep = o => { bake(o, true); for (const c of o.children.slice()) walk(c); }, walk = c => { if (c.userData.live) deep(c); else for (const k of c.children.slice()) walk(k); };
     for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup || r.userData.book || r.isLight) continue; deep(r); } }
   // perf: every tool sitting at home (hooks, shelves, stove, bench) is drawn from one shared proxy mesh per material. Each tool
   // has an id in a vertex attribute; when it leaves home (grabbed, easing back, its parent moved, hidden) its id is masked out of
   // the proxy (vertices collapse) and its own meshes show again. Shadow-casting and live sub-parts always stay on the tool itself.
-  { const names = Object.keys(out.tools).slice(0, 63), uHide = { value: new Array(64).fill(0) }, by = new Map(), TP = []; const prox = new Map();
+  if (!NOMERGE) { const names = Object.keys(out.tools).slice(0, 63), uHide = { value: new Array(64).fill(0) }, by = new Map(), TP = []; const prox = new Map();
     const proxMat = m => { if (prox.has(m)) return prox.get(m); const pm = m.clone(); const ob = m.onBeforeCompile, ck = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
       pm.onBeforeCompile = (sh, r) => { if (ob && ob !== THREE.Material.prototype.onBeforeCompile) ob.call(m, sh, r); sh.uniforms.uHide = uHide;
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
@@ -1341,7 +1345,7 @@ export function buildProps(ctx) {
     names.forEach((name, i) => { const o = out.tools[name], h = o.userData.home; if (!h || !o.visible || o.userData.noProxy) return; o.updateMatrixWorld(true); const ms = [];
       o.traverse(c => { if (!c.isMesh || c.castShadow || Array.isArray(c.material) || c.isInstancedMesh || c.isSkinnedMesh || !c.visible) return; const m = c.material; if (m.transparent || m.userData.keep || !m.isMeshStandardMaterial) return;
         if (c !== o && c.userData.live) return; for (let q = c.parent; q && q !== o; q = q.parent) if (q.userData.live || !q.visible) return;
-        let g0 = lodGeo(c), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== c.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !m.vertexColors) g.deleteAttribute('color'); if (m.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1), m.userData.plainV ? 1 : undefined);
+        let g0 = lodGeo(c), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== c.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !m.vertexColors) g.deleteAttribute('color'); if (m.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1), m.userData.plainV ? 1 : undefined, m.userData.plainV ? 0 : undefined);
         if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(c.matrixWorld); g.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1));
         const key = m.uuid + (g.attributes.color ? g.attributes.color.itemSize : 0); if (!by.has(key)) by.set(key, { m, gs: [] }); by.get(key).gs.push(g); ms.push(c); });
       if (ms.length) { ms.forEach(c => c.visible = false); o.parent.updateMatrixWorld(true); TP.push({ i, o, h, ms, at: true, mw: ms.map(c => c.matrixWorld.clone()) }); } });

@@ -26,12 +26,15 @@ async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log
     if(s.path==0&&!s.rm&&!s.lad&&s.state==='work'){if(++settled>=8)break;}else settled=0;}
    log('tour',t,'frames',n);}
   // every other body task hero.js knows (HH.hasTask), at an hour that suits it
-  const EXTRA=[['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
-   ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],['fetchwater',9],['trip',9],['eat',13],
+  const EXTRA=[['trip',9,{kind:'hunt',jacket:true,lantern:true},240],['store',10],['cook',12,{fromFridge:true}],['eat',13],['fetchwater',9],['dumpwater',9.5],
+   ['trip',15,{kind:'wood',jacket:false},240],['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
+   ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],
    ['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11]];
-  for(const [t,h] of EXTRA){const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
-   await p.evaluate(([t,h])=>{__th.setHour(h);__th.task(t);},[t,h]);let n=0,seen=false,idle=0;
-   while(n<60*90){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>__dbg.hero.task);if(s===t)seen=true;if(seen&&s!==t){if(++idle>=3)break;}else if(!seen&&n>=600)break;}
+  for(const [t,h,opts,maxS] of EXTRA){const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
+   // through the brain (the body alone does not route between floors); the brain may slip its own chore in first, so ask again until he takes it
+   const ask=()=>p.evaluate(([t,o])=>{const B=window.__brain;if(B&&B.command)B.command(t,o||undefined);else __th.task(t);},[t,opts||null]);
+   await p.evaluate(h=>__th.setHour(h),h);await ask();let n=0,seen=false,idle=0;
+   while(n<60*(maxS||90)){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>__dbg.hero.task);if(s===t)seen=true;if(seen&&s!==t){if(++idle>=3)break;}else if(!seen){if(n>=900)break;await ask();}}
    log('tour',t,seen?'ran':'never started','frames',n);}}
  return {info,total};
 }
