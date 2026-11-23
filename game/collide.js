@@ -51,6 +51,23 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (s.kind === 'vox') { s.inv = (s.inv || new THREE.Matrix4()).copy(mw).invert(); s.sMin = Math.min(...sc); }
     return true;
   }
+  // a big merged mesh (props.js bakes all static furniture of a material into one: fridge body, cupboards, stove...) is cut into
+  // 0.4 m slabs across its local z (every x-row keeps all its triangles, so the inside test stays right) and each slab is a shape
+  function slabs(o, name) {
+    const g = o.geometry, A = g.attributes.position, I = g.index ? g.index.array : null, nt = I ? I.length / 3 : A.count / 3; if (nt < 4) return;
+    const bb = g.boundingBox, Z0 = bb.min.z, n = Math.max(1, Math.ceil((bb.max.z - Z0) / .4)), dz = (bb.max.z - Z0) / n; const lists = Array.from({ length: n }, () => []);
+    for (let t = 0; t < nt; t++) { let lo = 1e9, hi = -1e9; for (let q = 0; q < 3; q++) { const z = A.getZ(I ? I[t * 3 + q] : t * 3 + q); lo = Math.min(lo, z); hi = Math.max(hi, z); }
+      for (let k = Math.max(0, Math.floor((lo - Z0) / dz)); k <= Math.min(n - 1, Math.floor((hi - Z0) / dz)); k++) lists[k].push(t); }
+    // inside a slab, pieces with an empty gap between them along x (separate pieces of furniture) become separate shapes:
+    // no surface crosses the gap, so the inside test is unaffected, and the grids stay small (phone memory)
+    const parts = []; lists.forEach((L, k) => { const ex = L.map(t => { let lo = 1e9, hi = -1e9; for (let q = 0; q < 3; q++) { const x = A.getX(I ? I[t * 3 + q] : t * 3 + q); lo = Math.min(lo, x); hi = Math.max(hi, x); } return [lo, hi, t]; }).sort((a, b) => a[0] - b[0]);
+      let cur = null, end = -1e9; for (const [lo, hi, t] of ex) { if (!cur || lo > end + .01) { cur = []; parts.push([k, cur]); end = hi; } else end = Math.max(end, hi); cur.push(t); } });
+    parts.forEach(([k, L], pi) => { if (L.length < 4) return; const arr = new Float32Array(L.length * 9); let w = 0; const b = new THREE.Box3();
+      for (const t of L) for (let q = 0; q < 3; q++) { const v = I ? I[t * 3 + q] : t * 3 + q; const x = A.getX(v), y = A.getY(v), z = A.getZ(v); arr[w++] = x; arr[w++] = y; arr[w++] = z; b.expandByPoint(V(x, y, z)); }
+      b.min.z = Math.max(b.min.z, Z0 + k * dz); b.max.z = Math.min(b.max.z, Z0 + (k + 1) * dz); if (b.max.z - b.min.z < .003) return;
+      const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(arr, 3)); sg.boundingBox = b;
+      wb.copy(b).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) return; add(o, sg, o.matrixWorld, name + '/z' + k + '.' + pi); });
+  }
   const clsOf = name => SOFT.test(name) ? (/pillow/i.test(name) ? 3 : 2) : SEAT.test(name) ? 1 : 0;
   function add(obj, geo, mw, name, inst = -1) {
     if (!geo.boundingBox) geo.computeBoundingBox(); const t = geo.type, pr = geo.parameters || {};
@@ -78,7 +95,8 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       return;
     }
     wb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) return;
-    const sz = wb.getSize(V()); if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4) { skipped['big ' + name] = 1; return; }
+    const sz = wb.getSize(V()); if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4 && Math.hypot(sz.x, sz.y, sz.z) < 14) { slabs(o, name); return; }
+    if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4) { skipped['big ' + name] = sz.toArray().map(v => +v.toFixed(1)).join('x') + ' @' + wb.getCenter(V()).toArray().map(v => +v.toFixed(1)).join(','); return; }
     add(o, o.geometry, o.matrixWorld, name);
   });
 
@@ -435,7 +453,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     let t = now(), c = 0; for (let q = 0; q < n; q++) { frameNo++; skin(); gather(); for (const P of PTS) { const L = LC[P.chain]; if (!L.length && !nearTrunk[P.chain]) continue; if (probe(P.p, P.part, false, L) > 0) c++; } } r.fast = +((now() - t) / n).toFixed(3); r.fastHits = c / n; r.lists = LC.map(l => l.length).join(","); r.trunk = nearTrunk.map(Number).join(""); { let t2 = now(); for (let q = 0; q < n; q++) for (const P of PTS) trunkDepth(P.p); r.trunkMs = +((now() - t2) / n).toFixed(3); } r.names = [...new Set(LC.flat().map(k => S[k].name))].slice(0, 8).join("|");
     t = now(); c = 0; for (let q = 0; q < n; q++) { frameNo++; skin(); for (const P of PTS) if (probe(P.p, P.part, false) > 0) c++; } r.old = +((now() - t) / n).toFixed(3); r.oldHits = c / n;
     t = now(); for (let q = 0; q < n; q++) skin(); r.skin = +((now() - t) / n).toFixed(3); return r; }
-  const api = { bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
+  // what the body is in right now (no allowances): { shape name: deepest cm }
+  function touching() { skin(); const r = {}; for (const P of PTS) { const kk = key(Math.floor(P.p.x / CS), Math.floor(P.p.y / CS), Math.floor(P.p.z / CS)); const a = G.get(kk); if (!a) continue;
+      for (const n of a) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, P.p); if (d > .005) { const k = s.name + ':' + P.part; r[k] = Math.max(r[k] || 0, +(d * 100).toFixed(1)); } } } return r; }
+  const api = { touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
     depthAt: (x, y, z) => probe(V(x, y, z), 7, false), navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
   return api;
 }
