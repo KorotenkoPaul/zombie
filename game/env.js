@@ -360,7 +360,9 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
    if(LS)cA.add(cC.copy(LS.color).multiplyScalar(LS.intensity*.3));c.copy(cA).multiplyScalar(PH.leafK/Math.PI);}}
  // the grade folded into three's OutputPass (one full-screen pass less): same uniforms, run right after tone mapping + sRGB
  env.foldGrade=op=>{const gu=env.gradePass.uniforms;for(const k of ['sat','con','lift','warm','vig','night','morn','gOn'])op.uniforms[k]=gu[k];
-  let fs=op.material.fragmentShader;fs=fs.replace('uniform sampler2D tDiffuse;','uniform sampler2D tDiffuse;uniform float sat,con,vig,night,morn,gOn;uniform vec3 lift,warm;float hi0(float l){return smoothstep(.25,.8,l);}');
+  op.uniforms.tFog={value:null};op.uniforms.fogOn={value:0};env.outU=op.uniforms;
+  let fs=op.material.fragmentShader;fs=fs.replace(/gl_FragColor\s*=\s*texture2D\(\s*tDiffuse\s*,\s*vUv\s*\);/,'gl_FragColor=texture2D(tDiffuse,vUv);if(fogOn>.5){vec4 fg=texture2D(tFog,vUv);gl_FragColor.rgb=fg.rgb+gl_FragColor.rgb*(1.-fg.a);}/* half-res fog (premultiplied), merged here on phones */');
+  fs=fs.replace('uniform sampler2D tDiffuse;','uniform sampler2D tDiffuse,tFog;uniform float fogOn,sat,con,vig,night,morn,gOn;uniform vec3 lift,warm;float hi0(float l){return smoothstep(.25,.8,l);}');
   const e=fs.lastIndexOf('}');fs=fs.slice(0,e)+'if(gOn>.5){vec3 x=gl_FragColor.rgb;'+GRADE_BODY+'x+=(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.;/* dither after the 8-bit grade: no banding in the sky and fog gradients */gl_FragColor.rgb=clamp(x,0.,1.);}\n}';op.material.fragmentShader=fs;op.material.needsUpdate=true;env.gradeFolded=true;};
  env.noiseTex=fogNoise;for(const m of farRings)m.material.uniforms.tNoise.value=fogNoise;/* the baked 128px tiling noise (R,G), also used by the sky clouds in index.html */
  env.sheets=sheets;env.puffs=puffs;window.__env=env;

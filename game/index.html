@@ -915,6 +915,8 @@ const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPas
 // morning fog bank are drawn into a quarter-pixel target and blended over the frame once. __fogpass.setEnabled(false) = old way.
 const FOGPASS=await (async()=>{try{const {Pass,FullScreenQuad}=await import('three/addons/postprocessing/Pass.js');const fp=(await import(new URL(ASSET+'fogpass.js',document.baseURI).href)).createFogPass({THREE,renderer,scene,camera,composer,FullScreenQuad,Pass,MOBILE});
  composer.insertPass(fp.pass,1);fp.add([...(MOBILE?rays.children:[]),...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),...((typeof FOGBANK!=='undefined'&&FOGBANK.sheets)||[])]);return fp;}catch(e){console.error('fogpass',e);return null;}})();window.__fogpass=FOGPASS;
+// [ENV] phones: the output pass composites the half-res fog itself (one full-screen pass less) whenever nothing runs between them
+if(FOGPASS&&MOBILE&&ENV.outU)FOGPASS.merge=()=>{if(DOF.active||window.__fogMergeOff)return false;ENV.outU.tFog.value=FOGPASS.fogTexture;ENV.outU.fogOn.value=1;return true;};
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
 // [PERF] GPU cost finder (perf.js; 5 quick taps on the clock or ?perfdebug): each test switches ONE thing off.
@@ -1026,7 +1028,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  if(!camOv)DOF.update(dt,rig.focusDist);
  if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
- hud();if(noPost)renderer.render(scene,camera);else composer.render();
+ hud();if(ENV.outU)ENV.outU.fogOn.value=0;/* the fog pass turns it on when it hands its fog to the output pass */if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
 // [PERF] phones: objects smaller than 20 cm stop casting the sun/moon shadow (~100 of 256 casters, each one a draw call
