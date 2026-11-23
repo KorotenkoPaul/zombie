@@ -791,6 +791,10 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  hud();if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
+// [PERF] phones: objects smaller than 20 cm stop casting the sun/moon shadow (~100 of 256 casters, each one a draw call
+// in the shadow pass; their shadow is a few texels of a 1024 map over 24 m). They still receive shadows. Runs again later
+// for things built after loading.
+if(MOBILE){const _b=new THREE.Box3(),_v=V();const tiny=()=>{let n=0;scene.traverse(o=>{if(!o.isMesh||!o.castShadow||o.isInstancedMesh||o.isSkinnedMesh||o.userData.keepShadow)return;_b.setFromObject(o);_b.getSize(_v);if(Math.max(_v.x,_v.y,_v.z)<.2){o.castShadow=false;n++;}});return n;};PERF.tinyCasters=tiny();setTimeout(()=>{PERF.tinyCasters+=tiny();},8000);}
 // [PERF] phones start at pixel ratio 1.5 and climb to 2.2 while frames keep vsync (perf.js)
 if(MOBILE)PERF.preset([PX[1],PX[2],PX[3]]);
 resize();hud();$('load').classList.add('hide');PERF.openDebugWhenReady();

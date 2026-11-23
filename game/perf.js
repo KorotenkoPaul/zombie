@@ -150,6 +150,7 @@ export function createPerf({ renderer, MOBILE }) {
   };
   P.openDebugWhenReady = () => { if (/[?&#]perfdebug/.test(location.href)) P.debugPanel(); };
 
+  P.renderer = renderer;
   window.__perf = P;
   return P;
 }
