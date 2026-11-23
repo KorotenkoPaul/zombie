@@ -1,0 +1,11 @@
+<meta charset="utf-8"><body style="margin:0;background:#bbb">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
+const names=(new URLSearchParams(location.search).get('n')).split(',');const dir=new URLSearchParams(location.search).get('d')||'o';
+const R=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});R.setSize(1024,1024);R.outputColorSpace=THREE.SRGBColorSpace;R.toneMapping=THREE.ACESFilmicToneMapping;document.body.appendChild(R.domElement);R.setScissorTest(true);
+const L=new GLTFLoader();L.setMeshoptDecoder(MeshoptDecoder);const cols=Math.ceil(Math.sqrt(names.length));const cell=1024/cols;
+let i=0;for(const n of names){const g=await L.loadAsync(dir+'/'+n+'.glb');const s=new THREE.Scene();s.background=new THREE.Color(0xcccccc);s.add(new THREE.HemisphereLight(0xffffff,0x666666,2));const d=new THREE.DirectionalLight(0xffffff,2);d.position.set(2,3,4);s.add(d);
+ const o=g.scene;const b=new THREE.Box3().setFromObject(o);const c=b.getCenter(new THREE.Vector3()),z=b.getSize(new THREE.Vector3());s.add(o);const cam=new THREE.PerspectiveCamera(35,1,.01,100);const r=Math.max(z.x,z.y,z.z);cam.position.copy(c).add(new THREE.Vector3(r*.9,r*.6,r*1.6));cam.lookAt(c);
+ const x=(i%cols)*cell,y=1024-(Math.floor(i/cols)+1)*cell;R.setViewport(x,y,cell,cell);R.setScissor(x,y,cell,cell);R.render(s,cam);window['sz_'+n]=z.toArray();i++;}
+window.done=true;</script>

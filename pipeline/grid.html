@@ -1,0 +1,18 @@
+<meta charset="utf-8"><body style="margin:0">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
+const R=new THREE.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});R.setSize(1000,1100);R.outputColorSpace=THREE.SRGBColorSpace;document.body.appendChild(R.domElement);
+const L=new GLTFLoader();L.setMeshoptDecoder(MeshoptDecoder);const g=await L.loadAsync('o/tree.glb');const t=g.scene;
+const H=18;let b=new THREE.Box3().setFromObject(t);const k=H/(b.max.y-b.min.y);t.scale.setScalar(k);b=new THREE.Box3().setFromObject(t);const c=b.getCenter(new THREE.Vector3());
+// centre the trunk base at origin: use slice at y=2m
+t.position.set(-c.x,-b.min.y,-c.z);t.updateMatrixWorld(true);
+const s=new THREE.Scene();s.background=new THREE.Color(0xeeeeee);s.add(t);s.add(new THREE.HemisphereLight(0xffffff,0x888888,2.5));
+const side=new URLSearchParams(location.search).get('side')==='1';
+const cam=new THREE.OrthographicCamera(-10,10,19.5,-.5,-50,50);if(side){cam.position.set(10,0,0);}else cam.position.set(0,0,10);cam.lookAt(0,0,0);cam.position.y=0;
+const gm=new THREE.LineBasicMaterial({color:0xff0000,transparent:true,opacity:.35,depthTest:false});const pts=[];for(let x=-10;x<=10;x++){pts.push(x,0,0,x,20,0);}for(let y=0;y<=20;y++)pts.push(-10,y,0,10,y,0);const gg=new THREE.BufferGeometry();gg.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));const gl=new THREE.LineSegments(gg,gm);if(side)gl.rotation.y=Math.PI/2;gl.renderOrder=9;s.add(gl);
+R.render(s,cam);
+// trunk slices: raycast from front & back & sides to measure trunk extent near the axis
+const rc=new THREE.Raycaster();const out=[];
+for(let y=.5;y<=13;y+=.5){const row={y};for(const [nm,o,d] of [['zF',[0,y,20],[0,0,-1]],['zB',[0,y,-20],[0,0,1]],['xR',[20,y,0],[-1,0,0]],['xL',[-20,y,0],[1,0,0]]]){rc.set(new THREE.Vector3(...o),new THREE.Vector3(...d));const h=rc.intersectObject(t,true)[0];row[nm]=h?+(nm[0]=='z'?h.point.z:h.point.x).toFixed(2):null;}out.push(row);}
+window.info={k,box:[b.min.toArray(),b.max.toArray()],c:c.toArray(),out};window.done=true;</script>

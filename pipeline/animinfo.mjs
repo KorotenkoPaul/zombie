@@ -1,0 +1,5 @@
+import { NodeIO } from '@gltf-transform/core';import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+for(const f of ['hero.glb','zombie.glb']){const io=new NodeIO().registerExtensions(ALL_EXTENSIONS);const doc=await io.read(f);const r=doc.getRoot();
+console.log('==',f,'nodes:',r.listNodes().map(n=>n.getName()).slice(0,70).join(' '));
+for(const a of r.listAnimations()){let info=[];for(const ch of a.listChannels()){const n=ch.getTargetNode().getName();if(ch.getTargetPath()==='translation'&&/Hips/i.test(n)){const o=ch.getSampler().getOutput().getArray();let mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];for(let i=0;i<o.length;i+=3)for(let k=0;k<3;k++){mn[k]=Math.min(mn[k],o[i+k]);mx[k]=Math.max(mx[k],o[i+k]);}info.push(n+' x'+mn[0].toFixed(2)+'..'+mx[0].toFixed(2)+' y'+mn[1].toFixed(2)+'..'+mx[1].toFixed(2)+' z'+mn[2].toFixed(2)+'..'+mx[2].toFixed(2));}}
+ const dur=Math.max(...a.listChannels().map(c=>{const i=c.getSampler().getInput().getArray();return i[i.length-1];}));console.log(a.getName(),'dur',dur.toFixed(2),info.join(' | '));}}
