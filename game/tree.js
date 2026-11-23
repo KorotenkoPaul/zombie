@@ -209,14 +209,14 @@ export function buildTree(THREE, o) {
     for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i] - AX, P[i + 2] - AZ), y = P[i + 1]; if ((d > 3.6 && y > 4.5 && (Math.abs(P[i] - AX) > 3 || y > 15)) || y > 15.5) cand.push([P[i], y, P[i + 2], d + y * 0.35]); }
     cand.sort((a, b) => b[3] - a[3]);
     const picked = [];
-    for (const c of cand) { if (picked.length >= (o.leafClumps || 24)) break; if (picked.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.8)) continue; picked.push(c); }
+    for (const c of cand) { if (picked.length >= (o.leafClumps || 40)) break; if (picked.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.3)) continue; /* Pavel: a fuller crown */ picked.push(c); }
     for (const c of picked) leafSpots.push({ p: V(c[0], c[1] + 0.3, c[2]), s: c[1] > 15 ? rnd(2.3, 2.9) : rnd(1.6, 2.2) });
     // the crown: the photo's top is a full canopy of big clumps with only small sky gaps
     const top = [];
     for (let i = 0; i < P.length; i += 3) if (P[i + 1] > 15.2 && Math.abs(P[i] - AX) < 7.5) top.push([P[i], P[i + 1], P[i + 2]]);
     for (let j = top.length - 1; j > 0; j--) { const r = Math.floor(rnd(0, j + 1)); [top[j], top[r]] = [top[r], top[j]]; }
     const crown = [];
-    for (const c of top) { if (crown.length >= 10) break; if ([...crown, ...picked].some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.2)) continue; crown.push(c); }
+    for (const c of top) { if (crown.length >= 16) break; if ([...crown, ...picked].some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 1.9)) continue; crown.push(c); }
     for (const c of crown) leafSpots.push({ p: V(c[0], c[1] + 1.0, c[2] + 0.4), s: rnd(2.3, 2.9) });
   }
   // roofs (critic T15): a limb crossing a roof is lifted clear of it as a whole (a smooth height field over the
@@ -357,7 +357,9 @@ export function buildTree(THREE, o) {
     }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\nfloat ff=smoothstep(.18,.6,vFacing)*smoothstep(.8,3.,vDep);diffuseColor.a*=step(length(vMapUv-.5)*2.,ff*1.3);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
-  const total = MOB(o) ? (o.leafCards || 760) : 2800; // [PERF] phones: fewer, slightly bigger cards (same coverage, less overdraw)
+  // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
+  // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
+  const total = MOB(o) ? (o.leafCards || 230) : 900;
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
   const qg = MOB(o) ? new THREE.PlaneGeometry(1, 1, 2, 2) : new THREE.PlaneGeometry(1, 1, 3, 3); // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
@@ -382,7 +384,7 @@ export function buildTree(THREE, o) {
         : rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
       const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
-      sc.setScalar(MOB(o) ? rnd(1.55, 2.3) : rnd(1.25, 2.0));
+      sc.setScalar(MOB(o) ? rnd(3.4, 4.4) : rnd(3.2, 4.2));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       // phones have no inner cards, so some shell cards take the darker inner shade to keep the clumps' depth
       const rs = MOB(o) && rnd(0, 1) < 0.35 ? rnd(0.4, 0.78) : rr;
@@ -403,7 +405,7 @@ export function buildTree(THREE, o) {
   // A few leaf cards are rendered once into a small atlas (two sub-clumps, lit top/front, with the odd autumn-yellow
   // leaf), and each clump gets a handful of camera-facing quads with it: far less overlap than hundreds of cards, the
   // same full silhouette. Quads turn to the camera in the vertex shader, so they never show as flat planes edge-on.
-  if (MOB(o) && o.renderer && o.leafImpostors !== false) { // (2026-11-23 the first try baked off-atlas at the phone's pixel ratio: no foliage)
+  if (MOB(o) && o.renderer && o.leafImpostors === true) { // off: Pavel wants the crisp big leaves of the photo, not baked clumps // (2026-11-23 the first try baked off-atlas at the phone's pixel ratio: no foliage)
     try {
       const R2 = o.renderer, S = 256, rt = new THREE.WebGLRenderTarget(S * 2, S, { depthBuffer: true });
       rt.texture.generateMipmaps = true; rt.texture.minFilter = THREE.LinearMipmapLinearFilter; rt.texture.colorSpace = leafT.colorSpace;
