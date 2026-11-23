@@ -115,9 +115,9 @@ const L = {
     act: (h, e) => nightW(h, 21, 4.6, 1) * (.2 + 1.1 * (e.anx ?? .3)) * (1 - .4 * e.rain),
     bout: [1, 1], rest: [70, 170] },
   // ---- the pond (all only when the camera is within ~45 m of it) ----
-  lap: { clips: ['slosh_a', 'slosh_b'], n: 3, place: 'pond', vol: .1, pitch: .06, p: 1, pondy: 1, rate: .62, rev: .15,
+  lap: { clips: ['slosh_a', 'slosh_b'], n: 3, place: 'pond', vol: .08, pitch: .06, p: 1, pondy: 1, rate: .62, rev: .15,
     act: (h, e) => SEASON_K(e.season, { winter: .1 }) * (.25 + e.wind),                       // little waves when the wind blows
-    texture: [.6, 1.2], gap: [1.2, 3.5], rest: [1, 3] },
+    texture: [.6, 1.2], gap: [3, 8], rest: [1, 3] },   // mix review: was every 1-3 s, read as a constant wash
   fish: { clips: ['drip_bucket_b', 'drip_bucket_a'], n: 1, place: 'pond', vol: .3, pitch: .05, p: .9, pondy: 1, rate: .5, rev: .3,
     act: (h, e) => (win(h, 5.5, 20.5, 1) + .4 * nightW(h, 20.5, 5.5, 1)) * SEASON_K(e.season, { winter: 0, autumn: .6 }),
     bout: [1, 1], rest: [25, 70] },
@@ -132,7 +132,7 @@ const L = {
     act: (h, e) => (nightW(h, 18.5, 6.5, 1)) * SEASON_K(e.season, { autumn: 1, winter: .2, summer: .15, spring: 0 }) * (1 - .6 * e.rain),
     bout: [1, 2], gap: [5, 12], rest: [35, 90] },
   damp: { clips: ['wetdrip_a', 'drip_a'], n: 3, place: 'house', vol: .2, pitch: .12, p: 1,
-    act: (h, e) => SEASON_K(e.season, { autumn: .8, winter: .1, summer: 0, spring: .3 }) * (1 - e.rain),
+    act: (h, e) => SEASON_K(e.season, { autumn: .8, winter: .1, summer: 0, spring: .3 }) * (1 - e.rain) * (.35 + .65 * nightW(h, 19, 9, 1.5)),   // dew drips mostly at night and in the morning
     texture: [1.2, 3], gap: [5, 16], rest: [6, 16] },
   coldwind: { clips: ['windw_a', 'windw_b'], n: 2, place: 'far', vol: .16, pitch: .06, p: 1,
     act: (h, e) => SEASON_K(e.season, { winter: 1, autumn: .35, summer: 0, spring: 0 }) * (.6 + .4 * nightW(h, 19, 6, 2)),
@@ -349,6 +349,7 @@ export function createAudio(ctx) {
     src.start(t, off, dur);
     const v = { src, g, end: t + realDur, name };
     LOG.push([+now.toFixed(1), name]); if (LOG.length > 60) LOG.shift();
+    if (window.__audioTrace) window.__audioTrace.push([+t.toFixed(2), name, +(o.gain || 0).toFixed(3), +dist.toFixed(1), o.indoor ? 1 : 0]);   // mix QA only
     voices.add(v); src.onended = () => { voices.delete(v); try { out.disconnect(); g.disconnect(); } catch (e) {} };
     return v;
   }
@@ -374,6 +375,7 @@ export function createAudio(ctx) {
   function call(k, I, act, env) {
     const S = L[k]; let name = pick(S.clips); if (S.uneasy && name === S.last) name = pick(S.clips); S.last = name;
     const buf = getBuf(name); if (!buf) return;
+    if (!S.texture && !S.uneasy) lastLife = now;
     if (S.uneasy) { const q = I.pos; emit('unease', { name, pos: [q.x, q.y, q.z], anx: env.anx ?? 0 }); }
     const rate = I.pitch * (1 + rnd(-.025, .025));
     const o = { pos: I.pos, rate: rate * (S.rate ?? 1), gain: S.vol * rnd(.6, 1.05) * (.55 + .45 * Math.min(1, act)), rev: S.rev, far: S.place === 'veryfar', ref: S.place === 'house' ? 4 : 10 };
@@ -390,7 +392,12 @@ export function createAudio(ctx) {
   // Each individual is either in a bout (calls spaced by `gap`) or resting. A resting creature starts a bout
   // as a Poisson process whose rate follows its activity right now, so a frog that was quiet at dusk joins
   // in as soon as the night comes, and nothing waits on a long timer drawn when it was still day.
+  // lull guard (mix review): the forest never goes quiet for long. After LULL seconds without a creature call every
+  // active layer's hazard rises (up to x8) until something answers, so sparse autumn middays and the dusk hand-over stay alive.
+  let lastLife = 0;
+  const MUSIC_LVL = .2;   // mix review: was .5, the music box sat ~15 dB over the dusk forest
   function tickLayers(h, env, dt) {
+    const LULL = h > 20.5 || h < 5 ? 6 : 7, lull = Math.min(8, 1 + 3 * Math.max(0, now - lastLife - LULL) / LULL);
     const morning = clamp01(win(h, 4.5, 9.5, 1)) * kick;
     { const P = pondGeo(), c = ctx.camera ? ctx.camera.position : P0; pondFar = Math.hypot(P.x - c.x, P.z - c.z) > 45; }
     for (const k in L) {
@@ -408,7 +415,7 @@ export function createAudio(ctx) {
         }
         if (I.bout > 0) { if (now >= I.next) { call(k, I, act, env); I.bout--; I.next = now + rnd(S.gap[0], S.gap[1]); } continue; }
         if (now < I.next) continue;                                         // a short breather after a bout
-        if (Math.random() < dt * Math.min(2, act * I.lazy) / meanRest) {
+        if (Math.random() < dt * Math.min(2, act * I.lazy * (S.uneasy ? 1 : lull)) / meanRest) {
           I.bout = Math.round(rnd(S.bout[0], S.bout[1] + .49));
           call(k, I, act, env); I.bout--; I.next = now + (I.bout > 0 ? rnd(S.gap[0], S.gap[1]) : rnd(S.rest[0], S.rest[1]) * .35);
         }
@@ -718,8 +725,9 @@ export function createAudio(ctx) {
       if (dusk && mDuskDay !== day && Math.random() < .7) { start = true; mDuskDay = day; }
       else if (quietMoment(h) && Math.random() < dt / 90) start = true;                // in a quiet moment: about once in a minute and a half
       if (!start) return;
+      if (window.__audioTrace) window.__audioTrace.push([+A.currentTime.toFixed(2), 'MUSIC', 0, 0, 0]);
       musicGraph(); mSession = now + rnd(60, 120); mNext = now + 1.5; mPhrase = null;
-      holdGain(mBus.gain, t); mBus.gain.linearRampToValueAtTime(.5, t + 6);
+      holdGain(mBus.gain, t); mBus.gain.linearRampToValueAtTime(MUSIC_LVL, t + 6);
       padChord(t + .5, pick(CHORDS), rnd(14, 20)); mPad = now + rnd(12, 18);
       return;
     }
@@ -755,7 +763,7 @@ export function createAudio(ctx) {
     on: (k, f) => { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     setSeason: s => { season0 = s || null; populate(Object.keys(L), { season: season(), rain: 0, wind }); },
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
-      const ext = { toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
+      const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
     play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState,
   };

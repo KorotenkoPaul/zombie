@@ -45,3 +45,12 @@ Debug: `__treedress.stats()`.
 - Soaked bark (`barkU.damp`): soaks in ~25 s of rain, dries over ~4 min; dark runs down the bark that shrink as it dries
   (furrows, streaks, foot hold water longest). Gloss only while it rains. One extra texture read, only while damp.
 - Frost on root tops: not done, Environment exposes no temperature.
+
+## Round 6 (junctions, beams, frost)
+- Bark geometry gets a `tdJ` attribute (built once from the mesh): x = crease (concave at ~0.5 m scale: a Laplacian-smoothed copy
+  of the surface moves outwards), y = collar ring within 0.65 m of a crease, z = near a beam. Crotches darker, squeezed folds,
+  moss packed in; collars get deeper, paler-ridged folds.
+- Beam bites: ends of beams/posts (blockers) within 0.35 m of the bark -> up to 72 contacts in `tdBite[]`, looped per pixel only
+  where tdJ.z > 0. Crushed dark bark under the end, a callus roll round it (normal), rubbed grey ridges without moss, a water stain below.
+- Frost: `__weather.state().temp` (Wind). Target = (5.3 - temp) / 1.1 on dry nights (~1-5 am), forms over 90 s, melts in 60 s.
+  A light dusting on root-top ridges near the ground, not snow.

@@ -597,6 +597,10 @@ const {createLights}=await import(new URL(ASSET+'lights.js',document.baseURI).hr
 const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},windows:WINS});window.__lights=LIGHTS;
 // [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
 const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
+// [WIND] autumn particles (game/particles.js): dust in the lamplit rooms, the hero's breath on cold mornings
+const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).createParticles({THREE,scene,wind:WIND,lights:LIGHTS,rooms:LEAF_AVOID,hero:{head:()=>heroBones&&heroBones.Head,mouth:()=>window.__hero&&window.__hero.mouth?window.__hero.mouth():null},MOBILE});window.__particles=PARTS;
+// [WIND] the house answers the wind (game/housewind.js): the landing lantern swings on its chain, the telescope shivers in gusts
+const HOUSEWIND=(await import(new URL(ASSET+'housewind.js',document.baseURI).href)).createHouseWind({wind:WIND,scene,ladders:[{id:'ladder-ground',x:0,z:4.0,y0:0,y1:LC+.05},{id:'ladder-deck',x:1.35,z:3.15,y0:BD,y1:DK+.05}]});window.__housewind=HOUSEWIND;
 // [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
 const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
 // [WIND] morning fog bank rolling in from the forest on the breeze (game/fogbank.js)
@@ -801,14 +805,14 @@ $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
 // ================= post & camera =================
-const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;composer.addPass(new OutputPass());composer.addPass(ENV.gradePass);
+const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;{const OUTP=new OutputPass();ENV.foldGrade(OUTP);composer.addPass(OUTP);}/* the colour grade runs inside the output pass (env.js foldGrade) */
 // [PERF] shared quality governor + FPS readout (game/perf.js). Steps run cheapest-looking first and undo when the phone keeps up again.
 const PERF=createPerf({renderer,MOBILE});const DPR=PR;
 // pixel ratio ladder: each step is one rung down (capped by the screen's own density)
 const prStep=(hi,lo,order)=>PERF.addStep('px',()=>{const l=Math.min(lo,DPR);if(PR<=l+.01)return false;PR=l;renderer.setPixelRatio(PR);resize();},()=>{PR=Math.min(hi,DPR);renderer.setPixelRatio(PR);resize();},order);
 const PX=[prStep(2.5,2.2,1),prStep(2.2,2,2),prStep(2,1.75,20),prStep(1.75,1.5,55),prStep(1.5,1.3,60),prStep(1.3,1.1,65),prStep(1.1,1,70)];
 // [WIND] weather quality steps: dry window glass, half the rain streaks, fewer splashes, fewer falling leaves
-[WIND,RAIN].forEach(m=>m.addPerfSteps&&m.addPerfSteps(PERF));
+[WIND,RAIN,PARTS].forEach(m=>m.addPerfSteps&&m.addPerfSteps(PERF));
 PERF.addStep('bloom',()=>{if(!bloom.enabled)return false;bloom.enabled=false;},()=>{bloom.enabled=true;},10);
 if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),15);PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),50);}
 if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LIGHTS.winGlow(true),45);
@@ -875,7 +879,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
- WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);
+ WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
  RAIN.update(dt,T,rainK,scene.fog.color);
  if(AUDIO)AUDIO.update(dt);
  // --- spawn ---
