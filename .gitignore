@@ -6,3 +6,6 @@ tests/planks/*.jpg
 tests/planks/*.png
 tests/planks/*.log
 tests/planks/*.txt
+pipeline/planks/*.png
+pipeline/planks/log_*
+pipeline/planks/prev*.jpg
