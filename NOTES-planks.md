@@ -48,3 +48,8 @@ Code: index.html, block "wood: every board is its own body" (`plankShader`, `bev
 - props.js workTops(M.woodLight): a world-space layer on the upward faces of the counter, workbench and side bench tops (WTOPS, set by setTop() after shiftRooms). It adds knife cuts, saw kerfs, dents, scorch rings, oil/tea stains, water-darkened wood by the sink, paint spots, pencil ticks, and a hand-worn front edge. Fine marks bend the normal and fade to a mean darkening at distance. It chains onto varyWood, and the proxMat clone chains onto it.
 - Walls: wallBack/wallSide(..., out) put each plank at its own depth (pushed inward ≤1 cm), sometimes split in two at a random height (cutRun), with a batten over every joint on the outside. Battens carry seed +200/+300 (bat), and the shader darkens their inner face, seen through the slot.
 - Floors: runs are split into 0.8–1.9 m boards with staggered butt joints. Lift is capped at 3.5 mm and roll at ±.02 so rugs don't get poked through.
+
+## Round 9: slates + ladder rungs
+- Slates: a soft shadow band on each slate's top just under the butt of the slate above (vDn = downslope sign per instance), so the overlap reads as depth.
+- Wooden ladder rungs: board opt rung → seed +400 (wall flag excludes ≥400). The middle of the top and the front edge are worn pale and smooth, and the ends are grimy.
+- Rope-ladder rungs: rungWear(rungMat) samples the dark wood scan along the stick and adds bark scraps near the ends, a polished middle and grime by the lashings. Rungs are 9-sided with varied radius and taper. Same draw calls.
