@@ -17,3 +17,7 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Oak limbs: `windBranch(p, trunkAxis)` on the bark (tree.js) and added to every leaf card at its centre, so leaves stay on their branch. Zero within 5.5 m of the trunk and below 14 m (house), ~3 cm in a breeze, ~15 cm in a strong gust at the far limbs.
 - `uDrift` uniform: metres the air has carried things (world xz). Fog: Environment does its own wind drift in env.js (windU).
 - No smoke exists yet (no chimney/oven smoke); no outdoor hanging plants, quilts on railings or lantern chains. Rope ladders: Tree & house (windRope).
+
+## Round 3 (2026-11-23)
+- game/smoke.js: thin stove smoke (GPU points, loop per puff). Source = `__props.chimneyTop` (Vector3, pipe opening, world) — Props adds the pipe; hidden until then. Amount follows `LIGHTS.level('oven')` (ramps ~6 s up, ~12 s down); wind bends the plume. Test: `__smoke.force(1)` / `force(null)`.
+- Sound events: `__wind.on('gust'|'creak'|'mode', fn)`, `__wind.rustle()` 0..1, `__wind.level()`. Creaks: only when wind > .45, every 5-12 s at most, `{strength, pos}`.

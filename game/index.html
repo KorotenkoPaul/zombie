@@ -320,6 +320,8 @@ let TDRESS=null;try{TDRESS=(await import(new URL(ASSET+'treedress.js',document.b
 // every warm light in the house comes from a real source (lanterns, dome lamp, candle, oven fire, trunk door): game/lights.js
 const {createLights}=await import(new URL(ASSET+'lights.js',document.baseURI).href);
 const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},windows:WINS});window.__lights=LIGHTS;
+// [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
+const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
 
 // ================= splinters, dust, fog, rain, fireflies =================
 const SPL=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),boardMat,260);SPL.count=0;SPL.castShadow=true;SPL.frustumCulled=false;{const r=new THREE.InstancedBufferAttribute(new Float32Array(260),1),t=new THREE.InstancedBufferAttribute(new Float32Array(260).fill(.2),1);SPL.geometry.setAttribute('aRow',r);SPL.geometry.setAttribute('aTile',t);}scene.add(SPL);
@@ -522,7 +524,7 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
- WIND.update({dt,T,rainK});
+ WIND.update({dt,T,rainK});SMOKE.update(dt,T,scene.fog.color);
  rain.m.opacity=rainK*.5;if(rainK>.02){const a=rain.pos;for(let i=0;i<rain.n;i++){const j=i*6;a[j+1]-=dt*14;a[j+4]-=dt*14;a[j]+=dt*.7;a[j+3]+=dt*.7;if(a[j+4]<0){const x=rnd(-16,16),y=rnd(20,24),z=rnd(-6,10);a.set([x,y,z,x+.04,y-.5,z],j);}}rain.l.geometry.attributes.position.needsUpdate=true;}
  if(amb){const wl=WIND.level();amb.wind.gain.value=(.006+nightK*.006)+.014*Math.min(1.6,wl);amb.rain.gain.value=rainK*.05;}
  // --- spawn ---

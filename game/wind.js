@@ -29,6 +29,8 @@
 //   set(mode)    force 'calm' | 'breeze' | 'windy' (or 'auto' to let the weather run again)
 //   gust(amp)    send one gust through the scene now
 //   level()      overall strength at the tree, 0..~2 (for sound, fog drift, ...)
+//   rustle()     0..1 how loud the leaves should rustle now
+//   on('gust'|'creak'|'mode', fn) -> off()   events for sound: gust start/end at the tree, branch creaks (strength, pos), weather spell changes
 
 const MODES = {
   calm:   { base: [0.03, 0.1],  dur: [50, 140], gustEvery: 70, gustAmp: [0.15, 0.3] },
@@ -86,6 +88,9 @@ export function createWind(opt = {}) {
   // the legacy scalar (env.js U.wind) still read by old sway code: keep it alive
   const legacy = opt.legacy || null;
   let fall = null; // falling leaves (W.addFallingLeaves)
+  // events for sound and anything else that wants to react (W.on)
+  const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) { try { f(e); } catch (er) { console.error('wind', k, er); } } };
+  let gustIn = false, creakWait = 3, lastMode = 'breeze';
 
   function pickNext() {
     const r = R(); let acc = 0;
@@ -126,6 +131,14 @@ export function createWind(opt = {}) {
       if (gust) setV(U.uGust, gust.front, gust.inv, gust.amp, gust.tail); else setV(U.uGust, -1e4, 0.1, 0, 10);
       if (legacy) legacy.value = 0.25 + W.level() * 1.1;
       if (fall) fall(dt);
+      // --- events ---
+      if (mode !== lastMode) { emit('mode', { mode, prev: lastMode }); lastMode = mode; }
+      const gt = W.gustAt(0, 0);
+      if (!gustIn && gt > 0.15) { gustIn = true; emit('gust', { amp: gust ? gust.amp : gt, phase: 'start' }); }
+      else if (gustIn && gt < 0.08) { gustIn = false; emit('gust', { phase: 'end' }); }
+      // the old oak creaks under load: rarely in a breeze, now and then when windy, almost surely in a strong gust
+      const s0 = base + gt; creakWait -= dt;
+      if (s0 > 0.45 && creakWait <= 0 && R() < dt * (s0 - 0.4) * 0.9) { creakWait = rr(5, 12); emit('creak', { strength: Math.min(1, (s0 - 0.4) / 1.2), pos: [rr(-7, 7), rr(9, 17), rr(-3, 1)] }); }
     },
 
     gustAt(x, z) {
@@ -140,6 +153,11 @@ export function createWind(opt = {}) {
       return { x: Math.cos(ang) * s, z: Math.sin(ang) * s, s, gust: g };
     },
     level() { return W.sample({ x: 0, z: 0 }).s; },
+    // how loud the leaves should rustle now, 0..1 (the crown, a moment after the gust passes the far trees)
+    rustle() { const s0 = base + W.gustAt(0, 0); return Math.min(1, 0.05 + s0 * 0.55); },
+    // W.on('gust' | 'creak' | 'mode', fn) -> off(). gust: {phase:'start', amp} / {phase:'end'}; creak: {strength 0..1, pos [x,y,z]};
+    // mode: {mode, prev} when the weather spell changes ('calm' | 'breeze' | 'windy')
+    on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
     gust(amp) { startGust(amp); },
