@@ -72,7 +72,7 @@
       if (r > B.r + 3.8 || t[1] > B.yMax + 3.6 || t[1] < groundH(t[0], t[2]) - 0.01) bad('focus-out', { t, r: +r.toFixed(2) });
       if (!isFinite(E) || !isFinite(cp.x)) bad('nan', {});
       if (d.cd < 0.99 || d.cd > d.hardD + 0.05) bad('dist-range', { cd: d.cd });
-      if (orbitRef && (d.hit === 'room' || d.hit === 'wall')) orbitRef.room = true;
+      if (orbitRef && (d.hit === 'room' || d.hit === 'wall' || (prev && prev.coll < 0.999 && orbitRef.E === prev.E))) orbitRef.room = true;   // a room hold releasing
       if (orbitRef) {
         if (zin > 0 || d.flyK > 0 || d.cine || d.follow || Math.abs(Math.log(d.cd / orbitRef.cd)) > 0.003) orbitRef = null;
         else if (Math.abs(Math.log(E / orbitRef.E)) > 0.12 && orbitRef.E > 5 && !orbitRef.room)   // zoomed into a room, its walls hold the camera in (intended)

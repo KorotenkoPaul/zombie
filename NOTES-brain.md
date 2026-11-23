@@ -47,3 +47,4 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - Jacket for trips: `__weather.state()` (rain !== 'none', cold / feels < 6 °C), fallback `__wind.raining()`.
 - QA natural day (seed 1, 25 h) after the fixes: turn-back 1 (the opening switch), short stays: fix_shingle 7.6 s (the body ends it; no brain decision in the trace), wash 8.6 s.
 - fix_shingle targets only slates within 1.5 m (horizontal) of a walkable node and 0–2.2 m above it (HH.N); none in reach → the body's default deck spot. Every chore end is logged in __brain.trace as end:<name> with t (seconds at it) and res. Checked: fix_shingle 35–37 s, real slates.
+- `brain.command(name)` for ACTS/JOBS/EXTRA goes through planFor (job → body task e.g. fetch→fetchwater, hunt→trip with lantern at night; leaving-room lamp off 80%, candle, hatch), the last step is marked cmd. Raw body tasks (hatch, switch, …) still go straight to HH.startTask.

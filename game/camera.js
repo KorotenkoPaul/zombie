@@ -84,7 +84,6 @@ export function createCameraRig(o) {
       goal.target.copy(tmp);
     }
     goal.dist = nd; endFly(); atHome = false;
-    if (followOn && point && k > 0) { const f = follow(); if (!f || f.distanceTo(point) > 1.5) stopFollow(); }
   }
   function stopFollow() { fHave = false; if (followOn) { followOn = false; o.onFollow && o.onFollow(false); } }
   // a flight (double tap, home, follow start) taken over by the fingers stops where it is instead of
@@ -149,7 +148,8 @@ export function createCameraRig(o) {
   function setFollow(on) {
     followOn = on; atHome = false;
     if (on) {   // look at him from the open (front) side of the house
-      stopInertia();
+      stopInertia(); if (cine.on) stopCine();
+      const f = follow(); if (f) { goal.target.copy(f); fHave = false; }   // fly straight to him, then trail softly
       goal.dist = clamp(Math.min(goal.dist, 4.2), MIN_D, maxD());
       goal.yaw = home.yaw + Math.round((goal.yaw - home.yaw) / (Math.PI * 2)) * Math.PI * 2;
       goal.pitch = clamp(goal.pitch, 0.1, 0.45);
@@ -200,6 +200,7 @@ export function createCameraRig(o) {
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { dom.setPointerCapture(e.pointerId); } catch (_) {}
     idle = 0; stopCine(); stopInertia(); recording = true;
+    stopFollow();                      // following the hero ends on any touch: the fingers take over from where it is
     if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -221,7 +222,7 @@ export function createCameraRig(o) {
       const d = Math.max(10, Math.hypot(a.x - b.x, a.y - b.y));
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       pinch.mv = (pinch.mv || 0) + Math.hypot(mx - pinch.mx, my - pinch.my);
-      if (!followOn || pinch.mv > 40) pan(mx - pinch.mx, my - pinch.my);
+      pan(mx - pinch.mx, my - pinch.my);
       zoomAt(pinch.d / d, pinch.p);
       pinch.d = d; pinch.mx = mx; pinch.my = my;
       return;
@@ -269,7 +270,7 @@ export function createCameraRig(o) {
   }
 
   dom.addEventListener('wheel', e => {
-    e.preventDefault(); idle = 0; stopCine();
+    e.preventDefault(); idle = 0; stopCine(); stopFollow();
     let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
     const f = Math.exp(clamp(dy * (e.ctrlKey ? 0.01 : 0.0016), -0.35, 0.35)); // ctrlKey = trackpad pinch; one notch at most ±35 %
     zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null);
@@ -278,12 +279,13 @@ export function createCameraRig(o) {
   // Safari desktop trackpad pinch
   let gs = 1;
   dom.addEventListener('gesturestart', e => { e.preventDefault(); gs = 1; });
-  dom.addEventListener('gesturechange', e => { e.preventDefault(); const f = gs / e.scale; gs = e.scale; zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null); });
+  // (on iPhone/iPad a two-finger touch pinch also fires gesture events: the pointer pinch already handles it, so skip)
+  dom.addEventListener('gesturechange', e => { e.preventDefault(); if (ptrs.size >= 2) { gs = e.scale; return; } const f = gs / e.scale; gs = e.scale; zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null); });
   dom.addEventListener('gestureend', e => e.preventDefault());
 
   addEventListener('keydown', e => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
-    idle = 0; stopCine();
+    idle = 0; stopCine(); stopFollow();
     const s = 24;
     if (e.key === 'ArrowLeft') orbit(-s, 0); else if (e.key === 'ArrowRight') orbit(s, 0);
     else if (e.key === 'ArrowUp') orbit(0, -s); else if (e.key === 'ArrowDown') orbit(0, s);
@@ -295,6 +297,8 @@ export function createCameraRig(o) {
   // After CINE_IDLE s without a touch the camera drifts on its own between calm shots (windows, the hero,
   // the roots, the crown), slow push-ins and arcs; any touch hands control straight back from where it is.
   const CINE_IDLE = o.cineIdle || 30;
+  // Pavel: the camera never moves by itself (only the tiny idle breathing). Cinematic idle is opt-in: ?cine=1
+  const CINE_ON = o.cineAuto !== undefined ? !!o.cineAuto : /[?&]cine=1\b/.test(typeof location !== 'undefined' ? location.search : '');
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
   const SHOTS = o.shots || [
     { name: 'bedroom',  t: V3(-2.0, 9.4, 1.6), yaw: 0.25, pitch: 0.10, dist: 5.6, arc: -0.025, push: 0.012 },
@@ -307,6 +311,7 @@ export function createCameraRig(o) {
     { name: 'house',    t: V3(0, 7.4, 2.4), yaw: -0.3, pitch: 0.08, dist: 18, arc: 0.012, push: 0.006 },
   ];
   const cine = { on: false, i: -1, t: 0, hold: 11, shot: null };
+  let cineForce = false;
   function stopCine() {
     if (!cine.on) return;
     cine.on = false; endFly();
@@ -343,7 +348,7 @@ export function createCameraRig(o) {
   }
   function stepCine(dt) {
     if (!cine.on) {
-      if (idle > CINE_IDLE && !ptrs.size && !inert.on && !followOn) { cine.on = true; stopFollowSilent(); o.onCine && o.onCine(true); nextShot(); }
+      if ((CINE_ON || cineForce) && idle > CINE_IDLE && !ptrs.size && !inert.on && !followOn) { cine.on = true; stopFollowSilent(); o.onCine && o.onCine(true); nextShot(); }
       return;
     }
     cine.t += dt;
@@ -603,7 +608,7 @@ export function createCameraRig(o) {
     update, setHome, goHome, setFollow, flyTo, zoomAt, pan, orbit, pick, set, snap,
     get following() { return followOn; },
     get cinematic() { return cine.on ? (cine.shot && cine.shot.name) : null; },
-    cine: (on) => { if (on) { idle = CINE_IDLE + 1; } else { idle = 0; stopCine(); } },
+    cine: (on) => { cineForce = !!on; if (on) { idle = CINE_IDLE + 1; } else { idle = 0; stopCine(); } },
     get dist() { return cur.dist; },
     get focusDist() { return focusU.value; },
     get target() { return cur.target; },
