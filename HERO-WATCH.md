@@ -23,6 +23,7 @@ Severity: **P1** visible at normal play; **P2** noticeable when watching; **P3**
 | W10 | P1 | all work poses (708e4b2) | Systemic lean: in hy_stir and hy_hammer the whole body tilts 25–30° off vertical (looks like falling), likely the new reach / grab IK pulling the pelvis or spine | pot f1440–f3790, hammer f5170–f7370 | pictures of W1 and W5 | Character / grab thread |
 | W11 | P1 | pot (e778f58) | The stir never plays: at the stove he stays in hy_idle for 17+ s with his back to the stove, head thrown back to the ceiling, bow-legged squats, one arm reaching backwards to the pot | f2550–f3590 | r3-e778f58/pot_no_stir_back_to_stove_and_ladder_top_pause_f1390-3090.jpg | Character / grab thread |
 | W12 | P1 | ladders going down (e778f58) | Stops ~1 s at the ladder top in hy_idle before climbing down (Pavel: no slowing or pauses before ladders), one leg twisted behind in that stand | f1400–f1460 (deck rope ladder), f2110–f2170 (kitchen ladder) | same | Character / Motion matching |
+| W13 | P2 | ledge (e778f58) | Asked through __brain.command('ledge') on the deck: the brain switches to 'look' within 10 frames, so the ledge sit never plays; then 1 s of the walk clip with the root standing still (walking on the spot) | f3600–f3670 | log only | Brain |
 | W3 | P3 | pot | Mid-stir pause (hy_idle) turns him away from the stove with the ladle dangling from the fist for 2.5 s | f2160–f2310 | same sheet | Brain / Character |
 
 ## Fixed and re-verified
