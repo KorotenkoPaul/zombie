@@ -77,10 +77,10 @@ export function createParticles({ THREE, scene, wind, lights, rooms = [], hero =
   let cyc = Math.random() * 3.6, coldK = 0;
   // where the breath comes out: Character can give it exactly (hero.mouth()), else ~ in front of the face from the head bone
   function mouth() {
-    const m = hero.mouth && hero.mouth(); if (m) return hv.copy(m);
-    const h = hero.head && hero.head(); if (!h) return null;
-    h.updateWorldMatrix(true, false); m3.extractRotation(h.matrixWorld);
-    up.set(0, 1, 0).applyMatrix4(m3).normalize(); fw.set(0, 0, 1).applyMatrix4(m3).normalize();
+    const h = hero.head && hero.head();
+    if (h) { h.updateWorldMatrix(true, false); m3.extractRotation(h.matrixWorld); up.set(0, 1, 0).applyMatrix4(m3).normalize(); fw.set(0, 0, 1).applyMatrix4(m3).normalize(); }
+    const m = hero.mouth && hero.mouth(); if (m && m.lengthSq() > 0) return hv.copy(m);   // Character's own lip point (window.__hero.mouth)
+    if (!h) return null;
     return h.getWorldPosition(hv).addScaledVector(up, 0.07).addScaledVector(fw, 0.09);
   }
   function updateBreath(dt) {

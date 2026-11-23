@@ -75,3 +75,10 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Leaves: a few are always in the air (0.12/s plus 0.8*s² per second, still capped at 16 on phones / 30 on desktop), plus a burst when a gust reaches the crown.
 - Dust in the lamplight: one Points per room (140 on phones / 240 on desktop). The specks fill about 2.8 x 2.2 x 2.8 m around and below the room's main lamp. They glow only near the light sources (up to 3 per room, read from __lights.list()/pos()) and fade with the lamp's on/off. Perf step 'roomDust' (order 60) turns them off first.
 - Breath: 10 points, CPU. They show while __weather.state().feels < 6 °C (full at 2 °C). Indoors they show only below 2 °C, and at half strength. A puff comes on each exhale (every ~3.6 s) and drifts with the wind. The mouth is window.__hero.mouth() if Character provides it; otherwise Head bone + 0.07 up + 0.09 forward.
+
+## Round 13: the house answers the wind (game/housewind.js, window.__housewind)
+- Landing lantern: lights.js ([WIND] edit) puts its body, bulb, point light and chain under one pivot at the chain's top and registers it in window.__swing. housewind.js swings it as a 2-D pendulum: it leans downwind (~0.09*s*(s+.3) rad), flutters, and swings in gusts; the limit is 0.45 rad.
+- Telescope (found by name 'telescope', userData.tube): the tube shivers in gusts (~0.7°) and creeps up to ±0.04 rad around its mount; it is held still while the hero's task is the telescope.
+- Rope ladders: they already sway in their shader (windRope). `W.swayAt(p, freq)` is the CPU twin of windSwayS, used to track their free-end swing.
+- Events for Sound: `__wind.on('sway', e)` at the end of each swing: {part 'lantern'|'telescope'|'ladder', id, pos, amp 0..1}. `W.emit(k, e)` is now public for wind-thread modules.
+- Breath now uses Character's `window.__hero.mouth()`, and falls back to the Head bone.
