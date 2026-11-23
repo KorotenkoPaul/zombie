@@ -42,3 +42,9 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Falling leaves land on whatever is under them (`surfaceH` = `__rain.heightAt`, decks/landings/roofs) instead of falling through; leaves on decks lie 25-45 s; a gust (s > .7) picks a lying leaf up and skitters it along the boards. Horizontal drag 1.4 (was 2.2: windy spells blew every leaf 50 m away).
 - `__rain.covered(pos)`: something solid above the point (for Character: clothes/hair react to `__wind.sample(pos)` only outside).
 - Close-up pass in a forced gust (rope ladder, deck, crown): ropes smooth, rungs on their knots, nothing detached.
+
+## Round 8: phone GPU (2026-11-23)
+- windLocal: transpose/scale² instead of inverse() per vertex (every grass/bush/fern/leaf vertex runs it).
+- Shared baked noise: `__wind.noiseTexture(THREE)` 128² RGBA tiling fbm (R and an inverted variant in G). fogbank.js reads it twice instead of 3 octaves of procedural noise. Offered to Environment for its fog sheets/puffs/mist bands.
+- Smoke: 16 puffs on phones, point size capped (48 px × pixel ratio on phones) so a close camera can't fill the screen with smoke quads.
+- Overdraw (estimates from geometry, phone): rain streaks ~4 % of the screen, splashes/drips < 1 %, wet glass = window pixels only, fog bank 1 sheet ≈ 0.5 screen (dawn only, discards ahead of the front), smoke ≤ 16 × 72² px. None of it is on in a normal clear day/night.
