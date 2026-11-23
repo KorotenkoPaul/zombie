@@ -19,7 +19,7 @@ const LIMITS={
  detour:1.35,      // walked length / straight distance for one walk
  // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
  // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
- walkMin:.85,stayMin:20,neckYaw:60,headHips:100,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+ walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:100,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
 };
 const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -141,10 +141,12 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   const aH=loc(f=>Q(f,'Head'),fw),aC=loc(f=>Q(f,'Spine2'),fw),uC=loc(f=>Q(f,'Spine2'),up),aP=loc(f=>f.hq,fw),uP=loc(f=>f.hq,up);
   const yaw=(qa,a,qb,b,ub)=>{const h=qrot(qa,a),c=qrot(qb,b),u=n3(qrot(qb,ub));const pr=v=>{const d=dot(v,u);return [v[0]-u[0]*d,v[1]-u[1]*d,v[2]-u[2]*d];};const hp=pr(h),cp=pr(c);const sg=dot(cross(cp,hp),u)>=0?1:-1;return sg*angd(hp,cp);};
   const neck=F.map(f=>yaw(Q(f,'Head'),aH,Q(f,'Spine2'),aC,uC)),body=F.map(f=>/[WBST]/.test(f.fl)||qrot(f.hq,uP)[1]<.85||qrot(Q(f,'Spine2'),uC)[1]<.7?0:yaw(Q(f,'Head'),aH,f.hq,aP,uP));
+  const uH=loc(f=>Q(f,'Head'),up);const tilt=F.map(f=>angd(qrot(Q(f,'Head'),uH),qrot(Q(f,'Spine2'),uC)));
+  runs(i=>tilt[i]>lim.headTilt?tilt[i]:null,2,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head tipped vs chest (nod/side bend)',limit:lim.headTilt,what:'head bent further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
   const pct=(a,p)=>{const b=a.map(Math.abs).sort((x,y)=>x-y);return +b[Math.floor((b.length-1)*p)].toFixed(1);};
   tempo.anatomy.neckYaw={p50:pct(neck,.5),p99:pct(neck,.99),max:pct(neck,1)};tempo.anatomy.headVsHips={p50:pct(body,.5),p99:pct(body,.99),max:pct(body,1)};
-  runs(i=>Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
-  runs(i=>Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>tilt[i]<50&&Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>tilt[i]<50&&Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
   // feet: ankle angle (shin vs foot) against his own neutral, toe bend, roll of a planted foot
   for(const sd of ['Left','Right']){const ank=F.map(f=>angd(sub(bone(f,sd+'Foot'),bone(f,sd+'Leg')),sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot'))));
    const toe=F.map(f=>angd(sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot')),sub(bone(f,sd+'Toe_End'),bone(f,sd+'ToeBase'))));
@@ -173,10 +175,16 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
      tempo.ladderGrip.push(row);}s0=-1;}}}
  // contactless: something moves near him (lid, door, bolt, oven door, bucket...) while neither palm is on it
  if(D.mov){const ambient=new Set(D.mov.map((m,id)=>m[1]>F.length*.1?id:-1));const ev={};
-  F.forEach((f,i)=>{if(i<30)return;for(const [id,d] of f.mv||[]){if(ambient.has(id))continue;let e=ev[id]&&ev[id][ev[id].length-1];if(!e||i-e.i1>12){e={i0:i,i1:i,d:[]};(ev[id]=ev[id]||[]).push(e);}e.i1=i;e.d.push(d);}});
+  F.forEach((f,i)=>{if(i<30)return;for(const [id,d] of f.mv||[]){if(f.hfree&&/^Group$|hatch/.test(D.mov[id][0]))continue;if(ambient.has(id))continue;let e=ev[id]&&ev[id][ev[id].length-1];if(!e||i-e.i1>12){e={i0:i,i1:i,d:[]};(ev[id]=ev[id]||[]).push(e);}e.i1=i;e.d.push(d);}});
   tempo.touch=[];for(const id in ev)for(const e of ev[id]){if(e.d.length<3)continue;const s2=e.d.slice().sort((a,b)=>a-b);const med=s2[s2.length>>1],mn=s2[0];const nm=D.mov[id][0];
    tempo.touch.push({obj:nm,at:D.mov[id][2],f:F[e.i0].f,task:F[e.i0].task,frames:e.d.length,medCm:med,minCm:mn});
+   if(mn>150||/^PlaneGeometry/.test(nm))continue;// never within 1.5 m of a palm: something the game moves by itself (shutters, curtains), not his interaction
    if(med>lim.touchCm)add('no-touch',e.i0,{bone:'hands',into:nm,value:med,unit:'cm from the nearer palm while it moves (median)',limit:lim.touchCm,what:'moves without being touched ('+F[e.i0].task+')',minCm:mn,from:F[e.i0].f,to:F[e.i1].f,dur:+((e.i1-e.i0+1)*lim.dt).toFixed(2)});}}
+ // held tools: the palm holding it should be on it (< 5 cm from the tool's mesh) the whole time it is held
+ {const ev={};F.forEach((f,i)=>{for(const [nm,k,d] of f.grip||[]){const key=nm+'|'+k;let e=ev[key]&&ev[key][ev[key].length-1];if(!e||i-e.i1>3){e={i0:i,i1:i,d:[]};(ev[key]=ev[key]||[]).push(e);}e.i1=i;e.d.push(d);}});
+  tempo.grip=[];for(const key in ev)for(const e of ev[key]){if(e.d.length<10)continue;const s2=e.d.slice().sort((a,b)=>a-b);const med=s2[s2.length>>1];const [nm,k]=key.split('|');
+   tempo.grip.push({tool:nm,hand:k==='0'?'L':'R',f:F[e.i0].f,frames:e.d.length,medCm:med,maxCm:s2[s2.length-1]});
+   if(med>lim.touchCm)add('grip',e.i0,{bone:(k==='0'?'Left':'Right')+'Hand',into:nm,value:med,unit:'cm from the palm to the held tool (median)',limit:lim.touchCm,what:'holds the tool without touching it ('+F[e.i0].task+')',from:F[e.i0].f,to:F[e.i1].f,dur:+((e.i1-e.i0+1)*lim.dt).toFixed(2)});}}
  // ---- 9. stays: how long he stays where he walked to; turning back right away; sleep turnover ----
  // a stay = from the end of one walk (or ladder) to the start of the next; chained chores (switch, hatch, bolt, micro) are short on purpose
  const CHAIN=/^(switch|hatch|bolt|micro|null|guard)$/;tempo.stays=[];
@@ -208,7 +216,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   else if(q.type==='owl-head')P=q.value>=(q.limit+20)?1:2;
   else if(q.type==='foot-bend')P=Math.abs(q.value)>=q.limit+15?1:2;
   else if(q.type==='ladder-grip')P=q.unit.startsWith('cm')?(q.value>=q.limit*1.6?1:2):2;
-  else if(q.type==='no-touch')P=q.value>=15?1:2;
+  else if(q.type==='no-touch'||q.type==='grip')P=q.value>=15?1:2;
   else if(q.type==='turn-back')P=q.value<8?1:2;
   else if(q.type==='short-stay')P=q.value<8?2:3;
   else if(q.type==='sleep-turnover')P=2;

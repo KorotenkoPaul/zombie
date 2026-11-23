@@ -158,3 +158,18 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
   - 90 strikes, 70 hit by a full step and 15 by a shuffle, 5 missed (5.5 %).
   - 9 extra full steps out of 79 (11 %, previously 13–18 %).
   - Timing: median −6 to −23 ms, p10 −53 / −39 ms, p90 +6 / +10 ms.
+
+## Round 21: tool sounds on contact
+- `__audio.contact({tool, kind:'hit'|'stroke'|'scrape', pos, strength, dur, dir})` lets the grab thread send exact contacts. The first call switches off Sound's own detection, the same way footstep() does.
+- Until then, contacts are read from the right hand while it holds a tool (`hero.hold.Right.tool`):
+  - Hammer (benchHammer): after a downswing faster than 1 m/s, the hit is the moment the hand brakes to 40 % of its peak speed. It plays hammer, and half the time a nail ring as well.
+  - Saw (plankSaw): the hand's travel along his facing direction. A stroke turns when the hand comes back 8 mm from its extreme. Each stroke plays a slice of the saw clip as long as the previous stroke, higher on the push and lower on the pull.
+  - Ladle: a short stir scrape at each peak of hand speed (over .15 m/s, at least .45 s apart).
+- While contacts are synced, hero.js's timer calls (hammer / nails / sfx.hammer, saw every .8 s, stir) are dropped.
+- QA: `K=45 ROUTE=saw,hammer node tests/audio/tool_sync.js`, then analyse TH/TC in /tmp/feet_30.json.
+  - Hammer: 34 of 35 downswing bottoms got a hit within one frame (0 to −33 ms); one hit came 266 ms early.
+  - Saw: 32 strokes for 34 turns, median 67 ms after the turn (the 8 mm hysteresis). The current saw clip moves the hand only 2–4 cm, so this will tighten once the grips are fixed.
+
+## Round 22: bucket splash
+- `__ground.on('pond', {act:'splash', pos, k})` (Ground's `pond.splash()`, called when the bucket dips) plays a splash (a slosh played higher and short) and, for k > .4, a low "gloop" of water rushing in. The hero's own bucket_fill gurgle follows it.
+- A new helper, `vplay(name, o)`, plays a clip as soon as it is decoded, so a first use is never dropped. Without it, the splash was silent until slosh had been decoded once. Saw and stir contacts now use it too.

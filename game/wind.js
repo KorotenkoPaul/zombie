@@ -333,7 +333,7 @@ export function createWind(opt = {}) {
       const im = new THREE.InstancedMesh(geo, mat, N); im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       const cols = [0x6E8A3A, 0x8C9A3C, 0xB49A3A, 0xA8742E, 0x7A5A2E];
       const c = new THREE.Color(); for (let i = 0; i < N; i++) im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.8, 1.1)));
-      o.scene.add(im);
+      o.scene.add(im); im.matrixAutoUpdate = false;   // per-instance matrices move, the mesh itself never does
       // spawn points: the leaf cards of the crown (their centres)
       const spots = []; const m4 = new THREE.Matrix4(), v = new THREE.Vector3();
       if (o.crown) for (let i = 0; i < o.crown.count; i += 3) { o.crown.getMatrixAt(i, m4); v.setFromMatrixPosition(m4); if (v.y > 6) spots.push(v.toArray()); }
@@ -414,7 +414,7 @@ export function createWind(opt = {}) {
     const zero = new THREE.Matrix4().makeScale(0, 0, 0), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
     const cols = [0x8A5A26, 0xA0682A, 0x7A4E22, 0xB0823A, 0x6E5A2C, 0x94602C], c = new THREE.Color();
     for (let i = 0; i < LN; i++) { im.setMatrixAt(i, zero); im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.7, 1.0))); }
-    o.scene.add(im);
+    o.scene.add(im); im.matrixAutoUpdate = false;
     const put = (i, x, y, z, yaw) => {
       P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z; on[i] = 1;
       // flat on the boards with a little curl (a dry oak leaf never lies dead flat), random turn and size
