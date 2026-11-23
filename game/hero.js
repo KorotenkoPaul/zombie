@@ -218,7 +218,7 @@ export function createHero(ctx){
   H.v+=clamp(vmax*align*align-H.v,-2.4*dt,1.4*dt);
   // turn rate depends on speed: on the spot it takes small steps
   const rate=lerp(3.2,4.5,clamp(H.v/H.walkV,0,1));root.rotation.y+=clamp(da,-rate*dt,rate*dt);H.face=root.rotation.y;
-  const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9))pushOut(p);
+  const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=1.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
   const moving=H.v>.06||Math.abs(da)>.25;
   if(moving){play('30',{fade:.4});actions['30'].timeScale=clamp(Math.max(H.v,Math.abs(da)>.25?.35:0)/walkSpeed,.35,1.4);}else play(H.idleClip||'0',{fade:.5});
   H.state='walk';const rem=Math.hypot(target.x-p.x,target.z-p.z);
@@ -422,7 +422,7 @@ export function createHero(ctx){
   if(H.fit){const f=H.fit;const hy=bones.Hips.position.y;let w=1;
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
    p.y=lerp(f.base,f.y-hy,w);}
-  else if(H.ground){const f=floorAt(p.x,p.y,p.z);if(f!=null){H.floorY=f;p.y=lerp(p.y,f,1-Math.exp(-dt*14));}}
+  else if(H.ground){const f=floorAt(p.x,p.y,p.z,.2);if(f!=null&&f-p.y<.12){H.floorY=f;p.y=lerp(p.y,f,1-Math.exp(-dt*14));}}
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
