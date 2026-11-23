@@ -121,15 +121,35 @@ export function createWind(opt = {}) {
   // morning fog bank: on most mornings a light breeze carries a bank of mist in from the forest, it rolls through the
   // clearing along the wind and lifts as the sun comes up. fogBank = {front (m along dir), k 0..1}
   const fb = { front: -1e4, k: 0, on: false, tried: false };
-  let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(360, 1080);
-  function setRain(on, quiet) {
-    if (on === rainOn) return; rainOn = on;
-    if (on) { rainLeft = rr(120, 300); if (mode === 'calm' && !forced) { mode = 'breeze'; target = rr(...MODES.breeze.base); spellLeft = rainLeft * 0.6; } }
-    else rainWait = rr(360, 1080);
-    if (!quiet) emit('rain', { on });
+  let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(360, 1080), rainKind = 'none';
+  // three kinds of rain: a fine drizzle (light, long, no wind change), a proper rain, and a rare storm (windy, heavy,
+  // distant thunder and lightning lighting up the fog)
+  const RAIN = { drizzle: { p: 0.45, dur: [180, 420], amt: 0.35 }, rain: { p: 0.4, dur: [120, 300], amt: 0.75 }, storm: { p: 0.15, dur: [150, 330], amt: 1 } };
+  function setRain(on, quiet, kind) {
+    if (on === rainOn && (!on || !kind || kind === rainKind)) return; rainOn = on;
+    if (on) { if (!RAIN[kind]) { const r = R(); kind = r < RAIN.drizzle.p ? 'drizzle' : r < RAIN.drizzle.p + RAIN.rain.p ? 'rain' : 'storm'; }
+      rainKind = kind; rainLeft = rr(...RAIN[kind].dur);
+      if (!forced) { if (kind === 'storm') { mode = 'windy'; target = rr(0.75, 0.95); spellLeft = rainLeft; nextStrike = rr(6, 20); }
+        else if (kind === 'rain' && mode === 'calm') { mode = 'breeze'; target = rr(...MODES.breeze.base); spellLeft = rainLeft * 0.6; } } }
+    else { rainWait = rr(360, 1080); rainKind = 'none'; }
+    if (!quiet) emit('rain', { on, kind: rainKind });
   }
+  // lightning: a storm strikes every 15-50 s, kilometres away. Each strike is two or three quick flickers (W.flash()),
+  // and its thunder arrives distance/343 m/s later. In a plain rain an odd far rumble with no visible flash.
+  let lastSt = null, nextStrike = 1e9, rumbleWait = rr(60, 200), lastThunder = -1e9; const pulses = [], thunders = []; let flashV = 0;
+  function strike(dist) {
+    dist = dist ?? rr(1.5, 7); const k = Math.min(1, 2.2 / dist) * rr(0.7, 1);
+    const n = 1 + Math.floor(R() * 3); let t = T; for (let i = 0; i < n; i++) { pulses.push([t, k * (i ? rr(0.4, 0.9) : 1)]); t += rr(0.06, 0.25); }
+    const az = ang + Math.PI + rr(-1.2, 1.2);  // mostly upwind: the storm is coming
+    emit('lightning', { dist: dist * 1000, distKm: dist, strength: k, k, dir: [Math.cos(az), Math.sin(az)] });   // dist in metres (Sound)
+    thunders.push({ t: T + dist / 0.343, dist, loud: Math.min(1, 1.6 / dist), dir: [Math.cos(az), Math.sin(az)] });
+  }
+  // calm, still evenings: once the sun is down the wind usually settles (unless it rains)
+  let hourNow = null, eveDone = -1, dayN = 0, lastHr = null;
+  const evening = () => hourNow != null && hourNow >= 18.2 && hourNow < 23.5;
 
   function pickNext() {
+    if (evening() && !rainOn && R() < 0.75) return 'calm';
     const r = R(); let acc = 0;
     for (const [m, p] of NEXT[mode]) { acc += p; if (r <= acc) return m; }
     return 'breeze';
@@ -171,24 +191,35 @@ export function createWind(opt = {}) {
         const dawn = hour >= 4.6 && hour < 9;
         if (!dawn) fb.tried = false;
         if (dawn && !fb.on && !fb.tried && hour < 6.4) { fb.tried = true;
-          if (R() < 0.7) { fb.on = true; fb.front = -SPAN; if (mode === 'calm' && !forced) { mode = 'breeze'; target = rr(0.25, 0.4); spellLeft = rr(90, 160); } emit('fogbank', { on: true }); } }
+          if (R() < 0.6 + 0.35 * U.uWet.value) { /* most mornings, nearly always after a wet night */ fb.on = true; fb.front = -SPAN; if (mode === 'calm' && !forced) { mode = 'breeze'; target = rr(0.25, 0.4); spellLeft = rr(90, 160); } emit('fogbank', { on: true }); } }
         if (fb.on) { fb.front += dt * (0.35 + base * 0.6); fb.k += ((hour < 7.6 ? 1 : 0) - fb.k) * Math.min(1, dt / (hour < 7.6 ? 20 : 40));
           if (hour >= 9 || (hour > 7.6 && fb.k < 0.02)) { fb.on = false; fb.k = 0; fb.front = -1e4; emit('fogbank', { on: false }); } }
         U.uFogBank.value.set ? U.uFogBank.value.set(fb.front, fb.k) : (U.uFogBank.value[0] = fb.front, U.uFogBank.value[1] = fb.k);
       }
+      if (hour != null) { if (lastHr != null && hour < lastHr - 12) dayN++; lastHr = hour; hourNow = hour;
+        // the evening settles: soon after sunset the current spell gives way (mostly to calm, see pickNext)
+        if (evening() && eveDone !== dayN && !rainOn && !forced) { eveDone = dayN; spellLeft = Math.min(spellLeft, rr(8, 30)); } }
       // rain spells
       if (rainOn) { rainLeft -= dt; if (rainLeft <= 0) setRain(false); } else { rainWait -= dt; if (rainWait <= 0) setRain(true); }
+      // lightning and thunder
+      if (rainOn && rainKind === 'storm') { nextStrike -= dt; if (nextStrike <= 0) { strike(); nextStrike = rr(15, 50); } }
+      else if (rainOn && rainKind === 'rain') { rumbleWait -= dt; if (rumbleWait <= 0) { rumbleWait = rr(120, 300); if (R() < 0.35) { const d = rr(8, 14); emit('lightning', { dist: d * 1000, distKm: d, strength: 0.1, k: 0, dir: [-Math.cos(ang), -Math.sin(ang)], unseen: true }); thunders.push({ t: T + d / 0.343, dist: d, loud: 0.15, dir: [-Math.cos(ang), -Math.sin(ang)] }); } } }
+      for (let i = thunders.length - 1; i >= 0; i--) if (T >= thunders[i].t) { const th = thunders.splice(i, 1)[0]; lastThunder = T; emit('thunder', { dist: th.dist * 1000, distKm: th.dist, loud: th.loud, dir: th.dir }); }
+      flashV = 0; for (let i = pulses.length - 1; i >= 0; i--) { const a = T - pulses[i][0]; if (a < 0) continue; if (a > 0.6) { pulses.splice(i, 1); continue; } flashV += pulses[i][1] * Math.exp(-a * 14); }
+      flashV = Math.min(1, flashV);
+      { const st = W.weather ? W.weather.state().state : null; if (st && st !== lastSt) { if (lastSt) emit('state', { state: st, prev: lastSt }); lastSt = st; } }
       // weather spells
       spellLeft -= dt;
       if (spellLeft <= 0 && !forced) { mode = pickNext(); if (rainOn && mode === 'calm') mode = 'breeze'; spellLeft = rr(...MODES[mode].dur); target = rr(...MODES[mode].base); }
-      const want = Math.min(1.1, target + rainK * 0.35);
+      const still = evening() && mode === 'calm' && !rainOn ? 0.5 : 1;   // a calm evening is really still
+      const want = Math.min(1.1, target * still + rainK * 0.35);
       base += (want - base) * Math.min(1, dt / 12);          // spells fade in and out over ~10-20 s
       // the direction wanders slowly around the prevailing one
       if (R() < dt / 25) angT = PREVAIL + rr(-0.5, 0.5);
       ang += (angT - ang) * Math.min(1, dt / 20);
       // gusts
       if (gust) { gust.front += gust.speed * dt; if (gust.front > SPAN + gust.tail * 4) gust = null; }
-      else { gustWait -= dt * (1 + rainK); if (gustWait <= 0) { startGust(); gustWait = rr(0.4, 1.6) * MODES[mode].gustEvery; } }
+      else { gustWait -= dt * (1 + rainK) * (evening() && !rainOn ? 0.5 : 1); if (gustWait <= 0) { startGust(); gustWait = rr(0.4, 1.6) * MODES[mode].gustEvery; } }
       const dx = Math.cos(ang), dz = Math.sin(ang);
       U.uWT.value = T;
       U.uRain.value = rainK;
@@ -232,7 +263,24 @@ export function createWind(opt = {}) {
     // morning fog bank: {front, k}; mist is thick upwind of the front (already reached), thin ahead of it
     fogBank() { return { front: fb.front, k: fb.k, on: fb.on }; },
     fogBankAt(x, z) { if (!fb.on) return 0; const d = x * Math.cos(ang) + z * Math.sin(ang); return fb.k * Math.min(1, Math.max(0, (fb.front - d) / 10)); },   // 0..1: how wet things are (soaks fast, dries slowly)
-    setRain(on) { setRain(!!on); },
+    setRain(on, kind) { setRain(!!on, false, kind); },
+    // how hard it rains now (index.html eases rainK towards this): 0, drizzle .35, rain .75, storm 1
+    rainAmt() { return rainOn ? RAIN[rainKind].amt : 0; },
+    rainKind() { return rainKind; },
+    // lightning flash 0..1 right now (W.applyFlash lights the scene with it); strike(distKm) for tests
+    flash() { return flashV; },
+    strike(d) { strike(d); },
+    // light the scene with the lightning: call once per frame AFTER the day/night code has set these.
+    // A far flash mostly lights the fog and the sky low down, a little the whole scene (cheap: no extra light).
+    applyFlash({ hemi, fog, sky, fogMats } = {}) {
+      const f = flashV; if (f < 0.002) return;
+      const c = W._fc || (W._fc = fog && fog.color.clone());
+      if (fog) { c.setRGB(0.72, 0.78, 0.92); fog.color.lerp(c, f * 0.55); }
+      if (hemi) hemi.intensity += f * 1.4;
+      if (sky && sky.hor) sky.hor.value.lerp(c, f * 0.6);
+      if (fogMats) { const seen = new Set(); for (const m of fogMats) { const u = m.material && m.material.uniforms; const cv = u && u.col && u.col.value;
+        if (cv && cv.lerp && !seen.has(cv)) { seen.add(cv); cv.lerp(c, f * 0.6); } } }
+    },
     on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
@@ -338,6 +386,25 @@ export function createWind(opt = {}) {
       };
       W.fallingLeaves = im; return im;
     }
+  };
+  // ---- window.__weather: one place for Brain (jacket in rain or cold), Sound and the UI to read the weather ----
+  // state() -> { state: 'clear'|'calm'|'drizzle'|'rain'|'storm'|'mist', intensity 0..1, wind: 'calm'|'breeze'|'windy', windLevel 0..2, gust bool, rain: 'none'|'drizzle'|'rain'|'storm',
+  //   rainAmt 0..1, wet 0..1, mist 0..1 (morning fog bank), storm bool, stillEvening bool, sinceThunder s,
+  //   temp °C (autumn: ~4 at dawn, ~13 mid-afternoon, colder in rain), feels °C (wind and wet on top), cold bool }
+  // on('rain'|'lightning'|'thunder'|'state'|'mode'|'gust'|'fogbank', fn) -> off(): rain {on, kind};
+  //   lightning {dist m, distKm, strength 0..1, dir [x,z]} on the flash frame; state {state, prev};
+  //   thunder {dist m, distKm, loud 0..1, dir [x,z]} (arrives dist/343 m/s after its flash); test: setRain(true,'storm'), strike(2)
+  W.weather = {
+    state() {
+      const h = hourNow ?? 12, lv = W.level(), amt = W.rainAmt(), wet = U.uWet.value;
+      const temp = 8.5 + 4.5 * Math.cos((h - 15) / 24 * Math.PI * 2) - amt * 2.5;
+      const feels = temp - Math.min(1, lv) * 3.5 - wet * 1.5;
+      const st = rainOn ? rainKind : fb.k > 0.25 ? 'mist' : (forced || mode) === 'calm' ? 'calm' : 'clear';
+      return { state: st, intensity: +(rainOn ? amt : st === 'mist' ? fb.k : Math.min(1, lv)).toFixed(2), wind: forced || mode, windLevel: +lv.toFixed(2), gust: gustIn, rain: rainKind, rainAmt: amt, wet: +wet.toFixed(2),
+        mist: +fb.k.toFixed(2), storm: rainOn && rainKind === 'storm', stillEvening: evening() && mode === 'calm' && !rainOn,
+        sinceThunder: Math.min(9999, +(T - lastThunder).toFixed(1)), temp: +temp.toFixed(1), feels: +feels.toFixed(1), cold: feels < 6 };
+    },
+    on: (k, f) => W.on(k, f), setRain: (on, kind) => W.setRain(on, kind), strike: d => W.strike(d), set: m => W.set(m)
   };
   W.update({ dt: 0, T: 0 });
   return W;
