@@ -19,7 +19,7 @@ const LIMITS={
  detour:1.35,      // walked length / straight distance for one walk
  // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
  // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
- walkMin:.85,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+ walkMin:.85,stayMin:20,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
 };
 const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -130,6 +130,19 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    const w=(i0,i1)=>{let s=0,c=0;for(let k=Math.max(1,i0);k<Math.min(F.length,i1);k++){const p=F[k].root,q=F[k-1].root;s+=Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2])/lim.dt;c++;}return c?s/c:0;};
    const before=w(i-30,i),after=w(i,i+30);tempo.trans.push({f:F[i].f,ladder:b?'enter':'exit',before:+before.toFixed(2),after:+after.toFixed(2)});
    if(Math.max(before,after)>.05&&Math.max(before,after)/Math.max(.02,Math.min(before,after))>2.5)add('robot',i,{bone:'root',value:+(Math.max(before,after)/Math.max(.02,Math.min(before,after))).toFixed(1),unit:'x speed change at the ladder ('+before.toFixed(2)+' -> '+after.toFixed(2)+' m/s)',limit:2.5,what:'ladder '+(b?'entry':'exit')+': '+(after>before?'speeds up':'slows down')+' abruptly'});}}
+ // ---- 9. stays: how long he stays where he walked to; turning back right away; sleep turnover ----
+ // a stay = from the end of one walk (or ladder) to the start of the next; chained chores (switch, hatch, bolt, micro) are short on purpose
+ const CHAIN=/^(switch|hatch|bolt|micro|null|guard)$/;tempo.stays=[];
+ {const moves=walks.filter(w=>w.i1-w.i0>=20);for(let k=0;k+1<moves.length;k++){const a=moves[k],b=moves[k+1];const d=(b.i0-a.i1)*lim.dt;const task=F[Math.min(F.length-1,a.i1+30)].task||'';
+   const back=b.pts&&a.pts&&a.pts.length&&b.pts.length?Math.hypot(b.pts[b.pts.length-1][0]-a.pts[0][0],b.pts[b.pts.length-1][1]-a.pts[0][1])<.6&&Math.abs(b.pts[b.pts.length-1][2]-a.pts[0][2])<.5:false;
+   tempo.stays.push({f:F[a.i1].f,task,stay:+d.toFixed(1),back,tag:F[a.i1].tag});if(F[a.i1].tag!==F[b.i0].tag)continue;// forced tour switches do not count
+   if(back&&d<lim.stayMin)add('turn-back',a.i1,{bone:'root',value:+d.toFixed(1),unit:'s before walking back where he came from',limit:lim.stayMin,what:'arrives ('+task+') and turns back',from:F[a.i1].f,to:F[b.i0].f});
+   else if(d<lim.stayMin&&!CHAIN.test(task))add('short-stay',a.i1,{bone:'root',value:+d.toFixed(1),unit:'s at the spot before leaving again',limit:lim.stayMin,what:'too short a stay ('+task+')',from:F[a.i1].f,to:F[b.i0].f});}
+  const by={};for(const s2 of tempo.stays){(by[s2.task]=by[s2.task]||[]).push(s2.stay);}tempo.stayByTask={};for(const k in by){const a=by[k].sort((x,y)=>x-y);tempo.stayByTask[k]={n:a.length,min:a[0],median:a[a.length>>1]};}}
+ // sleep: separate times in bed per night; leaving the bed in the night and coming back = turnover
+ {const eps=[];let s0=-1;for(let i=0;i<F.length;i++){const on=F[i].fl.includes('B');if(on&&s0<0)s0=i;if(!on&&s0>=0){eps.push({f0:F[s0].f,f1:F[i-1].f,h0:F[s0].hour,h1:F[i-1].hour,dur:+((i-s0)*lim.dt).toFixed(1)});s0=-1;}}
+  if(s0>=0)eps.push({f0:F[s0].f,f1:F[F.length-1].f,h0:F[s0].hour,h1:F[F.length-1].hour,dur:+((F.length-s0)*lim.dt).toFixed(1),open:true});tempo.sleep=eps;
+  for(let k=1;k<eps.length;k++){const gap=(eps[k].f0-eps[k-1].f1)*lim.dt;const night=h=>h>=21||h<5.5;if(night(eps[k-1].h1)&&night(eps[k].h0)&&gap<120)add('sleep-turnover',F.findIndex(f=>f.f===eps[k-1].f1),{bone:'root',value:+gap.toFixed(1),unit:'s out of bed in the night before lying down again',limit:0,what:'gets up in the night and goes back to bed'});}}
  // ---- merge repeated flags of the same kind (same type+bone within 0.5 s) keeping the worst ----
  iss.sort((a,b)=>a.i-b.i);const merged=[];const last={};
  for(const q of iss){const k=q.type+'|'+q.bone+'|'+(q.into||'').replace(/#\d+.*/,'')+'|'+(q.what||'');const m=last[k];
@@ -142,6 +155,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='foot-slide')P=q.value>=8?1:q.value>=4?2:3;
   else if(q.type==='detour')P=q.unit.startsWith('deg')?(q.value>80?1:2):(q.value>1.7?1:2);
+  else if(q.type==='turn-back')P=q.value<8?1:2;
+  else if(q.type==='short-stay')P=q.value<8?2:3;
+  else if(q.type==='sleep-turnover')P=2;
   else if(q.type==='robot')P=q.value>=q.limit*2?1:2;
   else if(q.type==='slow')P=(q.limit&&q.value<q.limit*.7)||q.value>q.limit*1.5?1:2;
   else if(q.type==='sharp-turn')P=r>=2?1:2;else if(q.type==='crab-walk')P=q.value>70?1:2;
