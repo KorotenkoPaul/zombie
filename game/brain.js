@@ -355,7 +355,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (name !== 'read' && from === 'bedroom' && candleOn()) plan.unshift({ task: 'switch', opts: { light: 'candle', on: false }, why: 'задувает свечу' });
     // trips: the bow from the workshop for the hunt; the jacket from the hook when it rains or is chilly (sometimes he skips it)
     if (EXTRA[name]) { const E = EXTRA[name]; plan.push({ task: E.task || name, opts: repairTarget(name), why: reason, extra: name }); }
-    else if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, away: secPerHour(h) * (name === 'hunt' ? rnd(1.5, 2.5) : rnd(1, 1.8)), lantern: dark(h), bow: name === 'hunt', jacket: raining() || (chilly(h) && Math.random() < .8) || Math.random() < .1 }, why: reason, job: name });
+    else if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, away: secPerHour(h) * (name === 'hunt' ? rnd(.6, 1.1) : rnd(.4, .8)), lantern: dark(h), bow: name === 'hunt', jacket: raining() || (chilly(h) && Math.random() < .8) || Math.random() < .1 }, why: reason, job: name });
     else plan.push({ task: name, opts: ECON && name === 'cook' ? { fromFridge: true } : {}, why: reason });
   }
 
