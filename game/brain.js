@@ -49,7 +49,7 @@ const ACTS = {
   wash:   { room: 'kitchen',  node: 'sink',      gives: { tidy: -.06 },                             dur: [8, 15],  label: 'моет посуду' },
   read:   { room: 'bedroom',  node: 'chair_app', gives: { fun: -.025, comfort: -.02 },              dur: [22, 40], label: 'читает' },
   craft:  { room: 'workshop', node: 'bench',     gives: { fun: -.04, tidy: .004 },                  dur: [14, 26], label: 'мастерит' },
-  look:   { room: 'outside',  node: 'deck',      gives: { curiosity: -.06, fun: -.01, comfort: .006 }, dur: [8, 16], label: 'смотрит вдаль' },
+  look:   { room: 'outside',  node: 'deck',      gives: { curiosity: -.06, fun: -.01, comfort: .006 }, dur: [16, 30], label: 'смотрит вдаль' },
   window: { room: null,       node: null,        gives: { curiosity: -.05 },                        dur: [7, 13],  label: 'смотрит в окно' },
   sleep:  { room: 'bedroom',  node: 'bed_app',   gives: {},                                         dur: [1e9, 1e9], label: 'спит' },
 };
@@ -197,6 +197,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     s -= travel(A.node) * (.15 + (1 - need.energy) * .25);
     // cabin fever: the longer he stays in one room, the more the other rooms call
     if (A.room && A.room !== roomNow) s += Math.min(.7, roomT / 70);
+    else if (A.room && A.room === roomNow) s += Math.max(0, .4 - roomT / 120);   // first chain what is at hand in this room
     const i = recent.indexOf(name);
     if (i === 0) s -= .9; else if (i === 1) s -= .35; else if (i === 2) s -= .15;
     if (mood < .35 && (name === 'read' || name === 'tea')) s += .25;   // low mood: comfort first
@@ -303,7 +304,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // reading in the dark: the candle lights itself when he sits down (lights.js); only putting it out is his job
     if (st.task === 'read' && hasCandle && lights.auto) lights.auto('candle');
     const A = ACTS[st.task];
-    cur = { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? A.dur[0] * .6 : 0 };
+    cur = { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? Math.max(8, A.dur[0] * .8) : 0 };
     if (A) { recent.unshift(st.task); recent.length = 4; }
     setGait();
     HH.startTask(st.task, st.opts);
@@ -352,7 +353,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const h = v.hour;
     // the body has not caught up with the last request yet (or the game took over: guard, repair): wait
     if (v.task && expected && v.task !== expected) return;
-    if (cur) cur.t += dt;
+    // time at the activity counts only once he is there; the walk there makes him stay longer (no climbing up just to climb down)
+    if (cur) { if (v.step && v.step !== 'go') cur.t += dt; else cur.walk = (cur.walk || 0) + dt; }
     // a task the brain did not start: the game started him reading, or the player asked for something.
     // Adopt it and respect it: a direct request wins over needs (he only drops it if he is falling asleep on his feet)
     if (v.task && !cur && ACTS[v.task]) {
@@ -401,12 +403,15 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // commitment: stay until the need is met or he has had enough; leave early only for something urgent
     const A = ACTS[cur.name];
     if (!A) return;
-    let done = cur.t > cur.dur;
+    const stay = cur.min + (cur.walk || 0) * .6;   // minimum dwell: base + 60% of the walk it took
+    let done = cur.t > Math.max(cur.dur, stay);
     const main = Object.keys(A.gives).sort((a, b) => A.gives[a] - A.gives[b])[0];
-    if (main && cur.t > cur.min && need[main] < .08) done = true;
+    if (main && cur.t > stay && need[main] < .08) done = true;
     if (cur.cmd) { if (need.energy < .03 || (h >= bedTime + 1.5 && h < 23.9) || (h < 4 && h > 1)) done = true; else done = cur.t > cur.dur; }
-    else if (cur.name !== 'sleep' && (cur.t > cur.min * .5 || h >= bedTime || h < 5)) {
-      const urgent = (need.hunger > .9 && cur.name !== 'cook') || (need.energy < .08) || (h >= bedTime && h < 23.9) || (h < 5);
+    else if (cur.name !== 'sleep') {
+      // early exits: only after the minimum dwell, unless it is really pressing
+      const pressing = (need.hunger > .97 && cur.name !== 'cook') || need.energy < .03 || (h >= bedTime + .6 && h < 23.9) || (h < 4.5);
+      const urgent = pressing || (cur.t > stay && ((need.hunger > .9 && cur.name !== 'cook') || need.energy < .08 || (h >= bedTime && h < 23.9) || h < 5));
       if (urgent) done = true;
     }
     if (done) choose(h);

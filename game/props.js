@@ -16,6 +16,14 @@ function canvas(w, h, f) { const c = document.createElement('canvas'); c.width =
 function texOf(c, { srgb = true, rep = 1 } = {}) { const t = new THREE.CanvasTexture(c); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); t.anisotropy = 8; return t; }
 // painted Fal AI textures (game/*.jpg): start with the canvas version, swap in the image when it loads
 function upgrade(t, url) { const img = new Image(); img.onload = () => { t.image = img; t.dispose(); t.needsUpdate = true; }; /* dispose: GPU storage is immutable and the size changes */ img.src = url; return t; }
+// swap a material's procedural grain for a photo-scanned wood (the boards' scans, see NOTES-planks): the scans run their grain
+// along u, ours along v, so the image is drawn turned 90° into a canvas (downsized: furniture needs less than floors).
+// boxUV gives 1.11 u and 0.56 v per metre; the scan covers ~1 m across the grain and ~2.4 m along it.
+function scanWood(mat, url, { w = 512, h = 1024, color = 0xffffff, bump = 1.2 } = {}) {
+  const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.translate(w, 0); g.rotate(Math.PI / 2); g.drawImage(img, 0, 0, h, w);
+    for (const [k, srgb] of [['map', true], ['bumpMap', false]]) { const t = mat[k]; if (!t) continue; t.image = c; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.repeat.set(.9, .75); t.dispose(); t.needsUpdate = true; }
+    mat.color.set(color); mat.bumpScale = bump; mat.needsUpdate = true; };
+  img.src = url; return mat; }
 function hexA(hex, a) { const c = new THREE.Color(hex); return `rgba(${c.r * 255 | 0},${c.g * 255 | 0},${c.b * 255 | 0},${a})`; }
 // wood grain runs along canvas y (= texture v)
 function woodCanvas(base, dark, light, { knots = 2, w = 256, h = 512, s = 1 } = {}) {
@@ -101,6 +109,7 @@ function makeMaterials(renderer) {
     wood: std({ ...wt('#C98A4E', '#7A4826', '#EDB477', 2, 2), roughness: .72 }),          // honey furniture
     woodLight: std({ ...wt('#D9A066', '#8E5A30', '#F4C88E', 1, 2), roughness: .72 }),     // table tops, shelves
     woodDark: std({ ...wt('#7E4E2E', '#3E2414', '#A8703F', 2), roughness: .78 }),      // frames, legs
+    // (wood, woodLight, woodDark get the photo scans once loaded: see scanWood below)
     woodRed: std({ ...wt('#A85E34', '#5E2E16', '#D48A52', 1), roughness: .7 }),        // tool handles
     stave: std({ map: texOf(staveCanvas('#B87842', '#4A2A14', 14)), roughness: .75 }),
     staveDark: std({ map: texOf(staveCanvas('#9A6036', '#3A2010', 12)), roughness: .78 }),
@@ -139,6 +148,7 @@ function makeMaterials(renderer) {
     covers: [0x8E3B2E, 0x2F5D7C, 0x4E6B3A, 0xB2803A, 0x6B4A7A, 0x9C5B2E, 0x3E4C5E].map(c => std({ color: c, roughness: .7 })),
     cans: [['#B8442E', '#E9D7A8'], ['#3F6E9A', '#F0E6CC'], ['#6E8F4A', '#F3E2B0'], ['#C99A3A', '#5A3A22']].map(([a, b]) => std({ map: texOf(labelCanvas(a, b)), metalness: .5, roughness: .4, envMap: env, envMapIntensity: .8 })),
   };
+  scanWood(M.wood, 'wood-floor.jpg', { color: 0xF2DCC4 }); scanWood(M.woodLight, 'wood-wall.jpg', { color: 0xE6C49C }); scanWood(M.woodDark, 'wood-dark.jpg', { w: 256, h: 512, color: 0xC49470, bump: 1.6 });
   return M;
 }
 
@@ -381,7 +391,13 @@ function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 
   for (const t of metal ? [.97] : [.15, .8]) { const r = r0 + (r1 - r0) * t + .004; const tor = add(g, new THREE.TorusGeometry(r, metal ? .008 : .01, 6, 32), metal ? M.steel : M.iron, 0, h * t, 0, Math.PI / 2); if (!metal) tor.scale.z = 1.6; }
   add(g, new THREE.TorusGeometry(r1, .004, 6, 24, Math.PI), M.iron, 0, h, 0, 0, Math.PI / 2, 0); return bake(g); }
 const RUG_IMG = { check: 'rug-blue.jpg', orange: 'rug-orange.jpg', green: 'rug-green.jpg' };
-function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1 }); add(g, rb(w, .012, d, .004), m, 0, .006, 0).castShadow = false;
+function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1 }); { const pg = new THREE.PlaneGeometry(w, d, 40, 26); pg.rotateX(-Math.PI / 2); const P = pg.attributes.position; const ph = R() * 6, fx = R() * w - w / 2;
+    for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i); let y = .006;
+      y += .006 * Math.max(0, Math.sin(x * 9 + ph + z * 2)) * Math.max(0, 1 - Math.abs(x - fx) / (w * .3)); // a soft ruck where it was kicked
+      y += .003 * Math.sin(x * 23 + z * 7 + ph) * Math.sin(z * 17);
+      for (const [cx, cz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]]) { const dd = Math.hypot(x - cx, z - cz); if (dd < .16) y += .028 * Math.pow(1 - dd / .16, 2); } // corners curl up
+      P.setY(i, y); }
+    pg.computeVertexNormals(); const rm = add(g, pg, m, 0, 0, 0); rm.castShadow = false; m.side = THREE.DoubleSide; }
   if (fringe) { const fm = new THREE.MeshStandardMaterial({ map: texOf(fringeCanvas(fringe)), transparent: true, alphaTest: .4, roughness: 1, side: THREE.DoubleSide }); fm.map.repeat.set(w * 6, 1); for (const s of [-1, 1]) add(g, new THREE.PlaneGeometry(w * .96, .06), fm, 0, .004, s * (d / 2 + .03), -Math.PI / 2, 0, s > 0 ? 0 : Math.PI).castShadow = false; }
   g.traverse(o => { if (o.isMesh) o.receiveShadow = true; }); return g; }
 function wallShelf(w, { brackets = true, mat = M.woodLight } = {}) { const g = new THREE.Group(); W(g, w, .035, .24, 0, 0, .12, { mat }); if (brackets) for (const s of [-1, 1]) { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.18, 0); sh.quadraticCurveTo(.06, -.04, 0, -.17); sh.lineTo(0, 0); const e = new THREE.ExtrudeGeometry(sh, { depth: .03, bevelEnabled: true, bevelSize: .004, bevelThickness: .004, bevelSegments: 2 }); add(g, e, M.woodDark, s * (w / 2 - .08) - .015, -.018, .01, 0, -Math.PI / 2, 0); } return g; }
@@ -679,10 +695,10 @@ function choppingBoard() { const X = mx(), g = new THREE.Group(); W(g, .28, .022
   add(g, new THREE.SphereGeometry(.032, 14, 10), X.onion, -.08, .052, .05).scale.set(1, .9, 1); add(g, new THREE.SphereGeometry(.028, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), X.fat, -.08, .022, -.04);
   add(g, new THREE.SphereGeometry(.028, 10, 8), X.potato, -.02, .045, -.05).scale.set(1.25, .8, 1); return bake(g); }
 function knife() { const g = new THREE.Group(); const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.12, 0); sh.quadraticCurveTo(.15, .01, .16, .03); sh.lineTo(0, .03); sh.lineTo(0, 0); add(g, EX(sh, .0015, .0005), M.steel, .01, -.015, 0); add(g, rb(.095, .02, .016, .007), M.woodDark, -.045, 0, 0); for (const x of [-.07, -.03]) add(g, new THREE.CylinderGeometry(.003, .003, .018, 6), M.brass, x, 0, 0, Math.PI / 2); g.userData.grip = V(-.045, 0, 0); return bake(g); }
-function pantryShelf() { const g = new THREE.Group(), X = mx(); const w = .5, d = .26, h = 1.45; const tools = {};
+function pantryShelf(h = 1.45) { const g = new THREE.Group(), X = mx(); const w = .5, d = .26; const tools = {};
   for (const s of [-1, 1]) W(g, .03, h, d, s * (w / 2 - .015), h / 2, d / 2, { mat: M.woodDark, grain: 1 });
   W(g, w - .02, h - .08, .012, 0, h / 2, .008, { mat: M.wood, grain: 1 });
-  const ys = [.05, .42, .78, 1.12, h - .015]; for (const y of ys) W(g, w - .06, .025, d - .01, 0, y, d / 2 + .004, { mat: M.woodLight });
+  const ys = [.05, .05 + (h - .07) * .27, .05 + (h - .07) * .52, .05 + (h - .07) * .76, h - .015]; for (const y of ys) W(g, w - .06, .025, d - .01, 0, y, d / 2 + .004, { mat: M.woodLight });
   const top = i => ys[i] + .0125;
   for (const [x, s] of [[-.1, 1], [.11, .85]]) { const sk = add(g, lathe([[0, 0], [.08, 0], [.1, .05], [.1, .15], [.075, .21], [.03, .24], [.045, .27], [0, .27]], 16), X.sack, x, top(0), .13); sk.scale.set(s, s, s * .9); add(g, new THREE.TorusGeometry(.035, .006, 5, 12), X.rope, x, top(0) + .235 * s, .13, Math.PI / 2); }
   [-.17, -.08, .01].forEach((x, i) => { const c = can(.11, .038, M.cans[i]); c.position.set(x, top(1), .14); g.add(c); }); { const c = can(.11, .038, M.cans[3]); c.position.set(-.125, top(1) + .11, .14); g.add(c); }
@@ -880,8 +896,9 @@ export function buildProps(ctx) {
   const wp = place('woodpile', logStack(pyramidSlots([4, 3, 2, 1], .062, .12, .008, [3, 4, 5, 6, 4]), .42), -4.04, KT, 1.33);
   out.woodpile = { obj: wp, max: wp.userData.logs.max, get count() { return wp.userData.logs.count; }, setCount: k => wp.userData.logs.setCount(k) };
   PT.woodpile = [wp, V(0, .5, .05)];
-  const pantry = place('pantry', pantryShelf(), -4.37, KT, 2.0, { ry: Math.PI / 2 }); for (const [k, o] of Object.entries(pantry.userData.tools)) { homeOf(o); out.tools[k] = o; }
-  PT.pantry = [pantry, V(0, 1.0, .3)];
+  // hung on the left wall above the firewood (the kitchen ladder stands at x -4, z 2 and must stay clear; under the stovepipe at KT+1.95)
+  const pantry = place('pantry', pantryShelf(1.25), -4.372, KT + .56, 1.33, { ry: Math.PI / 2, wall: true, solid: false }); for (const [k, o] of Object.entries(pantry.userData.tools)) { homeOf(o); out.tools[k] = o; }
+  PT.pantry = [pantry, V(0, .6, .3)];
   const cn = placed.counter, cTop = cn.userData.floorY + .9;
   tool('board', choppingBoard(), scene, -2.62, cTop, 1.4, [0, .05, 0]); tool('knife', knife(), scene, -2.6, cTop + .023, 1.33, [0, -.15, 0]);
   const plateO = tool('plate', bake(plateOfFood()), st, .2, .915, -.12); /* serving plate waits by the pan on the stove */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
