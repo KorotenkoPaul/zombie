@@ -6,6 +6,11 @@
 // A height map of everything solid under the sky (roofs, decks, landings, rails) is built once after load, a few
 // rays per frame, so drops stop on the roofs instead of falling into the rooms, and splashes/drips know where to be.
 
+// a program cache key that stays unique per material after wrapping onBeforeCompile: three's default key is
+// onBeforeCompile.toString(), which after a wrap is the WRAPPER's source, the same for every wrapped material (so they
+// shared one program: the white boards on Pavel's phone). Capture the wrapped hook's source and any own key now.
+const wrapKey = (m, prev, tag) => { const own = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey : null, src = prev ? prev.toString() : '';
+  return () => (own ? own.call(m) : '') + '|' + src + '|' + tag; };
 export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], crown = null, MOBILE = false, renderer = null }) {
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -185,7 +190,7 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
   // long rain. Dries as __wind.wet() falls. Planks' own onBeforeCompile is kept (chained).
   const wetU = { uWetB: wind && wind.U ? wind.U.uWet : { value: 0 }, uHB: U.uH, uBoxB: U.uBox };   // own names: Ground's materials declare uWet
   function wetBoards(mats) {
-    for (const m of mats) { if (m.userData.wetBoards) continue; m.userData.wetBoards = true; const prev = m.onBeforeCompile, key = m.customProgramCacheKey;
+    for (const m of mats) { if (m.userData.wetBoards) continue; m.userData.wetBoards = true; const prev = m.onBeforeCompile, wk = wrapKey(m, prev, 'wetBoards');
       m.onBeforeCompile = (sh, r) => { prev && prev.call(m, sh, r); Object.assign(sh.uniforms, wetU);
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWW;')
           .replace('#include <project_vertex>', `#include <project_vertex>
@@ -210,7 +215,7 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
  float wet=uWetB*ex*(.3+.7*up);float film=up*ex*smoothstep(.55,.72,wbN(vWW.xz*1.6))*smoothstep(.55,.95,uWetB);
  diffuseColor.rgb*=1.-.34*wet-.12*film;roughnessFactor=mix(roughnessFactor,.22,wet*.9);roughnessFactor=mix(roughnessFactor,.04,film);}`);   /* after Planks' own roughness (theirs is set right after roughnessmap) */
       };
-      m.customProgramCacheKey = () => (key ? key.call(m) : '') + '|wetBoards'; m.needsUpdate = true; }
+      m.customProgramCacheKey = wk; m.needsUpdate = true; }
     R.wetMats = [...mats];
   }
   // quality steps fade instead of popping: a mesh is thinned out one instance at a time over ~2 s (uKeep), and only then
@@ -260,7 +265,7 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
     // drops running down window glass while it rains (and a while after): beads that slide down in fits, leave a thin
     // wet trail, plus small still droplets. Hooks into the glass materials (keeps their own onBeforeCompile).
     wetGlass(mats) {
-      for (const m of mats) { if (!m || m.userData.wetGlass) continue; m.userData.wetGlass = true; const prev = m.onBeforeCompile;
+      for (const m of mats) { if (!m || m.userData.wetGlass) continue; m.userData.wetGlass = true; const prev = m.onBeforeCompile, wk = wrapKey(m, prev, 'wetGlass');
         m.onBeforeCompile = (sh, r) => { prev && prev.call(m, sh, r); if (wind) wind.hook(sh); sh.uniforms.uGlassK = GK;
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vGp;')
             .replace('#include <project_vertex>', `#include <project_vertex>
@@ -280,7 +285,7 @@ float wetDrops(vec2 p){float acc=0.;
             .replace('#include <dithering_fragment>', `#include <dithering_fragment>
 if(uWet*uGlassK>.003){float wd=wetDrops(vGp)*uWet;gl_FragColor.rgb+=vec3(.55,.62,.7)*wd*.55;gl_FragColor.a=max(gl_FragColor.a,min(.6,wd*.5));}`);
         };
-        m.needsUpdate = true; }
+        m.customProgramCacheKey = wk; m.needsUpdate = true; }
     },
     // quality steps for the perf governor (perf.js): cheapest visual loss first
     addPerfSteps(PERF) {
