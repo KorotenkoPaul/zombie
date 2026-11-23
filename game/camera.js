@@ -37,16 +37,41 @@ export function createCameraRig(o) {
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const pickable = [];
+  // [PERF] the far forest and the leaf litter are never zoom targets (the ground or sky behind them anchors the zoom),
+  // and big static meshes get a bounding volume tree: a pick costs well under a millisecond instead of ~15 ms
+  // (a dropped frame or three at the start of every pinch on the phone). The library loads in the background; until it
+  // is there (or if the CDN fails) picking works exactly as before.
+  const NOPICK = /^(forest|litter)/;
+  let BVH = null, bvhWarm = false;
+  import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js').then(m => { BVH = m; bvhWarm = true; }).catch(() => {});
+  const bvhQueue = [];
+  function wantBVH(m) {
+    const g = m.geometry;
+    if (!BVH || m.isSkinnedMesh || m.isInstancedMesh || !g || !g.attributes.position) return;
+    const n = (g.index ? g.index.count : g.attributes.position.count) / 3;
+    if (n < 1500) return;
+    if (g.boundsTree && g.userData.bvhVer === g.attributes.position.version) { m.raycast = BVH.acceleratedRaycast; return; }
+    if (!bvhQueue.includes(m)) bvhQueue.push(m);
+  }
+  function buildSomeBVH() {           // one mesh per call, from update(): spreads the one-off build over idle frames
+    const m = bvhQueue.shift(); if (!m) return;
+    const g = m.geometry, ver = g.attributes.position.version;
+    try { g.boundsTree = new BVH.MeshBVH(g); g.userData.bvhVer = ver; m.raycast = BVH.acceleratedRaycast; } catch (e) { /* keep the plain raycast */ }
+  }
   function rebuildPickable() {
     pickable.length = 0;
     scene.traverse(m => {
       if (!(m.isMesh || m.isSkinnedMesh) || m.isPoints || m.isSprite || m.isLine) return;
       if (!m.visible || m.userData.noPick) return;
+      for (let n = m; n && n !== scene; n = n.parent) if (NOPICK.test(n.name || '')) return;
       const mt = Array.isArray(m.material) ? m.material[0] : m.material;
       if (!mt || mt.depthWrite === false || mt.side === THREE.BackSide) return;   // sky, fog puffs, light rays
       if (mt.transparent && mt.opacity < 0.5) return;
       const g = m.geometry; if (g && !g.boundingSphere) g.computeBoundingSphere();
       if (g && g.boundingSphere && g.boundingSphere.radius * m.matrixWorld.getMaxScaleOnAxis() > 120) return;
+      // a geometry edited since its tree was built (repairs, rebuilt boards) falls back to the plain raycast until rebuilt
+      if (g && g.boundsTree && g.userData.bvhVer !== g.attributes.position.version) { delete m.raycast; g.boundsTree = null; }
+      wantBVH(m);
       pickable.push(m);
     });
   }
@@ -494,6 +519,7 @@ export function createCameraRig(o) {
     dt = dt > 0 ? Math.min(dt, 0.1) : 0;            // a hitch or a bad first frame must never throw the camera
     if (!(cur.dist > 0) || !isFinite(cur.target.x + cur.target.y + cur.target.z + cur.yaw + cur.pitch)) snap();
     pickAge += dt; idle += dt;
+    if (bvhQueue.length) buildSomeBVH(); else if (bvhWarm && !ptrs.size) { bvhWarm = false; rebuildPickable(); pickAge = 0; }   // once, to queue the trees
     if (followOn) followStep(dt);
     stepInertia(dt);
     stepCine(dt);
@@ -661,6 +687,8 @@ export function createCameraRig(o) {
 export function createDOF(o) {
   const { renderer, composer, camera } = o;
   const taps = o.mobile ? 8 : 12;
+  // the pass reads scene depth, so the composer targets carry depth textures. Keep them even with DOF off:
+  // the shared fog pass (fogpass.js, on by default on phones) reads the same depth texture for its soft edges.
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) {
     if (!rt.depthTexture) { rt.depthTexture = new THREE.DepthTexture(rt.width, rt.height); rt.depthTexture.type = THREE.UnsignedIntType; }
   }
