@@ -65,7 +65,7 @@ let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(l
 await RAPIER.init();prog();
 // ================= renderer =================
 const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);// [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js)renderer.setPixelRatio(PR);
+const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
 renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();const l=$('load');if(l){l.classList.remove('hide');$('loadTx').textContent='Перезапускаем картинку…';}setTimeout(()=>location.reload(),1500);});
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;renderer.outputColorSpace=THREE.SRGBColorSpace;
