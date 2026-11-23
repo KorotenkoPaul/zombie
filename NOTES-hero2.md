@@ -25,3 +25,8 @@ Eye placement for a new face: run `facescan.mjs` (front texture render of the he
 Added the same way: `deq.mjs` (dequantize; mesh space is normalized, y -1..1 = 0..1.6 m) -> facescan (RES=.001 XW=.125 Y0=.75 Y1=1.03) ->
 `lids.mjs old-dq.glb out.glb '{"L":[-0.0535,0.7985,0.072,0.036],"R":[0.0515,0.797,0.068,0.037],"skin":[-0.05,0.765],"lash":[-0.06,0.82],"off":0.0028,"ymin":0.7,"pow":0.4,"flat":1}'` -> quant.mjs.
 Lid UVs must not be all identical (quantize breaks a zero-range attribute), hence the tiny jitter in flat mode.
+
+## Phone cost of the default hero (2026-11-23)
+`optim.mjs in.glb out.glb 0.66`: the metal/roughness map is gone (roughness was 0.66 ± 0.07 and metal 0 everywhere, so now it is a constant factor),
+and skin joints no vertex uses are dropped (body 28 -> 23: HeadTop_End, HandMiddle4 x2, Toe_End x2; eyelids 28 -> 1: Head). The bone NODES stay, so clips and hero.js lookups are unchanged.
+Before/after render diff: mean 0.1-0.4 of 255. Textures 3 -> 2 (base colour + normal map, 1024 webp).

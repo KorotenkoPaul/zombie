@@ -739,7 +739,7 @@ vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=(
 {const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;WIND.hookRaw(motesMat);scene.add(p);}
 // [WIND] fireflies drift and leaves fall with the wind (game/wind.js)
 if(ENV.fireflies)WIND.hookRaw(ENV.fireflies.material);
-{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE,surfaceH:(x,z)=>window.__rain&&__rain.ready?__rain.heightAt(x,z):null});}
+{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE,surfaceH:(x,z)=>window.__rain&&__rain.ready?__rain.heightAt(x,z):null,hero:()=>({pos:hero.root.position,task:hero.task,still:!hero.path.length})});}
 // god rays: soft beams through the canopy
 const rayMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{t:{value:0},o:{value:0},col:{value:new THREE.Color(1,.86,.6)}},
  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
@@ -947,7 +947,7 @@ if(!PERF.minMs)PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;}
 if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+i);
 // [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
 // (at the phones' 30 FPS cap it is redrawn every frame again, so the hero's shadow never steps; every 2nd under load)
-const SUN0=MOBILE&&!PERF.minMs?2:1;let sunEvery=SUN0,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
+const SUN0=MOBILE&&!PERF.minMs?2:1;let sunEvery=SUN0,sunF=0,sunN=0;const sunHP=new THREE.Vector3(),sunLD=new THREE.Vector3();window.__sunShadowN=()=>sunN;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
 PERF.addStep('sunShadow',()=>{if(sunEvery>=SUN0+1)return false;sunEvery=SUN0+1;},()=>{sunEvery=SUN0;},30);
 const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
 // [WIND] shared half-resolution fog pass (game/fogpass.js): Environment's fog sheets, puffs and mist bands plus the
@@ -955,6 +955,7 @@ const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPas
 const FOGPASS=await (async()=>{try{const {Pass,FullScreenQuad}=await import('three/addons/postprocessing/Pass.js');const fp=(await import(new URL(ASSET+'fogpass.js',document.baseURI).href)).createFogPass({THREE,renderer,scene,camera,composer,FullScreenQuad,Pass,MOBILE});
  composer.insertPass(fp.pass,1);fp.add([...(MOBILE?rays.children:[]),...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),...((typeof FOGBANK!=='undefined'&&FOGBANK.sheets)||[])]);return fp;}catch(e){console.error('fogpass',e);return null;}})();window.__fogpass=FOGPASS;
 // [ENV] phones: the output pass composites the half-res fog itself (one full-screen pass less) whenever nothing runs between them
+if(FOGPASS&&MOBILE)FOGPASS.scale=.4;/* [ENV] the fog is soft: 0.4 res (16% of the pixels) looks the same as 0.5 on the phone */
 if(FOGPASS&&MOBILE&&ENV.outU)FOGPASS.merge=()=>{if(DOF.active||window.__fogMergeOff)return false;ENV.outU.tFog.value=FOGPASS.fogTexture;ENV.outU.fogOn.value=1;return true;};
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
@@ -1067,7 +1068,15 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  SHUT.update(dt);/* after the camera moved: the fade reads its distance */
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  if(!camOv)DOF.update(dt,rig.focusDist);
- if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
+ {/* [LIGHTS] phone heat: redraw the sun/moon shadow map only as often as its content changes. Hero walking/climbing or the light
+    direction turning by >0.3 deg -> every sunEvery frames (as before); hero standing at a task -> half as often; at night the moon
+    shadow is soft (radius 6) and faint -> half again (walking: at most every 4th); at the 30 FPS cap the base is every frame; a thin moon or rain clouds -> standing, every 16th. Desktop unchanged. */
+  let ev=sunEvery;
+  if(MOBILE){const hp=hero.root.position,mv=sunHP.distanceTo(hp)>Math.max(dt,1/60)*.25;sunHP.copy(hp);
+   if(sunLD.dot(sun.position)<sun.position.length()*sunLD.length()*.999986)sunF=ev;           // the light turned: redraw now
+   const moonPow=(.28+.72*moonIll)*(1-rainK*.85);
+   ev=mv?Math.min(4,ev*(nightK>.5?2:1)):Math.min(16,ev*2*(nightK>.5?2:1)*(nightK>.5&&moonPow<.45?2:1));}   /* walking: never under ~8 redraws/s */
+  if(++sunF>=ev){sunF=0;sun.shadow.needsUpdate=true;sunLD.copy(sun.position);sunN++;}}
  hud();if(ENV.outU)ENV.outU.fogOn.value=0;/* the fog pass turns it on when it hands its fog to the output pass */if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
@@ -1078,6 +1087,9 @@ if(MOBILE){const _b=new THREE.Box3(),_v=V();const tiny=()=>{let n=0;scene.traver
 // [PERF] phones start at pixel ratio 1.5 and climb while frames keep their interval (perf.js)
 // at the 30 FPS cap the ceiling is 1.75 (one rung up): above that the extra pixels mostly turn into heat on a 3x screen
 if(MOBILE){PERF.preset([PX[1],PX[2],PX[3]]);if(PERF.minMs){PX[1].up=null;PX[2].up=null;}}
+// [PERF] compile every shader now, behind the loading screen: hidden things (night sprites, sun rays, rain, fog layers)
+// otherwise compile the first time they show up, a visible stall of 50-200 ms on a phone (e.g. at dawn)
+{const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);try{renderer.compile(scene,camera);}catch(e){console.warn('prewarm',e);}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;PERF.prewarmed=renderer.info.programs.length;window.__pw=new Set();scene.traverse(o=>__pw.add(o));}
 resize();hud();$('load').classList.add('hide');PERF.openDebugWhenReady();
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>BRAIN?BRAIN.command(n):startTask(n),
  view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};

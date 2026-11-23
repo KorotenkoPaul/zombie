@@ -560,7 +560,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       for (const L of s.lights) {
         L.l.intensity = L.I * k * f * (s.name === "oven" ? .45 + 1.2 * open : 1 + open * 1.2);   // oven shut: only what the small glass lets out
         if (L.sway) { if (!L.home) L.home = L.l.position.clone(); const a = T * 1.7 + s.seed * 5; L.l.position.set(L.home.x + noise(a) * L.sway, L.home.y + noise(a + 40) * L.sway * .6, L.home.z + noise(a + 80) * L.sway); }
-        if (L.l.castShadow) { const lit = k > .01; if (lit && (!L.wasLit || (frame + s.idx) % shadowEvery === 0)) L.l.shadow.needsUpdate = true; L.wasLit = lit; }
+        if (L.l.castShadow) { const lit = k > .01;
+          // the lamp's shadows only change when the hero (the one thing that moves) is in its reach: an empty lit room keeps its map
+          const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root, near = !hr || hr.position.distanceTo(L.l.position) < (L.l.shadow.camera.far || 6) + .5;
+          if (lit && (!L.wasLit || (near && (frame + s.idx) % shadowEvery === 0))) L.l.shadow.needsUpdate = true; L.wasLit = lit; }
       }
       for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
