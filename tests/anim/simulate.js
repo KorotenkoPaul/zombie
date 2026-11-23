@@ -1,7 +1,7 @@
 // Runs the hero's life at a fixed timestep and samples every frame. Shared by run.js (measure) and shots.js (replay + render).
 const install=require('./sampler.js');
 const TASKS=['read','cook','wash','tea','craft','look','sleep'];
-async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log=console.log}={}){
+async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log=console.log,gate=0}={}){
  const info=await p.evaluate(`(${install})({})`);
  await p.evaluate(()=>__qa.start());
  await p.evaluate(h=>{__qa.reseed(12345);__th.setHour(h);},start);
@@ -15,26 +15,29 @@ async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log
    if(ci<cap.length&&cap[ci]===total){await capture.fn(total);ci++;}}};
  // a game day: 14 h of day in 110 s and 10 h of night in 70 s -> frames per in-game hour differ; step until the clock has run `hours`
  let ran=0;let prevH=start;
- while(ran<hours){await runFrames(CH,'day');const h=await p.evaluate(()=>__th.state().hour);let d=h-prevH;if(d<0)d+=24;ran+=d;prevH=h;}
+ while(!gate&&ran<hours){await runFrames(CH,'day');const h=await p.evaluate(()=>__th.state().hour);let d=h-prevH;if(d<0)d+=24;ran+=d;prevH=h;}
  log('natural day done: frames',total);
  // phase 2: every activity at least once, forced (covers what the random day skipped)
- if(tour){const seen=new Set(await p.evaluate(()=>__A.out.frames.filter(f=>f.state==='work').map(f=>f.task)));
+ if(tour&&!gate){const seen=new Set(await p.evaluate(()=>__A.out.frames.filter(f=>f.state==='work').map(f=>f.task)));
   const seq=[['read',11],['cook',8],['wash',9],['tea',13],['craft',10],['look',16],['read',19.9],['sleep',22.5],['cook',7]];
   for(const [t,h] of seq){if(seen.has(t)&&t!=='sleep')continue;
    await p.evaluate(([t,h])=>{__th.setHour(h);__th.task(t);},[t,h]);let settled=0,n=0;
    while(n<60*60){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>{const h=__dbg.hero;return {path:h.path.length,state:h.state,rm:!!h.swing||!!h.trans,lad:!!h.lad}});
     if(s.path==0&&!s.rm&&!s.lad&&s.state==='work'){if(++settled>=8)break;}else settled=0;}
    log('tour',t,'frames',n);}
+  }
+ if(tour||gate){
   // every other body task hero.js knows (HH.hasTask), at an hour that suits it
-  const EXTRA=[['trip',9,{kind:'hunt',jacket:true,lantern:true},240],['store',10],['cook',12,{fromFridge:true}],['eat',13],['fetchwater',9],['dumpwater',9.5],
+  const EXTRA=(gate?[['read',11],['cook',8],['wash',9],['tea',13],['craft',10],['look',16],['sleep',22.5]]:[]).concat([['trip',9,{kind:'hunt',jacket:true,lantern:true},240],['store',10],['cook',12,{fromFridge:true}],['eat',13],['fetchwater',9],['dumpwater',9.5],
    ['trip',15,{kind:'wood',jacket:false},240],['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
    ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],
-   ['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11]];
+   ['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11]]);
   for(const [t,h,opts,maxS] of EXTRA){const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
    // through the brain (the body alone does not route between floors); the brain may slip its own chore in first, so ask again until he takes it
    const ask=()=>p.evaluate(([t,o])=>{const B=window.__brain;if(B&&B.command)B.command(t,o||undefined);else __th.task(t);},[t,opts||null]);
    await p.evaluate(h=>__th.setHour(h),h);await ask();let n=0,seen=false,idle=0;
-   while(n<60*(maxS||90)){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>__dbg.hero.task);if(s===t)seen=true;if(seen&&s!==t){if(++idle>=3)break;}else if(!seen){if(n>=900)break;await ask();}}
+   const cap=gate?60*(t==='sleep'?gate+35:gate):60*(maxS||90);
+   while(n<cap){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>__dbg.hero.task);if(s===t)seen=true;if(seen&&s!==t){if(++idle>=3)break;}else if(!seen){if(n>=900)break;await ask();}}
    log('tour',t,seen?'ran':'never started','frames',n);}}
  return {info,total};
 }
