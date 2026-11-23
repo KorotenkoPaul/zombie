@@ -103,6 +103,8 @@ const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0
 const TREE=buildTree(THREE,{model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:Math.atan2(1.0-TREE_AXIS[1],1.45-TREE_AXIS[0]),y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
  avoidLeaves:[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]]});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
+// ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
+const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;
 const barkTris=TREE.tris;
 // ================= physics world =================
 const world=new RAPIER.World({x:0,y:-9.81,z:0});world.timestep=1/60;

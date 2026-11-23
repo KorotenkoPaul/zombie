@@ -64,88 +64,9 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const U={t:{value:0},wind:{value:1}};
  const env={U};
 
- // ================= ground =================
- // big mesh with vertex colours: moss, cold teal in the hollows, trodden earth around the roots
- {const S=MOBILE?110:150;const g=new THREE.PlaneGeometry(260,260,S,S).rotateX(-Math.PI/2);const p=g.attributes.position;const col=new Float32Array(p.count*3);const c=new THREE.Color();
-  const moss=new THREE.Color(0x6A9A5E),teal=new THREE.Color(0x45735F),earth=new THREE.Color(0x8A7058),deep=new THREE.Color(0x3A5E5E);
-  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setY(i,groundH(x,z));const r=Math.hypot(x,z);
-   const n=fbm2(x*.08+11,z*.08+3),m=fbm2(x*.3,z*.3);
-   c.copy(teal).lerp(moss,smooth(.35,.7,n));c.lerp(earth,smooth(5.5,2.6,r+(m-.5)*2.5)*.75);c.lerp(deep,smooth(30,70,r)*.6);c.multiplyScalar(.85+m*.3);
-   col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;}
-  g.setAttribute('color',new THREE.BufferAttribute(col,3));g.computeVertexNormals();
-  const gt=groundT.clone();gt.needsUpdate=true;gt.repeat.set(1,1);gt.wrapS=gt.wrapT=THREE.RepeatWrapping;
-  const mat=new THREE.MeshStandardMaterial({map:gt,vertexColors:true,roughness:1,metalness:0});
-  // two texture scales blended by noise: no visible tiling
-  mat.onBeforeCompile=s=>{s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 vGW;').replace('#include <begin_vertex>','#include <begin_vertex>\nvGW=(modelMatrix*vec4(position,1.)).xz;');
-   s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vGW;'+GLSL_NOISE)
-    .replace('#include <map_fragment>',`vec4 g1=texture2D(map,vGW/4.2);vec4 g2=texture2D(map,vGW/11.3+.37);float bn=fbm(vGW*.09);vec4 gc=mix(g1,g2,smoothstep(.35,.65,bn));
-     diffuseColor*=vec4(gc.rgb*1.8,1.);`);};
-  const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);env.ground=ground;
-  // painted forest floor from the reference (Fal): dark green grass, moss, teal ferns, fallen oak leaves; replaces ground2.jpg once loaded
-  new THREE.TextureLoader().load(new URL('ground3.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=8;mat.map=t;mat.needsUpdate=true;});}
-
- // ================= grass tufts (cards in a star, swaying) =================
- const grassTex=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=256;const x=cv.getContext('2d');
-  for(let i=0;i<34;i++){const bx=128+(Math.random()-.5)*90,lean=(Math.random()-.5)*150,h=120+Math.random()*120,w=5+Math.random()*7;
-   const gr=x.createLinearGradient(0,256,0,256-h);gr.addColorStop(0,'#24402F');gr.addColorStop(.55,'#4E7A4A');gr.addColorStop(1,Math.random()<.25?'#9DB36A':'#79A564');x.fillStyle=gr;
-   x.beginPath();x.moveTo(bx-w,256);x.quadraticCurveTo(bx+lean*.3-w*.4,256-h*.55,bx+lean,256-h);x.quadraticCurveTo(bx+lean*.3+w*.4,256-h*.55,bx+w,256);x.closePath();x.fill();}
-  const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
- {const parts=[];for(let k=0;k<3;k++){const q=new THREE.PlaneGeometry(1,1,1,2).translate(0,.5,0).rotateY(k*Math.PI/3);parts.push(q);}
-  const g=mergeGeometries(parts);const nr=g.attributes.normal;for(let i=0;i<nr.count;i++)nr.setXYZ(i,0,1,0);
-  const mat=new THREE.MeshStandardMaterial({map:grassTex,alphaTest:.45,side:THREE.DoubleSide,roughness:1});
-  mat.onBeforeCompile=s=>{s.uniforms.uT=U.t;s.uniforms.uW=U.wind;s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nuniform float uT,uW;')
-   .replace('#include <begin_vertex>',`#include <begin_vertex>
-    vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float hk=position.y*position.y;
-    transformed.x+=(sin(uT*1.6+ip.x*.6+ip.z*.4)*.7+sin(uT*2.9+ip.z*1.3)*.3)*.12*hk*uW;transformed.z+=sin(uT*1.2+ip.x*.9)*.06*hk*uW;`);};
-  const N=MOBILE?700:1300;const im=new THREE.InstancedMesh(g,mat,N);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),s=V(),c=new THREE.Color();let n=0;
-  // clumps: a few seeds, tufts scattered around each
-  while(n<N){const a=rr(0,Math.PI*2),r=Math.pow(R(),.7)*42+3.2;const cx=Math.cos(a)*r,cz=Math.sin(a)*r*.85;const cnt=3+Math.floor(R()*7);
-   for(let j=0;j<cnt&&n<N;j++){const x=cx+rr(-1.4,1.4),z=cz+rr(-1.4,1.4);if(Math.hypot(x,z*1.1)<2.9)continue;const sz=rr(.35,.8)*(1+smooth(10,40,Math.hypot(x,z))*.6);
-    q.setFromAxisAngle(V(0,1,0),rr(0,6.28));s.set(sz*rr(.8,1.3),sz,sz*rr(.8,1.3));m.compose(V(x,groundH(x,z)-.03,z),q,s);im.setMatrixAt(n,m);
-    c.setHSL(rr(.27,.4),rr(.25,.45),rr(.42,.62));im.setColorAt(n,c);n++;}}
-  im.receiveShadow=true;scene.add(im);env.grass=im;}
-
- // ================= rocks (mossy, around the roots) =================
- {const base=new THREE.IcosahedronGeometry(1,1);const p=base.attributes.position;for(let i=0;i<p.count;i++){const v=V(p.getX(i),p.getY(i),p.getZ(i));const k=1+(hash2(v.x*3.1+v.z,v.y*2.7)-.5)*.35;p.setXYZ(i,v.x*k,v.y*k*.6,v.z*k);}base.computeVertexNormals();
-  const col=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){const up=Math.max(0,p.getY(i)/.6);const c=new THREE.Color(0x5C666C).lerp(new THREE.Color(0x3E5A3E),smooth(.45,.95,up)*.8);col.set([c.r,c.g,c.b],i*3);}
-  base.setAttribute('color',new THREE.BufferAttribute(col,3));
-  const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95,flatShading:true});const N=MOBILE?40:70;const im=new THREE.InstancedMesh(base,mat,N);const m=new THREE.Matrix4(),q=new THREE.Quaternion();
-  for(let i=0;i<N;i++){let x,z,r0=0;if(i<N*.45){const a=rr(-.3,Math.PI+.3)+(R()<.5?0:Math.PI),r=rr(3.4,8);x=Math.cos(a)*r;z=Math.sin(a)*r;}else{const a=rr(0,6.28),r=rr(8,45);r0=r;x=Math.cos(a)*r;z=Math.sin(a)*r;}
-   const sz=rr(.07,.24)*(i%9===0?2.:1)*(r0>12?1.8:1);q.setFromEuler(new THREE.Euler(rr(-.2,.2),rr(0,6.28),rr(-.2,.2)));m.compose(V(x,groundH(x,z)+sz*.12,z),q,V(sz*rr(.9,1.6),sz,sz*rr(.9,1.4)));im.setMatrixAt(i,m);}
-  im.castShadow=!MOBILE;im.receiveShadow=true;scene.add(im);}
-
- // ================= ferns and mushrooms among the roots (cosy-eerie detail, like the painted reference) =================
- {// fern frond painted on a canvas: a curved rachis with paired leaflets
-  const fernTex=(()=>{const cv=document.createElement('canvas');cv.width=128;cv.height=256;const x=cv.getContext('2d');
-   const gr=x.createLinearGradient(0,256,0,0);gr.addColorStop(0,'#2E6A50');gr.addColorStop(.5,'#5A9A62');gr.addColorStop(1,'#9CC870');x.fillStyle=gr;x.strokeStyle='#2C5A40';x.lineWidth=3;
-   x.beginPath();x.moveTo(64,256);x.quadraticCurveTo(70,120,60,8);x.stroke();
-   for(let i=0;i<15;i++){const t=i/15,y=250-t*235,cx=64+Math.sin(t*2.4)*6-t*6,L=(1-t*.85)*52;for(const sd of [-1,1]){x.beginPath();x.moveTo(cx,y);x.quadraticCurveTo(cx+sd*L*.6,y-10,cx+sd*L,y-4-t*10);x.quadraticCurveTo(cx+sd*L*.5,y+3,cx,y+4);x.fill();}}
-   const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
-  // one fern = 6 fronds arching out from the centre
-  const parts=[];for(let k=0;k<6;k++){const q=new THREE.PlaneGeometry(.32,.75,1,4);const p=q.attributes.position;
-   for(let i=0;i<p.count;i++){const y=p.getY(i)+.375;p.setY(i,y*.8-y*y*.35);p.setZ(i,y*.75);}q.rotateY(k/6*Math.PI*2+(k%2)*.3);parts.push(q);}
-  const fg=mergeGeometries(parts);const nr=fg.attributes.normal;for(let i=0;i<nr.count;i++)nr.setXYZ(i,0,1,0);
-  const fm=new THREE.MeshStandardMaterial({map:fernTex,alphaTest:.5,side:THREE.DoubleSide,roughness:.9,emissive:0x10261E,emissiveMap:fernTex});
-  fm.onBeforeCompile=sh=>{sh.uniforms.uT=U.t;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nuniform float uT;').replace('#include <begin_vertex>',`#include <begin_vertex>
-   float ph=instanceMatrix[3][0]*1.7+instanceMatrix[3][2];transformed.x+=sin(uT*1.3+ph)*.04*position.z;transformed.y+=sin(uT*1.9+ph)*.02*position.z;`);};
-  const NF=MOBILE?40:70;const im=new THREE.InstancedMesh(fg,fm,NF);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
-  for(let i=0;i<NF;i++){const a=rr(0,6.28),r=i<NF*.6?rr(3.6,8.5):rr(9,24);const x=Math.cos(a)*r,z=Math.sin(a)*r*.9;const sz=rr(.8,1.5)*(r>9?1.3:1);
-   q.setFromAxisAngle(V(0,1,0),rr(0,6.28));m.compose(V(x,groundH(x,z)-.02,z),q,V(sz,sz*rr(.8,1.1),sz));im.setMatrixAt(i,m);c.setHSL(rr(.3,.4),rr(.35,.5),rr(.62,.78));im.setColorAt(i,c);}
-  im.receiveShadow=true;scene.add(im);env.ferns=im;}
- {// mushrooms: little clusters with warm caps that glow faintly at night (a cosy touch in the cold blue)
-  const cap=new THREE.SphereGeometry(1,10,6,0,Math.PI*2,0,Math.PI*.5).scale(1,.55,1).translate(0,.9,0);const stem=new THREE.CylinderGeometry(.28,.36,.95,8).translate(0,.47,0);
-  const sc=new Float32Array(stem.attributes.position.count*3).fill(.92);stem.setAttribute('color',new THREE.BufferAttribute(sc,3));
-  const cc=new Float32Array(cap.attributes.position.count*3);for(let i=0;i<cap.attributes.position.count;i++){const y=cap.attributes.position.getY(i);const k=smooth(.9,1.45,y);cc.set([.55+k*.3,.3+k*.08,.2],i*3);}cap.setAttribute('color',new THREE.BufferAttribute(cc,3));
-  stem.setAttribute('aCap',new THREE.BufferAttribute(new Float32Array(stem.attributes.position.count),1));{const p=cap.attributes.position;const a=new Float32Array(p.count);for(let i=0;i<p.count;i++)a[i]=smooth(.95,1.4,p.getY(i));cap.setAttribute('aCap',new THREE.BufferAttribute(a,1));}
-  const mg=mergeGeometries([stem.toNonIndexed(),cap.toNonIndexed()]);
-  env.shroomMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.7});const glowU={value:0};env.shroomGlow=glowU;
-  env.shroomMat.onBeforeCompile=sh=>{sh.uniforms.uGlow=glowU;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aCap;varying float vCap;').replace('#include <begin_vertex>','#include <begin_vertex>\nvCap=aCap;');
-   sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float uGlow;varying float vCap;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.2)*vCap*uGlow;');};
-  const NM=MOBILE?36:60;const im=new THREE.InstancedMesh(mg,env.shroomMat,NM);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();let n=0;
-  while(n<NM){const a=rr(0,6.28),r=rr(3.4,9);const cx=Math.cos(a)*r,cz=Math.sin(a)*r*.9;const k=2+Math.floor(R()*4);
-   for(let j=0;j<k&&n<NM;j++){const x=cx+rr(-.3,.3),z=cz+rr(-.3,.3),sz=rr(.05,.12);q.setFromEuler(new THREE.Euler(rr(-.25,.25),rr(0,6.28),rr(-.25,.25)));
-    m.compose(V(x,groundH(x,z)-.01,z),q,V(sz,sz*rr(.9,1.4),sz));im.setMatrixAt(n,m);c.setHSL(rr(.03,.08),rr(.5,.8),rr(.55,.75));im.setColorAt(n,c);n++;}}
-  im.castShadow=!MOBILE;im.receiveShadow=true;scene.add(im);env.shrooms=im;}
+ // ground, grass, rocks, ferns, mushrooms and bushes moved to ground.js (ground & vegetation thread).
+ // the mushroom glow uniform stays here: update() drives it, ground.js reads it.
+ env.shroomGlow={value:0};
 
  // ================= forest =================
  // trunk + roots + a few big branches as one geometry per variant; canopies are leaf-cluster cards like the oak
@@ -181,12 +102,6 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
     // deeper in the forest the leaves turn bluer and darker, like the painted reference
     const far=smooth(16,60,t.d);c.setRGB(.78-far*.25,.88-far*.25,.82-far*.1);im.setColorAt(n,c);n++;}}
   im.count=n;im.castShadow=!MOBILE;scene.add(im);env.canopy=im;}
- // bushes at the forest edge (low leaf clumps)
- {const mat=new THREE.MeshStandardMaterial({map:leafT,alphaTest:.5,side:THREE.DoubleSide,roughness:.9});const NB=MOBILE?22:36,per=9;const im=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),mat,NB*per);
-  const m=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();let n=0;
-  for(let b=0;b<NB;b++){let x,z,g=0;do{const a=rr(0,6.28),r=rr(11,40);x=Math.cos(a)*r;z=Math.sin(a)*r;}while(((z>-4&&Math.abs(x)<17)||Math.hypot(x,z)<11)&&g++<50);
-   const y=groundH(x,z);for(let k=0;k<per;k++){q.setFromEuler(new THREE.Euler(rr(-.9,.9),rr(0,6.28),rr(-.9,.9)));const sz=rr(1,1.7);m.compose(V(x+rr(-.8,.8),y+rr(.3,1),z+rr(-.8,.8)),q,V(sz,sz,sz));im.setMatrixAt(n,m);c.setRGB(.62,.75,.7);im.setColorAt(n,c);n++;}}
-  im.count=n;scene.add(im);}
 
  // far forest: a painted backdrop (Fal, from the reference: gnarled oak silhouettes in blue fog) on a cylinder around the scene.
  // Mirrored-repeat so there is no seam; at night the painting shows as is, by day it is re-tinted with the fog colour.
