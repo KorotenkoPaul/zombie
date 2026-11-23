@@ -3,12 +3,12 @@
 const fs=require('fs'),path=require('path'),zlib=require('zlib');
 const {open}=require('../anim/lib.js');const install=require('../anim/sampler.js');const {analyze}=require('../anim/analyze.js');
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
-const OUT=path.resolve(arg('out','/tmp/mm'));const OFF=process.argv.includes('--off');const NOCOL=process.argv.includes('--nocollide');
+const OUT=path.resolve(arg('out','/tmp/mm'));const OFF=process.argv.includes('--off');const NOCOL=process.argv.includes('--nocollide');const NOPOPS=process.argv.includes('--nopops');
 const ROUTE=(arg('route','cook,wash,craft,look,window,read')).split(',');
 (async()=>{fs.mkdirSync(OUT,{recursive:true});const t0=Date.now();const {b,p,errs}=await open({seed:3});
  await p.evaluate(`(${install})({vertStep:40})`);await p.evaluate(()=>__qa.start());
  await p.evaluate(()=>{window.__LQ=['Hips','Spine','Spine1','Spine2','Neck','Head','LeftShoulder','LeftArm','LeftForeArm','LeftHand','RightShoulder','RightArm','RightForeArm','RightHand','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','RightUpLeg','RightLeg','RightFoot','RightToeBase'];});
- await p.evaluate(off=>{__qa.reseed(99);__th.setHour(10.5);window.__noMotion=off[0];if(off[1]&&window.__collide)window.__collide.enable(false);if(__dbg.HH&&__dbg.HH.setBrain)__dbg.HH.setBrain({tick(){}});},[OFF,NOCOL]);
+ await p.evaluate(off=>{__qa.reseed(99);__th.setHour(10.5);window.__noMotion=off[0];window.__noPops=off[2];if(off[1]&&window.__collide)window.__collide.enable(false);if(__dbg.HH&&__dbg.HH.setBrain)__dbg.HH.setBrain({tick(){}});},[OFF,NOCOL,NOPOPS]);
  const step=async(n,tag)=>p.evaluate(([n,tag])=>__qa.step(n,1/60,f=>{__A.sample(f,1/60,__th.state().hour,tag);const m=window.__motion;const r=__A.out.frames[__A.out.frames.length-1];if(m){const i=m.info();r.mm=[i.on?1:0,i.layer?1:0,i.jumps,+i.cost.toFixed(2),i.lk,i.clip+':'+i.f];}const hb=__dbg.heroBones;r.lq=__LQ.map(n=>hb[n].quaternion.toArray().map(v=>+v.toFixed(4)));r.hp=hb.Hips.position.toArray().map(v=>+v.toFixed(4));r.ry=+__dbg.hero.root.rotation.y.toFixed(4);}),[n,tag]);
  for(const t of ROUTE){await p.evaluate(t=>__th.task(t),t);let n=0,settled=0;
   while(n<60*40){await step(30,t);n+=30;const s=await p.evaluate(()=>{const h=__dbg.hero;return {path:h.path.length,tr:!!h.trans||!!h.swing||!!h.lad,state:h.state}});
