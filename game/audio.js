@@ -175,7 +175,7 @@ export function createAudio(ctx) {
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) try { f(e); } catch (er) { console.error('audio', k, er); } };
   const MOB = !!ctx.mobile;
   const MAXV = MOB ? 9 : 14;   // phones: fewer simultaneous voices (each is a panner + filter + gain)
-  let pondSig = null, pondFar = false, layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
+  let gameDay = 0, pondSig = null, pondFar = false, layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
   const ind = {};          // individuals per layer
   const mult = {};         // today's / tonight's personality per layer
   const center = { x: 0, z: 0 };
@@ -663,12 +663,13 @@ export function createAudio(ctx) {
     if (wState === 'storm' && !wHooked && now > thunderNext) { if (thunderNext > 0) thunder(rnd(1200, 4000), rnd(.4, .8)); thunderNext = now + rnd(25, 60); }
     // the hero getting up in the morning wakes the garden
     if (wasAsleep && !asleep && h > 4 && h < 10.5) kick = 1;
-    wasAsleep = asleep; kick = Math.max(0, kick - dt / 70);
+    wasAsleep = asleep; kick = Math.max(0, kick - dt / 180);   // the wake-up chorus fades over ~3 game hours (1 game hour = 1 real minute)
     // a new night / a new day: new personalities, new territories
     if (lastH === null) { populate(Object.keys(L), env); }
     else {
       if (lastH < 18 && h >= 18) populate(NIGHT, env);
       if (lastH < 4 && h >= 4) populate(DAY, env);
+      if (h < lastH - 12) gameDay++;                                    // midnight
     }
     lastH = h;
     { const P = pondGeo(), sig = P.x + P.z * 7 + P.r * 13; if (sig !== pondSig) { if (pondSig !== null) for (const k in L) if (L[k].pondy && ind[k]) for (const I of ind[k]) I.pos = place('pond'); pondSig = sig; } }
@@ -682,7 +683,7 @@ export function createAudio(ctx) {
     bed('rain', ['rain_a'], rain * rk, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
     // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
     bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
-    rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 60);
+    rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 120);   // the ground stays wet ~2 game hours after rain
     if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
     // the oven fire, where the oven is
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
@@ -962,7 +963,7 @@ export function createAudio(ctx) {
     const dk = t < duckUntil; if (mDuck && dk !== tickMusic.dk) { tickMusic.dk = dk; holdGain(mDuck.gain, t); mDuck.gain.setTargetAtTime(dk ? .3 : 1, t, dk ? .15 : 1.2); }
     if (!mSession) {
       if (now < mRestUntil) return;
-      const dusk = h >= 18.3 && h < 20.6, day = Math.floor(gnow / 180);
+      const dusk = h >= 18.3 && h < 20.6, day = gameDay;   // one dusk session at most per game day
       let start = !!tickMusic.force; tickMusic.force = false;
       if (dusk && mDuskDay !== day && Math.random() < .7) { start = true; mDuskDay = day; }
       else if (quietMoment(h) && Math.random() < dt / 90) start = true;                // in a quiet moment: about once in a minute and a half
