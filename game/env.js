@@ -295,6 +295,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   const wt=env.wet.value;barkMat.roughness=1-wt*.55;barkMat.color.setRGB(.6*(1-wt*.35),.55*(1-wt*.35),.5*(1-wt*.3));
   if(rainK>0){fogU.col.value.lerp(rainC,rainK*.5);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
   ffU.on.value=eve*(1-rainK);const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.18);g.con.value=1.08+eve*.05;
+  warmBounce(eve,rainK,nightK);
   if(MOBILE){phoneNight(eve,rainK);foldLights();}};
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
@@ -305,6 +306,19 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
   fill.intensity*=f(PH.fill);rim.intensity*=f(PH.rim);env.moonRim.strength.value*=f(PH.moonRim);
   bgU.bgHaze.value=.3+(PH.haze-.3)*k;fogU.trunkK.value=.45+(PH.trunk-.45)*k;puffU.frontK.value=.7+(PH.front-.7)*k;env.gradePass.uniforms.lift.value.copy(liftBase).lerp(liftTmp.copy(PH.lift),k*(1-rainK*.5));}
+ // dusk/night bark: the photo's oak is warm brown in the evening, lit by the house. The light that comes up from below (the
+ // hemisphere's ground colour) is pushed towards the amber of the lamps bouncing off the landings and roots, so the trunk's
+ // sides and the undersides of the branches pick it up while tops stay moonlit blue. Light only: the bark texture and its
+ // roughness are untouched.
+ env.duskWarm={col:new THREE.Color(0xB06C3A),k:.8,amb:.4};
+ // for the oak's bark shader (Tree): warm house light bouncing onto the trunk near the rooms. Suggested use in the bark material:
+ //   outgoingLight += diffuseColor.rgb * barkWarm.color * barkWarm.strength * (near the house: y 2..11, front of the trunk)
+ env.barkWarm={color:{value:new THREE.Color(0xFF9A50)},strength:{value:0}};let WH=null,WA=null;const wTmp2=new THREE.Color();
+ function warmBounce(eve,rainK,nightK){if(!WH){scene.traverse(o=>{if(o.isHemisphereLight&&o!==sky&&!WH)WH=o;else if(o.isAmbientLight&&!WA)WA=o;});if(!WH)return;}
+  if(WA)WA.color.set(0xFFE6C8);/* index sets the ambient's intensity each frame, not its colour: start from its own colour */
+  env.barkWarm.strength.value=eve*(1-rainK*.4)*.35;
+  const k=eve*env.duskWarm.k*(1-rainK*.5);if(k<=0)return;WH.groundColor.lerp(env.duskWarm.col,k);
+  if(WA){WA.color.lerp(wTmp2.copy(env.duskWarm.col),k*.5);WA.intensity+=eve*env.duskWarm.amb*(1-rainK*.5);}}
  // phones: the two non-shadow directional lights (fill, rim) and the second hemisphere (sky) are not in the scene, so every lit
  // shader has fewer lights to loop over. Their light is folded into index's hemisphere and ambient each frame instead
  // (directional -> ambient at about the average cosine it gives over all normals), and the forest canopy (unlit on phones)
@@ -314,7 +328,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   const hi=LH.intensity,si=sky.intensity,ht=hi+si;
   if(si>0&&ht>0){LH.color.multiplyScalar(hi/ht).add(cA.copy(sky.color).multiplyScalar(si/ht));LH.groundColor.multiplyScalar(hi/ht).add(cA.copy(sky.groundColor).multiplyScalar(si/ht));LH.intensity=ht;}
   const ai=LA.intensity,fi=fill.intensity*PH.foldF,ri=rim.intensity*PH.foldR,at=ai+fi+ri;
-  LA.color.copy(ambBase);if(at>0){LA.color.multiplyScalar(ai/at).add(cA.copy(fill.color).multiplyScalar(fi/at)).add(cB.copy(rim.color).multiplyScalar(ri/at));}LA.intensity=at;
+  if(at>0){LA.color.multiplyScalar(ai/at).add(cA.copy(fill.color).multiplyScalar(fi/at)).add(cB.copy(rim.color).multiplyScalar(ri/at));}LA.intensity=at;
   if(env.canopy){const c=env.canopy.material.color;// what a lit card gets on average (Lambert: albedo/pi x irradiance)
    cA.copy(LH.groundColor).lerp(LH.color,.6).multiplyScalar(LH.intensity);cA.add(cB.copy(LA.color).multiplyScalar(LA.intensity));
    if(LS)cA.add(cC.copy(LS.color).multiplyScalar(LS.intensity*.3));c.copy(cA).multiplyScalar(PH.leafK/Math.PI);}}
