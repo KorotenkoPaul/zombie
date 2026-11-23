@@ -15,12 +15,24 @@ Priorities: **P1**: visible at normal play (through objects ≥ 2–4 cm, broken
 | 1 | d5e8ad1 | 24,660 | seated jitter fixed; legs folded next to the head after the kitchen ladder; head in the upper bunk |
 | 2 | 46310d0 (v81) | 25,620 | legs at head **fixed**, head in upper bunk **fixed**, walking through the bunk end **fixed**; slow motion measured |
 | 3 | c7cd2d0 (v91) | 16,980 | tempo mostly fixed (walk 1.0 m/s, sit/stand 1.5 s); robot braking/starting and ladder speed jumps open; ladder clipping open |
+| 4 | 77c392b | 16,320 | creeping to a stop fixed (1 case left); NEW: 15 cm root teleport at the top of the kitchen ladder, walking backwards after the ladder top, 25 cm root jump into bed |
+
+## New in run 4 (master 77c392b)
+
+| P | what | frames | measured |
+|---|---|---|---|
+| P1 | Root teleports up at the start of the kitchen ladder going down from the bedroom (bl_t, clip 435) | f159, f4445, f11634 | +15.3 cm in one frame |
+| P1 | Walks backwards after leaving the ladder at the top (bl_t) and the pelvis snaps | f2601–2607, f7502, f15295 | 178° facing vs travel, 23°/frame, 14x speed jump |
+| P1 | Root jumps up when lying down (hy_sleep_bed) | f11156 | +24.8 cm in one frame |
+| P2 | Slow start of walks (still) | f11368, f14017, f8466 | up to 1.47 s |
+| P1 | hy_standup at 0.5x (still) | f8301 | 4.8 s total |
+| note | The house is now instanced/merged geometry, so feet-into-floorboard values of 2–3.6 cm may be ~1 cm too high (being verified) | | |
 
 ## Open issues (run 3, master c7cd2d0)
 
 | # | P | what | frames (60 fps) | measured | normal / limit |
 |---|---|---|---|---|---|
-| 1 | P1 | Creeps to a stop: long braking before the target, worst before ladders | f7498, f15402, f14795, f3767, f13809, f11958 | 1.05–2.18 s from cruise to stop | ≤ 0.9 s (a person: ~0.6 s) |
+| 1 | fixed in run 4 | Creeps to a stop: long braking before the target, worst before ladders | f7498, f15402, f14795, f3767, f13809, f11958 | 1.05–2.18 s from cruise to stop | ≤ 0.9 s (a person: ~0.6 s) |
 | 2 | P2 | Slow start of the walk | f3578, f14497, f5614 | 1.05–1.6 s to reach pace | ≤ 0.9 s |
 | 3 | P1 | Ladder exit at the top: almost stops, then jumps to walking | f4344, f8108, f15227, f16005 | 0.04 → 0.20 m/s (5x) | smooth, < 2.5x |
 | 4 | P2 | Ladder entry: speeds up onto the rungs | f1122, f5991, f11361 | 0.25 → 0.72 m/s (2.8x) | < 2.5x |
