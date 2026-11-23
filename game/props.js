@@ -497,19 +497,22 @@ function sideBench() {
 // ------------- deck -------------
 function telescope() {
   const g = new THREE.Group(); const top = 1.08;
-  for (let i = 0; i < 3; i++) { const l = new THREE.Group(); l.position.set(0, top, 0); l.rotation.y = i * Math.PI * 2 / 3 + .4; g.add(l); W(l, .035, 1.16, .025, 0, -.55, .19, { mat: M.woodDark, grain: 1, r: .008, rx: -.33 }); add(l, rb(.04, .025, .035, .008), M.brass, 0, -.02, .02); }
-  add(g, new THREE.CylinderGeometry(.05, .06, .05, 20), M.brass, 0, top, 0);
-  add(g, new THREE.CylinderGeometry(.012, .012, .3, 8), M.brass, 0, top - .25, 0); // centre column
+  // aged brass (less candy-yellow than TB) and a dark lacquered tube body, like an old field telescope
+  const TB = new THREE.MeshStandardMaterial({ color: 0xB48C48, metalness: .9, roughness: .36, envMap: M.env, envMapIntensity: 1.1 }), LAC = new THREE.MeshStandardMaterial({ color: 0x1C2633, roughness: .3, metalness: .35, envMap: M.env, envMapIntensity: 1.2 });
+  for (let i = 0; i < 3; i++) { const l = new THREE.Group(); l.position.set(0, top, 0); l.rotation.y = i * Math.PI * 2 / 3 + .4; g.add(l); W(l, .035, 1.16, .025, 0, -.55, .19, { mat: M.woodDark, grain: 1, r: .008, rx: -.33 }); add(l, rb(.04, .025, .035, .008), TB, 0, -.02, .02); add(l, rb(.022, .016, .13, .004), M.woodDark, 0, -.5, .105); add(l, new THREE.CylinderGeometry(.006, .006, .03, 6), TB, 0, -1.08, .38); }
+  add(g, new THREE.CylinderGeometry(.065, .065, .014, 3), M.woodDark, 0, top - .5, 0); // spreader tray
+  add(g, new THREE.CylinderGeometry(.05, .06, .05, 20), TB, 0, top, 0);
   const yoke = new THREE.Group(); yoke.position.set(0, top + .05, 0); g.add(yoke);
-  for (const s of [-1, 1]) add(yoke, rb(.015, .1, .03, .006), M.brass, 0, .05, s * .06);
+  for (const s of [-1, 1]) add(yoke, rb(.015, .1, .03, .006), TB, 0, .05, s * .06);
   const tube = new THREE.Group(); tube.position.set(0, .1, 0); tube.rotation.z = .38; yoke.add(tube); tube.userData.live = true;
   const prof = [[0, -.42], [.02, -.42], [.02, -.36], [.03, -.355], [.03, -.25], [.038, -.24], [.038, -.2], [.045, -.19], [.046, .25], [.054, .26], [.054, .3], [.058, .32], [.058, .5], [.062, .51], [.062, .53], [.054, .53], [.054, .52], [0, .52]];
-  const tg = lathe(prof.map(([r, y]) => [r, y]), 28); tg.rotateZ(-Math.PI / 2); add(tube, tg, M.brass);
+  const tg = lathe(prof.map(([r, y]) => [r, y]), 28); tg.rotateZ(-Math.PI / 2); add(tube, tg, TB);
+  add(tube, new THREE.CylinderGeometry(.0475, .0475, .43, 28, 1, true), LAC, .03, 0, 0, 0, 0, Math.PI / 2); // lacquered body
   for (const x of [-.19, .25, .32]) add(tube, new THREE.TorusGeometry(x > 0 ? .056 : .046, .005, 6, 24), M.copper, x, 0, 0, 0, Math.PI / 2);
   add(tube, new THREE.CircleGeometry(.052, 24), new THREE.MeshStandardMaterial({ color: 0x1A2A3A, roughness: .05, metalness: .2, envMap: M.env, envMapIntensity: 1.5 }), .515, 0, 0, 0, Math.PI / 2);
-  add(tube, new THREE.CylinderGeometry(.012, .012, .14, 8), M.brass, 0, 0, 0, Math.PI / 2);
+  add(tube, new THREE.CylinderGeometry(.012, .012, .14, 8), TB, 0, 0, 0, Math.PI / 2);
   add(tube, lathe([[0, 0], [.024, 0], [.026, .012], [.022, .05], [0, .05]], 18), M.rubber, -.47, 0, 0, 0, 0, Math.PI / 2); // eyepiece cup
-  { const f = lathe([[0, -.09], [.011, -.09], [.011, .07], [.016, .08], [.016, .1], [0, .1]], 14); f.rotateZ(-Math.PI / 2); add(tube, f, M.brass, .1, .07, 0); for (const x of [.04, .16]) add(tube, rb(.012, .025, .01, .003), M.brass, x, .052, 0); }
+  { const f = lathe([[0, -.09], [.011, -.09], [.011, .07], [.016, .08], [.016, .1], [0, .1]], 14); f.rotateZ(-Math.PI / 2); add(tube, f, TB, .1, .07, 0); for (const x of [.04, .16]) add(tube, rb(.012, .025, .01, .003), TB, x, .052, 0); }
   bake(g); g.userData.tube = tube; return g;
 }
 

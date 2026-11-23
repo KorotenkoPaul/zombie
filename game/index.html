@@ -324,13 +324,6 @@ const glass=new THREE.MeshStandardMaterial({color:0xD6E6F0,emissive:0x5E8CC0,emi
 const glassFresnel=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <project_vertex>','#include <project_vertex>\nvFr=1.-abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <opaque_fragment>','gl_FragColor=vec4(outgoingLight,mix(diffuseColor.a,.55,pow(vFr,3.)));');};
 glass.onBeforeCompile=glassFresnel;glass.userData.ownGlass=true;
-// the little window in the trunk above the deck (photo): a plank frame on the bark with a dark, warm-lit opening
-{const wx=.8,wy=DK+1.05,wz=frontZ(wx,wy)+.04,g=new THREE.Group();g.position.set(wx,wy,wz);scene.add(g);
- // behind the glass: a small dark nook in the trunk; the pane itself is clear glass
- const hole=new THREE.Mesh(new THREE.BoxGeometry(.62,.78,.35),new THREE.MeshStandardMaterial({color:0x3A2414,roughness:1,side:THREE.BackSide}));hole.position.z=-.17;g.add(hole);
- const tg=glass.clone();tg.onBeforeCompile=glassFresnel;tg.userData.ownGlass=true;tg.emissiveIntensity=.12;const pane=new THREE.Mesh(new THREE.PlaneGeometry(.62,.78),tg);pane.position.z=.0;pane.renderOrder=2;g.add(pane);
- for(const [w,h,x,y] of [[.86,.13,0,.45],[.86,.13,0,-.45],[.13,1.03,-.37,0],[.13,1.03,.37,0],[.62,.05,0,0]]){const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,.1),darkBoard);b.position.set(x,y,.02);b.castShadow=true;g.add(b);}
- const sill=new THREE.Mesh(new THREE.BoxGeometry(1.0,.07,.22),darkBoard);sill.position.set(0,-.53,.07);g.add(sill);}
 // kitchen ladders: landing↑kitchen (through a hatch), kitchen↑bedroom (through a hatch)
 ladder(-1.22,LC,KT+.05,3.45);ladder(-4.0,KT,BD+.05,2.0);
 // barricades the zombies have to break
