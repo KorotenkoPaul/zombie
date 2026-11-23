@@ -549,12 +549,12 @@ const BX0=-4.2,BX1=.4;
 floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]]});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
-const HATCH=(()=>{const x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+const HATCH=(()=>{const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
  // the opening reads as a real hole (Pavel): a dark trim frame round it on the bedroom floor, and the floor's thickness lined
  // with boards inside it, so from the kitchen below it is a framed square hole with the ladder going up through it
- {const fr=new THREE.Group();scene.add(fr);const W=x1-x0,D=z1-z0,cx=(x0+x1)/2,cz=(z0+z1)/2;
+ {const fr=new THREE.Group();scene.add(fr);const W=x1-hx0,D=z1-z0,cx=(hx0+x1)/2,cz=(z0+z1)/2;
   const bx=(sx,sy,sz,px,py,pz,mat)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(px,py,pz);m.castShadow=m.receiveShadow=true;fr.add(m);};
-  for(const sd of [-1,1]){bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,darkBoard);bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),darkBoard);
+  for(const sd of [-1,1]){if(sd>0)bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,darkBoard);/* -x: the wall is the edge */bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),darkBoard);
    bx(.035,.26,D,cx+sd*(W/2-.017),y-.15,cz,boardMat);bx(W-.07,.26,.035,cx,y-.15,cz+sd*(D/2-.017),boardMat);}
   bakeStatic(fr);}
  const lid=new THREE.Group();g.add(lid);const L=z1-z0;
@@ -566,7 +566,7 @@ const HATCH=(()=>{const x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.
  const grab=new THREE.Vector3();
  return {update(dt){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;lid.rotation.x=ang;ring.getWorldPosition(grab);},
   open(){target=OPEN;},close(){target=0;},toggle(){target=target===0?OPEN:0;},isOpen(){return target!==0;},
-  get angle(){return ang;},grab,box:[x0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
+  get angle(){return ang;},grab,box:[hx0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
@@ -582,6 +582,38 @@ wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]]);wallSide(WX0,1.0,
 roof(WX0,WX1,WS+2.3,1.0,4.0,.95);post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
 brace(V(2.0,WS-2.2,frontZ(2.0,WS-2.2)-.1),V(4.2,WS-.15,4.6),.16);brace(V(1.6,WS-2,1.4),V(4.0,WS-.15,1.5),.17);
 if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
+// ---- lockdown shutters (for the zombie nights): each open room front has folding plank shutters. Open, they are folded up
+// under the eave like an awning (two panels stacked, hinged at the top); in lockdown (window.__brain.locked) they swing down
+// and the lower panel unfolds, so the house reads sealed. Close to the camera they turn see-through so the hero stays visible.
+// API: window.__house.shutters {k:{kitchen,bedroom,workshop} 0 open..1 closed, set(room,on), auto (follow the brain)}
+const SHUT=(()=>{let tq=[];const rooms={kitchen:[KX0+.02,KX1,KT+.03,BD-.15,3.97],bedroom:[BX0,BX1,BD+.03,BD+2.28,3.93],workshop:[WX0,WX1,WS+.03,WS+2.28,4.13]};
+ const R={},api={k:{},auto:true,set(room,on){const r=R[room];if(!r)return;const w=on?1:0;if(r.want===w)return;r.want=w;try{window.__audio&&window.__audio.play&&window.__audio.play(on?'shutter_close':'shutter_open',r.c);}catch(e){}},
+ // Brain: close()/open() all rooms one after another (or one room by name); a call takes over from the auto follow
+ close(room){api.auto=false;if(room)return api.set(room,1);tq=['kitchen','workshop','bedroom'].map((r,i)=>[r,i*1.6,true]);},
+ open(room){api.auto=false;if(room)return api.set(room,0);tq=['bedroom','workshop','kitchen'].map((r,i)=>[r,i*1.2,false]);},snap(room,on){if(R[room])R[room].want=R[room].k=on?1:0;},state:room=>R[room]&&R[room].k};
+ for(const [name,[x0,x1,y0,y1,z]] of Object.entries(rooms)){
+  const mat=boardMat.clone();plankShader(mat);const bat=boardMat.clone();plankShader(bat);bat.color.setScalar(.62);
+  const H=y1-y0,h1=H*.5,np=Math.max(1,Math.round((x1-x0)/2.3)),PW=(x1-x0)/np,ups=[],los=[];
+  const panel=(g,w,h,flip)=>{for(let x=-w/2+.15;x<w/2-.05;x+=.3){const m=new THREE.Mesh(new THREE.BoxGeometry(rnd(.275,.29),h-.01,.04),mat);m.position.set(x+rnd(-.004,.004),-h/2,rnd(-.004,.004));g.add(m);}
+   for(const yy of [-.16,-h+.16]){const m=new THREE.Mesh(new THREE.BoxGeometry(w-.14,.11,.03),bat);m.position.set(0,yy,flip*.035);g.add(m);}
+   const L=Math.hypot(w-.3,h-.32),m=new THREE.Mesh(new THREE.BoxGeometry(L,.1,.028),bat);m.position.set(0,-h/2,flip*.034);m.rotation.z=Math.atan2(h-.32,w-.3)*(rnd(0,1)<.5?1:-1);g.add(m);
+   g.traverse(m=>{if(m.isMesh){m.castShadow=!MOBILE;m.receiveShadow=true;}});};
+  for(let i=0;i<np;i++){const up=new THREE.Group();up.position.set(x0+PW*(i+.5),y1,z);scene.add(up);panel(up,PW-.02,h1,1);
+   const lo=new THREE.Group();lo.position.set(0,-h1,0);up.add(lo);panel(lo,PW-.02,H-h1,1);bakeStatic(lo);bakeStatic(up,m=>m===lo||lo.children.includes(m));ups.push(up);los.push(lo);}
+  R[name]={ups,los,mat,bat,k:0,want:0,c:V((x0+x1)/2,(y0+y1)/2,z)};api.k[name]=0;}
+ let lastLock=false;
+ api.update=(dt)=>{const B=window.__brain,lk=!!(B&&B.locked);
+  if(api.auto&&lk!==lastLock){lastLock=lk;tq=['kitchen','workshop','bedroom'].map((r,i)=>[r,i*1.6,lk]);}
+  tq=tq.filter(q=>{q[1]-=dt;if(q[1]<=0){api.set(q[0],q[2]);return false;}return true;});
+  for(const [name,r] of Object.entries(R)){const k0=r.k;r.k+=Math.sign(r.want-r.k)*Math.min(Math.abs(r.want-r.k),dt/2.6);api.k[name]=r.k;
+   if(k0<1&&r.k>=1){try{window.__audio&&window.__audio.play&&window.__audio.play('board_up',r.c);}catch(e){}}
+   const e=t=>t*t*(3-2*t),a=e(Math.min(1,r.k/.55)),b=e(Math.max(0,(r.k-.4)/.6));
+   for(const up of r.ups){up.rotation.x=-1.42*(1-a);up.visible=true;}for(const lo of r.los)lo.rotation.x=-(Math.PI-.06)*(1-b);
+   // close to the camera a closed front turns see-through (the hero inside stays visible); from afar the house reads sealed
+   const d=camera.position.distanceTo(r.c),f=Math.min(1,Math.max(0,(13-d)/6))*b,op=1-.75*f*f*(3-2*f);
+   for(const m of [r.mat,r.bat]){m.opacity=op;m.transparent=op<.98;m.depthWrite=op>.98;}}};
+ api._R=R;return api;})();
+window.__house=Object.assign(window.__house||{},{shutters:SHUT});
 // lookout deck (right, top)
 floorBoards(.8,4.25,DK,.3,3.0);rail(.8,3.0,4.25,3.0,DK,[.84,1.86]);/* the gap at the rope-ladder top is wider than the hero (collide.js) */rail(4.25,.6,4.25,3.0,DK);
 brace(V(1.6,DK-2.4,1.0),V(2.6,DK-.13,1.6),.17);brace(V(4.0,WS+3.5,1.6),V(4.0,DK-.13,1.6),.16);
@@ -967,6 +999,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  trauma=Math.max(0,trauma-dt*1.8);const tr=trauma*trauma;
  if(camOv){look.set(camOv[0],camOv[1],camOv[3]);camera.position.set(look.x+Math.sin(.05)*camOv[2],look.y+Math.sin(.13)*camOv[2],look.z+Math.cos(.05)*camOv[2]);camera.lookAt(look);}
  else rig.update(dt,{drift:RM?0:Math.sin(T*.07)*.03,shake:(RM||tr<1e-4)?null:V(Math.sin(T*47)*.12*tr,Math.cos(T*41)*.12*tr,0)});
+ SHUT.update(dt);/* after the camera moved: the fade reads its distance */
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  if(!camOv)DOF.update(dt,rig.focusDist);
  if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
