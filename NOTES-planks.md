@@ -32,3 +32,8 @@ Code: index.html, block "wood: every board is its own body" (`plankShader`, `bev
 - Under each roof slab: honey sheathing boards (instances in `boards`, wall texture, nails) running down the slope, with rafters every 0.85 m (instances in `beams`). Kind 'roof' in `__planks`, and the exposure loop skips them. No new draw calls.
 - Undersides of floor boards (the ceiling of the room below) are rough-sawn and dull (×0.68/0.6/0.55, roughness 0.95). Nails now show on the top face only.
 - The door (props.js plankDoor) and the furniture wood (props M.wood/M.woodDark, canvas grain) belong to Props. The coordinator was told they could switch to game/wood-*.jpg.
+
+## Landings and struts (round 6)
+- Round landings (`floorBoards` with `radial:`) now match the photo: thick parallel planks running front-to-back, each cut to the circle so the chunky ends trace the curve. The sunburst and the rim board over the ends are gone. A dark curved band sits under the edge, with joists across underneath every 0.8 m.
+- `brace()` sinks its trunk end 14 cm into the bark, so it reads as a real joint. Beams, braces and posts longer than 0.6 m get a coach bolt (head, washer, rust halo) in the shader at each end.
+- Struts that passed through walkable boards were moved: the centre-landing brace now starts at y 3.0, and the two kitchen knee braces start above the centre landing. `tests/planks/braces.js` checks that no diagonal beam crosses a floor (it should print []).

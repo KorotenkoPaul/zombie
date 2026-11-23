@@ -70,3 +70,8 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Morning mist (the fog bank) shows on 60% of mornings, and nearly always after a wet night. It still burns off by 9:00.
 - `__weather.state()`: {state 'clear'|'calm'|'drizzle'|'rain'|'storm'|'mist', intensity, wind, windLevel, gust, rain, rainAmt, wet, mist, storm, stillEvening, sinceThunder, temp °C, feels °C, cold}. Temperature is an autumn curve, about 4 °C at dawn and 13 °C mid-afternoon, minus up to 2.5 °C in rain. 'feels' takes off up to 3.5 for wind and 1.5 for wet; cold = feels < 6.
 - fogpass: narrower soft-edge range (.15 + z*.012 m), so puffs sitting close to roots and ground stay visible.
+
+## Round 12: autumn particles (game/particles.js, window.__particles)
+- Leaves: a few are always in the air (0.12/s plus 0.8*s² per second, still capped at 16 on phones / 30 on desktop), plus a burst when a gust reaches the crown.
+- Dust in the lamplight: one Points per room (140 on phones / 240 on desktop). The specks fill about 2.8 x 2.2 x 2.8 m around and below the room's main lamp. They glow only near the light sources (up to 3 per room, read from __lights.list()/pos()) and fade with the lamp's on/off. Perf step 'roomDust' (order 60) turns them off first.
+- Breath: 10 points, CPU. They show while __weather.state().feels < 6 °C (full at 2 °C). Indoors they show only below 2 °C, and at half strength. A puff comes on each exhale (every ~3.6 s) and drifts with the wind. The mouth is window.__hero.mouth() if Character provides it; otherwise Head bone + 0.07 up + 0.09 forward.

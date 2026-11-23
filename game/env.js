@@ -100,7 +100,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
     for(const e of variants[vi].ends){const w=e.clone().multiplyScalar(s.s).applyQuaternion(q).add(V(s.x,groundH(s.x,s.z),s.z));tips.push({p:w,s:s.s,d:Math.hypot(s.x,s.z)});}});});
   if(baked.length){const fm=new THREE.Mesh(mergeGeometries(baked),barkMat);baked.forEach(g=>g.dispose());fm.castShadow=!MOBILE;fm.receiveShadow=true;fm.name='forestTrunks';scene.add(fm);env.forestTrunks=fm;}}
  // canopy cards
- {const lt=leafT;const mat=new THREE.MeshStandardMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide,roughness:.85});
+ {const lt=leafT;/* phones: unlit cards (MeshBasic), their colour = the light they would get, computed once a frame (see foldLights) */const mat=MOBILE?new THREE.MeshBasicMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide}):new THREE.MeshStandardMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide,roughness:.85});
   const per=MOBILE?18:40;/* phones: fewer, slightly bigger cards (draw budget) */const csz=MOBILE?1.18:1;const N=tips.length*per;const im=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),mat,N);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();let n=0;
   for(const t of tips){for(let k=0;k<per;k++){const d=V(rr(-1,1),rr(-.5,.8),rr(-1,1)).normalize().multiplyScalar(Math.pow(R(),.5)*3.4*t.s);const p=t.p.clone().add(d);
     q.setFromEuler(new THREE.Euler(rr(-1.2,1.2),rr(0,6.28),rr(-1.2,1.2)));const sz=rr(1.6,2.6)*t.s*csz;m.compose(p,q,V(sz,sz,sz));im.setMatrixAt(n,m);
@@ -250,10 +250,10 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
 
  // ================= cool night fill =================
  // a soft blue light from the front-left and a rim from behind, no shadows: the bark and leaves pick up the moonlit blue of the reference
- const fill=new THREE.DirectionalLight(0x86AEDC,0);fill.position.set(-8,14,26);const sky=new THREE.HemisphereLight(0x9CC2E0,0x35584E,0);scene.add(sky);scene.add(fill);
+ const fill=new THREE.DirectionalLight(0x86AEDC,0);fill.position.set(-8,14,26);const sky=new THREE.HemisphereLight(0x9CC2E0,0x35584E,0);if(!MOBILE){scene.add(sky);scene.add(fill);}
  const rim=new THREE.DirectionalLight(0x86C2F0,0);
  // moon rim for materials that want a fresnel edge (bark, leaves, roofs): colour*strength, updated every frame; direction = towards the moon rim light
- env.moonRim={color:{value:new THREE.Color(0x86C2F0)},strength:{value:0},dir:{value:V(-20,15,4).normalize()}};rim.position.set(-20,15,4);scene.add(rim);
+ env.moonRim={color:{value:new THREE.Color(0x86C2F0)},strength:{value:0},dir:{value:V(-20,15,4).normalize()}};rim.position.set(-20,15,4);if(!MOBILE)scene.add(rim);
 
  // ================= per-frame =================
  const tmp=new THREE.Color(),tmpV=V();
@@ -292,16 +292,29 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   const wt=env.wet.value;barkMat.roughness=1-wt*.55;barkMat.color.setRGB(.6*(1-wt*.35),.55*(1-wt*.35),.5*(1-wt*.3));
   if(rainK>0){fogU.col.value.lerp(rainC,rainK*.5);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
   ffU.on.value=eve*(1-rainK);const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.18);g.con.value=1.08+eve*.05;
-  if(MOBILE)phoneNight(eve,rainK);};
+  if(MOBILE){phoneNight(eve,rainK);foldLights();}};
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
  // stronger blue rim and a cooler lift in the shadows. Uniform tweaks only: no extra draw calls or passes.
- const PH={trunk:.9,front:.3,puff:2.6,sheet:2.2,mist:1.7,fill:1.7,rim:1.6,moonRim:1.8,haze:.6,lift:new THREE.Color(0x10304a)};env.phoneNightK=PH;
+ const PH={foldF:.75,foldR:.5,leafK:1,trunk:.9,front:.3,puff:2.6,sheet:2.2,mist:1.7,fill:1.7,rim:1.6,moonRim:1.8,haze:.6,lift:new THREE.Color(0x10304a)};env.phoneNightK=PH;
  const liftBase=env.gradePass.uniforms.lift.value.clone(),liftTmp=new THREE.Color();
  function phoneNight(eve,rainK){const k=eve;const f=x=>1+(x-1)*k;
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
   fill.intensity*=f(PH.fill);rim.intensity*=f(PH.rim);env.moonRim.strength.value*=f(PH.moonRim);
   bgU.bgHaze.value=.3+(PH.haze-.3)*k;fogU.trunkK.value=.45+(PH.trunk-.45)*k;puffU.frontK.value=.7+(PH.front-.7)*k;env.gradePass.uniforms.lift.value.copy(liftBase).lerp(liftTmp.copy(PH.lift),k*(1-rainK*.5));}
+ // phones: the two non-shadow directional lights (fill, rim) and the second hemisphere (sky) are not in the scene, so every lit
+ // shader has fewer lights to loop over. Their light is folded into index's hemisphere and ambient each frame instead
+ // (directional -> ambient at about the average cosine it gives over all normals), and the forest canopy (unlit on phones)
+ // gets the colour these lights would give it.
+ let LH=null,LA=null,LS=null;const ambBase=new THREE.Color(0xFFE6C8),cA=new THREE.Color(),cB=new THREE.Color(),cC=new THREE.Color();
+ function foldLights(){if(!LH){scene.traverse(o=>{if(o.isHemisphereLight&&o!==sky&&!LH)LH=o;else if(o.isAmbientLight&&!LA)LA=o;else if(o.isDirectionalLight&&o.castShadow&&!LS)LS=o;});if(!LH||!LA)return;}
+  const hi=LH.intensity,si=sky.intensity,ht=hi+si;
+  if(si>0&&ht>0){LH.color.multiplyScalar(hi/ht).add(cA.copy(sky.color).multiplyScalar(si/ht));LH.groundColor.multiplyScalar(hi/ht).add(cA.copy(sky.groundColor).multiplyScalar(si/ht));LH.intensity=ht;}
+  const ai=LA.intensity,fi=fill.intensity*PH.foldF,ri=rim.intensity*PH.foldR,at=ai+fi+ri;
+  LA.color.copy(ambBase);if(at>0){LA.color.multiplyScalar(ai/at).add(cA.copy(fill.color).multiplyScalar(fi/at)).add(cB.copy(rim.color).multiplyScalar(ri/at));}LA.intensity=at;
+  if(env.canopy){const c=env.canopy.material.color;// what a lit card gets on average (Lambert: albedo/pi x irradiance)
+   cA.copy(LH.groundColor).lerp(LH.color,.6).multiplyScalar(LH.intensity);cA.add(cB.copy(LA.color).multiplyScalar(LA.intensity));
+   if(LS)cA.add(cC.copy(LS.color).multiplyScalar(LS.intensity*.3));c.copy(cA).multiplyScalar(PH.leafK/Math.PI);}}
  env.sheets=sheets;env.puffs=puffs;window.__env=env;
  // called by index.html when FPS stays under 40 after pixel ratio is already at 1: fewer fog puffs, then no soft edges, then one fog sheet
  let qLevel=0;env.degrade=()=>{qLevel++;if(qLevel===1)pg.instanceCount=Math.round(PN*.6);else if(qLevel===2)softU.soft.value=0;else if(qLevel===3){sheets.slice(1).forEach(m=>m.visible=false);pg.instanceCount=Math.round(PN*.4);}return qLevel<=3;};
