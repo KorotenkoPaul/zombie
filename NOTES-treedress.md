@@ -63,3 +63,9 @@ Debug: `__treedress.stats()`.
   phones use one. Phones read with plain texture2D and pick the angle coordinate whose wrap is not in this pixel quad
   (Tarini's trick, one turn = whole tiles), so no textureGrad and no seam. Phones blend trunk/root coordinates in a narrower band.
 - Result: back to the lite-pass level within bench noise (roots ~595 vs 598, trunk ~480 vs 482, frame ~555 vs 550).
+
+## Round 9 (house grown into the tree)
+- From the beam contacts (D.bites, now with the beam axis, length and cross-section): moss cushions on the wood right at the bark
+  and a fringe on the bark above (moss mesh, +110*MUL capacity), and ivy sprigs round the joint on the bark that creep 0.2-0.7 m
+  along the wood (ivy mesh; stems on desktop only). Horizontal wood: ivy only on a side face, never on the walked top;
+  none near the door. Same draw calls.
