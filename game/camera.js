@@ -7,6 +7,7 @@
 //   single tap ..................... handed back to the game (onTap) for shooting etc.
 // Everything is damped; the camera never goes inside the trunk or under the ground.
 import * as THREE from 'three';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -27,7 +28,8 @@ export function createCameraRig(o) {
   const goal = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   const cur = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   let followOn = false, atHome = true, flyK = 0, idle = 0;
-  const MIN_D = 0.7, PMIN = -0.25, PMAX = 1.45;
+  const MIN_D = 0.7, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
+  const AXIS = o.axis || [0, -0.6];
   const maxD = () => home.dist * 1.25, hardD = () => home.dist * 1.5;
 
   // ---------- picking ----------
@@ -75,7 +77,7 @@ export function createCameraRig(o) {
     goal.dist = nd; flyK = 0; atHome = false;
     if (followOn && point && k > 0) { const f = follow(); if (!f || f.distanceTo(point) > 1.5) stopFollow(); }
   }
-  function stopFollow() { if (followOn) { followOn = false; o.onFollow && o.onFollow(false); } }
+  function stopFollow() { fHave = false; if (followOn) { followOn = false; o.onFollow && o.onFollow(false); } }
   function pan(dx, dy) {               // screen pixels
     const h = dom.clientHeight || innerHeight;
     const s = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * goal.dist / h;
@@ -89,10 +91,19 @@ export function createCameraRig(o) {
     rec(0, 0, dx, dy, 0, null);
     stopFollow(); flyK = 0; atHome = false;
   }
+  // Orbit always turns around the oak's trunk (vertical axis through AXIS), within the same limits as the
+  // original camera (±0.75 rad from the front view, pitch 0.02..0.6). When zoomed in somewhere, the whole view
+  // swings around the trunk with it, so the rotation never pivots on an arbitrary spot.
   function orbit(dx, dy) {
     rec(dx, dy, 0, 0, 0, null);
-    goal.yaw -= dx * 0.0065;
-    goal.pitch = clamp(goal.pitch + dy * 0.0045, PMIN, PMAX);
+    const ny = clamp(goal.yaw - dx * 0.006, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
+    const a = ny - goal.yaw;
+    if (a) {
+      const x = goal.target.x - AXIS[0], z = goal.target.z - AXIS[1], c = Math.cos(a), sn = Math.sin(a);
+      goal.target.x = AXIS[0] + x * c + z * sn; goal.target.z = AXIS[1] - x * sn + z * c;
+      goal.yaw = ny;
+    }
+    goal.pitch = clamp(goal.pitch + dy * 0.004, PMIN, PMAX);
     flyK = 0; atHome = false;
   }
   function flyTo(point, dist, k = 3.2) {
@@ -272,12 +283,29 @@ export function createCameraRig(o) {
     goal.target.copy(cur.target); goal.yaw = cur.yaw; goal.pitch = cur.pitch; goal.dist = cur.dist;  // freeze where it is
     o.onCine && o.onCine(false);
   }
+  // every other shot shows what the hero is doing, framed by the room he is in
+  // (cooking -> kitchen, reading or sleeping -> bedroom, crafting -> workshop, telescope -> deck)
+  const SCENIC = SHOTS.filter(s => !s.hero), ROOMS = SCENIC.filter(s => s.dist < 7 && s.t.y > 3);
+  let scenicI = -1, heroTurn = false;
+  function heroShot() {
+    const f = follow(); if (!f) return null;
+    let best = null, bd = 1e9;
+    for (const r of ROOMS) { const d = r.t.distanceTo(f); if (d < bd) { bd = d; best = r; } }
+    if (best && bd < 3.2)    // in a room: room framing, focus between the room and the hero
+      return { name: 'hero@' + best.name, hero: true, mix: 0.55, room: best.t, yaw: best.yaw, pitch: best.pitch, dist: Math.max(3.2, best.dist * 0.85), arc: best.arc, push: best.push };
+    return SHOTS.find(s => s.hero) || null;
+  }
+  function shotTarget(sh) {
+    if (!sh.hero) return sh.t;
+    const f = follow(); if (!f) return sh.room || home.target;
+    return sh.room ? tmp.copy(sh.room).lerp(f, sh.mix) : f;
+  }
   function nextShot() {
-    cine.i = (cine.i + 1) % SHOTS.length;
-    const sh = SHOTS[cine.i];
-    if (sh.hero && !follow()) { cine.i = (cine.i + 1) % SHOTS.length; }
-    cine.shot = SHOTS[cine.i]; cine.t = 0;
-    const tg = cine.shot.hero ? follow() : cine.shot.t;
+    heroTurn = !heroTurn;
+    let sh = heroTurn ? heroShot() : null;
+    if (!sh) { scenicI = (scenicI + 1) % SCENIC.length; sh = SCENIC[scenicI]; }
+    cine.shot = sh; cine.t = 0; cine.i++;
+    const tg = shotTarget(sh);
     goal.target.copy(tg);
     goal.yaw = cine.shot.yaw + Math.round((cur.yaw - cine.shot.yaw) / (Math.PI * 2)) * Math.PI * 2;
     goal.pitch = cine.shot.pitch; goal.dist = cine.shot.dist;
@@ -290,12 +318,36 @@ export function createCameraRig(o) {
     }
     cine.t += dt;
     const sh = cine.shot;
-    if (sh.hero) { const f = follow(); if (f) goal.target.lerp(f, damp(1.5, dt)); }
-    goal.yaw += sh.arc * dt;                        // slow arc
+    if (sh.hero) goal.target.lerp(shotTarget(sh), damp(1.5, dt));
+    goal.yaw = clamp(goal.yaw + sh.arc * dt, home.yaw - YAW_LIM, home.yaw + YAW_LIM);   // slow arc, same limits as the hand
     goal.dist *= 1 - sh.push * dt;                  // slow push-in
     if (cine.t > cine.hold) nextShot();
   }
   function stopFollowSilent() { if (followOn) stopFollow(); }
+
+  // ---------- soft hero follow ----------
+  // The hero's position is smoothed into a velocity; the focus leads a little in the direction he walks and
+  // trails softly, slower vertically, so ladders and room changes glide instead of jerking.
+  const fPrev = new THREE.Vector3(), fVel = new THREE.Vector3(), fLead = new THREE.Vector3(), fWant = new THREE.Vector3();
+  let fHave = false;
+  function followStep(dt) {
+    const f = follow(); if (!f) return;
+    if (!fHave || dt <= 0) { fPrev.copy(f); fVel.set(0, 0, 0); fHave = true; }
+    else {
+      tmp.copy(f).sub(fPrev).divideScalar(Math.max(dt, 1e-3));
+      if (tmp.length() > 8) tmp.set(0, 0, 0);            // teleport / snap: no lead spike
+      fVel.lerp(tmp, damp(3, dt));
+      fPrev.copy(f);
+    }
+    fLead.set(fVel.x * 0.55, fVel.y * 0.25, fVel.z * 0.55);
+    const L = Math.hypot(fLead.x, fLead.z); if (L > 0.9) { fLead.x *= 0.9 / L; fLead.z *= 0.9 / L; }
+    fLead.y = clamp(fLead.y, -0.4, 0.4);
+    fWant.copy(f).add(fLead);
+    const kh = damp(2.6, dt), kv = damp(1.6, dt);
+    goal.target.x += (fWant.x - goal.target.x) * kh;
+    goal.target.z += (fWant.z - goal.target.z) * kh;
+    goal.target.y += (fWant.y - goal.target.y) * kv;
+  }
 
   // ---------- per frame ----------
   const camPos = new THREE.Vector3(), dir = new THREE.Vector3(), p = new THREE.Vector3();
@@ -315,7 +367,7 @@ export function createCameraRig(o) {
   }
   function update(dt, extra = {}) {
     pickAge += dt; idle += dt;
-    if (followOn) { const f = follow(); if (f) goal.target.lerp(f, damp(6, dt)); }
+    if (followOn) followStep(dt);
     stepInertia(dt);
     stepCine(dt);
     for (const U of fadeU) U.u.value = clamp(cur.dist * U.k, U.min, U.max);
@@ -407,7 +459,7 @@ export function createCameraRig(o) {
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;')
             .replace('#include <project_vertex>', '#include <project_vertex>\nvCamDNF=length(mvPosition.xyz);');
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;uniform float ' + name + ';uniform float uNFHole,uNFFocus;uniform vec2 uNFRes;')
-            .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{float nf=smoothstep(' + name + '*0.3,' + name + ',vCamDNF);if(uNFHole>0.01&&vCamDNF<uNFFocus-0.35){vec2 q=(gl_FragCoord.xy-0.5*uNFRes)/uNFRes.y;nf=min(nf,1.0-(1.0-smoothstep(0.18,0.32,length(q)))*uNFHole);}float hd=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))));if(hd>nf)discard;}');
+            .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{float nf=smoothstep(' + name + '*0.12,' + name + ',vCamDNF);nf=nf*nf*(3.0-2.0*nf);if(uNFHole>0.01&&vCamDNF<uNFFocus-0.35){vec2 q=(gl_FragCoord.xy-0.5*uNFRes)/uNFRes.y;nf=min(nf,1.0-(1.0-smoothstep(0.14,0.36,length(q)))*uNFHole);}float hd=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))));if(hd>nf)discard;}');
         };
         mt.customProgramCacheKey = () => key + '|' + name;
         mt.needsUpdate = true;
@@ -422,9 +474,68 @@ export function createCameraRig(o) {
     get cinematic() { return cine.on ? (cine.shot && cine.shot.name) : null; },
     cine: (on) => { if (on) { idle = CINE_IDLE + 1; } else { idle = 0; stopCine(); } },
     get dist() { return cur.dist; },
+    get focusDist() { return focusU.value; },
     get target() { return cur.target; },
     get state() { return { target: cur.target.toArray().map(v => +v.toFixed(2)), yaw: +cur.yaw.toFixed(3), pitch: +cur.pitch.toFixed(3), dist: +cur.dist.toFixed(2), follow: followOn, cam: camera.position.toArray().map(v => +v.toFixed(2)) }; },
     get homeDist() { return home.dist; },
+  };
+  return api;
+}
+
+
+// ---------- depth of field (close-ups only) ----------
+// One full-screen pass right after the scene render: 12-tap golden-spiral blur whose radius grows with the distance
+// from the focus plane. Works at half the blur cost on phones (fewer taps). It is a quality level: off by default
+// on phones, turned off automatically when the frame rate has no headroom, and switchable via window.__camera.dof(on).
+export function createDOF(o) {
+  const { renderer, composer, camera } = o;
+  const taps = o.mobile ? 8 : 12;
+  for (const rt of [composer.renderTarget1, composer.renderTarget2]) {
+    if (!rt.depthTexture) { rt.depthTexture = new THREE.DepthTexture(rt.width, rt.height); rt.depthTexture.type = THREE.UnsignedIntType; }
+  }
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, near: { value: 0.1 }, far: { value: 300 }, focus: { value: 3 }, amount: { value: 0 }, res: { value: new THREE.Vector2(1, 1) } },
+    vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+    fragmentShader: `#include <packing>
+uniform sampler2D tDiffuse,tDepth;uniform float near,far,focus,amount;uniform vec2 res;varying vec2 vUv;
+float vz(vec2 uv){return -perspectiveDepthToViewZ(texture2D(tDepth,uv).x,near,far);}
+float coc(float z){return clamp(abs(z-focus)/max(z,0.05)*1.6,0.0,1.0);}
+void main(){vec4 c0=texture2D(tDiffuse,vUv);float z0=vz(vUv);float r=coc(z0)*amount*7.0;
+ if(r<0.4){gl_FragColor=c0;return;}
+ vec3 acc=c0.rgb;float w=1.0;
+ for(int i=1;i<=${taps};i++){float fi=float(i);float a=fi*2.39996;float rr=sqrt(fi/${taps}.0)*r;vec2 uv=vUv+vec2(cos(a),sin(a))*rr/res;
+  float zi=vz(uv);float wi=zi<z0-0.05?coc(zi):1.0; /* sharp foreground must not bleed */
+  acc+=texture2D(tDiffuse,uv).rgb*wi;w+=wi;}
+ gl_FragColor=vec4(acc/w,c0.a);}`,
+  });
+  class DOFPass extends Pass {
+    constructor() { super(); this.fsq = new FullScreenQuad(mat); }
+    render(rd, write, read) {
+      mat.uniforms.tDiffuse.value = read.texture; mat.uniforms.tDepth.value = read.depthTexture;
+      mat.uniforms.near.value = camera.near; mat.uniforms.far.value = camera.far;
+      mat.uniforms.res.value.set(read.width, read.height);
+      rd.setRenderTarget(this.renderToScreen ? null : write); this.fsq.render(rd);
+    }
+    setSize() {}
+  }
+  const pass = new DOFPass();
+  pass.enabled = false;
+  let want = o.enabled !== undefined ? o.enabled : !o.mobile, amount = 0, fpsAvg = 60, coolT = 0;
+  const api = {
+    pass,
+    // call each frame: focus distance and camera distance (m)
+    update(dt, focusDist) {
+      fpsAvg += ((1 / Math.max(dt, 1e-3)) - fpsAvg) * Math.min(1, dt * 2);
+      coolT = Math.max(0, coolT - dt);
+      if (pass.enabled && fpsAvg < 50 && !api.force) coolT = 15;          // no headroom: back off for a while
+      const close = 1 - THREE.MathUtils.smoothstep(focusDist, 3, 5);
+      const target = want && (coolT === 0 || api.force) ? close : 0;
+      amount += (target - amount) * Math.min(1, dt * 3);
+      mat.uniforms.amount.value = amount; mat.uniforms.focus.value = focusDist;
+      pass.enabled = amount > 0.02;
+    },
+    set enabled(v) { want = !!v; }, get enabled() { return want; },
+    get active() { return pass.enabled; }, get fps() { return Math.round(fpsAvg); },
   };
   return api;
 }
