@@ -159,7 +159,22 @@ export function buildTree(THREE, o) {
       const x = (sp.getX(i) - cx) * k * (o.widen || 1.3), z = (sp.getZ(i) - cz) * k * (o.widen || 1.3);
       // roots like the photo: long, clearly visible forms spreading over the ground (the model's are short and sink in)
       const yy = (sp.getY(i) - y0) * k - (o.sink ?? 0.15), t = Math.min(1, Math.max(0, (1.9 - yy) / 1.9)), sp2 = 1 + 0.55 * t * t * (3 - 2 * t);
-      P.push(AX + (x * cr + z * sr) * sp2, yy + (t > 0.8 ? -0.12 * (t - 0.8) / 0.2 * 0 : 0), AZ + (-x * sr + z * cr) * sp2);
+      // the photo's oak: smooth bark, but deep folds running up the trunk with a slow twist, and big rounded lobes between
+      // them (Pavel 2026-11-23: the character is in the form, not the texture). Trunk only (near the axis, y 0.2..12).
+      let xr = (x * cr + z * sr) * sp2, zr = (-x * sr + z * cr) * sp2; const d0 = Math.hypot(xr, zr);
+      if (o.folds !== false && d0 > 0.3 && d0 < 3.4 && yy > -0.4 && yy < 12.5) {
+        const an = Math.atan2(zr, xr), nearDoor = Math.max(0, 1 - Math.max(0, Math.abs(angDiff(an, doorAng)) - 0.45) / 0.35) * Math.max(0, Math.min(1, (door.y1 + 1.4 - yy) / 0.6)), w = (1 - nearDoor) * Math.min(1, (yy + 0.4) / 0.8) * Math.min(1, (12.5 - yy) / 1.5) * Math.min(1, (3.4 - d0) / 0.6);
+        const ph = 5 * an + 0.22 * yy + 0.9 * Math.sin(2 * an + 0.35 * yy), gr = Math.pow(Math.max(0, Math.cos(ph)), 2.5), ph2 = 11 * an - 0.3 * yy + 2.1, gr2 = Math.pow(Math.max(0, Math.cos(ph2)), 6);
+        const lobe = Math.sin(3 * an - 0.18 * yy + 0.7) * 0.5 + Math.sin(5 * an + 0.4 * yy) * 0.25;
+        const dr = (o.foldDepth ?? 1) * w * (-0.5 * gr - 0.14 * gr2 + 0.16 * lobe) * Math.min(1, d0 / 1.6);
+        const fk = (d0 + dr) / d0; xr *= fk; zr *= fk;
+      }
+      // the base flares out like a skirt (photo): an outward push strongest at the ground and near the trunk, so the
+      // buttresses splay wide and the roots reach further out
+      { const d1 = Math.hypot(xr, zr) || 1e-6, ts = Math.min(1, Math.max(0, (2.8 - yy) / 2.8));
+        const sk = (o.flare ?? 1.1) * Math.pow(ts, 2) * Math.min(1, d1 / 1.4) * Math.max(0.35, 1 - Math.max(0, d1 - 3.2) / 5);
+        const fk = (d1 + sk) / d1; xr *= fk; zr *= fk; }
+      P.push(AX + xr, yy, AZ + zr);
       UV.push(su ? su.getX(i) : 0, su ? su.getY(i) : 0); G.push(0);
     }
     // trunk radius along the hollow's direction, measured from the mesh (for the hollow, the cave and the door light)
@@ -305,6 +320,8 @@ export function buildTree(THREE, o) {
         diffuseColor.rgb*=mix(.8,1.,smoothstep(-.3,2.2,vY));
         // photo bark: cool grey-brown rather than orange (the Meshy paint is warm), shadows go violet-blue below
         diffuseColor.rgb=mix(vec3(dot(diffuseColor.rgb,vec3(.3,.59,.11))),diffuseColor.rgb,.62)*vec3(.97,.97,1.04);
+        // Pavel: smooth painted bark like the photo, the character in the forms: the texture's fine noise is toned down
+        diffuseColor.rgb=mix(vec3(.13,.08,.052),diffuseColor.rgb,.5);
 `)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(vec3(.38,.37,.47),vec3(1.06,1.05,1.02),pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
@@ -359,10 +376,10 @@ export function buildTree(THREE, o) {
   };
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
-  const total = MOB(o) ? (o.leafCards || 230) : 900;
+  const total = MOB(o) ? (o.leafCards || 170) : 700; // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
-  const qg = MOB(o) ? new THREE.PlaneGeometry(1, 1, 2, 2) : new THREE.PlaneGeometry(1, 1, 3, 3); // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
+  const qg = new THREE.CircleGeometry(0.5, MOB(o) ? 10 : 12); // round like the painted clump: no empty quad corners to shade // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
   { const pa = qg.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i); pa.setZ(i, 0.28 * (0.5 - (x * x + y * y))); } qg.computeVertexNormals(); }
   let im = new THREE.InstancedMesh(qg, lmat, total);
   const shade = new Float32Array(total);

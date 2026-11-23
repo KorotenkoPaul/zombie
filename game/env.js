@@ -102,7 +102,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  {const byV=[[],[],[],[]];spots.forEach(s=>byV[s.v].push(s));const m=new THREE.Matrix4(),q=new THREE.Quaternion();
   // all forest trunks baked into ONE mesh (one draw call instead of one per variant; they surround the scene, so culling saved nothing)
   const baked=[];byV.forEach((list,vi)=>{list.forEach(s=>{q.setFromAxisAngle(V(0,1,0),s.ry);m.compose(V(s.x,groundH(s.x,s.z),s.z),q,V(s.s,s.s,s.s));baked.push(variants[vi].g.clone().applyMatrix4(m));
-    for(const e of variants[vi].ends){const w=e.clone().multiplyScalar(s.s).applyQuaternion(q).add(V(s.x,groundH(s.x,s.z),s.z));tips.push({p:w,s:s.s,d:Math.hypot(s.x,s.z)});}});});
+    for(const e of variants[vi].ends){const w=e.clone().multiplyScalar(s.s).applyQuaternion(q).add(V(s.x,groundH(s.x,s.z),s.z));tips.push({p:w,s:s.s,d:Math.hypot(s.x,s.z),tr:s});}});});
   if(baked.length){const fm=new THREE.Mesh(mergeGeometries(baked),barkMat);baked.forEach(g=>g.dispose());fm.castShadow=!MOBILE;fm.receiveShadow=true;fm.name='forestTrunks';scene.add(fm);env.forestTrunks=fm;}}
  // canopy cards
  {const lt=leafT;/* phones: unlit cards (MeshBasic), their colour = the light they would get, computed once a frame (see foldLights) */const mat=MOBILE?new THREE.MeshBasicMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide}):new THREE.MeshStandardMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide,roughness:.85});
@@ -130,13 +130,22 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
    imat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,hazeU);sh.vertexShader='varying vec3 vHz;\n'+sh.vertexShader.replace('#include <project_vertex>',`vec3 ctr=instanceMatrix[3].xyz;float isz=length(instanceMatrix[0].xyz);
      vec3 rgt=normalize(vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]));vec4 mvPosition=viewMatrix*vec4(ctr+rgt*transformed.x*isz+vec3(0.,transformed.y*length(instanceMatrix[1].xyz),0.),1.);gl_Position=projectionMatrix*mvPosition;vHz=ctr+vec3(0.,transformed.y*length(instanceMatrix[1].xyz),0.);`);
     sh.fragmentShader='uniform vec3 hz;uniform float hzK;varying vec3 vHz;\n'+sh.fragmentShader.replace('#include <fog_fragment>',`{float d=length(vHz.xz-cameraPosition.xz);float k=hzK*(.75+.5*smoothstep(45.,85.,d));k=max(k,smoothstep(3.5,-.5,vHz.y)*.85);gl_FragColor.rgb=mix(gl_FragColor.rgb,hz,clamp(k,0.,.92));}`);};
-   const mkImp=(list,name)=>{const iq=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),imat,list.length);list.forEach((o,j)=>{m.compose(o.p,q.identity(),V(o.w,o.h,1));iq.setMatrixAt(j,m);iq.setColorAt(j,c.setRGB(o.c[0],o.c[1],o.c[2]));});
+   // an octagon just around the clump's round silhouette instead of the full quad: 17% fewer pixels to shade
+   const oct=new THREE.CircleGeometry(.5/Math.cos(Math.PI/8),8);{const op=oct.attributes.position,ou=oct.attributes.uv;for(let i=0;i<op.count;i++)ou.setXY(i,op.getX(i)+.5,op.getY(i)+.5);}
+   const mkImp=(list,name)=>{const iq=new THREE.InstancedMesh(oct,imat,list.length);list.forEach((o,j)=>{m.compose(o.p,q.identity(),V(o.w,o.h,1));iq.setMatrixAt(j,m);iq.setColorAt(j,c.setRGB(o.c[0],o.c[1],o.c[2]));});
     iq.frustumCulled=false;iq.name=name;scene.add(iq);return iq;};
    const tint=(d,k)=>{const far=smooth(FR0,FR0+22,d);return [(.8-far*.2)*k,(.9-far*.2)*k,(.84-far*.08)*k];};
    // crowns: fuller than the cards were (x1.6 wide), so neighbouring crowns merge into one canopy
-   env.canopy=mkImp(tips.map(t=>({p:t.p,w:9.6*t.s*1.6,h:9.6*t.s*1.45,c:tint(t.d,1)})),'forestCanopyImpostors');scene.remove(im);im.geometry.dispose();im.dispose();
+   // phones (GPU cost): one crown per tree, sized to the spread of its branch tips, instead of one per tip (the tips' crowns
+   // overlapped ~7 deep). Desktop keeps a crown per tip.
+   let crowns=tips.map(t=>({p:t.p,w:9.6*t.s*1.6,h:9.6*t.s*1.45,c:tint(t.d,1)}));
+   if(MOBILE){const by=new Map();for(const t of tips){if(!by.has(t.tr))by.set(t.tr,[]);by.get(t.tr).push(t);}crowns=[];
+    for(const [tr,l] of by){const ctr=V();l.forEach(t=>ctr.add(t.p));ctr.multiplyScalar(1/l.length);let sx=0,sy=0;const rgt=V();
+     for(const t of l){sx=Math.max(sx,Math.hypot(t.p.x-ctr.x,t.p.z-ctr.z));sy=Math.max(sy,Math.abs(t.p.y-ctr.y));}
+     const cs=9.6*tr.s*.75;crowns.push({p:ctr.add(V(0,cs*.1,0)),w:(sx*1.5+cs)*1.05,h:sy*1.5+cs,c:tint(Math.hypot(tr.x,tr.z),1)});}}
+   env.canopy=mkImp(crowns,'forestCanopyImpostors');scene.remove(im);im.geometry.dispose();im.dispose();
    // understory: low bushes on the forest floor, young trees' crowns at 3-8 m, and leaf mass hung between neighbouring crowns
-   const ul=[];const ru=rng(57);const NU=MOBILE?380:560;for(let k=0;k<NU*3&&ul.length<NU;k++){const a=ru()*6.28,r=FR0-3+ru()*24,x=Math.cos(a)*r,z=Math.sin(a)*r;if(z>12)continue;
+   const ul=[];const ru=rng(57);const NU=MOBILE?170:560;for(let k=0;k<NU*3&&ul.length<NU;k++){const a=ru()*6.28,r=FR0-3+ru()*24,x=Math.cos(a)*r,z=Math.sin(a)*r;if(z>12)continue;
     const lvl=ru();const w=lvl<.4?3.8+ru()*3.6:6+ru()*5;const y=groundH(x,z)+(lvl<.4?w*.34:4+ru()*8);ul.push({p:V(x,y,z),w:w*1.15,h:w,c:tint(r,lvl<.4?.72:.86)});}
    env.understory=mkImp(ul,'forestUnderstory');env.canopyTex=rt.texture;}catch(e){console.warn('canopy impostors',e);}}}
 
