@@ -20,7 +20,7 @@ await p.evaluate(()=>{const {hero,heroBones,THREE}=window.__dbg;
  const wp=b=>{const v=new THREE.Vector3();b.getWorldPosition(v);return v;};
  window.__log=[];let last=performance.now();
  window.__sample=()=>{const t=performance.now();const dt=(t-last)/1000;last=t;scene.updateMatrixWorld();
-  const hp=wp(H),r=hero.root.position;const rec={t,dt,task:hero.task,state:hero.state,clip:hero.cur?hero.cur.getClip().name:'',lad:hero.lad?hero.lad.phase:'',rm:!!hero.rm,seat:!!hero.seated,bed:!!hero.inBed,
+  const hp=wp(H),r=hero.root.position;const rec={t,dt,task:hero.task,state:hero.state,clip:hero.cur?hero.cur.getClip().name:'',lad:hero.lad?hero.lad.phase:'',rm:!!(hero.rm||hero.trans),seat:!!hero.seated,bed:!!hero.inBed,
    hip:[hp.x,hp.y,hp.z],root:[r.x,r.y,r.z],ry:hero.root.rotation.y};
   const feet=[];for(const [f,to] of [[LF,LT],[RF,RT]]){const a=wp(f),b2=to?wp(to):a;const g=down(a,.7);const g2=down(b2,.7);feet.push([a.y,b2.y,g?g.y:null,g2?g2.y:null,g?g.n:'']);}rec.feet=feet;
   const s=down(hp,.05);rec.under=s?[s.y,s.n]:null; // first surface below the hips
@@ -34,7 +34,7 @@ const seq=[['read',11],['cook',8],['wash',9],['tea',13],['craft',10],['look',16]
 await p.evaluate(()=>{window.__TS=1;__noRender(true);});
 for(const [task,h] of seq){await p.evaluate(([t,h])=>{__th.setHour(h);__th.task(t);window.__log.push({mark:t,h});},[task,h]);
  const t0=Date.now();let settled=0;
- while(Date.now()-t0<SEC*1000){await p.waitForTimeout(1000);const s=await p.evaluate(()=>{const h=__dbg.hero;return {path:h.path.length,state:h.state,rm:!!h.rm,lad:!!h.lad}});
+ while(Date.now()-t0<SEC*1000){await p.waitForTimeout(1000);const s=await p.evaluate(()=>{const h=__dbg.hero;return {path:h.path.length,state:h.state,rm:!!(h.rm||h.trans),lad:!!h.lad}});
   if(s.path==0&&!s.rm&&!s.lad&&s.state==='work'){if(++settled>=6)break;}else settled=0;}
  console.log(task,h,'secs',(Date.now()-t0)/1000);}
 // one screenshot per pose with rendering on: seated, bed
