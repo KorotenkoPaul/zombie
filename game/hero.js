@@ -634,9 +634,9 @@ export function createHero(ctx){
    a.leave=cb=>{if(a.step==='sit'||a.step==='work'){a.step='up';a.t=0;play(IDLE(),{fade:1});const f=a.update;a.update=dt=>{f(dt);};const wait=()=>{if(H.fit&&a.step==='up'&&a.t<1.3){setTimeout(wait,100);}else{H.fit=null;H.ground=true;cb();}};wait();}else cb();};
    return a;},
   firewood:(o)=>{const X=window.__ground&&window.__ground.exits&&window.__ground.exits.forest;if(!X||!N.g_wood)return job({pt:()=>PT('woodpile'),stand:.5,clip:'hy_picklog',dur:[2,3]});
-   const a={step:'go'};goTo('g_wood',()=>{H.face=N.g_wood.face;a.step='pick';once('hy_picklog',{fade:.4,then:()=>{try{(window.__props||P3).grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}
+   const a={step:'go'};goTo('g_wood',()=>{H.face=N.g_wood.face;a.step='pick';reps('hy_picklog',4+(Math.random()<.5?1:0),()=>{try{(window.__props||P3).grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}
      H.carry='hy_carrylogs';const wp=PT('woodpile');const nn=wp?nearNode(wp):'kmid';goTo(nn||'kmid',()=>{a.step='drop';if(wp)H.face=Math.atan2(wp.x-root.position.x,wp.z-root.position.z);once('hy_droplogs',{fade:.4,then:()=>{
-      try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});endTask({ok:true,logs:3});}});});}});});
+      try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});endTask({ok:true,logs:3});}});});});});
    a.update=()=>{if(H.carry&&H.path.length&&has(H.carry)&&!H.ov)overlay(H.carry,{fade:.3,until:.98,weight:.9});};
    a.leave=cb=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
  });
@@ -682,6 +682,8 @@ export function createHero(ctx){
   if(nn)goTo(nn,run);else run();}
  function stepTick(a,dt){a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return true;}
   if(a.step==='clip'){H.look=a.pt;H.lookW=.9;const k=a.t/Math.max(.3,a.clipDur);while(a.hits.length&&k>=a.hits[0][0]){a.hits.shift()[1]();}return true;}return false;}
+ // the same one-off clip n times in a row (gathering logs, scooping), each with a small shift of the gaze
+ function reps(clip,n,then){if(n<=0||!has(clip)){then();return;}once(clip,{fade:.35,then:()=>{H.face+=rnd(-.25,.25);reps(clip,n-1,then);}});}
  const peg=n=>{const p=PT(n);if(!p)return null;const q=p.clone();q.hand=true;/* hand height: stand on the floor below it, not on a floor level with it */return q;};
  function gearOn(a,o,then){const seq=[];
   if(o.jacket&&!GEAR.coat&&COAT)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketon',[[.14,()=>{try{PP().setHere&&PP().setHere('jacket',false);}catch(e){}COAT.on=true;GEAR.coat=true;}],[.55,()=>AU('zip')]]/* no rigid jacket in the hand: it leaves the peg at the touch and settles on the body (skinned coat fades in) */,next));
@@ -716,9 +718,9 @@ export function createHero(ctx){
    a.update=dt=>{if(!stepTick(a,dt))carryOv();};a.leave=cb=>{try{P.release('meatBag');P.fridge.openTo(0,.4);}catch(e){}H.carry=null;cb();};return a;},
   eat:(o={})=>{// the plate from the stove to the table, sit, eat 10-15 s, then the plate to the sink
    const a={step:'go',t:0,T:0};const P=PP();const dur=rnd(10,15);
-   visit(a,toolHome('plate')||PT('pan'),.45,'hy_take',[[.45,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});a.pl=1;}catch(e){}}]],()=>{a.step='go2';goTo('chair_app',()=>{a.step='sit';sitDown(N.chair,()=>{
+   visit(a,toolHome('plate')||PT('pan'),.45,'hy_take',[[.45,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});a.pl=1;}catch(e){}}]],()=>{a.step='serve';if(has('hy_stir'))play('hy_stir',{fade:.5});H.look=PT('pan')||null;H.lookW=.8;/* serves himself from the pan before sitting down */H.wait={t:rnd(3.5,5),then:()=>{a.step='go2';play(IDLE(),{fade:.4});goTo('chair_app',()=>{a.step='sit';sitDown(N.chair,()=>{
      const tp=PT('table')||root.position.clone().addScaledVector(fwd(root.rotation.y),.4).setY(FIT.tableTop);try{const pl=P.tools.plate;scene.attach(pl);pl.position.copy(tp).add(V(0,.01,0));pl.quaternion.identity();}catch(e){}
-     a.step='eat';a.t=0;play(has('hy_eat')?'hy_eat':SITIDLE,{fade:.8});});});});
+     a.step='eat';a.t=0;play(has('hy_eat')?'hy_eat':SITIDLE,{fade:.8});});});}};});
    a.update=dt=>{if(stepTick(a,dt))return;if(a.step==='eat'){a.T+=dt;H.look=PT('table');H.lookW=.9;try{P.plate&&P.plate.setFood&&P.plate.setFood(1-a.T/dur);}catch(e){}
      if(a.T>dur){a.step='up';standUp(N.chair,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});}catch(e){}
        visit(a,PT('sink'),.42,'hy_take',[[.45,()=>{try{P.release('plate');a.pl=0;P.dishes&&P.dishes.setDirty(P.dishes.state().dirty+1);}catch(e){}}]],()=>endTask({ok:true}));});}}};
@@ -727,8 +729,8 @@ export function createHero(ctx){
   fetchwater:(o={})=>{const a={step:'go',t:0};const P=PP();const pond=window.__ground&&window.__ground.pond&&window.__ground.pond.fill;
    visit(a,PT('waterShelf'),.45,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry='hy_carrysack';}]],()=>{a.step='out';
     const spot=pond?pond.clone?pond.clone():V(pond.x,pond.y,pond.z):(N.g_exit1?N.g_exit1.p.clone().add(V(.6,0,.6)):null);
-    const fill=()=>{a.step='fill';once('hy_picklog',{fade:.4,then:()=>{AU('bucket_fill',root.position);try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.3});
-      a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}});};
+    const fill=()=>{a.step='fill';reps('hy_picklog',3,()=>{AU('bucket_fill',root.position);try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.3});H.look=root.position.clone().addScaledVector(fwd(H.face),2.5);H.lookW=.6;/* a breath at the water before carrying it home */
+      H.wait={t:rnd(2.5,4),then:()=>{a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};});};
     if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
    a.update=dt=>{if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
