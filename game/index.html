@@ -320,7 +320,8 @@ if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
 floorBoards(.8,4.25,DK,.3,3.0);rail(.8,3.0,4.25,3.0,DK,[1.05,1.65]);rail(4.25,.6,4.25,3.0,DK);
 brace(V(1.6,DK-2.4,1.0),V(2.6,DK-.13,1.6),.17);brace(V(4.0,WS+3.5,1.6),V(4.0,DK-.13,1.6),.16);
 // real window glass: thin, see-through from both sides, a faint cool tint, more reflective at grazing angles
-const glass=new THREE.MeshStandardMaterial({color:0xD6E6F0,emissive:0x5E8CC0,emissiveIntensity:.55,roughness:.04,metalness:.1,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false});
+// dark base colour: glass scatters almost no light, a lamp shows in it as a sharp reflection, not a milky warm haze
+const glass=new THREE.MeshStandardMaterial({color:0x26303A,emissive:0x5E8CC0,emissiveIntensity:.55,roughness:.04,metalness:.1,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false});
 const glassFresnel=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <project_vertex>','#include <project_vertex>\nvFr=1.-abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <opaque_fragment>','gl_FragColor=vec4(outgoingLight,mix(diffuseColor.a,.55,pow(vFr,3.)));');};
 glass.onBeforeCompile=glassFresnel;glass.userData.ownGlass=true;
