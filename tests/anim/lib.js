@@ -17,7 +17,7 @@ const INIT=seed=>{ // runs before any page script
  window.__qa={reseed(n){s=n>>>0;},start(){return new Promise(res=>{realRAF(()=>{manual=true;realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
   step(n,dt,each){for(let i=0;i<n;i++){vt+=dt*1000;const cb=q;q=[];for(const c of cb)c(vt);this.frame++;if(each)each(this.frame);}}};
 };
-async function open({seed=1,vp={width:640,height:640},log=false}={}){
+async function open({seed=1,vp={width:640,height:640},log=false,query=''}={}){
  const b=await chromium.launch({args:['--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader','--ignore-gpu-blocklist']});
  const p=await b.newPage({viewport:vp,deviceScaleFactor:1});p.setDefaultTimeout(600000);
  const errs=[];p.on('pageerror',e=>errs.push('PE '+e.message));p.on('console',m=>{if(m.type()==='error')errs.push(m.text().slice(0,200));if(log)console.log('[page]',m.text().slice(0,200));});
@@ -32,7 +32,7 @@ async function open({seed=1,vp={width:640,height:640},log=false}={}){
   const ct={'.html':'text/html','.js':'application/javascript','.txt':'text/plain','.jpg':'image/jpeg','.png':'image/png','.json':'application/json'}[ext]||'application/octet-stream';
   r.fulfill({body,contentType:ct});});
  await p.route('https://fonts.googleapis.com/**',r=>r.fulfill({body:'',contentType:'text/css'}));
- await p.goto(ORIGIN+'/index.html');try{await p.waitForLoadState('networkidle',{timeout:120000});}catch(e){}await p.waitForFunction(()=>window.__th&&window.__dbg&&window.__renderer,null,{timeout:600000});
+ await p.goto(ORIGIN+'/index.html'+(query||''));try{await p.waitForLoadState('networkidle',{timeout:120000});}catch(e){}await p.waitForFunction(()=>window.__th&&window.__dbg&&window.__renderer,null,{timeout:600000});
  await p.evaluate(()=>{const R=window.__renderer;const real=R.render;window.__realRender=real;
   window.__noRender=on=>{R.render=on?function(s){s&&s.updateMatrixWorld&&s.updateMatrixWorld();}:real;};__noRender(true);});
  return {b,p,errs};

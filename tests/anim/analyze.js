@@ -19,7 +19,7 @@ const LIMITS={
  detour:1.35,      // walked length / straight distance for one walk
  // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
  // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
- walkMin:.85,stayMin:20,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+ walkMin:.85,stayMin:20,neckYaw:60,headHips:100,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
 };
 const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -41,7 +41,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  // calibrate the natural knee-bend direction from walking frames
  let sgn=0;F.forEach((f,i)=>{if(f.fl.includes('P'))for(const s of ['Left','Right'])if(M[i][s].knee<160)sgn+=Math.sign(M[i][s].bend);});sgn=Math.sign(sgn)||1;
  // ---- 1. penetration ----
- const pen=[];F.forEach((f,i)=>f.pen.forEach((p,g)=>{if(!p)return;const [cm,ci,pos]=p;const nm=names[ci]||'?';const G=GN[g];
+ const pen=[];F.forEach((f,i)=>f.pen.forEach((p,g)=>{if(!p)return;const [cm,ci,pos]=p;const nm=names[ci]||'?';const G=GN[g];if(/ (\d{4,})x/.test(nm)&&+nm.match(/ (\d+)x/)[1]>1200)return;
   let tol=lim.pen[G];if(SOFT.test(nm))tol=Math.max(tol,lim.penSoft);if(SOFT.test(nm)&&(f.fl.includes('B')||f.fl.includes('W'))&&pos&&pos[1]<f.root[1]+.6)tol=Math.max(tol,lim.penPillow);if(SEAT.test(nm)&&(G==='hips'||G==='shins'))tol=Math.max(tol,lim.penSeat);
   if(cm>tol)pen.push({i,G,nm,cm,pos,tol});}));
  // merge into events: same body part + same object, gaps < 0.3 s
@@ -130,6 +130,53 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    const w=(i0,i1)=>{let s=0,c=0;for(let k=Math.max(1,i0);k<Math.min(F.length,i1);k++){const p=F[k].root,q=F[k-1].root;s+=Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2])/lim.dt;c++;}return c?s/c:0;};
    const before=w(i-30,i),after=w(i,i+30);tempo.trans.push({f:F[i].f,ladder:b?'enter':'exit',before:+before.toFixed(2),after:+after.toFixed(2)});
    if(Math.max(before,after)>.05&&Math.max(before,after)/Math.max(.02,Math.min(before,after))>2.5)add('robot',i,{bone:'root',value:+(Math.max(before,after)/Math.max(.02,Math.min(before,after))).toFixed(1),unit:'x speed change at the ladder ('+before.toFixed(2)+' -> '+after.toFixed(2)+' m/s)',limit:2.5,what:'ladder '+(b?'entry':'exit')+': '+(after>before?'speeds up':'slows down')+' abruptly'});}}
+ // ---- 10. anatomy: owl head, ankles/toes, feet rolled over; hands/feet on real ladder rungs; objects moved without touching ----
+ const n3=a=>{const l=len(a)||1;return [a[0]/l,a[1]/l,a[2]/l];},angd=(a,b)=>Math.acos(Math.max(-1,Math.min(1,dot(n3(a),n3(b)))))*180/Math.PI;
+ const runs=(test,minN,cb)=>{let s0=-1,best=-1,bv=0;for(let i=0;i<=F.length;i++){const v=i<F.length?test(i):null;if(v!=null){if(s0<0){s0=i;bv=-1e9;}const a=Math.abs(v);if(a>bv){bv=a;best=i;}}else if(s0>=0){if(i-s0>=minN)cb(s0,i-1,best,bv);s0=-1;}}};
+ tempo.anatomy={};
+ if(F[0].q){const QI={Spine2:0,Neck:1,Head:2,LeftFoot:3,RightFoot:4,LeftToeBase:5,RightToeBase:6};const Q=(f,n)=>f.q.slice(QI[n]*4,QI[n]*4+4);const qi=q=>[-q[0],-q[1],-q[2],q[3]];
+  const fw=f=>[Math.sin(f.ry),0,Math.cos(f.ry)],rt=f=>[Math.cos(f.ry),0,-Math.sin(f.ry)],up=()=>[0,1,0];
+  const cal=F.filter((f,i)=>i%7===0&&f.fl==='P'&&!f.fl.includes('L'));// walking frames: body faces where he goes
+  const loc=(get,wv)=>{let a=[0,0,0];for(const f of cal){const v=qrot(qi(get(f)),wv(f));a=[a[0]+v[0],a[1]+v[1],a[2]+v[2]];}return n3(a);};
+  const aH=loc(f=>Q(f,'Head'),fw),aC=loc(f=>Q(f,'Spine2'),fw),uC=loc(f=>Q(f,'Spine2'),up),aP=loc(f=>f.hq,fw),uP=loc(f=>f.hq,up);
+  const yaw=(qa,a,qb,b,ub)=>{const h=qrot(qa,a),c=qrot(qb,b),u=n3(qrot(qb,ub));const pr=v=>{const d=dot(v,u);return [v[0]-u[0]*d,v[1]-u[1]*d,v[2]-u[2]*d];};const hp=pr(h),cp=pr(c);const sg=dot(cross(cp,hp),u)>=0?1:-1;return sg*angd(hp,cp);};
+  const neck=F.map(f=>yaw(Q(f,'Head'),aH,Q(f,'Spine2'),aC,uC)),body=F.map(f=>/[WBST]/.test(f.fl)||qrot(f.hq,uP)[1]<.85||qrot(Q(f,'Spine2'),uC)[1]<.7?0:yaw(Q(f,'Head'),aH,f.hq,aP,uP));
+  const pct=(a,p)=>{const b=a.map(Math.abs).sort((x,y)=>x-y);return +b[Math.floor((b.length-1)*p)].toFixed(1);};
+  tempo.anatomy.neckYaw={p50:pct(neck,.5),p99:pct(neck,.99),max:pct(neck,1)};tempo.anatomy.headVsHips={p50:pct(body,.5),p99:pct(body,.99),max:pct(body,1)};
+  runs(i=>Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  // feet: ankle angle (shin vs foot) against his own neutral, toe bend, roll of a planted foot
+  for(const sd of ['Left','Right']){const ank=F.map(f=>angd(sub(bone(f,sd+'Foot'),bone(f,sd+'Leg')),sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot'))));
+   const toe=F.map(f=>angd(sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot')),sub(bone(f,sd+'Toe_End'),bone(f,sd+'ToeBase'))));
+   const c=F.map((f,i)=>i).filter(i=>F[i].fl==='P'||F[i].fl==='').map(i=>ank[i]).sort((x,y)=>x-y);const a0=c.length?c[c.length>>1]:90;
+   const aS=loc(f=>Q(f,sd+'Foot'),rt);const gi=sd==='Left'?1:3,ti=BI[sd+'ToeBase'];
+   const planted=i=>{const f=F[i];if(/[LWBS]/.test(f.fl)||i<1)return false;const t=bone(f,sd+'ToeBase'),g=f.gnd[gi];if(g==null||t[1]-g>.07)return false;return len(sub(t,bone(F[i-1],sd+'ToeBase')))/lim.dt<.15;};
+   const roll=F.map((f,i)=>planted(i)?Math.asin(Math.max(-1,Math.min(1,qrot(Q(f,sd+'Foot'),aS)[1])))*180/Math.PI:null);
+   tempo.anatomy[sd+'Ankle']={neutral:+a0.toFixed(1)};
+   runs(i=>/[LWB]/.test(F[i].fl)?null:ank[i]-a0>lim.ankleUp?ank[i]-a0:null,3,(a,b,i)=>add('foot-bend',i,{bone:sd+'Foot',value:+(ank[i]-a0).toFixed(0),unit:'° foot bent up past neutral',limit:lim.ankleUp,what:'ankle bent up further than a person can',from:F[a].f,to:F[b].f}));
+   runs(i=>/[LWB]/.test(F[i].fl)?null:a0-ank[i]>lim.ankleDown?a0-ank[i]:null,3,(a,b,i)=>add('foot-bend',i,{bone:sd+'Foot',value:+(a0-ank[i]).toFixed(0),unit:'° foot pointed down past neutral',limit:lim.ankleDown,what:'ankle pointed further than a person can',from:F[a].f,to:F[b].f}));
+   runs(i=>toe[i]>lim.toeBend?toe[i]:null,3,(a,b,i)=>add('foot-bend',i,{bone:sd+'ToeBase',value:+toe[i].toFixed(0),unit:'° toes bent',limit:lim.toeBend,what:'toes folded',from:F[a].f,to:F[b].f}));
+   runs(i=>roll[i]!=null&&Math.abs(roll[i])>lim.footRoll?roll[i]:null,3,(a,b,i,v)=>add('foot-bend',i,{bone:sd+'Foot',value:+v.toFixed(0),unit:'° planted foot rolled onto its edge',limit:lim.footRoll,what:'foot twisted over on the floor',from:F[a].f,to:F[b].f}));}
+ }
+ // ladders: palm and ball of the foot vs the nearest real rung, on frames where that limb holds still (gripping / standing)
+ if(D.rungs&&D.rungs.length){const R=D.rungs;const dseg=(p,r)=>{const c=r.c,d=r.d;const v=sub(p,c);let t=dot(v,d);t=Math.max(-r.h,Math.min(r.h,t));return len(sub(v,[d[0]*t,d[1]*t,d[2]*t]));};
+  const near=p=>{let m=9;for(const r of R){if(Math.abs(r.c[1]-p[1])>.6||Math.abs(r.c[0]-p[0])>1||Math.abs(r.c[2]-p[2])>1)continue;const d=dseg(p,r);if(d<m)m=d;}return m;};
+  const palm=(f,sd)=>{const h=bone(f,sd+'Hand'),a=bone(f,sd+'ForeArm');const v=n3(sub(h,a));return [h[0]+v[0]*.07,h[1]+v[1]*.07,h[2]+v[2]*.07];};
+  const LIMB=[['LeftHand',f=>palm(f,'Left'),.09],['RightHand',f=>palm(f,'Right'),.09],['LeftFoot',f=>bone(f,'LeftToeBase'),.09],['RightFoot',f=>bone(f,'RightToeBase'),.09]];
+  tempo.ladderGrip=[];let s0=-1;
+  for(let i=0;i<=F.length;i++){const on=i<F.length&&F[i].fl.includes('L')&&/^43[57]$/.test(String(F[i].clip));if(on&&s0<0)s0=i;if(!on&&s0>=0){const i1=i-1;if(i1-s0>30){
+     const row={f:F[s0].f,dur:+((i1-s0)*lim.dt).toFixed(1)};
+     for(const [nm,pt,tol] of LIMB){const ds=[];for(let k=s0+2;k<=i1;k++){const p=pt(F[k]),q=pt(F[k-2]);if(len(sub(p,q))/(2*lim.dt)<.12)ds.push(near(p));}
+      ds.sort((x,y)=>x-y);const med=ds.length?ds[ds.length>>1]:null;row[nm]=med==null?'never still':+(med*100).toFixed(1);
+      if(med!=null&&med<5&&med>tol)add('ladder-grip',s0+((i1-s0)>>1),{bone:nm,value:+(med*100).toFixed(1),unit:'cm from the nearest rung while holding still',limit:tol*100,what:nm.includes('Hand')?'hand grips air, not the rung':'foot stands on air, not on a rung',from:F[s0].f,to:F[i1].f,dur:row.dur,still:ds.length});
+      if(ds.length<.1*(i1-s0))add('ladder-grip',s0,{bone:nm,value:ds.length,unit:'still frames on the whole climb',limit:Math.round(.1*(i1-s0)),what:nm+' never rests on a rung (slides with the canned clip)',from:F[s0].f,to:F[i1].f,dur:row.dur});}
+     tempo.ladderGrip.push(row);}s0=-1;}}}
+ // contactless: something moves near him (lid, door, bolt, oven door, bucket...) while neither palm is on it
+ if(D.mov){const ambient=new Set(D.mov.map((m,id)=>m[1]>F.length*.1?id:-1));const ev={};
+  F.forEach((f,i)=>{if(i<30)return;for(const [id,d] of f.mv||[]){if(ambient.has(id))continue;let e=ev[id]&&ev[id][ev[id].length-1];if(!e||i-e.i1>12){e={i0:i,i1:i,d:[]};(ev[id]=ev[id]||[]).push(e);}e.i1=i;e.d.push(d);}});
+  tempo.touch=[];for(const id in ev)for(const e of ev[id]){if(e.d.length<3)continue;const s2=e.d.slice().sort((a,b)=>a-b);const med=s2[s2.length>>1],mn=s2[0];const nm=D.mov[id][0];
+   tempo.touch.push({obj:nm,at:D.mov[id][2],f:F[e.i0].f,task:F[e.i0].task,frames:e.d.length,medCm:med,minCm:mn});
+   if(med>lim.touchCm)add('no-touch',e.i0,{bone:'hands',into:nm,value:med,unit:'cm from the nearer palm while it moves (median)',limit:lim.touchCm,what:'moves without being touched ('+F[e.i0].task+')',minCm:mn,from:F[e.i0].f,to:F[e.i1].f,dur:+((e.i1-e.i0+1)*lim.dt).toFixed(2)});}}
  // ---- 9. stays: how long he stays where he walked to; turning back right away; sleep turnover ----
  // a stay = from the end of one walk (or ladder) to the start of the next; chained chores (switch, hatch, bolt, micro) are short on purpose
  const CHAIN=/^(switch|hatch|bolt|micro|null|guard)$/;tempo.stays=[];
@@ -158,6 +205,10 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='foot-slide')P=q.value>=8?1:q.value>=4?2:3;
   else if(q.type==='detour')P=q.unit.startsWith('deg')?(q.value>80?1:2):(q.value>1.7?1:2);
+  else if(q.type==='owl-head')P=q.value>=(q.limit+20)?1:2;
+  else if(q.type==='foot-bend')P=Math.abs(q.value)>=q.limit+15?1:2;
+  else if(q.type==='ladder-grip')P=q.unit.startsWith('cm')?(q.value>=q.limit*1.6?1:2):2;
+  else if(q.type==='no-touch')P=q.value>=15?1:2;
   else if(q.type==='turn-back')P=q.value<8?1:2;
   else if(q.type==='short-stay')P=q.value<8?2:3;
   else if(q.type==='sleep-turnover')P=2;

@@ -26,7 +26,7 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
  pick.forEach((q,n)=>{if(q.type==='focus'){const L=q.f1-q.f;for(let k=0;k<6;k++)job(q.f+Math.round(L*k/5),{n,k,kind:'sheet'});return;}const ff=q.type==='detour'||q.type==='crab-walk'||q.type==='sharp-turn'||q.type==='foot-slide'?OFF.map(o=>o*2):OFF;
   ff.forEach((o,k)=>job(q.f+o,{n,k,kind:'sheet'}));});
  pick.filter(q=>q.P===1).slice(0,CLIPS).forEach(q=>{const n=pick.indexOf(q);if(q.type==='focus'){for(let o=-20;o<=q.f1-q.f+20;o+=2)job(q.f+o,{n,k:o,kind:'clip'});return;}for(let o=-42;o<=42;o+=2)job(q.f+o,{n,k:o,kind:'clip'});});
- const {b,p,errs}=await open({seed:D.meta.seed,vp:{width:360,height:360}});
+ const {b,p,errs}=await open({seed:D.meta.seed,query:D.meta.query||'',vp:{width:360,height:360}});
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  let drift=0;const t0=Date.now();
  await simulate(p,{hours:D.meta.hours,tour:true,log:()=>{},capture:{frames:new Set(want.keys()),fn:async fr=>{
