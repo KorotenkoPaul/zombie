@@ -344,6 +344,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   if(rainK>0){fogU.col.value.lerp(rainC,rainK*.7);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
   ffU.on.value=eve*(1-rainK);if(env.fireflies)env.fireflies.visible=ffU.on.value>.01;/* by day the points are fully transparent: don't draw them */const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.3);g.con.value=1.08+eve*.05-rainK*.06;/* rain: greyer, flatter, like looking through wet air */
   warmBounce(eve,rainK,nightK);
+  if(env.interiorOn){inProbe.sh.coefficients[0].set(eve*env.interiorK,0,0);}
   if(MOBILE){phoneNight(eve,rainK);foldLights();}};
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
@@ -383,6 +384,16 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   if(env.canopy){const c=env.canopy.material.color;// what a lit card gets on average (Lambert: albedo/pi x irradiance)
    cA.copy(LH.groundColor).lerp(LH.color,.6).multiplyScalar(LH.intensity);cA.add(cB.copy(LA.color).multiplyScalar(LA.intensity));
    if(LS)cA.add(cC.copy(LS.color).multiplyScalar(LS.intensity*.3));c.copy(cA).multiplyScalar(PH.leafK/Math.PI);}}
+ // ---- interior night ambient (Lights: with every lamp off the bedroom on phones stayed ~75% as bright as lit, so the cosy dark
+ // and the bunk shadow could not read). The ambient + hemisphere fill is cut to ~25% inside the room boxes at night; the moonlit
+ // outside keeps it. No new uniform in every material: a LightProbe carries the strength (lightProbe[0].x) and its own
+ // irradiance term is dropped, so the probe is a pure parameter. The mask uses the world position from the fog chunk (vFogW).
+ const inProbe=new THREE.LightProbe();inProbe.name='envInteriorK';
+ env.setInterior=rooms=>{const box=rooms.map(r=>`k=max(k,ib(p,vec3(${r[0].toFixed(3)},${r[2].toFixed(3)},${r[4].toFixed(3)}),vec3(${r[1].toFixed(3)},${r[3].toFixed(3)},${r[5].toFixed(3)})));`).join('');
+  const c=THREE.ShaderChunk;c.lights_fragment_begin=c.lights_fragment_begin.replace('irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );','')
+   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.;'+box+'irradiance*=1.-k*lightProbe[0].x;}\n#endif');
+  c.lights_pars_begin=c.lights_pars_begin+'\nfloat ib(vec3 p,vec3 a,vec3 b){vec3 d=min(p-a,b-p);return smoothstep(-.13,-.06,min(d.x,min(d.y,d.z)));}';
+  scene.add(inProbe);env.interiorOn=true;};env.interiorK=.75;/* share of the fill cut inside at full night (Lights: ~25% left) */
  // the grade folded into three's OutputPass (one full-screen pass less): same uniforms, run right after tone mapping + sRGB
  env.foldGrade=op=>{const gu=env.gradePass.uniforms;for(const k of ['sat','con','lift','warm','vig','night','morn','gOn'])op.uniforms[k]=gu[k];
   op.uniforms.tFog={value:null};op.uniforms.fogOn={value:0};env.outU=op.uniforms;
