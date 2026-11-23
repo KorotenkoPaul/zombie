@@ -366,7 +366,7 @@ export function createHero(ctx){
   // ===== CLIMB HOOK (climb.js, ladder thread): hands and feet on the real rungs =====
   else if(L.phase==='climb'&&climb&&!window.__noClimb&&(L.cl||(L.cl=climb.begin({up:L.up,x:L.x,lz:c.lz,side:c.side,cz,yBot:L.yBot,yTop:L.yTop,}))?1:(L.cl=-1,0))&&L.cl!==-1){
    turnTo(F,dt);if(L.hb)hatchBelow(L.hb,dt);const r=climb.tick(dt);
-   if(r==='off'){done();}
+   if(r==='off'){done();H.v=.12;/* walks off from the slow last step of climbing over (no 0 -> walk jump) */}
    else if(r==='bottom'){play(IDLE()||'0',{fade:.35});done();}}
   else if(L.phase==='over'&&climb&&!window.__noClimb&&!L.start&&L.cl!==-1){// down: walk to the edge, turn the back to the hole, climb down over it (climb.js)
    const P=L.P||(L.P=climb.topStand({x:L.x,lz:c.lz,cz,yTop:L.yTop}));if(!P){L.cl=-1;}

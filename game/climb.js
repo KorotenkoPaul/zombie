@@ -77,7 +77,10 @@ export function createClimb() {
 
   // top of rung i (where a sole rests); -1 = the floor below, >= nR = the floor above
   function top(A, i) { if (i < 0) return A.floorY; if (i >= A.R.length) return A.o.yTop; const r = A.R[i]; return r.y + r.r; }
-  function rungP(A, i) { if (i < 0) return V(A.lad.x, A.floorY, A.o.cz); const r = A.R[Math.min(i, A.R.length - 1)]; return V(r.x, r.y, r.z); }
+  function rungP(A, i) { if (i < 0) return V(A.lad.x, A.floorY, A.o.cz); const r = A.R[Math.min(i, A.R.length - 1)]; const q = V(r.x, r.y, r.z);
+    // rope ladders sway in their vertex shader (wind.js windRope): follow the same offset so the hands stay on the rung on screen
+    const W = window.__wind; if (A.lad.rope && A.lad.len && W && W.swayAt && r.sw > 0) { try { const o = W.swayAt(q, 1.1); const k = .05 * A.lad.len * r.sw * r.sw * (1 - .45 * (W.wet ? W.wet() : 0)); q.x += o.x * k; q.z += o.z * k; } catch (e) {} }
+    return q; }
   // where each limb wants to be when it rests on rung i
   function restTarget(A, k, i) {
     const s = k[0] === 'L' ? 1 : -1, zD = A.zDir;
@@ -240,9 +243,9 @@ export function createClimb() {
       // look at the hand that moves next (or between the hands); over the edge: ahead
       const nh = A.step && A.step.move.find(m => m.k[1] === 'H');
       { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
-        let L = A.mode === 'over' ? A.P.clone().add(V(0, 1.4, -A.zDir * 1.2)) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
+        let L = A.mode === 'over' ? V(A.P.x, hd.y + .05, A.P.z - A.zDir * 1.4) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
         if (A.mode !== 'over') { L.y = Math.min(L.y, hd.y + .2); L.z = planeZ; }
-        C.H.look = L; C.H.lookW = .35; }
+        C.H.look = L; C.H.lookW = .35; A.lookPt = L; }
     } else { tg = S.last && S.last.tg; hw = S.last && S.last.hw; }
     if (!tg) return;
     const W = S.W; const zDir = S.last.zDir;
@@ -260,6 +263,23 @@ export function createClimb() {
       const Hd = B[s + 'Hand']; if (Hd) { const a = wp(Hd); const dir = V(0, 1, 0).applyQuaternion(Hd.getWorldQuaternion(new THREE.Quaternion())); const tip = a.clone().addScaledVector(dir, .09);
         const flat = S.last.flat && S.last.flat[k];
         C.turnBone(Hd, tip, a.clone().add(flat ? V(0, -.015, -zDir * .09) : V(0, .075, -zDir * .06)), w); }
+    }
+    if (A && A.lookPt) aimHead(A.lookPt, W * .85);
+  }
+
+  // the head looks where he climbs (the climb clip throws it back to the ceiling): Neck 40 % / Head 60 %, kept within a
+  // human pitch range, after the limbs so nothing turns it back afterwards
+  const _q1 = () => new THREE.Quaternion();
+  function aimHead(pt, w) {
+    const B = C.bones, Hd = B.Head, Nk = B.Neck; if (!Hd || !Nk || !pt || w < .01) return;
+    for (const [b, part] of [[Nk, .4], [Hd, 1]]) {
+      const hp = Hd.getWorldPosition(V()); const f = V(0, 0, -1).applyQuaternion(Hd.getWorldQuaternion(_q1()));
+      const want = pt.clone().sub(hp).normalize();
+      // pitch only up to 30 deg up / 35 deg down from level
+      const hz = Math.hypot(want.x, want.z) || 1e-3; let pit = Math.atan2(want.y, hz); pit = Math.max(-.6, Math.min(.52, pit)); want.set(want.x / hz * Math.cos(pit), Math.sin(pit), want.z / hz * Math.cos(pit));
+      const dq = _q1().setFromUnitVectors(f, want); dq.slerp(_q1(), 1 - w * part);
+      const bq = b.getWorldQuaternion(_q1()), pq = b.parent.getWorldQuaternion(_q1());
+      b.quaternion.copy(pq.invert().multiply(dq.multiply(bq))); b.updateMatrixWorld(true);
     }
   }
 
