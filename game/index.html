@@ -1138,6 +1138,7 @@ window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,trunkSolid,LI
 try{const {createGrab}=await import(new URL(ASSET+'grab.js',document.baseURI).href);window.__grab=createGrab({THREE,bones:heroBones});try{window.__grab.buildFists(hero.root);window.__grab.wrapProps(window.__props||P3);}catch(e){console.error('fist',e);}}catch(e){console.error('grab',e);}
 // [COLLIDE] hard body boundaries: after hero.js poses the body, the skin is pushed out of walls, beams and furniture (game/collide.js)
 try{const {createCollide}=await import(new URL(ASSET+'collide.js',document.baseURI).href);window.__collide=createCollide({scene,HH,P3,trunk:{SL,TAX}});}catch(e){console.error('collide',e);}
+try{window.__grab&&window.__grab.attach(HH);}catch(e){console.error('grab attach',e);}/* [GRAB] after collide: exact hand holds are re-applied once the body has been pushed */
 // [PERF] the loading screen stays up until the heavy first work is done: every texture uploaded to the GPU, shaders linked
 // (parallel compile where the browser has it), collide.js built and two real frames drawn. Otherwise the first seconds after
 // it disappears are a frozen picture that ignores swipes.
