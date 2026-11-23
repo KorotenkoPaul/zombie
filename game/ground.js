@@ -145,7 +145,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);const inner=Math.max(Math.abs(x),Math.abs(z))<15.6;p.setY(i,groundH0(x,z)-(inner?.1:0)-(pondD(x,z)<2.5?.8:0));colAt(x,z);
    col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;}
   g.setAttribute('color',new THREE.BufferAttribute(col,3));g.computeVertexNormals();
-  const pg=new THREE.PlaneGeometry(32,32,MOBILE?56:128,MOBILE?56:128).rotateX(-Math.PI/2);{const pp=pg.attributes.position;const pc=new Float32Array(pp.count*3);
+  const pg=new THREE.PlaneGeometry(32,32,MOBILE?50:128,MOBILE?50:128).rotateX(-Math.PI/2);{const pp=pg.attributes.position;const pc=new Float32Array(pp.count*3);
    for(let i=0;i<pp.count;i++){const x=pp.getX(i),z=pp.getZ(i);pp.setY(i,groundH(x,z));colAt(x,z);pc[i*3]=c.r;pc[i*3+1]=c.g;pc[i*3+2]=c.b;}
    pg.setAttribute('color',new THREE.BufferAttribute(pc,3));pg.computeVertexNormals();}
   const gt=groundT.clone();gt.needsUpdate=true;gt.repeat.set(1,1);gt.wrapS=gt.wrapT=THREE.RepeatWrapping;
@@ -247,7 +247,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
  const tuftAlo=tuftGeo(MOBILE?5:7,2,11,.2,.46,.1),tuftBlo=tuftGeo(MOBILE?4:8,MOBILE?1:2,23,.08,.2,.16);
  scatterGrass(tuftA,tuftAlo,MOBILE?272:900,ring(2.4,18),[.7,1.25],'grassTall');
  scatterGrass(tuftB,tuftBlo,MOBILE?240:800,ring(2.2,14),[.8,1.3],'grassShort',false,MOBILE);// phones: one chunk each for the short and the far grass (draw calls)
- scatterGrass(tuftF,null,MOBILE?150:450,ring(16,48,.85),[1.3,2.1],'grassFar',true,MOBILE);
+ scatterGrass(tuftF,null,MOBILE?120:450,ring(16,48,.85),[1.3,2.1],'grassFar',true,MOBILE);
  G.grass=grassChunks;
  const LOD_HI=MOBILE?10:16,LOD_OFF=MOBILE?55:75;
  G.updateGrass=cam=>{for(const ch of grassChunks){const d=Math.hypot(cam.position.x-ch.c.x,cam.position.z-ch.c.z);
@@ -333,7 +333,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const mat=new THREE.MeshStandardMaterial({color:0x6A5A4A,roughness:1,vertexColors:true});
   mat.onBeforeCompile=s=>{s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nattribute float aU,aSeed;varying vec3 vTw;').replace('#include <begin_vertex>','#include <begin_vertex>\nvTw=vec3(aU*5.,(position.y+position.z)*260.,aSeed);');
    s.uniforms.uNz=NZU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vTw;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\n{float st=fbm(vec2(vTw.y,vTw.x+vTw.z));diffuseColor.rgb*=.55+.6*st;diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.42,.4,.36),smoothstep(.6,.8,fbm(vec2(vTw.y*.4,vTw.z*2.)))*.5);}');};
-  const N=MOBILE?40:85;const per=[[],[],[]];
+  const N=MOBILE?32:85;const per=[[],[],[]];
   for(let i=0;i<N*20&&per[0].length+per[1].length+per[2].length<N;i++){const s=pick(i%3?ring(2.2,8):ring(2.4,16),(x,z)=>rootD(x,z)>.2&&pathD(x,z)>.1,5);if(!s)continue;const [x,z]=s;
    const k=r()<.35?0:(r()<.55?1:2);const sz=rr(.7,1.25);M.compose(V(x,groundH(x,z)-.006,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz,sz*rr(.8,1.2)));per[k].push(M.clone());}
   // baked into one static mesh (one draw call for every stick in the clearing)
@@ -373,6 +373,11 @@ export function createGround(C){const __before=new Set(C.scene.children);
   if(ok(...big))add(wood(.42,.55,.62,MOBILE?14:20,1,2),big[0],big[1],1.1,[.04,-.03],.18,.9);
   if(ok(...big2))add(wood(.3,.4,.38,MOBILE?12:16,1,3),big2[0],big2[1],.2,[0,.05],.14,1);
   if(ok(...log))add(wood(.17,.21,2.6,MOBILE?10:14,1,4),log[0],log[1],.5,[0,Math.PI/2],.08,1);
+  // windfall: old trunks lying in the undergrowth between the clearing and the tree ring, mossy on top, some on a slant
+  {const NL=MOBILE?7:11;let nl=0;for(let t=0;t<400&&nl<NL;t++){const a=rr(0,6.28),r=rr(10.5,21);const x=Math.cos(a)*r,z=Math.sin(a)*r*.95;
+    if((z>1&&Math.abs(x)<13)||rootD(x,z)<2||!exitClear(x,z)||Math.hypot(x-chop[0],z-chop[1])<3||Math.hypot(x-log[0],z-log[1])<3)continue;
+    const len=rr(2.4,4.6),rad=rr(.16,.3);add(wood(rad*.85,rad,len,MOBILE?9:14,1,10+nl),x,z,rr(0,6.28),[rr(-.08,.08),Math.PI/2+rr(-.1,.1)],rad*.55,1);
+    G._stones=(G._stones||[]);for(let k=-1;k<=1;k++)G._stones.push([x,z,len*.3]);nl++;}}
   // phones' draw-call budget: bake every piece into one bark mesh and one end-grain mesh (2 draw calls in all)
   {const bark=[],ends=[];grp.updateMatrixWorld(true);
    for(const m of grp.children){const g=m.geometry.clone().applyMatrix4(m.matrix);const mats=Array.isArray(m.material)?m.material:[m.material];
@@ -603,9 +608,9 @@ export function createGround(C){const __before=new Set(C.scene.children);
   fm.onBeforeCompile=s=>{windHook(s);NOFLIP(s);s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nattribute float aK;')
    .replace('#include <begin_vertex>',`#include <begin_vertex>\n{float k=aK;const float SW=.05;${SWAY}}`);};
   const geos=MOBILE?[mk(8,.7,3)]:[mk(7,.75,3),mk(9,.6,8)];// phones: one variant (one draw call)
-  geos.forEach((fg,vi)=>{const NF=MOBILE?18:44;const im=new THREE.InstancedMesh(fg,fm,NF);let n=0;
-   for(let i=0;i<NF*30&&n<NF;i++){const s=pick(R()<.65?ring(3.,10):ring(10,26),(x,z)=>{const d=rootD(x,z);return d>.25&&d<(Math.hypot(x,z)>10?99:2.2)&&pathD(x,z)>.2;},6);if(!s)continue;const [x,z]=s;
-    const sz=rr(.8,1.4)*(Math.hypot(x,z)>10?1.35:1);M.compose(V(x,groundH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz*rr(.85,1.1),sz));im.setMatrixAt(n,M);
+  geos.forEach((fg,vi)=>{const NF=MOBILE?32:80;const im=new THREE.InstancedMesh(fg,fm,NF);let n=0;
+   for(let i=0;i<NF*30&&n<NF;i++){const s=pick(R()<.42?ring(3.,10):ring(10,24),(x,z)=>{const d=rootD(x,z);return d>.25&&d<(Math.hypot(x,z)>10?99:2.2)&&pathD(x,z)>.2;},6);if(!s)continue;const [x,z]=s;
+    const sz=rr(.8,1.4)*(Math.hypot(x,z)>10?rr(1.3,1.8):1);M.compose(V(x,groundH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz*rr(.85,1.1),sz));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.38),rr(.3,.45),rr(.6,.75));im.setColorAt(n,Col);n++;}
    im.count=n;im.receiveShadow=true;scene.add(im);});
   G.ferns=true;}
@@ -655,22 +660,22 @@ export function createGround(C){const __before=new Set(C.scene.children);
   // ---- the far edge of the clearing: a dense wall of undergrowth and young trees in front of the painted forest ----
   // It gives depth: near plants, then this thicket, then the far trees and the fog. Kept out of the camera's view line.
   const edgeOK=(x,z)=>!(z>1&&Math.abs(x)<13)&&rootD(x,z)>1.5&&exitClear(x,z);
-  {const bg=mkBush(5,MOBILE?14:20);const NE=MOBILE?50:90;const im=new THREE.InstancedMesh(bg,mat,NE);let n=0;
-   for(let t=0;t<NE*40&&n<NE;t++){const a=rr(0,6.28),r=rr(15,24)+(vnoise(a*3,1)-.5)*3;const x=Math.cos(a)*r,z=Math.sin(a)*r*.95;if(!edgeOK(x,z))continue;
+  {const bg=mkBush(5,MOBILE?14:20);const NE=MOBILE?95:180;const im=new THREE.InstancedMesh(bg,mat,NE);let n=0;
+   for(let t=0;t<NE*40&&n<NE;t++){const a=rr(0,6.28),r=(R()<.4?rr(10,15):rr(15,25))+(vnoise(a*3,1)-.5)*3;const x=Math.cos(a)*r,z=Math.sin(a)*r*.95;if(!edgeOK(x,z))continue;
     const sz=rr(1.2,2.4);M.compose(V(x,groundH(x,z)-.25,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(1,1.6),sz*rr(.8,1.25),sz*rr(1,1.5)));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.4),rr(.18,.32),rr(.38,.52));im.setColorAt(n,Col);n++;}
    im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);G.thicket=im;}
   {// young trees: a slim, slightly crooked trunk with a few side twigs, and two or three leaf clumps up top
    const r=rng(9);const parts=[];let px=0,pz=0;const pts=[];for(let i=0;i<=6;i++){const y=i/6*4.2;px+=(r()-.5)*.18;pz+=(r()-.5)*.18;pts.push(V(px,y,pz));}
-   const cu=new THREE.CatmullRomCurve3(pts);const tg=new THREE.TubeGeometry(cu,10,1,6,false);{const p=tg.attributes.position;const tmp=V();
+   const cu=new THREE.CatmullRomCurve3(pts);const tg=new THREE.TubeGeometry(cu,MOBILE?6:10,1,MOBILE?5:6,false);{const p=tg.attributes.position;const tmp=V();
     // taper: pull each ring towards the curve by height
     for(let i=0;i<p.count;i++){tmp.fromBufferAttribute(p,i);const t=Math.min(1,Math.max(0,tmp.y/4.2));const c=cu.getPoint(t);const k=(.11*(1-t)+.025)*(1+.6*smooth(.12,0,t));tmp.sub(c).multiplyScalar(k).add(c);p.setXYZ(i,tmp.x,tmp.y,tmp.z);}tg.computeVertexNormals();}
-   parts.push(tg);for(let b=0;b<3;b++){const y0=1.8+b*.7,a=r()*6.28;const c0=cu.getPoint(y0/4.2);const c1=c0.clone().add(V(Math.cos(a)*.7,.45,Math.sin(a)*.7));parts.push(new THREE.TubeGeometry(new THREE.LineCurve3(c0,c1),2,.025,4,false));}
+   parts.push(tg);for(let b=0;b<3;b++){const y0=1.8+b*.7,a=r()*6.28;const c0=cu.getPoint(y0/4.2);const c1=c0.clone().add(V(Math.cos(a)*.7,.45,Math.sin(a)*.7));parts.push(new THREE.TubeGeometry(new THREE.LineCurve3(c0,c1),MOBILE?1:2,.025,MOBILE?3:4,false));}
    const trunkG=mergeGeometries(parts.map(g=>{g.deleteAttribute('uv');return g.index?g.toNonIndexed():g;}));
    const tmat=new THREE.MeshStandardMaterial({color:0x4B3B30,roughness:.95});
    const crownG=mergeGeometries([mkBush(7,MOBILE?10:14).translate(0,3.6,0),mkBush(8,MOBILE?8:10).scale(.8,.8,.8).translate(.6,3.0,.3),mkBush(11,MOBILE?7:9).scale(.7,.7,.7).translate(-.5,4.3,-.2)]);
-   const NT=MOBILE?14:26;const ti=new THREE.InstancedMesh(trunkG,tmat,NT),ci=new THREE.InstancedMesh(crownG,mat,NT);let n=0;
-   for(let t=0;t<NT*50&&n<NT;t++){const a=rr(0,6.28),rad=rr(16,26);const x=Math.cos(a)*rad,z=Math.sin(a)*rad;if(!edgeOK(x,z))continue;
+   const NT=MOBILE?24:40;const ti=new THREE.InstancedMesh(trunkG,tmat,NT),ci=new THREE.InstancedMesh(crownG,mat,NT);let n=0;
+   for(let t=0;t<NT*50&&n<NT;t++){const a=rr(0,6.28),rad=rr(12,27);const x=Math.cos(a)*rad,z=Math.sin(a)*rad;if(!edgeOK(x,z))continue;
     const sz=rr(.75,1.25);M.compose(V(x,groundH(x,z)-.1,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz,sz*rr(.9,1.2),sz));ti.setMatrixAt(n,M);ci.setMatrixAt(n,M);
     Col.setHSL(rr(.28,.38),rr(.2,.35),rr(.42,.56));ci.setColorAt(n,Col);n++;}
    for(const im of [ti,ci]){im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);}G.youngTrees=ti;}
