@@ -30,3 +30,13 @@ Lid UVs must not be all identical (quantize breaks a zero-range attribute), henc
 `optim.mjs in.glb out.glb 0.66`: the metal/roughness map is gone (roughness was 0.66 ± 0.07 and metal 0 everywhere, so now it is a constant factor),
 and skin joints no vertex uses are dropped (body 28 -> 23: HeadTop_End, HandMiddle4 x2, Toe_End x2; eyelids 28 -> 1: Head). The bone NODES stay, so clips and hero.js lookups are unchanged.
 Before/after render diff: mean 0.1-0.4 of 255. Textures 3 -> 2 (base colour + normal map, 1024 webp).
+
+## Detailed version of the original hero (?hero=detail, 2026-11-23)
+Pavel: keep the original look but more detailed, less "anime". Concept: detail.py (same character, more detail, no quiver) -> dface.py (less anime face, strand hair) -> dmesh.py multi (Meshy v6 multi-image-to-3d, front + back, PBR) -> rig.py ->
+`KEEP_NORMAL=1 ROUGH=.65 node transplant.mjs old-dq.glb rig.glb out.glb` (keeps Meshy's normals + its normal map; smoothing normals breaks the normal map) -> slim 0.72 (18k tris) -> lids (L -0.0505/.8175, R .0475/.8175 in normalized space) ->
+`ktxtex.mjs in out 2048 1024` (base colour KTX2 ETC1S 2048, normal map webp 1024) -> quant -> optim. index.html now gives the GLTFLoader the KTX2 loader.
+GPU texture memory ~8.4 MB (vs 11.2 MB for the current default), download 2.79 MB (same as default). Body 18k tris (default 12.5k).
+Vest and boots are separate skinned meshes (`split.mjs`, after slim, before lids): nodes `vest` and `boots` (same skin + material) toggle with `.visible`.
+The body underneath has a knitted sweater layer (vest triangles inset 1.4 cm along welded normals, sweater texels) and wool socks (boot triangles pulled 36% toward the foot bones); both taper to zero where they meet the body, so no cracks.
+Classification: per-triangle texel colour + dominant bone (torso & not sweater/skin/green -> vest; feet, or shin & leather -> boots), majority smoothing over welded adjacency.
+Tris: body 18k (incl. layers), vest 2.8k, boots 3.1k.
