@@ -647,7 +647,7 @@ const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).
 // [WIND] the house answers the wind (game/housewind.js): the landing lantern swings on its chain, the telescope shivers in gusts
 const HOUSEWIND=(await import(new URL(ASSET+'housewind.js',document.baseURI).href)).createHouseWind({wind:WIND,scene,ladders:[{id:'ladder-ground',x:0,z:4.0,y0:0,y1:LC+.05},{id:'ladder-deck',x:1.35,z:3.15,y0:BD,y1:DK+.05}]});window.__housewind=HOUSEWIND;
 // [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
-const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
+const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],crown:TREE.leaves,MOBILE});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
 // [WIND] morning fog bank rolling in from the forest on the breeze (game/fogbank.js)
 const FOGBANK=(await import(new URL(ASSET+'fogbank.js',document.baseURI).href)).createFogBank({THREE,scene,wind:WIND,MOBILE});window.__fogbank=FOGBANK;
 
@@ -662,7 +662,7 @@ const motesMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blend
 #ifdef WIND
 p.xz+=windSwayS(position,.5)*.6;
 #endif
-vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=night*bl+day*.3;col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=min((day*2.+night*5.)*px*(26./-mv.z),16.*px);/* a mote drifting past the lens must not fill the screen with a green blob */gl_Position=projectionMatrix*mv;}`,
+vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=(night*bl+day*.3)*smoothstep(.5,2.,-mv.z);col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=min((day*2.+night*5.)*px*(26./-mv.z),16.*px);/* a mote drifting past the lens must not fill the screen with a green blob; [WIND] also fades out within 2 m */gl_Position=projectionMatrix*mv;}`,
  fragmentShader:`varying float a;varying vec3 col;void main(){float k=smoothstep(.5,0.,length(gl_PointCoord-.5));gl_FragColor=vec4(col*1.8*k*a,k*a);}`});
 {const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;WIND.hookRaw(motesMat);scene.add(p);}
 // [WIND] fireflies drift and leaves fall with the wind (game/wind.js)
