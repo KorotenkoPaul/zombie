@@ -87,7 +87,7 @@ export function createClimb() {
       const c = rungP(A, i); return c.add(V(side * A.hx, -.045, zD * .07)); }
     if (i < 0) { const f = A.limb[k].floor; if (f && A.up) return f.clone(); return V(A.lad.x + side * A.fx, A.floorY + M.footUp, A.o.cz - zD * .02); }
     const c = rungP(A, i); const R = A.R[Math.min(i, A.R.length - 1)];
-    return c.add(V(side * A.fx, R.r + .03 + M.footUp, zD * (M.footH - .02)));
+    return c.add(V(side * A.fx, R.r + .05 + M.footUp, zD * (M.footH - .02)));
   }
 
   // ---- over the top edge: s 0 = on the ladder (feet on the two top rungs, hands on the floor), 1 = standing up there ----
@@ -165,7 +165,7 @@ export function createClimb() {
     let hand = null, hto = null;
     // hands: one rung higher than the other hand; past the top rung the palm goes flat on the floor above
     if (up) { if (L[hLo].r < minAfter + A.K && L[hLo].r < nR) { hand = hLo; hto = Math.min(nR, L[hHi].r + 1); if (hto > nR - 1) hto = top(A, minAfter) + 1.3 > A.o.yTop + .05 ? nR : (L[hHi].r === nR - 1 ? nR - 2 : nR - 1); if (hto === L[hLo].r) hand = null; } }
-    else { if (L[hHi].r > minAfter + A.K + 1) { hand = hHi; hto = Math.min(nR - 1, L[hLo].r - 1); if (L[hLo].r >= nR) hto = nR - 1; } }
+    else { if (L[hHi].r > minAfter + A.K) {/* going down the hands stay a rung lower: the body hangs lower under them */ hand = hHi; hto = Math.min(nR - 1, L[hLo].r - 1); if (L[hLo].r >= nR) hto = nR - 1; } }
     if (hand && hto === L[hand].r) hand = null;
     if (up) {
       if (hand) { move.push({ k: hand, to: hto, a: 0, b: .42, arc: .09 }); move.push({ k: mf, to, a: .3, b: .84, arc: .13 }); }
@@ -195,6 +195,8 @@ export function createClimb() {
 
   // ---- after the clip pose: hips to the ladder, limbs onto the rungs ----
   function post(dt) {
+    // the body was reset (spawn / freeze guard / random start) while on a ladder: drop the climb at once
+    if (S.act && !C.H.lad) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; S.resid = null; }
     const A = S.act;
     // fade the IK weight (also after the climb ended, while the next clip takes over)
     const fadeT = A ? .3 : (S.fade || .3);
@@ -237,7 +239,10 @@ export function createClimb() {
       S.last = { tg, zDir: A.zDir, hw, flat: { LH: A.limb.LH.r >= A.R.length, RH: A.limb.RH.r >= A.R.length } };
       // look at the hand that moves next (or between the hands); over the edge: ahead
       const nh = A.step && A.step.move.find(m => m.k[1] === 'H');
-      C.H.look = A.mode === 'over' ? A.P.clone().add(V(0, 1.2, -A.zDir * 1.5)) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone(); C.H.lookW = .45;
+      { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
+        let L = A.mode === 'over' ? A.P.clone().add(V(0, 1.4, -A.zDir * 1.2)) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
+        if (A.mode !== 'over') { L.y = Math.min(L.y, hd.y + .2); L.z = planeZ; }
+        C.H.look = L; C.H.lookW = .35; }
     } else { tg = S.last && S.last.tg; hw = S.last && S.last.hw; }
     if (!tg) return;
     const W = S.W; const zDir = S.last.zDir;
