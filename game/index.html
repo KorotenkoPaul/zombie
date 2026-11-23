@@ -231,7 +231,8 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
   vec2 mx=dFdx(m.xy),my=dFdy(m.xy);float h0=pTop(m.xy,sz,sd,wall);dH+=vec2(pTop(m.xy+mx,sz,sd,wall)-h0,pTop(m.xy+my,sz,sd,wall)-h0);
   // worn, lighter along the rounded edges
   float ew=sz.y*.5-abs(m.y),el=sz.x*.5-abs(m.x);col*=1.+.1*smoothstep(.012,.0,min(ew,el));
-  if(uNails>.5&&sz.y>.12){vec3 nl=pNail(m.xy,sz,wall);col=mix(col,col*vec3(.55,.42,.33),nl.y*.6);float nh=smoothstep(.0055,.0035,nl.z);
+  if(vN0.z<0.&&wall<.5){col*=vec3(.68,.6,.55);pRgh=.95;}
+  if(uNails>.5&&sz.y>.12&&(vN0.z>0.||wall>.5)){vec3 nl=pNail(m.xy,sz,wall);col=mix(col,col*vec3(.55,.42,.33),nl.y*.6);float nh=smoothstep(.0055,.0035,nl.z);
    col=mix(col,vec3(.035,.032,.03)+vec3(.05,.03,.02)*pN(m.xy*900.),nh);pRgh=mix(pRgh,.45,nh);}
  }else if(face==1.){
   // the board's long side: rough sawn and in the shadow of its neighbour
@@ -304,7 +305,7 @@ const beams=new THREE.InstancedMesh(darkGeo,darkBoard,900);beams.castShadow=true
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
 // `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
-function beamInst(m){const i=beams.count++;{const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:beams,i,kind:'beam',c:p,q});}beams.setMatrixAt(i,m);dRow.setX(i,rnd(0,97));beams.setColorAt(i,new THREE.Color().setScalar(rnd(.9,1.04)));beams.instanceMatrix.needsUpdate=true;dRow.needsUpdate=true;if(beams.instanceColor)beams.instanceColor.needsUpdate=true;}
+function beamInst(m,kind='beam'){const i=beams.count++;{const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:beams,i,kind,c:p,q});}beams.setMatrixAt(i,m);dRow.setX(i,rnd(0,97));beams.setColorAt(i,new THREE.Color().setScalar(rnd(.9,1.04)));beams.instanceMatrix.needsUpdate=true;dRow.needsUpdate=true;if(beams.instanceColor)beams.instanceColor.needsUpdate=true;}
 function meshesToBeams(g){g.updateMatrixWorld(true);for(const o of [...g.children]){if(!o.isMesh||o.material!==darkBoard||!o.geometry.parameters||o.geometry.parameters.width===undefined)continue;const p=o.geometry.parameters;
  beamInst(_bm.copy(o.matrixWorld).multiply(_bs.makeScale(p.width,p.height,p.depth)));g.remove(o);o.geometry.dispose();}}
 const B=[];// all boards {rb, size, q, inst, breakable, hp, group, loose}
@@ -389,6 +390,14 @@ function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const 
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
   const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.38,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
+  // inside the room the roof is not a dark slab: honey sheathing boards run down the slope over chunky rafters (instances, no new calls)
+  {slab.updateMatrix();const SM=g.matrixWorld.clone().multiply(slab.matrix);const ex=V(1,0,0),ey=V(0,0,1),ez=V(0,-1,0);const B0=new THREE.Matrix4().makeBasis(ex,ey,ez);if(B0.determinant()<0)B0.makeBasis(ex,ey.clone().negate(),ez);
+   const put=(mesh,cx,cy,cz,L,W,T,roll,seed)=>{const m=SM.clone().multiply(new THREE.Matrix4().makeTranslation(cx,cy,cz)).multiply(B0).multiply(new THREE.Matrix4().makeRotationX(roll)).multiply(new THREE.Matrix4().makeScale(L,W,T));
+    if(mesh===beams){beamInst(m,'roof');dWx.setXY(beams.count-1,0,.2);return;}const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,seed);aWx.setXY(i,0,.3);boards.setColorAt(i,new THREE.Color().setScalar(rnd(.8,.95)));
+    {const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'roof',c:p,q});}};
+   for(let z=-d/2+.13;z<d/2-.05;z+=.25)put(boards,0,-.19-.013,z+rnd(-.004,.004),sl-.02,rnd(.226,.243),.025,rnd(-.02,.02),rnd(0,97)+100);
+   for(let z=-d/2+.35;z<d/2;z+=.85)put(beams,0,-.19-.026-.07,z,sl-.1,.1,.14,0,0);
+   boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
   // shingles: rows from the ridge down, each row overlapping the one below, staggered
   // thick dark slate, hand-laid: rows of uneven depth, shingles of random width, the odd one slipped or tilted (critic T4)
   const rows=Math.ceil(sl/.28);
@@ -551,7 +560,7 @@ const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+
 // a wall's outer face is the one facing away from its room; beams, posts and frames are out in the weather.
 ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[3],0,0);});
 {const inRoom=(c,m=0)=>ROOMS.find(r=>c.x>r[0]-m&&c.x<r[1]+m&&c.z>r[4]-m&&c.z<r[5]+m&&c.y>r[2]-.35&&c.y<r[3]+.2);
- for(const p of PL){if(p.kind==='shingle')continue;const A=p.kind==='beam'?dWx:aWx;let a=.8,b=.8;
+ for(const p of PL){if(p.kind==='shingle'||p.kind==='roof')continue;const A=p.kind==='beam'?dWx:aWx;let a=.8,b=.8;
   if(p.kind==='floor'){a=inRoom(p.c,-.05)?0:1;b=.25;}
   else if(p.kind==='wall'){const r=inRoom(p.c,.35);if(r){const n=V(0,0,1).applyQuaternion(p.q);const out=n.x*(p.c.x-(r[0]+r[1])/2)+n.z*(p.c.z-(r[4]+r[5])/2)>0;a=out?1:0;b=out?0:1;}else{a=.7;b=.7;}}
   A.setXY(p.i,a,b);}
@@ -654,7 +663,7 @@ const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
  setInterval(()=>{const p=hero&&hero.root&&hero.root.position;if(p)WEAR.stamp(p.x,p.y,p.z,.004,.22);if(WEAR.dirty&&(WEAR.n=(WEAR.n||0)+1)%5===0){WEAR.tex.needsUpdate=true;WEAR.dirty=false;}},1000);}
 const freshAttr=m=>m===boards?aFresh:m===beams?dFresh:sFresh;
 // window.__planks: every board / beam / slate of the house.
-//  list(kind?)        -> [{id, kind:'floor'|'wall'|'beam'|'shingle', pos:[x,y,z], fresh}]   (id = index into this list)
+//  list(kind?)        -> [{id, kind:'floor'|'wall'|'beam'|'roof'|'shingle', pos:[x,y,z], fresh}]   (id = index into this list)
 //  setFresh(id, f)    -> f 1 = just repaired, new wood/slate (pale, clean, no moss/wear/weather); 0 = old (default). Brain can fade it back over days.
 //  fresh(id)          -> current value
 //  near(x,y,z,r,kind?)-> ids within r metres
