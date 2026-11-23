@@ -254,7 +254,7 @@ export function buildTree(THREE, o) {
   g.setIndex(I); g.computeVertexNormals();
   // critic T16: the thin, curling side shoots of the model wrap around the house like snakes. Cut every thin piece
   // (under ~0.5 m thick) in the house band around the trunk; the main limbs and the crown's twigs stay.
-  if (o.model && o.pruneThin !== false) {
+  if (o.model && o.pruneThin === true) { // off: Pavel wants every branch kept (2026-11-23)
     const pa = g.attributes.position, na = g.attributes.normal, n = pa.count, CS = 0.35, grid = new Map();
     const key = (x, y, z) => Math.floor(x / CS) + ',' + Math.floor(y / CS) + ',' + Math.floor(z / CS);
     for (let i = 0; i < n; i++) { const k = key(pa.getX(i), pa.getY(i), pa.getZ(i)); let c = grid.get(k); if (!c) grid.set(k, c = []); c.push(i); }
