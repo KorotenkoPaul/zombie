@@ -31,3 +31,9 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 ## Round 5 (2026-11-23)
 - `uWet` uniform / `__wind.wet()` 0..1: soaks within ~10 s of rain, dries over ~2 min. `windRope` sways up to 45 % less when wet.
 - `__rain.wetGlass(mats)`: beads running down the window glass in 3 cm lanes + still droplets, strength = uWet. Hooked onto the WINS glass materials in index.html (chains their onBeforeCompile; glass coordinates are world metres, so any pane size works).
+
+## Round 6 (2026-11-23)
+- Fix: windSway has a per-position random phase, so it must only get a FIXED point (instance centre). Moving things (fireflies, motes, smoke, rope vertices) use `windSwayS` (smooth) - otherwise the phase jumps every frame (Pavel saw "twitching crickets").
+- Cost (code count, phone settings): drops 1 draw / 3.2k tris, splashes 1 / 440, drips 1 / 52, falling leaves 1 / 32, smoke 1 / 24 points, wet glass 0 extra draws (fragment work on 5 panes, skipped when dry), fog bank 1 sheet. JS: < 0.01 ms/frame for all weather. SwiftShader frame times are too noisy to measure GPU cost (±7%).
+- __perf steps: wetGlass (25), rainDrops half (35), leafFall half (55), rainSplash half (55).
+- Morning fog bank: wind.js rolls one in on ~70% of mornings (4.6-6.4 h start, lifts after 7.6 h), front travels along the wind (`uFogBank`, `__wind.fogBank()`, `fogBankAt(x,z)`, event 'fogbank'); game/fogbank.js draws 1 (phone) / 2 low noise sheets only while it's out. index passes `hour` to WIND.update.

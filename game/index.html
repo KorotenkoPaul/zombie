@@ -360,6 +360,8 @@ const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},w
 const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
 // [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
 const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
+// [WIND] morning fog bank rolling in from the forest on the breeze (game/fogbank.js)
+const FOGBANK=(await import(new URL(ASSET+'fogbank.js',document.baseURI).href)).createFogBank({THREE,scene,wind:WIND,MOBILE});window.__fogbank=FOGBANK;
 
 // ================= splinters, dust, fog, rain, fireflies =================
 const SPL=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),boardMat,260);SPL.count=0;SPL.castShadow=true;SPL.frustumCulled=false;{const r=new THREE.InstancedBufferAttribute(new Float32Array(260),1),t=new THREE.InstancedBufferAttribute(new Float32Array(260).fill(.2),1);SPL.geometry.setAttribute('aRow',r);SPL.geometry.setAttribute('aTile',t);}scene.add(SPL);
@@ -543,6 +545,8 @@ $('bH').onclick=()=>{ac();rig.goHome();};
 const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;composer.addPass(new OutputPass());composer.addPass(ENV.gradePass);
 // [PERF] shared quality governor + FPS readout (game/perf.js). Steps run cheapest-looking first and undo when the phone keeps up again.
 const PERF=createPerf({renderer,MOBILE});const PR0=PR;
+// [WIND] weather quality steps: dry window glass, half the rain streaks, fewer splashes, fewer falling leaves
+[WIND,RAIN].forEach(m=>m.addPerfSteps&&m.addPerfSteps(PERF));
 PERF.addStep('bloom',()=>{if(!bloom.enabled)return false;bloom.enabled=false;},()=>{bloom.enabled=true;},10);
 const prStep=(lo)=>[()=>{if(PR<=lo+.01)return false;PR=Math.max(lo,PR-.2);renderer.setPixelRatio(PR);resize();},()=>{PR=Math.min(PR0,PR+.2);renderer.setPixelRatio(PR);resize();}];
 PERF.addStep('px',...prStep(1.3),20);
@@ -585,7 +589,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
- WIND.update({dt,T,rainK});SMOKE.update(dt,T,scene.fog.color);
+ WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);
  RAIN.update(dt,T,rainK,scene.fog.color);
  if(AUDIO)AUDIO.update(dt);
  // --- spawn ---
