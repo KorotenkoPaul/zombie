@@ -113,7 +113,7 @@ function makeMaterials(renderer) {
     brass: metal(0xD8AE55, .85, .28, 1.2),
     copper: metal(0xC0754A, .9, .32, 1),
     hood: metal(0x7E858D, .85, .34, 1.0),
-    fridge: metal(0xBDB7AA, .3, .3, .8),
+    fridge: metal(0xA8ADB2, .55, .3, 1.0),   // silver-grey retro fridge like the photo
     ceramic: metal(0xF2EDE3, 0, .22, .7),
     glazeBlue: metal(0x6F8FA8, 0, .25, .7),
     glazeCream: metal(0xE8D9B8, 0, .3, .7),
@@ -284,6 +284,7 @@ function stove() {
   add(door, new THREE.PlaneGeometry(dw - .2, dh - .21), M.ovenGlass, 0, dh / 2 - .015, .0425);
   add(door, new THREE.CylinderGeometry(.011, .011, dw - .14, 12), M.chrome, 0, dh - .05, .075, 0, 0, Math.PI / 2);
   for (const sx of [-1, 1]) add(door, new THREE.CylinderGeometry(.008, .008, .045, 8), M.chrome, sx * (dw / 2 - .1), dh - .05, .055, Math.PI / 2);
+  { const tw = new THREE.MeshStandardMaterial({ map: texOf(towelCanvas()), roughness: .95, side: THREE.DoubleSide }); const t = add(door, drapeGeo(.2, .03, .2, { r: .016, wrinkle: .006 }), tw, -.12, dh - .05, .075); t.castShadow = false; }
   door.traverse(o => { if (o.isMesh) o.userData.live = true; });
   const glow = add(g, new THREE.PlaneGeometry(.0001, .0001), M.fire, 0, 0, 0); glow.visible = false; void glow; void fire;
   bake(g);
@@ -296,6 +297,25 @@ function stove() {
   };
   return g;
 }
+// ---- kitchen extras (photo: pots, hanging utensils, tea towel) ----
+function towelCanvas() { return canvas(128, 128, (g) => { g.fillStyle = '#F2E8D6'; g.fillRect(0, 0, 128, 128); g.fillStyle = 'rgba(178,58,46,.55)'; for (let i = 0; i < 8; i++) { g.fillRect(i * 16 + 4, 0, 6, 128); g.fillRect(0, i * 16 + 4, 128, 6); } g.fillStyle = 'rgba(178,58,46,.85)'; g.fillRect(0, 108, 128, 8); }); }
+function pot() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark);
+  add(g, lathe([[0, 0], [.1, 0], [.098, .01], [.04, .03], [.015, .034], [0, .034]], 24), M.enamelDark, 0, .115, 0); add(g, new THREE.SphereGeometry(.014, 10, 8), M.rubber, 0, .152, 0);
+  for (const s of [-1, 1]) add(g, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); return g; }
+function pan(r = .11) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r, 0], [r + .012, .04], [r + .006, .042], [r - .004, .006], [0, .006]], 28), M.iron, 0, 0, 0, Math.PI / 2); // hangs flat against the wall, handle up
+  add(g, rb(.026, .2, .012, .005), M.woodDark, 0, r + .11, .02); add(g, rb(.02, .05, .01, .004), M.iron, 0, r + .015, .02); add(g, new THREE.TorusGeometry(.008, .003, 6, 10), M.iron, 0, r + .205, .02); return g; }
+function ladle(len = .32) { const g = new THREE.Group(); add(g, new THREE.SphereGeometry(.04, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), M.steel, 0, -len / 2, 0); add(g, rb(.012, len, .004, .002), M.steel, 0, 0, -.01, -.06); add(g, new THREE.TorusGeometry(.01, .003, 6, 10), M.steel, 0, len / 2 + .008, -.012); return g; }
+function spatula(len = .3) { const g = new THREE.Group(); add(g, rb(.06, .08, .004, .006), M.woodLight, 0, -len / 2 + .04, 0); add(g, new THREE.CylinderGeometry(.007, .007, len - .08, 8), M.woodLight, 0, .04, 0); return g; }
+function utensilRail(w = .55) { const g = new THREE.Group(); add(g, new THREE.CylinderGeometry(.008, .008, w, 10), M.brass, 0, 0, .04, 0, 0, Math.PI / 2); for (const s of [-1, 1]) add(g, rb(.02, .03, .05, .006), M.brass, s * w / 2, 0, .02);
+  const hook = (x) => add(g, new THREE.TorusGeometry(.012, .0025, 6, 12, Math.PI * 1.4), M.brass, x, -.012, .04, 0, Math.PI / 2, 0);
+  const items = [[-.17, spatula(.2), -.12], [-.03, ladle(.24), -.14], [.08, spatula(.22), -.13], [.18, ladle(.2), -.12]]; for (const [x, o, y] of items) { hook(x); o.position.set(x, y, .045); g.add(o); }
+  return bake(g); }
+function coatHooks() { const g = new THREE.Group(); W(g, .34, .07, .025, 0, 0, .0125, { mat: M.woodDark, r: .008 });
+  for (const x of [-.11, 0, .11]) { add(g, new THREE.CylinderGeometry(.008, .008, .06, 8), M.woodDark, x, 0, .05, Math.PI / 2); add(g, new THREE.SphereGeometry(.013, 10, 8), M.woodDark, x, 0, .08); }
+  // a mustard scarf and a cap on the hooks
+  const sc = add(g, drapeGeo(.05, .02, .3, { r: .01, wrinkle: .008 }), new THREE.MeshStandardMaterial({ color: 0xC9962E, roughness: .95, side: THREE.DoubleSide }), -.11, .0, .06, 0, Math.PI / 2, 0); void sc;
+  const cap = add(g, new THREE.SphereGeometry(.075, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5A4632, roughness: .9 }), .11, -.04, .09); cap.scale.set(1, .75, 1); add(g, new THREE.CylinderGeometry(.06, .07, .008, 18, 1, false, 0, Math.PI), new THREE.MeshStandardMaterial({ color: 0x4A3826, roughness: .9 }), .11, -.04, .12, 0, Math.PI / 2, 0);
+  return g; }
 function kettle() { const g = new THREE.Group(); g.userData.live = true; add(g, lathe([[0, 0], [.08, 0], [.095, .02], [.1, .06], [.09, .11], [.06, .135], [.035, .14], [.035, .145], [0, .145]], 28), M.enamel);
   add(g, lathe([[0, 0], [.038, 0], [.04, .008], [.02, .02], [.012, .032], [0, .036]], 16), M.enamelDark, 0, .142, 0);
   add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(.07, .05, 0), V(.12, .09, 0), V(.15, .14, 0), V(.17, .155, 0)]), 12, .012, 8), M.enamel);
@@ -379,6 +399,11 @@ function workbench() {
   { const t = can(.13, .045, M.cans[1]); t.position.set(.62, H, -.2); g.add(t); for (let i = 0; i < 4; i++) { const sd = screwdriver([M.gripRed, M.gripYellow, M.gripBlue, M.gripRed][i], .17); sd.position.set(.62 + Math.cos(i * 1.6) * .02, H + .05, -.2 + Math.sin(i * 1.6) * .02); sd.rotation.set(rr(-.2, .2), 0, rr(-.25, .25)); g.add(sd); } }
   { const b = new THREE.Group(); b.position.set(.35, H, -.18); g.add(b); W(b, .16, .05, .1, 0, .025, 0, { mat: M.woodDark, r: .006 }); for (let i = 0; i < 10; i++) add(b, new THREE.CylinderGeometry(.002, .002, .05, 5), M.steel, rr(-.06, .06), .05, rr(-.035, .035), rr(-.6, .6), 0, Math.PI / 2 + rr(-.3, .3)); }
   { const p = new THREE.Group(); p.position.set(-.5, H, -.15); p.rotation.y = .4; g.add(p); W(p, .22, .05, .06, 0, .025, 0, { mat: M.woodRed, r: .012 }); add(p, rb(.12, .04, .05, .015), M.iron, -.01, .065, 0); add(p, new THREE.SphereGeometry(.02, 10, 8), M.woodRed, .07, .07, 0); }
+  // more bench clutter like the photo: offcut blocks, tape measure, a carpenter's pencil, a C-clamp at the front edge
+  for (const [x, z, w, h, a] of [[.22, .16, .2, .05, .3], [.3, .2, .12, .04, -.2], [.26, .17, .09, .09, .5]]) W(g, w, h, .07, x, H + h / 2 + (h > .06 ? .0 : 0), z, { mat: M.woodLight, ry: a, r: .006 });
+  { const t = new THREE.Group(); t.position.set(.72, H, .16); t.rotation.y = -.4; g.add(t); add(t, rb(.07, .07, .035, .012), M.gripYellow, 0, .018, 0, Math.PI / 2); add(t, new THREE.CylinderGeometry(.012, .012, .036, 12), M.iron, 0, .036, 0); add(t, rb(.12, .002, .018, .0008), M.gripYellow, .09, .002, .0); }
+  { const p = add(g, rb(.16, .008, .014, .003), M.gripRed, .02, H + .006, .12, 0, .5); void p; }
+  { const c = new THREE.Group(); c.position.set(-.3, H - .03, D / 2 - .02); g.add(c); const cs = new THREE.Shape(); cs.moveTo(0, .09); cs.lineTo(.07, .09); cs.lineTo(.07, -.09); cs.lineTo(0, -.09); cs.lineTo(0, -.07); cs.lineTo(.05, -.07); cs.lineTo(.05, .07); cs.lineTo(0, .07); add(c, EX(cs, .02), M.gripRed, -.01, 0, .02, 0, -Math.PI / 2, 0); add(c, new THREE.CylinderGeometry(.006, .006, .12, 8), M.steel, 0, -.06, 0); add(c, rb(.05, .01, .01, .003), M.steel, 0, -.12, 0); }
   bake(g); g.userData.info = { top: H }; return g;
 }
 function stool(S = .48) { const g = new THREE.Group(); add(g, lathe([[0, 0], [.15, 0], [.165, .008], [.172, .024], [.166, .04], [.15, .048], [0, .048]], 32), M.wood, 0, S - .048, 0);
@@ -494,6 +519,8 @@ export function buildProps(ctx) {
   // ---------- kitchen (back wall z≈1.05, open front +z) ----------
   const st = place('stove', stove(), -3.25, KT, 1.4); out.oven = st.userData.oven;
   const ket = kettle(); ket.position.set(-.19, .91, -.12); st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
+  { const pt = pot(); pt.position.set(.19, .93, .13); st.add(pt); }
+  place('krail', utensilRail(.5), -3.25, KT + 1.37, 1.56, { solid: false, wall: true }); // hangs from the front edge of the hood, over the stove
   place('hood', hood(Math.max(.2, (BD - .2) - (KT + 1.42) - .3)), -3.25, KT + 1.42, 1.32, { solid: false, wall: true });
   place('counter', sinkCounter(), -2.3, KT, 1.38);
   place('fridge', fridge(), -1.43, KT, 1.38);
@@ -513,6 +540,8 @@ export function buildProps(ctx) {
   const bk = book({ cover: M.covers[0] }); bk.position.set(-.33, tTop, 1.6); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
   { const m = mug(M.glazeBlue); m.position.set(-.06, tTop, 1.35); scene.add(m); const c = candle(); c.position.set(-.62, tTop, 1.32); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62, tTop, 1.6); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
   place('door', plankDoor(2.0), .33, BD, 1.82, { ry: -Math.PI / 2, solid: false });
+  place('hooks', coatHooks(), .17, BD + 1.6, .97, { solid: false, wall: true });
+  { const b = closedBook(.035, .2, .15, M.covers[4]); b.rotation.set(0, .6, Math.PI / 2); b.position.set(.25, 1.07 + .045 + .15 + .03, .12); bunk.add(b); }
   { const s = switchPlate(); s.position.set(.37, BD + 1.15, 2.5); s.rotation.y = -Math.PI / 2; scene.add(s); }
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const b = closedBook(bw, rr(.16, .22), .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12); s.add(b); x += bw + .003; } const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }

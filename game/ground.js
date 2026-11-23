@@ -3,7 +3,7 @@
 // Everything is instanced (a handful of draw calls) and keeps clear of the oak's roots: the roots are read from the
 // tree meshes at load time, so the plants follow whatever trunk/roots tree.js builds.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { groundH } from './env.js';
 
 function rng(seed){let s=seed>>>0;return ()=>{s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};}
@@ -19,16 +19,22 @@ float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i
 float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*vn(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(3.1,7.7);a*=.5;}return v;}`;
 
 // wind sway shared by all plants: k = how far up the plant this vertex is (0 root .. 1 tip)
-const SWAY=`vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);
- float gust=.6+.4*sin(uT*.35+ip.x*.05-ip.z*.04);
- transformed.x+=(sin(uT*1.7+ip.x*.6+ip.z*.4)*.7+sin(uT*3.1+ip.z*1.3)*.3)*SW*k*k*uW*gust;
- transformed.z+=(sin(uT*1.3+ip.x*.9)*.6+sin(uT*2.3+ip.x*1.7)*.2)*SW*.7*k*k*uW*gust;`;
-function swayMat(mat,U,amp,kExpr){mat.onBeforeCompile=s=>{s.uniforms.uT=U.t;s.uniforms.uW=U.wind;
- s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nuniform float uT,uW;')
+// [WIND] the motion comes from the global wind (game/wind.js): calm spells, breezes and gusts that roll through
+// the clearing. SW is the sway of a 1-unit plant at a steady breeze; bigger instances sway more, like before.
+const SWAY=`vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
+ vec2 wv=windSway(ip,1.7)*SW*k*k*1.6;
+ transformed+=windLocal(vec3(wv.x,0.,wv.y))*length(instanceMatrix[0].xyz);`;
+let WIND=null;// set by createGround (C.wind)
+const windHook=s=>{(WIND||window.__wind).hook(s);};
+function swayMat(mat,U,amp,kExpr){mat.onBeforeCompile=s=>{windHook(s);
+ s.vertexShader=s.vertexShader
   .replace('#include <begin_vertex>',`#include <begin_vertex>\n{float k=${kExpr};const float SW=${amp.toFixed(3)};${SWAY}}`);};return mat;}
 
+// three's icosahedron has split vertices (flat facets); weld them so moss and stones shade smoothly
+const smoothIco=d=>{const g=new THREE.IcosahedronGeometry(1,d);g.deleteAttribute('normal');g.deleteAttribute('uv');return mergeVertices(g);};
+
 export function createGround(C){
- const {scene,MOBILE,leafT,groundT,U,obstacles=[]}=C;
+ const {scene,MOBILE,leafT,groundT,U,obstacles=[]}=C;WIND=C.wind||null;
  const R=rng(777123);const rr=(a,b)=>a+R()*(b-a);
  const G={};
 
@@ -74,6 +80,8 @@ export function createGround(C){
     .replace('#include <map_fragment>',`
      // two texture scales blended by noise: no visible tiling. The far scale is softened so the painted clumps read as ground, not stickers.
      vec4 g1=texture2D(map,vGW/4.6);vec4 g2=texture2D(map,vGW/12.7+.37);float bn=fbm(vGW*.09);vec3 gc=mix(g1.rgb,g2.rgb,smoothstep(.35,.65,bn));
+     // close to the camera a finer third scale adds crisp detail (the far scales blur when you zoom in)
+     vec3 g0=texture2D(map,vGW/1.5+.71).rgb;gc=mix(gc,g0,.4*(1.-smoothstep(3.,11.,length(vViewPosition))));
      float lum=dot(gc,vec3(.3,.55,.15));gc=mix(vec3(lum),gc,.82);
      // moss fuzz: fine light/dark mottling, brighter mossy cushions in patches
      float mf=fbm(vGW*2.3);float mp=smoothstep(.5,.72,fbm(vGW*.35+4.));gc*=.82+.36*mf;gc=mix(gc,gc*vec3(.95,1.18,.9)+vec3(.0,.025,.0),mp*.6);
@@ -103,7 +111,7 @@ export function createGround(C){
     // normal: across the blade face, bent strongly to the sky
     const fn=dir.clone().multiplyScalar(-1).lerp(V(0,1,0),.75).normalize();
     for(const sd of [-1,1]){P.push(pc.x+side.x*ww*sd,pc.y,pc.z+side.z*ww*sd);N.push(fn.x+side.x*sd*.25,fn.y,fn.z+side.z*sd*.25);
-     const k=Math.pow(t,.8);Cc.push((.1+k*.3)*tint,(.16+k*.36)*tint,(.14+k*.28)*tint);UV.push(sd<0?0:1,t);}}
+     const k=Math.pow(t,.8);Cc.push((.08+k*.3)*tint,(.13+k*.42)*tint,(.08+k*.22)*tint);UV.push(sd<0?0:1,t);}}
    for(let s=0;s<seg;s++){const a=base+s*2;I.push(a,a+1,a+2,a+1,a+3,a+2);}}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(N,3));g.normalizeNormals?.();
   g.setAttribute('color',new THREE.Float32BufferAttribute(Cc,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(UV,2));g.setIndex(I);return g;}
@@ -111,7 +119,7 @@ export function createGround(C){
  {// a little translucency: the lit tips glow a touch so tufts read against the dark ground
   const ob=grassMat.onBeforeCompile;grassMat.onBeforeCompile=s=>{ob(s);s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vColor.rgb*vColor.rgb*.06;');};}
  // variants: tall spiky (the photo's tufts), short dense, and a cheap far version
- const tuftA=tuftGeo(MOBILE?9:13,MOBILE?3:4,11,.2,.46,.1),tuftB=tuftGeo(MOBILE?10:15,3,23,.08,.2,.16),tuftF=tuftGeo(7,2,37,.22,.5,.14);
+ const tuftA=tuftGeo(MOBILE?9:13,MOBILE?3:6,11,.2,.46,.1),tuftB=tuftGeo(MOBILE?10:15,MOBILE?3:4,23,.08,.2,.16),tuftF=tuftGeo(7,2,37,.22,.5,.14);
  function scatterGrass(geo,N,gen,size,name){const im=new THREE.InstancedMesh(geo,grassMat,N);let n=0,guard=0;
   while(n<N&&guard++<N*40){// clumps: a seed spot, a few tufts around it
    const s=gen();const cnt=2+Math.floor(R()*6);
@@ -119,29 +127,29 @@ export function createGround(C){
     // density: dense along root edges, sparse on bare trodden earth near the trunk, patchy elsewhere
     const dens=Math.max(smooth(1.4,.15,d)*.9,smooth(.38,.62,fbm2(x*.18+2,z*.18+9))*(.25+.75*smooth(3,6,r)));if(R()>dens)continue;
     const sz=rr(size[0],size[1])*(1+smooth(10,40,r)*.5);M.compose(V(x,groundH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz*rr(.85,1.2),sz*rr(.8,1.25),sz*rr(.85,1.2)));im.setMatrixAt(n,M);
-    const dry=smooth(.6,.85,fbm2(x*.4,z*.4+20));Col.setHSL(rr(.3,.42)-dry*.13,rr(.2,.38)-dry*.04,rr(.4,.55)+dry*.05);im.setColorAt(n,Col);n++;}}
+    const dry=smooth(.6,.85,fbm2(x*.4,z*.4+20));Col.setHSL(rr(.27,.38)-dry*.12,rr(.22,.38)-dry*.04,rr(.33,.47)+dry*.06);im.setColorAt(n,Col);n++;}}
   im.count=n;im.receiveShadow=true;im.castShadow=false;im.name=name;scene.add(im);return im;}
- G.grass=[scatterGrass(tuftA,MOBILE?520:1100,ring(2.4,18),[.6,1.1],'grassTall'),
+ G.grass=[scatterGrass(tuftA,MOBILE?440:900,ring(2.4,18),[.7,1.25],'grassTall'),
   scatterGrass(tuftB,MOBILE?380:800,ring(2.2,14),[.8,1.3],'grassShort'),
-  scatterGrass(tuftF,MOBILE?380:700,ring(16,48,.85),[1,1.6],'grassFar')];
+  scatterGrass(tuftF,MOBILE?260:450,ring(16,48,.85),[1.3,2.1],'grassFar')];
 
  // ================= moss cushions =================
  // soft lumpy pillows of moss where the roots meet the ground and on the sides of stones (the cosy, overgrown look)
- {const base=new THREE.IcosahedronGeometry(1,MOBILE?2:3);const p=base.attributes.position;const col=new Float32Array(p.count*3);
+ {const base=smoothIco(MOBILE?2:3);const p=base.attributes.position;const col=new Float32Array(p.count*3);
   for(let i=0;i<p.count;i++){const v=V(p.getX(i),p.getY(i),p.getZ(i));const k=1+(vnoise(v.x*2.5+3,v.z*2.5+v.y*2)-.5)*.5;const y=v.y<0?v.y*.2:v.y*.55;p.setXYZ(i,v.x*k,y*k,v.z*k);
    const up=Math.max(0,v.y);const c=new THREE.Color(0x1C3026).lerp(new THREE.Color(0x3C6236),smooth(.1,.9,up));col.set([c.r,c.g,c.b],i*3);}
   base.computeVertexNormals();base.setAttribute('color',new THREE.BufferAttribute(col,3));
   const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1});
   mat.onBeforeCompile=s=>{s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;').replace('#include <begin_vertex>','#include <begin_vertex>\nvMW=(modelMatrix*instanceMatrix*vec4(position,1.)).xyz;');
    s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\n{float f=fbm(vMW.xz*14.+vMW.y*9.);float f2=fbm(vMW.xz*3.1);diffuseColor.rgb*=.6+.6*f;diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.9,1.15,.8),f2*.6);}');};
-  const N=MOBILE?45:90;const im=new THREE.InstancedMesh(base,mat,N);let n=0;
+  const N=MOBILE?28:55;const im=new THREE.InstancedMesh(base,mat,N);let n=0;
   for(let t=0;t<N*30&&n<N;t++){const s=pick(ring(2.2,13),(x,z)=>{const d=rootD(x,z);return d>.04&&d<.45;},6);if(!s)continue;const [x,z]=s;
-   const sz=rr(.1,.26);E.set(0,rr(0,6.28),0);Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.25,z),Q,Sc.set(sz*rr(.9,1.5),sz*rr(.7,1.1),sz*rr(.8,1.3)));im.setMatrixAt(n,M);
+   const sz=rr(.07,.18);E.set(0,rr(0,6.28),0);Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.25,z),Q,Sc.set(sz*rr(.8,1.2),sz*rr(.9,1.3),sz*rr(.8,1.1)));im.setMatrixAt(n,M);
    Col.setHSL(rr(.28,.36),rr(.15,.28),rr(.42,.55));im.setColorAt(n,Col);n++;}
   im.count=n;im.receiveShadow=true;scene.add(im);G.moss=im;}
 
  // ================= stones =================
- {const base=new THREE.IcosahedronGeometry(1,MOBILE?3:4);const p=base.attributes.position;
+ {const base=smoothIco(MOBILE?3:4);const p=base.attributes.position;
   for(let i=0;i<p.count;i++){const v=V(p.getX(i),p.getY(i),p.getZ(i));const k=1+(vnoise(v.x*1.7+v.z,v.y*1.9+2)-.5)*.45+(vnoise(v.x*5,v.z*5+v.y*3)-.5)*.08;p.setXYZ(i,v.x*k*1.15,(v.y<0?v.y*.35:v.y*.62)*k,v.z*k);}
   base.computeVertexNormals();const nr=base.attributes.normal;const col=new Float32Array(p.count*3);
   for(let i=0;i<p.count;i++){const up=nr.getY(i);const c=new THREE.Color(0x4A4F50).lerp(new THREE.Color(0x3A5434),smooth(.4,.8,up)*.9).multiplyScalar(.85+vnoise(p.getX(i)*4,p.getZ(i)*4)*.25);col.set([c.r,c.g,c.b],i*3);}
@@ -174,7 +182,7 @@ export function createGround(C){
   const nr=g.attributes.normal;for(let i=0;i<nr.count;i++){const n=V(nr.getX(i),nr.getY(i),nr.getZ(i)).lerp(V(0,1,0),.6).normalize();nr.setXYZ(i,n.x,n.y,n.z);}
   const mat=new THREE.MeshStandardMaterial({map:tex,alphaTest:.5,side:THREE.DoubleSide,roughness:.9});
   const N=MOBILE?260:520;const im=new THREE.InstancedMesh(g,mat,N);let n=0;
-  const pal=[[.07,.55,.42],[.04,.5,.36],[.1,.5,.45],[.17,.35,.38],[.02,.45,.3],[.12,.3,.3]];
+  const pal=[[.07,.7,.36],[.04,.65,.3],[.1,.65,.4],[.16,.45,.32],[.02,.55,.26],[.12,.4,.26]];
   for(let i=0;i<N*20&&n<N;i++){const s=pick(R()<.7?ring(2.3,11):ring(11,30),(x,z)=>rootD(x,z)>.05,5);if(!s)continue;const [x,z]=s;
    const sz=rr(.08,.14);const q=slopeQ(x,z,rr(0,6.28));q.multiply(new THREE.Quaternion().setFromEuler(E.set(rr(-.25,.25),0,rr(-.25,.25))));M.compose(V(x,groundH(x,z)+.012,z),q,Sc.set(sz,sz,sz*1.15));im.setMatrixAt(n,M);
    const c=pal[Math.floor(R()*pal.length)];Col.setHSL(c[0]+rr(-.02,.02),c[1],c[2]+rr(-.05,.05));im.setColorAt(n,Col);n++;}
@@ -208,7 +216,7 @@ export function createGround(C){
     }const uv=q.attributes.uv;const a=new Float32Array(p.count);for(let i=0;i<p.count;i++)a[i]=uv.getY(i);q.setAttribute('aK',new THREE.BufferAttribute(a,1));
     q.rotateY(k/nf*Math.PI*2+r()*.5);parts.push(q);}return mergeGeometries(parts);};
   const fm=new THREE.MeshStandardMaterial({map:fernTex,alphaTest:.5,side:THREE.DoubleSide,roughness:.9,emissive:0x0C1E18,emissiveMap:fernTex});
-  fm.onBeforeCompile=s=>{s.uniforms.uT=U.t;s.uniforms.uW=U.wind;s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nuniform float uT,uW;attribute float aK;')
+  fm.onBeforeCompile=s=>{windHook(s);s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nattribute float aK;')
    .replace('#include <begin_vertex>',`#include <begin_vertex>\n{float k=aK;const float SW=.05;${SWAY}}`);};
   const geos=[mk(7,.75,3),mk(9,.6,8)];
   geos.forEach((fg,vi)=>{const NF=MOBILE?24:44;const im=new THREE.InstancedMesh(fg,fm,NF);let n=0;

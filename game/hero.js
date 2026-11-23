@@ -192,9 +192,18 @@ export function createHero(ctx){
  function legIK(dy,w){for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
    const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));ik2(U,L,F,a.clone().add(V(0,dy,0)),pole,w,true);}}
  // seated / perched: put each ankle at its standing height above the boards, then lift the toes out of the floor
- function legPlant(g){for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V()),k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
-   const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));ik2(U,L,F,V(a.x,g+(POSE.ankle??.1),a.z),pole,1,true);}toeGuard(g);}
- function toeGuard(g){for(const s of ['Left','Right']){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;const t=T.getWorldPosition(V());const need=g+.035-t.y;if(need<=.002)continue;turnBone(F,t,t.clone().add(V(0,need,0)),1);}}
+ // targets and knee direction are low-passed so clip noise and IK flips never reach the feet
+ const plantS={};
+ function legPlant(g,dt){const M=window.__plantMode??2;if(M===0)return;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V()),k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
+   const tgt=V(a.x,g+(POSE.ankle??.1),a.z);let pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole=fwd(root.rotation.y);pole.normalize().add(fwd(root.rotation.y).multiplyScalar(.5)).normalize();
+   if(M===1){ik2(U,L,F,tgt,pole,1,true);continue;}
+   let S=plantS[s];if(!S||S.t.distanceTo(tgt)>.3||!S.on){S=plantS[s]={t:tgt.clone(),p:pole.clone(),on:true};}
+   const kk=1-Math.exp(-(dt||1/60)*3);S.t.lerp(tgt,kk);S.p.lerp(pole,kk).normalize();ik2(U,L,F,S.t,S.p,1,true);}toeGuard(g,dt);}
+ function legPlantOff(){for(const k in plantS)plantS[k].on=false;}
+ const toeS={Left:0,Right:0};
+ function toeGuard(g,dt){const k=1-Math.exp(-(dt||1/60)*10);for(const s of ['Left','Right']){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;const t=T.getWorldPosition(V());const need=Math.max(0,g+.035-t.y);
+   toeS[s]+=(need-toeS[s])*k;if(toeS[s]<=.002)continue;turnBone(F,t,t.clone().add(V(0,toeS[s],0)),1);}}
+ const armLen=(()=>{const A=bones.RightArm,F=bones.RightForeArm,Hh=bones.RightHand;if(!A||!F||!Hh)return .58;root.updateMatrixWorld(true);return A.getWorldPosition(V()).distanceTo(F.getWorldPosition(V()))+F.getWorldPosition(V()).distanceTo(Hh.getWorldPosition(V()));})();
  function armIK(side,target,pole,w){ik2(bones[side+'Arm'],bones[side+'ForeArm'],bones[side+'Hand'],target,pole,w,false);}
  // head and neck turn toward a point (smoothed, limited like a real neck)
  const lookS={yaw:0,pitch:0};
@@ -210,14 +219,23 @@ export function createHero(ctx){
    b.quaternion.premultiply(pw.clone().invert().multiply(q).multiply(pw));b.updateMatrixWorld(true);}}
 
  // ---------- walking: smooth curves, speed matched to the stride, turning steps ----------
- function walkStep(dt){const step=H.path[0];const target=N[step.node].p;const p=root.position;const nxt=H.path[1];const isLast=!nxt||nxt.t==='ladder';
+ // is the straight line between two points on one floor free of furniture? (used to cut corners of the node graph)
+ function segClear(a,b){const n=Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/.08);const r=.24;for(let i=1;i<=n;i++){const t=i/n,x=a.x+(b.x-a.x)*t,z=a.z+(b.z-a.z)*t;
+   for(const o of OBST){if(o.seat||Math.abs(o.y-a.y)>.6)continue;if(x>o.x0-r&&x<o.x1+r&&z>o.z0-r&&z<o.z1+r)return false;}}return true;}
+ function walkStep(dt){
+  // string-pull: if the node after this one is in plain sight, head straight for it
+  while(H.path.length>1&&H.path[0].t!=='ladder'&&H.path[1].t!=='ladder'&&!N[H.path[0].node].tight&&!(H.path[2]&&H.path[2].t==='ladder'&&false)){const nx=N[H.path[1].node].p,p0=root.position;
+   if(Math.abs(nx.y-p0.y)>.25||Math.abs(N[H.path[0].node].p.y-p0.y)>.25||!segClear(p0,nx))break;H.node=H.path[0].node;H.path.shift();}
+  const step=H.path[0];const target=N[step.node].p;const p=root.position;const nxt=H.path[1];const isLast=!nxt||nxt.t==='ladder';
   // aim a little past the corner so the path rounds it
   let aim=target.clone();const toT=Math.hypot(target.x-p.x,target.z-p.z);if(!isLast&&toT<.55){const n2=N[nxt.node].p;aim.lerp(n2,clamp((.55-toT)/.55,0,1)*.5);}
   const dx=aim.x-p.x,dz=aim.z-p.z;const want=Math.atan2(dx,dz);const da=wrapA(want-root.rotation.y);
   const vmax=H.walkV*(isLast?clamp(toT/.9,.25,1):1);const align=Math.max(0,Math.cos(da));
   H.v+=clamp(vmax*align*align-H.v,-2.4*dt,1.4*dt);
   // turn rate depends on speed: on the spot it takes small steps
-  const rate=lerp(3.2,4.5,clamp(H.v/H.walkV,0,1));root.rotation.y+=clamp(da,-rate*dt,rate*dt);H.face=root.rotation.y;
+  const rate=lerp(2.6,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
+  // turning has inertia: angular speed ramps up and down, so there is never a snap in heading
+  const wav=clamp(da*3,-rate,rate);H.av=(H.av||0)+clamp(wav-(H.av||0),-7*dt,7*dt);root.rotation.y+=H.av*dt;H.face=root.rotation.y;
   const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=1.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
   const moving=H.v>.06||Math.abs(da)>.25;
   if(moving){play('30',{fade:.4});actions['30'].timeScale=clamp(Math.max(H.v,Math.abs(da)>.25?.35:0)/walkSpeed,.35,1.4);}else play(H.idleClip||'0',{fade:.5});
@@ -262,7 +280,7 @@ export function createHero(ctx){
   for(const k in sc){if(lastAct[0]===k)sc[k]-=1;if(lastAct[1]===k)sc[k]-=.35;sc[k]+=rnd(0,.35);}
   return Object.keys(sc).sort((a,b)=>sc[b]-sc[a])[0];}
  const WINDOWS=['bwin','kwin','wwin'];
- function goTo(node,then){if(node===H.node&&!H.path.length){then&&then();return;}H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.walkV=walkSpeed*rnd(.85,1.05);}
+ function goTo(node,then){if(node===H.node&&!H.path.length){then&&then();return;}H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=walkSpeed*(gait.speed||1)*(brain?1:rnd(.85,1.05));}
  const sidePole=(side,down=1)=>{const f=fwd(root.rotation.y);const right=V(-f.z,0,f.x);return right.multiplyScalar(side==='Right'?1:-1).add(V(0,-down,0)).add(f.clone().multiplyScalar(-.3));};
  function ikList(list){if(!list)return;for(const [s,t,w] of list)if(t&&w>.001)armIK(s,t,sidePole(s),clamp(w,0,1));}
 
@@ -274,10 +292,18 @@ export function createHero(ctx){
 
  // the activity currently running: a small state machine with its own update
  let act=null;
- function startTask(name){if(H.trans){H.pending=name;return;}
-  if(act&&act.leave&&!act.left){const nm=name;act.left=true;H.trans=true;act.leave(()=>{H.trans=false;act=null;startTask(nm);});return;}
+ function startTask(name,opts){if(H.trans){H.pending=name;H.pendingOpts=opts;return;}
+  if(act&&act.leave&&!act.left){const nm=name;act.left=true;H.trans=true;act.leave(()=>{H.trans=false;act=null;startTask(nm,opts);});return;}
   act=null;H.task=name;actT=0;const A=ACT[name]||{};actDur=A.dur?rnd(A.dur[0],A.dur[1]):8;lastAct.unshift(name);lastAct.length=3;H.look=null;H.lookW=0;
-  const mk=MAKE[name];if(!mk)return;act=mk();act.name=name;}
+  const mk=MAKE[name];if(!mk)return;act=mk(opts||{});act.name=name;}
+ // ===== BRAIN HOOK state: setBrain / gait / onTaskEnd =====
+ let brain=null;const gait={speed:1,turn:1};const endCbs=[];
+ function endTask(){const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n);}catch(e){console.error(e);}}}
+ // lamps with a wall switch (props.js switchPlate): the hand goes to the plate, not to the lamp
+ const SWITCH_AT={bedroom:V(.37,lv.BD+1.15,2.5)};
+ const LAMP=()=>window.__lights||ctx.lights||null;
+ function nearNode(p){let best=null,bd=1e9;for(const k in N){const n=N[k];if(!n||!n.p||n.seat!=null||!adj[k])continue;if(Math.abs(n.p.y-p.y)>2.6||n.p.y>p.y+.2)continue;const d=Math.hypot(n.p.x-p.x,n.p.z-p.z)+Math.max(0,p.y-n.p.y-2.4)*3;if(d<bd){bd=d;best=k;}}return best;}
+ // ===== END BRAIN HOOK state =====
  const READ=has('hy_read')?'hy_read':'33',SITIDLE=has('hy_sitidle')?'hy_sitidle':'33';
  // the book in the hands: centred between the hands, a little forward, the pages facing the eyes
  const _bx=V(),_by=V(),_bz=V(),_bm=new THREE.Matrix4(),_bq=new THREE.Quaternion();
@@ -286,6 +312,27 @@ export function createHero(ctx){
   _by.copy(head).sub(pos).normalize();_bx.set(-f.z,0,f.x);_bx.addScaledVector(_by,-_bx.dot(_by)).normalize();_bz.crossVectors(_bx,_by);
   _bm.makeBasis(_bx,_by,_bz);_bq.setFromRotationMatrix(_bm);return {pos,quat:_bq.clone()};}
  const MAKE={
+  // walk to a lamp or wall switch, reach out and press it; the light changes when the fingers touch
+  switch:(o={})=>{const a={step:'go',t:0};const L=LAMP();const lp=SWITCH_AT[o.light]?SWITCH_AT[o.light].clone():(L&&L.pos?L.pos(o.light):null);const plate=!!SWITCH_AT[o.light];
+   if(!lp){a.update=()=>endTask();return a;}
+   const sp=lp.clone?lp.clone():V(lp.x,lp.y,lp.z);const node=nearNode(sp);
+   const approach=()=>{a.step='approach';a.t=0;const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
+    const fl=floorAt(p.x,p.y+.3,p.z,.5)??p.y;a.low=sp.y-fl<.75;a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):sp.clone().add(V(0,-.15,0));
+    const move=Math.max(0,Math.min(.9,d-(a.low?.45:.27)));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
+    a.dur=Math.max(.5,move/.45);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:0,k:0,d:a.dur};if(move>.1)play('30',{fade:.3,speed:.5});};
+   if(node)goTo(node,approach);else approach();
+   a.update=dt=>{a.t+=dt;H.look=sp.clone();H.lookW=1;
+    if(a.step==='approach'&&a.t>=a.dur){a.step='reach';a.t=0;if(a.low&&has('hy_take'))once('hy_take',{fade:.4,then:()=>play(IDLE(),{fade:.5})});else play(IDLE(),{fade:.4});}
+    else if(a.step==='reach'){const tT=a.low&&has('hy_take')?durOf('hy_take')*.45:.55,tE=a.low&&has('hy_take')?durOf('hy_take'):1.3;if(a.t>tT&&!a.done){a.done=true;try{L.set(o.light,o.on!=null?!!o.on:!(L.get&&L.get(o.light)));}catch(e){}sfx&&sfx.click&&sfx.click();}
+     if(a.t>tE)endTask();}};
+   a.post=()=>{if(a.step!=='reach')return;const w=smooth(0,.5,a.t)*(1-smooth(.85,1.3,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
+    const v=a.knob.clone().sub(from);const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);if(!a.low)ikList([['Right',from.add(v),w]]);};
+   return a;},
+  // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
+  micro:(o={})=>{const a={step:'do',t:0};const c=o.clip&&has(o.clip)?o.clip:IDLE();const one=['hy_stretch','hy_inspect','hy_take','hy_drink'].includes(c);
+   const dur=o.dur||(one?durOf(c):3);if(H.seated){a.update=()=>endTask();return a;}
+   if(one)once(c,{fade:.5});else play(c,{fade:.5});
+   a.update=dt=>{a.t+=dt;if(o.look){H.look=o.look.clone?o.look.clone():V(o.look.x,o.look.y,o.look.z);H.lookW=.8;}if(a.t>=dur){play(IDLE(),{fade:.6});endTask();}};return a;},
   read:(o={})=>{const a={step:'go',t:0,k:0,flipT:rnd(5,8),pt:-1};
    if(o.seated){a.step='read';a.got=true;a.k=1;a.next=rnd(16,26);}
    else goTo('chair_app',()=>{a.step='sit';sitDown(N.chair,()=>{a.step='take';a.t=0;play(SITIDLE,{fade:.8});});});
@@ -314,7 +361,9 @@ export function createHero(ctx){
      else if(st.turning){const e=st.a<.5?2*st.a*st.a:1-Math.pow(-2*st.a+2,2)/2;const ph=e*Math.PI;tgt=bookObj.localToWorld(V(Math.cos(ph)*.13,.02+Math.sin(ph)*.11,.06));}
      else tgt=bookObj.localToWorld(V(-.11,.02,.06)).lerp(gr,smooth(1.3,1.75,a.pt));
      tr=tgt;wr=1;}
-    ikList([['Left',gl,.85*k],['Right',tr,wr]]);};
+    // the hand follows its goal through a soft spring, so phase changes never snap it
+    {const sf=1-Math.exp(-dt*12);if(!a.ht){a.ht=tr.clone();a.hw=wr;}else{a.ht.lerp(tr,sf);a.hw+=(wr-a.hw)*sf;}}
+    ikList([['Left',gl,.85*k],['Right',a.ht,a.hw]]);};
    a.leave=cb=>{a.ik=null;if(a.step==='go'){cb();return;}
     const up=()=>standUp(N.chair,cb);
     if(!a.got||!bookObj){up();return;}a.step='putdown';a.cb=up;a.k=1;play(SITIDLE,{fade:.8});};return a;},
@@ -387,7 +436,12 @@ export function createHero(ctx){
 
  // ---------- per frame ----------
  function update(dt){if(dt<=0)return;
-  // brain
+  // ===== BRAIN HOOK: an attached brain (game/brain.js) decides what to do; the body below only carries it out =====
+  if(brain){if(H.wait){H.wait.t-=dt;if(H.wait.t<=0){const f=H.wait.then;H.wait=null;f&&f();}}
+   const mode=ctx.mode?ctx.mode():null;if(mode&&mode!==H.task&&(mode==='guard'||mode==='repair')&&!H.trans)startTask(mode);
+   try{brain.tick(dt,{task:H.task,step:act?act.step:null,free:!H.trans&&!H.path.length&&!H.wait&&!H.swing,seated:!!H.seated,inBed:!!H.inBed,node:H.node,hour:hour()});}catch(e){console.error('brain',e);brain=null;}}
+  else{
+  // ===== END BRAIN HOOK (built-in chooser follows) =====
   const h=hour(),night=ctx.isNight(h);
   need.energy=clamp(need.energy-dt*(H.task==='sleep'&&H.inBed?-.02:.0015),0,1);need.hunger=clamp(need.hunger+dt*.002,0,1);need.fun=clamp(need.fun+dt*.003,0,1);need.tidy=clamp(need.tidy+dt*.0012,0,1);
   if(act&&act.name&&ACT[act.name]&&ACT[act.name].need&&H.state==='work'){need[ACT[act.name].need]=clamp(need[ACT[act.name].need]-dt*.03,0,1);}
@@ -402,19 +456,24 @@ export function createHero(ctx){
     if(H.linger&&!H.seated){H.linger-=dt;if(H.lingerClip!=='hy_stretch')play(H.lingerClip,{fade:.6});H.look=null;H.lookW=0;if(H.linger>0)return post(dt);}
     H.linger=0;startTask(night&&h<21.5&&h>=20?'read':choose());}
    else if(night&&H.task!=='sleep'&&H.task!=='guard'&&(h>=21.5||h<5)){startTask('sleep');}}
-  if(H.pending&&!H.trans){const n=H.pending;H.pending=null;startTask(n);}
+  }
+  if(H.pending&&!H.trans){const n=H.pending,o=H.pendingOpts;H.pending=null;H.pendingOpts=null;startTask(n,o);}
   // movement
   if(H.path.length){const step=H.path[0];if(step.t==='ladder')ladderStep(dt);else walkStep(dt);if(!H.path.length&&H.then){const f=H.then;H.then=null;H.state='work';f();}}
   else if(H.state==='walk'){H.state='work';H.v=0;}
-  if(!H.path.length){if(!H.swing&&!H.trans&&!H.seated&&!H.inBed){const da=wrapA(H.face-root.rotation.y);const k=1-Math.exp(-dt*4);root.rotation.y+=da*k;
+  if(!H.path.length){if(!H.swing&&!H.trans&&!H.seated&&!H.inBed){const da=wrapA(H.face-root.rotation.y);const wav=clamp(da*3.5,-2.6,2.6);H.av=(H.av||0)+clamp(wav-(H.av||0),-6*dt,6*dt);if(Math.abs(da)<.002&&Math.abs(H.av)<.02)H.av=0;root.rotation.y+=H.av*dt;
      if(Math.abs(da)>.35&&H.cur&&['0','11','12','336','30','hy_idle'].includes(H.cur.getClip().name)){play('30',{fade:.3,speed:.45});H.turnStep=true;}else if(H.turnStep&&Math.abs(da)<.12){H.turnStep=false;if(H.cur===actions['30'])play(IDLE(),{fade:.4});}}}
   if(act&&act.update)act.update(dt);
   swingTick(dt);
   return post(dt);}
+ const fkList=[...new Set(Object.values(bones))].filter(b=>b&&b.isObject3D);let fkSnap=null;
  function post(dt){const p=root.position;
   // root motion of once-off clips
   const pre=[];for(const n in rmCurve){const a=actions[n];if(a.isRunning()||a.getEffectiveWeight()>0)pre.push([n,a,a.time]);}
+  // three.js only rewrites a bone when the clip value changed, so IK edits from the last frame would leak into this one: put the pure clip pose back first
+  if(fkSnap)for(let i=0;i<fkList.length;i++)fkList[i].quaternion.copy(fkSnap[i]);
   mixer.update(dt);
+  if(!fkSnap)fkSnap=fkList.map(()=>new THREE.Quaternion());for(let i=0;i<fkList.length;i++)fkSnap[i].copy(fkList[i].quaternion);
   for(const [n,a,t0] of pre){const t1=a.time;if(t1===t0)continue;const w=a.getEffectiveWeight();if(w<=0)continue;const d=rmAt(n,t1).sub(rmAt(n,t0));p.add(rotY(V(d.x,0,d.z),root.rotation.y).multiplyScalar(w));if(RM[n].y)p.y+=d.y*w;}
   if(H.slide){const sl=H.slide;const k1=smooth(0,1,Math.min(1,sl.k+dt/sl.d)),k0=smooth(0,1,sl.k);sl.k=Math.min(1,sl.k+dt/sl.d);p.x+=sl.x*(k1-k0);p.z+=sl.z*(k1-k0);root.rotation.y+=sl.yaw*(k1-k0);if(sl.k>=1)H.slide=null;}
   if(H.once){const o=H.once;const a=o.a;if(a.time>=o.end-1e-3||!a.isRunning()){H.once=null;o.then&&o.then();}}
@@ -426,7 +485,7 @@ export function createHero(ctx){
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g);else{const dy=g-p.y;if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g);}}
+  if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt);else{legPlantOff();const dy=g-p.y;if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}}
   if(act&&act.post)act.post(dt);
   lookAt(dt);}
 
@@ -434,6 +493,7 @@ export function createHero(ctx){
  {const s=N.chair;root.position.set(s.p.x,s.floor,s.p.z);root.rotation.y=s.face;H.face=s.face;H.seated=s;H.node='chair_app';H.task='read';H.ground=false;
   H.fit={mode:'hold',base:s.floor,y:s.seat+SEAT_CLEAR};play(READ,{fade:0});act=MAKE.read({seated:true});act.name='read';lastAct=['read'];actDur=rnd(25,40);}
 
- return {H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,
+ return {H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
+  setBrain:b=>{brain=b||null;},onTaskEnd:cb=>{endCbs.push(cb);},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }

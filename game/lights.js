@@ -149,9 +149,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const dd = V(Math.cos(TREE.doorAngle), 0, Math.sin(TREE.doorAngle));
     const ax = LV.TAX; const r = TREE.R(LG + .7) - .3;
     doorLight = new THREE.PointLight(0xFF9A40, 0, 4, 1.6); doorLight.position.set(ax[0] + dd.x * r, LG + .75, ax[1] + dd.z * r); scene.add(doorLight);
+    // the lantern-lit cave inside the hollow: a warm light deep in it lights the carved walls, the one at the mouth spills onto the platform
+    const rIn = TREE.R(LG + .7) - 1.0;
+    const cave = new THREE.PointLight(0xFFA850, 0, 2.4, 1.4); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave);
+    doorLight.position.set(ax[0] + dd.x * (r + .25), LG + .8, ax[1] + dd.z * (r + .25));
     const glow = TREE.bark && TREE.bark.material.userData.doorGlow;
-    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: doorLight, I: 4 }], haloSize: 2.4,
-      extra: (k, f) => { if (glow) glow.value = 1.25 * k * f; }, autoFn: c => c.lamps > .3 });
+    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: doorLight, I: 4 }, { l: cave, I: 5, sway: .02 }], haloSize: 2.4,
+      extra: (k, f) => { if (glow) glow.value = 1.6 * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
@@ -237,8 +241,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     for (const g of glows) { const v = (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
     for (const w of windows) {
       const lit = Math.min(1, warm[w.room] || 0);
-      tmpC.copy(COLD).multiplyScalar(.12 + dayK * .45).lerp(WARM, clamp01(lit) * (1 - dayK * .7));
-      w.mat.emissive.copy(tmpC); w.mat.emissiveIntensity = 1;
+      // panes are see-through glass (Pavel): only a faint warm tint while the room is lit, no cold self-glow;
+      // the real window glow is the halo and the spill light outside (room glow above)
+      tmpC.setRGB(0, 0, 0).lerp(WARM, clamp01(lit) * (1 - dayK * .7));
+      w.mat.emissive.copy(tmpC); w.mat.emissiveIntensity = .18;
     }
   }
 

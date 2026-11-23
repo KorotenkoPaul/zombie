@@ -253,6 +253,18 @@ export function buildTree(THREE, o) {
   // soft, lit-from-above clumps: cards near the clump centre are darker (painted volume)
   lmat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\nvFacing=abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));vDep=-mvPosition.z;');
+    // [WIND] leaves sway with the global wind (game/wind.js): each card drifts with its clump and flutters on its own
+    const W = o.wind || window.__wind;
+    if (W) {
+      W.hook(sh);
+      sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
+ float s=windStrength(ip);vec2 wv=windSway(ip,2.3)*.15;
+ float h=fract(sin(dot(ip,vec3(12.99,78.23,37.71)))*4375.5);
+ float a=sin(uWT*(6.+h*5.)+h*30.)*(.04+.25*s),b=sin(uWT*(4.7+h*4.)+h*17.)*(.03+.15*s);
+ transformed.z+=a*position.x+b*position.y;
+ transformed+=windLocal(vec3(wv.x,wv.x*.15,wv.y));}`);
+    }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\nfloat ff=smoothstep(.18,.6,vFacing)*smoothstep(.8,3.,vDep);diffuseColor.a*=step(length(vMapUv-.5)*2.,ff*1.3);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
   const total = MOB(o) ? 1700 : 2800;
