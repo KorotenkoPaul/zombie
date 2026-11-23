@@ -226,7 +226,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
    if(depthRT.width!==w||depthRT.height!==h)depthRT.setSize(w,h);softU.uRes.value.copy(dbs);softU.cNear.value=camera.near;softU.cFar.value=camera.far;
    const hid=fogObjs().filter(o=>o&&o.visible);hid.forEach(o=>o.visible=false);const ov=scene.overrideMaterial,bg=scene.background,prev=renderer.getRenderTarget();
    const su=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;scene.background=null;renderer.setRenderTarget(depthRT);renderer.clear(false,true,false);renderer.render(scene,camera);
-   renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;U.wind.value=1+rainK*1.5;
+   renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;/* U.wind is driven by game/wind.js now */
   const fc=tmp.copy(P.fog);
   fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),.3+nightK*.3);const dusk=hour===undefined?0:smooth(17.6,19.0,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.15+eve*.85+mornK*.5+rainK*.25;fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}

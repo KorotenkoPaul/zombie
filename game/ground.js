@@ -19,19 +19,22 @@ float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i
 float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*vn(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(3.1,7.7);a*=.5;}return v;}`;
 
 // wind sway shared by all plants: k = how far up the plant this vertex is (0 root .. 1 tip)
-const SWAY=`vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);
- float gust=.6+.4*sin(uT*.35+ip.x*.05-ip.z*.04);
- transformed.x+=(sin(uT*1.7+ip.x*.6+ip.z*.4)*.7+sin(uT*3.1+ip.z*1.3)*.3)*SW*k*k*uW*gust;
- transformed.z+=(sin(uT*1.3+ip.x*.9)*.6+sin(uT*2.3+ip.x*1.7)*.2)*SW*.7*k*k*uW*gust;`;
-function swayMat(mat,U,amp,kExpr){mat.onBeforeCompile=s=>{s.uniforms.uT=U.t;s.uniforms.uW=U.wind;
- s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nuniform float uT,uW;')
+// [WIND] the motion comes from the global wind (game/wind.js): calm spells, breezes and gusts that roll through
+// the clearing. SW is the sway of a 1-unit plant at a steady breeze; bigger instances sway more, like before.
+const SWAY=`vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
+ vec2 wv=windSway(ip,1.7)*SW*k*k*1.6;
+ transformed+=windLocal(vec3(wv.x,0.,wv.y))*length(instanceMatrix[0].xyz);`;
+let WIND=null;// set by createGround (C.wind)
+const windHook=s=>{(WIND||window.__wind).hook(s);};
+function swayMat(mat,U,amp,kExpr){mat.onBeforeCompile=s=>{windHook(s);
+ s.vertexShader=s.vertexShader
   .replace('#include <begin_vertex>',`#include <begin_vertex>\n{float k=${kExpr};const float SW=${amp.toFixed(3)};${SWAY}}`);};return mat;}
 
 // three's icosahedron has split vertices (flat facets); weld them so moss and stones shade smoothly
 const smoothIco=d=>{const g=new THREE.IcosahedronGeometry(1,d);g.deleteAttribute('normal');g.deleteAttribute('uv');return mergeVertices(g);};
 
 export function createGround(C){
- const {scene,MOBILE,leafT,groundT,U,obstacles=[]}=C;
+ const {scene,MOBILE,leafT,groundT,U,obstacles=[]}=C;WIND=C.wind||null;
  const R=rng(777123);const rr=(a,b)=>a+R()*(b-a);
  const G={};
 
@@ -213,7 +216,7 @@ export function createGround(C){
     }const uv=q.attributes.uv;const a=new Float32Array(p.count);for(let i=0;i<p.count;i++)a[i]=uv.getY(i);q.setAttribute('aK',new THREE.BufferAttribute(a,1));
     q.rotateY(k/nf*Math.PI*2+r()*.5);parts.push(q);}return mergeGeometries(parts);};
   const fm=new THREE.MeshStandardMaterial({map:fernTex,alphaTest:.5,side:THREE.DoubleSide,roughness:.9,emissive:0x0C1E18,emissiveMap:fernTex});
-  fm.onBeforeCompile=s=>{s.uniforms.uT=U.t;s.uniforms.uW=U.wind;s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nuniform float uT,uW;attribute float aK;')
+  fm.onBeforeCompile=s=>{windHook(s);s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nattribute float aK;')
    .replace('#include <begin_vertex>',`#include <begin_vertex>\n{float k=aK;const float SW=.05;${SWAY}}`);};
   const geos=[mk(7,.75,3),mk(9,.6,8)];
   geos.forEach((fg,vi)=>{const NF=MOBILE?24:44;const im=new THREE.InstancedMesh(fg,fm,NF);let n=0;

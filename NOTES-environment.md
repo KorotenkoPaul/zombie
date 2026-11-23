@@ -31,3 +31,6 @@ jsdelivr was blocked earlier (it works now); if blocked: `npm i three@0.160.0 @d
 - Fog/forest colour pass for day and morning; check day isn't washed out.
 - Fireflies, light shafts from windows into fog, moss/ferns on roots, mushrooms (Little Nightmares-like cosy-eerie mood, per Pavel).
 - Measure real FPS on iPhone; fog puff overdraw is the main cost (reduce PN if needed).
+
+## Wind (game/wind.js, wind thread, 2026-11-23)
+U.wind is no longer set here: game/wind.js owns the wind (weather spells calm/breeze/windy, rolling gust fronts) and keeps ENV.U.wind as a legacy scalar. See NOTES-wind.md.

@@ -93,6 +93,8 @@ const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.MeshBasicM
 
 // ================= ground, forest, fog, grading: see env.js =================
 const ENV=(await import(new URL(ASSET+'env.js',document.baseURI).href)).createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});
+// one global wind for leaves, grass, ferns, bushes and ropes (game/wind.js): calm spells, breezes, rolling gusts
+const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).createWind({THREE,legacy:ENV.U.wind});window.__wind=WIND;
 
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
@@ -100,11 +102,11 @@ function placeTree(x,z,h,ry){const t=treeG.scene.clone(true);const b=new THREE.B
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
-const TREE=buildTree(THREE,{model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
+const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
  avoidLeaves:[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]]});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
-const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;
+const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,wind:WIND,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;
 const barkTris=TREE.tris;
 // ================= physics world =================
 const world=new RAPIER.World({x:0,y:-9.81,z:0});world.timestep=1/60;
@@ -507,8 +509,9 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
+ WIND.update({dt,T,rainK});
  rain.m.opacity=rainK*.5;if(rainK>.02){const a=rain.pos;for(let i=0;i<rain.n;i++){const j=i*6;a[j+1]-=dt*14;a[j+4]-=dt*14;a[j]+=dt*.7;a[j+3]+=dt*.7;if(a[j+4]<0){const x=rnd(-16,16),y=rnd(20,24),z=rnd(-6,10);a.set([x,y,z,x+.04,y-.5,z],j);}}rain.l.geometry.attributes.position.needsUpdate=true;}
- if(amb){amb.wind.gain.value=.012+nightK*.01;amb.rain.gain.value=rainK*.05;}
+ if(amb){const wl=WIND.level();amb.wind.gain.value=(.006+nightK*.006)+.014*Math.min(1.6,wl);amb.rain.gain.value=rainK*.05;}
  // --- spawn ---
  if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}
  // --- hero: body, routine, walking (hero.js) ---
