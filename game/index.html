@@ -126,6 +126,12 @@ function inTrunk(x,y,z,m=.06){const s=SL[clamp(Math.round(y*10),0,SL.length-1)];
   if((z1>z)!==(z2>z)){const xi=x1+(z-z1)/(z2-z1)*(x2-x1);if(xi>x)cr++;}
   const dx=x2-x1,dz=z2-z1,L=dx*dx+dz*dz;let t=L?((x-x1)*dx+(z-z1)*dz)/L:0;t=clamp(t,0,1);const ex=x1+dx*t-x,ez=z1+dz*t-z;if(ex*ex+ez*ez<m*m)return true;}
  return nearAxis&&(cr&1)===1;}
+// camera collision: the trunk only (branches must not push the camera in; leaves fade instead). Per 10 cm slice, the trunk
+// outline as a radius per angle around the axis, with branch roots trimmed to 1.3x the slice's median radius; up to 13 m.
+const TRK=(()=>{const NB=32,out=[];for(const seg of SL){const r=new Float32Array(NB);for(let i=0;i<seg.length;i+=2){const x=seg[i]-TAX[0],z=seg[i+1]-TAX[1],d=Math.hypot(x,z);if(d>3.4)continue;const b=((Math.round(Math.atan2(z,x)/(2*Math.PI)*NB)%NB)+NB)%NB;if(d>r[b])r[b]=d;}
+ const v=[...r].filter(q=>q>0).sort((a,b)=>a-b),med=v.length?v[v.length>>1]:0;for(let b=0;b<NB;b++)r[b]=Math.min(r[b]||med,med*1.3);out.push(r);}return out;})();
+function trunkSolid(x,y,z,m=0){if(y<0||y>13)return false;const r=TRK[clamp(Math.round(y*10),0,TRK.length-1)],NB=r.length;const dx=x-TAX[0],dz=z-TAX[1];
+ const a=(Math.atan2(dz,dx)/(2*Math.PI)*NB+NB)%NB,b0=Math.floor(a)%NB,t=a-Math.floor(a);return Math.hypot(dx,dz)<r[b0]*(1-t)+r[(b0+1)%NB]*t+m;}
 function runs(ok,a0,a1,step=.04,min=.1){const out=[];let s=null;for(let a=a0;a<=a1+1e-6;a+=step){const g=ok(Math.min(a,a1));if(g&&s===null)s=a;if((!g||a+step>a1+1e-6)&&s!==null){const e=g?a1:a-step;if(e-s>=min)out.push([s,e]);s=null;}}return out;}
 function cullLeaves(){}
 function frontZ(x,y){const rc=new THREE.Raycaster(V(x,y,20),V(0,0,-1));const h=rc.intersectObject(TREE.bark,false)[0];return h?h.point.z:1;}
@@ -586,13 +592,13 @@ function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guar
 // camera input lives in camera.js (free orbit / pinch-to-point / pan / double-tap fly-to / hero follow)
 const isHeroObj=o=>{for(;o;o=o.parent)if(o===hero.root)return true;return false;};
 const rig=createCameraRig({camera,dom:cv,scene,
- solid:(x,y,z)=>y>0&&y<16&&inTrunk(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
+ solid:(x,y,z)=>trunkSolid(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
  isHero:isHeroObj,follow:()=>hero.root.position.clone().add(V(0,1,0)),
  onUser:()=>{ac();startAmb();if(over)location.reload();},
  onFollow:on=>{$('bF').classList.toggle('on',on);},
  onTap:(x,y)=>{const z=pickZombie(x,y);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}});
-// whatever sits between the camera and the focus dithers away (leaves up to 2.2 m, bark/walls/props up to 1.2 m, scaled by zoom): the free camera never shows the inside of a board
-{const solidMat=mt=>mt.isMeshStandardMaterial||mt.isMeshLambertMaterial||mt.isMeshPhongMaterial;const nf=()=>{rig.nearFade(scene,2.2,undefined,.7);rig.nearFade(TREE.group,1.2,()=>true,.45);rig.nearFade(scene,1.2,solidMat,.45,.25);};nf();setTimeout(nf,8000);}
+// only the oak's leaf cards fade (near the camera, and in front of the focus when zoomed in); the house, bark, grass and ferns never do
+{const nf=()=>rig.nearFade(TREE.group,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);nf();setTimeout(nf,8000);}
 $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
@@ -722,6 +728,6 @@ if(MOBILE)PERF.preset([PX[1],PX[2],PX[3]]);
 resize();hud();$('load').classList.add('hide');PERF.openDebugWhenReady();
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>BRAIN?BRAIN.command(n):startTask(n),
  view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
-window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,E:HH.E};
+window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,trunkSolid,E:HH.E};
 requestAnimationFrame(frame);
 </script>
