@@ -552,7 +552,7 @@ export function createHero(ctx){
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
    p.y=lerp(f.base,f.y-hy,w);}
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
-   const f=floorAt(p.x,p.y,p.z,.2);if(f!=null&&f-p.y<.12&&p.y-f<.3){H.floorY=f;const d=f-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,.9*dt);}}
+   const f=floorAt(p.x,p.y,p.z,.32);if(f!=null&&f-p.y<.3&&p.y-f<.3){H.floorY=f;const d=f-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
