@@ -1,0 +1,348 @@
+[
+ {
+  "task": "sleep",
+  "state": "work",
+  "clip": "hy_sleep_bed",
+  "root": [
+   -2.49,
+   8.93,
+   1.71
+  ],
+  "n2cm": 234,
+  "deepest": {
+   "bunkbed": 0.247
+  },
+  "hour": 6
+ },
+ {
+  "task": "sleep",
+  "state": "work",
+  "clip": "hy_stretch",
+  "root": [
+   -2.48,
+   8.43,
+   2.65
+  ],
+  "n2cm": 0,
+  "deepest": {},
+  "hour": 7
+ },
+ {
+  "task": "switch",
+  "state": "walk",
+  "clip": "0",
+  "root": [
+   -4.04,
+   8.43,
+   2.72
+  ],
+  "n2cm": 134,
+  "deepest": {
+   "?": 0.25
+  },
+  "hour": 8
+ },
+ {
+  "task": "switch",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   -3.98,
+   6,
+   1.73
+  ],
+  "n2cm": 25,
+  "deepest": {
+   "?": 0.25
+  },
+  "hour": 9
+ },
+ {
+  "task": "switch",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   -2.54,
+   6.04,
+   2.24
+  ],
+  "n2cm": 0,
+  "deepest": {},
+  "hour": 10
+ },
+ {
+  "task": "micro",
+  "state": "work",
+  "clip": "hy_idle",
+  "root": [
+   -2.01,
+   6.04,
+   2.03
+  ],
+  "n2cm": 0,
+  "deepest": {},
+  "hour": 11
+ },
+ {
+  "task": "wash",
+  "state": "work",
+  "clip": "hy_wash",
+  "root": [
+   -2.3,
+   6.03,
+   2.15
+  ],
+  "n2cm": 10,
+  "deepest": {
+   "propsStatic": 0.031
+  },
+  "hour": 12
+ },
+ {
+  "task": "wash",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   -2.41,
+   6.03,
+   2.2
+  ],
+  "n2cm": 0,
+  "deepest": {},
+  "hour": 13
+ },
+ {
+  "task": "cook",
+  "state": "work",
+  "clip": "hy_stir",
+  "root": [
+   -3.21,
+   6.03,
+   2.41
+  ],
+  "n2cm": 11,
+  "deepest": {
+   "propsStatic": 0.028
+  },
+  "hour": 14
+ },
+ {
+  "task": "read",
+  "state": "walk",
+  "clip": "437",
+  "root": [
+   -4,
+   6.6,
+   1.68
+  ],
+  "n2cm": 42,
+  "deepest": {
+   "?": 0.232
+  },
+  "hour": 15
+ },
+ {
+  "task": "look",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   1.39,
+   10.04,
+   2.41
+  ],
+  "n2cm": 0,
+  "deepest": {},
+  "hour": 16
+ },
+ {
+  "task": "tea",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   3.09,
+   10.04,
+   2.67
+  ],
+  "n2cm": 0,
+  "deepest": {},
+  "hour": 17
+ },
+ {
+  "task": "craft",
+  "state": "work",
+  "clip": "hy_hammer",
+  "root": [
+   2.55,
+   4.45,
+   2.64
+  ],
+  "n2cm": 328,
+  "deepest": {
+   "propsStatic": 0.21,
+   "?": 0.161
+  },
+  "hour": 18
+ },
+ {
+  "task": "cook",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   2.55,
+   4.45,
+   2.64
+  ],
+  "n2cm": 231,
+  "deepest": {
+   "propsStatic": 0.193
+  },
+  "hour": 19
+ },
+ {
+  "task": "look",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   -4.03,
+   8.43,
+   2.75
+  ],
+  "n2cm": 36,
+  "deepest": {
+   "?": 0.242
+  },
+  "hour": 20
+ },
+ {
+  "task": "cook",
+  "state": "work",
+  "clip": "hy_oven",
+  "root": [
+   -3.2,
+   6.03,
+   2.4
+  ],
+  "n2cm": 0,
+  "deepest": {},
+  "hour": 21
+ },
+ {
+  "task": "cook",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   -2.01,
+   6.04,
+   2.03
+  ],
+  "n2cm": 0,
+  "deepest": {},
+  "hour": 22
+ },
+ {
+  "task": "switch",
+  "state": "work",
+  "clip": "hy_idle",
+  "root": [
+   -2,
+   6.04,
+   2.04
+  ],
+  "n2cm": 44,
+  "deepest": {
+   "klamp": 0.244
+  },
+  "hour": 23
+ },
+ {
+  "task": "sleep",
+  "state": "walk",
+  "clip": "0",
+  "root": [
+   -4,
+   6.03,
+   1.68
+  ],
+  "n2cm": 19,
+  "deepest": {
+   "?": 0.246,
+   "stove": 0.222
+  },
+  "hour": 0
+ },
+ {
+  "task": "sleep",
+  "state": "work",
+  "clip": "hy_sleep_bed",
+  "root": [
+   -2.49,
+   8.92,
+   1.9
+  ],
+  "n2cm": 455,
+  "deepest": {
+   "bunkbed": 0.25
+  },
+  "hour": 1
+ },
+ {
+  "task": "sleep",
+  "state": "work",
+  "clip": "hy_sleep_bed",
+  "root": [
+   -2.49,
+   8.93,
+   1.71
+  ],
+  "n2cm": 232,
+  "deepest": {
+   "bunkbed": 0.246
+  },
+  "hour": 2
+ },
+ {
+  "task": "switch",
+  "state": "walk",
+  "clip": "30",
+  "root": [
+   -3.2,
+   6.03,
+   2.42
+  ],
+  "n2cm": 2,
+  "deepest": {
+   "propsStatic": 0.022
+  },
+  "hour": 3
+ },
+ {
+  "task": "tea",
+  "state": "walk",
+  "clip": "435",
+  "root": [
+   1.38,
+   8.68,
+   3.45
+  ],
+  "n2cm": 94,
+  "deepest": {
+   "?": 0.248
+  },
+  "hour": 4
+ },
+ {
+  "task": "read",
+  "state": "walk",
+  "clip": "437",
+  "root": [
+   -4,
+   6.95,
+   1.68
+  ],
+  "n2cm": 119,
+  "deepest": {
+   "?": 0.231
+  },
+  "hour": 5
+ }
+]
