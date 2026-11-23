@@ -111,7 +111,12 @@ export function createGrab({ THREE, bones }) {
     const m = new THREE.Matrix4().compose(h.pos, h.quat, V(1, 1, 1).multiplyScalar(h.scale || 1)); return out.copy(g).applyMatrix4(m).applyMatrix4(h.parent.matrixWorld); }
   // the target to hand to a palm IK (palm = wrist + 6 cm) so that the fist's grip point lands on p
   function palmTarget(side, p, out = V()) { const pa = palm(side), gp = gripPoint(side); return out.copy(p).sub(gp.sub(pa)); }
+  // late fixes: hands that must stay exactly on something are put back after collide.js has moved the body (it wraps HH.update
+  // before this does; motion.js's pop filter stays outermost). Callers queue a fix each frame with late(fn).
+  let lateQ = [];
+  function attach(HH) { if (!HH || HH.__grabLate) return; const inner = HH.update; HH.update = dt => { lateQ = []; const r = inner(dt); const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } return r; }; HH.__grabLate = true; }
   const api = {
+    attach, late(fn) { lateQ.push(fn); },
     gripPoint, toolGripHome, palmTarget, setProps(P) { PROPS = P; },
     wrapProps, toolPose, GRIP,
     buildFists, tick, channel: s => CH[s], get fist() { return fistK; },
