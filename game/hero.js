@@ -336,7 +336,7 @@ export function createHero(ctx){
    const a=actions['435'];const d=a.getClip().duration;const end=rmCurve['435']?rmAt('435',99):V(0,1.4,1.06);
    if(!L.start){const goal=V(L.x,L.yTop,cz).add(rotY(V(end.x,0,end.z),F));H.ground=true;
     if(ladApproach(V(goal.x,p.y,goal.z),F,dt)){L.start=1;if(Math.abs(p.y-L.yTop)<.3)L.yTop=p.y;p.set(goal.x,L.yTop,goal.z);a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=-1;a.time=d;a.enabled=true;if(H.cur)H.cur.crossFadeTo(a,.3,false);a.play();H.cur=a;}}
-   else{L.ot=(L.ot||0)+dt;if(H.cur!==a&&a.time>1e-3){a.time=Math.max(0,a.time-dt);}if(a.time<=1e-3||L.ot>d+.6){L.phase='climb';L.start=0;L.ot=0;}}}}
+   else{root.rotation.y=F;H.face=F;H.av=0;H.slide=null;/* yaw locked while stepping back over the edge (collide: swung 82 deg through the roof) */L.ot=(L.ot||0)+dt;if(H.cur!==a&&a.time>1e-3){a.time=Math.max(0,a.time-dt);}if(a.time<=1e-3||L.ot>d+.6){L.phase='climb';L.start=0;L.ot=0;}}}}
 
  // ---------- daily life ----------
  // needs drift over the day; each activity answers one, so the day is varied and never a fixed loop
