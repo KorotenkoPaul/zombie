@@ -236,6 +236,10 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
   if(vN0.z<0.&&wall<.5){col*=vec3(.68,.6,.55);pRgh=.95;}
   if(uNails>.5&&sz.y>.12&&(vN0.z>0.||wall>.5)){vec3 nl=pNail(m.xy,sz,wall);col=mix(col,col*vec3(.55,.42,.33),nl.y*.6);float nh=smoothstep(.0055,.0035,nl.z);
    col=mix(col,vec3(.035,.032,.03)+vec3(.05,.03,.02)*pN(m.xy*900.),nh);pRgh=mix(pRgh,.45,nh);}
+  // beams, braces and posts: a coach bolt through each end (square-ish iron head on a washer, rust bleeding into the wood)
+  if(uNails<.5&&sz.x>.6&&sz.y>.08){float bx=sz.x*.5-min(.09,sz.x*.15);float r=length(vec2(abs(m.x)-bx,m.y));
+   col=mix(col,col*vec3(.6,.45,.35),smoothstep(.04,.015,r)*.7);float wsh=smoothstep(.024,.021,r),hd=smoothstep(.014,.011,max(abs(abs(m.x)-bx),abs(m.y)));
+   col=mix(col,vec3(.05,.045,.04),wsh*.85);col=mix(col,vec3(.07,.06,.05)+vec3(.06,.03,.015)*pN(m.xy*700.),hd);pRgh=mix(pRgh,.5,wsh);}
  }else if(face==1.){
   // the board's long side: rough sawn and in the shadow of its neighbour
   col*=.42;
@@ -431,13 +435,13 @@ function lay(){const r=Math.random();return {lift:r<.22?rnd(.003,.008):(r<.3?rnd
 function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z))&&!(o.holes||[]).some(h=>x>h[0]&&x<h[1]&&z>h[2]&&z<h[3])&&!inTrunk(x,y,z)&&!inTrunk(x,y-.12,z);
  const flat=(a,L)=>new THREE.Euler(-Math.PI/2+L.roll,a+rnd(-.006,.006),L.pitch,'YXZ');
  if(o.radial){const [cx,cz,R,zmin]=o.radial;const n=Math.round(Math.PI*R*.82/.25);
-  for(let k=0;k<=2*n;k++){const a=-Math.PI+k*Math.PI/n;const dx=Math.cos(a),dz=Math.sin(a);if(cz+dz*R*.6<zmin-.3)continue;
-   for(const [r0,r1] of runs(r=>ok(cx+dx*r,cz+dz*r),0,R,.04,.25)){const r1b=r1>R-.2?R-.12:r1-rnd(0,.015);const rm=(r0+r1b)/2;const L=lay();board(V(cx+dx*rm,y+.035-L.t/2+L.lift,cz+dz*rm),r1b-r0,rnd(.225,.245),L.t,flat(-a,L));}}
-  // a smooth round rim laid over the board ends (critic T11: no saw teeth), in many short pieces, plus the dark edge band below
-  const nr=6*n;for(let k=0;k<nr;k++){const a0=-Math.PI+k*2*Math.PI/nr,am=a0+Math.PI/nr;const rr=R-.1;const px=cx+Math.cos(am)*rr,pz=cz+Math.sin(am)*rr;if(!ok(cx+Math.cos(am)*(R-.15),cz+Math.sin(am)*(R-.15)))continue;
-   board(V(px,y+.012,pz),2*rr*Math.sin(Math.PI/nr)+.025,.2,.075,new THREE.Euler(-Math.PI/2,-am-Math.PI/2,0,'YXZ'));
-   board(V(cx+Math.cos(am)*(R-.07),y-.1,cz+Math.sin(am)*(R-.07)),2*R*Math.sin(Math.PI/nr)+.02,.26,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
-  for(let x=cx-R+.4;x<cx+R;x+=1.1)for(const [a2,b2] of runs(z=>ok(x,z),z0,z1,.05,.3))board(V(x,y-.12,(a2+b2)/2),b2-a2,.18,.13,new THREE.Euler(0,Math.PI/2,0),{dark:true});
+  // like the photo: thick parallel planks running front-to-back, each cut to the curve so their chunky rounded ends trace the
+  // circle (no sunburst, no rim board over the ends), a dark curved band under the edge, joists across underneath
+  for(let x=cx-R+.125;x<cx+R;x+=.25)for(const [a2,b2] of runs(z=>ok(x,z),z0,z1,.04,.2)){const e=b2+rnd(-.035,.02),st=a2;const L=lay();
+   board(V(x+rnd(-.004,.004),y+.035-(L.t+.012)/2+L.lift,(st+e)/2),e-st,rnd(.222,.242),L.t+.012,flat(-Math.PI/2,L));}
+  const nr=6*n;for(let k=0;k<nr;k++){const a0=-Math.PI+k*2*Math.PI/nr,am=a0+Math.PI/nr;if(!ok(cx+Math.cos(am)*(R-.15),cz+Math.sin(am)*(R-.15)))continue;
+   board(V(cx+Math.cos(am)*(R-.12),y-.1,cz+Math.sin(am)*(R-.12)),2*R*Math.sin(Math.PI/nr)+.02,.2,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
+  for(let z=cz+.25;z<cz+R-.2;z+=.8)for(const [a2,b2] of runs(x=>ok(x,z)&&ok(x,z+.1),cx-R,cx+R,.05,.3))board(V((a2+b2)/2,y-.115,z),b2-a2-.1,.14,.12,null,{dark:true});
   return;}
  for(let x=x0+.125;x<x1;x+=.25)for(const [a,b2] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e=b2>=z1-.05?b2+rnd(-.05,.05):b2;const L=lay();board(V(x+rnd(-.004,.004),y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
@@ -446,7 +450,7 @@ function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
 function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.16;x<x1;x+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.005,.005)),b2-a,rnd(.288,.303),rnd(.045,.055),new THREE.Euler(rnd(-.004,.004),rnd(-.03,.03),Math.PI/2+rnd(-.003,.003)),{tint:rnd(.93,1.07),wall:true});}
 function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.16;z<z1;z+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.005,.005),(a+b2)/2,z),b2-a,rnd(.288,.303),rnd(.045,.055),new THREE.Euler(0,Math.PI/2+rnd(-.02,.02),Math.PI/2+rnd(-.004,.004)),{tint:rnd(.88,1.0),wall:true});}
 const disc=(cx,cz,r,zmin)=>(x,z)=>(x-cx)**2+(z-cz)**2<=r*r&&z>=zmin;
-function brace(a,b2,w=.16){const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),{dark:true});}
+function brace(a,b2,w=.16){a=a.clone().addScaledVector(b2.clone().sub(a).normalize(),-.14);const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),{dark:true});}
 function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.42));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;post(x,y,y+.95,z);}
  if(skip){if(skip[0]>x0)brace(V(x0,y+.95,z0),V(skip[0],y+.95,lerp(z0,z1,(skip[0]-x0)/(x1-x0))),.09);if(x1>skip[1])brace(V(skip[1],y+.95,lerp(z0,z1,(skip[1]-x0)/(x1-x0))),V(x1,y+.95,z1),.09);}else brace(V(x0,y+.95,z0),V(x1,y+.95,z1),.09);}
 // rope ladders: tied over the floor edge with a knot round a peg, two twisted strands per side, round rungs lashed
@@ -500,7 +504,7 @@ brace(V(1.4,.9,frontZ(1.4,1.0)-.05),V(2.6,LG-.12,1.9),.13);
 // left low landing
 floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
 // center landing (half disc around the trunk front) + gate over the ground ladder
-floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-.9,1.3,frontZ(-.9,1.3)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(-.15,1.3,frontZ(-.15,1.3)-.08),V(-.05,LC-.13,3.45),.15);/* critic T19: kept left of the hollow's mouth */
+floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-1.0,3.0,frontZ(-1.0,3.0)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(-.15,1.3,frontZ(-.15,1.3)-.08),V(-.05,LC-.13,3.45),.15);/* critic T19: kept left of the hollow's mouth */
 if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
 ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
@@ -508,7 +512,7 @@ const KX0=-4.4,KX1=-.9;
 floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]]});
 wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
 wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]]);wallSide(KX1,.8,2.2,KT+.03,BD-.15);
-post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);brace(V(-2.2,KT-2.3,frontZ(-2.2,KT-2.3)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,KT-2.2,1.6),V(-3.6,KT-.15,1.6),.17);
+post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start above the centre landing (they used to pass through it) */brace(V(-2.3,LC+.4,frontZ(-2.3,LC+.4)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,LC+.45,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
@@ -670,7 +674,7 @@ const freshAttr=m=>m===boards?aFresh:m===beams?dFresh:sFresh;
 //  fresh(id)          -> current value
 //  near(x,y,z,r,kind?)-> ids within r metres
 //  wear(x,y,z,amt)    -> add foot wear on the floor at that point (0..1)
-window.__planks={list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
+window.__planks={meshes:{boards,beams,shingles:SHING},list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
  setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,0,1));A.needsUpdate=true;return true;},
  fresh:id=>PL[id]?freshAttr(PL[id].mesh).getX(PL[id].i):null,
  near:(x,y,z,r=.5,k)=>PL.map((p,id)=>[p,id]).filter(([p])=>(!k||p.kind===k)&&p.c.distanceTo(V(x,y,z))<r).map(([,id])=>id),
