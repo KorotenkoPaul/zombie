@@ -88,3 +88,13 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Drips run on `uDK = max(rainK*1.2, wet^1.4*.85)`, so they keep falling after the rain and thin out as things dry. Big drops from the leaf tips (18 on phones / 40 on desktop, sampled from TREE.leaves) share the same single draw.
 - Wet boards: every MeshStandardMaterial that is the top surface somewhere under the sky (recorded while building the height map) gets a chained hook. Where the height map says nothing is above it, it darkens by 34% and its roughness drops to .22. On flat boards in a long rain (wet > .55) shallow water films form (roughness .04) in noise patches. Uniform names are uWetB/uHB/uBoxB, because Ground declares uWet. It runs after Planks' roughness (injected after metalnessmap_fragment).
 - index.html motes ([WIND] fix): point size capped at 18 px*dpr, and faded out within 2 m of the camera. Before, a mote at the lens became a huge soft green disc at night.
+
+## Round 16: cloth
+- Curtains (lights.js exposes window.__curtains, a [WIND] line): the hem stirs in a draught through the window frame on gusty days. Nothing in a calm, a faint breath in a breeze, a stir in a gust. It's done in the vertex shader of each window's curtain material, with one uniform per window.
+- `__housewind.addCloth(material, worldPos, {outside})`: the same hem sway for any hanging cloth (laundry, a flag), stronger outside. Hanging things on a rope/chain: register a pivot in window.__swing (see round 13).
+- Smoke already bends with gusts: smoke.js uses windStrength at the pipe top, which includes the gust front.
+
+## Round 17: the hero in the wind
+- Foot kicks (particles.js): when a foot lands while he walks (hips speed .5-4 m/s, outside the rooms), 2-3 leaf bits hop up on the ground, or 1-2 dust specks on the landings. They flutter down and drift with the wind. Pool of 16 on phones / 24 on desktop, one draw. Perf step 'footKick' (order 58).
+- Breath already shows only outdoors, or indoors when it is very cold (feels < 2 °C, at half strength).
+- Hair and clothes stirring belongs to Character (hero.js). They can read __wind.sample(headPos) and __rain.covered(pos).

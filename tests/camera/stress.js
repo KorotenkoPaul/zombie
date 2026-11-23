@@ -38,6 +38,7 @@ const CHUNK = +(process.env.CHUNK || 25);
       window.__camStressOpt = {
         groundH: env.groundH,
         solid: (x, y, z) => trunkSolid(x, y, z, 0),
+        limb: window.__dbg.LIMB,
       };
     });
     const tot = { frames: 0, seqs: 0, viol: {}, samples: {}, collided: 0, maxRatioDrop: 0 };

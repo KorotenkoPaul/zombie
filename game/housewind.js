@@ -13,7 +13,9 @@
 // (Lights does this for the landing lantern).
 // Sound: __wind.on('sway', e) at the end of each swing (when the part turns back):
 //   e = {part: 'lantern' | 'telescope' | 'ladder', id, pos: [x,y,z], amp 0..1}
-// createHouseWind({wind, scene, ladders: [{id, x, z, y0, y1}]}) -> {update(dt)}
+// Curtains (Lights' window.__curtains): a draught through the frame stirs the hem on gusty days (vertex shader, one
+// uniform per window). Any other cloth: __housewind.addCloth(material, worldPos, {outside}).
+// createHouseWind({wind, scene, ladders: [{id, x, z, y0, y1}]}) -> {update(dt), addCloth}
 
 export function createHouseWind({ wind, scene, ladders = [] }) {
   const swings = new Map();   // piv -> state
@@ -22,9 +24,26 @@ export function createHouseWind({ wind, scene, ladders = [] }) {
   const busy = () => { try { const s = window.__th && window.__th.state ? window.__th.state() : null; return !!(s && /telescope/.test(s.task || '')); } catch (e) { return false; } };
   // a swing "turns back" when its velocity flips sign along the direction it was moving
   const turned = (st, vx, vz) => { const d = vx * st.lvx + vz * st.lvz; st.lvx = vx; st.lvz = vz; return d < 0; };
+  const curs = []; let curOn = false;
+  function hookCurtain(c) {
+    const m = c.mat; if (!m || m.userData.windCur) return; m.userData.windCur = true;
+    const u = { uCurK: { value: 0 }, uCurT: { value: 0 }, uCurS: { value: Math.random() * 10 } }; const prev = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => { prev && prev.call(m, sh, r); Object.assign(sh.uniforms, u);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uCurK,uCurT,uCurS;')
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+{float hw=clamp(.5-position.y,0.,1.);hw*=hw;   // the hem moves, the rod end stays
+ float wv=sin(uCurT*2.1+position.x*5.+uCurS)*.6+sin(uCurT*3.3-position.x*8.+uCurS*2.)*.4;
+ transformed.z+=uCurK*hw*(.04+.05*wv);transformed.x+=uCurK*hw*.02*sin(uCurT*1.7+uCurS);}`); };
+    m.customProgramCacheKey = () => 'windCurtain'; m.needsUpdate = true;
+    const pos = c.pos || (c.w && c.w.g ? c.w.g.getWorldPosition(c.w.g.position.clone()) : { x: 0, y: 0, z: 0 });
+    curs.push({ u, k: 0, pos, outside: !!c.outside });
+  }
   const LAD = ladders.map(l => ({ ...l, p: { x: l.x, y: l.y0 + 0.4, z: l.z }, lx: 0, lz: 0, lvx: 0, lvz: 0, peak: 0 }));
 
   return {
+    // any hanging cloth (laundry, a flag, a sack): its material's hem sways like the curtains, pinned at local y = +.5
+    // of a PlaneGeometry-like mesh. pos = world point to sample the wind at. Outside, pass outside: true (moves more).
+    addCloth(mat, pos, { outside = true } = {}) { hookCurtain({ mat, pos, outside }); },
     update(dt) {
       if (!wind || !wind.sample) return; dt = Math.min(0.05, dt); if (dt <= 0) return;
       const now = performance.now() * 0.001;
@@ -57,6 +76,11 @@ export function createHouseWind({ wind, scene, ladders = [] }) {
         tele.peak = Math.max(tele.peak, Math.abs(tele.w));
         if (turned(tele, tele.w, 0)) { if (!hold && g > 0.3) sway('telescope', 'telescope', tele.pos, tele.peak * 1.5); tele.peak = 0; }
       }
+      // ---- curtains: a draught through the window frame stirs the hem on gusty days (vertex shader, one uniform each) ----
+      if (!curOn && window.__curtains) { curOn = true; for (const c of window.__curtains) hookCurtain(c); }
+      for (const c of curs) { const w = wind.sample(c.pos), g = w.gust || 0, s = w.s || 0;
+        // only a gusty day gets through a closed window: nothing in a calm, a faint breath in a breeze, a stir in a gust
+        const want = c.outside ? Math.min(1.6, 0.15 + s * 0.6 + g * 0.6) : Math.max(0, s - 0.35) * 0.4 + g * 0.8; c.k += (want - c.k) * Math.min(1, dt * (want > c.k ? 3 : 0.8)); c.u.uCurK.value = Math.min(1, c.k); c.u.uCurT.value = now; }
       // ---- rope ladders: follow the shader's sway at the free end, report the turns ----
       for (const L of LAD) {
         const o = wind.swayAt(L.p, 1.1), len = L.y1 - L.y0, k = 0.05 * len;
