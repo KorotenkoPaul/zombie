@@ -259,7 +259,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
   }
 
   function startNext() {
-    const st = plan.shift();
+    let st = plan.shift();
+    // a lamp step planned in the dark, but it is light by now: skip it
+    while (st && st.task === 'switch' && st.opts.on && st.opts.light !== 'candle' && !dark(hour())) st = plan.shift();
     if (!st) return false;
     why = st.why || why;
     // he leaves the stove after really cooking: a portion of meat and a log are used, a meal waits
@@ -322,7 +324,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // Adopt it and respect it: a direct request wins over needs (he only drops it if he is falling asleep on his feet)
     if (v.task && !cur && ACTS[v.task]) {
       const A = ACTS[v.task], first = !cmdNext;
-      cur = { name: v.task, t: 0, dur: first ? rnd(A.dur[0], A.dur[1]) * .6 : A.dur[1], min: first ? 0 : A.dur[0], opts: {}, cmd: !first }; cmdNext = false;
+      cur = { name: v.task, t: 0, dur: first ? rnd(A.dur[0], A.dur[1]) * .6 : A.dur[1] * .7, min: first ? 0 : A.dur[0] * .7, opts: {}, cmd: !first }; cmdNext = false;
       plan.length = 0; recent.unshift(v.task); recent.length = 4; expected = v.task; why = first ? A.label : A.label + ' (попросили)';
     }
 
