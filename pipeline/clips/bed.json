@@ -1,0 +1,8 @@
+{
+ "bed_liedown": [4, "A person sitting on the edge of a bed leans sideways to the left onto the left elbow, swings both legs up onto the bed and lies down flat on the back, then rests still."],
+ "bed_liedown2": [4, "A seated person lies down sideways to the left on a bed: the upper body lowers onto the left side while both bent legs lift up onto the bed, ending lying on the back."],
+ "bed_getup": [4, "A person lying on the back on a bed pushes up with the left elbow, swings both legs down off the right side of the bed and sits up on the edge of the bed with feet on the floor."],
+ "bed_rollside": [3, "A person lying on the back on a bed slowly rolls over onto the right side and keeps sleeping with knees slightly bent."],
+ "bed_rollback": [3, "A person lying on the right side on a bed slowly rolls onto the back and keeps sleeping."],
+ "bed_rollstomach": [3, "A person lying on the side on a bed slowly rolls onto the stomach and keeps sleeping."]
+}
