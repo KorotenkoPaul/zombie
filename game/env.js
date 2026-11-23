@@ -112,6 +112,39 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
    const sz=rr(.07,.24)*(i%9===0?2.:1)*(r0>12?1.8:1);q.setFromEuler(new THREE.Euler(rr(-.2,.2),rr(0,6.28),rr(-.2,.2)));m.compose(V(x,groundH(x,z)+sz*.12,z),q,V(sz*rr(.9,1.6),sz,sz*rr(.9,1.4)));im.setMatrixAt(i,m);}
   im.castShadow=!MOBILE;im.receiveShadow=true;scene.add(im);}
 
+ // ================= ferns and mushrooms among the roots (cosy-eerie detail, like the painted reference) =================
+ {// fern frond painted on a canvas: a curved rachis with paired leaflets
+  const fernTex=(()=>{const cv=document.createElement('canvas');cv.width=128;cv.height=256;const x=cv.getContext('2d');
+   const gr=x.createLinearGradient(0,256,0,0);gr.addColorStop(0,'#2E6A50');gr.addColorStop(.5,'#5A9A62');gr.addColorStop(1,'#9CC870');x.fillStyle=gr;x.strokeStyle='#2C5A40';x.lineWidth=3;
+   x.beginPath();x.moveTo(64,256);x.quadraticCurveTo(70,120,60,8);x.stroke();
+   for(let i=0;i<15;i++){const t=i/15,y=250-t*235,cx=64+Math.sin(t*2.4)*6-t*6,L=(1-t*.85)*52;for(const sd of [-1,1]){x.beginPath();x.moveTo(cx,y);x.quadraticCurveTo(cx+sd*L*.6,y-10,cx+sd*L,y-4-t*10);x.quadraticCurveTo(cx+sd*L*.5,y+3,cx,y+4);x.fill();}}
+   const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  // one fern = 6 fronds arching out from the centre
+  const parts=[];for(let k=0;k<6;k++){const q=new THREE.PlaneGeometry(.32,.75,1,4);const p=q.attributes.position;
+   for(let i=0;i<p.count;i++){const y=p.getY(i)+.375;p.setY(i,y*.8-y*y*.35);p.setZ(i,y*.75);}q.rotateY(k/6*Math.PI*2+(k%2)*.3);parts.push(q);}
+  const fg=mergeGeometries(parts);const nr=fg.attributes.normal;for(let i=0;i<nr.count;i++)nr.setXYZ(i,0,1,0);
+  const fm=new THREE.MeshStandardMaterial({map:fernTex,alphaTest:.5,side:THREE.DoubleSide,roughness:.9,emissive:0x10261E,emissiveMap:fernTex});
+  fm.onBeforeCompile=sh=>{sh.uniforms.uT=U.t;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nuniform float uT;').replace('#include <begin_vertex>',`#include <begin_vertex>
+   float ph=instanceMatrix[3][0]*1.7+instanceMatrix[3][2];transformed.x+=sin(uT*1.3+ph)*.04*position.z;transformed.y+=sin(uT*1.9+ph)*.02*position.z;`);};
+  const NF=MOBILE?40:70;const im=new THREE.InstancedMesh(fg,fm,NF);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
+  for(let i=0;i<NF;i++){const a=rr(0,6.28),r=i<NF*.6?rr(3.6,8.5):rr(9,24);const x=Math.cos(a)*r,z=Math.sin(a)*r*.9;const sz=rr(.8,1.5)*(r>9?1.3:1);
+   q.setFromAxisAngle(V(0,1,0),rr(0,6.28));m.compose(V(x,groundH(x,z)-.02,z),q,V(sz,sz*rr(.8,1.1),sz));im.setMatrixAt(i,m);c.setHSL(rr(.3,.4),rr(.35,.5),rr(.62,.78));im.setColorAt(i,c);}
+  im.receiveShadow=true;scene.add(im);env.ferns=im;}
+ {// mushrooms: little clusters with warm caps that glow faintly at night (a cosy touch in the cold blue)
+  const cap=new THREE.SphereGeometry(1,10,6,0,Math.PI*2,0,Math.PI*.5).scale(1,.55,1).translate(0,.9,0);const stem=new THREE.CylinderGeometry(.28,.36,.95,8).translate(0,.47,0);
+  const sc=new Float32Array(stem.attributes.position.count*3).fill(.92);stem.setAttribute('color',new THREE.BufferAttribute(sc,3));
+  const cc=new Float32Array(cap.attributes.position.count*3);for(let i=0;i<cap.attributes.position.count;i++){const y=cap.attributes.position.getY(i);const k=smooth(.9,1.45,y);cc.set([.55+k*.3,.3+k*.08,.2],i*3);}cap.setAttribute('color',new THREE.BufferAttribute(cc,3));
+  stem.setAttribute('aCap',new THREE.BufferAttribute(new Float32Array(stem.attributes.position.count),1));{const p=cap.attributes.position;const a=new Float32Array(p.count);for(let i=0;i<p.count;i++)a[i]=smooth(.95,1.4,p.getY(i));cap.setAttribute('aCap',new THREE.BufferAttribute(a,1));}
+  const mg=mergeGeometries([stem.toNonIndexed(),cap.toNonIndexed()]);
+  env.shroomMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.7});const glowU={value:0};env.shroomGlow=glowU;
+  env.shroomMat.onBeforeCompile=sh=>{sh.uniforms.uGlow=glowU;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aCap;varying float vCap;').replace('#include <begin_vertex>','#include <begin_vertex>\nvCap=aCap;');
+   sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float uGlow;varying float vCap;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.2)*vCap*uGlow;');};
+  const NM=MOBILE?36:60;const im=new THREE.InstancedMesh(mg,env.shroomMat,NM);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();let n=0;
+  while(n<NM){const a=rr(0,6.28),r=rr(3.4,9);const cx=Math.cos(a)*r,cz=Math.sin(a)*r*.9;const k=2+Math.floor(R()*4);
+   for(let j=0;j<k&&n<NM;j++){const x=cx+rr(-.3,.3),z=cz+rr(-.3,.3),sz=rr(.05,.12);q.setFromEuler(new THREE.Euler(rr(-.25,.25),rr(0,6.28),rr(-.25,.25)));
+    m.compose(V(x,groundH(x,z)-.01,z),q,V(sz,sz*rr(.9,1.4),sz));im.setMatrixAt(n,m);c.setHSL(rr(.03,.08),rr(.5,.8),rr(.55,.75));im.setColorAt(n,c);n++;}}
+  im.castShadow=!MOBILE;im.receiveShadow=true;scene.add(im);env.shrooms=im;}
+
  // ================= forest =================
  // trunk + roots + a few big branches as one geometry per variant; canopies are leaf-cluster cards like the oak
  const barkMat=(()=>{const t=barkT.clone();t.needsUpdate=true;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(2,3);return new THREE.MeshStandardMaterial({map:t,roughness:1,color:0x9A8C80});})();
@@ -240,6 +273,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
    for(let i=0;i<6;i++){const v=puffU.lp.value[i];const l=L[i];if(l)v.set(l[0],l[1],l[2],l[3]*.9);else v.set(0,-99,0,0);}}
   bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
   for(const h of halos){const on=h.l.intensity>.05;h.s.visible=on;if(on){h.l.getWorldPosition(h.s.position);const k=Math.min(1,h.l.intensity/6);h.s.material.opacity=k*.85;h.s.scale.setScalar(h.size*(.85+k*.3));}}
+  env.shroomGlow.value=eve*1.8;
   fill.intensity=eve*1.6*(1-rainK*.4);sky.intensity=eve*.9;rim.intensity=eve*1.4;
   const g=env.gradePass.uniforms;g.night.value=eve;g.sat.value=1.18+nightK*.08;};
  env.sheets=sheets;env.puffs=puffs;window.__env=env;
