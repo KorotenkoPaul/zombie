@@ -484,7 +484,7 @@ export function createAudio(ctx) {
   const SYN = {};
   function synth(kind, v) {
     const sr = A.sampleRate, R = Math.random;
-    const len = { peck: .5, hop: .7, flutter: .9, claws: 2.2, chitter: 1.4 }[kind], n = Math.floor(sr * len), d = new Float32Array(n);
+    const len = { peck: .5, hop: .7, flutter: .9, claws: 2.2, chitter: 1.4, sniff: 1.6, squeak: .3 }[kind], n = Math.floor(sr * len), d = new Float32Array(n);
     // RBJ band-pass, run in place over a segment
     const bp = (x, f, Q) => { const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * Q), a0 = 1 + al, b0 = al / a0, a1 = -2 * Math.cos(w) / a0, a2 = (1 - al) / a0; let x1 = 0, x2 = 0, y1 = 0, y2 = 0; for (let i = 0; i < x.length; i++) { const y = b0 * x[i] - b0 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[i]; y2 = y1; y1 = y; x[i] = y; } return x; };
     const burst = (at, ms, f, Q, amp, tau) => { const m = Math.floor(sr * ms / 1000), s = Math.floor(at * sr); if (s >= n) return; const x = new Float32Array(m); for (let i = 0; i < m; i++) x[i] = (R() * 2 - 1) * Math.exp(-i / (sr * tau / 1000)); bp(x, f, Q); for (let i = 0; i < m && s + i < n; i++) d[s + i] += x[i] * amp; };
@@ -498,22 +498,30 @@ export function createAudio(ctx) {
         const nz = new Float32Array(L); for (let i = 0; i < L; i++) nz[i] = R() * 2 - 1; bp(nz, 3200, 2);
         for (let i = 0; i < L && s + i < n; i++) { const u = i / L, f = f0 + (f1 - f0) * u; ph += 2 * Math.PI * f / sr; const env = Math.min(1, u * 25) * Math.pow(1 - u, 1.5); d[s + i] += (Math.tanh(1.5 * Math.sin(ph)) * .55 + nz[i] * .9) * env * .5; }
         t += gap * (k > m * .6 ? .7 : 1) + R() * .012; } }
+    else if (kind === 'sniff') { let t = .02; while (t < len - .1) { const m = 2 + Math.floor(R() * 3); for (let j = 0; j < m; j++) burst(t + j * (.07 + R() * .03), 45, 1800 + R() * 1400, 1.2, .5 + R() * .5, 14); t += .25 + R() * .35; } }   // a hedgehog snuffling through the leaves
+    else if (kind === 'squeak') { const s0 = Math.floor(.01 * sr), L = Math.floor(sr * (.06 + v * .03)), f0 = 3800 + R() * 500; let ph = 0; for (let i = 0; i < L; i++) { const u = i / L; ph += 2 * Math.PI * (f0 + 900 * Math.sin(Math.PI * u)) / sr; d[s0 + i] += Math.sin(ph) * Math.sin(Math.PI * u) * .8; } }
     { let y = 0; const a = 1 - Math.exp(-2 * Math.PI * 6500 / sr); for (let i = 0; i < n; i++) { y += a * (d[i] - y); d[i] = y; } }   // soften the edges: nothing synthetic-bright
     let pk = 0; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(d[i])); const k = pk > 0 ? .9 / pk : 0; for (let i = 0; i < n; i++) d[i] *= k;
     const b = A.createBuffer(1, n, sr); b.getChannelData(0).set(d); return b;
   }
   function synBuf(name) { if (SYN[name]) return SYN[name]; const m = /^syn_(\w+)_(\d)$/.exec(name); if (!m || !A) return null; return SYN[name] = synth(m[1], +m[2]); }
+  // night critters (Ground): hedgehog snuffles and rustles, curls up with a dry crackle; a mouse patters and squeaks
+  const CRITK = { 'hedgehog.step': ['hop', .03, .3, 2, .7], 'hedgehog.sniff': ['sniff', .06, 1.5, 2, 1], 'hedgehog.curl': ['claws', .05, 1, 2, .6], 'hedgehog.uncurl': ['claws', .035, 1, 2, .55],
+    'hedgehog.appear': ['hop', .03, 2, 2, .65], 'hedgehog.leave': ['hop', .025, 2, 2, .65],
+    'mouse.step': ['claws', .02, .35, 2, 1.5], 'mouse.flee': ['claws', .04, .6, 2, 1.6], 'mouse.dash': ['claws', .035, .6, 2, 1.6], 'mouse.squeak': ['squeak', .025, 2, 2, 1],
+    'mouse.appear': ['claws', .015, 2, 2, 1.4], 'mouse.leave': ['claws', .015, 2, 2, 1.4] };
   const CRIT = { hop: ['hop', .05, .12, 2], peck: ['peck', .05, .1, 3], chitter: ['chitter', .16, 3, 2], climb: ['claws', .07, .9, 2], flee: ['flutter', .14, .8, 3], land: ['flutter', .06, .8, 3] };
   const critLast = {}; let critHooked = false;
   function critter(e) {
     if (!loaded || muted || !e || e.kind === 'butterfly' || !A) return;
-    const C = CRIT[e.act]; if (!C) return; const q = e.pos || [0, 0, 8], p = { x: q[0] ?? q.x, y: q[1] ?? q.y, z: q[2] ?? q.z };
+    const CK = CRITK[e.kind + '.' + e.act], C = CK || CRIT[e.act]; if (!C) return; const q = e.pos || [0, 0, 8], p = { x: q[0] ?? q.x, y: q[1] ?? q.y, z: q[2] ?? q.z };
     const l = listener(); if (Math.hypot(p.x - l.x, p.y - l.y, p.z - l.z) > 45) return;
     const id = (e.id || e.kind) + e.act; if (now - (critLast[id] ?? -9) < C[2]) return; critLast[id] = now;
     let kind = C[0]; if (e.kind === 'squirrel' && e.act === 'flee') kind = 'claws';
+    if (e.kind === 'mouse' && (e.act === 'flee' || e.act === 'dash') && Math.random() < .5) critter({ kind: 'mouse', act: 'squeak', pos: e.pos, id: e.id });   // a startled squeak
     const name = 'syn_' + kind + '_' + Math.floor(Math.random() * C[3]);
-    const dur = kind === 'claws' ? Math.min(2.1, e.dur || rnd(.6, 1.4)) : undefined;
-    voice(name, { pos: p, gain: C[1] * rnd(.8, 1.15) * (e.act === 'land' ? .7 : 1), rate: rnd(.9, 1.12) * (e.kind === 'squirrel' && kind === 'flutter' ? .8 : 1), dur, offset: kind === 'claws' ? rnd(0, .4) : 0,
+    const dur = kind === 'claws' ? Math.min(2.1, e.dur || (CK ? rnd(.15, .45) : rnd(.6, 1.4))) : kind === 'sniff' ? Math.min(1.5, e.dur || rnd(.6, 1.4)) : undefined;
+    voice(name, { pos: p, gain: C[1] * rnd(.8, 1.15) * (e.act === 'land' ? .7 : 1), rate: rnd(.9, 1.12) * (CK ? CK[4] : 1), dur, offset: kind === 'claws' ? rnd(0, .4) : 0,
       fadeIn: .004, fadeOut: kind === "claws" ? .12 : .05, ref: 4, roll: 1.2, rev: .12 });
   }
   function hookCritters() {
@@ -538,7 +546,7 @@ export function createAudio(ctx) {
   function swaySound(e) {
     if (!loaded || muted || !e) return;
     const amp = clamp01(e.amp ?? .5) * (.35 + .65 * clamp01(wind / .6)), key = e.hit ? 'hit' : e.part, S = SWAY[key] || SWAY.rope, id = (e.id || e.part || '?') + (e.hit ? '!' : '');
-    if (now - (swayLast[id] ?? -9) < (e.hit ? .8 : rnd(1.3, 2.4)) || now - swayLastT < .3) return;
+    if (now - (swayLast[id] ?? -9) < (e.hit ? .8 : rnd(2.5, 5)) || now - swayLastT < .3) return;
     if (amp < .12 || Math.random() > .25 + .7 * amp) return;                                   // small swings mostly pass in silence
     swayLast[id] = now; swayLastT = now;
     const q = e.pos || [rnd(-6, 6), rnd(9, 16), rnd(-3, 1)], dur = rnd(S.dur[0], S.dur[1]);
@@ -660,8 +668,48 @@ export function createAudio(ctx) {
       frameDt = frameDt * .8 + Math.min(.5, rawDt) * .2;
       dbgF = [+mv.toFixed(2), +vy.toFixed(2), +frameDt.toFixed(3), +p.y.toFixed(2)];
       if (autoFeet) feet(p, mv, vy, env);
+      houseWatch(hero, mv);
       if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
     }
+  }
+
+  // ---------- house watchers: the hatch lid, the door bolt, repairs, dishes ----------
+  // Sounds follow the house's real state, read each frame (cheap): Tree's hatch (window.__house.hatch), Props' door bolt
+  // and dishes, and the hero's current task. So they are right whoever moves things (the hero, Brain's lockdown, a test).
+  const HW = { hatch: null, bolt: null, rack: null, task: null, taskT: 0, next: 0, loop: null, hatchT: -9 };
+  // task foley while he works (standing at the job, not walking): [action or clip, every [a,b] s, gain, rate]
+  const TASKF = {
+    fix_rope: [['rope_ladder', [1.8, 3.2], .7, .9], ['fs_rope_a', [2.5, 4.5], .8, .85]],
+    fix_hinge: [['@squeak', [1.6, 3], 1, 1.45]],
+    fix_window: [['window', [3.5, 6], .7, 1], ['plank', [5, 8], .6, 1.1]],
+    clear_roof: [['leaves_a', [1.4, 2.6], .5, 1], ['sweep', [2.5, 4], .7, 1.05]],
+    fix_chimney: [['logs_stack', [2.4, 4], .45, 1.35], ['grunt', [8, 14], 1, 1]],
+    fix_shingle: [['plank', [4, 7], .6, 1.15], ['saw_shingle', [9, 15], .8, 1]],
+    fix_board: [['plank', [4, 7], .7, 1]], fix_wall: [['plank', [5, 8], .6, 1.05]], fix_railing: [['plank', [4, 7], .6, .95]],
+    dishes: [['plate', [3.5, 6], .55, 1.05], ['cup', [6, 10], .5, 1]],
+  };
+  function houseWatch(hero, mv) {
+    const hc = window.__house && window.__house.hatch;
+    if (hc && hc.isOpen) { const o = hc.isOpen(); if (HW.hatch !== null && o !== HW.hatch && now - HW.hatchT > 1.5) { const g = hc.grab; playAct(o ? 'hatch_open' : 'hatch_close', g ? { x: g.x, y: g.y, z: g.z } : undefined); HW.hatchT = now; } HW.hatch = o; }
+    const P = window.__props, D = P && P.door;
+    if (D && D.boltKnob) { const b = D.bolt > .5; if (HW.bolt !== null && b !== HW.bolt) playAct(b ? 'bolt_lock' : 'bolt_open', D.boltKnob(new (ctx.camera.position.constructor)())); HW.bolt = b; }
+    if (P && P.dishes && P.dishes.state) {   // a plate put away from the rack onto the shelf: a soft clack each, staggered
+      const r = P.dishes.state().rack; if (HW.rack !== null && r < HW.rack && P.point) { const sp = P.point('sink'); for (let i = 0; i < HW.rack - r; i++) playAct(i % 2 ? 'cup' : 'plate', sp, { delay: .35 + i * rnd(.45, .7), gain: .8 }); } HW.rack = r; }
+    const task = HW.force || hero && hero.task || null;
+    if (task !== HW.task) { HW.task = task; HW.taskT = now; HW.next = {}; if (HW.loop) { HW.loop.stop(.8); HW.loop = null; } }
+    const working = task && mv < .15 && now - HW.taskT > 1.5;
+    if (task === 'dishes') {                          // the tap runs and the dishes splash while he washes
+      if (working && !HW.loop && P && P.point) { const sp = P.point('sink'); HW.loop = { a: loopAct('tap', sp, { gain: .7 }), b: loopAct('wash', sp) }; HW.loop.stop = f => { HW.loop.a && HW.loop.a.stop(f); HW.loop.b && HW.loop.b.stop(f); }; }
+      if (!working && HW.loop && mv > .3) { HW.loop.stop(.8); HW.loop = null; }
+    }
+    const F = working && TASKF[task]; if (!F) return;
+    const hp = hero.root.position, at = { x: hp.x, y: hp.y + 1, z: hp.z };
+    F.forEach((f, i) => {
+      if (HW.next[i] == null) { HW.next[i] = now + rnd(.3, f[1][0]); return; } if (now < HW.next[i]) return; HW.next[i] = now + rnd(f[1][0], f[1][1]);
+      if (f[0] === '@squeak') { const k = Math.max(.25, 1 - (now - HW.taskT) / 25); voice('creak_a', { pos: at, gain: .2 * k, rate: rnd(1.35, 1.6), dur: rnd(.3, .6), offset: rnd(0, 1), ref: 2.5, roll: 1, rev: .2, indoor: true, fadeIn: .02, fadeOut: .1 }); return; }   // the oiled hinge squeaks less and less
+      if (ACT[f[0]] || ALIAS[f[0]]) playAct(f[0], at, { gain: f[2], rate: f[3] });
+      else voice(f[0], { pos: at, gain: .3 * f[2], rate: f[3] * rnd(.95, 1.05), dur: rnd(.6, 1.2), offset: rnd(0, 1), ref: 3, roll: 1, rev: .2, indoor: true, fadeIn: .05, fadeOut: .25 });
+    });
   }
 
   // ---------- the hero's actions (foley) ----------
@@ -725,6 +773,8 @@ export function createAudio(ctx) {
   function playAct(name, pos, o = {}) {
     if (!A || muted || !loaded) return null;
     if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
+    if (name === 'bolt') return null;                                  // houseWatch plays lock / unlock from the door's real bolt
+    if (/^hatch_/.test(name)) { if (now - HW.hatchT < 1.5) return null; HW.hatchT = now; }
     const a = ACT[name] || ACT[ALIAS[name]];
     const clip = a ? pick(a.c) : RAW[name] ? name : null;
     if (!clip) { console.warn('audio: no sound', name); return null; }
@@ -852,7 +902,7 @@ export function createAudio(ctx) {
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
       const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
-    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter,
+    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter, _task: t => { HW.force = t || null; },
   };
   window.__audio = api;
   return api;
