@@ -73,36 +73,67 @@ export function createTreeDress(C) {
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
     D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 },
-      nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 } };
+      nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.35, rain); };
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
       sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdRimK = D.barkU.rimK;
-      sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale;
+      sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.,tdFade=0.,tdH=.5;vec3 tdBl=vec3(0.,0.,1.);
+${MOBILE ? '#define TD_LITE' : ''}
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
-// triplanar sample, bark furrows run up the trunk (y is stretched)
-vec4 tdTri(sampler2D t,vec3 p,vec3 bl,float s){return texture2D(t,vec2(p.z,p.y*.42)*s)*bl.x+texture2D(t,p.xz*s)*bl.y+texture2D(t,vec2(p.x,p.y*.42)*s)*bl.z;}
-// triplanar normal (UDN blend): returns the world-space perturbation to add to the surface normal
-vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
- vec3 tx=texture2D(tdNrm,vec2(p.z,p.y*.42)*s).xyz*2.-1.,ty=texture2D(tdNrm,p.xz*s).xyz*2.-1.,tz=texture2D(tdNrm,vec2(p.x,p.y*.42)*s).xyz*2.-1.;
- return (vec3(0.,tx.y,tx.x)*bl.x+vec3(ty.x,0.,ty.y)*bl.y+vec3(tz.x,tz.y,0.)*bl.z)*k;}` + NOISE)
+// triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
+// Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
+float tdLf=0.;vec3 tdA=vec3(0.,1.,0.),tdB=vec3(1.,0.,0.),tdC=vec3(0.,0.,1.);
+vec3 tdW(vec3 n,vec3 A,vec3 B,vec3 C){vec3 b=pow(abs(vec3(dot(n,B),dot(n,C),dot(n,A))),vec3(4.));return b/(b.x+b.y+b.z);}
+vec4 tdS(sampler2D t,vec3 p,vec3 n,vec3 A,vec3 B,vec3 C,float s){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8;
+ return texture2D(t,vec2(dot(p,C),a)*s)*w.x+texture2D(t,vec2(dot(p,B),a)*s)*w.y+texture2D(t,vec2(dot(p,B),dot(p,C))*s)*w.z;}
+vec3 tdSN(vec3 p,vec3 n,vec3 A,vec3 B,vec3 C,float s,float k){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8;
+ vec3 tx=texture2D(tdNrm,vec2(dot(p,C),a)*s).xyz*2.-1.,ty=texture2D(tdNrm,vec2(dot(p,B),a)*s).xyz*2.-1.,tz=texture2D(tdNrm,vec2(dot(p,B),dot(p,C))*s).xyz*2.-1.;
+ return ((C*tx.x+A*tx.y)*w.x+(B*ty.x+A*ty.y)*w.y+(B*tz.x+C*tz.y)*w.z)*k;}
+// both mappings, blended between the trunk and the roots / limbs
+vec4 tdTri(sampler2D t,vec3 p,vec3 n,float s){vec4 a=vec4(0.),b=vec4(0.);
+ if(tdLf<.99)a=tdS(t,p,n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s);if(tdLf>.01)b=tdS(t,p,n,tdA,tdB,tdC,s);return mix(a,b,tdLf);}
+vec3 tdTriN(vec3 p,vec3 n,float s,float k){vec3 a=vec3(0.),b=vec3(0.);
+ if(tdLf<.99)a=tdSN(p,n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s,k);if(tdLf>.01)b=tdSN(p,n,tdA,tdB,tdC,s,k);return mix(a,b,tdLf);}
+uniform float tdCool;` + NOISE)
         .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 wn=normalize(tdN); float y=tdP.y;
+#ifdef USE_MAP
+          // the sculpted model's own painted texture has long vertical streaks: keep only its broad colour (a blurred mip),
+          // the bark detail comes from the relief below
+          { vec4 mb=texture2D(map,vMapUv,5.);
+            diffuseColor.rgb=diffuseColor.rgb/max(sampledDiffuseColor.rgb,vec3(.004))*mix(sampledDiffuseColor.rgb,mb.rgb,.85); }
+#endif
           // ---- bark relief: light worn crust on the ridges, deep dark furrows, fibrous detail up close ----
-          tdBl=pow(abs(wn),vec3(4.));tdBl/=tdBl.x+tdBl.y+tdBl.z;
+          { vec2 rv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float r=length(rv); vec3 rad=r>1e-3?vec3(rv.x/r,0.,rv.y/r):vec3(1.,0.,0.);
+            // roots and limbs: furrows along them. Near the ground the roots run outwards; higher up the limbs rise a little as they go out.
+            tdA=normalize(rad+vec3(0.,y>3.?.25:0.,0.)); tdC=vec3(-rad.z,0.,rad.x); tdB=normalize(cross(tdC,tdA));
+            tdLf=smoothstep(2.5,3.7,r); }
           tdFade=1.-smoothstep(5.,16.,length(cameraPosition-tdP));
-          vec4 ha=tdTri(tdHao,tdP,tdBl,tdScale), hb=tdTri(tdHao,tdP*1.0+7.3,tdBl,tdScale*4.);
+          // phones: one macro read and no close-up octave (GPU-bound at night); desktop: anti-tiling second read + micro detail up close
+          vec4 hb=vec4(.5,1.,.5,1.);
+#ifdef TD_LITE
+          vec4 ha=tdTri(tdHao,tdP,wn,tdScale);
+#else
+          float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
+          vec4 ha=tdTri(tdHao,tdP,wn,tdScale);
+          if(brk>.01)ha=mix(ha,tdTri(tdHao,tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale),brk);
+          if(tdFade>.01)hb=tdTri(tdHao,tdP+7.3,wn,tdScale*3.3);
+#endif
           tdH=ha.r;float cav=ha.g*mix(1.,.6+.4*hb.g,tdFade);
           float rel=tdRelief;
-          diffuseColor.rgb*=mix(1.,mix(.3,1.3,smoothstep(.05,.95,tdH))*mix(.35,1.,cav),rel);
+          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.6,1.,cav),rel);
           diffuseColor.rgb*=mix(1.,.82+.36*hb.b,tdFade*rel);
-          { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel); }
+          { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
+            // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
+            diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
+            diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.82,.8,1.05),vec3(1.),smoothstep(.15,.6,tdH)),tdCool); }
           vec2 ax=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float rd=length(ax);
           float lum=dot(diffuseColor.rgb,vec3(.3,.59,.11));
           // big soft patches + fine breakup
@@ -139,7 +170,14 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec3 wn=normalize(tdN);
-          vec3 dn=tdTriN(tdP,tdBl,tdScale,4.5)+tdTriN(tdP+7.3,tdBl,tdScale*4.,1.6)*tdFade;
+#ifdef TD_LITE
+          vec3 dn=tdTriN(tdP,wn,tdScale,3.);
+#else
+          float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
+          vec3 dn=tdTriN(tdP,wn,tdScale,3.);
+          if(brk>.01)dn=mix(dn,tdTriN(tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
+          if(tdFade>.01)dn+=tdTriN(tdP+7.3,wn,tdScale*3.3,1.1)*tdFade;
+#endif
           vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
@@ -155,7 +193,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress3';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress5';
     mat.needsUpdate = true;
   }
 
@@ -547,7 +585,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
     const tex = (() => {
       const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const x = cv.getContext('2d'); const r = rng(99);
       for (let i = 0; i < 46; i++) {
-        const x0 = 8 + r() * 48, len = 80 + r() * 170, w = 0.8 + r() * 1.6; const c = 120 + r() * 60;
+        const x0 = 32 + (r() + r() - 1) * 22, len = 80 + r() * 170, w = 0.8 + r() * 1.6; const c = 120 + r() * 60;
         x.strokeStyle = `rgba(${c * 0.82 | 0},${c | 0},${c * 0.72 | 0},${0.65 + r() * 0.35})`; x.lineWidth = w; x.beginPath(); x.moveTo(x0, 0);
         let px = x0; for (let y = 8; y < len; y += 8) { px += (r() - 0.5) * 3 - (px - 32) * 0.02 * (y / 256); x.lineTo(px, y); } x.stroke();
         // little tufts along the strand
@@ -556,9 +594,12 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
     })();
     // two crossed cards, top at y=0 hanging down to y=-1 (uv.y 1 at the top)
-    const a = new THREE.PlaneGeometry(1, 1).translate(0, -0.5, 0), b = a.clone().rotateY(Math.PI / 2);
+    const a = new THREE.PlaneGeometry(1, 1, 2, 6).translate(0, -0.5, 0);
+    { const q = a.attributes.position; for (let i = 0; i < q.count; i++) { const t = -q.getY(i); q.setX(i, q.getX(i) * (1 - 0.75 * t)); } }
+    const b = a.clone().rotateY(Math.PI / 2);
     const g = mergeGeometries([a, b]);
-    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 1, color: 0xa8b296 });
+    tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter; // averaged mips turned the strands into solid strips far away
+    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, color: 0xa8b296 });
     mat.onBeforeCompile = sh => {
       const W = window.__wind; if (!W) return; W.hook(sh);
       sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -566,7 +607,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
        vec3 off=windRope(ip,t,len)*3.5+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));
        transformed+=windLocal(off);}`);
     };
-    const N = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
+    const N = Math.round(45 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
     const under = sampler(q => q.n.y < -0.35 && q.c.y > 3.6 && q.c.y < 10.5 && radial(q.c.x, q.c.z) > 2.2);
     for (let k = 0; k < 600 && n < N; k++) {
       const s0 = under(); if (!s0) break; const p0 = s0.p;

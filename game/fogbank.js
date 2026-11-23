@@ -6,7 +6,7 @@
 // createFogBank({THREE, scene, wind, MOBILE}) -> {update(fogColor), sheets}
 
 export function createFogBank({ THREE, scene, wind, MOBILE = false }) {
-  const U = { uCol: { value: new THREE.Color(0.8, 0.82, 0.86) }, uOp: { value: 0.5 } };
+  const U = { uCol: { value: new THREE.Color(0.8, 0.82, 0.86) }, uOp: { value: 0.5 }, uN: { value: wind && wind.noiseTexture ? wind.noiseTexture(THREE) : null } };
   const mat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: false, uniforms: U,
     vertexShader: `varying vec3 vW;varying float vB;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;
 #ifdef WIND
@@ -16,18 +16,17 @@ export function createFogBank({ THREE, scene, wind, MOBILE = false }) {
       vB=0.;
 #endif
       gl_Position=projectionMatrix*viewMatrix*w;}`,
-    fragmentShader: `uniform vec3 uCol;uniform float uOp;varying vec3 vW;varying float vB;
+    // two reads of a baked tiling noise texture (cheap on phones) instead of procedural fbm
+    fragmentShader: `uniform vec3 uCol;uniform float uOp;uniform sampler2D uN;varying vec3 vW;varying float vB;
 #ifdef WIND
       uniform vec2 uDrift;
 #endif
-      float h(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
-      float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
       void main(){if(vB<.004)discard;vec2 dr=vec2(0.);
 #ifdef WIND
        dr=uDrift;
 #endif
-       vec2 p=(vW.xz-dr*.9)*.09+vec2(vW.y*2.3,0.);float d=n(p)*.55+n(p*2.13+3.1)*.3+n(p*4.4+7.7)*.15;
-       float edge=smoothstep(70.,40.,length(vW.xz));float a=smoothstep(.32,.8,d)*vB*uOp*edge;gl_FragColor=vec4(uCol*(.9+.25*d),a);}` });
+       vec2 p=(vW.xz-dr*.9)*.012+vec2(vW.y*.3,0.);float d=texture2D(uN,p).r*.7+texture2D(uN,p*2.3+.37).g*.3;
+       float edge=smoothstep(70.,40.,length(vW.xz));float a=smoothstep(.3,.75,d)*vB*uOp*edge;gl_FragColor=vec4(uCol*(.9+.25*d),a);}` });
   // hookRaw adds the wind uniforms and the WIND define (the fragment shader reads uDrift through it too)
   if (wind && wind.hookRaw) wind.hookRaw(mat);
   const sheets = [];
