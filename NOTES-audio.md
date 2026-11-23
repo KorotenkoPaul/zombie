@@ -84,3 +84,20 @@ Mix targets (mix bus RMS, camera at the default orbit):
 - Silence: no stretch longer than about 7 s by day and 6 s at night without a creature (the lull guard). A rest of 3–8 s is fine: quiet is part of the mood.
 - Texture layers should never read as a constant wash: pond lapping now plays every 3–8 s (it was every 1–3 s), and dew drips now come mostly at night and in the morning, not all day.
 Found and fixed: music too loud at dusk; pond lapping almost constant; autumn middays and the 17:00 hand-over went 10–15 s with no life; drips in dry afternoons. Pond voices sit on the real pond from `__ground.pond` (x −8.4, z 9.2, r 2.3) and move there automatically if the pond moves.
+
+## Round 13: house sway
+- `__wind.on('sway', {part, id, pos, amp, hit?})` (Wind, fc33e5b) fires when a part turns back at the end of a swing. Parts: 'landing lantern' (a hook squeak: creak_a pitched up, short), the telescope (a pivot creak, gusts only), 'ladder-ground' and 'ladder-deck' (rope strain: fs_rope_a/b slowed). `hit` gives a knock (shutter / trunk_door_close) for future shutters. The door is Props' own (it plays 'shutter').
+- Cost and taste: each id sounds at most once every 1.3–2.4 s, there are at most ~3 sway sounds a second overall, and swings below .12 are skipped. Larger swings are more likely to creak. Amp is scaled by the wind level, so a breeze creaks softly and a storm creaks hard.
+- Positional on the forest bus, so the room muffling (−55 % and a 1.5 kHz low-pass indoors) applies by itself. `__audio.sway(e)` plays one by hand for tests.
+
+## Round 14: daytime critters
+- There are no clips: Fal was not available. Synthesized buffers made in code (`synth(kind, variant)`): peck (2–4 band-passed taps), hop (soft thuds with a leaf tick), flutter (band-passed noise gated by slowing wingbeats, 24→14 Hz), claws (grouped scratch ticks on bark), chitter (chucks sweeping 4.3→2.5 kHz with breath noise, speeding up at the end). Each is low-passed at 6.5 kHz so nothing is bright or beepy. There are 2–3 variants per kind; they are made on first use and kept in `SYN`, about 0.8 MB, and are never evicted.
+- Event: `__ground.on('critter', {kind:'bird'|'squirrel'|'butterfly', act:'hop'|'peck'|'chitter'|'climb'|'flee'|'land', pos, id, dur})`, or `__audio.critter(e)`. When a squirrel flees you hear claws, not wings. Butterflies are silent. Per-critter limits: a hop every .12 s, a peck every .1 s, a chitter every 3 s, a climb every .9 s, a flee every .8 s. Anything over 30 m from the camera is dropped. Positional on the forest bus, ref 2.5 m.
+- QA (gpt-audio, blind): it heard peck, flutter, chitter and claws as intended. It rated hop and peck as partly matching.
+
+## Round 15: rooms and surfaces
+- Room centres had been 1 m too low because the index.html levels include HY = 1.0. They are now KT 6.0, BD 8.4 and WS 4.6.
+- `roomOf(pos)` picks the room a sound is in, and each room has its own colour (ROOMC). The kitchen rings brightest (room send ×1.3). The bedroom is soft: send ×.5 and a 4.8 kHz low-pass for the quilts and bunks. The workshop sits between (×1, 9 kHz). An "indoor" sound that is in no room (deck, landings, ladders, the roof) is moved to the forest bus with forest reverb, so it sounds like open air.
+- Footstep surfaces are boards, dirt, leaves, wet, ladder, rope, and now roof. Standing on either roof (the ROOFS rects from buildTree) gives a lighter, higher wooden step, and 45 % of steps add a loose-shingle tick (the synth peck). Water already split before: the pond bucket is outdoors with forest reverb, and the sink tap is in the kitchen, which now rings.
+- Critters (Ground 35336db): verified in game, bird hops arrive and play. The cut-off went from 30 m to 45 m (ref 4 m) because the default orbit camera is about 38 m from the critters. They stay faint there and get clear when zoomed in.
+- CPU (iPhone 13 profile, headless): update() takes 0.008–0.010 ms per frame. The synth buffers are built once on first use and are about 0.8 MB.

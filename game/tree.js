@@ -454,45 +454,6 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
     const flg = new THREE.Group(); flg.position.set(cx, fy, cz); flg.rotation.y = -doorAng; flg.add(fl); fl.receiveShadow = true; group.add(flg);
   }
 
-  // ---------- a hewn wooden frame round the opening (critic N4): jambs and an arched header of short boards ----------
-  if (ARCH) {
-    const dirx = Math.cos(doorAng), dirz = Math.sin(doorAng), hh = door.y1 - door.y0, K = 1.07;
-    const pt = (da, vy) => { const v = da * door.w / 2, y = door.y0 + vy * hh, rr = R(y), ru = Math.sqrt(Math.max(0.01, rr * rr - v * v)) - 0.03;
-      return V(AX + dirx * ru - dirz * v, y, AZ + dirz * ru + dirx * v); };
-    const path = [[-K, -0.02], [-K, 0.62]];
-    for (let i = 1; i < 8; i++) { const t = Math.PI - i / 8 * Math.PI; path.push([Math.cos(t) * K, 0.62 + Math.sin(t) * K * 0.38 / 1.05]); }
-    path.push([K, 0.62], [K, -0.02]);
-    const pos = [], nor = [], uvs = [], col = [];
-    for (let i = 0; i + 1 < path.length; i++) {
-      const a = pt(...path[i]), b = pt(...path[i + 1]); const L = a.distanceTo(b) + 0.05, mid = a.clone().add(b).multiplyScalar(0.5);
-      const ex = b.clone().sub(a).normalize(), out = V(mid.x - AX, 0, mid.z - AZ).normalize(); const ey = out.clone().cross(ex).normalize(); out.copy(ex.clone().cross(ey));
-      const m = new THREE.Matrix4().makeBasis(ex, ey, out).setPosition(mid.clone().addScaledVector(out, 0.03));
-      m.multiply(new THREE.Matrix4().makeRotationX(rnd(-0.06, 0.06)));
-      const bg = new THREE.BoxGeometry(L, rnd(0.16, 0.19), rnd(0.13, 0.17)).toNonIndexed(); bg.applyMatrix4(m);
-      const k = rnd(0.8, 1.1), sd = rnd(0, 9);
-      for (let j = 0; j < bg.attributes.position.count; j++) {
-        pos.push(bg.attributes.position.getX(j), bg.attributes.position.getY(j), bg.attributes.position.getZ(j));
-        nor.push(bg.attributes.normal.getX(j), bg.attributes.normal.getY(j), bg.attributes.normal.getZ(j));
-        uvs.push(bg.attributes.uv.getX(j) * L + sd, bg.attributes.uv.getY(j)); col.push(k, k * 0.97, k * 0.93);
-      }
-      bg.dispose();
-    }
-    const fg = new THREE.BufferGeometry();
-    fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); fg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-    fg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); fg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    const frm = new THREE.MeshStandardMaterial({ color: 0x5C4030, roughness: 0.95, vertexColors: true });
-    frm.onBeforeCompile = sh => {
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFU;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvFU=uv;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-varying vec2 vFU;float fH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-float fN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(fH(i),fH(i+vec2(1,0)),f.x),mix(fH(i+vec2(0,1)),fH(i+vec2(1,1)),f.x),f.y);}`)
-        .replace('#include <map_fragment>', `#include <map_fragment>
-{float g=fN(vec2(vFU.x*3.,vFU.y*28.))*.55+fN(vec2(vFU.x*11.,vFU.y*70.))*.45;diffuseColor.rgb*=.62+.5*g;}`);
-    };
-    frm.customProgramCacheKey = () => 'doorframe';
-    const fmesh = new THREE.Mesh(fg, frm); fmesh.castShadow = !MOB(o); fmesh.receiveShadow = true; group.add(fmesh);
-  }
-
   // world-space triangle soup for physics / slicing
   const tris = new Float32Array(I.length * 3);
   for (let i = 0; i < I.length; i++) { tris[i * 3] = P[I[i] * 3]; tris[i * 3 + 1] = P[I[i] * 3 + 1]; tris[i * 3 + 2] = P[I[i] * 3 + 2]; }
