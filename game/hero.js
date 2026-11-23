@@ -1188,15 +1188,14 @@ export function createHero(ctx){
  // HERO-RULES 3, live: ?inv in the URL (or HH.inv.on=true) checks the final pose every frame and counts what breaks, per task.
  // HH.inv.report() lists them; the first of each kind per task is logged with the frame so a thread can jump to it.
  const INV={on:/[?&]inv\b/.test(location.search),n:0,hits:{},prev:null,report(){return Object.entries(this.hits).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>k+' x'+v.n+' worst '+v.worst.toFixed(v.unit==='deg'?0:2)+v.unit+' first f'+v.f);},reset(){this.hits={};this.n=0;}};
- function invHit(kind,val,unit){const k=(H.task||H.state||'-')+' / '+kind;const h=INV.hits[k];if(!h){INV.hits[k]={n:1,worst:val,unit,f:INV.n};console.warn('[inv] f'+INV.n+' '+k+' '+val.toFixed(2)+unit);}else{h.n++;if(val>h.worst)h.worst=val;}}
+ function invHit(kind,val,unit){const k=(H.task||H.state||'-')+(H.lad?' (ladder)':H.trans?' (transition)':H.state==='walk'?' (walking)':'')+' / '+kind;const h=INV.hits[k];if(!h){INV.hits[k]={n:1,worst:val,unit,f:INV.n};console.warn('[inv] f'+INV.n+' '+k+' '+val.toFixed(2)+unit);}else{h.n++;if(val>h.worst)h.worst=val;}}
  function invCheck(dt){INV.n++;const p=root.position;const f=fwd(root.rotation.y);const busy=H.lad||H.trans||H.seated||H.inBed||H.fit||!root.visible;
   // 1 feet on a support while standing
   if(!busy&&H.ground&&H.floorY!=null){const lf=bones.LeftFoot.getWorldPosition(V()),rf=bones.RightFoot.getWorldPosition(V());const lo=Math.min(lf.y,rf.y)-H.floorY;if(lo>.16)invHit('feet in the air',lo,'m');}
-  // 5 knees never bend forward (the knee is behind the hip-ankle line, seen along the toes)
-  for(const s of ['Left','Right']){const hp=bones[s+'UpLeg'].getWorldPosition(V()),kn=bones[s+'Leg'].getWorldPosition(V()),an=bones[s+'Foot'].getWorldPosition(V());
-   const toe=bones[s+'ToeBase']?bones[s+'ToeBase'].getWorldPosition(V()).sub(an).setY(0):f.clone();if(toe.lengthSq()<1e-5)toe.copy(f);toe.normalize();
-   const mid=hp.clone().lerp(an,.5);const off=kn.clone().sub(mid).dot(toe);const ang=kn.clone().sub(hp).angleTo(an.clone().sub(kn));
-   if(off<-.02&&ang>.35)invHit(s+' knee backwards',ang*57.3,'deg');}
+  // 5 knees never bend forward: the bend plane's normal (thigh x shin) points to his left for a real knee; to his right = broken
+  {const lh=bones.LeftUpLeg.getWorldPosition(V()),rh=bones.RightUpLeg.getWorldPosition(V());const toR=rh.clone().sub(lh);
+   for(const s of ['Left','Right']){const hp=s==='Left'?lh:rh,kn=bones[s+'Leg'].getWorldPosition(V()),an=bones[s+'Foot'].getWorldPosition(V());const th=kn.clone().sub(hp),sh=an.clone().sub(kn);const ang=th.angleTo(sh);
+    if(ang>.35){const nrm=th.clone().cross(sh).normalize();if(nrm.dot(toR)/toR.length()>.5)invHit(s+' knee backwards',ang*57.3,'deg');}}}
   // 5 head within 70 deg of the pelvis, no roll past 10 deg
   {const hq=bones.Head.getWorldQuaternion(new THREE.Quaternion());const hf=BFWD.Head.clone().applyQuaternion(hq).setY(0);const pf=hipsFwd().setY(0);if(hf.lengthSq()>1e-4&&pf.lengthSq()>1e-4){const d=hf.angleTo(pf)*57.3;if(d>75)invHit('owl head',d,'deg');}
    const fw=BFWD.Head.clone().applyQuaternion(hq),up=V(0,1,0).applyQuaternion(hq),sd=fw.clone().cross(YAX);if(sd.lengthSq()>1e-4){const r=Math.abs(Math.asin(clamp(up.dot(sd.normalize()),-1,1)))*57.3;if(r>12&&!H.inBed)invHit('head roll',r,'deg');}}
