@@ -107,9 +107,9 @@ export function buildTree(THREE, o) {
     { p: [[0.4, 8.7, -1.0], [3.0, 8.4, -1.3], [5.6, 9.2, -1.1], [8.4, 10.6, -0.5]], r0: 0.5, r1: 0.1, leaf: [2, 3] },
     { p: [[-0.3, 10.0, -0.9], [-2.6, 10.9, -1.3], [-5.0, 12.0, -1.1], [-7.2, 13.4, -0.4]], r0: 0.55, r1: 0.12, leaf: [1, 2, 3] },
     // crown limbs
-    { p: [[0, 9.8, -0.6], [-0.7, 12.4, -0.8], [-1.7, 14.8, -1.1], [-2.6, 17.0, -0.9]], r0: 1.0, r1: 0.25, leaf: [1, 2, 3] },
-    { p: [[0.1, 9.8, -0.6], [1.3, 12.5, -0.4], [2.7, 14.6, -0.6], [4.2, 16.4, -0.3]], r0: 0.95, r1: 0.22, leaf: [1, 2, 3] },
-    { p: [[0, 10.4, -0.9], [0.3, 13.0, -2.3], [0.5, 15.6, -3.6], [0.2, 17.6, -3.8]], r0: 0.8, r1: 0.2, leaf: [2, 3] },
+    { p: [[0, 9.8, -0.6], [-0.7, 12.4, -0.8], [-1.9, 15.0, -1.1], [-3.2, 17.4, -1.4]], r0: 1.0, r1: 0.25, leaf: [1, 2, 3] },
+    { p: [[0.1, 9.8, -0.6], [1.3, 12.5, -0.4], [2.7, 14.8, -0.8], [3.8, 17.2, -1.2]], r0: 0.95, r1: 0.22, leaf: [1, 2, 3] },
+    { p: [[0, 10.4, -0.9], [0.3, 13.0, -2.3], [0.5, 15.8, -3.0], [0.6, 18.4, -2.6]], r0: 0.8, r1: 0.2, leaf: [2, 3] },
     { p: [[-0.2, 11.0, -0.5], [-2.2, 13.2, 0.2], [-4.4, 14.6, 0.6], [-6.4, 15.2, 0.4]], r0: 0.55, r1: 0.12, leaf: [2, 3] },
     { p: [[0.2, 11.2, -0.5], [2.5, 12.6, 0.0], [4.8, 13.6, 0.4], [6.8, 14.0, 0.2]], r0: 0.5, r1: 0.12, leaf: [2, 3] },
     // a couple of small branches reaching to the back, so the tree is round from every side
@@ -124,12 +124,14 @@ export function buildTree(THREE, o) {
       r *= 1 + 0.35 * Math.exp(-t * 14); // flare where it grows out of the trunk
       return r * (1 + 0.05 * Math.sin(ang * 7 + t * 12));
     }, { tile: 1.5 }));
+    // leaves only at the branch tips (the photo shows bare limbs against the sky, foliage at the ends)
     const curve = new THREE.CatmullRomCurve3(pts);
-    for (const k of b.leaf) { const t = k / (b.p.length - 1); leafSpots.push({ p: curve.getPointAt(Math.min(1, t)), s: 1.6 + t * 1.6 }); }
-    leafSpots.push({ p: curve.getPointAt(1), s: 2.4 });
+    leafSpots.push({ p: curve.getPointAt(1), s: b.tip || 2.5 });
+    if (b.leaf.length >= 3) leafSpots.push({ p: curve.getPointAt(0.78), s: 1.7 });
   }
-  // extra clumps filling the crown dome
-  for (let i = 0; i < 16; i++) { const a = rnd(0, Math.PI * 2), r = rnd(1.5, 6.5); leafSpots.push({ p: V(AX + Math.cos(a) * r, rnd(13.5, 17.5) - r * 0.25, AZ + Math.sin(a) * r * 0.7 - 0.5), s: rnd(2.2, 3.0) }); }
+  // the crown: a few big clumps high up, with gaps between them
+  for (const [x, y, z, s] of [[-3.4, 17.6, -1.6, 2.8], [0.6, 18.8, -2.6, 3.0], [3.6, 17.4, -1.4, 2.7], [-1.2, 19.4, 0.4, 2.4], [5.6, 15.4, -0.6, 2.2], [-6.0, 15.8, -0.6, 2.2], [1.8, 16.6, 1.2, 2.0]])
+    leafSpots.push({ p: V(AX + x, y, AZ + z), s });
 
   // ---------- merge, keep the wood out of the rooms ----------
   const P = [], UV = [], G = [], I = [];
@@ -181,7 +183,7 @@ export function buildTree(THREE, o) {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;');
   };
-  const total = MOB(o) ? 900 : 1500;
+  const total = MOB(o) ? 800 : 1300;
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   const qg = new THREE.PlaneGeometry(1, 1);
   const im = new THREE.InstancedMesh(qg, lmat, total);
@@ -192,7 +194,7 @@ export function buildTree(THREE, o) {
     const k = Math.round(total * s.s * s.s / sumS);
     for (let i = 0; i < k && n < total; i++) {
       // points on a squashed sphere shell (more on top), facing out
-      let dx, dy, dz; do { dx = rnd(-1, 1); dy = rnd(-0.7, 1); dz = rnd(-1, 1); } while (dx * dx + dy * dy + dz * dz > 1);
+      let dx, dy, dz; do { dx = rnd(-1, 1); dy = rnd(-0.45, 1); dz = rnd(-1, 1); } while (dx * dx + dy * dy + dz * dz > 1);
       const dir = V(dx, dy, dz); const rr = Math.max(0.35, dir.length()); dir.normalize();
       const p = s.p.clone().add(V(dir.x * s.s * rr, dir.y * s.s * 0.7 * rr, dir.z * s.s * rr));
       if (inB(p.x, p.y, p.z, 0.8)) continue;
@@ -208,6 +210,34 @@ export function buildTree(THREE, o) {
   im.count = n;
   qg.setAttribute('shade', new THREE.InstancedBufferAttribute(shade, 1));
   im.castShadow = !MOB(o); im.receiveShadow = true; group.add(im);
+
+  // ---------- the cave behind the glowing hollow: a warm little room carved into the trunk ----------
+  {
+    const yc0 = door.y0 - 0.02, hh = door.y1 - door.y0, cr = door.w * 0.62, dep = door.depth || 0.95;
+    const cd = 0.95, dist = R(yc0 + hh / 2) - cd + 0.12;
+    const cx = AX + Math.cos(doorAng) * dist, cz = AZ + Math.sin(doorAng) * dist;
+    const cmat = new THREE.MeshStandardMaterial({ color: 0x7A4A2A, roughness: 0.95, side: THREE.BackSide });
+    cmat.onBeforeCompile = sh => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float doorGlow;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.55;');
+      sh.uniforms.doorGlow = mat.userData.doorGlow;
+    };
+    const cave = new THREE.Group(); cave.position.set(cx, yc0, cz); cave.rotation.y = -doorAng; group.add(cave);
+    const sh0 = new THREE.Group(); sh0.scale.set(cd / cr, 1, door.w * 0.56 / cr); cave.add(sh0);
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(cr, cr * 1.08, hh * 0.65, 20, 1, true), cmat); wall.position.y = hh * 0.325; sh0.add(wall);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(cr, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), cmat); dome.scale.y = hh * 0.35 / cr / 0.95; dome.position.y = hh * 0.65; sh0.add(dome);
+    // plank floor, slightly worn, lit by the glow
+    const fmat = new THREE.MeshStandardMaterial({ color: 0x9A6238, roughness: 0.85 });
+    fmat.onBeforeCompile = sh => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float doorGlow;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.4;');
+      sh.uniforms.doorGlow = mat.userData.doorGlow;
+    };
+    const fl = new THREE.Mesh(new THREE.CircleGeometry(cr * 1.07, 20), fmat); fl.rotation.x = -Math.PI / 2; fl.position.y = 0.035; sh0.add(fl);
+    const seamM = new THREE.MeshBasicMaterial({ color: 0x3A2214 });
+    for (let i = -2; i <= 2; i++) { const g = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.004, cd * 2 * Math.sqrt(Math.max(0.01, 1 - (i * 0.11 / (door.w * 0.56)) ** 2))), seamM); g.rotation.y = Math.PI / 2; g.position.set(0, 0.038, i * 0.11); cave.add(g); }
+    cave.traverse(m => { if (m.isMesh) m.receiveShadow = true; });
+  }
 
   // world-space triangle soup for physics / slicing
   const tris = new Float32Array(I.length * 3);
