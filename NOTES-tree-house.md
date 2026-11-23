@@ -22,3 +22,12 @@
 4. Roofs: InstancedMesh of chunky shingles (about 0.3×0.25×0.04, slightly rotated and staggered, dark slate blue) on a thick roof slab with a big overhang.
 5. Remove the stilts and add knee braces to the trunk. Rope ladders: twisted rope sides.
 6. Then merge to master, republish the artifact https://claude.ai/artifact/Ro32b6Sg7VRcXuuKDEq85d with `files` = all game/*.txt/jpg/png **plus `tree.js`** (and the character thread's `hero.js`).
+
+## Checkpoint 2 (2026-11-23, artifact v15)
+- Crown: leaves only at branch tips + 7 high clumps (tree.js); trunk and limbs now read against the sky.
+- Cave: elliptical warm room behind the hollow (tree.js), glow driven by the same doorGlow uniform.
+- Planks: procedural shader `PLANK_GLSL`/`plankShader()` in index.html (floor-atlas.jpg no longer used by boards). aRow = per-board seed.
+- Floors run front-to-back (z) with ragged front ends and a 0.28 m dark fascia; landings LG/LL/LC use `radial:` planks + dark rim. Top heights unchanged.
+- Roofs: thick slab + InstancedMesh `SHING` of slate-blue shingles, big overhang, gable trim.
+- Stilts replaced by knee braces; `BARRICADES=false` removes the plank fences and their posts (combat is off).
+- Next: T1 proportions (trunk bigger, rooms hugging it), cave interior detail, twisted rope ladders.
