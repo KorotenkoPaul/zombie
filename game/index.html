@@ -105,9 +105,9 @@ const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).create
 const TREE_H=16;
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
-const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
+const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
-const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
+const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:1.15,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:.95,top:.42,clear:.45}],door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
@@ -359,7 +359,7 @@ const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},w
 // [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
 const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
 // [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
-const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;
+const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
 
 // ================= splinters, dust, fog, rain, fireflies =================
 const SPL=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),boardMat,260);SPL.count=0;SPL.castShadow=true;SPL.frustumCulled=false;{const r=new THREE.InstancedBufferAttribute(new Float32Array(260),1),t=new THREE.InstancedBufferAttribute(new Float32Array(260).fill(.2),1);SPL.geometry.setAttribute('aRow',r);SPL.geometry.setAttribute('aTile',t);}scene.add(SPL);
