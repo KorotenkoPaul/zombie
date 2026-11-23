@@ -35,7 +35,7 @@ module.exports=function install(cfg){
   if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();const s=o.geometry.boundingBox.getSize(V());const sw=V().setFromMatrixScale(o.matrixWorld);const diag=Math.hypot(s.x*sw.x,s.y*sw.y,s.z*sw.z);
   // only primitive-like meshes: boxes/cylinders/spheres, or other meshes small enough that their box is a fair hull
   if(/Box|Cylinder|Sphere/.test(t)){addShape(o.geometry,o.matrixWorld,name,'mesh');return;}
-  if(diag>(cfg.maxVoxDiag||3.2)){skipped['big '+name]=Math.round(diag*100)/100;return;}
+  if(diag>(cfg.maxVoxDiag||3.2)){if(diag<20&&splitBig(o,name))return;skipped['big '+name]=Math.round(diag*100)/100;return;}
   voxShape(o,name);});
 
  // Non-primitive meshes (merged furniture, GLB parts) are voxelised once: rays along +x through every (y,z) voxel row,
@@ -43,6 +43,20 @@ module.exports=function install(cfg){
  // transform gives the depth (cm) of any inside voxel.
 
 
+ // a big merged mesh (propsStatic: all the furniture in one 8.6 m mesh): split it into its connected parts (vertices welded
+ // at 0.1 mm) and voxelise each part on its own
+ function splitBig(o,name){const g=o.geometry,P=g.attributes.position;if(!P)return false;const I=g.index?g.index.array:null;const nt=I?I.length/3:P.count/3;if(nt>400000)return false;
+  const wid=new Int32Array(P.count);const wm=new Map();for(let i=0;i<P.count;i++){const k=Math.round(P.getX(i)*1e4)+','+Math.round(P.getY(i)*1e4)+','+Math.round(P.getZ(i)*1e4);let w=wm.get(k);if(w===undefined){w=wm.size;wm.set(k,w);}wid[i]=w;}
+  const par=new Int32Array(wm.size);for(let i=0;i<par.length;i++)par[i]=i;const fd=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};
+  const vi=t=>I?[I[t*3],I[t*3+1],I[t*3+2]]:[t*3,t*3+1,t*3+2];
+  for(let t=0;t<nt;t++){const [a,b,c]=vi(t);const ra=fd(wid[a]),rb=fd(wid[b]),rc=fd(wid[c]);par[rb]=ra;par[fd(rc)]=fd(ra);}
+  const comp=new Map();for(let t=0;t<nt;t++){const r=fd(wid[vi(t)[0]]);let a=comp.get(r);if(!a)comp.set(r,a=[]);a.push(t);}
+  let n=0;o.updateMatrixWorld();for(const tris of comp.values()){if(tris.length<4)continue;const arr=new Float32Array(tris.length*9);let q=0;
+   for(const t of tris)for(const v of vi(t)){arr[q++]=P.getX(v);arr[q++]=P.getY(v);arr[q++]=P.getZ(v);}
+   const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(arr,3));sg.computeBoundingBox();const sz=sg.boundingBox.getSize(V());const sw=V().setFromMatrixScale(o.matrixWorld);
+   if(Math.hypot(sz.x*sw.x,sz.y*sw.y,sz.z*sw.z)>(cfg.maxVoxDiag||3.2)){skipped['big part '+name]=(skipped['big part '+name]||0)+1;continue;}
+   voxShape({geometry:sg,updateMatrixWorld(){},matrixWorld:o.matrixWorld},name+'~'+(n++));}
+  skipped['split '+name]=n;return n>0;}
  function voxShape(o,name,MW){o.updateMatrixWorld();const mw=MW||o.matrixWorld;const g=o.geometry;const P=g.attributes.position;const I=g.index?g.index.array:null;const nt=I?I.length/3:P.count/3;if(nt<4)return;
   if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox.clone();const sz=bb.getSize(V());const pad=.02;bb.min.subScalar(pad);bb.max.addScalar(pad);sz.addScalar(2*pad);
   const sc=V().setFromMatrixScale(mw);const cached=VCACHE.get(g.uuid);if(cached){pushVox(cached,mw,sc,bb,sz,name);return;}const sMin=Math.min(sc.x,sc.y,sc.z);
