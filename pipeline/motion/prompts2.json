@@ -1,0 +1,7 @@
+{
+ "liedown2": [6, "A person sitting on the edge of a high bed turns the body, lies down on their back and lifts both legs onto the bed, then rests still."],
+ "getup2": [5, "A person lying on their back on a bed sits up, turns and puts both feet down on the floor, ending seated on the edge of the bed."],
+ "readturn": [5, "A person sits on a chair holding an open book with the left hand and turns a page with the right hand, then holds the book with both hands again."],
+ "sitidle": [8, "A person sits on a chair, relaxed, leans back a little and slowly looks around."],
+ "inspect": [6, "A person stands at a table, picks up a small object, inspects it closely turning it in both hands, and puts it back down."]
+}
