@@ -883,15 +883,18 @@ export function createHero(ctx){
   store:(o={})=>{const a={step:'go',t:0};const P=PP();try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}H.carry='hy_carrysack';
    fridgeVisit(a,'in',()=>endTask({ok:true}));
    a.update=dt=>{if(!stepTick(a,dt))carryOv();};a.leave=cb=>{try{P.release('meatBag');P.fridge.openTo(0,.4);}catch(e){}H.carry=null;cb();};return a;},
-  eat:(o={})=>{// the plate from the stove to the table, sit, eat 10-15 s, then the plate to the sink
+  eat:(o={})=>{// serve from the pan, eat at the kitchen barrel on the stool (or at the bedroom table), the plate to the sink after
    const a={step:'go',t:0,T:0};const P=PP();const dur=rnd(10,15);
-   visit(a,toolHome('plate')||PT('pan'),.45,'hy_take',[[.45,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});a.pl=1;}catch(e){}}]],()=>{a.step='serve';if(has('hy_stir'))play('hy_stir',{fade:.5});H.look=PT('pan')||null;H.lookW=.8;/* serves himself from the pan before sitting down */H.wait={t:rnd(3.5,5),then:()=>{a.step='go2';play(IDLE(),{fade:.4});goTo('chair_app',()=>{a.step='sit';sitDown(N.chair,()=>{
-     const tp=PT('table')||root.position.clone().addScaledVector(fwd(root.rotation.y),.4).setY(FIT.tableTop);try{const pl=P.tools.plate;scene.attach(pl);pl.position.copy(tp).add(V(0,.01,0));pl.quaternion.identity();}catch(e){}
+   const KT_=P&&P.surfaces&&P.surfaces.kitchenTable;const sp=KT_&&PT('eatSeat');let seat=N.chair,seatNode='chair_app',tablePt=()=>PT('table');
+   if(sp){const face=KT_.face??-Math.PI/2;seat={p:sp.clone().setY(lv.KT),face,seat:sp.y,sit:true,floor:floorTop(lv.KT,sp.x,sp.z)};seatNode=nearNode(sp.clone().setY(lv.KT+.1))||'kmid';seat.node=seatNode;tablePt=()=>PT('eatTable');}
+   visit(a,toolHome('plate')||PT('pan'),.45,'hy_take',[[.45,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});a.pl=1;}catch(e){}}]],()=>{a.step='serve';if(has('hy_stir'))play('hy_stir',{fade:.5});H.look=PT('pan')||null;H.lookW=.8;/* serves himself from the pan before sitting down */H.wait={t:rnd(3.5,5),then:()=>{a.step='go2';play(IDLE(),{fade:.4});goTo(seatNode,()=>{
+     a.step='sit';sitDown(seat,()=>{
+     const tp=tablePt()||root.position.clone().addScaledVector(fwd(root.rotation.y),.4).setY(FIT.tableTop);try{const pl=P.tools.plate;scene.attach(pl);pl.position.copy(tp).add(V(0,.01,0));pl.quaternion.identity();}catch(e){}
      a.step='eat';a.t=0;play(has('hy_eat')?'hy_eat':SITIDLE,{fade:.8});});});}};});
-   a.update=dt=>{if(stepTick(a,dt))return;if(a.step==='eat'){a.T+=dt;H.look=PT('table');H.lookW=.9;try{P.plate&&P.plate.setFood&&P.plate.setFood(1-a.T/dur);}catch(e){}
-     if(a.T>dur){a.step='up';standUp(N.chair,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});}catch(e){}
+   a.update=dt=>{if(stepTick(a,dt))return;if(a.step==='eat'){a.T+=dt;H.look=tablePt();H.lookW=.9;try{P.plate&&P.plate.setFood&&P.plate.setFood(1-a.T/dur);}catch(e){}
+     if(a.T>dur){a.step='up';standUp(seat,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});}catch(e){}
        visit(a,PT('sink'),.42,'hy_take',[[.45,()=>{try{P.release('plate');a.pl=0;P.dishes&&P.dishes.setDirty(P.dishes.state().dirty+1);}catch(e){}}]],()=>endTask({ok:true}));});}}};
-   a.leave=cb=>{try{P.release('plate');}catch(e){}if(a.step==='eat'){standUp(N.chair,cb);}else cb();};return a;},
+   a.leave=cb=>{try{P.release('plate');}catch(e){}if(a.step==='eat'){standUp(seat,cb);}else cb();};return a;},
   // water: the tap bucket from the pond, the drain bucket emptied outside
   fetchwater:(o={})=>{const a={step:'go',t:0};const P=PP();const pond=window.__ground&&window.__ground.pond&&window.__ground.pond.fill;
    visit(a,PT('waterShelf'),.45,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry='hy_carrysack';}]],()=>{a.step='out';
@@ -934,7 +937,7 @@ export function createHero(ctx){
   once(SIT,{fade:.4,then:()=>{H.trans=false;H.seated=spot;H.fit.mode='hold';{const dx=spot.p.x-root.position.x,dz=spot.p.z-root.position.z;if(Math.hypot(dx,dz)<.3)H.slide={x:dx,z:dz,yaw:wrapA(spot.face-root.rotation.y),k:0,d:.6};}then&&then();}});}
  function standUp(spot,then){H.trans=true;H.face=spot.face;const fl=spot.floor??floorTop(BD);
   H.fit={mode:'rise',base:fl,y:spot.seat+SEAT_CLEAR,hStand:hyAt(STAND,1),hSeat:hyAt(STAND,0)};
-  once(STAND,{fade:.45,until:.9,then:()=>{H.fit=null;H.seated=null;H.trans=false;H.ground=true;H.floorY=fl;play(IDLE(),{fade:.6});H.node=spot===N.chair?'chair_app':'bed_app';then&&then();}});}
+  once(STAND,{fade:.45,until:.9,then:()=>{H.fit=null;H.seated=null;H.trans=false;H.ground=true;H.floorY=fl;play(IDLE(),{fade:.6});H.node=spot.node||(spot===N.chair?'chair_app':'bed_app');then&&then();}});}
  // lying down: sit on the edge, lean onto the left hand towards the pillow, lower the body and swing the legs up.
  // Done as a staged blend from the seated pose to the (pre-turned) sleep clip: torso leads, the legs follow; getting up is the same played backwards.
  const _bedQ=new THREE.Quaternion();
