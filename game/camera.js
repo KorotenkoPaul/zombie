@@ -119,7 +119,11 @@ export function createCameraRig(o) {
   function orbit(dx, dy) {
     cancelFly();
     rec(dx, dy, 0, 0, 0, null);
-    const ny = clamp(goal.yaw - dx * 0.006, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
+    // ease into the rotation limits: the last 0.15 rad get gradually stiffer, so the view slows down instead of stopping dead
+    const ease = (room, toward) => toward ? clamp(room / 0.15, 0.12, 1) : 1;
+    let ddy = -dx * 0.006;
+    ddy *= ease(home.yaw + YAW_LIM - goal.yaw, ddy > 0) * ease(goal.yaw - (home.yaw - YAW_LIM), ddy < 0);
+    const ny = clamp(goal.yaw + ddy, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
     const a = ny - goal.yaw;
     if (a) {
       const x = goal.target.x - AXIS[0], z = goal.target.z - AXIS[1], c = Math.cos(a), sn = Math.sin(a);
@@ -127,7 +131,9 @@ export function createCameraRig(o) {
       goal.yaw = ny;
       limitOut(goal.target);
     }
-    goal.pitch = clamp(goal.pitch + dy * 0.004, PMIN, PMAX);
+    let ddp = dy * 0.004;
+    ddp *= ease(PMAX - goal.pitch, ddp > 0) * ease(goal.pitch - PMIN, ddp < 0);
+    goal.pitch = clamp(goal.pitch + ddp, PMIN, PMAX);
     endFly(); atHome = false;
   }
   function flyTo(point, dist) {
@@ -447,6 +453,22 @@ export function createCameraRig(o) {
     }
     return moved;
   }
+  // crown limbs (above 11.5 m): a voxel proxy from index.html; like the rooms, only close views stop in front of a limb
+  const limb = o.limb || (() => false);
+  function outOfLimb(t, yaw, pitch) {  // a focus inside a limb steps out toward the camera's side
+    if (!limb(t.x, t.y, t.z)) return;
+    const cx = Math.sin(yaw) * Math.cos(pitch), cy = Math.sin(pitch), cz = Math.cos(yaw) * Math.cos(pitch);
+    for (let n = 0; n < 50 && limb(t.x, t.y, t.z); n++) { t.x += cx * 0.1; t.y += cy * 0.1; t.z += cz * 0.1; }
+  }
+  function limbHit(t, dv, dmax) {
+    if (cur.dist > 8) return Infinity;
+    const top = Math.min(dmax, 8);
+    if (t.y + dv.y * top < 11.3 && t.y < 11.3) return Infinity;
+    let s0 = 0;                        // a focus on (or in) the bark: start where the ray leaves it
+    while (s0 < 1.5 && limb(t.x + dv.x * s0, t.y + dv.y * s0, t.z + dv.z * s0)) s0 += 0.1;
+    for (let s = s0 + 0.3; s <= top; s += 0.1) if (limb(t.x + dv.x * s, t.y + dv.y * s, t.z + dv.z * s)) return Math.max(s0 + 0.2, s - 0.35);
+    return Infinity;
+  }
   function limitOut(t) {             // the focus may leave the soft bounds a little (rubber band), never far
     const o1 = outside(t);
     if (o1 > 3.5) { inside(t, inB); t.sub(inB).multiplyScalar(3.5 / o1).add(inB); }
@@ -462,6 +484,7 @@ export function createCameraRig(o) {
     // never below ground; beyond the soft bounds: spring back once the fingers are off
     target.y = Math.max(target.y, groundY(target.x, target.z) + BOUND.yMin);
     // never behind the trunk as seen from the camera (a focus there puts the trunk between the camera and it)
+    if (yaw !== undefined) outOfLimb(target, yaw, goal.pitch);
     if (yaw !== undefined) { toLocal(target, yaw, fL); if (fL.z < 0.7) { fL.z = 0.7; fromLocal(fL, yaw, target); } }
     outOfTrunk(target);
     if (!dragging && outside(target) > 0.001) target.lerp(inB, damp(5, dt));
@@ -501,6 +524,7 @@ export function createCameraRig(o) {
     }
     fromLocal(cL, cur.yaw, cur.target);
     outOfTrunk(cur.target);
+    outOfLimb(cur.target, cur.yaw, cur.pitch);
 
     // idle breathing: the caller's slow drift fades in a few seconds after the last touch and fades out quickly on touch
     const still = idle > 3 && !ptrs.size && !inert.on && !fly;
@@ -523,14 +547,14 @@ export function createCameraRig(o) {
     d = Math.max(d, s0 + 0.2);
     // zoomed into a room: the camera stays inside it unless it leaves through the open (cut-away) front
     // (only for close views: from afar the whole house is meant to be seen, and a rotation must never pull the camera in)
-    const dR = roomExit(cur.target, dir);
+    const dLimb = limbHit(cur.target, dir, d), dR = Math.min(roomExit(cur.target, dir), dLimb);
     if (dR < d) {
       const w = 1 - THREE.MathUtils.smoothstep(cur.dist, 4, 8), dd = d + (Math.max(0.3, dR) - d) * w;
-      if (dd < d - 1e-4) { d = dd; hitWhy = 'room'; }
+      if (dd < d - 1e-4) { d = dd; hitWhy = dLimb < Infinity && dLimb <= dR ? 'limb' : 'room'; }
     }
     // smooth the collision: the camera slides in and out instead of snapping, but never stops inside the trunk
     const want = d / cur.dist;
-    collK = !isFinite(collK) || dt <= 0 ? want : collK + (want - collK) * damp(want < collK ? 6 : 3, dt);
+    collK = !isFinite(collK) || dt <= 0 ? want : collK + (want - collK) * damp(want < collK ? (hitWhy === 'limb' ? 14 : 6) : 3, dt);
     collK = Math.min(collK, 1);
     d = cur.dist * collK;              // if the slide is still inside the trunk, the guard below pushes it out sideways
     camPos.copy(cur.target).addScaledVector(dir, d);
@@ -541,6 +565,12 @@ export function createCameraRig(o) {
     if (solid(camPos.x, camPos.y, camPos.z)) { outOfTrunk(camPos); hitWhy = 'solid'; }
     // ... and never inside a wall, floor or roof of a room: out of the board to the side the focus is on
     if (outOfWalls(camPos, cur.target)) hitWhy = hitWhy || 'wall';
+    // never inside a limb: slide toward the focus until clear
+    if (limb(camPos.x, camPos.y, camPos.z)) {
+      tmp.copy(cur.target).sub(camPos); const L = tmp.length(); tmp.divideScalar(L || 1);
+      for (let s = 0; s < L && limb(camPos.x, camPos.y, camPos.z); s += 0.1) camPos.addScaledVector(tmp, Math.min(0.1, L - s));
+      hitWhy = 'limb';
+    }
     if (extra.shake) camPos.add(extra.shake);
     focusU.value = camPos.distanceTo(cur.target);
     // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar

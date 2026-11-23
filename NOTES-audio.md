@@ -101,3 +101,31 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
 - Footstep surfaces are boards, dirt, leaves, wet, ladder, rope, and now roof. Standing on either roof (the ROOFS rects from buildTree) gives a lighter, higher wooden step, and 45 % of steps add a loose-shingle tick (the synth peck). Water already split before: the pond bucket is outdoors with forest reverb, and the sink tap is in the kitchen, which now rings.
 - Critters (Ground 35336db): verified in game, bird hops arrive and play. The cut-off went from 30 m to 45 m (ref 4 m) because the default orbit camera is about 38 m from the critters. They stay faint there and get clear when zoomed in.
 - CPU (iPhone 13 profile, headless): update() takes 0.008–0.010 ms per frame. The synth buffers are built once on first use and are about 0.8 MB.
+
+## Round 16: house actions and night critters
+- `houseWatch()` reads the real state every frame, so a sound is right whoever moves the thing:
+  - Hatch: `__house.hatch.isOpen()` flips → hatch_open or hatch_close at the ring. The hero's own 'hatch_open' call counts too, and the two are de-duplicated within 1.5 s.
+  - Door bolt: `__props.door.bolt` crosses .5 → bolt_lock or bolt_open at the bolt knob. `play('bolt')` is now a no-op, because it used to pick lock or unlock at random.
+  - Dishes: plates leaving the rack (`dishes.state().rack` drops) → staggered plate and cup clacks at the sink.
+- Task foley while the hero works at a job (task set, standing still, 1.5 s in), from the TASKF table:
+  - dishes: tap and wash loops, plus plate and cup clacks
+  - fix_rope: rope creaks
+  - fix_hinge: a squeak that fades as the oil works
+  - fix_window: window and plank sounds
+  - clear_roof: leaves and sweeping
+  - fix_chimney: stones (logs_stack pitched up) and a grunt
+  - fix_shingle: plank and saw_shingle
+  - board, wall and railing: plank
+  The existing hero.js nails every 1.3 s still play on top of this. For tests, `__audio._task(name)` forces a task.
+- Night critters (Ground): hedgehog step, sniff, curl, uncurl, appear and leave; mouse step, flee, dash, appear and leave. The mouse squeaks half the times it flees. Two synth sounds were added: sniff (snuffling puffs) and squeak (a short 3.8–4.7 kHz chirp). The blind QA heard both as intended.
+- Sway: each object now creaks at most once every 2.5–5 s. At 1.3–2.4 s the ladders creaked too often in a normal breeze.
+
+## Round 17: curtains, lockdown boards and sleep
+- New actions for Tree, Props and Brain to call with `__audio.play(name, pos)`:
+  - `curtain`, `curtain_close`, `curtain_open`: cloth, plus a synth "rings" run of metallic ticks along the rod.
+  - `shutter_close` (the shutter clip) and `shutter_open` (window_open).
+  - `board_up`: a plank, then three nails.
+- When Tree adds lockdown shutters or boards, call these at the moment each one moves.
+- Sleep: each night has its own sleeper. On 55 % of nights he snores, in spells of 1.5–5 minutes with quiet stretches of 2–7 minutes between. Outside the snoring spells he takes a slow synth breath every 4–5.5 s (in 1.4 s, a pause, out 2 s, band-passed around 520 Hz, very quiet), and only when the camera is within 8 m of the bed. He still turns over every 35–90 s.
+- Awake: when he stands still and the camera is within 3.5 m of him, he breathes softly, a faster version of the same breath every 3–4 s.
+- The blind QA heard the rings as curtain rings on a rod and the breath as slow, soft breathing.

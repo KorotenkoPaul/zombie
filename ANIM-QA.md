@@ -15,9 +15,26 @@ Priorities: **P1**: visible at normal play (through objects ≥ 2–4 cm, broken
 | 1 | d5e8ad1 | 24,660 | seated jitter fixed; legs folded next to the head after the kitchen ladder; head in the upper bunk |
 | 2 | 46310d0 (v81) | 25,620 | legs at head **fixed**, head in upper bunk **fixed**, walking through the bunk end **fixed**; slow motion measured |
 | 3 | c7cd2d0 (v91) | 16,980 | tempo mostly fixed (walk 1.0 m/s, sit/stand 1.5 s); robot braking/starting and ladder speed jumps open; ladder clipping open |
+| 7 | 2d246eb | 74,700 | trip/store/fridge/eat/water in the tour; jacket and bow taken in the bedroom, not at the workshop pegs; stuck on the gate ladder and in the hatch task |
 | 6 | f58e5ff | 47,220 | full tour of all 32 new tasks (9 repairs, hatch, bolt, firewood...); kitchen ping-pong gone; NEW: 2.4 m teleport into bed, 25 cm into the woodpile, ladder exits 12–22x speed jumps |
 | 5 | 610ced0 | 19,020 | P1 jumps 223 → 106, robot P1 6 → 0, crab walk and detours P1 gone; NEW checks: stays and turning back (see below) |
 | 4 | 77c392b | 16,320 | creeping to a stop fixed (1 case left); NEW: 15 cm root teleport at the top of the kitchen ladder, walking backwards after the ladder top, 25 cm root jump into bed |
+
+## New in run 7 (master 2d246eb): trips, food, water, jacket
+
+Storyboards: `/mnt/project-files/anim-qa/2d246eb-jacket/` (jacket_on.jpg/.gif, bow_take.jpg, bow_hang.jpg, jacket_off.jpg).
+The tour now goes through the brain (`__brain.command`, asked again until he takes it): without the brain the body
+slides to targets on the same floor (the fridge "in the bedroom"), so that mode is not used.
+
+| P | what | frames | measured |
+|---|---|---|---|
+| P1 | Jacket put on and bow taken in the **bedroom** (-1.3, 8.44, 2.83) / (-0.16, 8.44, 2.48), not at the pegs in the workshop (jacket peg x 4.58, bow peg x 0.93, WS floor y 4.6); the jacket and bow fly up a floor into his hand. Hung back correctly in the workshop | f28339–28586, f28677–28842 | 4–6 m from the peg |
+| P1 | The jacket in the hand is a rigid green slab (looks like a case), and while taking it off it sticks straight through his chest | f28388–28487, f36725–36765 | handL 9.1 cm into a 230x20x20 beam at f36741 |
+| P1 | Stuck on the gate ladder: stretch ends on ladder clip 435 at (0.02, 4.44, 3.32), task null, frozen for the rest of the run (separate run, same build) | f35510 → end | > 4 min |
+| P1 | Hatch task: wanders the bedroom 21 cm above the floor (y 8.65 vs 8.44) for 85 s, then freezes in hy_take at (2.30, 9.02, 1.95) for 48 s | f46100–51300, f51700–53600 | 21 cm float, 133 s |
+| P1 | The brain overrides commands within a second (chop, pot, stoke, dishes, supplies, saw, hammer, sharpen, fixlamp, stretch never started when asked) | f45481–46381 | — |
+| P2 | Forced sleep at 21:00: lies down and gets up 3 s later | f44816–44996 | 3 s |
+| ok | Wood trip, store (fridge in), cook from the fridge (hy_fridgeout), eat at the table (sit 1.5 s, eat 10 s, plate to the sink), dump water: all ran | | |
 
 ## New in run 6 (master f58e5ff): every new task forced once
 

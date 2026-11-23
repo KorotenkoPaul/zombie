@@ -30,16 +30,21 @@ float td_n(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
 float td_f(vec3 p){return td_n(p)*.55+td_n(p*2.13+3.1)*.3+td_n(p*4.37+7.7)*.15;}`;
 
 // leaf flutter for instanced cards: small rotation-ish wobble growing with distance from the stem (uv.y)
+// ivy leaves: tip flutter driven by Wind (wind.js windSway: ~.1 calm, ~.4 breeze, ~2 in a gust), so gusts visibly ruffle them
 const FLUTTER = `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
- float gust=.55+.45*sin(uT*.35+ip.x*.05-ip.z*.04);
- float k=clamp(uv.y,0.,1.)*SW*uW*gust;
- transformed.z+=sin(uT*2.3+ip.x*3.1+ip.y*2.7)*k;
- transformed.x+=sin(uT*1.7+ip.z*2.9+ip.y*1.3)*k*.5;}`;
+ float k=clamp(uv.y,0.,1.)*SW;
+#ifdef WIND_GLSL_ON
+ vec2 w=windSway(ip,2.6);
+ transformed+=windLocal(vec3(w.x,0.,w.y))*k*.6+windLocal(vec3(0.,0.,1.))*sin(uT*7.3+ip.x*13.1+ip.y*7.7)*k*.04*length(w);
+#else
+ transformed.z+=sin(uT*2.3+ip.x*3.1+ip.y*2.7)*k*uW;
+#endif
+}`;
 function swayMat(mat, U, amp, chunk) {
   mat.onBeforeCompile = s => {
     if (mat.userData.AX !== undefined) branchHook(s, mat.userData.AX, mat.userData.AZ);
     s.uniforms.uT = U.t; s.uniforms.uW = U.wind;
-    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;')
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;' + (s.vertexShader.includes('windSway') ? '\n#define WIND_GLSL_ON' : ''))
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n{const float SW=${amp.toFixed(3)};${chunk}}`);
   };
   return mat;
@@ -127,7 +132,7 @@ export function createTreeDress(C) {
           const c = ctr.clone().applyMatrix4(M); ax.set(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0).applyQuaternion(q);
           if (Math.hypot(c.x - AX, c.z - AZ) > 9) continue;
           for (const sgn of [-1, 1]) { const ep = c.clone().addScaledVector(ax, sgn * L * 0.5); const w = nearest(ep.x, ep.y, ep.z, 0.35); if (w < 0) continue;
-            const pt = V(wpos[w * 3], wpos[w * 3 + 1], wpos[w * 3 + 2]); if (D.bites.some(b => b.distanceTo(pt) < 0.12)) continue; pt.w = wid * 0.5 + 0.05; D.bites.push(pt); } } }
+            const pt = V(wpos[w * 3], wpos[w * 3 + 1], wpos[w * 3 + 2]); if (D.bites.some(b => b.distanceTo(pt) < 0.12)) continue; pt.w = wid * 0.5 + 0.05; pt.ax = ax.clone().multiplyScalar(-sgn); pt.len = L; pt.flat = e.filter((_, j) => j !== k); D.bites.push(pt); } } }
       D.biteAll = D.bites.length; const NB = 72; D.bites.sort((a, b) => a.y - b.y); D.bites = D.bites.slice(0, NB);
       const J = new Float32Array(n * 3), BI = new Float32Array(n * 8);
       for (let i = 0; i < n; i++) { const w = wk[i]; const x = wpos[w * 3], y = wpos[w * 3 + 1], z = wpos[w * 3 + 2];
@@ -300,6 +305,7 @@ uniform float tdCool;` + NOISE)
           // linear colours: deep olive in the shade, a little brighter yellow-green where it catches light
           vec3 moss=mix(vec3(.030,.048,.014),vec3(.085,.125,.028),smoothstep(.3,.8,fine));
           moss=mix(moss,vec3(.028,.045,.035),foot*.5);
+          moss*=mix(vec3(1.),vec3(.72,1.08,.62),tdDamp); // soaked moss: deeper and greener
           diffuseColor.rgb=mix(diffuseColor.rgb,moss*(.7+2.*lum),mm*.9);
           // grey-green lichen spots on the drier upper bark
 #ifdef TD_LITE
@@ -417,9 +423,19 @@ uniform float tdCool;` + NOISE)
       branchHook(sh, AX, AZ);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
-        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}');
+        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}')
+        // weather (same uniforms as the bark): soaked moss deeper and greener, hoar frost on the tops of the cushions on cold nights.
+        // Only the green instances (moss), not the brown soil lumps that share this mesh.
+        .replace('#include <color_fragment>', `#include <color_fragment>
+{ vec3 c=diffuseColor.rgb; float green=smoothstep(.05,.3,(c.g-c.r)/max(c.g,1e-3));
+  c=mix(c,c*vec3(.72,1.1,.6),tdDamp*green);
+  vec3 wN=normalize((vec4(vNormal,0.)*viewMatrix).xyz); float top=smoothstep(.3,.85,wN.y);
+  float fr=tdFrost*top*green*(.35+.65*smoothstep(.4,.65,td_n(tdP*70.)));
+  c=mix(c,vec3(.24,.26,.3),fr*.45); diffuseColor.rgb=c; }`)
+        .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost;');
+      sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost;
     };
-    const NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL), NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
+    const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
@@ -463,6 +479,25 @@ uniform float tdCool;` + NOISE)
         const v = rr(0.8, 1.2); col.setRGB(0.05 * v, 0.075 * v, 0.024 * v); im.setColorAt(n++, col);
       }
     }
+    // the house grown into the tree: where a post, beam or landing board meets the trunk, moss creeps over the joint -
+    // a cushion on the top of the wood right at the bark (water and dirt collect there) and a fringe on the bark above it
+    { const tmp = V(0, 0, 0), sideV = V(0, 0, 0); D.joinMoss = 0;
+      for (const b of D.bites) { if (n >= N) break; if (R() < (MOBILE ? 0.45 : 0.25)) continue; if (inBox(avoid, b.x, b.y + 0.1, b.z, 0.05) || nearDoor(b.x, b.y + 0.3, b.z)) continue;
+        const ax = b.ax; const upOnBeam = V(0, 1, 0).addScaledVector(ax, -ax.y).normalize(); // the beam's top face direction
+        const h = Math.min(...b.flat) * 0.5; // half thickness
+        const k = MOBILE ? 2 + Math.floor(R() * 2) : 3 + Math.floor(R() * 3);
+        for (let j = 0; j < k && n < N; j++) {
+          const along = rr(0.0, 0.22) * (j ? 1 : 0.4); sideV.crossVectors(ax, upOnBeam).normalize();
+          tmp.set(b.x, b.y, b.z).addScaledVector(ax, along + 0.02).addScaledVector(upOnBeam, h).addScaledVector(sideV, rr(-1, 1) * b.w * 0.7);
+          const sz = rr(0.04, 0.085) * (1 - along * 1.6);
+          M4.compose(tmp, orient(upOnBeam, rr(0, 6.28)), S.set(sz * rr(1.3, 2.1), sz * 0.32, sz * rr(0.9, 1.3))); im.setMatrixAt(n, M4);
+          const v = rr(0.8, 1.2); col.setRGB(0.05 * v, 0.078 * v, 0.024 * v); im.setColorAt(n++, col); D.joinMoss++;
+        }
+        // a fringe on the bark just above the joint
+        if (n < N && R() < 0.7) { const out = V(b.x - AX, 0, b.z - AZ).normalize(); tmp.set(b.x, b.y + h + rr(0.03, 0.1), b.z).addScaledVector(out, 0.01);
+          const sz = rr(0.06, 0.1); M4.compose(tmp, orient(out.clone().lerp(UP, 0.4).normalize(), rr(0, 6.28)), S.set(sz * 2.2, sz * 0.3, sz * 1.1)); im.setMatrixAt(n, M4);
+          const v = rr(0.8, 1.15); col.setRGB(0.045 * v, 0.07 * v, 0.022 * v); im.setColorAt(n++, col); D.joinMoss++; }
+      } }
     im.count = n; im.receiveShadow = true; D.group.add(im); D.moss = im;
   }
 
@@ -630,6 +665,25 @@ uniform float tdCool;` + NOISE)
       }
       D.strands = strands;
     }
+    // ivy where the house meets the trunk: a few sprigs climb off the bark onto the post or beam (the beam is a blocker, so
+    // these leaves skip the blocked() test and only keep out of the rooms)
+    { D.joinIvy = 0; const sideV = V(0, 0, 0); let made = 0;
+      const put = (p, out, size) => { if (nl >= NLV || inBox(avoid, p.x, p.y, p.z, 0.03)) return; const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), out.clone().add(V(rr(-0.3, 0.3), rr(0, 0.3), rr(-0.3, 0.3))).normalize());
+        q.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), rr(-0.9, 0.9))); M4.compose(p, q, S.setScalar(size)); leaves.setMatrixAt(nl, M4);
+        const v = rr(0.75, 1.15); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); leaves.setColorAt(nl++, col); D.joinIvy++; };
+      for (const b of D.bites) { if (made >= (MOBILE ? 10 : 22)) break; if (R() < 0.5) continue; if (inBox(avoid, b.x, b.y + 0.1, b.z, 0.05) || nearDoor(b.x, b.y + 0.3, b.z)) continue; made++; (D.joinAt = D.joinAt || []).push([+b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2)]);
+        const out = V(b.x - AX, 0, b.z - AZ).normalize(); const ax = b.ax, vert = Math.abs(ax.y) > 0.7;
+        // horizontal wood (landing boards, joists, braces): creep along a side face, never on the top people walk on; posts: the outer face
+        const fv = vert ? out.clone() : V(0, 1, 0).cross(ax).normalize().multiplyScalar(R() < 0.5 ? -1 : 1); const up = fv; sideV.crossVectors(ax, fv).normalize(); const h = vert ? b.w : Math.max(...b.flat) * 0.5;
+        // on the bark round the joint
+        for (let j = 0; j < (MOBILE ? 3 : 5); j++) { const a = rr(0, 6.28), rad = b.w + rr(0.04, 0.22); put(V(b.x, b.y, b.z).addScaledVector(sideV, Math.cos(a) * rad).add(V(0, Math.sin(a) * rad, 0)).addScaledVector(out, 0.03), out, rr(0.1, 0.16)); }
+        // creeping out along the wood, on its top and sides, thinning out
+        const reach = rr(0.2, Math.min(0.7, b.len * 0.4)), side = R() < 0.5 ? -1 : 1, pts = [];
+        for (let t = 0.04; t < reach; t += 0.07) { const sw = Math.sin(t * 9 + b.x) * 0.5; const p = V(b.x, b.y, b.z).addScaledVector(ax, t).addScaledVector(up, h + 0.012).addScaledVector(sideV, sw * side * (vert ? b.w * 0.8 : Math.min(...b.flat) * 0.5));
+          pts.push(p.clone()); if (R() < 0.85 - t) put(p.clone().addScaledVector(sideV, vert ? rr(-0.05, 0.05) : 0), up.clone().addScaledVector(sideV, rr(-0.6, 0.6)).normalize(), rr(0.08, 0.13) * (1 - t * 0.6)); }
+        if (!MOBILE && pts.length > 2) stems.push({ pts, r: 0.008 });
+      }
+      D.joinIvyAt = made; }
     leaves.count = nl; leaves.receiveShadow = true; leaves.castShadow = !MOBILE; D.group.add(leaves); D.ivy = leaves;
     const sgs = stems.map(s => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), Math.max(3, Math.round(s.pts.length * (MOBILE ? 0.7 : 1.5))), s.r, MOBILE ? 3 : 4, false));
     if (sgs.length && !MOBILE) { const sm = new THREE.Mesh(mergeGeometries(sgs), new THREE.MeshStandardMaterial({ color: 0x3a3424, roughness: 0.9 })); sm.receiveShadow = true; D.group.add(sm); D.ivyStems = sm; }
@@ -867,6 +921,6 @@ uniform float tdCool;` + NOISE)
 
   // phones: small dressing neither casts nor receives shadows (cheaper shaders, nothing in the shadow pass)
   if (MOBILE) D.group.children.forEach(m => { m.castShadow = false; m.receiveShadow = false; });
-  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, caught: D.caughtLeaves, baseShroom: D.baseShroom, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, junction: D.junction, frost: +D.barkU.frost.value.toFixed(2), wet: +D.barkU.wet.value.toFixed(2), damp: +D.barkU.damp.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
+  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, caught: D.caughtLeaves, baseShroom: D.baseShroom, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, junction: D.junction, joinMoss: D.joinMoss, joinIvy: D.joinIvy, frost: +D.barkU.frost.value.toFixed(2), wet: +D.barkU.wet.value.toFixed(2), damp: +D.barkU.damp.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
   return D;
 }

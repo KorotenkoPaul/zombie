@@ -13,6 +13,9 @@ const byF=new Map(D.frames.map(f=>[f.f,f]));
 // pick distinct issues: worst first, at most 3 of the same type, skip ones within 1 s of an already chosen one
 // worst first, at most 3 per type and 1 per type+body part+object, nothing within 1 s of an already chosen one
 const pick=[];const kk=q=>q.type+'|'+q.bone+'|'+(q.into||'').replace(/#\d+.*/,'');for(const q of R.issues){if(pick.length>=TOP)break;if(q.type==='slow'&&!/m\/s|to sit/.test(q.unit))continue;if(pick.filter(x=>x.type===q.type).length>=3)continue;if(pick.some(x=>kk(x)===kk(q)))continue;if(pick.some(x=>Math.abs(x.f-q.f)<60))continue;pick.push(q);}
+// --focus REGEX: instead of issues, storyboard every run of clips matching REGEX (e.g. 'jacket'), whole run, 6 frames
+const FOCUS=arg('focus',null);if(FOCUS){pick.length=0;const re=new RegExp(FOCUS);let s0=-1;const fr=D.frames;
+ for(let i=0;i<=fr.length;i++){const on=i<fr.length&&re.test(String(fr[i].clip));if(on&&s0<0)s0=i;if(!on&&s0>=0){const a=fr[s0].f,b2=fr[i-1].f;if(b2-a>=10&&pick.length<TOP)pick.push({type:'focus',t:+(fr[s0].f/60).toFixed(2),clip:fr[s0].clip,bone:'Hips',f:a,f1:b2,P:1,value:0,unit:'',hour:fr[s0].hour,act:fr[s0].task});s0=-1;}}}
 const OFF=[-30,-12,-4,0,4,12];
 const BI={Hips:0,Head:3,HeadTop_End:4,LeftFoot:7,RightFoot:12,LeftHand:17,RightHand:20,LeftLeg:6,RightLeg:11};
 function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head',handL:'LeftHand',handR:'RightHand',feet:'LeftFoot',shins:'LeftLeg',hips:'Hips',arms:'Hips',torso:'Hips'}[q.bone]||q.bone;const i=(BI[k]??BI[k.replace(/ .*/,'')]??0)*3;const h=[f.b[0],f.b[1],f.b[2]];
@@ -20,9 +23,9 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
 (async()=>{fs.mkdirSync(DIR+'/raw',{recursive:true});fs.mkdirSync(DIR+'/sheets',{recursive:true});fs.mkdirSync(DIR+'/clips',{recursive:true});
  const want=new Map();// frame -> list of jobs
  const job=(f,j)=>{if(!want.has(f))want.set(f,[]);want.get(f).push(j);};
- pick.forEach((q,n)=>{const ff=q.type==='detour'||q.type==='crab-walk'||q.type==='sharp-turn'||q.type==='foot-slide'?OFF.map(o=>o*2):OFF;
+ pick.forEach((q,n)=>{if(q.type==='focus'){const L=q.f1-q.f;for(let k=0;k<6;k++)job(q.f+Math.round(L*k/5),{n,k,kind:'sheet'});return;}const ff=q.type==='detour'||q.type==='crab-walk'||q.type==='sharp-turn'||q.type==='foot-slide'?OFF.map(o=>o*2):OFF;
   ff.forEach((o,k)=>job(q.f+o,{n,k,kind:'sheet'}));});
- pick.filter(q=>q.P===1).slice(0,CLIPS).forEach(q=>{const n=pick.indexOf(q);for(let o=-42;o<=42;o+=2)job(q.f+o,{n,k:o,kind:'clip'});});
+ pick.filter(q=>q.P===1).slice(0,CLIPS).forEach(q=>{const n=pick.indexOf(q);if(q.type==='focus'){for(let o=-20;o<=q.f1-q.f+20;o+=2)job(q.f+o,{n,k:o,kind:'clip'});return;}for(let o=-42;o<=42;o+=2)job(q.f+o,{n,k:o,kind:'clip'});});
  const {b,p,errs}=await open({seed:D.meta.seed,vp:{width:360,height:360}});
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  let drift=0;const t0=Date.now();
@@ -30,7 +33,7 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
   const rec=byF.get(fr);const now=await p.evaluate(()=>__dbg.hero.root.position.toArray());if(rec){const d=Math.hypot(now[0]-rec.root[0],now[1]-rec.root[1],now[2]-rec.root[2]);if(d>.01&&drift<=.01)console.log('replay drifts from frame',fr,(d*100).toFixed(1),'cm');drift=Math.max(drift,d);}
   for(const j of want.get(fr)){const q=pick[j.n];const f=rec||byF.get(q.f);const c=focus(q,f);
    const views=j.kind==='sheet'?[[-.45,.2,2.2],[.5,.28,2.4]]:[[-.4,.2,2.3]];let vi=0;
-   for(const [yaw,pitch,dist] of views){const file=`${DIR}/raw/${j.kind}_${String(j.n).padStart(2,'0')}_${j.kind==='sheet'?j.k+'_'+vi:String(j.k+100).padStart(3,'0')}.png`;
+   for(const [yaw,pitch,dist] of views){const file=`${DIR}/raw/${j.kind}_${String(j.n).padStart(2,'0')}_${j.kind==='sheet'?j.k+'_'+vi:String(j.k+1000).padStart(5,'0')}.png`;
     // through the game's own camera rig (it cuts holes in walls between the camera and the target, and its near-fade
     // radius follows the rig distance); depth of field off so the close-up stays sharp
     await p.evaluate(([c,yaw,pitch,dist])=>{const T=__dbg.THREE;const R=window.__camera&&window.__camera.rig;
