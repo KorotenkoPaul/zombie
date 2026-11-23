@@ -20,3 +20,8 @@ weights remapped by bone name, normals smoothed by welded position. So hero-move
 A separate skinned mesh `eyelids` (bound to Head, same material) with morph targets `blink` (both), `blinkL`, `blinkR`; 0 = open (lids collapsed under the brow, invisible), 1 = closed.
 `hero.root.getObjectByName('eyelids')` -> `m.morphTargetInfluences[m.morphTargetDictionary.blink] = v`. The old hero has no eyelids: check for null.
 Eye placement for a new face: run `facescan.mjs` (front texture render of the head, face.png) and pass eye centres/size to lids.mjs.
+
+## Eyelids on the original (default) hero
+Added the same way: `deq.mjs` (dequantize; mesh space is normalized, y -1..1 = 0..1.6 m) -> facescan (RES=.001 XW=.125 Y0=.75 Y1=1.03) ->
+`lids.mjs old-dq.glb out.glb '{"L":[-0.0535,0.7985,0.072,0.036],"R":[0.0515,0.797,0.068,0.037],"skin":[-0.05,0.765],"lash":[-0.06,0.82],"off":0.0028,"ymin":0.7,"pow":0.4,"flat":1}'` -> quant.mjs.
+Lid UVs must not be all identical (quantize breaks a zero-range attribute), hence the tiny jitter in flat mode.
