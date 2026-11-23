@@ -156,7 +156,7 @@ export function createAudio(ctx) {
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) try { f(e); } catch (er) { console.error('audio', k, er); } };
   const MOB = !!ctx.mobile;
   const MAXV = MOB ? 9 : 14;   // phones: fewer simultaneous voices (each is a panner + filter + gain)
-  let now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
+  let layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
   const ind = {};          // individuals per layer
   const mult = {};         // today's / tonight's personality per layer
   const center = { x: 0, z: 0 };
@@ -240,8 +240,11 @@ export function createAudio(ctx) {
   const L3 = { x: 0, y: 0, z: 0 };
   function listener() { const c = ctx.camera; if (c) { L3.x = c.position.x; L3.y = c.position.y; L3.z = c.position.z; } return L3; }
   function syncListener() {
-    if (!A || !ctx.camera) return; const c = ctx.camera, l = A.listener;
-    const f = { x: 0, y: 0, z: -1 }, u = { x: 0, y: 1, z: 0 }, e = c.matrixWorld.elements;
+    if (!A || !ctx.camera) return; const c = ctx.camera, l = A.listener, e = c.matrixWorld.elements;
+    // only when the camera actually moved (and at most ~30 times a second): each call queues 9 automation events
+    const tn = A.currentTime, sig = e[12] + e[13] * 3.1 + e[14] * 7.3 + e[8] * 11 + e[10] * 13 + e[5] * 17;
+    if (Math.abs(sig - (syncListener.sig ?? 1e9)) < 1e-3 || tn - (syncListener.t ?? -1) < .033) return; syncListener.sig = sig; syncListener.t = tn;
+    const f = { x: 0, y: 0, z: -1 }, u = { x: 0, y: 1, z: 0 };
     f.x = -e[8]; f.y = -e[9]; f.z = -e[10]; u.x = e[4]; u.y = e[5]; u.z = e[6];
     const t = A.currentTime + .05;
     if (l.positionX) { l.positionX.linearRampToValueAtTime(c.position.x, t); l.positionY.linearRampToValueAtTime(c.position.y, t); l.positionZ.linearRampToValueAtTime(c.position.z, t);
@@ -353,7 +356,7 @@ export function createAudio(ctx) {
     if (b.lvl < .01) return;
     const t = A.currentTime;
     if (!b.cur || b.cur.end - t < 2.2) { b.applied = b.lvl; b.cur = voice(pick(clips), Object.assign({ bed: true, fadeIn: 2, fadeOut: 2.2 }, mk(b.lvl))); }
-    else if (Math.abs(b.lvl - (b.applied ?? 0)) > .08) { b.applied = b.lvl; b.cur.g.gain.cancelScheduledValues(t); b.cur.g.gain.setTargetAtTime(mk(b.lvl).gain, t, .4); b.cur.g.gain.setTargetAtTime(0, Math.max(t + .5, b.cur.end - 2), .5); }
+    else if (Math.abs(b.lvl - (b.applied ?? 0)) > .08) { b.applied = b.lvl; holdGain(b.cur.g.gain, t); b.cur.g.gain.setTargetAtTime(mk(b.lvl).gain, t, .4); b.cur.g.gain.setTargetAtTime(0, Math.max(t + .5, b.cur.end - 2), .5); }
   }
 
   function windLevel(dt) {
@@ -458,7 +461,7 @@ export function createAudio(ctx) {
       if (lastH < 4 && h >= 4) populate(DAY, env);
     }
     lastH = h;
-    tickLayers(h, env, dt);
+    layerAcc += dt; if (layerAcc >= .1) { tickLayers(h, env, layerAcc); layerAcc = 0; }   // creatures decide 10x a second, not every frame
     gusts(env);
     // rain on leaves and roof
     // rain: leaves all around, and drumming on the roof when the camera (or hero) is near one
@@ -550,7 +553,9 @@ export function createAudio(ctx) {
     const sp = a.rate ?? .04;
     return { pos: toPos(pos), gain: (o.gain ?? 1) * a.v * rnd(.82, 1.05), rate: (o.rate ?? 1) * (1 + rnd(-sp, sp)), ref: 3.5, roll: 1, rev: .25, delay: o.delay || 0, fadeIn: .01, fadeOut: .12, prio: true, indoor: !o.outdoor };
   }
-  function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; v.g.gain.cancelScheduledValues(t); v.g.gain.setValueAtTime(v.g.gain.value, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
+  // freeze a gain where it is right now before a new ramp (cancelScheduledValues alone can jump: a click)
+  function holdGain(p, t) { if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else { const v = p.value; p.cancelScheduledValues(t); p.setValueAtTime(v, t); } }
+  function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; holdGain(v.g.gain, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
   function playAct(name, pos, o = {}) {
     if (!A || muted || !loaded) return null;
     if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
@@ -630,10 +635,10 @@ export function createAudio(ctx) {
     return idle && now - lastActT > 20;
   }
   function tickMusic(h, dt) {
-    if (!musicOn) { if (mBus && mSession) { mBus.gain.setTargetAtTime(0, A.currentTime, 1.5); mSession = 0; } return; }
+    if (!musicOn) { if (mBus && mSession) { holdGain(mBus.gain, A.currentTime); mBus.gain.setTargetAtTime(0, A.currentTime, 1.5); mSession = 0; } return; }
     const t = A.currentTime;
     // ducking under the hero's own sounds
-    if (mDuck) mDuck.gain.setTargetAtTime(t < duckUntil ? .3 : 1, t, t < duckUntil ? .15 : 1.2);
+    const dk = t < duckUntil; if (mDuck && dk !== tickMusic.dk) { tickMusic.dk = dk; holdGain(mDuck.gain, t); mDuck.gain.setTargetAtTime(dk ? .3 : 1, t, dk ? .15 : 1.2); }
     if (!mSession) {
       if (now < mRestUntil) return;
       const dusk = h >= 18.3 && h < 20.6, day = Math.floor(gnow / 180);
@@ -642,12 +647,12 @@ export function createAudio(ctx) {
       else if (quietMoment(h) && Math.random() < dt / 90) start = true;                // in a quiet moment: about once in a minute and a half
       if (!start) return;
       musicGraph(); mSession = now + rnd(60, 120); mNext = now + 1.5; mPhrase = null;
-      mBus.gain.cancelScheduledValues(t); mBus.gain.setValueAtTime(mBus.gain.value, t); mBus.gain.linearRampToValueAtTime(.5, t + 6);
+      holdGain(mBus.gain, t); mBus.gain.linearRampToValueAtTime(.5, t + 6);
       padChord(t + .5, pick(CHORDS), rnd(14, 20)); mPad = now + rnd(12, 18);
       return;
     }
     if (now > mSession) {                                          // the session fades away
-      mBus.gain.setTargetAtTime(0, t, 3); mSession = 0; mRestUntil = now + rnd(150, 300); return;
+      holdGain(mBus.gain, t); mBus.gain.setTargetAtTime(0, t, 3); mSession = 0; mRestUntil = now + rnd(150, 300); return;
     }
     if (now > mPad) { padChord(t, pick(CHORDS), rnd(14, 22)); mPad = now + rnd(14, 22); }
     if (now < mNext) return;
@@ -660,12 +665,12 @@ export function createAudio(ctx) {
     if (Math.random() < .18) mNote(midiOf(d) + 24, t + .02 + rnd(.01, .03), .025, rnd(-.5, .5));   // a faint octave sparkle now and then
     mNext = now + l * rnd(.9, 1.15);
   }
-  function setMusic(b) { musicOn = !!b; try { localStorage.setItem('th_music', musicOn ? '1' : '0'); } catch (e) {} if (!musicOn && mBus) mBus.gain.setTargetAtTime(0, A.currentTime, .4); }
+  function setMusic(b) { musicOn = !!b; try { localStorage.setItem('th_music', musicOn ? '1' : '0'); } catch (e) {} if (!musicOn && mBus) { holdGain(mBus.gain, A.currentTime); mBus.gain.setTargetAtTime(0, A.currentTime, .4); } }
 
   function setMute(b) {
     muted = !!b; try { localStorage.setItem('th_mute', muted ? '1' : '0'); } catch (e) {}
-    if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER, A.currentTime, .15);
-    if (muted) for (const v of voices) try { v.src.stop(); } catch (e) {}
+    if (master) { holdGain(master.gain, A.currentTime); master.gain.setTargetAtTime(muted ? 0 : MASTER, A.currentTime, .15); }
+    if (muted) for (const v of voices) try { v.src.stop(A.currentTime + .7); } catch (e) {}   // after the master has faded: no click
   }
   // phones: stop the audio clock in the background
   document.addEventListener('visibilitychange', () => { if (!A) return; if (document.hidden) A.suspend(); else if (started) A.resume(); });

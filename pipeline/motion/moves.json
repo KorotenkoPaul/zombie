@@ -272,5 +272,67 @@
   "src": "scratch-11",
   "smooth": 2,
   "speed": 1.2
+ },
+ "hy_shingle": {
+  "src": "shingle-11",
+  "smooth": 2,
+  "speed": 1.2,
+  "loop": true,
+  "close": 0.8
+ },
+ "hy_nailboard": {
+  "src": "nailboard-11",
+  "smooth": 2,
+  "speed": 1.2,
+  "loop": true,
+  "close": 0.8
+ },
+ "hy_patchwall": {
+  "src": "patchwall-11",
+  "smooth": 2,
+  "speed": 1.2,
+  "loop": true,
+  "close": 0.8
+ },
+ "hy_ropeknot": {
+  "src": "ropeknot-11",
+  "smooth": 2,
+  "speed": 1.2
+ },
+ "hy_oilhinge": {
+  "src": "oilhinge-23",
+  "smooth": 2,
+  "speed": 1.2
+ },
+ "hy_window": {
+  "src": "window-11",
+  "smooth": 2,
+  "speed": 1.2,
+  "loop": true,
+  "close": 0.8
+ },
+ "hy_railing": {
+  "src": "railing-11",
+  "smooth": 2,
+  "speed": 1.2
+ },
+ "hy_clearleaves": {
+  "src": "clearleaves-11",
+  "smooth": 2,
+  "speed": 1.2,
+  "loop": true,
+  "close": 0.8
+ },
+ "hy_chimney": {
+  "src": "chimney-11",
+  "smooth": 2,
+  "speed": 1.2,
+  "loop": true,
+  "close": 0.8
+ },
+ "hy_tightenrope": {
+  "src": "tightenrope-11",
+  "smooth": 2,
+  "speed": 1.2
  }
 }

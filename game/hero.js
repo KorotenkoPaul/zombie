@@ -281,6 +281,12 @@ export function createHero(ctx){
  // is the straight line between two points on one floor free of furniture? (used to cut corners of the node graph)
  function segClear(a,b){const n=Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/.08);const r=.24;for(let i=1;i<=n;i++){const t=i/n,x=a.x+(b.x-a.x)*t,z=a.z+(b.z-a.z)*t;
    for(const o of OBST){if(Math.abs(o.y-a.y)>.6)continue;if(x>o.x0-r&&x<o.x1+r&&z>o.z0-r&&z<o.z1+r)return false;}}return true;}
+ // stuck: walking but not getting anywhere (QA: sunk into the workshop floor, walked on the spot for an hour) -> back onto the boards and replan
+ function stuckCheck(dt){const p=root.position;const S=H.stk||(H.stk={t:0,x:p.x,z:p.z,n:0});S.t+=dt;if(S.t<2.5)return;const d=Math.hypot(p.x-S.x,p.z-S.z);S.t=0;S.x=p.x;S.z=p.z;
+  if(d>.15||!H.path.length){S.n=0;return;}S.n++;const last=H.path[H.path.length-1].node;
+  const f=floorAt(p.x,p.y+.6,p.z,.1,1.2);if(f!=null&&f>p.y+.04&&f-p.y<.6){p.y=f;H.floorY=f;}// sunk under the boards: back on top
+  const nn=nearNode(p.clone().add(V(0,.3,0)));if(nn){H.node=nn;H.path=route(nn,last);}
+  if(S.n>=2&&H.path.length){const t=N[H.path[0].node].p;if(H.path[0].t!=='ladder'&&Math.abs(t.y-p.y)<.5){p.x+=(t.x-p.x)*.5;p.z+=(t.z-p.z)*.5;}}}
  function walkStep(dt){
   // string-pull: if the node after this one is in plain sight, head straight for it
   while(H.path.length>1&&H.path[0].t!=='ladder'&&H.path[1].t!=='ladder'&&!N[H.path[0].node].tight&&!(H.path[2]&&H.path[2].t==='ladder'&&false)){const nx=N[H.path[1].node].p,p0=root.position;
@@ -290,8 +296,9 @@ export function createHero(ctx){
   let aim=target.clone();const toT=Math.hypot(target.x-p.x,target.z-p.z);if(!isLast&&toT<.55){const n2=N[nxt.node].p;aim.lerp(n2,clamp((.55-toT)/.55,0,1)*.5);}
   const dx=aim.x-p.x,dz=aim.z-p.z;const want=Math.atan2(dx,dz);const da=wrapA(want-root.rotation.y);
   // ===== MOTION HOOK: with motion matching the stop is a human one (constant deceleration over the last step), no creeping =====
-  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):1);const align=clamp(Math.cos(da)*1.25-.25,0,1);
-  H.v+=clamp(vmax*align*align-H.v,-3.2*dt,2.2*dt);
+  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):1);const align=smooth(-.17,.8,Math.cos(da));
+  H.v+=clamp(vmax*align-H.v,-3.2*dt,2.4*dt);
+  stuckCheck(dt);
   // turn rate depends on speed: on the spot it takes small steps
   const rate=lerp(2.6,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
   // turning has inertia: angular speed ramps up and down, so there is never a snap in heading
@@ -313,7 +320,7 @@ export function createHero(ctx){
  function ladderStep(dt){const step=H.path[0];const key=step.from+'>'+step.node,rkey=step.node+'>'+step.from;const c=LAD[key]||LAD[rkey];const target=N[step.node].p;const p=root.position;
   if(!H.lad){const a=N[step.from].p;const up=target.y>a.y+.01;H.lad={up,phase:up?'mount':'over',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};}
   const L=H.lad;const cz=c.lz+.32*c.side;const F=c.side>0?Math.PI:0;H.state='walk';H.ground=false;
-  const done=()=>{H.lad=null;H.path.shift();H.node=step.node;H.ground=true;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
+  const done=()=>{H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.v=0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
   if(L.phase==='mount'){H.ground=true;if(ladApproach(V(L.x,p.y,cz),F,dt)){L.phase='climb';}}
   else if(L.phase==='climb'){turnTo(F,dt);p.x=L.x;p.z=cz;play('437',{speed:1.3,fade:.3});const v=.31*1.3*dt;const pull=rmCurve['435']?rmAt('435',99).y:1.4;
    if(L.up){p.y+=v;if(p.y>=L.yTop-pull){p.y=L.yTop-pull;L.phase='finish';once('435',{fade:.3,then:()=>{L.phase='stand';}});}}
@@ -322,7 +329,7 @@ export function createHero(ctx){
   else if(L.phase==='over'){// down: step back over the edge (the pull-up played backwards)
    const a=actions['435'];const d=a.getClip().duration;const end=rmCurve['435']?rmAt('435',99):V(0,1.4,1.06);
    if(!L.start){const goal=V(L.x,L.yTop,cz).add(rotY(V(end.x,0,end.z),F));H.ground=true;
-    if(ladApproach(V(goal.x,p.y,goal.z),F,dt)){L.start=1;p.set(goal.x,L.yTop,goal.z);a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=-1;a.time=d;a.enabled=true;if(H.cur)H.cur.crossFadeTo(a,.3,false);a.play();H.cur=a;}}
+    if(ladApproach(V(goal.x,p.y,goal.z),F,dt)){L.start=1;if(Math.abs(p.y-L.yTop)<.3)L.yTop=p.y;p.set(goal.x,L.yTop,goal.z);a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=-1;a.time=d;a.enabled=true;if(H.cur)H.cur.crossFadeTo(a,.3,false);a.play();H.cur=a;}}
    else if(a.time<=1e-3){L.phase='climb';L.start=0;}}}
 
  // ---------- daily life ----------
@@ -348,7 +355,10 @@ export function createHero(ctx){
   for(const k in sc){if(lastAct[0]===k)sc[k]-=1;if(lastAct[1]===k)sc[k]-=.35;sc[k]+=rnd(0,.35);}
   return Object.keys(sc).sort((a,b)=>sc[b]-sc[a])[0];}
  const WINDOWS=['bwin','kwin','wwin'];
- function goTo(node,then){if(node===H.node&&!H.path.length){then&&then();return;}H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));}
+ function goTo(node,then){if(node===H.node&&!H.path.length){then&&then();return;}
+  // on a ladder: finish this rung run first, the new route starts where the ladder ends (QA: H.lad left set, then a 67 cm teleport)
+  if(H.lad&&H.path[0]&&H.path[0].t==='ladder'){const first=H.path[0];H.path=[first,...(first.node===node?[]:route(first.node,node))];H.then=then;return;}
+  H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));}
  const sidePole=(side,down=1)=>{const f=fwd(root.rotation.y);const right=V(-f.z,0,f.x);return right.multiplyScalar(side==='Right'?1:-1).add(V(0,-down,0)).add(f.clone().multiplyScalar(-.3));};
  function ikList(list){if(!list)return;for(const [s,t,w] of list)if(t&&w>.001)armIK(s,t,sidePole(s),clamp(w,0,1));}
 
@@ -366,7 +376,7 @@ export function createHero(ctx){
   const mk=MAKE[name];if(!mk)return;act=mk(opts||{});act.name=name;}
  // ===== BRAIN HOOK state: setBrain / gait / onTaskEnd =====
  let brain=null;let motion=null;/* MOTION HOOK: game/motion.js, see setMotion */const gait={speed:1,turn:1};const endCbs=[];
- function endTask(){const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n);}catch(e){console.error(e);}}}
+ function endTask(res){const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n,res);}catch(e){console.error(e);}}}
  // lamps with a wall switch (props.js switchPlate): the hand goes to the plate, not to the lamp
  const SWITCH_AT=(ctx.props&&ctx.props.switches)?Object.fromEntries(Object.entries(ctx.props.switches).map(([k,v])=>[k,v.clone()])):{bedroom:V(.372,lv.BD+1.15,3.5)};// wall switch positions come from props.js
  const LAMP=()=>window.__lights||ctx.lights||null;
@@ -487,6 +497,135 @@ export function createHero(ctx){
   repair:()=>{const a={};const b=ctx.brokenBoard&&ctx.brokenBoard();if(!b){H.task=null;return a;}goTo(ctx.WIN_NODE[b.group],()=>{a.go=1;a.t=0;grabTool('benchHammer','Right');});
    a.update=dt=>{if(!a.go)return;a.t+=dt;play(has('hy_hammer')?'hy_hammer':'128');if(Math.floor(a.t*2.2)!==Math.floor((a.t-dt)*2.2))sfx&&sfx.hammer&&sfx.hammer();if(a.t>2.4){ctx.repairBoard(b);releaseTool('Right');H.task=null;act=null;}};a.leave=cb=>{if(H.hold.Right)releaseTool('Right');cb();};return a;},
  };
+ // ===================== everyday jobs (Brain task names) =====================
+ // one framework: walk to the spot (graph node, then a short slide up to the work point), optionally take tools from their
+ // home (hand IK to the hook / shelf, real attach to the hand bone), work for a while with small variations (pause, look
+ // round, scratch, stretch, sigh), put the tools back, end by itself. Props / lights / audio hooks are all optional.
+ const PT=(n)=>{try{const P=window.__props||P3;return P&&P.point?P.point(n):null;}catch(e){return null;}};
+ const AU=(n,pos)=>{try{window.__audio&&window.__audio.play&&window.__audio.play(n,pos);}catch(e){}};
+ const toolHome=n=>{try{const P=window.__props||P3;return P&&P.toolHome?P.toolHome(n,V()):null;}catch(e){return null;}};
+ const hasTool=n=>{const P=window.__props||P3;return !!(P&&P.tools&&P.tools[n]);};
+ // slide the last bit up to a work point and face it
+ function approachTo(a,sp,stand,then){const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz)||1e-3;H.face=Math.atan2(dx,dz);
+  const move=Math.max(0,Math.min(1.2,d-stand));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);const dur=Math.max(.3,move/.8);
+  H.slide={x:q.x-p.x,z:q.z-p.z,yaw:wrapA(H.face-root.rotation.y),k:0,d:dur};if(move>.08)play('30',{fade:.3,speed:1});
+  a.step='approach';a.t=0;a.next=()=>{play(IDLE(),{fade:.4});then();};a.adur=dur;}
+ function job(o){const a={step:'go',t:0,T:0,held:[]};const sp0=typeof o.pt==='function'?o.pt():o.pt;
+  if(!sp0&&!o.node){a.update=()=>endTask(false);return a;}
+  const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
+  const dur=o.dur?rnd(o.dur[0],o.dur[1]):(o.clip&&!o.loop&&has(o.clip)?durOf(o.clip)*(o.reps||1):8);
+  const tools=(o.tools||[]).filter(([n])=>hasTool(n));
+  const begin=()=>{a.step=tools.length?'take':'work';a.t=0;o.start&&o.start(a);if(!tools.length)work();};
+  const work=()=>{a.step='work';a.t=0;if(o.clip&&has(o.clip)){if(o.loop)play(o.clip,{fade:.5,speed:o.speed||1});else once(o.clip,{fade:.45,speed:o.speed||1,then:()=>{if(a.step==='work'&&a.T<dur-1)play(o.idle&&has(o.idle)?o.idle:IDLE(),{fade:.5});}});}else play(IDLE(),{fade:.5});};
+  const go=()=>{const s=sp();if(o.node){goTo(o.node,()=>{if(o.slide===false){H.face=N[o.node].face??H.face;begin();}else approachTo(a,s,o.stand??.45,begin);});}
+   else{const nn=nearNode(s);if(nn)goTo(nn,()=>approachTo(a,s,o.stand??.45,begin));else approachTo(a,s,o.stand??.45,begin);}};
+  go();
+  a.update=dt=>{a.t+=dt;const s=sp();
+   if(a.step==='approach'){H.look=s;H.lookW=.6;if(a.t>=a.adur){a.next();}return;}
+   if(a.step==='take'){// reach each tool's home and close the hand on it
+    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=toolHome(n)||s;H.look=h;H.lookW=1;a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];
+    if(a.t>.5&&!a.gotIt){a.gotIt=true;grabTool(n,hand);AU('cloth');}if(a.t>.95){a.held.push(n);a.gotIt=false;a.t=0;a.ik=null;if(a.held.length>=tools.length)work();}return;}
+   if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
+    // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
+    if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
+      if(r<.45){a.pause=rnd(2.5,4.5);a.pl=root.position.clone().add(V(rnd(-3,3),rnd(1.2,1.8),rnd(-3,3)));play(IDLE(),{fade:.6});}
+      else if(r<.65&&has('hy_scratch'))overlay('hy_scratch',{fade:.4,speed:1.2});else if(r<.8&&has('hy_stretch'))overlay('hy_stretch',{fade:.5,speed:1.15,weight:.7});else AU('sigh',root.position);}
+     if(a.pause){a.pause-=dt;H.look=a.pl;H.lookW=.7;if(a.pause<=0){a.pause=0;if(o.clip&&o.loop&&has(o.clip))play(o.clip,{fade:.6,speed:o.speed||1});else if(o.clip&&has(o.clip))once(o.clip,{fade:.45,speed:o.speed||1});}}}
+    if(!o.loop&&o.clip&&o.reps&&!H.once&&!a.pause&&a.T<dur-1)once(o.clip,{fade:.4,speed:o.speed||1});
+    if(a.T>=dur){a.step='put';a.t=0;o.end&&o.end(a);play(IDLE(),{fade:.5});}return;}
+   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=toolHome(n)||s;H.look=h;H.lookW=1;
+    a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];if(a.t>.5&&!a.rel){a.rel=true;relTool(hand,n);}if(a.t>.95){a.held.pop();a.rel=false;a.t=0;a.ik=null;}}};
+  const finish=()=>{a.ik=null;endTask(o.result?o.result(a):undefined);};
+  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);};
+  a.leave=cb=>{for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
+  return a;}
+ function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
+ const telePt=()=>{const P=window.__props||P3;const t=P&&P.placed&&P.placed.telescope;if(t&&t.position)return t.position.clone().add(V(0,1.35,0));return V(3.5,DK+1.35,1.3);};
+ // the edge of the platform in front of a node: step forward until the boards end
+ function edgeFrom(node){const n=N[node];if(!n)return null;const f=fwd(n.face??0);const p=n.p.clone();let last=null;
+  for(let d=.1;d<2.5;d+=.05){const q=p.clone().addScaledVector(f,d);const y=floorAt(q.x,p.y+.2,q.z,.3,.6);if(y==null||Math.abs(y-p.y)>.15){return last?{p:last,f,y:p.y}:null;}last=q;}return null;}
+ Object.assign(MAKE,{
+  // kitchen
+  chop:(o)=>job({pt:()=>PT('board'),stand:.42,clip:'hy_chop',loop:true,dur:[22,40],tools:[['knife','Right']],tick:(a,dt)=>{a.ct=(a.ct||0)+dt;if(a.ct>.45){a.ct=0;AU('chop',PT('board'));}}}),
+  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.45,clip:'hy_stir',loop:true,dur:[25,45],tools:[['ladle','Right']]}),
+  stoke:(o)=>{// a log from the woodpile into the oven: crouch, pick it up, carry it over, open the little door, in, shut
+   const a={step:'go',t:0};const wp=PT('woodpile'),ovp=PT('oven');if(!wp||!ovp){a.update=()=>endTask(false);return a;}
+   const P=window.__props||P3;const toOven=()=>{const nn=nearNode(ovp)||'stove';goTo(nn,()=>approachTo(a,ovp,.55,()=>{a.step='stoke';a.t=0;once('hy_stoke',{fade:.4,then:()=>{play(IDLE(),{fade:.5});endTask();}});}));};
+   const nn=nearNode(wp)||'kmid';goTo(nn,()=>approachTo(a,wp,.5,()=>{a.step='pick';AU('grunt');once('hy_picklog',{fade:.4,then:()=>{try{P.grab('logArmful',bones.RightHand,{offset:V(0,.08,.06)});a.log=1;}catch(e){}
+     try{P.woodpile&&P.woodpile.setCount&&P.woodpile.setCount(Math.max(0,(P.woodpile.count||1)-1));}catch(e){}a.step='carry';toOven();}});}));
+   a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
+    if(a.step==='stoke'){const ov=P&&P.oven;const k=a.t/Math.max(.5,durOf('hy_stoke'));H.look=ovp;H.lookW=1;if(ov&&ov.setOpen)ov.setOpen(smooth(.12,.28,k)-smooth(.72,.86,k));
+     if(k>.5&&a.log){a.log=0;try{P.release('logArmful');}catch(e){}AU('stoke',ovp);}}};
+   a.leave=cb=>{if(a.log)try{P.release('logArmful');}catch(e){}try{P.oven&&P.oven.setOpen&&P.oven.setOpen(0);}catch(e){}cb();};return a;},
+  dishes:(o)=>job({pt:()=>PT('sink'),stand:.42,clip:'hy_wash',loop:true,dur:[16,30],
+   start:a=>{const P=window.__props||P3;try{P.water&&P.water.tap&&P.water.tap(true);}catch(e){}},
+   tick:(a,dt)=>{a.wt=(a.wt||0)+dt;if(a.wt>3.2){a.wt=0;const P=window.__props||P3;try{if(P.dishes&&P.dishes.wash()===-1){a.T=Math.max(a.T,999);}}catch(e){}}},
+   end:a=>{const P=window.__props||P3;try{P.water&&P.water.tap&&P.water.tap(false);if(P.dishes){for(let i=0;i<4;i++)P.dishes.putAway();}}catch(e){}}}),
+  supplies:(o)=>job({pt:()=>PT('pantry'),stand:.5,clip:'hy_count',loop:true,dur:[15,28]}),
+  tea:MAKE.tea,
+  // workshop
+  saw:(o)=>job({pt:()=>PT('bench'),stand:.45,clip:'hy_saw',loop:true,dur:[20,40],tools:[['plankSaw','Right']],tick:(a,dt)=>{a.ct=(a.ct||0)+dt;if(a.ct>.8){a.ct=0;AU('saw',PT('bench'));}}}),
+  hammer:(o)=>MAKE.craft(o),
+  sharpen:(o)=>job({pt:()=>PT('whetstone'),stand:.42,clip:'hy_sharpen',loop:true,dur:[18,30],tools:[['knife','Right']],tick:(a,dt)=>{a.ct=(a.ct||0)+dt;if(a.ct>1.1){a.ct=0;AU('sharpen',PT('whetstone'));}}}),
+  fixlamp:(o)=>job({pt:()=>PT('bench'),stand:.45,clip:'hy_lantern',loop:true,dur:[25,45],tools:[['lantern','Left']],
+   start:a=>{const L=window.__lights;try{L&&L.attachHand&&L.attachHand(bones.LeftHand);}catch(e){}},tick:a=>{if(a.step==='work'&&!a.lit&&a.T>2){a.lit=1;try{window.__lights.set('hand',true);}catch(e){}}},
+   end:a=>{const L=window.__lights;try{L&&L.set&&L.set('hand',false);L&&L.detachHand&&L.detachHand();}catch(e){}}}),
+  // bedroom and anywhere
+  stretch:(o)=>MAKE.micro({clip:'hy_stretch'}),
+  diary:(o)=>{// sit at the table, open the diary, write, pause to think, write on
+   const a={step:'go',t:0,T:0};const dur=rnd(30,60);const P=window.__props||P3;
+   goTo('chair_app',()=>{a.step='sit';sitDown(N.chair,()=>{a.step='take';a.t=0;play(SITIDLE,{fade:.8});});});
+   a.update=dt=>{a.t+=dt;const dp=toolHome('diary');
+    if(a.step==='take'){H.look=dp;H.lookW=1;a.ik=dp?[['Right',dp,smooth(0,.5,a.t)*(1-smooth(.7,1,a.t))]]:null;if(a.t>.55&&!a.got){a.got=1;grabTool('pencil','Right');}if(a.t>1.1){a.ik=null;a.step='write';a.t=0;play(has('hy_diary')?'hy_diary':SITIDLE,{fade:.8});}}
+    else if(a.step==='write'){a.T+=dt;H.look=dp;H.lookW=.9;if(a.T>dur){a.step='put';a.t=0;play(SITIDLE,{fade:.7});}}
+    else if(a.step==='put'){a.ik=dp?[['Right',dp,smooth(0,.5,a.t)*(1-smooth(.7,1,a.t))]]:null;if(a.t>.55&&a.got){a.got=0;relTool('Right','pencil');}if(a.t>1.1){a.ik=null;a.step='up';standUp(N.chair,()=>endTask());}}};
+   a.post=()=>ikList(a.ik);
+   a.leave=cb=>{if(a.got)relTool('Right','pencil');a.ik=null;if(a.step==='go'){cb();return;}standUp(N.chair,cb);};return a;},
+  sweep:(o)=>job({pt:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),1).add(V(0,.1,0)),stand:.9,clip:'hy_sweep',loop:true,dur:[15,28],tools:[['broom','Right']],
+   tick:(a,dt)=>{// shuffles slowly across the floor while sweeping, turning back at walls
+    if(a.pause)return;const p=root.position;const f=fwd(root.rotation.y);const q=p.clone().addScaledVector(f,.25);pushOut(q);const y=floorAt(q.x,p.y+.2,q.z,.3,.5);
+    if(y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02){root.rotation.y+=Math.PI*.6*dt;H.face=root.rotation.y;}else{p.addScaledVector(f,.22*dt);}
+    a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
+  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
+  listen:(o)=>{const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<1.5))||pick(WINDOWS);return job({node:wn,slide:false,clip:'hy_listen',dur:[12,22],reps:2,look:a=>root.position.clone().add(V(Math.sin(a.T*.35)*2.5,1.55,0)).addScaledVector(fwd(N[wn].face??0),5)});},
+  bolt:(o)=>{const P=window.__props||P3;const D=P&&P.door;return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.42,clip:'hy_bolt',dur:[3.2,3.6],
+   start:()=>{try{D.openTo&&D.openTo(0,.8);}catch(e){}},tick:a=>{if(a.T>1.6&&!a.done){a.done=1;try{D.boltTo&&D.boltTo(o&&o.lock===false?0:1,.3);}catch(e){}AU('bolt',D.boltKnob(V()));}}});},
+  radio:(o)=>{const P=window.__props||P3;const R=P&&P.radio;return job({pt:()=>PT('radio'),stand:.45,clip:'hy_radio',loop:true,dur:[30,60],
+   start:()=>{try{R.setOn(1);}catch(e){}},tick:(a,dt)=>{try{if(a.T<6)R.setTune(.3+.4*smooth(0,6,a.T));}catch(e){}},end:()=>{try{if(!(o&&o.keepOn))R.setOn(0);}catch(e){}}});},
+  telescope:(o)=>job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')}),
+  look:(o)=>job({node:'deck',slide:false,clip:has('hy_listen')?null:null,dur:[40,80],look:a=>root.position.clone().add(V(Math.sin(a.T*.22)*6,1.2+Math.sin(a.T*.13)*.6,8))}),
+  ledge:(o)=>{// sit on the edge of the deck with the legs over it
+   const node='deck';const a={step:'go',t:0,T:0};const dur=rnd(40,90);
+   goTo(node,()=>{const e=edgeFrom(node);if(!e){a.update=()=>endTask(false);return;}a.e=e;const yaw=Math.atan2(e.f.x,e.f.z);
+    const tgt=e.p.clone().addScaledVector(e.f,-.12);approachTo(a,V(tgt.x,0,tgt.z).addScaledVector(e.f,.5),.5,()=>{a.step='sit';a.t=0;H.face=yaw;a.hy0=bones.Hips.getWorldPosition(V()).y;
+     H.fit={mode:'hold',base:e.y,y:a.hy0};H.ground=false;play('hy_dangle',{fade:1.2});AU('sigh');});});
+   a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
+    if(a.step==='sit'){const k=smooth(0,1.3,a.t);H.fit.y=lerp(a.hy0,a.e.y+.06,k);if(a.t>1.3){a.step='work';a.t=0;}return;}
+    if(a.step==='work'){a.T+=dt;H.look=root.position.clone().add(V(Math.sin(a.T*.2)*5,.4+Math.sin(a.T*.11)*.5,0)).addScaledVector(a.e.f,6);H.lookW=.8;
+     if(a.T>dur){a.step='up';a.t=0;play(IDLE(),{fade:1.2});}return;}
+    if(a.step==='up'){const k=smooth(0,1.3,a.t);H.fit.y=lerp(a.e.y+.06,a.hy0,k);if(a.t>1.3){H.fit=null;H.ground=true;H.floorY=a.e.y;endTask();}}};
+   a.leave=cb=>{if(a.step==='sit'||a.step==='work'){a.step='up';a.t=0;play(IDLE(),{fade:1});const f=a.update;a.update=dt=>{f(dt);};const wait=()=>{if(H.fit&&a.step==='up'&&a.t<1.3){setTimeout(wait,100);}else{H.fit=null;H.ground=true;cb();}};wait();}else cb();};
+   return a;},
+  firewood:(o)=>{const X=window.__ground&&window.__ground.exits&&window.__ground.exits.forest;if(!X||!N.g_wood)return job({pt:()=>PT('woodpile'),stand:.5,clip:'hy_picklog',dur:[2,3]});
+   const a={step:'go'};goTo('g_wood',()=>{H.face=N.g_wood.face;a.step='pick';once('hy_picklog',{fade:.4,then:()=>{try{(window.__props||P3).grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}
+     H.carry='hy_carrylogs';const wp=PT('woodpile');const nn=wp?nearNode(wp):'kmid';goTo(nn||'kmid',()=>{a.step='drop';if(wp)H.face=Math.atan2(wp.x-root.position.x,wp.z-root.position.z);once('hy_droplogs',{fade:.4,then:()=>{
+      try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});endTask({ok:true,logs:3});}});});}});});
+   a.update=()=>{if(H.carry&&H.path.length&&has(H.carry)&&!H.ov)overlay(H.carry,{fade:.3,until:.98,weight:.9});};
+   a.leave=cb=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+ });
+ // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
+ const REPAIR={fix_shingle:{clip:'hy_shingle',tools:[['benchHammer','Right']],stand:.55,def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
+  fix_board:{clip:'hy_nailboard',tools:[['benchHammer','Right']],stand:.5,def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
+  fix_wall:{clip:'hy_patchwall',tools:[['benchHammer','Right']],stand:.45},
+  fix_rope:{clip:'hy_ropeknot',node:'gate',stand:.45,def:()=>N.gate&&N.gate.p.clone().add(V(0,.3,.6))},
+  fix_hinge:{clip:'hy_oilhinge',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
+  fix_window:{clip:'hy_window',stand:.4,def:()=>{const w=pick(WINDOWS);return N[w].p.clone().addScaledVector(fwd(N[w].face??0),.5).add(V(0,1.3,0));}},
+  fix_railing:{clip:'hy_railing',tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
+  clear_roof:{clip:'hy_clearleaves',stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
+  fix_chimney:{clip:'hy_chimney',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.chimneyTop?P.chimneyTop.clone().setY(Math.min(P.chimneyTop.y,root.position.y+1.6)):null;}}};
+ for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{const pos=o.pos?V(...o.pos):(R.def?R.def():null);
+  return job({pt:()=>pos,node:pos?null:R.node,stand:R.stand,clip:R.clip,loop:true,dur:[18,35],tools:R.tools||[],
+   tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});};
 
  // ---------- sitting, lying down, getting up ----------
  // H.fit places the root so the hip joints are at fit.y (seat or mattress + clearance) whatever the clip assumes;
@@ -597,6 +736,7 @@ export function createHero(ctx){
     H.linger=0;startTask(night&&h<21.5&&h>=20?'read':choose());}
    else if(night&&H.task!=='sleep'&&H.task!=='guard'&&(h>=21.5||h<5)){startTask('sleep');}}
   }
+  if(H.lad&&(!H.path.length||H.path[0].t!=='ladder')){H.lad=null;H.ground=true;}
   if(H.pending&&!H.trans&&!H.lad){const n=H.pending,o=H.pendingOpts;H.pending=null;H.pendingOpts=null;startTask(n,o);}
   // movement
   if(H.path.length){const step=H.path[0];if(step.t==='ladder')ladderStep(dt);else walkStep(dt);if(!H.path.length&&H.then){const f=H.then;H.then=null;H.state='work';f();}}
@@ -649,7 +789,7 @@ export function createHero(ctx){
   if(left<=0){H.ov=null;ov.then&&ov.then();return;}
   const tt=Math.min(ov.t,ov.T.dur);for(const k of ov.T.tracks){const v=k.it.evaluate(tt);_ovq.fromArray(v);k.b.quaternion.slerp(_ovq,ov.w*(k.spine&&H.path.length?.6:1));}}
  // ---------- start anywhere: drop him into the middle of any activity (used for a random start, any time of day) ----------
- function resetBody(){for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
+ function resetBody(){H.lad=null;H.path=[];H.stk=null;for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
   if(bookObj&&bookHome&&bookObj.parent!==bookHome.parent){bookHome.parent.add(bookObj);bookObj.position.copy(bookHome.pos);bookObj.quaternion.copy(bookHome.quat);}
   if(H.inBed)bedPress(false);
   Object.assign(H,{path:[],then:null,wait:null,swing:null,bedB:null,edgeHold:null,lad:null,slide:null,once:null,trans:false,seated:null,inBed:false,fit:null,ground:true,v:0,av:0,look:null,lookW:0,pending:null,linger:0,turnStep:false});
@@ -670,7 +810,7 @@ export function createHero(ctx){
  spawn('read');
 
  return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
-  setBrain:b=>{brain=b||null;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
+  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }

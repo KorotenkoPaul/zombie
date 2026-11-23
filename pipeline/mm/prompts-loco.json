@@ -1,0 +1,11 @@
+{
+ "quickstop": [4, "A person walks forward at a normal brisk pace and stops in one step, both feet together, standing still."],
+ "quickstop2": [4, "A person walks briskly forward, then stops quickly with a short step and stands relaxed."],
+ "startturnL": [4, "A person standing still turns to the left and starts walking forward in the new direction in one smooth motion."],
+ "startturnR": [4, "A person standing still turns to the right and starts walking forward in the new direction in one smooth motion."],
+ "turnback": [5, "A person standing still turns around to face behind and walks away at a normal pace."],
+ "walkstopturn": [5, "A person walks forward, stops and turns ninety degrees to the right to face a wall, then stands still."],
+ "startwalk": [4, "A person standing relaxed starts walking forward at a normal brisk pace."],
+ "walkstopgrab": [5, "A person walks forward to a ladder, stops in front of it and grabs a rung with both hands at chest height."],
+ "stepoff": [4, "A person standing at the top of a ladder steps forward onto the floor and walks away at a normal pace."]
+}
