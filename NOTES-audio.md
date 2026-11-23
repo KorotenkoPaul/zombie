@@ -129,3 +129,12 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
 - Sleep: each night has its own sleeper. On 55 % of nights he snores, in spells of 1.5–5 minutes with quiet stretches of 2–7 minutes between. Outside the snoring spells he takes a slow synth breath every 4–5.5 s (in 1.4 s, a pause, out 2 s, band-passed around 520 Hz, very quiet), and only when the camera is within 8 m of the bed. He still turns over every 35–90 s.
 - Awake: when he stands still and the camera is within 3.5 m of him, he breathes softly, a faster version of the same breath every 3–4 s.
 - The blind QA heard the rings as curtain rings on a rod and the breath as slow, soft breathing.
+
+## Round 18: sleep check and a second full-day pass
+- Sleep was checked live by reloading until the random start put the hero in bed (2:00). With the camera by the bed, the slow synth breaths play every 4–5 s. Snoring spells follow the per-night draw.
+- Full day on the phone profile, after rounds 11–17:
+  - Every hour falls between −52 and −31 dB RMS, with short-term peaks at −26 dB or below.
+  - The longest silence is 8.6 s.
+  - The one point over target was the owl at 25 m: −18.8 dB short-term. Owl volume went from .5 to .32 (−4 dB).
+  - 1–2 a.m. sat at about −51 dB. Autumn crickets went from .3 to .4 so the deep night is quiet but never empty.
+- The curtains are animated by lights.js (dusk half-drawn, lockdown shut). Lights has the `curtain_*` names to call.

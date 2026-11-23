@@ -4,7 +4,7 @@ import {NodeIO} from '@gltf-transform/core';import {ALL_EXTENSIONS} from '@gltf-
 const io=new NodeIO().registerExtensions(ALL_EXTENSIONS);const d=await io.read(process.argv[2]);
 const p=d.getRoot().listMeshes()[0].listPrimitives()[0];const P=p.getAttribute('POSITION').getArray(),UV=p.getAttribute('TEXCOORD_0').getArray(),I=p.getIndices().getArray();
 const img=p.getMaterial().getBaseColorTexture().getImage();const {data,info}=await sharp(Buffer.from(img)).raw().toBuffer({resolveWithObject:true});
-const RES=.0008,X0=-.1,X1=.1,Y0=1.40,Y1=1.62;const W=Math.round((X1-X0)/RES),H=Math.round((Y1-Y0)/RES);
+const RES=+(process.env.RES||.0008),X0=-(process.env.XW||.1),X1=+(process.env.XW||.1),Y0=+(process.env.Y0||1.40),Y1=+(process.env.Y1||1.62);const W=Math.round((X1-X0)/RES),H=Math.round((Y1-Y0)/RES);
 const tris=[];for(let t=0;t<I.length;t+=3){const a=I[t],b=I[t+1],c=I[t+2];if(P[a*3+1]>Y0-.02&&P[a*3+2]>0)tris.push(t);}
 console.log('tris',tris.length,W,H);
 const out=Buffer.alloc(W*H*3);const hits=new Float32Array(W*H*6).fill(NaN);

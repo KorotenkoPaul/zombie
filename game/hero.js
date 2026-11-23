@@ -281,15 +281,22 @@ export function createHero(ctx){
  function armIK(side,target,pole,w){ik2(bones[side+'Arm'],bones[side+'ForeArm'],bones[side+'Hand'],target,pole,w,false);}
  // head and neck turn toward a point (smoothed, limited like a real neck)
  const lookS={yaw:0,pitch:0};
- function lookAt(dt){const Hd=bones.Head,Nk=bones.Neck;if(!Hd||!Nk)return;let ty=0,tp=0;const w=H.lookW;
-  if(H.look&&w>.01){const hp=Hd.getWorldPosition(V());const d=H.look.clone().sub(hp);const yaw=root.rotation.y;const local=rotY(d,-yaw);ty=clamp(Math.atan2(local.x,local.z),-1.1,1.1)*w;tp=clamp(Math.atan2(-d.y,Math.hypot(d.x,d.z)),-.6,.7)*w;
-   // remove what the animation already does with the head
-   const hq=Hd.getWorldQuaternion(new THREE.Quaternion());const hf=V(0,0,1).applyQuaternion(hq);const hl=rotY(hf,-yaw);ty-=Math.atan2(hl.x,hl.z)*w;tp-=Math.atan2(-hl.y,Math.hypot(hl.x,hl.z))*w;}
-  const k=1-Math.exp(-dt*4);lookS.yaw=lerp(lookS.yaw,clamp(ty,-1.2,1.2),k);lookS.pitch=lerp(lookS.pitch,clamp(tp,-.7,.7),k);
+ // head look with human limits: the head never turns more than ~70 deg from the pelvis (neck + chest together),
+ // whatever the clip or the look target asks; the turn is shared chest 25% / neck 35% / head 40%, so no owl turns
+ const HEADMAX=1.22,LOOKMAX=1.05;
+ function lookAt(dt){const Hd=bones.Head,Nk=bones.Neck,Ch=bones.Spine2;if(!Hd||!Nk)return;if(window.__noLookClamp&&!H.look)return;
+  const hf=hipsFwd();const hy=Math.atan2(hf.x,hf.z);
+  const hq=Hd.getWorldQuaternion(new THREE.Quaternion());const fw=V(0,0,1).applyQuaternion(hq);const hl=rotY(fw,-hy);const ah=Math.atan2(hl.x,hl.z),ap=Math.atan2(-hl.y,Math.hypot(hl.x,hl.z));
+  let ty=0,tp=0;const w=H.look?H.lookW:0;
+  if(H.look&&w>.01){const hp=Hd.getWorldPosition(V());const d=H.look.clone().sub(hp);const local=rotY(d,-hy);
+   const want=clamp(Math.atan2(local.x,local.z),-LOOKMAX,LOOKMAX),wp=clamp(Math.atan2(-d.y,Math.hypot(d.x,d.z)),-.6,.7);ty=(want-ah)*w;tp=(wp-ap)*w;}
+  // whatever the result, the final head yaw stays inside the human range
+  const fin=ah+ty;if(fin>HEADMAX)ty-=fin-HEADMAX;else if(fin<-HEADMAX)ty+=-HEADMAX-fin;
+  const k=1-Math.exp(-dt*4);lookS.yaw=lerp(lookS.yaw,clamp(ty,-1.6,1.6),k);lookS.pitch=lerp(lookS.pitch,clamp(tp,-.7,.7),k);
   if(Math.abs(lookS.yaw)+Math.abs(lookS.pitch)<1e-3)return;
-  const yawQ=new THREE.Quaternion().setFromAxisAngle(YAX,0);
-  for(const [b,share] of [[Nk,.4],[Hd,.6]]){const pw=b.parent.getWorldQuaternion(new THREE.Quaternion());const right=V(1,0,0).applyAxisAngle(YAX,root.rotation.y);
-   const q=new THREE.Quaternion().setFromAxisAngle(YAX,lookS.yaw*share).multiply(new THREE.Quaternion().setFromAxisAngle(right,lookS.pitch*share));
+  const right=V(1,0,0).applyAxisAngle(YAX,hy);
+  for(const [b,share] of [[Ch,.25],[Nk,.35],[Hd,.4]]){if(!b)continue;const pw=b.parent.getWorldQuaternion(new THREE.Quaternion());
+   const q=new THREE.Quaternion().setFromAxisAngle(YAX,lookS.yaw*share).multiply(new THREE.Quaternion().setFromAxisAngle(right,lookS.pitch*(b===Ch?0:share/.75)));
    b.quaternion.premultiply(pw.clone().invert().multiply(q).multiply(pw));b.updateMatrixWorld(true);}}
 
  // ---------- walking: smooth curves, speed matched to the stride, turning steps ----------
@@ -908,7 +915,7 @@ export function createHero(ctx){
   if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   bedHand();bedLegClear(dt);
   if(act&&act.post)act.post(dt);
-  lookAt(dt);duck(dt);}
+  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);}
 
  // ---------- overlay: an upper-body clip layered over whatever the legs do (stretch while walking off, scratch the head, sip...) ----------
  const UPPER=/^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|LeftArm|LeftForeArm|LeftHand|RightShoulder|RightArm|RightForeArm|RightHand)$/;

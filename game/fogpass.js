@@ -60,7 +60,7 @@ void main(){fpMain();gl_FragColor.a*=fpOcc();
   });
   const fsq = new FullScreenQuad(blend);
 
-  const api = { enabled: !!MOBILE, scale: 0.5 };  // on by default on phones (the fill-rate problem); desktop keeps the old way
+  const api = { enabled: !!MOBILE, scale: 0.5, merged: false, merge: null, fogTexture: rt.texture };  // on by default on phones (the fill-rate problem); desktop keeps the old way
   function setLayers(on) {
     for (const m of meshes) { if (on) m.layers.set(FOG_LAYER); else m.layers.set(0); }
     if (!on) for (const u of envU) { const sv = saved.get(u.tDepth); if (sv) { u.tDepth.value = sv[0]; u.uRes.value.copy(sv[1]); } }
@@ -84,6 +84,10 @@ void main(){fpMain();gl_FragColor.a*=fpOcc();
       FP.fpDepth.value = null;
       camera.layers.mask = mask; scene.background = bg; rd.shadowMap.autoUpdate = su; rd.setClearColor(col, cc);
       // lay it over the frame (no clear: keep the frame and its depth for the passes after this one)
+      // [ENV] merged mode (phones): the output pass composites the fog texture itself (one full-screen pass less);
+      // api.merge() is set by index.html and says whether that is safe this frame (no pass between this one and the output)
+      api.merged = !!(api.merge && api.merge() && !this.renderToScreen);
+      if (api.merged) { rd.setRenderTarget(read); rd.autoClear = ac; return; }
       rd.setRenderTarget(this.renderToScreen ? null : read); fsq.render(rd); rd.autoClear = ac;
     }
     setSize() {}
