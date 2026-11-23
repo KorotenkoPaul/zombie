@@ -39,7 +39,8 @@ const NEEDS = {
   tidy:      { drift: .07,  label: 'Порядок' },
   comfort:   { drift: .09,  label: 'Уют' },        // cold, damp, wants to be cosy (faster at night)
   curiosity: { drift: .16,  label: 'Любопытство' },
-  safety:    { drift: .05,  label: 'Тревога' },     // shelter mood: grows at dusk, at night and in the rain; bolt, listening, radio calm it
+  safety:    { drift: .05,  label: 'Тревога' },
+  wear:      { drift: .035, label: 'Износ дома' },  // the house wears out; faster in rain and wind; repairs fix it     // shelter mood: grows at dusk, at night and in the rain; bolt, listening, radio calm it
 };
 
 // what each activity gives per real second of doing it, where it happens, how long he tends to do it
@@ -49,7 +50,7 @@ const ACTS = {
   wash:   { room: 'kitchen',  node: 'sink',      gives: { tidy: -.06 },                             dur: [8, 15],  label: 'моет посуду' },
   read:   { room: 'bedroom',  node: 'chair_app', gives: { fun: -.025, comfort: -.02 },              dur: [22, 40], label: 'читает' },
   craft:  { room: 'workshop', node: 'bench',     gives: { fun: -.04, tidy: .004 },                  dur: [14, 26], label: 'мастерит' },
-  look:   { room: 'outside',  node: 'deck',      gives: { curiosity: -.06, fun: -.01, comfort: .006 }, dur: [8, 16], label: 'смотрит вдаль' },
+  look:   { room: 'outside',  node: 'deck',      gives: { curiosity: -.06, fun: -.01, comfort: .006 }, dur: [16, 30], label: 'смотрит вдаль' },
   window: { room: null,       node: null,        gives: { curiosity: -.05 },                        dur: [7, 13],  label: 'смотрит в окно' },
   sleep:  { room: 'bedroom',  node: 'bed_app',   gives: {},                                         dur: [1e9, 1e9], label: 'спит' },
 };
@@ -85,6 +86,16 @@ const EXTRA = {
   radio:     { room: null,       give: { safety: -.3, fun: -.2, curiosity: -.15 }, label: 'слушает радио', when: h => (h >= 19 && h < 22.5 ? .45 : -.2) },
   telescope: { room: 'outside',  give: { curiosity: -.45, safety: -.1 }, label: 'смотрит в подзорную трубу', when: h => ((h >= 6 && h < 8) || (h >= 17.5 && h < 20) ? .35 : 0) },
   ledge:     { room: 'outside',  give: { comfort: -.15, curiosity: -.2, fun: -.1 }, label: 'сидит на краю площадки', when: h => (h >= 16 && h < 19.5 ? .3 : -.2) },
+  // house repairs (Pavel): each go takes the wear down; spread over every corner of the house
+  fix_shingle: { room: 'outside',  give: { wear: -.3, fun: -.05 }, label: 'чинит черепицу',     when: h => (h >= 9 && h < 17 ? .3 : -1.5) },
+  fix_board:   { room: null,       give: { wear: -.25 },           label: 'меняет доску в полу', when: h => (h >= 8 && h < 18 ? .25 : -.8) },
+  fix_wall:    { room: null,       give: { wear: -.2, comfort: -.05 }, label: 'латает стену',   when: h => (h >= 8 && h < 18 ? .25 : -.8) },
+  fix_rope:    { room: 'outside',  give: { wear: -.15, safety: -.05 }, label: 'перевязывает узлы на лестнице', when: h => (h >= 8 && h < 18 ? .05 : -1) },
+  fix_hinge:   { room: null,       give: { wear: -.15, safety: -.08 }, label: 'смазывает петли', when: h => (h >= 16 && h < 21 ? .15 : 0) },
+  fix_window:  { room: null,       give: { wear: -.2, comfort: -.05 }, label: 'чинит окно',     when: h => (h >= 9 && h < 18 ? .05 : -.6) },
+  fix_railing: { room: 'outside',  give: { wear: -.2, safety: -.05 }, label: 'чинит перила',    when: h => (h >= 9 && h < 17 ? .05 : -1.2) },
+  clear_roof:  { room: 'outside',  give: { wear: -.15, tidy: -.05 }, label: 'сметает листья с крыши', when: h => (h >= 9 && h < 17 ? .3 : -1.5) },
+  fix_chimney: { room: 'outside',  give: { wear: -.25, comfort: -.05 }, label: 'чистит трубу',  when: (h, c) => (h >= 10 && h < 16 && !c.ovenLit ? .1 : -2) },
   firewood:  { room: 'outside',  give: { comfort: -.05 }, label: 'носит дрова снизу',     when: (h, c) => (c.logs <= 1 ? .5 : -.4) + (h >= 8 && h < 18 ? 0 : -1) },
 };
 const isN = h => !(h >= 6 && h < 20);
@@ -105,6 +116,7 @@ const MICRO = {
 };
 
 export function createBrain({ HH, lights, hour, isNight }) {
+  const windy = () => { try { const w = window.__wind; const g = w && (w.strength ? w.strength() : w.gust ? w.gust() : 0); return Math.max(0, Math.min(1, +g || 0)); } catch (e) { return 0; } };
   const raining = () => { try { const w = window.__wind; return !!(w && w.raining && w.raining()); } catch (e) { return false; } };
   const H = HH.hero || HH.H;
   const has = c => !!(HH.actions && HH.actions[c]);
@@ -116,7 +128,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   const WET = { cook: .1, tea: .1, wash: .25, dishes: .25 };   // water each use takes from the tap (and sends down the drain)
   const ECON = !!(HH.hasTask && HH.hasTask('trip') && HH.hasTask('eat'));
   const showStock = () => { try { const P = window.__props; P && P.fridge && P.fridge.setStock && P.fridge.setStock(stock.meat); P && P.woodpile && P.woodpile.setCount && P.woodpile.setCount(stock.logs); } catch (e) {} };
-  const need = { hunger: .35, energy: .8, fun: .4, tidy: .25, comfort: .3, curiosity: .3, safety: .2 };
+  const need = { hunger: .35, energy: .8, fun: .4, tidy: .25, comfort: .3, curiosity: .3, safety: .2, wear: .25 };
   let mood = .6;
   let lastH = hour();
   let cur = null;           // {name, t, dur, min, opts}
@@ -145,6 +157,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       let r = NEEDS[k].drift;
       if (asleep) r = k === 'energy' ? .16 : k === 'hunger' ? .03 : k === 'fun' || k === 'curiosity' ? -.05 : 0;
       if (k === 'comfort' && isNight(h)) r *= 1.8;
+      if (k === 'wear') r = asleep ? .03 : .06 * (raining() ? 2.5 : 1) * (1 + windy());
       if (k === 'safety') r = asleep ? -.04 : (isNight(h) ? .12 : h >= 17 ? .08 : .015) * (raining() ? 1.5 : 1);
       if (k === 'energy' && !asleep && H.state === 'walk') r *= 1.4;
       need[k] = clamp(need[k] + r * dh);
@@ -197,6 +210,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     s -= travel(A.node) * (.15 + (1 - need.energy) * .25);
     // cabin fever: the longer he stays in one room, the more the other rooms call
     if (A.room && A.room !== roomNow) s += Math.min(.7, roomT / 70);
+    else if (A.room && A.room === roomNow) s += Math.max(0, .4 - roomT / 120);   // first chain what is at hand in this room
     const i = recent.indexOf(name);
     if (i === 0) s -= .9; else if (i === 1) s -= .35; else if (i === 2) s -= .15;
     if (mood < .35 && (name === 'read' || name === 'tea')) s += .25;   // low mood: comfort first
@@ -229,7 +243,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (E.room === 'outside' && raining()) return null;
     let s = 0, top = '', topV = 0;
     for (const k in E.give) { const g = -E.give[k]; if (g <= 0) continue; const v = need[k] ** 2 * g * 4; s += v; if (v > topV) { topV = v; top = k; } }
-    s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty() });
+    s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
+    if (E.give.wear && need.wear > .55) s += (need.wear - .55) * 3;   // the house needs fixing: it nags him
+    if (E.room && E.room === roomNow) s += Math.max(0, .35 - roomT / 120); else if (!E.room) s += .15;   // things at hand first
     const i = recent.indexOf(n); if (i === 0) s -= 2; else if (i === 1) s -= .5; else if (i >= 2) s -= .2;
     return { name: n, s: s + rnd(0, .3), top: top || '' };
   }
@@ -303,7 +319,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // reading in the dark: the candle lights itself when he sits down (lights.js); only putting it out is his job
     if (st.task === 'read' && hasCandle && lights.auto) lights.auto('candle');
     const A = ACTS[st.task];
-    cur = { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? A.dur[0] * .6 : 0 };
+    cur = { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? Math.max(8, A.dur[0] * .8) : 0 };
     if (A) { recent.unshift(st.task); recent.length = 4; }
     setGait();
     HH.startTask(st.task, st.opts);
@@ -352,7 +368,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const h = v.hour;
     // the body has not caught up with the last request yet (or the game took over: guard, repair): wait
     if (v.task && expected && v.task !== expected) return;
-    if (cur) cur.t += dt;
+    // time at the activity counts only once he is there; the walk there makes him stay longer (no climbing up just to climb down)
+    if (cur) { if (v.step && v.step !== 'go') cur.t += dt; else cur.walk = (cur.walk || 0) + dt; }
     // a task the brain did not start: the game started him reading, or the player asked for something.
     // Adopt it and respect it: a direct request wins over needs (he only drops it if he is falling asleep on his feet)
     if (v.task && !cur && ACTS[v.task]) {
@@ -401,12 +418,15 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // commitment: stay until the need is met or he has had enough; leave early only for something urgent
     const A = ACTS[cur.name];
     if (!A) return;
-    let done = cur.t > cur.dur;
+    const stay = cur.min + (cur.walk || 0) * .6;   // minimum dwell: base + 60% of the walk it took
+    let done = cur.t > Math.max(cur.dur, stay);
     const main = Object.keys(A.gives).sort((a, b) => A.gives[a] - A.gives[b])[0];
-    if (main && cur.t > cur.min && need[main] < .08) done = true;
+    if (main && cur.t > stay && need[main] < .08) done = true;
     if (cur.cmd) { if (need.energy < .03 || (h >= bedTime + 1.5 && h < 23.9) || (h < 4 && h > 1)) done = true; else done = cur.t > cur.dur; }
-    else if (cur.name !== 'sleep' && (cur.t > cur.min * .5 || h >= bedTime || h < 5)) {
-      const urgent = (need.hunger > .9 && cur.name !== 'cook') || (need.energy < .08) || (h >= bedTime && h < 23.9) || (h < 5);
+    else if (cur.name !== 'sleep') {
+      // early exits: only after the minimum dwell, unless it is really pressing
+      const pressing = (need.hunger > .97 && cur.name !== 'cook') || need.energy < .03 || (h >= bedTime + .6 && h < 23.9) || (h < 4.5);
+      const urgent = pressing || (cur.t > stay && ((need.hunger > .9 && cur.name !== 'cook') || need.energy < .08 || (h >= bedTime && h < 23.9) || h < 5));
       if (urgent) done = true;
     }
     if (done) choose(h);
