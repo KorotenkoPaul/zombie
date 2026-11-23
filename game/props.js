@@ -154,11 +154,25 @@ function makeMaterials(renderer) {
 
 // ---------------- merge static meshes per material (keeps draw calls low) ----------------
 const STD2 = new Map(); const std2 = (c) => { if (!STD2.has(c)) STD2.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: .85 })); return STD2.get(c); }; // shared per colour: fewer materials, fewer merged meshes
-function bake(group) {
+// perf: every colour-only standard material is drawn through one shared vertex-coloured material per (roughness band, metal or
+// not, env-lit or not, side). bake() and the global static merge both use it, so most objects end up one or two draw calls.
+const PLAINV = new Map();
+// roughness rides in the vertex colour's alpha (opaque materials ignore alpha), so one material covers every roughness
+function plainOf(m) {
+  if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.polygonOffset || m.alphaTest || m.map || m.bumpMap || m.normalMap || m.transparent || m.vertexColors || m.userData.keep || m.emissive.getHex() !== 0) return null;
+  const mt = m.metalness > .5 ? 1 : 0; const key = `vc|${mt}|${m.side}|${m.flatShading ? 1 : 0}`;
+  if (!PLAINV.has(key)) { const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: mt ? .85 : 0, side: m.side, flatShading: !!m.flatShading }); pm.userData.plainV = true;
+    pm.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);'); };
+    pm.customProgramCacheKey = () => 'plainV'; PLAINV.set(key, pm); }
+  return PLAINV.get(key); }
+function colorize(g, c, a) { const n = g.attributes.position.count, k = a === undefined ? 3 : 4, ca = new Float32Array(n * k); for (let i = 0; i < n; i++) { ca[i * k] = c.r; ca[i * k + 1] = c.g; ca[i * k + 2] = c.b; if (k === 4) ca[i * k + 3] = a; } g.setAttribute('color', new THREE.Float32BufferAttribute(ca, k)); }
+// bake(group, keepCast): merge the group's static meshes (not inside a userData.live node, not hidden) into one mesh per material.
+// keepCast: also split by each part's own castShadow flag (the late pass, after small parts were set not to cast).
+function bake(group, keepCast = false) {
   group.updateMatrixWorld(true); const inv = group.matrixWorld.clone().invert(); const by = new Map(); const kill = [];
-  group.traverse(o => { if (!o.isMesh || o.userData.live) return; let p = o.parent; while (p && p !== group) { if (p.userData.live) return; p = p.parent; } let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); if (!by.has(o.material)) by.set(o.material, []); by.get(o.material).push(g); kill.push(o); });
-  for (const o of kill) o.removeFromParent();
-  for (const [mat, gs] of by) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = m.receiveShadow = true; group.add(m); gs.forEach(g => g.dispose()); }
+  group.traverse(o => { if (!o.isMesh || o === group || Array.isArray(o.material) || o.userData.live || (keepCast && o.material.userData.keep) || o.isInstancedMesh || o.isSkinnedMesh || !o.visible || o.userData.keepMesh) return; if (o.morphTargetInfluences) return; let p = o.parent; while (p && p !== group) { if (p.userData.live || !p.visible) return; p = p.parent; } let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); let mat = o.material; const pm = plainOf(mat); if (pm) { colorize(g, mat.color, mat.roughness); mat = pm; } else if (mat.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1)); const key = keepCast ? mat.uuid + (o.castShadow ? 's' : 'n') + (o.receiveShadow ? 'r' : '') : mat.uuid; if (!by.has(key)) by.set(key, { mat, cast: o.castShadow, rec: o.receiveShadow, gs: [], os: [] }); by.get(key).gs.push(g); by.get(key).os.push(o); });
+  for (const e of by.values()) { if (keepCast && e.gs.length < 2) { e.gs[0].dispose(); e.skip = true; continue; } e.os.forEach(o => o.removeFromParent()); }
+  for (const { mat, cast, rec, gs, skip } of by.values()) { if (skip) continue; const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = keepCast ? cast : true; m.receiveShadow = keepCast ? rec : true; group.add(m); gs.forEach(g => g.dispose()); }
   return group;
 }
 
@@ -683,12 +697,12 @@ function fridge() {
 
 function fryPan() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.1, 0], [.112, .035], [.106, .037], [.094, .006], [0, .006]], 28), M.iron); rod(g, V(.105, .03, 0), V(.27, .05, 0), .011, .009, M.iron, 8); add(g, rb(.09, .022, .026, .008), M.woodDark, .24, .05, 0, 0, 0, -.1); return g; }
 function steak() { const X = mx(), g = new THREE.Group(); const sh = new THREE.Shape(); sh.moveTo(-.06, -.03); sh.quadraticCurveTo(-.075, .035, -.02, .042); sh.quadraticCurveTo(.05, .05, .068, .01); sh.quadraticCurveTo(.07, -.04, .0, -.045); sh.quadraticCurveTo(-.05, -.05, -.06, -.03);
-  const m = new THREE.MeshStandardMaterial({ color: X.meat.color.clone(), roughness: .45 }); add(g, EX(sh, .016, .004), m, 0, .012, 0, -Math.PI / 2); add(g, new THREE.TorusGeometry(.045, .006, 5, 18, 2.2), X.fat, -.004, .012, .0, Math.PI / 2, 0, 2.6); g.userData.mat = m; return g; }
+  const m = new THREE.MeshStandardMaterial({ color: X.meat.color.clone(), roughness: .45 }); add(g, EX(sh, .016, .004), m, 0, .012, 0, -Math.PI / 2); add(g, new THREE.TorusGeometry(.045, .006, 5, 18, 2.2), X.fat, -.004, .012, .0, Math.PI / 2, 0, 2.6); m.userData.keep = true; g.userData.mat = m; return g; }
 function plateOfFood() { const X = mx(), g = new THREE.Group(); add(g, lathe([[0, 0], [.07, 0], [.095, .013], [.1, .018], [.06, .007], [0, .007]], 28), M.ceramic);
   const food = []; const st = steak(); st.scale.setScalar(.85); st.position.set(-.02, .0, .01); g.add(st); food.push(st);
   for (let i = 0; i < 4; i++) { const p = add(g, new THREE.SphereGeometry(.018, 8, 6), X.potato, .045 + rr(-.012, .012), .017, -.04 + i * .022); p.scale.set(1.2, .8, 1); food.push(p); }
   for (let i = 0; i < 3; i++) { const c = add(g, new THREE.CylinderGeometry(.012, .012, .006, 10), X.carrot, -.04 + i * .018, .012, -.05); food.push(c); }
-  g.userData.food = food; return g; }
+  food.forEach(f => f.userData.live = true); g.userData.food = food; return g; }
 function choppingBoard() { const X = mx(), g = new THREE.Group(); W(g, .28, .022, .2, 0, .011, 0, { mat: M.woodLight, r: .008 }); add(g, new THREE.CylinderGeometry(.012, .012, .024, 12), M.darkInside, .12, .011, 0);
   { const c = lathe([[0, 0], [.016, .01], [.017, .05], [.011, .11], [0, .13]], 12); add(g, c, X.carrot, .04, .039, .045, 0, 0, Math.PI / 2); add(g, new THREE.ConeGeometry(.01, .045, 6), X.leaf, .062, .039, .045, 0, 0, -Math.PI / 2); }
   for (const [x, z] of [[.08, -.04], [.1, -.02], [.06, -.06]]) add(g, new THREE.CylinderGeometry(.015, .015, .007, 12), X.carrot, x, .0255, z, 0, 0, rr(-.1, .1));
@@ -943,7 +957,7 @@ export function buildProps(ctx) {
     const wm = new THREE.MeshStandardMaterial({ color: 0x3A5A68, roughness: .08, metalness: .1, envMap: M.env, envMapIntensity: 1.2, transparent: true, opacity: .82 });
     const dm = new THREE.MeshStandardMaterial({ color: 0x5A5440, roughness: .15, metalness: .05, envMap: M.env, envMapIntensity: .8, transparent: true, opacity: .9 });
     const H0 = .3, r0 = H0 * .5, r1 = H0 * .62;
-    const mkB = (metal, mat) => { const g = new THREE.Group(); const b = bucket(H0, metal); g.add(b); const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 28), mat); disc.rotation.x = -Math.PI / 2; disc.renderOrder = 2; g.add(disc); g.userData.water = { disc, level: 0 }; g.userData.grip = V(0, H0 + .05, 0); return g; };
+    const mkB = (metal, mat) => { const g = new THREE.Group(); const b = bucket(H0, metal); g.add(b); const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 28), mat); disc.rotation.x = -Math.PI / 2; disc.renderOrder = 2; disc.userData.live = true; g.add(disc); g.userData.water = { disc, level: 0 }; g.userData.grip = V(0, H0 + .05, 0); return g; };
     // shelf + supply bucket with a spigot and a hose down to the tap
     const shX = -1.9, shY = KT + 1.28, shZ = 1.03, shD = .42;
     { const sh = new THREE.Group(); W(sh, .3, .035, shD, 0, 0, shD / 2, { mat: M.woodLight }); for (const s of [-1, 1]) { const b = new THREE.Shape(); b.moveTo(0, 0); b.lineTo(.3, 0); b.quadraticCurveTo(.1, -.06, 0, -.26); b.lineTo(0, 0); add(sh, EX(b, .03, .004), M.woodDark, s * .11, -.018, .0, 0, -Math.PI / 2, 0); } bake(sh); sh.position.set(shX, shY, shZ); scene.add(sh); }
@@ -955,9 +969,9 @@ export function buildProps(ctx) {
     const db = mkB(false, dm); tool('drainBucket', db, cn, .23, .08, .04);
     // tap stream and drips
     const sm = new THREE.MeshStandardMaterial({ color: 0xBFD8E4, roughness: .05, envMap: M.env, transparent: true, opacity: .55, depthWrite: false });
-    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; scene.add(stream);
-    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; scene.add(pourS);
-    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; cn.add(drip);
+    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; stream.userData.live = true; scene.add(stream);
+    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; pourS.userData.live = true; scene.add(pourS);
+    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; drip.userData.live = true; cn.add(drip);
     const ws = { clean: .7, dirty: .15, tap: false, drainT: 0, dripT: 0, pour: null };
     const setLvl = (b, k) => { const W2 = b.userData.water; W2.level = clamp01(k); const r = r0 + (r1 - r0) * W2.level - .012; W2.disc.visible = W2.level > .02; W2.disc.scale.set(r, r, 1); W2.disc.position.y = .015 + (H0 - .03) * W2.level; };
     // slosh: the water surface stays level in world space and rocks against the bucket's acceleration while carried
@@ -986,7 +1000,7 @@ export function buildProps(ctx) {
     if (potO) { potO.removeFromParent(); }
     const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); }
     tool('pot', bake(pg), st, .19, .93, .13); tool('ladle', bake(ladle(.3)), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
-    const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; fp.add(stk);
+    const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; stk.userData.live = true; fp.add(stk);
     const raw = new THREE.Color(0xA2343A), done = new THREE.Color(0x6A3A22);
     // the pan: setMeat(true/false) puts a steak in it, setCook(0..1) browns it
     out.pan = { obj: fp, setMeat(on) { stk.visible = !!on; }, setCook(k) { stk.userData.mat.color.copy(raw).lerp(done, clamp01(k)); } };
@@ -1098,7 +1112,7 @@ export function buildProps(ctx) {
       const dx = (x - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d > 1.35) continue;
       const sink = d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008; a[i + 1] = y - sink * press.k; }
     P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
-  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => {
+  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
@@ -1142,18 +1156,39 @@ export function buildProps(ctx) {
     const roots = []; for (let i = nScene0; i < scene.children.length; i++) { const o = scene.children[i]; if (KEEP.has(o.name) || o.userData.live || o.userData.book || Object.values(out.tools).includes(o)) continue; roots.push(o); }
     const by = new Map(); const kill = []; const PLAIN = new Map(); out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
-      let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
-      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0;
-      // plain colour-only materials share one vertex-coloured material per (roughness, metalness, env, side): far fewer draw calls
-      if (m0.isMeshStandardMaterial && !m0.map && !m0.bumpMap && !m0.normalMap && !m0.transparent && !m0.vertexColors && m0.emissive.getHex() === 0 && !out._liveMats.has(m0)) {
-        key = `plain|${m0.roughness.toFixed(1)}|${m0.metalness.toFixed(1)}|${m0.envMap ? (m0.envMapIntensity || 1).toFixed(1) : 0}|${m0.side}|${cast ? 's' : 'n'}`;
-        if (!PLAIN.has(key)) PLAIN.set(key, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: +m0.roughness.toFixed(1), metalness: +m0.metalness.toFixed(1), envMap: m0.envMap || null, envMapIntensity: m0.envMapIntensity || 1, side: m0.side })); mat = PLAIN.get(key);
-        const n = g.attributes.position.count, ca = new Float32Array(n * 3); for (let i = 0; i < n; i++) { ca[i * 3] = m0.color.r; ca[i * 3 + 1] = m0.color.g; ca[i * 3 + 2] = m0.color.b; } g.setAttribute('color', new THREE.Float32BufferAttribute(ca, 3)); }
+      let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
+      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0; const pm = out._liveMats.has(m0) ? null : plainOf(m0); if (pm) { colorize(g, m0.color, m0.roughness); mat = pm; key = pm.uuid + (cast ? 's' : 'n'); } else if (m0.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1));
       if (!by.has(key)) by.set(key, { mat, cast, gs: [] }); by.get(key).gs.push(g); kill.push(o); }); }
     for (const o of kill) o.removeFromParent();
     const sg = new THREE.Group(); sg.name = 'propsStatic'; for (const { mat, cast, gs } of by.values()) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = cast; m.receiveShadow = true; sg.add(m); gs.forEach(x => x.dispose()); } scene.add(sg); out.staticGroup = sg; }
   { const ws = V(); for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup) continue; r.updateMatrixWorld(true);
       r.traverse(o => { if (!o.isMesh || !o.castShadow || o.isInstancedMesh) return; if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); o.getWorldScale(ws); if (o.geometry.boundingSphere.radius * Math.max(ws.x, ws.y, ws.z) < CAST_R) o.castShadow = false; }); } }
+  // perf: the same merge inside every object that stays separate (kept furniture, live objects, tools): static parts by material
+  // (plain colours share one vertex-coloured material), keeping each part's shadow flags; anything the code moves or edits is a
+  // userData.live node and stays as it is, and a material that has a single part is left alone too.
+  { for (const m of Object.values(out.materials || {})) if (m) m.userData.keep = true; if (quiltMesh) quiltMesh.userData.live = true;
+    const deep = o => { bake(o, true); for (const c of o.children.slice()) walk(c); }, walk = c => { if (c.userData.live) deep(c); else for (const k of c.children.slice()) walk(k); };
+    for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup || r.userData.book || r.isLight) continue; deep(r); } }
+  // perf: every tool sitting at home (hooks, shelves, stove, bench) is drawn from one shared proxy mesh per material. Each tool
+  // has an id in a vertex attribute; when it leaves home (grabbed, easing back, its parent moved, hidden) its id is masked out of
+  // the proxy (vertices collapse) and its own meshes show again. Shadow-casting and live sub-parts always stay on the tool itself.
+  { const names = Object.keys(out.tools).slice(0, 64), uHide = { value: new Array(64).fill(0) }, by = new Map(), TP = []; const prox = new Map();
+    const proxMat = m => { if (prox.has(m)) return prox.get(m); const pm = m.clone(); const ob = m.onBeforeCompile, ck = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
+      pm.onBeforeCompile = (sh, r) => { if (ob && ob !== THREE.Material.prototype.onBeforeCompile) ob.call(m, sh, r); sh.uniforms.uHide = uHide;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
+      pm.customProgramCacheKey = () => ck + '|toolProxy'; prox.set(m, pm); return pm; };
+    names.forEach((name, i) => { const o = out.tools[name], h = o.userData.home; if (!h || !o.visible || o.userData.noProxy) return; o.updateMatrixWorld(true); const ms = [];
+      o.traverse(c => { if (!c.isMesh || c.castShadow || Array.isArray(c.material) || c.isInstancedMesh || c.isSkinnedMesh || !c.visible) return; const m = c.material; if (m.transparent || m.userData.keep || !m.isMeshStandardMaterial) return;
+        if (c !== o && c.userData.live) return; for (let q = c.parent; q && q !== o; q = q.parent) if (q.userData.live || !q.visible) return;
+        let g = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !m.vertexColors) g.deleteAttribute('color'); if (m.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1), m.userData.plainV ? 1 : undefined);
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(c.matrixWorld); g.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1));
+        const key = m.uuid + (g.attributes.color ? g.attributes.color.itemSize : 0); if (!by.has(key)) by.set(key, { m, gs: [] }); by.get(key).gs.push(g); ms.push(c); });
+      if (ms.length) { ms.forEach(c => c.visible = false); o.parent.updateMatrixWorld(true); TP.push({ i, o, h, ms, at: true, pm: o.parent.matrixWorld.clone() }); } });
+    const pg = new THREE.Group(); pg.name = 'toolProxy'; for (const { m, gs } of by.values()) { const mesh = new THREE.Mesh(mergeGeometries(gs, false), proxMat(m)); mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false; pg.add(mesh); gs.forEach(g => g.dispose()); }
+    scene.add(pg); out.toolProxy = pg;
+    const vis = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
+    out._toolProxyInfo = () => TP.map(t => t.o === undefined ? '' : (t.at ? 1 : 0)).join(''); out._toolProxyTick = () => { for (const t of TP) { const { o, h } = t; const at = o.parent === h.parent && !homing.has(o) && o.position.distanceToSquared(h.pos) < 1e-8 && Math.abs(o.quaternion.dot(h.quat)) > .999999 && Math.abs(o.scale.x - (h.scale || 1)) < 1e-5 && vis(o) && o.parent.matrixWorld.equals(t.pm);
+        if (at !== t.at) { t.at = at; uHide.value[t.i] = at ? 0 : 1; for (const c of t.ms) c.visible = !at; } } }; }
   out.surfaces.bed = bunk.userData.info.levels.map(l => ({ top: bunk.userData.floorY + l.top, x0: bunk.position.x + l.x0, x1: bunk.position.x + l.x1, z0: bunk.position.z + l.z0, z1: bunk.position.z + l.z1, headDir: '+x' }));
   return out;
 }
