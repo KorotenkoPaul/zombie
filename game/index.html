@@ -32,7 +32,7 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <div id="stage"></div>
 <div class="hud"><div class="grp"><span class="chip"><span id="ic">☀︎</span><span id="tod">День 1 · 08:00</span></span></div><div class="grp"><span class="chip" id="zc" hidden style="display:none">🧟 <span id="zn">0</span></span><span class="chip hearts" id="hearts" style="display:none">♥♥♥</span></div></div>
-<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button></div>
+<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button><button class="ib" id="bS" aria-label="Звук">🔊</button></div>
 <div class="hint" id="hint"><b>Веди пальцем</b> — повернуть вокруг дерева, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
 <div class="toast" id="toast"></div>
 <div class="load" id="load"><span id="loadTx">Загружаем лес…</span><i><b id="loadBar"></b></i></div>
@@ -392,7 +392,8 @@ function tone(f,d,v,type='sine',sl=1){const a=ac();if(!a)return;const o=a.create
 const sfx={hammer:()=>{burst(.06,'bandpass',1900,900,4,.4);tone(230,.07,.08,'triangle',.7)},bang:()=>{burst(.22,'lowpass',650,110,.8,.5);burst(.1,'bandpass',1300,500,3,.22)},crack:()=>{burst(.35,'bandpass',2400,500,1.4,.45);burst(.18,'highpass',3200,1500,1,.2)},
  bow:()=>{burst(.15,'bandpass',600,2600,2,.3);tone(140,.12,.08,'triangle',1.6)},thunk:()=>{burst(.12,'lowpass',900,200,1,.4);tone(180,.1,.08,'triangle',.6)},flesh:()=>{burst(.18,'lowpass',500,120,.8,.5)},
  growl:()=>tone(rnd(85,120),.7,.05,'sawtooth',.8),breach:()=>{tone(140,.6,.15,'sawtooth',.5);burst(.4,'lowpass',500,100,.6,.45)},dawn:()=>[0,4,7,12].forEach((n,i)=>setTimeout(()=>tone(392*Math.pow(2,n/12),.5,.05,'triangle'),i*140))};
-let amb=null;function startAmb(){const a=ac();if(!a||amb)return;const mk=(type,fq,q)=>{const s=a.createBufferSource();s.buffer=nb(a,4);s.loop=true;const f=a.createBiquadFilter();f.type=type;f.frequency.value=fq;f.Q.value=q;const g=a.createGain();g.gain.value=0;s.connect(f).connect(g).connect(a.destination);s.start();return g;};amb={wind:mk('bandpass',380,.5),rain:mk('highpass',2400,.5)};}
+// the forest soundscape lives in audio.js (real recorded creatures, no generated hiss)
+let AUDIO=null;function startAmb(){if(AUDIO)AUDIO.start();}
 
 // ================= characters =================
 // clips that carry their own body travel (root motion): the game moves the character by exactly that amount when they end
@@ -486,6 +487,7 @@ let hour=19.3,dayNo=1,weather='clear',rainK=0,spawnLeft=0,spawnT=0,over=false,hi
 let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSET+'brain.js',document.baseURI).href);BRAIN=createBrain({HH,lights:LIGHTS,hour:()=>hour,isNight:h=>isNight(h)});window.__brain=BRAIN;}catch(e){console.error('brain',e);}}
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return isNight(hour)?10/70:14/110;}// a day of ~3 minutes
+try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET});}catch(e){console.error('audio',e);}
 const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.7,.95,1.15],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.9,.7,1.08],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.7,1.0],
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.8,.95],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.6,1.0],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,1.05,1.12],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.75,1.0,1.15],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15]];
 function pal(h){let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=smooth(0,1,(h-a[0])/(b[0]-a[0]));const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
@@ -497,6 +499,7 @@ function hint(h){const e=$('hint');e.innerHTML=h;e.classList.remove('off');hintT
 $('bW').onclick=()=>{ac();startAmb();WIND.setRain(weather==='clear');};
 // [WIND] rain comes and goes with the weather (game/wind.js); the button just starts or stops a rain spell
 WIND.on('rain',e=>{weather=e.on?'rain':'clear';$('bW').textContent=e.on?'☂︎':'☁︎';});
+{const bS=$('bS'),sy=()=>{bS.textContent=AUDIO&&AUDIO.muted()?'🔇':'🔊';};sy();bS.onclick=()=>{if(!AUDIO)return;const first=!AUDIO.started();ac();startAmb();AUDIO.mute(first?false:!AUDIO.muted());sy();};}
 $('bN').onclick=()=>{ac();startAmb();if(!isNight(hour)&&hour<19.2)hour=19.2;};
 
 // ================= aiming (drag back, release) =================
@@ -559,7 +562,7 @@ function frame(){requestAnimationFrame(frame);try{frameBody();}catch(e){if(!fram
 function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;
  const wasN=isNight(hour);hour+=dt*hps()*TS;if(hour>=24)hour-=24;const nowN=isNight(hour);
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}
- if(!over&&wasN&&!nowN){dayNo++;sfx.dawn();toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
+ if(!over&&wasN&&!nowN){dayNo++;toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
  // --- light & sky ---
  const P=pal(hour);rainK=lerp(rainK,weather==='rain'?1:0,dt*.6);const dim=1-rainK*.45;
  const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));
@@ -579,7 +582,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
  WIND.update({dt,T,rainK});SMOKE.update(dt,T,scene.fog.color);
  RAIN.update(dt,T,rainK,scene.fog.color);
- if(amb){const wl=WIND.level();amb.wind.gain.value=(.006+nightK*.006)+.014*Math.min(1.6,wl);amb.rain.gain.value=rainK*.05;}
+ if(AUDIO)AUDIO.update(dt);
  // --- spawn ---
  if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){if(!zombG)loadZombie();else{spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}}
  // --- hero: body, routine, walking (hero.js) ---
