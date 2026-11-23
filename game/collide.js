@@ -195,10 +195,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   // deepest shape at p: returns depth beyond the allowance for this body part, OUT.n = way out
   const nB = V();
-  function probe(p, part, lying) {
+  function probe(p, part, lying) { const GR = window.__grab;
     const kk = key(Math.floor(p.x / CS), Math.floor(p.y / CS), Math.floor(p.z / CS)); const a = G.get(kk); let best = 0;
     if (a) for (const n of a) {
-      const s = S[n]; if (s.dead) continue; if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
+      const s = S[n]; if (s.dead) continue; if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;/* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
       let allow = part === 3 ? ALLOW.feet : ALLOW.hard;
       if (s.cls >= 2) allow = (lying && p.y < root.position.y + .6) ? ALLOW.pillow : ALLOW.soft;
       else if (s.cls === 1 && (part === 4 || part === 5)) allow = ALLOW.seat;
@@ -293,6 +293,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     floorGuard(dt);
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 14);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGrow[c] = grow[c]; grow[c] = 0; }
+    { const GR = window.__grab; if (GR) for (const c of [2, 3]) if (GR.grip[c === 2 ? 'Left' : 'Right']) { off.limb[c].set(0, 0, 0); hold[c] = 0; } }// a gripping hand stays on its handle (game/grab.js)
     if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) off.limb[c].multiplyScalar(c >= 4 ? relFoot : rel);
     const fit = !!hero.fit, lying = !!(hero.inBed || hero.swing);
     root.position.add(off.root); applied.copy(off.root); root.updateMatrixWorld(true);

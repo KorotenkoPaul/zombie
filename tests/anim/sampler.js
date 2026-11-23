@@ -110,7 +110,9 @@ module.exports=function install(cfg){
  const GN=['head','handL','handR','feet','shins','hips','arms','torso'];const VS=[];const step=cfg.vertStep||10;
  for(let i=0;i<pos.count;i+=step){let bi=0,bw=-1;for(let k=0;k<4;k++){const w=GC(sw2,i,k);if(w>bw){bw=w;bi=GC(si,i,k);}}VS.push([i,GN.indexOf(GROUP(M.skeleton.bones[bi].name))]);}
  const BN=['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'];
- const BB=BN.map(n=>heroBones[n]);
+ // the old hero's skeleton has no end bones: put them where they would be (head top 18 cm on from the neck, toe tip 7 cm on from the ankle)
+ const EXT={HeadTop_End:['Neck','Head',.18],LeftToe_End:['LeftFoot','LeftToeBase',.07],RightToe_End:['RightFoot','RightToeBase',.07]};
+ const BB=BN.map(n=>heroBones[n]||{getWorldPosition(v){const [a,b,l]=EXT[n];const pa=heroBones[a].getWorldPosition(new THREE.Vector3());heroBones[b].getWorldPosition(v);return v.add(v.clone().sub(pa).setLength(l));}});
  // ladder rungs: thin horizontal bars among the solid boxes (board ladders) + the lashed round rungs of the rope ladders (merged mesh)
  const RUNGS=[];
  for(const sh of C){if(sh.shape==='vox'||sh.shape==='none'||!sh.h)continue;const o=[0,1,2].sort((a,b)=>sh.h[b]-sh.h[a]);const L=sh.h[o[0]];

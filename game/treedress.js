@@ -77,7 +77,7 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, rimK: { value: 1 },
+    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
     D.update = () => {
@@ -85,7 +85,9 @@ export function createTreeDress(C) {
       const W = window.__wind, on = W && W.raining ? W.raining() : 0;
       D._rk = (D._rk || 0) + (on - (D._rk || 0)) * Math.min(1, dt / 6); const rain = D._rk;
       const night = Math.min(1, ENVR.strength.value / 0.8 || 0);
-      D.barkU.wet.value = rain; /* sheen only while it rains (no dew gloss): dry bark stays fully matte */ void night;
+      D.barkU.wet.value = rain; /* sheen only while it rains (no dew gloss): dry bark stays fully matte */
+      /* by day the oak is a warm grey-brown, its cool violet cast is a night look; under the house it gets bounce light */
+      D.barkU.cool.value = 0.15 + 0.35 * night; D.barkU.day.value = 1 - night;
       /* soaked bark: soaks up in ~25 s of rain, then dries over ~4 min, last in the furrows, the runs down the bark and the foot */
       const d = D.barkU.damp; d.value = rain > 0.05 ? Math.min(1, d.value + dt * rain / 25) : Math.max(0, d.value - dt / 240);
       /* hoar frost on the root tops on cold clear nights (Wind's __weather temp: ~4 °C before dawn): forms over ~90 s, melts in ~60 s */
@@ -144,7 +146,7 @@ export function createTreeDress(C) {
     }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
@@ -155,7 +157,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdL=0.,tdFade=0.,tdH=.5;
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -363,6 +365,9 @@ uniform float tdCool;` + NOISE)
           float fr=pow(1.-max(dot(wn,wv),0.),3.);
           float rim=fr*max(dot(wn,normalize(tdRimD)),0.)*tdRimS*tdRimK*(1.-.7*smoothstep(.5,.9,wn.y)); // an edge light, not a sheen on the tops
           totalEmissiveRadiance+=tdRimC*rim*(.12+tdL*1.6)*(1.-tdMM*.5)*(1.+tdWM*.8);
+          // daylight bounced off the ground, the roots and the house's planks: warm fill so the trunk in the house's shade reads
+          // as brown bark, not a black hole (weaker in the furrows and the deep crotches)
+          totalEmissiveRadiance+=diffuseColor.rgb*vec3(1.1,.95,.8)*tdDay*.5*(.45+.55*tdH)*(1.-tdCr*.7);
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
