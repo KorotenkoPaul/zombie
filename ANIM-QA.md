@@ -15,8 +15,31 @@ Priorities: **P1**: visible at normal play (through objects ≥ 2–4 cm, broken
 | 1 | d5e8ad1 | 24,660 | seated jitter fixed; legs folded next to the head after the kitchen ladder; head in the upper bunk |
 | 2 | 46310d0 (v81) | 25,620 | legs at head **fixed**, head in upper bunk **fixed**, walking through the bunk end **fixed**; slow motion measured |
 | 3 | c7cd2d0 (v91) | 16,980 | tempo mostly fixed (walk 1.0 m/s, sit/stand 1.5 s); robot braking/starting and ladder speed jumps open; ladder clipping open |
+| 6 | f58e5ff | 47,220 | full tour of all 32 new tasks (9 repairs, hatch, bolt, firewood...); kitchen ping-pong gone; NEW: 2.4 m teleport into bed, 25 cm into the woodpile, ladder exits 12–22x speed jumps |
 | 5 | 610ced0 | 19,020 | P1 jumps 223 → 106, robot P1 6 → 0, crab walk and detours P1 gone; NEW checks: stays and turning back (see below) |
 | 4 | 77c392b | 16,320 | creeping to a stop fixed (1 case left); NEW: 15 cm root teleport at the top of the kitchen ladder, walking backwards after the ladder top, 25 cm root jump into bed |
+
+## New in run 6 (master f58e5ff): every new task forced once
+
+Tour forced 32 tasks; 27 ran. stretch, sweep, ledge, fix_board and fix_wall did not start when asked (the brain took over at
+once and ran its own repair instead); fetchwater, trip and eat are not in hero.js yet (`hasTask` false). Frames in the
+0.5 s around each forced switch are ignored.
+
+| P | what | frames | measured |
+|---|---|---|---|
+| P1 | Hatch → sleep: root teleports 2.4 m straight up from the top of the kitchen ladder (-3.98, 6.03 → 8.44, 2.51) into the bedroom | f8132 (h0.2) | 240 cm in one frame |
+| P1 | Walks through the woodpile on the ground (firewood / board) | f35180–35196, f35030 | feet and shins 25 cm, 11 cm |
+| P1 | Ladder top exits: stands still, then full walking speed at once | f29667 (water), f34059 (firewood), f26580, f37196, f41602 | 12–22x speed change |
+| P1 | Telescope pose: right knee bent forward (the wrong way) | f1–7 | 49° |
+| P1 | Hand into the oven door while stoking / cooking | f21762, f21850 | 10.2, 9.5 cm |
+| P1 | Sharp turns on the spot while walking (kitchen, repairs) | f23317–23328, f11437, f20091 | 585–680 °/s |
+| P1 | Walks the long way round (heading 100–179° off the goal at the start) | f21484, f11196, f13956, f43878 | 109–179° |
+| P1 | Feet slide while walking (diary, hinge, railing) | f27664, f42538, f44735 | 15–18 cm |
+| P1 | Hand jitter while crafting | f13846 | 126 mm RMS |
+| P1 | Deck ladder (clip 435) beam: head/arms/feet (still) | f15164, f45596, f14432 | 9.7–9.9 cm |
+| P2 | Repair stays are short: fix_shingle 5.9 and 7.9 s, fix_board / fix_wall 0 s (go and leave) | f4120, f4821 | under 20 s |
+
+Day part without the tour: no kitchen ping-pong any more, and no turning back.
 
 ## New in run 5 (master 610ced0): stays, turning back, sleep
 
