@@ -836,7 +836,7 @@ let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSE
 if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=Math.random()*24;BRAIN.prime(hour);const t0=performance.now(),dt=1/30;let n=0;const N=Math.floor(rnd(900,2400));
  while(n<N&&performance.now()-t0<2500){hour+=dt*hps();if(hour>=24)hour-=24;HH.update(dt);n++;}}catch(e){console.error('prewarm',e);}}
 function isNight(h){return !(h>=6&&h<20);}
-function hps(){return isNight(hour)?10/70:14/110;}// a day of ~3 minutes
+function hps(){return isNight(hour)?10/180:14/300;}// a day of 8 minutes (Pavel 2026-11-23): 5 min of daylight, 3 min of night
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
 const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.68,.6,.94],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98]];

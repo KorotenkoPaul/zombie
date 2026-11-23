@@ -453,7 +453,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     for (let i = 0; i < 12; i++) { const c = all[Math.floor(Math.random() * all.length)]; const d = hp ? Math.hypot(c.pos[0] - hp.x, c.pos[1] - hp.y, c.pos[2] - hp.z) : 0; const sc = c.fresh * 3 + d * .08 + Math.random() * .3; if (sc < bs) { bs = sc; best = c; } }
     return best ? { target: best.id, pos: best.pos, kind } : {};
   }
-  let reachCache = null;
+  let reachCache = null, warmT = 0;
   function reachable(list) {
     if (reachCache && reachCache.n === list.length) return reachCache.r;
     const N = HH.N || {}, spots = [];
@@ -490,6 +490,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
   const house = () => { try { return window.__house || null; } catch (e) { return null; } };
   let pausing = 0, expected, cmdNext = false, job = null, extra = null, lastOpts = null;
   function tick(dt, v) {
+    dt = Math.min(dt, .25);   // a stalled frame (tab in the background, a hitch) never counts as a long stretch of work
+    // one-off setup spread out of the decision frames: the slates in reach are worked out a few seconds after the start
+    if (!reachCache && (warmT += dt) > 3) { try { const P = planks(); if (P && P.list) reachable(P.list('shingle')); } catch (e) {} }
     const dh = gameHours();
     measureClock(dt);
     if (lockAsk) { lockAsk = false; brain.lockdown(true); }
