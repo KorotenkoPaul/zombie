@@ -84,7 +84,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- kitchen: hanging lantern over the counter + a small one on the front counter ----------
   const kPos = PL.kitchenLamp ? PL.kitchenLamp.pos.clone() : V(-2.3, KT + 1.78, 1.75);
   {
-    const l = new THREE.PointLight(0xFFA14A, 0, 5.5, 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
+    const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     const panes = claimHousing(kPos);
     const b = bulbMesh(kPos, .07);
     const front = V(-2.4, KT + 1.5, 3.5); housing(front); claimHousing(front, .3); const fb = bulbMesh(front, .06);
@@ -108,7 +108,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
   const bPos = V(-2.0, BD + 1.95, 2.5);
   {
-    const l = new THREE.PointLight(0xFFA14A, 0, 5.5, 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
+    const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
     housing(bPos); const panes = claimHousing(bPos);
     const b = bulbMesh(bPos, .065);
     add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
@@ -117,13 +117,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   if (PL.candle) {
     const cPos = PL.candle.pos.clone();
     const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l);
-    add('candle', 'bedroom', 'candle', cPos, { lights: [{ l, I: 1.6 }], opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
+    add('candle', 'bedroom', 'candle', cPos, { lights: [{ l, I: 1.6, sway: .012 }], opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
       autoFn: c => c.task === 'read' && c.lamps > .25 });
   }
 
   // ---------- outside: lantern by the ladder landing, the deck lantern ----------
   {
-    const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.PointLight(0xFFA14A, 0, 5, 1.6); l.position.copy(p); scene.add(l);
+    const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.PointLight(0xFFB25E, 0, 5, 1.6); l.position.copy(p); scene.add(l);
     housing(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
     add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
     const d = V(.7, DK + 1.15, 3.0); housing(d); claimHousing(d, .3); const db = bulbMesh(d, .065);
@@ -134,7 +134,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   if (PL.oven || (P3 && P3.oven)) {
     const p = PL.oven ? PL.oven.pos.clone() : V(-3.25, KT + .3, 1.45);
     const l = new THREE.PointLight(0xFF7A2A, 0, 4.2, 1.8); l.position.copy(p).add(V(.05, .1, .55)); scene.add(l);
-    add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2 }], haloSize: .9, extra: k => {
+    add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: k => {
       // index.html passes this level to props.update(), which calls oven.setHeat once per frame
       // Props keeps a faint ember glow at heat 0; a cold oven shows nothing
       if (pm.fire) pm.fire.emissiveIntensity = 2.45 * k;
@@ -158,18 +158,48 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const WARM = new THREE.Color(0xFFA548), COLD = new THREE.Color(0x5E8CC0), tmpC = new THREE.Color();
   for (const w of windows) { w.mat.emissive = w.mat.emissive.clone(); }
 
+  // ---------- room glow, driven only by the room's own sources ----------
+  // A lit room is warm all over (walls, ceiling, corners), not just a hotspot by the lamp: a soft unshadowed
+  // bounce light in the middle of the room stands in for the light the warm planks throw back.
+  // Light also leaves through the back windows onto the trunk (desktop: a small spill light; phones: halo only).
+  const ROOMS = {
+    kitchen:  { c: V(-2.65, KT + 1.05, 2.5), bounce: 2.0 },
+    bedroom:  { c: V(-1.9, BD + 1.1, 2.3), bounce: 1.6 },
+    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.2 },
+  };
+  const glows = [];
+  for (const [room, R] of Object.entries(ROOMS)) {
+    const b = new THREE.PointLight(0xFFBE80, 0, 3.8, 1.3); b.position.copy(R.c); scene.add(b);
+    glows.push({ room, l: b, I: R.bounce });
+  }
+  for (const w of windows) {
+    if (!w.g || !ROOMS[w.room]) continue;
+    w.g.updateMatrixWorld(true); const p = w.g.getWorldPosition(V());
+    const n = V(0, 0, 1).applyQuaternion(w.g.quaternion); n.y = 0; n.normalize();
+    const out = p.clone().sub(ROOMS[w.room].c); out.y = 0; if (out.dot(n) < 0) n.negate();
+    const hp = p.clone().addScaledVector(n, .12);
+    if (ENV && ENV.addHalo) { const h = Object.assign(new THREE.Object3D(), { intensity: 0 }); h.position.copy(hp); scene.add(h); ENV.addHalo(h, 1.25); glows.push({ room: w.room, halo: h, I: 2.6 }); }
+    const back = Math.abs(n.z) > .7;
+    if (back && !MOBILE) { const l = new THREE.PointLight(0xFFA850, 0, 3.4, 1.6); l.position.copy(p).addScaledVector(n, .45); scene.add(l); glows.push({ room: w.room, l, I: 2.4 }); }
+  }
+  const warm = {};
+
   // ---------- the switching logic ----------
   function fire(name, on) { for (const cb of listeners) { try { cb(name, on); } catch (e) { console.error(e); } } }
   function setOn(s, on) { if (s.on === on) return; s.on = on; if (on) s.flare = 1; fire(s.name, on); }
   let cookT = 0, t = 0;
 
+  // smooth 1D value noise in [-1, 1]: flames breathe instead of pulsing like a sine
+  const hash = n => { const x = Math.sin(n * 127.1) * 43758.5453; return (x - Math.floor(x)) * 2 - 1; };
+  const noise = x => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return hash(i) * (1 - u) + hash(i + 1) * u; };
   function flick(s, T) {
-    const k = s.seed;
+    const k = s.seed * 17;
     switch (KINDS[s.kind].flick) {
-      case 'flame': return .88 + Math.sin(T * 9 + k) * .05 + Math.sin(T * 23 + k * 2) * .04 + Math.sin(T * 3.1 + k) * .03;
-      case 'candle': return .8 + Math.sin(T * 11 + k) * .08 + Math.sin(T * 29 + k * 3) * .07 + Math.sin(T * 2.3 + k) * .05;
-      case 'fire': return .82 + Math.sin(T * 7 + k) * .08 + Math.sin(T * 17 + k * 2) * .06 + Math.sin(T * 41 + k) * .04;
-      default: return 1 + Math.sin(T * 60) * .004;
+      // oil lantern: steady, a slow breath and a rare small dip when the wick gutters
+      case 'flame': return .93 + noise(T * 1.3 + k) * .035 + noise(T * 7 + k) * .02 - Math.max(0, noise(T * .45 + k) - .55) * .25;
+      case 'candle': return .84 + noise(T * 2.2 + k) * .07 + noise(T * 9 + k) * .05 + noise(T * 23 + k) * .02;
+      case 'fire': return .8 + noise(T * 1.6 + k) * .1 + noise(T * 6 + k) * .07 + noise(T * 15 + k) * .03;
+      default: return 1 + noise(T * 40) * .004;
     }
   }
 
@@ -178,6 +208,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const cooking = task === 'cook' && state === 'work';
     cookT = cooking ? 40 : Math.max(0, cookT - dt);     // the fire is fed while cooking and burns a while after
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
+    for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
       const want = s.manual !== null ? s.manual : !!s.autoFn(ctx);
       setOn(s, want);
@@ -193,15 +224,19 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       const open = s.extra && s.lights[0] && s.lights[0].l.userData.open || 0;
       for (const L of s.lights) {
         L.l.intensity = L.I * k * f * (1 + open * 1.2);
+        if (L.sway) { if (!L.home) L.home = L.l.position.clone(); const a = T * 1.7 + s.seed * 5; L.l.position.set(L.home.x + noise(a) * L.sway, L.home.y + noise(a + 40) * L.sway * .6, L.home.z + noise(a + 80) * L.sway); }
         if (L.l.castShadow) L.l.shadow.autoUpdate = k > .01;      // no shadow passes for a lamp that is off
       }
       for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
       if (s.extra) s.extra(k, f);
       if (!s.lights.length && s.haloObj) s.haloObj.intensity = 4.5 * k * f;
+      const share = s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
+      warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
+    for (const g of glows) { const v = (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
     for (const w of windows) {
-      const lit = roomLevel(w.room);
+      const lit = Math.min(1, warm[w.room] || 0);
       tmpC.copy(COLD).multiplyScalar(.12 + dayK * .45).lerp(WARM, clamp01(lit) * (1 - dayK * .7));
       w.mat.emissive.copy(tmpC); w.mat.emissiveIntensity = 1;
     }

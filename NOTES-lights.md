@@ -14,3 +14,9 @@ Auto logic (until the hero switches things himself): lamps follow evening/night 
 
 Shadows: workshop spot always (1024 desktop / 512 phone); kitchen + bedroom lantern point shadows on desktop only (512, tiny frusta). Shadow maps update only while a lamp is on. `__lights.degrade()` drops point shadows.
 Lamp housings near a source get castShadow=false and their own pane material (glows per lamp).
+
+## Round 2 (2026-11-23)
+- Room glow: per room one soft unshadowed bounce light (kitchen/bedroom/workshop), intensity = the room's live source warmth (with flicker), so a lit room is warm in the corners too, like the photo. Off room = 0.
+- Light leaves through windows: halo proxies just outside every window (fog glow), and on desktop a small spill light outside each back window that warms the trunk.
+- Flicker: smooth value noise (oil lanterns steady with a slow breath and rare gutter dips; candle livelier; oven fire strongest). Candle and oven lights sway a few cm so their shadows move.
+- Lantern colour moved from orange 0xFFA14A to warmer amber 0xFFB25E (photo).
