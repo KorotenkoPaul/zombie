@@ -178,7 +178,7 @@ function screw(parent, x, y, z) { add(parent, new THREE.CylinderGeometry(.006, .
 
 // draped cloth: a plane laid over a w×d top that falls `drop` over the long sides
 function drapeGeo(len, wid, drop, { r = .05, wrinkle = .01, endDrop = 0, puff = 0 } = {}) {
-  const nx = puff ? 40 : 24, nz = puff ? 24 : 16; const geo = new THREE.PlaneGeometry(1, 1, nx, nz); const p = geo.attributes.position, uv = geo.attributes.uv;
+  const nx = puff ? 32 : 24, nz = puff ? 20 : 16; const geo = new THREE.PlaneGeometry(1, 1, nx, nz); const p = geo.attributes.position, uv = geo.attributes.uv;
   const fold = (s, half) => { const a = Math.abs(s), arcL = r * Math.PI / 2; if (a <= half - r) return [s, 0]; const d = a - (half - r); if (d < arcL) { const th = d / r; return [Math.sign(s) * (half - r + (r + .01) * Math.sin(th)), -(r - r * Math.cos(th))]; } return [Math.sign(s) * (half + .01), -r - (d - arcL)]; };
   for (let i = 0; i < p.count; i++) {
     const u = uv.getX(i), v = uv.getY(i); const s = (v - .5) * (wid + 2 * drop); let [z, y] = fold(s, wid / 2); let x = -len / 2 + u * (len + endDrop);
@@ -314,7 +314,7 @@ function stove() {
   add(door, new THREE.CylinderGeometry(.011, .011, dw - .14, 12), M.chrome, 0, dh - .05, .075, 0, 0, Math.PI / 2);
   for (const sx of [-1, 1]) add(door, new THREE.CylinderGeometry(.008, .008, .045, 8), M.chrome, sx * (dw / 2 - .1), dh - .05, .055, Math.PI / 2);
   { const tw = new THREE.MeshStandardMaterial({ map: texOf(towelCanvas()), roughness: .95, side: THREE.DoubleSide }); const t = add(door, drapeGeo(.2, .03, .2, { r: .016, wrinkle: .006 }), tw, -.12, dh - .05, .075); t.castShadow = false; }
-  door.traverse(o => { if (o.isMesh) o.userData.live = true; });
+  bake(door); // one mesh per material; the door group itself stays live (it swings)
   const glow = add(g, new THREE.PlaneGeometry(.0001, .0001), M.fire, 0, 0, 0); glow.visible = false; void glow; void fire;
   bake(g);
   let openK = 0, heatK = 0;
@@ -556,7 +556,7 @@ function telescope() {
   add(tube, new THREE.CylinderGeometry(.012, .012, .14, 8), TB, 0, 0, 0, Math.PI / 2);
   add(tube, lathe([[0, 0], [.024, 0], [.026, .012], [.022, .05], [0, .05]], 18), M.rubber, -.47, 0, 0, 0, 0, Math.PI / 2); // eyepiece cup
   { const f = lathe([[0, -.09], [.011, -.09], [.011, .07], [.016, .08], [.016, .1], [0, .1]], 14); f.rotateZ(-Math.PI / 2); add(tube, f, TB, .1, .07, 0); for (const x of [.04, .16]) add(tube, rb(.012, .025, .01, .003), TB, x, .052, 0); }
-  bake(g); g.userData.tube = tube; return g;
+  bake(tube); bake(g); g.userData.tube = tube; return g;
 }
 
 // ================= round 6: things the hero handles (food, wood, gear, chores) =================
