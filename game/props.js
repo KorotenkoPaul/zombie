@@ -19,6 +19,20 @@ function upgrade(t, url) { const img = new Image(); img.onload = () => { t.image
 // swap a material's procedural grain for a photo-scanned wood (the boards' scans, see NOTES-planks): the scans run their grain
 // along u, ours along v, so the image is drawn turned 90° into a canvas (downsized: furniture needs less than floors).
 // boxUV gives 1.11 u and 0.56 v per metre; the scan covers ~1 m across the grain and ~2.4 m along it.
+// (Planks thread) the wood pieces are merged into one mesh per material, so the variety comes from the shader: boxUV gives
+// every piece its own random UV offset, and a slow noise of that UV gives each board/leg/door plank its own tone, a few
+// greyer weathered ones, and long faint streaks along the grain. Same program, same draw calls, roughness untouched.
+function varyWood(mat, k = 1) {
+  mat.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+float vwH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float vwN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(vwH(i),vwH(i+vec2(1,0)),f.x),mix(vwH(i+vec2(0,1)),vwH(i+vec2(1,1)),f.x),f.y);}`)
+   .replace('#include <map_fragment>', `#include <map_fragment>
+#ifdef USE_MAP
+{vec2 q=vMapUv*vec2(.45,.16);float n=vwN(q),n2=vwN(vMapUv*vec2(9.,.35)+5.);
+ diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.8,.76,.72),vec3(1.14,1.05,.94),n)*(.93+.14*n2),${k.toFixed(2)});
+ float g=smoothstep(.72,.9,vwN(q*.8+3.7))*.35*${k.toFixed(2)};diffuseColor.rgb=mix(diffuseColor.rgb,vec3(dot(diffuseColor.rgb,vec3(.3,.55,.15)))*vec3(1.04,.99,.92),g);}
+#endif`); };
+  mat.customProgramCacheKey = () => 'varyWood' + k; mat.needsUpdate = true; return mat; }
 function scanWood(mat, url, { w = 512, h = 1024, color = 0xffffff, bump = 1.2 } = {}) {
   const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.translate(w, 0); g.rotate(Math.PI / 2); g.drawImage(img, 0, 0, h, w);
     for (const [k, srgb] of [['map', true], ['bumpMap', false]]) { const t = mat[k]; if (!t) continue; t.image = c; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.repeat.set(.9, .75); t.dispose(); t.needsUpdate = true; }
@@ -149,6 +163,7 @@ function makeMaterials(renderer) {
     cans: [['#B8442E', '#E9D7A8'], ['#3F6E9A', '#F0E6CC'], ['#6E8F4A', '#F3E2B0'], ['#C99A3A', '#5A3A22']].map(([a, b]) => std({ map: texOf(labelCanvas(a, b)), metalness: .5, roughness: .4, envMap: env, envMapIntensity: .8 })),
   };
   scanWood(M.wood, 'wood-floor.jpg', { color: 0xF2DCC4 }); scanWood(M.woodLight, 'wood-wall.jpg', { color: 0xE6C49C }); scanWood(M.woodDark, 'wood-dark.jpg', { w: 256, h: 512, color: 0xC49470, bump: 1.6 });
+  varyWood(M.wood); varyWood(M.woodLight); varyWood(M.woodDark, .7); // (Planks thread) every piece its own tone
   return M;
 }
 
