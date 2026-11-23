@@ -1075,16 +1075,29 @@ export function buildProps(ctx) {
   }
   // ---- the quilt sinks where someone lies on it: Character calls __props.bedPress(worldHipPos) / bedPress(null) ----
   const quiltMesh = (() => { let q = null; bunk.traverse(o => { if (o.isMesh && o.material === M.quilt) q = o; }); return q; })();
-  const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null; const press = { at: null, k: 0, shown: -1 };
-  out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; };
+  const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null, nBase = quiltMesh ? quiltMesh.geometry.attributes.normal.array.slice() : null;
+  const press = { at: null, k: 0, shown: -1, cover: false };
+  // bedPress(worldHip): a hollow where he sits or lies ON the quilt. bedCover(worldHip): he lies UNDER it: the quilt rises over a
+  // body (head toward the pillow, +x in the bed), so his legs never show through. null releases either; both ease in and out.
+  out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = false; };
+  out.bedCover = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = true; };
+  const sm = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  function bodyLift(x, z, c) { // height of the cover over a lying body, hips at c (bed local), feet toward -x
+    const u = x - c.x; if (u < -1.15 || u > .7) return 0;
+    const h = u < 0 ? .09 + .05 * sm(-.95, 0, u) : .14 + .03 * sm(0, .35, u); // feet .09, hips .14, chest .17
+    const w = u < 0 ? .13 + .07 * sm(-.95, 0, u) : .2 + .03 * sm(0, .3, u); const dz = (z - c.z) / w;
+    return h * Math.exp(-dz * dz * 1.3) * sm(-1.15, -.95, u) * (1 - sm(.45, .7, u)); }
   function pressQuilt(dt) {
     if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5); if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
-    const P = quiltMesh.geometry.attributes.position, a = P.array, c = press.at;
-    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (Math.abs(y - c.y) > .3) continue;
+    const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, c = press.at, e = .01;
+    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (Math.abs(y - c.y) > .3) continue;
+      if (press.cover) { const L0 = bodyLift(x, z, c); if (L0 <= 0) continue; a[i + 1] = y + L0 * press.k;
+        if (nBase[i + 1] > .4) { const gx = (bodyLift(x + e, z, c) - bodyLift(x - e, z, c)) / (2 * e) * press.k, gz = (bodyLift(x, z + e, c) - bodyLift(x, z - e, c)) / (2 * e) * press.k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; }
+        continue; }
       // an elongated hollow along the bed (body length on x), deepest under the hips, with a slight rim of bunched cloth
       const dx = (x - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d > 1.35) continue;
       const sink = d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008; a[i + 1] = y - sink * press.k; }
-    P.needsUpdate = true; } // normals kept: the merged mesh is non-indexed, recomputing would facet it
+    P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
   out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => {
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);

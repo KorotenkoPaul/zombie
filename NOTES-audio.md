@@ -34,3 +34,27 @@
 - `__audio.footstep(side, pos?, {surface, gain})`: Character can drive exact contacts; the first call turns auto mode off.
 - Footstep clips are decoded as soon as the foley pack arrives (they must never be late).
 - Night unease layer `unease`: distant branch crack, unclear cry, metal clank, thud, wail, bushes; night only, ~0.3-1 per night, rate x (0.2 + 1.1 * __brain.need.safety). Never the same one twice in a row. `__audio.on('unease', e => …)` with {name, pos, anx}: Brain can make the hero stop and listen.
+
+## Round 5: water, hatch, repair, sleep
+- New foley (names / aliases): bucket_fill (pond, fill_bucket), slosh (carry_water; call on each step while carrying), tap (water_tap; use loop()), drip_bucket (drain_drip), bucket_dump (dump_water), hatch_open / hatch_close (hatch, trapdoor), nails (repair_nail, roof_nail), saw_shingle (shingle), bed_turn (turn_over), snore (snoring).
+- Automatic while `hero.inBed`: a soft snore every 7-16 s and turning over every 35-90 s at the bed. `__audio.autoSleep(false)` hands it to Character/Brain.
+- Live build: master auto-deploys to Railway (https://game-production-8358051a.up.railway.app/); the claude.ai artifact has a 200 publishes/day limit.
+
+## Round 6: interior mix, phone cost, iOS unlock
+- Roof rain is slate now (rain_slate_a/b): routed through the house bus (not muffled with the forest); level rain × max(__rain.roofNear(camera), indoorK).
+- Stove crackle (fire bed) and old fridge hum (fridge_hum at ctx.fridge or (-1.43, KT+0.8, 1.38)) are steep-rolloff positional beds that are not played at all when the camera is further than 14 m / 7 m. Fridge cycles on 40-90 s / off 25-60 s.
+- Phones (`mobile: MOBILE` from index.html): max 9 voices, 1.7 s forest reverb; 32 kHz context; lazy decode with LRU.
+- iOS unlock: document-level touchend/click/pointerup/keydown (capture) start or resume the context and play a 1-sample silent buffer the first time; re-armed after an 'interrupted' state (calls, Siri). Works the same in Safari and home-screen (standalone) mode. The ring/silent switch still mutes Web Audio on iOS (system behaviour).
+
+## Round 7: the hero's body (all quiet)
+- Names: breath_climb, breath_heavy (breath), grunt (lift, effort), cloth (rustle), zip_up (zip), zip_down (unzip, jacket_off), sigh.
+- Body sounds (breath, grunt, sigh) never overlap (1.6 s lock) and are not priority: on a full phone voice cap they are the first to be skipped.
+- Automatic: breath while climbing up (every 2.2-3.4 s), cloth rustle when he sets off and every 4-9 s while walking.
+- `__audio.carry(true|false)`: Character calls it when he picks up / puts down logs or a bucket; it grunts on pick-up and breathes heavier while walking with the load.
+- Sigh at the telescope / ledge: Character calls `__audio.play('sigh')` when he settles.
+
+## Round 8: the score (procedural, no samples)
+- A sparse music box in A natural minor (8 hand-written lullaby motifs, rubato, octave sparkles) over a dark two-note triangle pad, through its own long reverb (3.8 s, 2.6 s on phones). All Web Audio oscillators, created per note and stopped after their decay.
+- Off most of the time: a 60-120 s session may start at dusk (18:20-20:35, 70% once a day) or in a quiet moment (hero in bed / reading / sitting / at the telescope, no actions for 20 s; about once per 90 s of quiet). Then it rests 2.5-5 min.
+- Ducks to 30% for 3 s under every hero sound (priority voices: actions, footsteps).
+- UI: ♫ button (#bM) next to 🔊; dimmed = off, remembered in localStorage (`th_music`). API: `__audio.music(on?)`, `__audio.musicNow()` (debug).
