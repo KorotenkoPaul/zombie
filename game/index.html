@@ -170,10 +170,12 @@ function inTrunk(x,y,z,m=.06){const s=SL[clamp(Math.round(y*10),0,SL.length-1)];
   const dx=x2-x1,dz=z2-z1,L=dx*dx+dz*dz;let t=L?((x-x1)*dx+(z-z1)*dz)/L:0;t=clamp(t,0,1);const ex=x1+dx*t-x,ez=z1+dz*t-z;if(ex*ex+ez*ez<m*m)return true;}
  return nearAxis&&(cr&1)===1;}
 // camera collision: the trunk only (branches must not push the camera in; leaves fade instead). Per 10 cm slice, the trunk
-// outline as a radius per angle around the axis, with branch roots trimmed to 1.3x the slice's median radius; up to 13 m.
+// outline as a radius per angle around the axis, with branch roots trimmed (1.15x the slice's median radius, smallest within ±1 m); up to 11.5 m (above: the fork of the limbs, leaves fade there).
 const TRK=(()=>{const NB=32,out=[];for(const seg of SL){const r=new Float32Array(NB);for(let i=0;i<seg.length;i+=2){const x=seg[i]-TAX[0],z=seg[i+1]-TAX[1],d=Math.hypot(x,z);if(d>3.4)continue;const b=((Math.round(Math.atan2(z,x)/(2*Math.PI)*NB)%NB)+NB)%NB;if(d>r[b])r[b]=d;}
- const v=[...r].filter(q=>q>0).sort((a,b)=>a-b),med=v.length?v[v.length>>1]:0;for(let b=0;b<NB;b++)r[b]=Math.min(r[b]||med,med*1.3);out.push(r);}return out;})();
-function trunkSolid(x,y,z,m=0){if(y<0||y>13)return false;const r=TRK[clamp(Math.round(y*10),0,TRK.length-1)],NB=r.length;const dx=x-TAX[0],dz=z-TAX[1];
+ const v=[...r].filter(q=>q>0).sort((a,b)=>a-b),med=v.length?v[v.length>>1]:0;for(let b=0;b<NB;b++)r[b]=Math.min(r[b]||med,med*1.15);out.push(r);}
+ // branch roots are bumps a metre or two high: the smallest radius within ±1 m keeps the trunk and drops them
+ return out.map((r,i)=>r.map((v,b)=>{let m=v;for(let j=Math.max(0,i-10);j<=Math.min(out.length-1,i+10);j++)m=Math.min(m,out[j][b]);return m;}));})();
+function trunkSolid(x,y,z,m=0){if(y<0||y>11.5)return false;const r=TRK[clamp(Math.round(y*10),0,TRK.length-1)],NB=r.length;const dx=x-TAX[0],dz=z-TAX[1];
  const a=(Math.atan2(dz,dx)/(2*Math.PI)*NB+NB)%NB,b0=Math.floor(a)%NB,t=a-Math.floor(a);return Math.hypot(dx,dz)<r[b0]*(1-t)+r[(b0+1)%NB]*t+m;}
 function runs(ok,a0,a1,step=.04,min=.1){const out=[];let s=null;for(let a=a0;a<=a1+1e-6;a+=step){const g=ok(Math.min(a,a1));if(g&&s===null)s=a;if((!g||a+step>a1+1e-6)&&s!==null){const e=g?a1:a-step;if(e-s>=min)out.push([s,e]);s=null;}}return out;}
 function cullLeaves(){}

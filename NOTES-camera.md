@@ -17,3 +17,12 @@ Most likely cause: the **collision march**, not zoom input.
 2. `inTrunk` clamps the slice index to y ≤ 13 m (`SL` has 131 slices, 0.1 m each), while `solid` is active up to y 16, so between 13 and 16 m it tests the wrong (13 m) slice.
 Suggested fix: make `solid` test the trunk only (e.g. distance to the axis < `TREE.R(y)` + margin, or `nearAxis` only), limit it to y ≤ 13, and let branches be handled by the near-fade / see-through hole instead of pushing the camera. Also smooth any collision shortening (damp the collided distance, never jump), so a thin obstacle can't snap the camera.
 3. Less likely, check too: inertia pushing against the yaw limit (the target keeps rotating with yaw, fine), and the soft-bounds spring (focus r>10 from (0,1) pulls the focus back, which can look like a pan).
+
+## Fixed 2026-11-23 (stress-test thread)
+- Root cause of the auto-zoom confirmed by `tests/camera/stress.js`: the collision march hit branches (24 m → 5 m in one frame at yaw ~0.6).
+- Collision is now trunk-only: `trunkSolid()` in index.html (per-slice radius by angle, branch roots trimmed, ≤11.5 m), smoothed (`collK`), the ground lifts the camera instead of pushing it in, a final guard pushes the camera out of the trunk.
+- The focus is damped in the frame that rotates with yaw around the trunk axis (`toLocal/fromLocal`): orbit = pure rotation, flights go around the trunk. The focus is kept in front of the trunk as seen from the camera (local z ≥ 0.7), never inside it, and ≤3.5 m outside the soft bounds (zoom, orbit, double tap).
+- Touch during a flight stops it where it is (`cancelFly`); home/follow/fly stop inertia; wheel ≤ ±35 % per notch; far picks can't drag the focus more than 3× the distance change.
+- See-through circle removed. `nearFade` only on the oak's leaf cards (alpha-test, not transparent): per-card alpha erosion (no pixel dither), near the camera and, when zoomed in (<9-15 m), everything in front of the focus. House, bark, grass, ferns never fade.
+- Zoom limits (Pavel): MIN_D 1.0 m, soft max = home, hard max 1.2× home.
+- Tests: `node tests/camera/stress.js [N] [seed]` (desktop + iPhone, invariants per frame; 3000+3000 sequences clean), `node tests/camera/renders.js [outDir]` (close-zoom screenshots, K1).
