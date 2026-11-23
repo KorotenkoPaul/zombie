@@ -123,10 +123,29 @@ const SONG = Object.keys(L).filter(k => L[k].song);
 
 export function createAudio(ctx) {
   const getAC = ctx.ac || (() => null);
-  let A = null, master = null, rev = null, revIn = null, loaded = false, loading = null, started = false;
+  let A = null, master = null, rev = null, revIn = null, outBus = null, outLP = null, inBus = null, roomIn = null, loaded = false, loading = null, started = false;
   let muted = false; try { muted = localStorage.getItem('th_mute') === '1'; } catch (e) {}
   let season0 = null;
-  const B = {};            // decoded buffers
+  // Memory: the packs stay compressed (RAW, ~3 MB); a clip is decoded the first time it is needed and the
+  // least recently used ones are dropped beyond a budget, so a phone never holds all ~6 min of PCM (70+ MB).
+  const RAW = {}, B = {}, USED = {}, PENDING = {};
+  const BUDGET_S = 140;   // seconds of decoded audio kept at most (~27 MB at 48 kHz, ~18 MB at 32 kHz)
+  let decodedS = 0;
+  function getBuf(k) { const b = B[k]; if (b) { USED[k] = now; return b; } decode(k); return null; }
+  function decode(k) {
+    if (B[k]) return Promise.resolve(B[k]); if (PENDING[k]) return PENDING[k]; if (!RAW[k] || !A) return Promise.resolve(null);
+    return PENDING[k] = new Promise(res => A.decodeAudioData(RAW[k].slice().buffer, res, () => res(null))).then(b => {
+      delete PENDING[k]; if (!b) return null; B[k] = b; USED[k] = now; decodedS += b.duration; evict(); return b;
+    });
+  }
+  function evict() {
+    if (decodedS <= BUDGET_S) return;
+    const busy = new Set([...voices].map(v => v.name));
+    for (const k of Object.keys(B).sort((a, b) => USED[a] - USED[b])) {
+      if (decodedS <= BUDGET_S * .85) break; if (busy.has(k)) continue;
+      decodedS -= B[k].duration; delete B[k];
+    }
+  }
   const voices = new Set();
   const LOG = [];
   const MAXV = 14;
@@ -148,25 +167,48 @@ export function createAudio(ctx) {
     // one shared forest reverb: a soft decaying impulse response (only heard through the calls, never on its own)
     const len = Math.floor(A.sampleRate * 2.6), ir = A.createBuffer(2, len, A.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); let lp = 0; for (let i = 0; i < len; i++) { const t = i / len; lp += ((Math.random() * 2 - 1) - lp) * (0.5 - .42 * t); d[i] = lp * Math.pow(1 - t, 2.4) * (i < 300 ? i / 300 : 1); } }
-    rev = A.createConvolver(); rev.buffer = ir; revIn = A.createGain(); revIn.gain.value = .55; revIn.connect(rev).connect(master);
+    rev = A.createConvolver(); rev.buffer = ir; revIn = A.createGain(); revIn.gain.value = .55;
+    // the forest goes through one low-pass + gain: from inside a room it is muffled and quieter
+    outLP = A.createBiquadFilter(); outLP.type = 'lowpass'; outLP.frequency.value = 20000; outLP.Q.value = .4;
+    outBus = A.createGain(); outBus.connect(outLP).connect(master); revIn.connect(rev).connect(outBus);
+    // sounds in the house: dry bus + a short wooden-room reverb (early reflections off the planks)
+    inBus = A.createGain(); inBus.connect(master);
+    const rl = Math.floor(A.sampleRate * .45), rir = A.createBuffer(2, rl, A.sampleRate);
+    for (let c = 0; c < 2; c++) { const d = rir.getChannelData(c); let lp = 0; for (let i = 0; i < rl; i++) { const t = i / rl; lp += ((Math.random() * 2 - 1) - lp) * .35; d[i] = lp * Math.pow(1 - t, 3.5) * (i < 40 ? i / 40 : 1); } }
+    const room = A.createConvolver(); room.buffer = rir; roomIn = A.createGain(); roomIn.gain.value = .5; roomIn.connect(room).connect(inBus);
+  }
+  // ---------- rooms: where the camera is decides what we hear ----------
+  const LV = ctx.lv || { KT: 5.0, BD: 7.4, WS: 3.6 };
+  const ROOMS = ctx.rooms || [
+    { n: 'kitchen', c: { x: -2.65, y: LV.KT + 1.05, z: 2.5 }, r: 2.8 },
+    { n: 'bedroom', c: { x: -1.9, y: LV.BD + 1.1, z: 2.3 }, r: 2.6 },
+    { n: 'workshop', c: { x: 2.75, y: LV.WS + 1.1, z: 2.9 }, r: 2.8 },
+  ];
+  function indoorK(p) {     // 0 outside .. 1 well inside a room
+    let k = 0; for (const R of ROOMS) { const dx = p.x - R.c.x, dy = (p.y - R.c.y) * 1.6, dz = p.z - R.c.z; const d = Math.sqrt(dx * dx + dy * dy + dz * dz); k = Math.max(k, 1 - smooth(R.r * .8, R.r * 1.7, d)); }   // the rooms are open to the camera: being zoomed close counts as being in the room
+    return k;
+  }
+  let inK = 0, inKa = -1;
+  function acoustics(dt) {
+    const c = ctx.camera; if (!c || !outLP) return;
+    inK += (indoorK(c.position) - inK) * Math.min(1, dt * 2.5);
+    if (Math.abs(inK - inKa) < .01) return; inKa = inK; const t = A.currentTime;
+    outLP.frequency.setTargetAtTime(20000 * Math.pow(1500 / 20000, inK), t, .15);   // 20 kHz -> 1.5 kHz
+    outBus.gain.setTargetAtTime(1 - .55 * inK, t, .15);
+    roomIn.gain.setTargetAtTime(.35 + .5 * inK, t, .15);                                 // the room rings more when we are in it
   }
 
   let actLoaded = false;
   async function load() {
     await loadPack('sounds-mp3.txt');
-    loaded = true; console.log('audio: ' + Object.keys(B).length + ' forest clips ready');
+    loaded = true; console.log('audio: ' + Object.keys(RAW).length + ' forest clips ready');
     await loadPack('sounds-act-mp3.txt').catch(e => console.warn('audio actions', e));   // the hero's foley comes second
     actLoaded = true;
   }
   async function loadPack(file) {
     const url = new URL((ctx.asset || '') + file, document.baseURI).href;
     const pack = await fetch(url).then(r => r.json());
-    await Promise.all(Object.keys(pack).map(async k => {
-      try {
-        const bin = atob(pack[k]), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
-        B[k] = await new Promise((res, rej) => A.decodeAudioData(u8.buffer, res, rej));
-      } catch (e) { console.warn('audio clip', k, e); }
-    }));
+    for (const k in pack) { const bin = atob(pack[k]), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); RAW[k] = u8; }
   }
 
   function start() {
@@ -192,7 +234,8 @@ export function createAudio(ctx) {
 
   // play a buffer at a world position. o: {gain, rate, offset, dur, ref, rev, fadeIn, fadeOut, pos|null, pan}
   function voice(name, o) {
-    const buf = B[name]; if (!buf || !A || (!o.bed && voices.size >= (o.prio ? MAXV + 6 : MAXV))) return null;   // the hero's own sounds get extra room
+    if (!A || (!o.bed && voices.size >= (o.prio ? MAXV + 6 : MAXV))) return null;   // the hero's own sounds get extra room
+    const buf = getBuf(name); if (!buf) return null;
     const t = A.currentTime + (o.delay || 0);
     const src = A.createBufferSource(); src.buffer = buf; src.playbackRate.value = o.rate || 1;
     const off = Math.min(o.offset || 0, Math.max(0, buf.duration - .3));
@@ -209,13 +252,13 @@ export function createAudio(ctx) {
       const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = o.ref || 10; p.rolloffFactor = o.roll ?? .9; p.maxDistance = 400;
       if (p.positionX) { p.positionX.value = o.pos.x; p.positionY.value = o.pos.y; p.positionZ.value = o.pos.z; } else p.setPosition(o.pos.x, o.pos.y, o.pos.z);
       if (o.move) { const m = o.move; if (p.positionX) { p.positionX.setValueAtTime(o.pos.x, t); p.positionX.linearRampToValueAtTime(m.x, t + realDur); p.positionY.setValueAtTime(o.pos.y, t); p.positionY.linearRampToValueAtTime(m.y, t + realDur); p.positionZ.setValueAtTime(o.pos.z, t); p.positionZ.linearRampToValueAtTime(m.z, t + realDur); } }
-      src.connect(lp).connect(g).connect(p).connect(master); out = p;
+      src.connect(lp).connect(g).connect(p).connect(o.indoor ? inBus : outBus); out = p;
     } else {
       const sp = A.createStereoPanner ? A.createStereoPanner() : null;
-      if (sp) { sp.pan.value = o.pan || 0; src.connect(g).connect(sp).connect(master); } else src.connect(g).connect(master);
+      const bus = o.indoor ? inBus : outBus; if (sp) { sp.pan.value = o.pan || 0; src.connect(g).connect(sp).connect(bus); } else src.connect(g).connect(bus);
     }
     const sendAmt = o.rev ?? clamp01(.12 + dist / 60);
-    if (sendAmt > .01) { const s = A.createGain(); s.gain.value = sendAmt; g.connect(s).connect(revIn); }
+    if (sendAmt > .01) { const s = A.createGain(); s.gain.value = sendAmt; g.connect(s).connect(o.indoor ? roomIn : revIn); }
     src.start(t, off, dur);
     const v = { src, g, end: t + realDur, name };
     LOG.push([+now.toFixed(1), name]); if (LOG.length > 60) LOG.shift();
@@ -242,7 +285,7 @@ export function createAudio(ctx) {
   const DAY = Object.keys(L).filter(k => !NIGHT.includes(k));
 
   function call(k, I, act, env) {
-    const S = L[k], name = pick(S.clips), buf = B[name]; if (!buf) return;
+    const S = L[k], name = pick(S.clips), buf = getBuf(name); if (!buf) return;
     const rate = I.pitch * (1 + rnd(-.025, .025));
     const o = { pos: I.pos, rate, gain: S.vol * rnd(.6, 1.05) * (.55 + .45 * Math.min(1, act)), rev: S.rev, far: S.place === 'veryfar', ref: S.place === 'house' ? 4 : 10 };
     if (S.texture) { o.dur = rnd(S.texture[0], S.texture[1]); o.offset = rnd(0, Math.max(0, buf.duration - o.dur)); o.fadeIn = rnd(.4, 1.2); o.fadeOut = rnd(.6, 1.5); }
@@ -329,6 +372,7 @@ export function createAudio(ctx) {
     if (!loaded || muted || A.state !== 'running') return;
     // real seconds from the audio clock: the frame dt is clamped and slows down on weak devices
     const t = A.currentTime; dt = clamp01(t - (update.t ?? t)); update.t = t; now += dt;
+    acoustics(dt);
     if (loops.size) tickLoops();
     const h = ctx.hour ? ctx.hour() : 12;
     const rain = clamp01(ctx.rain ? ctx.rain() : 0);
@@ -353,18 +397,18 @@ export function createAudio(ctx) {
     const R = window.__rain, cp = ctx.camera ? ctx.camera.position : null;
     let roof = .35; if (R && typeof R.roofNear === 'function' && cp) { try { roof = clamp01(R.roofNear(cp)); } catch (e) {} }
     bed('rain', ['rain_a'], rain, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1 }));
-    bed('roof', ['rain_b'], rain * (.25 + .75 * roof), l => ({ gain: .42 * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05 }));
+    bed('roof', ['rain_b'], rain * Math.min(1, .25 + .75 * roof + .5 * inK), l => ({ gain: .42 * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05 }));
     rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 60);
     if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
     // the oven fire, where the oven is
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
     const op = L2 && L2.pos ? L2.pos('oven') : null;
-    if (op) bed('fire', ['fire_a', 'fire_b'], fireLvl, l => ({ gain: .5 * l, pos: op, ref: 2.2, roll: 1.3, rev: .05, offset: rnd(0, 2) }));
+    if (op) bed('fire', ['fire_a', 'fire_b'], fireLvl, l => ({ gain: .5 * l, pos: op, ref: 2.2, roll: 1.3, rev: .2, indoor: true, offset: rnd(0, 2) }));
     // old planks creak under the hero now and then
     if (hero && hero.root) {
       const p = hero.root.position, mv = Math.hypot(p.x - lastHero.x, p.z - lastHero.z) / Math.max(dt, 1e-3);
       lastHero.x = p.x; lastHero.y = p.y; lastHero.z = p.z;
-      if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .05 }); creakNext = now + rnd(4, 14); }
+      if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
     }
   }
 
@@ -389,13 +433,18 @@ export function createAudio(ctx) {
     step: { c: ['step_wood_a', 'step_wood_b', 'step_wood_c'], v: .22, rate: .08 }, ladder: { c: ['ladder_step'], v: .28 }, rope_ladder: { c: ['rope_ladder'], v: .32 },
     sit: { c: ['chair_sit'], v: .35 }, stand: { c: ['chair_stand'], v: .35 }, bed: { c: ['bed_lie'], v: .35 }, blanket: { c: ['blanket'], v: .3 },
     page: { c: ['page_a'], v: .3 }, book_close: { c: ['book_close'], v: .35 }, tool: { c: ['tool_pickup'], v: .35 }, plank: { c: ['plank_place'], v: .42 },
-    sizzle: { c: ['sizzle'], v: .3 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
+    bow_draw: { c: ['bow_draw'], v: .45, out: 1 }, bow_release: { c: ['bow_release'], v: .45, out: 1 }, arrow: { c: ['arrow_quiver'], v: .4 },
+    jacket: { c: ['jacket_on'], v: .38 }, backpack: { c: ['backpack'], v: .38 }, fridge_open: { c: ['fridge_open'], v: .42 }, fridge_close: { c: ['fridge_close'], v: .42 },
+    meat_pan: { c: ['meat_pan'], v: .42 }, eat: { c: ['eat'], v: .32 }, plate: { c: ['plate_set'], v: .38 },
+    forest_steps: { c: ['forest_steps'], v: .32, out: 1 }, door_open: { c: ['trunk_door'], v: .42 }, door_close: { c: ['trunk_door_close'], v: .42 }, woodpile: { c: ['logs_stack', 'firewood_drop'], v: .42 },
+    sizzle: { c: ['sizzle', 'meat_pan'], v: .3 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
   };
   // the 20 approved actions by their plain names (Character may call either)
   const ALIAS = { tea: 'tea_pour', kettle_tea: 'kettle', chopping: 'chop_veg', vegetables: 'chop_veg', stir_pot: 'stir', stove_wood: 'firewood_oven', dishes: 'wash',
     sawing: 'saw', nail: 'hammer', hammering: 'hammer', sharpening: 'sharpen', fix_lantern: 'lantern_fix', diary: 'write', writing: 'write', sweeping: 'sweep',
     water_plant: 'water', watering: 'water', door_bolt: 'bolt', check_bolt: 'bolt', count_supplies: 'supplies', radio: 'radio_tune', ledge_sit: 'edge_sit',
-    carry_firewood: 'firewood_carry', armful: 'firewood_carry', listen: 'window' };
+    carry_firewood: 'firewood_carry', armful: 'firewood_carry', listen: 'window',
+    bow: 'bow_release', shoot: 'bow_release', fridge: 'fridge_open', meat: 'meat_pan', fry: 'meat_pan', eating: 'eat', forest: 'forest_steps', forest_walk: 'forest_steps', logs_to_pile: 'woodpile', put_on_jacket: 'jacket' };
   const P0 = { x: 0, y: 0, z: 0 };
   function toPos(p) {
     if (!p) { const r = ctx.hero && ctx.hero.root; return r ? { x: r.position.x, y: r.position.y + 1, z: r.position.z } : P0; }
@@ -404,16 +453,20 @@ export function createAudio(ctx) {
   }
   function actOpts(a, pos, o = {}) {
     const sp = a.rate ?? .04;
-    return { pos: toPos(pos), gain: (o.gain ?? 1) * a.v * rnd(.82, 1.05), rate: (o.rate ?? 1) * (1 + rnd(-sp, sp)), ref: 3.5, roll: 1, rev: .06, delay: o.delay || 0, fadeIn: .01, fadeOut: .12, prio: true };
+    return { pos: toPos(pos), gain: (o.gain ?? 1) * a.v * rnd(.82, 1.05), rate: (o.rate ?? 1) * (1 + rnd(-sp, sp)), ref: 3.5, roll: 1, rev: .25, delay: o.delay || 0, fadeIn: .01, fadeOut: .12, prio: true, indoor: !o.outdoor };
   }
   function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; v.g.gain.cancelScheduledValues(t); v.g.gain.setValueAtTime(v.g.gain.value, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
   function playAct(name, pos, o = {}) {
     if (!A || muted || !loaded) return null;
     if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
     const a = ACT[name] || ACT[ALIAS[name]];
-    const v = a ? voice(pick(a.c), actOpts(a, pos, o)) : B[name] ? voice(name, actOpts({ v: .4 }, pos, o)) : null;
-    if (!a && !B[name]) console.warn('audio: no sound', name);
-    return v ? { stop: (f = .15) => stopVoice(v, f) } : null;
+    const clip = a ? pick(a.c) : RAW[name] ? name : null;
+    if (!clip) { console.warn('audio: no sound', name); return null; }
+    const opts = actOpts(a || { v: .4 }, pos, Object.assign({ outdoor: a && a.out }, o));
+    const h = { v: null, dead: false, stop: (f = .15) => { h.dead = true; stopVoice(h.v, f); } };
+    if (B[clip]) h.v = voice(clip, opts);
+    else decode(clip).then(() => { if (!h.dead && !muted) h.v = voice(clip, opts); });   // first use: decoded in a few ms, then played
+    return h;
   }
   const loops = new Set();
   function loopAct(name, pos, o = {}) {
@@ -425,7 +478,7 @@ export function createAudio(ctx) {
   function tickLoops() {
     for (const Lp of loops) {
       if (Lp.cur && Lp.cur.end - A.currentTime > 1.2) continue;
-      const name = pick(Lp.a.c), buf = B[name]; if (!buf) continue;
+      const name = pick(Lp.a.c), buf = getBuf(name); if (!buf) continue;
       const o = actOpts(Lp.a, Lp.pos, Lp.o); o.gain *= Lp.gain; o.bed = true; o.fadeIn = Lp.cur ? 1.2 : .25; o.fadeOut = 1.2;
       if (Lp.cur && buf.duration > 4) o.offset = rnd(0, buf.duration * .4);
       Lp.cur = voice(name, o);
@@ -444,7 +497,7 @@ export function createAudio(ctx) {
     start, update, mute: setMute, muted: () => muted, started: () => started, loaded: () => loaded, actionsReady: () => actLoaded, actions: () => Object.keys(ACT).concat(Object.keys(ALIAS)),
     loop: loopAct,
     setSeason: s => { season0 = s || null; populate(Object.keys(L), { season: season(), rain: 0, wind }); },
-    state: () => { const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
+    state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const ext = { indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
     play: playAct,
   };

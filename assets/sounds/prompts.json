@@ -470,5 +470,57 @@
 "window_open": [
 "opening a small wooden window with a creak, close, natural recording",
 2
+],
+"bow_draw": [
+"drawing back a wooden hunting bow, clearly audible creak of the bending bow limbs and taut string, close up recording",
+2
+],
+"bow_release": [
+"shooting an arrow from a wooden bow: sharp string twang and a quick arrow whoosh, clearly audible, close up recording",
+1.5
+],
+"arrow_quiver": [
+"pulling a wooden arrow out of a leather quiver, clearly audible leather and wood rustle, close up recording",
+1.2
+],
+"jacket_on": [
+"putting on a heavy leather vest and wool sweater, leather creak and fabric rustle, close, foley",
+2.5
+],
+"fridge_open": [
+"opening an old vintage refrigerator door, chrome handle clunk and rubber seal unsticking, close, foley",
+1.5
+],
+"fridge_close": [
+"closing an old vintage refrigerator door with a solid soft thunk, close, foley",
+1.2
+],
+"meat_pan": [
+"a piece of raw meat placed into a hot cast iron pan, loud sizzle that settles into gentle frying, close",
+5
+],
+"eat": [
+"a person eating a meal quietly at a wooden table, fork tapping a ceramic plate and soft chewing, close, foley",
+4
+],
+"plate_set": [
+"setting a ceramic plate down on a wooden table, close, foley",
+1
+],
+"forest_steps": [
+"slow footsteps walking on dry autumn leaves and small twigs on a forest floor, close, foley",
+5
+],
+"backpack": [
+"swinging a canvas backpack onto the shoulders, buckles and fabric rustle, close, foley",
+2
+],
+"trunk_door": [
+"an old heavy wooden door creaking open slowly, close, natural recording",
+2.5
+],
+"trunk_door_close": [
+"closing an old heavy wooden door with a soft thud and latch click, close",
+1.5
 ]
 }
