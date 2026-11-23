@@ -104,7 +104,7 @@ function makeMaterials(renderer) {
     woodRed: std({ ...wt('#A85E34', '#5E2E16', '#D48A52', 1), roughness: .7 }),        // tool handles
     stave: std({ map: texOf(staveCanvas('#B87842', '#4A2A14', 14)), roughness: .75 }),
     staveDark: std({ map: texOf(staveCanvas('#9A6036', '#3A2010', 12)), roughness: .78 }),
-    weave: std({ map: texOf(weaveCanvas(), { rep: 3 }), roughness: .9 }),
+    weave: std({ map: texOf(weaveCanvas(), { rep: 7 }), roughness: .9 }),   // fine wicker, not big dots
     iron: metal(0x34383F, .65, .45, .6),
     enamel: metal(0x4F5965, .35, .32, .9),
     enamelDark: metal(0x30353C, .4, .4, .6),
@@ -313,7 +313,7 @@ function utensilRail(w = .55) { const g = new THREE.Group(); add(g, new THREE.Cy
 function coatHooks() { const g = new THREE.Group(); W(g, .34, .07, .025, 0, 0, .0125, { mat: M.woodDark, r: .008 });
   for (const x of [-.11, 0, .11]) { add(g, new THREE.CylinderGeometry(.008, .008, .06, 8), M.woodDark, x, 0, .05, Math.PI / 2); add(g, new THREE.SphereGeometry(.013, 10, 8), M.woodDark, x, 0, .08); }
   // a mustard scarf and a cap on the hooks
-  const sc = add(g, drapeGeo(.05, .02, .3, { r: .01, wrinkle: .008 }), new THREE.MeshStandardMaterial({ color: 0xC9962E, roughness: .95, side: THREE.DoubleSide }), -.11, .0, .06, 0, Math.PI / 2, 0); void sc;
+  const sc = add(g, drapeGeo(.11, .03, .32, { r: .015, wrinkle: .01 }), new THREE.MeshStandardMaterial({ color: 0xC9962E, roughness: .95, side: THREE.DoubleSide }), -.11, .0, .065, 0, Math.PI / 2, 0); void sc;
   const cap = add(g, new THREE.SphereGeometry(.075, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5A4632, roughness: .9 }), .11, -.04, .09); cap.scale.set(1, .75, 1); add(g, new THREE.CylinderGeometry(.06, .07, .008, 18, 1, false, 0, Math.PI), new THREE.MeshStandardMaterial({ color: 0x4A3826, roughness: .9 }), .11, -.04, .12, 0, Math.PI / 2, 0);
   return g; }
 function kettle() { const g = new THREE.Group(); g.userData.live = true; add(g, lathe([[0, 0], [.08, 0], [.095, .02], [.1, .06], [.09, .11], [.06, .135], [.035, .14], [.035, .145], [0, .145]], 28), M.enamel);
@@ -375,7 +375,10 @@ function lanternHousing(rod) { const g = new THREE.Group(); const s = .17, h = .
   for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; add(g, new THREE.PlaneGeometry(s * .7, h * .95), M.glass, Math.sin(a) * s * .35, 0, Math.cos(a) * s * .35, 0, a); }
   add(g, new THREE.TorusGeometry(.025, .005, 6, 16), M.iron, 0, h / 2 + .09, 0); add(g, new THREE.CylinderGeometry(.006, .006, rod, 6), M.iron, 0, h / 2 + .1 + rod / 2, 0); return g; }
 function domeShade(rod) { const g = new THREE.Group(); const m = add(g, lathe([[.2, 0], [.19, .03], [.14, .1], [.07, .15], [.035, .17], [0, .18]], 28), M.enamelDark); m.material = M.enamelDark; const inner = add(g, lathe([[.19, .002], [.14, .095], [.07, .145], [0, .17]], 28), new THREE.MeshStandardMaterial({ color: 0xF0E2C0, roughness: .6, side: THREE.BackSide, emissive: 0xFFC27A, emissiveIntensity: 0 }));
-  g.userData.inner = inner.material; inner.userData.live = true; add(g, new THREE.CylinderGeometry(.006, .006, rod, 6), M.iron, 0, .18 + rod / 2, 0); add(g, new THREE.TorusGeometry(.2, .008, 6, 32), M.iron, 0, 0, 0, Math.PI / 2); return g; }
+  g.userData.inner = inner.material; inner.userData.live = true; // hangs on a chain of small links up to the roof beam, with a ceiling rose at the top
+  { const n = Math.max(2, Math.round(rod / .035)); const lg = new THREE.TorusGeometry(.011, .0028, 5, 10); for (let i = 0; i < n; i++) add(g, lg, M.iron, 0, .185 + i * rod / n + .012, 0, 0, (i % 2) * Math.PI / 2, 0).scale.set(1, 1.5, 1);
+    add(g, new THREE.CylinderGeometry(.03, .04, .025, 14), M.iron, 0, .18 + rod + .012, 0); }
+  add(g, new THREE.TorusGeometry(.2, .008, 6, 32), M.iron, 0, 0, 0, Math.PI / 2); return g; }
 function plankDoor(h = 2.0, w = .86) { const g = new THREE.Group(); const n = 5, pw = w / n; for (let i = 0; i < n; i++) W(g, pw - .008, h - .01, .045, -w / 2 + pw * (i + .5), h / 2, 0, { mat: M.wood, r: .01, grain: 1 });
   for (const y of [.35, h - .35]) W(g, w - .06, .12, .03, 0, y, -.035, { mat: M.woodDark }); for (const [ww, hh, x, y] of [[.09, h + .09, -w / 2 - .045, h / 2], [.09, h + .09, w / 2 + .045, h / 2], [w + .18, .09, 0, h + .045]]) W(g, ww, hh, .07, x, y, .01, { mat: M.woodDark });
   for (const y of [.35, h - .35]) { add(g, rb(.2, .035, .008, .004), M.iron, w / 2 - .1, y, .027); for (const k of [0, 1, 2]) screw(g, w / 2 - .17 + k * .06, y, .032); }
@@ -436,7 +439,7 @@ function toolWall() {
   for (let i = 0; i < 3; i++) W(g, Wd, H / 3 - .012, .035, 0, (i + .5) * H / 3, 0, { mat: M.wood, r: .008 });
   for (const [w, h, x, y] of [[Wd + .08, .06, 0, H + .02], [Wd + .08, .06, 0, -.02], [.06, H + .1, Wd / 2 + .01, H / 2], [.06, H + .1, -Wd / 2 - .01, H / 2]]) W(g, w, h, .05, x, y, .01, { mat: M.woodDark, r: .01 });
   const peg = (x, y) => add(g, new THREE.CylinderGeometry(.007, .007, .05, 8), M.woodDark, x, y, .04, Math.PI / 2);
-  const hang = (name, obj, x, y, rz = 0, s = 1.3) => { obj.position.set(x, y, .045); obj.rotation.z = rz; obj.scale.setScalar(s); obj.userData.live = true; g.add(obj); tools[name] = obj; };
+  const hang = (name, obj, x, y, rz = 0, s = 1.3) => { bake(obj); obj.traverse(o => { if (o.isMesh) o.castShadow = false; }); obj.position.set(x, y, .045); obj.rotation.z = rz; obj.scale.setScalar(s); obj.userData.live = true; g.add(obj); tools[name] = obj; };
   // big wrench on the left, a row of spanners, hammer, saw, screwdrivers, pliers, adjustable bar
   hang('wrenchBig', wrench(.36), -.58, .4, .08); peg(-.58, .66);
   [.22, .2, .18, .16, .14].forEach((l, i) => { hang('wrench' + (i + 1), wrench(l), -.38 + i * .1, .55 + (.22 - l) * .65, 0); peg(-.38 + i * .1, .72); });
@@ -511,15 +514,15 @@ export function buildProps(ctx) {
   };
   const roomDx = (x, y) => (x < .8 && y > KT - .3 && y < DK + 1) ? (L.dxL || 0) : (x > .8 && y > WS - .3 && y < KT + 1.2) ? (L.dxR || 0) : 0;
   function place(name, g, x, y, z, { ry = 0, solid = true, seat = false, floor = true, wall = false } = {}) {
-    const fy = floor && !wall ? floorAt(x, y, z) : y; g.position.set(x, fy, z); g.rotation.y = ry; g.traverse(o => { if (o.isMesh) { o.castShadow = o.castShadow !== false; } }); scene.add(g); g.updateMatrixWorld(true);
+    const fy = floor && !wall ? floorAt(x, y, z) : y; g.position.set(x, fy, z); g.rotation.y = ry; g.updateMatrixWorld(true); const sz0 = new THREE.Box3().setFromObject(g).getSize(V()); const small = Math.max(sz0.x, sz0.y, sz0.z) < .45; g.traverse(o => { if (o.isMesh) { o.castShadow = small ? false : o.castShadow !== false; } }); scene.add(g); g.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(g); g.userData.box = b; g.userData.floorY = fy; g.name = name; if (solid && !wall) OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y, seat, n: name }); placed[name] = g; return g;
   }
   const out = { objects: placed, tools: {}, surfaces: {} };
 
   // ---------- kitchen (back wall z≈1.05, open front +z) ----------
   const st = place('stove', stove(), -3.25, KT, 1.4); out.oven = st.userData.oven;
-  const ket = kettle(); ket.position.set(-.19, .91, -.12); st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
-  { const pt = pot(); pt.position.set(.19, .93, .13); st.add(pt); }
+  const ket = bake(kettle()); ket.position.set(-.19, .91, -.12); st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
+  { const pt = bake(pot()); pt.position.set(.19, .93, .13); st.add(pt); }
   place('krail', utensilRail(.5), -3.25, KT + 1.37, 1.56, { solid: false, wall: true }); // hangs from the front edge of the hood, over the stove
   place('hood', hood(Math.max(.2, (BD - .2) - (KT + 1.42) - .3)), -3.25, KT + 1.42, 1.32, { solid: false, wall: true });
   place('counter', sinkCounter(), -2.3, KT, 1.38);
@@ -529,7 +532,7 @@ export function buildProps(ctx) {
   place('kbarrel', barrel(.78), -4.0, KT, 3.0);
   place('kbucket', bucket(.34), -3.55, KT, 3.28);
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
-  place('klamp', lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.78) - .2)), -2.3, KT + 1.78, 1.75, { solid: false, wall: true });
+  place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -1.75, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
 
   // ---------- bedroom ----------
   const bunk = place('bunkbed', bunkBed(), -2.4, BD, 1.71, { seat: true });
@@ -538,9 +541,9 @@ export function buildProps(ctx) {
   const chairO = place('chair', chair(), -.58, BD, 2.3, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
   const tbl = place('table', table(), -.35, BD, 1.45); const tTop = tbl.userData.floorY + .74;
   const bk = book({ cover: M.covers[0] }); bk.position.set(-.33, tTop, 1.6); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
-  { const m = mug(M.glazeBlue); m.position.set(-.06, tTop, 1.35); scene.add(m); const c = candle(); c.position.set(-.62, tTop, 1.32); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62, tTop, 1.6); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
+  { const m = bake(mug(M.glazeBlue)); m.position.set(-.06, tTop, 1.35); scene.add(m); const c = bake(candle()); c.position.set(-.62, tTop, 1.32); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62, tTop, 1.6); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
   place('door', plankDoor(2.0), .33, BD, 1.82, { ry: -Math.PI / 2, solid: false });
-  place('hooks', coatHooks(), .17, BD + 1.6, .97, { solid: false, wall: true });
+  place('hooks', bake(coatHooks()), .17, BD + 1.6, .97, { solid: false, wall: true });
   { const b = closedBook(.035, .2, .15, M.covers[4]); b.rotation.set(0, .6, Math.PI / 2); b.position.set(.25, 1.07 + .045 + .15 + .03, .12); bunk.add(b); }
   { const s = switchPlate(); s.position.set(.37, BD + 1.15, 2.5); s.rotation.y = -Math.PI / 2; scene.add(s); }
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
@@ -551,14 +554,14 @@ export function buildProps(ctx) {
   const tw = toolWall(); place('toolwall', tw.g, 2.6, WS + 1.05, 1.28, { solid: false, wall: true });
   for (const [k, o] of Object.entries(tw.tools)) { o.userData.home = { parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.x }; out.tools[k] = o; }
   // a hammer and a wrench lying on the bench, ready to be picked up
-  { const h = hammer(); h.position.set(2.2, wb.userData.floorY + .9 + .018, 1.98); h.rotation.set(-Math.PI / 2, 0, -1.2); h.userData.live = true; scene.add(h); out.tools.benchHammer = h; h.userData.home = { parent: scene, pos: h.position.clone(), quat: h.quaternion.clone(), scale: 1 };
-    const w = wrench(.2); w.position.set(3.25, wb.userData.floorY + .9 + .008, 2.0); w.rotation.set(-Math.PI / 2, 0, .5); scene.add(w); out.tools.benchWrench = w; w.userData.home = { parent: scene, pos: w.position.clone(), quat: w.quaternion.clone(), scale: 1 }; }
+  { const h = bake(hammer()); h.position.set(2.2, wb.userData.floorY + .9 + .018, 1.98); h.rotation.set(-Math.PI / 2, 0, -1.2); h.userData.live = true; scene.add(h); out.tools.benchHammer = h; h.userData.home = { parent: scene, pos: h.position.clone(), quat: h.quaternion.clone(), scale: 1 };
+    const w = bake(wrench(.2)); w.position.set(3.25, wb.userData.floorY + .9 + .008, 2.0); w.rotation.set(-Math.PI / 2, 0, .5); scene.add(w); out.tools.benchWrench = w; w.userData.home = { parent: scene, pos: w.position.clone(), quat: w.quaternion.clone(), scale: 1 }; }
   place('wshelves', workshopShelves(.95), 4.4, WS + .95, 1.85, { ry: -Math.PI / 2, solid: false, wall: true });
   const stl = place('stool', stool(), 1.85, WS, 2.6, { seat: true }); out.surfaces.stoolSeat = stl.userData.floorY + .48;
   place('wbarrel', barrel(.8), 1.55, WS, 1.55);
   place('wbucket', bucket(.36, true), 4.05, WS, 3.4);
   place('wrug', rug(1.6, .95, 'green', '#D9C99A'), 2.8, WS, 3.05, { solid: false });
-  place('wlamp', domeShade(.6), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
+  place('wlamp', bake(domeShade(1.1)), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
 
   // ---------- deck and landings ----------
@@ -586,6 +589,19 @@ export function buildProps(ctx) {
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
     out.oven.setHeat(heat); void cooking; // lights.js owns the oven heat (passed in as heat) tAcc += dt; out.oven.flicker(tAcc);
   };
+  // ---------- stovepipe: from the hood duct across the kitchen ceiling, out through the left wall,
+  // then up outside the bedroom wall past the eaves, with a rain cap (smoke.js reads out.chimneyTop) ----------
+  { const g = new THREE.Group(); const r = .055, y1 = KT + 1.95, xo = -4.8, z = 1.3, top = BD + 3.05;
+    const seg = (a, b) => { const d = b.clone().sub(a); const m = add(g, new THREE.CylinderGeometry(r, r, d.length(), 16), M.iron, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); m.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize()); };
+    const joint = (p) => add(g, new THREE.SphereGeometry(r * 1.08, 16, 10), M.iron, p.x, p.y, p.z);
+    const band = (p, horiz) => add(g, new THREE.CylinderGeometry(r * 1.15, r * 1.15, .03, 16), M.iron, p.x, p.y, p.z, 0, 0, horiz ? Math.PI / 2 : 0);
+    const A = V(-3.25, y1, z), B = V(xo, y1, z), C = V(xo, top, z);
+    seg(V(-3.25, KT + 1.62, z), A); joint(A); seg(A, B); joint(B); seg(B, C);
+    for (const x of [-3.9, -4.42]) band(V(x, y1, z), true); for (let y = y1 + .5; y < top - .2; y += .7) band(V(xo, y, z), false);
+    // wall collar where it goes through the kitchen wall, a bracket on the bedroom wall, the cap
+    add(g, rb(.05, .22, .22, .01), M.woodDark, -4.42, y1, z); add(g, rb(.62, .03, .05, .01), M.iron, -4.5, BD + 1.2, z);
+    add(g, new THREE.CylinderGeometry(.01, .16, .1, 16), M.iron, xo, top + .12, z); for (const s of [-1, 1]) add(g, rb(.012, .08, .012, .003), M.iron, xo + s * .045, top + .04, z);
+    bake(g); g.traverse(o => { if (o.isMesh) o.castShadow = false; }); scene.add(g); out.chimneyTop = V(xo, top, z); }
   shiftRooms();
   // ---------- light sources for lights.js: world positions + the emissive materials to switch ----------
   // each: { pos: Vector3 (world), obj, mats: [materials whose emissive/opacity show the source is on] }
