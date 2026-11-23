@@ -232,6 +232,41 @@ export function createMotion({ hero, db, opts = {} }) {
     const ox = prevOut[b*4], oy = prevOut[b*4+1], oz = prevOut[b*4+2], ow = prevOut[b*4+3];
     const nx = -newQ[ni], ny = -newQ[ni+1], nz = -newQ[ni+2], nw = newQ[ni+3];
     const t = [0, 0, 0, 0]; qmul([ox, oy, oz, ow], 0, [nx, ny, nz, nw], 0, t, 0); qlog(t[0], t[1], t[2], t[3], offX, b*3); }
+  // angle between q (at qi) and the constant-angular-velocity prediction from a (t-1) and b (t-2)
+  function devAngle(q, qi, a, b, i) { const ib = [-b[i], -b[i+1], -b[i+2], b[i+3]], d = [0, 0, 0, 0], pr = [0, 0, 0, 0]; qmul(a, i, ib, 0, d, 0); qmul(d, 0, a, i, pr, 0);
+    const dot = Math.abs(pr[0]*q[qi] + pr[1]*q[qi+1] + pr[2]*q[qi+2] + pr[3]*q[qi+3]) / Math.max(1e-9, Math.hypot(pr[0], pr[1], pr[2], pr[3])); return 2 * Math.acos(Math.min(1, dot)); }
+
+  // ---------- final pass: no pose ever pops on screen ----------
+  // Runs after everything that touches the skeleton in a frame (hero.js clips and IK, motion matching, collide.js). When a bone's
+  // final rotation breaks from its own constant-velocity prediction (a clip switched without a long enough cross-fade, an IK target
+  // let go, a correction released), the jump is taken into a decaying offset (inertialization): the bone leaves from where it was on
+  // screen and eases into the new pose. Around action changes the threshold is low, elsewhere only real pops trip it.
+  const legSide = names.map((n, b) => !isLower[b] ? -1 : /Left/.test(n) ? 0 : /Right/.test(n) ? 1 : -1);
+  const FP = { on: opts.pops ?? true, hl: .11, thrHot: .06, thr: .3, hot: 0, key: '', n: 0, bones: 0, gen: 0 };
+  const fr1 = new Float32Array(NB * 4), fr2 = new Float32Array(NB * 4), fShown = new Float32Array(NB * 4), fRaw = new Float32Array(NB * 4);
+  const fX = new Float32Array(NB * 3), fV = new Float32Array(NB * 3); let fN = 0; const fY = damp(FP.hl);
+  function final(dt) { if (!(dt > 0)) return; dt = Math.min(dt, .1);
+    const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : '';
+    const key = cn + '|' + (S.on ? 1 : 0) + (H.lad ? 1 : 0) + (H.fit ? 1 : 0) + (H.seated ? 1 : 0) + (H.inBed ? 1 : 0) + (H.swing ? 1 : 0) + (H.once ? 1 : 0) + '|' + (H.state || '');
+    if (key !== FP.key) { FP.hot = .6; FP.key = key; } else FP.hot = Math.max(0, FP.hot - dt);
+    const off = !FP.on || window.__noPops;
+    for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
+    let any = false, hit = 0;
+    for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const i3 = b*3;
+      if (!off && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
+        if (dv > (FP.hot > 0 ? FP.thrHot : FP.thr)) { // start from what was on screen last frame
+          const t = [0, 0, 0, 0]; qmul(fShown, b*4, [-fRaw[b*4], -fRaw[b*4+1], -fRaw[b*4+2], fRaw[b*4+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], fX, i3); fV[i3] = fV[i3+1] = fV[i3+2] = 0; hit++; } }
+      if (off) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; }
+      const e = Math.exp(-fY * dt); for (let k = 0; k < 3; k++) { const j1 = fV[i3+k] + fX[i3+k] * fY; fX[i3+k] = e * (fX[i3+k] + j1 * dt); fV[i3+k] = e * (fV[i3+k] - j1 * fY * dt); }
+      if (Math.abs(fX[i3]) + Math.abs(fX[i3+1]) + Math.abs(fX[i3+2]) > 1e-4) { const o = [0, 0, 0, 0]; qexp(o, 0, fX[i3], fX[i3+1], fX[i3+2]); qmul(o, 0, fRaw, b*4, fShown, b*4); B.quaternion.set(fShown[b*4], fShown[b*4+1], fShown[b*4+2], fShown[b*4+3]); any = true; }
+      else { fShown[b*4] = fRaw[b*4]; fShown[b*4+1] = fRaw[b*4+1]; fShown[b*4+2] = fRaw[b*4+2]; fShown[b*4+3] = fRaw[b*4+3]; } }
+    if (hit) { FP.n++; FP.bones += hit; }
+    fr2.set(fr1); fr1.set(fRaw); fN++;
+    if (any) root.updateMatrixWorld(true); }
+  // hook the final pass after everything else in the hero's update (collide.js wraps HH.update too, possibly later: stay outermost)
+  let fWrap = null;
+  function ensureFinal() { if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
+    fWrap = dt => { inner(dt); if (g === FP.gen) final(dt); }; hero.update = fWrap; }
   function stepOffsets(dt) {
     for (let i = 0; i < NB * 3; i++) { const y = yB[(i / 3) | 0], e = Math.exp(-y * dt); const j1 = offV[i] + offX[i] * y; offX[i] = e * (offX[i] + j1 * dt); offV[i] = e * (offV[i] - j1 * y * dt); }
     { const e = Math.exp(-yP * dt); for (let k = 0; k < 3; k++) { const j1 = offPV[k] + offP[k] * yP; offP[k] = e * (offP[k] + j1 * dt); offPV[k] = e * (offPV[k] - j1 * yP * dt); } } }
@@ -242,7 +277,7 @@ export function createMotion({ hero, db, opts = {} }) {
   // ---------- per frame, called by hero.js right after mixer.update ----------
   const traj = [null, null, null];
   const T0 = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  function post(dt) { if (!(dt > 0)) return; dt = Math.min(dt, .1);
+  function post(dt) { if (!(dt > 0)) return; dt = Math.min(dt, .1); ensureFinal();
     // three.js only writes a bone when the clip value changes, so the hips position may still be what we wrote last frame
     { const hp = HB[HIPS].position; if (!(wroteH && hp.x === outH[0] && hp.y === outH[1] && hp.z === outH[2])) pureH = [hp.x, hp.y, hp.z]; }
     const p = root.position, yaw = root.rotation.y;
@@ -341,6 +376,6 @@ export function createMotion({ hero, db, opts = {} }) {
 
   // timing check: n full searches against random database frames as queries (Date.now: works under a frozen performance.now)
   function bench(n = 400) { let pr = 0; const t0 = Date.now(); for (let i = 0; i < n; i++) { const g = (Math.random() * total) | 0; for (let k = 0; k < NF; k++) Qv[k] = F[g*NF + k] + (Math.random() - .5) * .3; search(Qv, -1, 1e9); pr += S.pruned; } return { msPerSearch: (Date.now() - t0) / n, pruned: pr / n }; }
-  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
+  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
   return api;
 }
