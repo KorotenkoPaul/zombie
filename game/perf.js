@@ -64,7 +64,7 @@ export function createPerf({ renderer, MOBILE }) {
       else if (miss < UP) { calm++; if (calm >= 2 && clock >= blockUntil && P.applied.some(s => s.up)) { if (stepUp()) { lastUpAt = clock; cool = 1; } calm = 0; } }
       else calm = 0;
     }
-    if (hud && hud.on) drawHud();
+    if (hud && hud.on) drawHud(); else if ((++bF & 127) === 0) checkBudget();
   };
   P.stats = () => {
     const a = []; for (let i = 0; i < n; i++) a.push(ft[i]); a.sort((x, y) => x - y);
@@ -73,6 +73,13 @@ export function createPerf({ renderer, MOBILE }) {
       vsync: +vs.toFixed(1), miss: Math.round(miss * 100), calls: lastDraw.calls, tris: lastDraw.tris, geo: info.memory.geometries, tex: info.memory.textures, progs: info.programs ? info.programs.length : 0,
       cap: P.cap, pr: +renderer.getPixelRatio().toFixed(2), level: P.level, applied: P.applied.map(s => s.name), steps: P.steps.map(s => s.name), blocked: clock < blockUntil, hist: hist.slice(), mobile: !!MOBILE };
   };
+
+  // ---------- phone budget (all passes of one frame, incl. shadows). Over budget shows red in the readout and
+  // warns once in the console with the numbers, so owners see it in their own tests. ----------
+  P.budget = MOBILE ? { calls: 300, tris: 450000 } : { calls: 900, tris: 2000000 };
+  let warned = false, bF = 0;
+  P.overBudget = () => { const o = []; if (lastDraw.calls > P.budget.calls) o.push('вызовов ' + lastDraw.calls + '>' + P.budget.calls); if (lastDraw.tris > P.budget.tris) o.push('треуг. ' + Math.round(lastDraw.tris / 1000) + 'k>' + Math.round(P.budget.tris / 1000) + 'k'); return o; };
+  const checkBudget = () => { const o = P.overBudget(); if (o.length && !warned && clock > 8) { warned = true; console.warn('[perf] over the phone budget:', o.join(', '), '- see NOTES-perf.md'); } return o; };
 
   // ---------- readout ----------
   let hud = null, hudT = 0;
@@ -85,8 +92,9 @@ export function createPerf({ renderer, MOBILE }) {
   function drawHud() {
     const t = performance.now(); if (t - hudT < 500) return; hudT = t; const s = P.stats();
     const col = s.fps >= 55 ? '#8CF59A' : s.fps >= 40 ? '#FFD36B' : '#FF7B6B';
+    const ob = checkBudget(), red = t => `<span style="color:#FF7B6B">${t}</span>`;
     hud.el.innerHTML = `<span style="color:${col};font-size:13px">${s.fps.toFixed(0)} FPS</span>  ${s.ms} ms\n` +
-      `худший ${s.worst} · 95% ${s.p95} ms\nJS ${s.js} ms · вызовов ${s.calls}\nтреуг. ${(s.tris / 1000).toFixed(0)}k · px ${s.pr}\n` +
+      `худший ${s.worst} · 95% ${s.p95} ms\nJS ${s.js} ms · ${s.calls > P.budget.calls ? red('вызовов ' + s.calls) : 'вызовов ' + s.calls}\n${s.tris > P.budget.tris ? red('треуг. ' + (s.tris / 1000).toFixed(0) + 'k') : 'треуг. ' + (s.tris / 1000).toFixed(0) + 'k'} · px ${s.pr}\n` +
       `пропуски ${s.miss}% · кадр ${s.vsync} ms${s.cap > 1 ? ' · предел ' + Math.round(1000 / (s.vsync * s.cap)) + ' FPS' : ''}\nкачество −${s.level}${s.applied.length ? ' (' + [...new Set(s.applied)].join(', ') + ')' : ''}`;
   }
   P.show = on => { if (!hud) hud = makeHud(); hud.on = on; hud.el.style.display = on ? 'block' : 'none'; try { localStorage.setItem('perfHud', on ? '1' : '0'); } catch (e) {} };
