@@ -905,8 +905,8 @@ let hour=19.3,dayNo=1,weather='clear',rainK=0,spawnLeft=0,spawnT=0,over=false,hi
 let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSET+'brain.js',document.baseURI).href);BRAIN=createBrain({HH,lights:LIGHTS,hour:()=>hour,isNight:h=>isNight(h)});window.__brain=BRAIN;}catch(e){console.error('brain',e);}}
 // the game opens at any hour, in the middle of whatever he is doing: random hour, needs to match, then a quick
 // off-screen run of his life (walking, ladders, cooking, sleep...) so the first frame catches him mid-action. ?start=fixed keeps the old start.
-if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=Math.random()*24;BRAIN.prime(hour);const t0=performance.now(),dt=1/30;let n=0;const N=Math.floor(rnd(900,2400));
- while(n<N&&performance.now()-t0<2500){hour+=dt*hps();if(hour>=24)hour-=24;HH.update(dt);n++;}}catch(e){console.error('prewarm',e);}}
+if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=Math.random()*24;BRAIN.prime(hour);const t0=performance.now(),dt=1/15;let n=0;const N=Math.floor(rnd(450,1200));/* same game time in half the steps; hero.js skips its IK polish meanwhile (__heroFast) */
+ window.__heroFast=true;while(n<N&&performance.now()-t0<2500){hour+=dt*hps();if(hour>=24)hour-=24;HH.update(dt);n++;}window.__heroFast=false;}catch(e){window.__heroFast=false;console.error('prewarm',e);}}
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return isNight(hour)?10/180:14/300;}// a day of 8 minutes (Pavel 2026-11-23): 5 min of daylight, 3 min of night
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}

@@ -1101,8 +1101,9 @@ export function createHero(ctx){
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
    const sq=H.squat||0;const f=floorAt(p.x,p.y+sq,p.z,.32);if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
-  if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
+  if(motion&&!window.__heroFast){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
   sleepTick(dt);lidTick(dt);coatTick(dt);
+  if(window.__heroFast)return;/* off-screen fast-forward (the random start): no IK polish, nobody sees these frames */
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
