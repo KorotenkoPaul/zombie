@@ -98,3 +98,8 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Foot kicks (particles.js): when a foot lands while he walks (hips speed .5-4 m/s, outside the rooms), 2-3 leaf bits hop up on the ground, or 1-2 dust specks on the landings. They flutter down and drift with the wind. Pool of 16 on phones / 24 on desktop, one draw. Perf step 'footKick' (order 58).
 - Breath already shows only outdoors, or indoors when it is very cold (feels < 2 °C, at half strength).
 - Hair and clothes stirring belongs to Character (hero.js). They can read __wind.sample(headPos) and __rain.covered(pos).
+
+## Round 18: phone cost audit and soft quality steps
+- CPU per frame (all wind-thread updates; SwiftShader host, so expect about 5x on a phone): wind .008 ms, rain .001, particles .020, housewind .015, smoke ~0. Total about .045 ms.
+- Draws in a night storm on a phone, at most about 11: falling leaves 1 (16 inst, 32 tris), rain streaks 1 (1600 inst, 3200 tris, thin, fill-light), splashes 1 (220 inst), drips 1 (44 inst), room dust 0-3 (Points of 140, only rooms with a lit lamp), breath 0-1 (10 pts, only when cold), foot kicks 0-1 (16 pts, only right after a step), smoke 0-1 (16 pts), fog bank 0-1 (one sheet, half-res inside fogpass). Curtains, lantern, telescope and ladders add no draws: uniforms or transforms on existing meshes.
+- Quality steps no longer pop. wetGlass fades over 2.5 s. rainDrops and rainSplash thin out one instance at a time (uKeep, gl_InstanceID) over ~1 s, then cut instanceCount. roomDust fades (uK) over ~2 s. leafFall and footKick only stop spawning, so the ones already in the air live out.
