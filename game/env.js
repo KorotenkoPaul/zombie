@@ -221,7 +221,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   fragmentShader:`uniform float t,op,trunkK;uniform vec3 col,cam,pond;uniform vec2 drift;varying vec3 vW;${FOG_NOISE}${SOFT_GLSL}
    void main(){vec2 p=(vW.xz-drift)*.075+vec2(vW.y*1.7,0.);vec2 q=nz2(p+vec2(t*.018,t*.007));
     vec2 r=nz2(p+3.*q+vec2(1.7,9.2)+t*.02);float d=fbm(p+3.4*r);
-    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK,1.,smoothstep(4.,12.,length(vW.xz)))*mix(.1,1.,smoothstep(pond.z+.2,pond.z+2.2,length(vW.xz-pond.xy)));
+    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK,1.,smoothstep(5.,10.,length(vW.xz)))*mix(.1,1.,smoothstep(pond.z+.2,pond.z+2.2,length(vW.xz-pond.xy)));
     float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6)*smoothstep(.35,1.8,cam.y-vW.y);/* a sheet near eye height reads as a hard horizontal line: it fades out as the camera comes down to it */gl_FragColor=vec4(col*(.82+.4*d),a);}`});
  const sheets=[];(MOBILE?[[.3,1.1],[.9,.85]]:[[.25,1],[.7,.8],[1.3,.6]]).forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.CircleGeometry(97,40).rotateX(-Math.PI/2)/* the sheets fade out by r 95: a disc, not a 200 m square */,sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
@@ -242,7 +242,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     vec4 mv=viewMatrix*vec4(cpos,1.);vW=cpos+vec3(0.,iA.w*.3,0.);float sz=iA.w*(1.+.08*sin(t*.11+iB.x));mv.xy+=position.xy*vec2(sz*1.6,sz);vWy=(inverse(viewMatrix)*mv).y;
     vFade=smoothstep(2.,8.,-mv.z);
     // keep the trunk base and roots clear: puffs between the camera side and the trunk fade out (fog stays around and behind them, as in the photo)
-    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*frontK*(1.-bl);vFade*=smoothstep(pond.z+.3,pond.z+2.3,length(cpos.xz-pond.xy)-iA.w*.45);/* the pond stays clear (puff edge 2 m off the water) */vFade=mix(vFade,smoothstep(1.,4.,-mv.z),bl);gl_Position=projectionMatrix*mv;}`,
+    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*frontK*(1.-bl);vFade*=1.-smoothstep(9.,6.,length(cpos.xz))*frontK*.6*(1.-bl);/* Ground: within ~8 m of the trunk the fog lies low in patches (billows), the roots and moss read */vFade*=smoothstep(pond.z+.3,pond.z+2.3,length(cpos.xz-pond.xy)-iA.w*.45);/* the pond stays clear (puff edge 2 m off the water) */vFade=mix(vFade,smoothstep(1.,4.,-mv.z),bl);gl_Position=projectionMatrix*mv;}`,
   fragmentShader:`uniform float t,op,wlv;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${FOG_NOISE}${SOFT_GLSL}
    void main(){vec2 p=vUv-.5;float r=length(p*vec2(1.,1.25));
     // swirl: rotate the noise domain by an amount that depends on radius and time, so the clump churns
@@ -363,7 +363,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
  // stronger blue rim and a cooler lift in the shadows. Uniform tweaks only: no extra draw calls or passes.
- const PH={foldF:.75,foldR:.5,leafK:1,trunk:.9,front:.3,puff:2.6,sheet:2.2,mist:1.7,fill:1.7,rim:1.6,moonRim:1.8,haze:.6,lift:new THREE.Color(0x10304a)};env.phoneNightK=PH;
+ const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:2.6,sheet:2.2,mist:1.7,fill:1.7,rim:1.6,moonRim:1.8,haze:.6,lift:new THREE.Color(0x10304a)};env.phoneNightK=PH;
  const liftBase=env.gradePass.uniforms.lift.value.clone(),liftTmp=new THREE.Color();
  function phoneNight(eve,rainK){const k=eve;PH.cur=k;const f=x=>1+(x-1)*k;
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
