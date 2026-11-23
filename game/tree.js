@@ -252,10 +252,10 @@ export function buildTree(THREE, o) {
   const lmat = new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
   // soft, lit-from-above clumps: cards near the clump centre are darker (painted volume)
   lmat.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\nvFacing=abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;').replace('#include <alphatest_fragment>', 'diffuseColor.a*=smoothstep(.12,.5,vFacing);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
-  const total = MOB(o) ? 600 : 950;
+  const total = MOB(o) ? 700 : 1100;
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   const qg = new THREE.PlaneGeometry(1, 1);
   const im = new THREE.InstancedMesh(qg, lmat, total);
@@ -271,7 +271,8 @@ export function buildTree(THREE, o) {
       const p = s.p.clone().add(V(dir.x * s.s * rr, dir.y * s.s * 0.7 * rr, dir.z * s.s * rr));
       if (inB(p.x, p.y, p.z, 0.8)) continue;
       // cards turned mostly towards the viewer, like the painted clumps in the photo
-      const look = new THREE.Matrix4().lookAt(V(0, 0, 0), dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)).normalize(), V(0, 1, 0));
+      const fw = rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
+      const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
       sc.setScalar(rnd(2.3, 3.3));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
