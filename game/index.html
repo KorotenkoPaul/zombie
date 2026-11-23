@@ -293,25 +293,17 @@ function prop(n,x,y,z,{h,w,ry=0,bright=1,solid=true,seat=false}={}){const o=PROP
  o.traverse(m=>{if(m.isMesh){m.castShadow=true;m.receiveShadow=true;if(m.material){m.material=m.material.clone();m.material.metalness=Math.min(m.material.metalness??0,.15);m.material.roughness=Math.max(.55,m.material.roughness??.8);if(bright!==1&&m.material.color)m.material.color.multiplyScalar(bright);}}});scene.add(o);b=new THREE.Box3().setFromObject(o);if(solid&&b.min.y<y+.5)OBST.push({x0:b.min.x,x1:b.max.x,z0:b.min.z,z1:b.max.z,y:y,seat,n});o.userData.box=b;return o;}
 function rug(x,y,z,w,d,c1,c2){const cv=document.createElement('canvas');cv.width=128;cv.height=128;const g=cv.getContext('2d');g.fillStyle=c1;g.fillRect(0,0,128,128);g.strokeStyle=c2;g.lineWidth=6;g.strokeRect(8,8,112,112);g.lineWidth=3;g.strokeRect(20,20,88,88);for(let i=0;i<6;i++){g.fillStyle=c2;g.fillRect(28+i*13,58,7,12);}const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshStandardMaterial({map:t,roughness:1}));m.rotation.x=-Math.PI/2;m.position.set(x,y+.035,z);m.receiveShadow=true;scene.add(m);}
 const glass=new THREE.MeshStandardMaterial({color:0x9CC4E0,emissive:0x5E8CC0,emissiveIntensity:.55,roughness:.1});
-function win(x0,x1,y0,y1,z,side){const g=new THREE.Group();const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),glass);g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}
+const WINS=[];function win(x0,x1,y0,y1,z,side,room){const g=new THREE.Group();const gm=glass.clone();WINS.push({mat:gm,room});const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),gm);g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}
  if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);}
-win(-2.7,-1.95,KT+1.15,KT+1.85,1.04);win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2);win(-.75,-.05,BD+1.05,BD+1.75,.99);win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2);win(3.2,3.95,WS+1.05,WS+1.75,1.24);win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2);
+win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(-.75,-.05,BD+1.05,BD+1.75,.99,0,'bedroom');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
 // all furniture and objects: props.js (bevelled, textured, interactive). P3.oven / P3.book / P3.tools / P3.surfaces
 const P3=buildProps({scene,renderer,OBST,floors:[boards,beams],L:{KT,BD,WS,DK,LL}});window.__props=P3;
 const chairO=P3.chairO,bunk=P3.bunk;
 // the glowing doorway in the trunk (bottom right)
 // the glowing hollow in the trunk (bottom right) is carved into the tree mesh itself (game/tree.js)
-const doorDir=V(Math.cos(TREE.doorAngle),0,Math.sin(TREE.doorAngle)),doorZ=TAX[1]+doorDir.z*TREE.R(LG+.7);
-const doorLight=new THREE.PointLight(0xFF9A40,0,4,1.6);doorLight.position.set(TAX[0]+doorDir.x*(TREE.R(LG+.7)-.3),LG+.75,TAX[1]+doorDir.z*(TREE.R(LG+.7)-.3));scene.add(doorLight);
-// lanterns
-const lanterns=[];
-function lantern(x,y,z,hang,noLight){const g=new THREE.Group();g.position.set(x,y,z);scene.add(g);if(!hang)P3.lanternHousing(g,.2);
- const bulbM=new THREE.MeshStandardMaterial({color:0xFFE0A0,emissive:0xFF9A30,emissiveIntensity:0});const bulb=new THREE.Mesh(new THREE.SphereGeometry(hang?.07:.065,12,10),bulbM);g.add(bulb);
- const l=noLight?{intensity:0}:new THREE.PointLight(0xFFA14A,0,6.5,1.6);if(!noLight)g.add(l);lanterns.push({g,l,bulbM,seed:rnd(0,9)});}
-lantern(-2.3,KT+1.78,1.75,true);lantern(3.75,WS+1.5,2.45,true);lantern(-2.0,BD+1.95,2.5);lantern(.7,DK+1.15,3.0,false,true);lantern(-.62,LC+1.25,3.84);lantern(-2.4,KT+1.5,3.5,false,true);
-lanterns.forEach(L=>{if(L.l.isLight)ENV.addHalo(L.l,1.5);});ENV.addHalo(doorLight,2.4);
-const stoveLight=new THREE.PointLight(0xFF7A2A,0,4,1.8);stoveLight.position.set(-3.2,KT+.45,2.0);scene.add(stoveLight);
-const fills=[].map(([x,y,z])=>{const l=new THREE.PointLight(0xFFE8CC,0,6,1.2);l.position.set(x,y,z);scene.add(l);return l;});
+// every warm light in the house comes from a real source (lanterns, dome lamp, candle, oven fire, trunk door): game/lights.js
+const {createLights}=await import(new URL(ASSET+'lights.js',document.baseURI).href);
+const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},windows:WINS});window.__lights=LIGHTS;
 
 // ================= splinters, dust, fog, rain, fireflies =================
 const SPL=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),boardMat,260);SPL.count=0;SPL.castShadow=true;SPL.frustumCulled=false;{const r=new THREE.InstancedBufferAttribute(new Float32Array(260),1),t=new THREE.InstancedBufferAttribute(new Float32Array(260).fill(.2),1);SPL.geometry.setAttribute('aRow',r);SPL.geometry.setAttribute('aTile',t);}scene.add(SPL);
@@ -577,9 +569,10 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4);scene.fog.near=camDist*zoom*.95-mornK*12-rainK*6;scene.fog.far=camDist*zoom+70-mornK*30-rainK*25-nightK*35;
  moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
- for(const L of lanterns){const f=.86+Math.sin(T*9+L.seed)*.06+Math.sin(T*23+L.seed*2)*.05;L.l.intensity=lampOn*6*f;L.bulbM.emissiveIntensity=lampOn*5*f;}
- ambL.intensity=dayK*(1-rainK*.3)*.55+.12;doorLight.intensity=(1+lampOn*3)*(.9+Math.sin(T*7)*.08);TREE.bark.material.userData.doorGlow.value=(.35+lampOn*.9)*(.9+Math.sin(T*7)*.08);
- const cooking=hero.task==='cook'&&hero.state==='work';P3.update(dt,{reading:hero.task==='read'&&hero.state==='work',cooking,heat:lampOn*.35});stoveLight.intensity=(cooking?3.5:.6+lampOn*1.5)*(.85+Math.sin(T*11)*.1);
+ // no warm room fill: daylight only; at night rooms are lit by their lamps alone (game/lights.js)
+ ambL.intensity=dayK*(1-rainK*.3)*.55;
+ P3.update(dt,{reading:hero.task==='read'&&hero.state==='work',cooking:false,heat:LIGHTS.level('oven')});
+ LIGHTS.update({dt,T,lampOn,dayK,task:hero.task,state:hero.state,asleep:!!hero.inBed});
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera});
