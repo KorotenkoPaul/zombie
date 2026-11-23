@@ -323,7 +323,11 @@ function plankShader(m,o={}){const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv}
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=pRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=pnArb(-vViewPosition,normal,pDH,faceDirection);');};}
 plankShader(boardMat);
-const darkBoard=boardMat.clone();darkBoard.color.set(0xffffff);plankShader(darkBoard,{a:woodDarkT,b:woodDarkT,ta:new THREE.Vector3(.95,.55,.34),tb:new THREE.Vector3(.95,.55,.34),nails:0,bump:.0002});
+// explicit program keys: hooks chained on later (rain wetBoards, ...) build their key from ours; without one three.js falls back to
+// onBeforeCompile.toString(), which is the *wrapper's* source and the same for every wrapped material, so the boards could get
+// another material's program (the plain-white boards/slates on phones, 2026-11-23)
+boardMat.customProgramCacheKey=()=>'plank';
+const darkBoard=boardMat.clone();darkBoard.color.set(0xffffff);plankShader(darkBoard,{a:woodDarkT,b:woodDarkT,ta:new THREE.Vector3(.95,.55,.34),tb:new THREE.Vector3(.95,.55,.34),nails:0,bump:.0002});darkBoard.customProgramCacheKey=()=>'plank';
 // a board solid with rounded edges: 24 vertices / 44 triangles. position = the unit box corner, aBev = the inset
 // direction (the shader scales it by the bevel radius in metres, whatever the board size), normal = face normal,
 // interpolated across the bevel strips and corners so the edges shade round.
@@ -424,6 +428,7 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
   vec3 mc=texture2D(tMoss,vW.xz*1.7+vec2(vW.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
+shingleMat.customProgramCacheKey=()=>'slate';
 shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT},uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);vDn=1.;\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;vDn=-sign((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).y+1e-6);\n#endif')
