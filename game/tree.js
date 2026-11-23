@@ -84,7 +84,7 @@ export function buildTree(THREE, o) {
     if (m >= 0.9 && m < 1.4) r += 0.12 * Math.sin((m - 0.9) / 0.5 * Math.PI);
     return r;
   };
-  const trunkPts = []; for (let y = -0.6; y <= 13.6; y += 0.6) trunkPts.push(V(AX + 0.12 * Math.sin(y * 0.33), y, AZ + 0.1 * Math.sin(y * 0.27 + 1)));
+  const trunkPts = []; for (let y = -0.6; y <= 14.6; y += 0.6) trunkPts.push(V(AX + 0.12 * Math.sin(y * 0.33), y, AZ + 0.1 * Math.sin(y * 0.27 + 1)));
   const parts = [];
   parts.push(tube(trunkPts, MOB(o) ? 110 : 150, MOB(o) ? 72 : 96, trunkR, { tile: 3.2, hole: (c, ang) => doorMask(ang, c.y) < 0.97, glow: (p, t, ang) => { const m = doorMask(ang, p.y); return m < 1.5 ? Math.max(0, 1 - (m - 0.9) / 0.6) * 0.5 : 0; } }));
 
@@ -94,26 +94,26 @@ export function buildTree(THREE, o) {
     const dx = Math.cos(a), dz = Math.sin(a), sx = -dz, sz = dx;
     const r0 = R(0.5) * 0.85;
     const wig = rnd(-0.6, 0.6);
-    const pts = [V(AX + dx * r0 * 0.6, 1.5, AZ + dz * r0 * 0.6), V(AX + dx * (r0 + 0.3), 0.75, AZ + dz * (r0 + 0.3)),
-      V(AX + dx * (r0 + L * 0.35) + sx * wig * 0.5, 0.32, AZ + dz * (r0 + L * 0.35) + sz * wig * 0.5),
-      V(AX + dx * (r0 + L * 0.7) + sx * wig, 0.12, AZ + dz * (r0 + L * 0.7) + sz * wig),
+    const pts = [V(AX + dx * r0 * 0.6, 2.0, AZ + dz * r0 * 0.6), V(AX + dx * (r0 + 0.4), 1.05, AZ + dz * (r0 + 0.4)),
+      V(AX + dx * (r0 + L * 0.35) + sx * wig * 0.5, 0.55, AZ + dz * (r0 + L * 0.35) + sz * wig * 0.5),
+      V(AX + dx * (r0 + L * 0.7) + sx * wig, 0.22, AZ + dz * (r0 + L * 0.7) + sz * wig),
       V(AX + dx * (r0 + L) + sx * wig * 0.6, -0.35, AZ + dz * (r0 + L) + sz * wig * 0.6)];
-    parts.push(tube(pts, 34, 18, (t, ang) => (0.95 * Math.pow(1 - t, 1.3) + 0.09) * (1 + 0.06 * Math.sin(ang * 5 + t * 9)), { tile: 1.4, flat: 0.72 }));
+    parts.push(tube(pts, 34, 18, (t, ang) => (1.15 * Math.pow(1 - t, 1.2) + 0.1) * (1 + 0.06 * Math.sin(ang * 5 + t * 9)), { tile: 1.4, flat: 0.72 }));
   }
 
   // ---------- branches: all leave from the back half of the trunk so they pass behind the rooms ----------
   const BR = [
-    // side branches (from the photo: one long to the left at kitchen height, two to the right)
-    { p: [[0, 6.4, -1.0], [-2.4, 6.8, -1.7], [-5.0, 7.5, -2.2], [-7.6, 8.7, -2.0], [-9.4, 10.3, -1.5]], r0: 0.62, r1: 0.12, leaf: [1, 3, 3] },
-    { p: [[0.3, 7.2, -1.0], [2.6, 7.5, -1.6], [5.2, 7.8, -1.5], [7.6, 8.6, -0.9], [9.2, 9.8, -0.4]], r0: 0.56, r1: 0.1, leaf: [2, 3] },
-    { p: [[0.4, 9.7, -1.0], [3.0, 9.4, -1.3], [5.6, 10.2, -1.1], [8.4, 11.6, -0.5]], r0: 0.5, r1: 0.1, leaf: [2, 3] },
-    { p: [[-0.3, 11, -0.9], [-2.6, 11.9, -1.3], [-5.0, 13, -1.1], [-7.2, 14.4, -0.4]], r0: 0.55, r1: 0.12, leaf: [1, 3, 3] },
-    // crown limbs
-    { p: [[0, 10.8, -0.6], [-0.7, 13.4, -0.8], [-1.9, 16, -1.1], [-3.2, 18.4, -1.4]], r0: 1.0, r1: 0.25, leaf: [1, 3, 3] },
-    { p: [[0.1, 10.8, -0.6], [1.3, 13.5, -0.4], [2.7, 15.8, -0.8], [3.8, 18.2, -1.2]], r0: 0.95, r1: 0.22, leaf: [1, 3, 3] },
-    { p: [[0, 11.4, -0.9], [0.3, 14, -2.3], [0.5, 16.8, -3.0], [0.6, 19.4, -2.6]], r0: 0.8, r1: 0.2, leaf: [2, 3] },
-    { p: [[-0.2, 12, -0.5], [-2.2, 14.2, 0.2], [-4.4, 15.6, 0.6], [-6.4, 16.2, 0.4]], r0: 0.55, r1: 0.12, leaf: [2, 3] },
-    { p: [[0.2, 12.2, -0.5], [2.5, 13.6, 0.0], [4.8, 14.6, 0.4], [6.8, 15, 0.2]], r0: 0.5, r1: 0.12, leaf: [2, 3] },
+    // branches traced from the photo (heights in metres, the house levels match the photo):
+    // left low S-curve under the kitchen, left behind the bedroom, left high; the same three on the right
+    { p: [[-0.5, 6.2, -1.0], [-2.8, 5.4, -1.4], [-5.2, 5.6, -1.6], [-7.4, 6.8, -1.3], [-9.6, 8.2, -0.8]], r0: 0.82, r1: 0.14, leaf: [1, 3, 3] },
+    { p: [[-0.3, 10.4, -1.0], [-2.6, 10.8, -1.6], [-5.0, 10.2, -1.6], [-7.6, 11.0, -1.0], [-9.8, 12.4, -0.5]], r0: 0.72, r1: 0.12, leaf: [1, 3, 3] },
+    { p: [[-0.4, 13.0, -0.8], [-2.2, 14.4, -1.0], [-4.4, 15.4, -1.0], [-6.8, 16.4, -0.5]], r0: 0.9, r1: 0.16, leaf: [1, 3, 3] },
+    { p: [[0.5, 5.4, -1.0], [2.8, 5.0, -1.5], [5.2, 5.2, -1.4], [7.4, 6.2, -0.9], [9.6, 7.6, -0.4]], r0: 0.78, r1: 0.13, leaf: [1, 3, 3] },
+    { p: [[0.5, 9.4, -1.0], [3.0, 9.2, -1.4], [5.4, 9.8, -1.2], [7.8, 11.0, -0.7], [9.8, 12.2, -0.3]], r0: 0.72, r1: 0.12, leaf: [1, 3, 3] },
+    { p: [[0.4, 13.2, -0.8], [2.0, 14.6, -1.0], [3.8, 16.0, -1.2], [5.6, 17.4, -0.8]], r0: 0.9, r1: 0.16, leaf: [1, 3, 3] },
+    // the trunk forks at the top into two thick limbs
+    { p: [[0, 14.0, -0.7], [-0.6, 16.2, -0.9], [-1.4, 18.2, -1.2]], r0: 1.1, r1: 0.3, leaf: [1, 2] },
+    { p: [[0.1, 14.0, -0.7], [0.9, 16.4, -0.6], [1.8, 18.6, -1.0]], r0: 1.0, r1: 0.28, leaf: [1, 2] },
     // a couple of small branches reaching to the back, so the tree is round from every side
     { p: [[0, 8.5, -1.4], [-0.6, 9.6, -3.8], [-1.0, 11.2, -6.0]], r0: 0.45, r1: 0.1, leaf: [1, 2] },
     { p: [[0.3, 6, -1.4], [1.6, 6.6, -3.8], [2.6, 8, -6.0]], r0: 0.45, r1: 0.1, leaf: [1, 2] }
@@ -158,7 +158,7 @@ export function buildTree(THREE, o) {
 
   // ---------- bark: the painted texture along the wood, relief from the same texture, cool-warm painted shading ----------
   const barkT = o.barkT; barkT.wrapS = barkT.wrapT = THREE.RepeatWrapping; barkT.repeat.set(1, 1);
-  const mat = new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 1.4, roughness: 0.9, color: 0xFFDCC2 });
+  const mat = new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 1.4, roughness: 0.9, color: 0xF0B080 });
   mat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float glow;varying float vGlow;varying float vY;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGlow=glow;vY=(modelMatrix*vec4(transformed,1.)).y;');
@@ -166,7 +166,7 @@ export function buildTree(THREE, o) {
       .replace('#include <map_fragment>', `#include <map_fragment>
         diffuseColor.rgb*=mix(.8,1.,smoothstep(-.3,2.2,vY));
 `)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09);');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(.42,1.08,pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
   };
   mat.userData.doorGlow = { value: 0 };
