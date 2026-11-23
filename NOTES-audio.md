@@ -138,3 +138,14 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
   - The one point over target was the owl at 25 m: −18.8 dB short-term. Owl volume went from .5 to .32 (−4 dB).
   - 1–2 a.m. sat at about −51 dB. Autumn crickets went from .3 to .4 so the deep night is quiet but never empty.
 - The curtains are animated by lights.js (dusk half-drawn, lockdown shut). Lights has the `curtain_*` names to call.
+
+## Round 19: footstep sync with the new hero, rung contacts, hand contacts
+- The new hero lifts the heel only 4–6 cm, so contact by toe height missed steps. A step is now detected when the swinging foot comes to a stop: its world speed falls from over max(1.1, 1.5×walk) to under max(.3, .3×walk). In swing the foot moves at 2–3 m/s; planted, it is still. The strike is predicted from the deceleration, so the sound is scheduled inside the frame (`step(..., delay)`) rather than a frame late. Each foot can strike at most once per .3 s. Frames where the pose did not advance (the foot only rode along with the root) are skipped. The pre-roll for slow frames below 12.5 fps is unchanged.
+- Ladder and rope rungs: a rung sound plays when a foot that was travelling vertically faster than .55 m/s settles below .12 m/s. If the bones give no signal for 1.2 s, it falls back to the old cadence.
+- QA: `node tests/audio/feet_sync.js`, then `python3 tests/audio/feet_sync_report.py /tmp/feet_30.json`. This runs on the virtual clock at 30 fps with the route cook, wash, craft, look, window, read, telescope.
+  - Result: median offset of −8 ms against the moment the foot stops (heel strike), with 90 % of steps within roughly −60..+10 ms.
+  - About 7 % of contacts are missed. About 18 % of steps are "extra"; these are mostly real small re-plants when he starts, stops or turns.
+- Hand contacts are read from state:
+  - the oven door (`__props.oven.open` crossing .15 or .08) plays oven_open or oven_close at the handle;
+  - a hand taking a tool or item (`hero.hold[hand]` changes) plays tool_pickup, and putting it back plays it softer and lower;
+  - the hatch ring and the door bolt were already wired in round 16.
