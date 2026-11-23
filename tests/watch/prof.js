@@ -1,0 +1,11 @@
+const {open}=require('../anim/lib');
+(async()=>{const {b,p}=await open({seed:1,vp:{width:400,height:400}});await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});await p.evaluate(()=>__qa.start());
+await p.evaluate(()=>{__qa.step(60,1/60);});
+const R=async(label,setup)=>{await p.evaluate(setup||'0');let t=[];for(let i=0;i<3;i++){const t0=Date.now();await p.evaluate(()=>{const c=__qaCamera,H=__dbg.hero.root.position;c.position.set(H.x+2,H.y+1.3,H.z+1);c.lookAt(H.x,H.y+.8,H.z);c.updateMatrixWorld();let s=__dbg.hero.root;while(s.parent)s=s.parent;__realRender.call(__renderer,s,c);});await p.locator('canvas').first().screenshot({path:'/tmp/claude-0/-home-user/7435aadb-271e-560a-bab5-da2529d9d672/scratchpad/prof_'+label+'.png'});t.push(Date.now()-t0);}console.log(label,t,await p.evaluate(()=>JSON.stringify(__renderer.info.render)));};
+await R('base');
+await R('noshadowupd',()=>{__renderer.shadowMap.autoUpdate=false;});
+await R('pr1',()=>{__renderer.setPixelRatio(1);});
+await R('hidebig',()=>{let s=__dbg.hero.root;while(s.parent)s=s.parent;window.__hid=[];s.traverse(o=>{if(o.isInstancedMesh&&o.count>500){o.visible=false;__hid.push(o.name+':'+o.count);}});return __hid;});
+console.log(await p.evaluate(()=>__hid.join(' ')));
+await R('noshadow',()=>{__renderer.shadowMap.enabled=false;});
+await b.close();})();
