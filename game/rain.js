@@ -130,8 +130,9 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
       if (!R.ready) {
         if (wait-- > 0) return;
         if (!targets) collect();
-        const end = Math.min(NX * NZ, scan + (MOBILE ? 60 : 140));
-        for (; scan < end; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
+        // a few ms per frame at most, so building the map never shows as a hitch
+        const t0 = performance.now(), budget = MOBILE ? 3 : 5;
+        for (; scan < NX * NZ && performance.now() - t0 < budget; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
           const y = castDown(x, z); hm[scan] = y; kind[scan] = y > groundH(x, z) + 0.6 ? 1 : 0; }
         if (scan >= NX * NZ) { R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; }
         else return;
