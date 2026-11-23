@@ -95,18 +95,18 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const spots=[];{let guard=0;const NT=MOBILE?18:28;while(spots.length<NT&&guard++<4000){const x=rr(-58,58),z=rr(-62,10);const r=Math.hypot(x,z);
    if(r<14)continue;if(z>-8&&Math.abs(x)<15)continue;if(z>-2&&Math.abs(x)<22)continue;if(spots.some(s=>Math.hypot(s.x-x,s.z-z)<7.5))continue;spots.push({x,z,v:Math.floor(R()*4),ry:rr(0,6.28),s:rr(.85,1.25)});}}
  {const byV=[[],[],[],[]];spots.forEach(s=>byV[s.v].push(s));const m=new THREE.Matrix4(),q=new THREE.Quaternion();
-  byV.forEach((list,vi)=>{if(!list.length)return;const im=new THREE.InstancedMesh(variants[vi].g,barkMat,list.length);
-   list.forEach((s,i)=>{q.setFromAxisAngle(V(0,1,0),s.ry);m.compose(V(s.x,groundH(s.x,s.z),s.z),q,V(s.s,s.s,s.s));im.setMatrixAt(i,m);
-    for(const e of variants[vi].ends){const w=e.clone().multiplyScalar(s.s).applyQuaternion(q).add(V(s.x,groundH(s.x,s.z),s.z));tips.push({p:w,s:s.s,d:Math.hypot(s.x,s.z)});}});
-   im.castShadow=!MOBILE;im.receiveShadow=true;scene.add(im);});}
+  // all forest trunks baked into ONE mesh (one draw call instead of one per variant; they surround the scene, so culling saved nothing)
+  const baked=[];byV.forEach((list,vi)=>{list.forEach(s=>{q.setFromAxisAngle(V(0,1,0),s.ry);m.compose(V(s.x,groundH(s.x,s.z),s.z),q,V(s.s,s.s,s.s));baked.push(variants[vi].g.clone().applyMatrix4(m));
+    for(const e of variants[vi].ends){const w=e.clone().multiplyScalar(s.s).applyQuaternion(q).add(V(s.x,groundH(s.x,s.z),s.z));tips.push({p:w,s:s.s,d:Math.hypot(s.x,s.z)});}});});
+  if(baked.length){const fm=new THREE.Mesh(mergeGeometries(baked),barkMat);baked.forEach(g=>g.dispose());fm.castShadow=!MOBILE;fm.receiveShadow=true;fm.name='forestTrunks';scene.add(fm);env.forestTrunks=fm;}}
  // canopy cards
  {const lt=leafT;const mat=new THREE.MeshStandardMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide,roughness:.85});
-  const per=MOBILE?26:40;const N=tips.length*per;const im=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),mat,N);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();let n=0;
+  const per=MOBILE?18:40;/* phones: fewer, slightly bigger cards (draw budget) */const csz=MOBILE?1.18:1;const N=tips.length*per;const im=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),mat,N);const m=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();let n=0;
   for(const t of tips){for(let k=0;k<per;k++){const d=V(rr(-1,1),rr(-.5,.8),rr(-1,1)).normalize().multiplyScalar(Math.pow(R(),.5)*3.4*t.s);const p=t.p.clone().add(d);
-    q.setFromEuler(new THREE.Euler(rr(-1.2,1.2),rr(0,6.28),rr(-1.2,1.2)));const sz=rr(1.6,2.6)*t.s;m.compose(p,q,V(sz,sz,sz));im.setMatrixAt(n,m);
+    q.setFromEuler(new THREE.Euler(rr(-1.2,1.2),rr(0,6.28),rr(-1.2,1.2)));const sz=rr(1.6,2.6)*t.s*csz;m.compose(p,q,V(sz,sz,sz));im.setMatrixAt(n,m);
     // deeper in the forest the leaves turn bluer and darker, like the painted reference
     const far=smooth(16,60,t.d);c.setRGB(.78-far*.25,.88-far*.25,.82-far*.1);im.setColorAt(n,c);n++;}}
-  im.count=n;im.castShadow=!MOBILE;scene.add(im);env.canopy=im;}
+  im.count=n;im.castShadow=!MOBILE;im.name='forestCanopy';scene.add(im);env.canopy=im;}
 
  // far forest: a painted backdrop (Fal, from the reference: gnarled oak silhouettes in blue fog) on a cylinder around the scene.
  // Mirrored-repeat so there is no seam; at night the painting shows as is, by day it is re-tinted with the fog colour.
@@ -146,12 +146,12 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  // soft edges (desktop): a half-resolution depth pre-pass of the opaque scene lets the fog fade where it meets the trunk, roots and house
  // instead of cutting them with a hard line. Phones skip it (SOFT 0) to save a scene pass.
  const SOFT=!MOBILE&&!!renderer;
- const softU={tDepth:{value:null},uRes:{value:new THREE.Vector2(1,1)},cNear:{value:.1},cFar:{value:500},soft:{value:SOFT?1:0}};
+ const softU={tDepth:{value:null},uRes:{value:new THREE.Vector2(1,1)},cNear:{value:.1},cFar:{value:500},soft:{value:SOFT?1:0},softS:{value:1}};
  const SOFT_GLSL=`
 #include <packing>
-uniform sampler2D tDepth;uniform vec2 uRes;uniform float cNear,cFar,soft;
-float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragCoord.xy/uRes).x;
- float sz=-perspectiveDepthToViewZ(sd,cNear,cFar);float fz=-perspectiveDepthToViewZ(gl_FragCoord.z,cNear,cFar);return clamp((sz-fz)/range,0.,1.);}`;
+uniform sampler2D tDepth;uniform vec2 uRes;uniform float cNear,cFar,soft,softS;
+float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float sd=texture2D(tDepth,su).x;
+ float sz=-perspectiveDepthToViewZ(sd,cNear,cFar);float fz=-perspectiveDepthToViewZ(gl_FragCoord.z,cNear,cFar);return clamp((sz-fz)/(range*softS),0.,1.);}`;
  let depthRT=null;const depthMat=new THREE.MeshBasicMaterial({colorWrite:false});
  if(SOFT){depthRT=new THREE.WebGLRenderTarget(4,4,{depthBuffer:true});depthRT.depthTexture=new THREE.DepthTexture(4,4);depthRT.depthTexture.type=THREE.UnsignedIntType;softU.tDepth.value=depthRT.depthTexture;}
  // wind (wind.js, window.__wind): fog noise drifts downwind and puffs lean/churn with the gusts
@@ -266,7 +266,9 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
   {const W=window.__wind;const dt=lastT===null?0:Math.min(.1,Math.max(0,T-lastT));lastT=T;
    if(W&&W.sample){const w=W.sample(wTmp.set(0,1,0))||{};const x=w.x||0,z=w.z||0,sp=w.s!==undefined?w.s:Math.hypot(x,z);const L=Math.hypot(x,z)||1;
     windU.wdir.value.set(x/L,z/L);windU.wlv.value=Math.min(1.5,sp);windU.drift.value.x+=x*dt*1.6;windU.drift.value.y+=z*dt*1.6;}}
-  /* the shared half-res fog pass (game/fogpass.js) feeds softK its own depth: skip ours then */
+  /* the shared half-res fog pass (game/fogpass.js) feeds softK its own depth: skip ours then. Its depth is the full scene,
+     grass and leaf cards included (ours leaves them out), so the soft range shrinks there or the low puffs fade away in the grass */
+  {const fp=!!(window.__fogpass&&window.__fogpass.enabled);softU.soft.value=(fp||(SOFT&&qLevel<2))?1:0;softU.softS.value=fp?.22:1;}
   if(SOFT&&softU.soft.value>.5&&!(window.__fogpass&&window.__fogpass.enabled)&&(frameN++&1)===0){renderer.getDrawingBufferSize(dbs);const w=Math.max(4,dbs.x>>1),h=Math.max(4,dbs.y>>1);
    if(depthRT.width!==w||depthRT.height!==h)depthRT.setSize(w,h);softU.uRes.value.copy(dbs);softU.cNear.value=camera.near;softU.cFar.value=camera.far;
    const hid=fogObjs().filter(o=>o&&o.visible);hid.forEach(o=>o.visible=false);const ov=scene.overrideMaterial,bg=scene.background,prev=renderer.getRenderTarget();
