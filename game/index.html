@@ -90,6 +90,11 @@ import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.
 
 const $=id=>document.getElementById(id);
 const rnd=(a,b)=>a+Math.random()*(b-a);
+// [PERF][SAFETY] three.js keys a shader hook by its source text (onBeforeCompile.toString()). Wrappers that chain hooks
+// (e.g. rain's wet boards, props' injectors) have the same text for every material they wrap, so two materials whose
+// generated shaders differ could get one compiled program: on iPhone the boards drew with another material's shader
+// (white house, 2026-11-23). Default key now = identity of the hook function; owners' own customProgramCacheKey still wins.
+{const D=THREE.Material.prototype.onBeforeCompile,ids=new WeakMap();let nx=1;THREE.Material.prototype.customProgramCacheKey=function(){const f=this.onBeforeCompile;if(f===D)return f.toString();let i=ids.get(f);if(!i){i=nx++;ids.set(f,i);}return 'obc#'+i;};}
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const lerp=(a,b,k)=>a+(b-a)*k;
 const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
@@ -264,7 +269,8 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  col*=1.-.18*old*smoothstep(.62,.9,pN(vec2(m.x*1.3+sd*3.,m.y*4.)))*step(.5,pH(sd+8.));
  // relief from a blurred tap of the scan, differenced in texture space (smooth, no 2x2 blocks), in metres
  vec2 dH=vec2(0.);
- if(near>0.){float hb=pL(pTex(uv,wall,2.5));dH=vec2(pL(pTex(uv+ux,wall,2.5))-hb,pL(pTex(uv+uy,wall,2.5))-hb)*uBump;
+ /* [ENV fix] taps inside this branch use explicit gradients: implicit-derivative texture reads inside a per-pixel branch are undefined on Apple GPUs (boards/slates came out washed white on iPhone) */
+ if(near>0.){vec2 g1=ux*5.66,g2=uy*5.66;float hb=pL(pTexG(uv,wall,g1,g2));dH=vec2(pL(pTexG(uv+ux,wall,g1,g2))-hb,pL(pTexG(uv+uy,wall,g1,g2))-hb)*uBump;
   if(face==0.){float h0=pTop(m.xy,sz,sd,wall);dH+=vec2(pTop(m.xy+mx,sz,sd,wall)-h0,pTop(m.xy+my,sz,sd,wall)-h0);}dH*=near;}
  if(face==0.){
   // worn, lighter along the rounded edges
@@ -412,8 +418,8 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  vec2 ux=dFdx(uv),uy=dFdy(uv),mx=dFdx(m.xz),my=dFdy(m.xz);vec3 wx=dFdx(vW),wy=dFdy(vW);
  // LOD (perf round): far slates (> ~7 mm/px) skip the relief taps, crack relief, lichen specks and moss relief
  float near=1.-smoothstep(.005*uLod,.009*uLod,max(length(mx),length(my)));vec2 dH=vec2(0.);
- if(near>0.){float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
-  dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004*near;}
+ if(near>0.){vec2 g1=ux*4.,g2=uy*4.;/* [ENV fix] explicit gradients inside the branch (Apple GPUs) */float hb=dot(textureGrad(tSlate,uv,g1,g2).rgb,vec3(.33));
+  dH=vec2(dot(textureGrad(tSlate,uv+ux,g1,g2).rgb,vec3(.33))-hb,dot(textureGrad(tSlate,uv+uy,g1,g2).rgb,vec3(.33))-hb)*.004*near;}
  if(top>.5){
   // the slate above lies on this one: under its butt edge a soft shadow band (the overlap reads as depth, not as a drawn line),
   // and a little grime washed down along it
@@ -425,7 +431,7 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  // moss, raised a few mm over the stone
  float ms=sMoss(vW,sd),mo=ms*mix(.5,1.,top)*old;
  if(mo>.001){if(near>0.)dH+=vec2(sMoss(vW+wx,sd)-ms,sMoss(vW+wy,sd)-ms)*.006*mix(.5,1.,top)*near;
-  vec3 mc=texture2D(tMoss,vW.xz*1.7+vec2(vW.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
+  vec3 mc=textureGrad(tMoss,vW.xz*1.7+vec2(vW.y*.7),wx.xz*1.7+vec2(wx.y*.7),wy.xz*1.7+vec2(wy.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
 shingleMat.customProgramCacheKey=()=>'slate';
@@ -447,7 +453,7 @@ function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matr
   if(!by.has(m.material))by.set(m.material,[]);by.get(m.material).push({geo,m});rm.push(m);});
  for(const [mat,L] of by){if(L.length<2)continue;const mg=mergeGeometries(L.map(x=>x.geo));if(!mg)continue;for(const x of L)x.m.parent.remove(x.m);
   const me=new THREE.Mesh(mg,mat);me.castShadow=L.some(x=>x.m.castShadow);me.receiveShadow=L.some(x=>x.m.receiveShadow);g.add(me);}}
-function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
+function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);g.userData.plStatic=true;scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
@@ -583,7 +589,7 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   for(const y of rungY){const t=(top-y)/H;ropes.push(placed(knotGeo,V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1)));}}
  // round rungs, a little uneven like hand-lashed sticks
  for(const y of rungY){const t=(top-y)/H;{const r=rnd(.019,.024);rungs.push(placed(new THREE.CylinderGeometry(r,r*rnd(.85,1),.64,9),V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t)),new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}}
- for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;scene.add(me);}}
+ for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;me.userData.plStatic=true;scene.add(me);}}
 function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});for(let y=y0+.3;y<y1;y+=.32)board(V(x,y,z),.5,.06,.05,null,{dark:true,rung:true});}
 // the photo is an open cutaway: no plank fences across the room fronts while there are no zombies (BARRICADES=false)
 const BARRICADES=false;
@@ -721,6 +727,7 @@ barricade('Забор кухни',V(-3.0,KT+.55,3.88),2.8);
 barricade('Забор мастерской',V(3.0,WS+.55,4.43),3.15);
 boards.instanceMatrix.needsUpdate=true;beams.instanceMatrix.needsUpdate=true;aRow.needsUpdate=true;aTile.needsUpdate=true;dRow.needsUpdate=true;dTile.needsUpdate=true;
 const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+3.5,1.0,4.2],[WX0+.05,WX1-.05,WS+.05,WS+3.3,1.25,5.3]];
+if(ENV.setInterior)ENV.setInterior(ROOMS);/* [ENV] interior night ambient cut (Lights) */
 // ---- age (round 3): which face of each board is outside. Floors inside a room are sheltered, landings/deck are not;
 // a wall's outer face is the one facing away from its room; beams, posts and frames are out in the weather.
 ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[3],0,0);});
@@ -837,6 +844,8 @@ const freshAttr=m=>m===boards?aFresh:m===beams?dFresh:sFresh;
 //  fresh(id)          -> current value
 //  near(x,y,z,r,kind?)-> ids within r metres
 //  wear(x,y,z,amt)    -> add foot wear on the floor at that point (0..1)
+// [PERF] static house parts this thread owns: matrices frozen (no updateMatrix per frame). Instances still move via instanceMatrix.
+{const fr=o=>{o.updateMatrix();o.matrixAutoUpdate=false;o.updateMatrixWorld(true);};for(const m of [boards,beams,SHING])fr(m);scene.traverse(o=>{if(o.userData.plStatic)o.traverse(fr);});}
 window.__planks={meshes:{boards,beams,shingles:SHING},list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
  setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,0,1));A.needsUpdate=true;return true;},
  fresh:id=>PL[id]?freshAttr(PL[id].mesh).getX(PL[id].i):null,
