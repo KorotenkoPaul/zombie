@@ -2,6 +2,7 @@
 //
 // 1) On-screen readout (off by default). Toggle: tap the clock chip 3 times quickly, or press F,
 //    or open the page with ?fps. The choice is remembered on the device.
+//    5 quick taps open the GPU cost finder (also ?perfdebug).
 //    Shows: FPS, frame time (avg / worst of the last second), JS time per frame, draw calls,
 //    triangles, pixel ratio and the current quality level.
 // 2) Quality governor. Systems register quality steps with addStep(); when the game stays
@@ -23,7 +24,7 @@ export function createPerf({ renderer, MOBILE }) {
   const WIN = 2.0, DOWN = .20, UP = .03;
   let winT = 0, winF = 0, winMiss = 0, warm = 3, calm = 0, cool = 0, clock = 0, lastUpAt = -1e9, blockUntil = 0, backoff = 30;
   const N = 120, ft = new Float32Array(N), js = new Float32Array(N); let k = 0, n = 0;
-  let t0 = 0, last = performance.now(), lastDraw = { calls: 0, tris: 0 }, vs = 16.7, miss = 0;
+  let vmin = 1e9, vT = 0, t0 = 0, last = performance.now(), lastDraw = { calls: 0, tris: 0 }, vs = 16.7, miss = 0;
 
   P.addStep = (name, down, up = null, order = 50) => { const s = { name, down, up, order }; P.steps.push(s); P.steps.sort((a, b) => a.order - b.order); return s; };
   // start below the top (e.g. phones begin at a modest pixel ratio and climb if there is room): steps are applied in the given order
@@ -48,9 +49,10 @@ export function createPerf({ renderer, MOBILE }) {
     const dt = Math.min(dtm / 1000, .25); clock += dt;
     if (document.hidden || dtm > 250) return;                  // tab switches and long stalls say nothing about load
     if (warm > 0) { warm -= dt; return; }                     // let loading hitches settle
-    if (dtm > 4 && dtm < vs) vs += (dtm - vs) * .05;          // refresh interval: tracks the shortest frames
-    else if (dtm >= vs) vs += .0005 * (dtm - vs);             // (slowly forgets, e.g. ProMotion switching 120 -> 60)
+    // refresh interval: the shortest frames of the last ~4 s, never above 16.7 ms (a slow phone must not look "on time")
+    vmin = Math.min(vmin, dtm); vT += dt; if (vT > 4) { vs = Math.min(16.7, Math.max(6, vmin)); vmin = 1e9; vT = 0; }
     winT += dt; winF++; if (dtm > vs * 1.3 && dtm < 100) winMiss++;
+    if (P.frozen) { winT = 0; winF = 0; winMiss = 0; }
     if (winT >= WIN) {
       miss = winMiss / Math.max(1, winF); P.fps = winF / winT; winT = 0; winF = 0; winMiss = 0;
       if (cool > 0) { cool--; calm = 0; }
@@ -89,7 +91,52 @@ export function createPerf({ renderer, MOBILE }) {
   addEventListener('keydown', e => { if (e.key === 'f' || e.key === 'F') P.show(!(hud && hud.on)); });
   // triple tap on the clock chip (the HUD row ignores pointers, so this chip opts in)
   const chip = document.getElementById('tod'); const host = chip && chip.closest('.chip');
-  if (host) { host.style.pointerEvents = 'auto'; let taps = []; host.addEventListener('pointerdown', e => { e.stopPropagation(); const t = performance.now(); taps = taps.filter(x => t - x < 700); taps.push(t); if (taps.length >= 3) { taps = []; P.show(!(hud && hud.on)); } }); }
+  if (host) { host.style.pointerEvents = 'auto'; let taps = []; host.addEventListener('pointerdown', e => { e.stopPropagation(); const t = performance.now(); taps = taps.filter(x => t - x < 700); taps.push(t); clearTimeout(host._tt); if (taps.length >= 5) { taps = []; P.debugPanel(); } else if (taps.length >= 3) { host._tt = setTimeout(() => { if (taps.length >= 3 && taps.length < 5) P.show(!(hud && hud.on)); taps = []; }, 720); } }); }
+
+  // ---------- GPU cost finder (?perfdebug, or the "Тест" button under the readout) ----------
+  // Tests come from the game: {name, on(), off()}; on() switches ONE thing off. The auto test holds the quality
+  // governor, measures the average frame time with everything on, then with each thing off, and shows a table:
+  // how many ms each thing costs on this phone. Single buttons toggle one thing for manual checks.
+  P.tests = [];
+  P.addTest = (name, on, off) => P.tests.push({ name, on, off, active: false });
+  const sample = async ms => { const s0 = []; const t1 = performance.now(); let l = performance.now();
+    await new Promise(r => { const f = () => { const t = performance.now(); s0.push(t - l); l = t; if (t - t1 < ms) requestAnimationFrame(f); else r(); }; requestAnimationFrame(f); });
+    s0.shift(); s0.sort((a, b) => a - b); return { avg: s0.reduce((a, b) => a + b, 0) / Math.max(1, s0.length), p95: s0[Math.floor(s0.length * .95)] || 0 }; };
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  let dbg = null, running = false;
+  P.bench = async () => {
+    if (running) return; running = true; P.frozen = true; const out = [];
+    for (const t of P.tests) if (t.active) { try { t.off(); } catch (e) {} t.active = false; }
+    paintDbg('измеряю…');
+    await wait(1500); const base = await sample(3000); out.push(['всё включено', base.avg, base.p95, 0]);
+    for (const t of P.tests) { paintDbg('без: ' + t.name + '…', out);
+      try { t.on(); } catch (e) { console.warn('bench', t.name, e); }
+      await wait(1500); const r = await sample(2500); try { t.off(); } catch (e) {} out.push([t.name, r.avg, r.p95, base.avg - r.avg]); await wait(700); }
+    const end = await sample(2000); out.push(['всё снова', end.avg, end.p95, 0]);
+    P.lastBench = out.map(r => ({ name: r[0], ms: +r[1].toFixed(1), p95: +r[2].toFixed(1), saves: +r[3].toFixed(1) }));
+    P.frozen = false; running = false; paintDbg('готово: пришли скриншот', out); return P.lastBench;
+  };
+  function paintDbg(msg, rows) {
+    if (!dbg) return; const tb = dbg.querySelector('.r');
+    tb.textContent = msg + '\n' + (rows || []).map(r => (r[0] + '                    ').slice(0, 20) + r[1].toFixed(1).padStart(5) + ' ms' + (r[3] ? ('  −' + r[3].toFixed(1)).padStart(8) : '')).join('\n');
+  }
+  P.debugPanel = () => {
+    if (dbg) { dbg.style.display = dbg.style.display === 'none' ? 'block' : 'none'; return; }
+    if (!hud || !hud.on) P.show(true);
+    dbg = document.createElement('div');
+    dbg.style.cssText = 'position:fixed;left:max(10px,env(safe-area-inset-left,0px));right:60px;top:calc(env(safe-area-inset-top,0px) + 132px);z-index:51;' +
+      'font:600 10px/1.35 ui-monospace,Menlo,monospace;color:#E9F3FF;background:rgba(8,12,24,.72);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px;max-height:60vh;overflow:auto';
+    const bs = 'margin:2px;padding:4px 7px;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font:600 11px system-ui';
+    const run = document.createElement('button'); run.textContent = '▶ Тест (≈1 мин)'; run.style.cssText = bs + ';background:#E89A3C;color:#1B1206';
+    run.onclick = e => { e.stopPropagation(); P.bench(); }; dbg.appendChild(run);
+    for (const t of P.tests) { const b = document.createElement('button'); b.textContent = t.name; b.style.cssText = bs;
+      b.onclick = e => { e.stopPropagation(); if (running) return; t.active = !t.active; try { t.active ? t.on() : t.off(); } catch (er) {} P.frozen = P.tests.some(x => x.active); b.style.background = t.active ? '#C0392B' : 'rgba(255,255,255,.08)'; };
+      dbg.appendChild(b); }
+    const r = document.createElement('pre'); r.className = 'r'; r.style.cssText = 'margin:4px 0 0;white-space:pre;font:inherit'; r.textContent = 'Красная кнопка = выключено. Регулятор стоит, пока что-то выключено.'; dbg.appendChild(r);
+    ['pointerdown', 'pointerup', 'pointermove', 'click', 'touchstart'].forEach(ev => dbg.addEventListener(ev, e => e.stopPropagation()));
+    document.body.appendChild(dbg);
+  };
+  P.openDebugWhenReady = () => { if (/[?&#]perfdebug/.test(location.href)) P.debugPanel(); };
 
   window.__perf = P;
   return P;

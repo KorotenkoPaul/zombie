@@ -345,9 +345,12 @@ function sinkCounter() {
   const g = new THREE.Group(); const Wd = .96, D = .6, H = .9;
   const sx0 = .02, sx1 = .44; // the sink cut in the countertop
   // cabinet body: solid below the basin, and only beside it up top, so the basin is a real hollow (no wood showing inside it)
-  W(g, Wd, H - .31, D - .04, 0, .06 + (H - .31) / 2, -.02, { mat: M.wood, grain: 1 }); W(g, Wd - .06, .06, D - .1, 0, .03, -.05, { mat: M.woodDark });
+  const lh = H - .31, ly = .06 + lh / 2; W(g, Wd / 2, lh, D - .04, -Wd / 4, ly, -.02, { mat: M.wood, grain: 1 }); W(g, Wd - .06, .06, D - .1, 0, .03, -.05, { mat: M.woodDark });
+  // open bay under the basin: the drain bucket stands in it (out.water)
+  W(g, Wd / 2, lh, .02, Wd / 4, ly, -.02 - (D - .04) / 2 + .01, { mat: M.woodDark, grain: 1 }); W(g, .025, lh, D - .04, Wd / 2 - .0125, ly, -.02, { mat: M.wood, grain: 1 }); W(g, Wd / 2 - .03, .02, D - .06, Wd / 4 - .01, .07, -.02, { mat: M.woodDark });
+  W(g, .025, lh + .02, .03, .012, ly, D / 2 - .05, { mat: M.wood, grain: 1 }); // centre stile between the door and the bay
   W(g, sx0 + Wd / 2, .21, D - .04, (-Wd / 2 + sx0) / 2, H - .25 + .105, -.02, { mat: M.wood, grain: 1 }); W(g, Wd / 2 - sx1, .21, D - .04, (sx1 + Wd / 2) / 2, H - .25 + .105, -.02, { mat: M.wood, grain: 1 });
-  panelDoor(g, .44, .58, -.235, .44, D / 2 - .04); panelDoor(g, .44, .58, .235, .44, D / 2 - .04); knob(g, -.04, .58, D / 2 - .01); knob(g, .04, .58, D / 2 - .01);
+  panelDoor(g, .44, .58, -.235, .44, D / 2 - .04); knob(g, -.04, .58, D / 2 - .01);
   W(g, .9, .1, .02, 0, H - .14, D / 2 - .03, { mat: M.wood });
   // countertop with a cut for the sink (two slabs and front/back strips)
   W(g, sx0 + Wd / 2 + .02, .05, D + .03, (-Wd / 2 - .02 + sx0) / 2, H - .025, 0, { mat: M.woodLight }); W(g, Wd / 2 + .02 - sx1, .05, D + .03, (sx1 + Wd / 2 + .02) / 2, H - .025, 0, { mat: M.woodLight }); W(g, sx1 - sx0, .05, .12, (sx0 + sx1) / 2, H - .025, -D / 2 + .045, { mat: M.woodLight });
@@ -360,6 +363,7 @@ function sinkCounter() {
   for (const s of [-1, 1]) { add(g, rb(.026, .014, bd + .03, .006), en, bx + s * (bw / 2 + .002), H + .004, bz); add(g, rb(bw + .03, .014, .026, .006), en, bx, H + .004, bz + s * (bd / 2 + .002)); }
   add(g, new THREE.CircleGeometry(.026, 20), M.darkInside, bx, H - .199, bz, -Math.PI / 2); add(g, new THREE.TorusGeometry(.027, .004, 6, 20), M.steel, bx, H - .199, bz, Math.PI / 2);
   for (const a of [0, Math.PI / 2]) add(g, rb(.044, .003, .004, .001), M.steel, bx, H - .197, bz, 0, a);
+  add(g, new THREE.CylinderGeometry(.018, .018, H - .21 - .5, 12), M.iron, bx, (H - .21 + .5) / 2, bz); add(g, new THREE.CylinderGeometry(.024, .02, .03, 12), M.iron, bx, .5, bz); // drain pipe into the bay
   // dishes are live state now (see out.dishes): dirty ones in the basin, drying in the rack, clean on the shelf
   // faucet
   const fz = -D / 2 + .07; add(g, new THREE.CylinderGeometry(.022, .026, .03, 14), M.chrome, bx, H + .015, fz);
@@ -915,6 +919,51 @@ export function buildProps(ctx) {
       setState({ dirty = 0, rack: r = 0 } = {}) { for (let i = 0; i < 4; i++) loc[i] = i < dirty ? 'dirty' : i < dirty + r ? 'rack' : 'shelf'; show(); } };
     show(); PT.rack = [rack, V(0, .1, 0)]; PT.dishShelf = [ksh, V(.06, .1, .12)]; PT.sink = [cn, V(BX, .78, BZ)]; }
 
+  { // ---- water: a supply bucket on a bracket shelf right of the window feeds the tap through a hose; the basin drains
+    // down a pipe into a bucket in the open bay under the sink. Brain: water.setClean(0..1) (tap bucket level, tap runs only
+    // while > 0), water.setDirty(0..1) (drain bucket). Character: tools 'waterBucket' and 'drainBucket' (grab/release),
+    // water.tap(on) runs the tap, water.pour(name, on) pours from a bucket the hand holds (stream from its lowest rim point).
+    const wm = new THREE.MeshStandardMaterial({ color: 0x3A5A68, roughness: .08, metalness: .1, envMap: M.env, envMapIntensity: 1.2, transparent: true, opacity: .82 });
+    const dm = new THREE.MeshStandardMaterial({ color: 0x5A5440, roughness: .15, metalness: .05, envMap: M.env, envMapIntensity: .8, transparent: true, opacity: .9 });
+    const H0 = .3, r0 = H0 * .5, r1 = H0 * .62;
+    const mkB = (metal, mat) => { const g = new THREE.Group(); const b = bucket(H0, metal); g.add(b); const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 28), mat); disc.rotation.x = -Math.PI / 2; disc.renderOrder = 2; g.add(disc); g.userData.water = { disc, level: 0 }; g.userData.grip = V(0, H0 + .05, 0); return g; };
+    // shelf + supply bucket with a spigot and a hose down to the tap
+    const shX = -1.9, shY = KT + 1.28, shZ = 1.03, shD = .42;
+    { const sh = new THREE.Group(); W(sh, .3, .035, shD, 0, 0, shD / 2, { mat: M.woodLight }); for (const s of [-1, 1]) { const b = new THREE.Shape(); b.moveTo(0, 0); b.lineTo(.3, 0); b.quadraticCurveTo(.1, -.06, 0, -.26); b.lineTo(0, 0); add(sh, EX(b, .03, .004), M.woodDark, s * .11, -.018, .0, 0, -Math.PI / 2, 0); } bake(sh); sh.position.set(shX, shY, shZ); scene.add(sh); }
+    const wb = mkB(true, wm); { const sp = new THREE.Group(); add(sp, new THREE.CylinderGeometry(.011, .011, .05, 10), M.brass, 0, 0, .025, Math.PI / 2); add(sp, rb(.012, .03, .012, .003), M.brass, 0, .02, .04); sp.position.set(0, .04, r0 + .01); wb.add(sp); bake(sp); }
+    tool('waterBucket', wb, scene, shX, shY + .018, shZ + .22);
+    const tapW = cn.localToWorld(V(.23, .9 + .015, -.23)); const spW = V(shX, shY + .018 + .04, shZ + .22 + r0 + .06);
+    { const c = new THREE.CatmullRomCurve3([spW, V(spW.x - .02, spW.y - .2, spW.z + .03), V(tapW.x + .05, tapW.y + .02, tapW.z - .02), tapW.clone().add(V(.02, .01, -.04))].map(q => q.clone().sub(spW))); const hm = add(scene, new THREE.TubeGeometry(c, 24, .008, 6), std2(0x2A2A2A), spW.x, spW.y, spW.z); hm.castShadow = false; }
+    // drain bucket in the bay
+    const db = mkB(false, dm); tool('drainBucket', db, cn, .23, .08, .04);
+    // tap stream and drips
+    const sm = new THREE.MeshStandardMaterial({ color: 0xBFD8E4, roughness: .05, envMap: M.env, transparent: true, opacity: .55, depthWrite: false });
+    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; scene.add(stream);
+    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; scene.add(pourS);
+    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; cn.add(drip);
+    const ws = { clean: .7, dirty: .15, tap: false, drainT: 0, dripT: 0, pour: null };
+    const setLvl = (b, k) => { const W2 = b.userData.water; W2.level = clamp01(k); const r = r0 + (r1 - r0) * W2.level - .012; W2.disc.visible = W2.level > .02; W2.disc.scale.set(r, r, 1); W2.disc.position.y = .015 + (H0 - .03) * W2.level; };
+    // slosh: the water surface stays level in world space and rocks against the bucket's acceleration while carried
+    const sl = new Map(); const _q = new THREE.Quaternion(), _p = V();
+    function slosh(b, dt) { const W2 = b.userData.water; let st = sl.get(b); b.updateMatrixWorld(true); b.getWorldPosition(_p); if (!st) { st = { p: _p.clone(), v: V(), t: V(), tv: V() }; sl.set(b, st); }
+      const v = _p.clone().sub(st.p).divideScalar(Math.max(dt, 1e-3)); const a = v.clone().sub(st.v).divideScalar(Math.max(dt, 1e-3)); st.p.copy(_p); st.v.copy(v);
+      const k = Math.min(.25, a.length() * .004); const tgt = V(a.z, 0, -a.x).normalize().multiplyScalar(k); if (!isFinite(tgt.x)) tgt.set(0, 0, 0);
+      st.tv.addScaledVector(tgt.sub(st.t).multiplyScalar(40).sub(st.tv.clone().multiplyScalar(5)), Math.min(dt, .05)); st.t.addScaledVector(st.tv, Math.min(dt, .05));
+      b.getWorldQuaternion(_q).invert(); const lv = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2 + st.t.x, 0, st.t.z)); W2.disc.quaternion.copy(_q).multiply(lv); }
+    out.water = {
+      get clean() { return ws.clean; }, get dirty() { return ws.dirty; },
+      setClean(k) { ws.clean = clamp01(k); setLvl(wb, ws.clean); if (ws.clean <= 0) out.water.tap(false); }, setDirty(k) { ws.dirty = clamp01(k); setLvl(db, ws.dirty); },
+      tap(on) { ws.tap = !!on && ws.clean > 0 && wb.parent === wb.userData.home.parent; stream.visible = ws.tap; if (ws.tap) { const top = cn.localToWorld(V(.23, .9 + .22, -.08)), bot = cn.localToWorld(V(.23, .9 - .19, -.08)); stream.position.copy(top).add(bot).multiplyScalar(.5); stream.scale.set(1, top.y - bot.y, 1); } return ws.tap; },
+      pour(name, on) { ws.pour = on ? (name === 'drainBucket' ? db : wb) : null; if (!on) pourS.visible = false; },
+      update(dt) { // tap drains the supply bucket (a full bucket ~90 s of running water) into the drain bucket
+        if (ws.tap) { if (wb.parent !== wb.userData.home.parent) out.water.tap(false); else { out.water.setClean(ws.clean - dt / 90); if (db.parent === db.userData.home.parent) out.water.setDirty(ws.dirty + dt / 100); ws.drainT = 6; } }
+        ws.drainT -= dt; drip.visible = false; if (ws.drainT > 0 && db.parent === db.userData.home.parent) { ws.dripT = (ws.dripT + dt) % .55; const t = ws.dripT / .35; if (t < 1) { drip.visible = true; drip.position.set(.23, .49 - t * t * (.49 - (.08 + .015 + (H0 - .03) * ws.dirty)), .04); } }
+        for (const b of [wb, db]) if (b.parent !== b.userData.home.parent || ws.pour === b) slosh(b, dt); else if (sl.has(b)) { sl.delete(b); b.userData.water.disc.quaternion.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)); }
+        if (ws.pour) { const b = ws.pour, W2 = b.userData.water; if (W2.level <= .01) { pourS.visible = false; } else { b.updateMatrixWorld(true); let low = null; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; const pw = b.localToWorld(V(Math.cos(a) * r1, H0, Math.sin(a) * r1)); if (!low || pw.y < low.y) low = pw; }
+          const wl = b.localToWorld(V(0, .015 + (H0 - .03) * W2.level, 0)); if (low.y < wl.y + .02) { const L2 = .7; pourS.visible = true; pourS.position.set(low.x, low.y - L2 / 2, low.z); pourS.scale.set(1, L2, 1); const nk = W2.level - dt / 5; if (b === wb) out.water.setClean(nk); else out.water.setDirty(nk); } else pourS.visible = false; } } } };
+    out.water.setClean(ws.clean); out.water.setDirty(ws.dirty);
+    PT.waterShelf = [wb.userData.home.parent, wb.userData.home.pos.clone().add(V(0, .35, 0))]; PT.tap = [cn, V(.23, 1.0, -.15)]; PT.drainBay = [cn, V(.23, .45, .3)]; }
+
   { // the stew pot loses its lid and gets a ladle; both are tools now
     let potO = null; st.children.forEach(c => { if (!potO && c.position && Math.abs(c.position.x - .19) < .001 && Math.abs(c.position.z - .13) < .001) potO = c; });
     if (potO) { potO.removeFromParent(); }
@@ -1024,7 +1073,7 @@ export function buildProps(ctx) {
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
     out.oven.setHeat(heat); void cooking; /* lights.js owns the oven heat (passed in as heat) */ tAcc += dt; out.oven.flicker(tAcc);
-    tweens(dt); out.door.update(dt); out.fridge.update(dt);
+    tweens(dt); out.door.update(dt); out.fridge.update(dt); out.water.update(dt);
     // the radio dial is a light source for lights.js (registered once lights.js is up)
     if (!out._radioLit && window.__lights && window.__lights.addSource) { out._radioLit = true; try { window.__lights.addSource('radio', { room: 'bedroom', kind: 'glow', pos: out.radio.knob(V()), mats: [[out.radio.dialMat, 1.2]], light: { I: .6, dist: 1.5 } }); } catch (e) { console.warn('radio light', e); } }
   };
