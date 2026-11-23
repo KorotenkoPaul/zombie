@@ -346,7 +346,7 @@ export function createWind(opt = {}) {
       let cap = N;
       fall = dt => {
         const s0 = W.level();
-        acc += dt * (0.04 + 0.7 * s0 * s0);                     // leaves per second grow with the wind
+        acc += dt * (0.12 + 0.8 * s0 * s0);                     // a few leaves are always in the air; more as the wind grows
         // a gust reaching the crown shakes a handful loose at once
         { const g = W.gustAt(0, 0); if (!gIn && g > 0.2) { gIn = true; acc += 2 + Math.min(5, g * 5); } else if (gIn && g < 0.08) gIn = false; }
         while (acc >= 1) { acc -= 1; if (L.reduce((n, l) => n + (l.on ? 1 : 0), 0) >= cap) { acc = 0; break; } const l = L.find(l => !l.on); if (!l) break;
