@@ -164,24 +164,26 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
    void main(){vec2 p=(vW.xz-drift)*.075+vec2(vW.y*1.7,0.);vec2 q=nz2(p+vec2(t*.018,t*.007));
     vec2 r=nz2(p+3.*q+vec2(1.7,9.2)+t*.02);float d=fbm(p+3.4*r);
     float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK,1.,smoothstep(4.,12.,length(vW.xz)));
-    float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6);gl_FragColor=vec4(col*(.82+.4*d),a);}`});
+    float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6)*smoothstep(.35,1.8,cam.y-vW.y);/* a sheet near eye height reads as a hard horizontal line: it fades out as the camera comes down to it */gl_FragColor=vec4(col*(.82+.4*d),a);}`});
  const sheets=[];(MOBILE?[[.3,1.1],[.9,.85]]:[[.25,1],[.7,.8],[1.3,.6]]).forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(200,200).rotateX(-Math.PI/2),sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
- const PN=MOBILE?46:80;const puffU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},night:{value:1},frontK:{value:.7},...softU,...windU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
+ const PB=MOBILE?12:22;/* low billows at the root feet (photo: fog in soft heaps between the roots, moss showing) */const PN=(MOBILE?46:80)+PB;const puffU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},night:{value:1},frontK:{value:.7},...softU,...windU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
  const pg=new THREE.InstancedBufferGeometry();pg.copy(new THREE.PlaneGeometry(1,1));pg.instanceCount=PN;
  {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}else if(i<PN*.55){ang=rr(3.6,5.9);r=rr(6,13);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
-   const sz=rr(2.6,6)*(r<10?.8:1.15);a.set([Math.cos(ang)*r,rr(.15,.9)*sz*.32,Math.sin(ang)*r,sz],i*4);b.set([rr(0,100),rr(.6,1.4)*(R()<.5?-1:1),rr(.55,1),rr(0,6.28)],i*4);}
+   let sz=rr(2.6,6)*(r<10?.8:1.15),y=rr(.15,.9)*sz*.32,va=rr(.55,1);
+   if(i>=PN-PB){const k=i-(PN-PB);ang=(k+rr(.15,.85))/PB*6.28;r=rr(3.6,7.5);sz=rr(1.3,2.4);y=sz*.18;va=1+rr(.6,1);}// billows: flagged by alpha>1, no orbit, kept even in front of the trunk
+   a.set([Math.cos(ang)*r,y,Math.sin(ang)*r-.6,sz],i*4);b.set([rr(0,100),rr(.6,1.4)*(R()<.5?-1:1),va,rr(0,6.28)],i*4);}
   pg.setAttribute('iA',new THREE.InstancedBufferAttribute(a,4));pg.setAttribute('iB',new THREE.InstancedBufferAttribute(b,4));}
  const puffMat=new THREE.ShaderMaterial({defines:FOGDEF,transparent:true,depthWrite:false,fog:false,uniforms:puffU,
   vertexShader:`attribute vec4 iA,iB;uniform float t,wlv,frontK;uniform vec2 wdir;varying vec2 vUv;varying float vS,vA;varying float vFade;varying vec3 vW;varying float vWy;
-   void main(){vUv=uv;vS=iB.x;vA=iB.z;
+   void main(){vUv=uv;vS=iB.x;float bl=step(1.,iB.z);vA=iB.z-bl;
     // slow orbit around the oak plus a lazy wobble
-    float ang=t*.01*iB.y+iB.w;float c=cos(ang),s=sin(ang);vec3 cpos=vec3(c*iA.x-s*iA.z,iA.y,s*iA.x+c*iA.z);
-    cpos.xz+=wdir*wlv*(1.2+.8*sin(t*.3+iB.x));cpos.x+=sin(t*.05+iB.x)*1.2;cpos.z+=cos(t*.04+iB.x*1.7)*1.;cpos.y+=sin(t*.07+iB.x)*.15;
+    float ang=(t*.01*iB.y+iB.w)*(1.-bl);float c=cos(ang),s=sin(ang);vec3 cpos=vec3(c*iA.x-s*iA.z,iA.y,s*iA.x+c*iA.z);
+    cpos.xz+=wdir*wlv*(1.2+.8*sin(t*.3+iB.x))*(1.-bl*.8);cpos.x+=sin(t*.05+iB.x)*1.2*(1.-bl*.75);cpos.z+=cos(t*.04+iB.x*1.7)*(1.-bl*.75);cpos.y+=sin(t*.07+iB.x)*.15;
     vec4 mv=viewMatrix*vec4(cpos,1.);vW=cpos+vec3(0.,iA.w*.3,0.);float sz=iA.w*(1.+.08*sin(t*.11+iB.x));mv.xy+=position.xy*vec2(sz*1.6,sz);vWy=(inverse(viewMatrix)*mv).y;
     vFade=smoothstep(2.,8.,-mv.z);
     // keep the trunk base and roots clear: puffs between the camera side and the trunk fade out (fog stays around and behind them, as in the photo)
-    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*frontK;gl_Position=projectionMatrix*mv;}`,
+    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*frontK*(1.-bl);vFade=mix(vFade,smoothstep(1.,4.,-mv.z),bl);gl_Position=projectionMatrix*mv;}`,
   fragmentShader:`uniform float t,op,wlv;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${FOG_NOISE}${SOFT_GLSL}
    void main(){vec2 p=vUv-.5;float r=length(p*vec2(1.,1.25));
     // swirl: rotate the noise domain by an amount that depends on radius and time, so the clump churns
