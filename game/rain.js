@@ -149,6 +149,31 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
         if (ix < 0 || iz < 0 || ix >= NX || iz >= NZ) continue; c++; if (kind[iz * NX + ix]) n++; }
       return c ? Math.min(1, n / c * 2.5) * U.uK.value : 0;
     },
+    // drops running down window glass while it rains (and a while after): beads that slide down in fits, leave a thin
+    // wet trail, plus small still droplets. Hooks into the glass materials (keeps their own onBeforeCompile).
+    wetGlass(mats) {
+      for (const m of mats) { if (!m || m.userData.wetGlass) continue; m.userData.wetGlass = true; const prev = m.onBeforeCompile;
+        m.onBeforeCompile = (sh, r) => { prev && prev.call(m, sh, r); if (wind) wind.hook(sh);
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vGp;')
+            .replace('#include <project_vertex>', `#include <project_vertex>
+{vec4 gw=modelMatrix*vec4(transformed,1.);vec3 gn=normalize(mat3(modelMatrix)*objectNormal);vec2 tg=normalize(vec2(-gn.z,gn.x)+1e-5);vGp=vec2(dot(gw.xz,tg),gw.y);}`);
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uWT,uWet;varying vec2 vGp;
+float gh(float n){return fract(sin(n*91.345)*47453.5);}
+float wetDrops(vec2 p){float acc=0.;
+ // running beads in 3 cm lanes; each lane its own speed, a slight wobble, a fading trail above the bead
+ float lx=p.x*33.;float ln=floor(lx);float h=gh(ln);
+ if(h>.45){float sp=.08+.25*h;float ph=fract(p.y*.9+uWT*sp*(1.+.6*sin(uWT*.7+h*9.))*.9+h*13.);
+  float fx=fract(lx)-.5+.18*sin(p.y*24.+h*20.);float head=exp(-fx*fx*60.-ph*ph*2200.);
+  float trail=step(0.,ph)*smoothstep(.35,0.,ph)*exp(-fx*fx*500.)*.35;acc+=head+trail;}
+ // still droplets
+ vec2 c=floor(p*70.);float h2=gh(c.x*7.1+c.y*13.7);if(h2>.78){vec2 f=fract(p*70.)-.5-(vec2(gh(h2*3.),gh(h2*5.))-.5)*.4;acc+=smoothstep(.22,.08,length(f))*.7;}
+ return acc;}`)
+            .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+{float wd=wetDrops(vGp)*uWet;gl_FragColor.rgb+=vec3(.55,.62,.7)*wd*.55;gl_FragColor.a=max(gl_FragColor.a,min(.6,wd*.5));}`);
+        };
+        m.needsUpdate = true; }
+    },
     heightAt(x, z) { const ix = Math.floor((x - X0) / CS), iz = Math.floor((z - Z0) / CS); return ix < 0 || iz < 0 || ix >= NX || iz >= NZ ? null : hm[iz * NX + ix]; }
   };
   return R;

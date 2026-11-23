@@ -27,3 +27,7 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - game/rain.js (`__rain`): GPU streaks (1600/3200 instanced quads) leaning with the wind, stopped by a height map of everything solid under the sky (rays down over a 0.5 m grid, built over ~16 frames ~90 frames after load, TREE.group skipped). Splashes (220/420) on roofs/decks and ground near the tree; drips (26/52) from roof edges found in the map and refined with a few rays. `roofNear(pos)` 0..1 for the rain-on-roof sound, `heightAt(x,z)`.
 - Gotcha: the streak quad's side vector decides its winding; with the wrong sign every streak was back-face culled (invisible, no error).
 - Environment owns fog, sky and the wet sheen (rainK). Sound owns the rain sound.
+
+## Round 5 (2026-11-23)
+- `uWet` uniform / `__wind.wet()` 0..1: soaks within ~10 s of rain, dries over ~2 min. `windRope` sways up to 45 % less when wet.
+- `__rain.wetGlass(mats)`: beads running down the window glass in 3 cm lanes + still droplets, strength = uWet. Hooked onto the WINS glass materials in index.html (chains their onBeforeCompile; glass coordinates are world metres, so any pane size works).

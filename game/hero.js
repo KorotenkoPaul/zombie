@@ -93,6 +93,26 @@ export function createHero(ctx){
  if(has('hy_drink')){let l=0,r=0;for(const f of [.35,.5,.65]){const p=poseOf('hy_drink',f);l+=p.lh.y;r+=p.rh.y;}POSE.drinkHand=r>=l?'Right':'Left';}
  {const p=poseOf(has('hy_idle')?'hy_idle':'0',.2);POSE.ankle=clamp(Math.min(p.la.y,p.ra.y),.05,.16);}
  mixer.stopAllAction();
+ // ---------- bed: seated pose (standing-up clip, frame 0) and a sleep clip turned so the root never has to spin ----------
+ let SLEEPB=has('hy_sleep')?'hy_sleep':'267';
+ const POSEBONES=[...new Set(Object.values(bones))].filter(b=>b&&b.isBone);
+ function sampleQ(name,f){const a=actions[name];if(!a)return null;mixer.stopAllAction();a.reset().play();a.time=durOf(name)*f;mixer.update(0);const q=POSEBONES.map(b=>b.quaternion.clone());const hy=bones.Hips.position.y;a.stop();return {q,hy};}
+ // sitting on the edge of a low bunk: the seated pose leaned well forward (forearms towards the knees) so the head stays clear of the upper bunk
+ function sampleLean(name,f,ang){const a=actions[name];if(!a)return null;const pr=root.position.clone(),py=root.rotation.y;root.position.set(0,0,0);root.rotation.y=0;
+  mixer.stopAllAction();a.reset().play();a.time=durOf(name)*f;mixer.update(0);root.updateMatrixWorld(true);
+  for(const nm of ['Spine','Spine1','Spine2']){const b=bones[nm];if(!b)continue;const pw=b.parent.getWorldQuaternion(new THREE.Quaternion());const R=new THREE.Quaternion().setFromAxisAngle(V(1,0,0),ang/3);
+   b.quaternion.premultiply(pw.clone().invert().multiply(R).multiply(pw));b.updateMatrixWorld(true);}
+  const q=POSEBONES.map(b=>b.quaternion.clone());const hy=bones.Hips.position.y;a.stop();root.position.copy(pr);root.rotation.y=py;return {q,hy};}
+ const SEATQ=sampleLean(has('hy_standup')?'hy_standup':'53',0,1.0);mixer.stopAllAction();
+ const BED_GROUP=POSEBONES.map(b=>{const n=b.name.replace('mixamorig','').replace(':','');return /UpLeg|Leg|Foot|Toe/.test(n)?'leg':/^(Neck|Head)/.test(n)?'head':/^Left(Shoulder|Arm|ForeArm|Hand)/.test(n)?'la':/^Right(Shoulder|Arm|ForeArm|Hand)/.test(n)?'ra':'core';});
+ const BED_MID={i:-1,q:null};
+ function makeBedClip(off){const src=gltf.animations.find(c=>c.name==='hy_sleep');if(!src)return null;const c=src.clone();c.name='hy_sleep_bed';
+  root.updateMatrixWorld(true);const rq=root.getWorldQuaternion(new THREE.Quaternion()),pq=bones.Hips.parent.getWorldQuaternion(new THREE.Quaternion());const rel=rq.clone().invert().multiply(pq);const relI=rel.clone().invert();
+  const R=relI.clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(0,1,0),off)).multiply(rel);
+  // half-way pose for the pelvis: rolled onto the left side towards the pillow (the legs, still bent, come up with it)
+  if(SEATQ){const hi=POSEBONES.indexOf(bones.Hips);BED_MID.i=hi;BED_MID.q=relI.clone().multiply(new THREE.Quaternion().setFromAxisAngle(V(0,0,1),-(ctx.bedHead??1)*Math.PI*.42)).multiply(rel).multiply(SEATQ.q[hi]);}
+  for(const tr of c.tracks){if(!/Hips\.quaternion$/.test(tr.name))continue;const v=tr.values;const q=new THREE.Quaternion();for(let i=0;i<v.length;i+=4){q.fromArray(v,i);q.premultiply(R);q.toArray(v,i);}}
+  actions[c.name]=mixer.clipAction(c);return c.name;}
 
  // ---------- floor under the hero: real board tops ----------
  const ray=new RAPIER.Ray({x:0,y:0,z:0},{x:0,y:-1,z:0});
@@ -129,7 +149,9 @@ export function createHero(ctx){
   N.chair={p:hip.clone().setY(BD),face,seat,sit:true,floor:floorTop(BD,cx+f.x*.4,cz+f.z*.4)};
   // where to stand so that sitting down lands the hips on the seat
   N.chair_app={p:hip.clone().sub(rotY(V(sdEnd.x,0,sdEnd.z),face)).setY(BD),face,tight:true};
-  N.chair_side={p:V(Math.min(hip.x-.55,(ctx.table?ctx.table.x0:hip.x)-.42),BD,hip.z-.2)};E.push(['bmid','chair_side'],['chair_side','chair_app']);
+  // out from the chair: along the gap between the table and the bunk bed, then out past the bunk's ladder to the middle of the room
+  {const tx=ctx.table?ctx.table.x0:hip.x-.13;const bb0=P3&&P3.surfaces&&P3.surfaces.bed&&P3.surfaces.bed[0];const bxr=bb0?bb0.x1+.1:-99;const cx=(bxr>tx-1.1)?(bxr+tx)/2:Math.min(hip.x-.55,tx-.42);
+   N.chair_side={p:V(cx,BD,hip.z-.2)};N.chair_out={p:V(cx,BD,bb0?bb0.z1+.62:hip.z+.5)};E.push(['chair_side','chair_out'],['chair_out','bmid'],['chair_side','chair_app']);}
   FIT.tableTop=ctx.table?ctx.table.top:BD+.76;FIT.chair={cx,cz,seat};}
  {// bunk bed, lower bed: sit on the front edge (head clear of the upper bunk), then lie along the middle
   const bk=ctx.bunk,bb=new THREE.Box3().setFromObject(bk);const S=P3&&P3.surfaces&&P3.surfaces.bed&&P3.surfaces.bed[0];
@@ -140,9 +162,9 @@ export function createHero(ctx){
   FIT.bed={bx,bz,mat,x0,x1,z1,headDir,box:bb};
   // lying: pelvis ~0.85 m from the head end, body centred across the mattress; yaw so the head points at the pillow
   const lieYaw=(headDir>0?Math.PI/2:-Math.PI/2)-(POSE.sleepHeadYaw??0);
-  N.bedlie={p:V(headDir>0?x1-1.0:x0+1.0,mat,bz),face:wrapA(lieYaw),seat:mat};
+  N.bedlie={p:V(headDir>0?x1-1.0:x0+1.0,mat,bz),face:0,seat:mat};SLEEPB=makeBedClip(lieYaw)||SLEEPB;
   // sitting on the very front edge of the mattress facing the room
-  N.bededge={p:V(bx-headDir*.15,mat,z1+.02),face:0,seat:mat,floor:floorTop(BD,bx,z1+.45)};
+  N.bededge={p:V(bx-headDir*.15,mat,z1+.14),face:0,seat:mat,floor:floorTop(BD,bx,z1+.45)};
   N.bed_app={p:V(N.bededge.p.x-sdEnd.x,BD,N.bededge.p.z-sdEnd.z),face:0,tight:true};
   E.push(['bmid','bed_app']);}
  const adj={};for(const [a,b,t] of E){(adj[a]=adj[a]||[]).push({to:b,t});(adj[b]=adj[b]||[]).push({to:a,t});}
@@ -194,16 +216,25 @@ export function createHero(ctx){
  // seated / perched: put each ankle at its standing height above the boards, then lift the toes out of the floor
  // targets and knee direction are low-passed so clip noise and IK flips never reach the feet
  const plantS={};
- function legPlant(g,dt){const M=window.__plantMode??2;if(M===0)return;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V()),k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
+ function legPlant(g,dt,pw=1){const M=window.__plantMode??2;if(M===0||pw<.01)return;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V()),k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
    const tgt=V(a.x,g+(POSE.ankle??.1),a.z);let pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole=fwd(root.rotation.y);pole.normalize().add(fwd(root.rotation.y).multiplyScalar(.5)).normalize();
    if(M===1){ik2(U,L,F,tgt,pole,1,true);continue;}
-   let S=plantS[s];if(!S||S.t.distanceTo(tgt)>.3||!S.on){S=plantS[s]={t:tgt.clone(),p:pole.clone(),on:true};}
-   const kk=1-Math.exp(-(dt||1/60)*3);S.t.lerp(tgt,kk);S.p.lerp(pole,kk).normalize();ik2(U,L,F,S.t,S.p,1,true);}toeGuard(g,dt);}
+   let S=plantS[s];if(!S||(pw>=.999&&S.t.distanceTo(tgt)>.3)||!S.on){S=plantS[s]={t:tgt.clone(),p:pole.clone(),on:true};}
+   const kk=1-Math.exp(-(dt||1/60)*3);S.t.lerp(tgt,kk);S.p.lerp(pole,kk).normalize();ik2(U,L,F,S.t,S.p,pw,true);}toeGuard(g,dt,pw);}
  function legPlantOff(){for(const k in plantS)plantS[k].on=false;}
  const toeS={Left:0,Right:0};
- function toeGuard(g,dt){const k=1-Math.exp(-(dt||1/60)*10);for(const s of ['Left','Right']){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;const t=T.getWorldPosition(V());const need=Math.max(0,g+.035-t.y);
-   toeS[s]+=(need-toeS[s])*k;if(toeS[s]<=.002)continue;turnBone(F,t,t.clone().add(V(0,toeS[s],0)),1);}}
+ function toeGuard(g,dt,tw=1){const k=1-Math.exp(-(dt||1/60)*10);for(const s of ['Left','Right']){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;const t=T.getWorldPosition(V());const need=Math.max(0,g+.035-t.y);
+   toeS[s]+=(need-toeS[s])*k;if(toeS[s]*tw<=.002)continue;turnBone(F,t,t.clone().add(V(0,toeS[s]*tw,0)),1);}}
  const armLen=(()=>{const A=bones.RightArm,F=bones.RightForeArm,Hh=bones.RightHand;if(!A||!F||!Hh)return .58;root.updateMatrixWorld(true);return A.getWorldPosition(V()).distanceTo(F.getWorldPosition(V()))+F.getWorldPosition(V()).distanceTo(Hh.getWorldPosition(V()));})();
+ // the upper bunk: whenever the head would be under it and too high, bend the spine forward/down to clear it
+ const duckS={v:0};
+ function duck(dt){if(window.__noDuck)return;const up=P3&&P3.surfaces&&P3.surfaces.bed&&P3.surfaces.bed[1];if(!up||!bones.Head||!bones.Spine1){return;}
+  const under=up.top-.272,front=up.z1+.07;const hd=bones.Head.getWorldPosition(V());
+  if(hd.x<up.x0-.12||hd.x>up.x1+.12||hd.y<under-.6){duckS.v+=(0-duckS.v)*(1-Math.exp(-dt*8));if(duckS.v<.002)return;}
+  else{const zone=1-smooth(front-.02,front+.07,hd.z);const need=Math.min(.3,Math.max(0,hd.y+.15-under)*zone);const dv=(need-duckS.v)*(1-Math.exp(-dt*6));duckS.v+=clamp(dv,-.5*dt,.7*dt);}
+  if(duckS.v<.002)return;
+  for(const [nm,f] of [['Spine',.4],['Spine1',.35],['Spine2',.25]]){const b=bones[nm];if(!b)continue;const h=bones.Head.getWorldPosition(V());
+   const fw=fwd(root.rotation.y);const goal=h.clone().add(V(fw.x*duckS.v*.7,-duckS.v,fw.z*duckS.v*.7));turnBone(b,h,goal,f/(1-(nm==='Spine'?0:nm==='Spine1'?.4:.75)));}}
  function armIK(side,target,pole,w){ik2(bones[side+'Arm'],bones[side+'ForeArm'],bones[side+'Hand'],target,pole,w,false);}
  // head and neck turn toward a point (smoothed, limited like a real neck)
  const lookS={yaw:0,pitch:0};
@@ -221,7 +252,7 @@ export function createHero(ctx){
  // ---------- walking: smooth curves, speed matched to the stride, turning steps ----------
  // is the straight line between two points on one floor free of furniture? (used to cut corners of the node graph)
  function segClear(a,b){const n=Math.ceil(Math.hypot(b.x-a.x,b.z-a.z)/.08);const r=.24;for(let i=1;i<=n;i++){const t=i/n,x=a.x+(b.x-a.x)*t,z=a.z+(b.z-a.z)*t;
-   for(const o of OBST){if(o.seat||Math.abs(o.y-a.y)>.6)continue;if(x>o.x0-r&&x<o.x1+r&&z>o.z0-r&&z<o.z1+r)return false;}}return true;}
+   for(const o of OBST){if(Math.abs(o.y-a.y)>.6)continue;if(x>o.x0-r&&x<o.x1+r&&z>o.z0-r&&z<o.z1+r)return false;}}return true;}
  function walkStep(dt){
   // string-pull: if the node after this one is in plain sight, head straight for it
   while(H.path.length>1&&H.path[0].t!=='ladder'&&H.path[1].t!=='ladder'&&!N[H.path[0].node].tight&&!(H.path[2]&&H.path[2].t==='ladder'&&false)){const nx=N[H.path[1].node].p,p0=root.position;
@@ -242,18 +273,20 @@ export function createHero(ctx){
   H.state='walk';const rem=Math.hypot(target.x-p.x,target.z-p.z);
   if(rem<(isLast?.06:.32)){H.node=step.node;H.path.shift();if(isLast&&H.v<.35){H.v=0;}}}
  // ladders: walk to the foot, climb, pull up over the edge (root motion), or the same backwards
+ // turn on the spot with inertia (angular speed ramps up and down, no snap)
+ function turnTo(F,dt){const da=wrapA(F-root.rotation.y);const wav=clamp(da*3.5,-2.6,2.6);H.av=(H.av||0)+clamp(wav-(H.av||0),-7*dt,7*dt);if(Math.abs(da)<.004&&Math.abs(H.av)<.05)H.av=0;root.rotation.y+=H.av*dt;}
  function ladderStep(dt){const step=H.path[0];const key=step.from+'>'+step.node,rkey=step.node+'>'+step.from;const c=LAD[key]||LAD[rkey];const target=N[step.node].p;const p=root.position;
   if(!H.lad){const a=N[step.from].p;const up=target.y>a.y+.01;H.lad={up,phase:up?'mount':'over',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};H.v=0;}
   const L=H.lad;const cz=c.lz+.32*c.side;const F=c.side>0?Math.PI:0;H.state='walk';H.ground=false;
-  const done=()=>{H.lad=null;H.path.shift();H.node=step.node;H.ground=true;};
-  if(L.phase==='mount'){const k=1-Math.exp(-dt*5);p.x=lerp(p.x,L.x,k);p.z=lerp(p.z,cz,k);root.rotation.y+=wrapA(F-root.rotation.y)*k;play('0',{fade:.3});H.ground=true;if(Math.hypot(p.x-L.x,p.z-cz)<.05&&Math.abs(wrapA(F-root.rotation.y))<.08){root.rotation.y=F;L.phase='climb';}}
+  const done=()=>{H.lad=null;H.path.shift();H.node=step.node;H.ground=true;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
+  if(L.phase==='mount'){const k=1-Math.exp(-dt*5);p.x=lerp(p.x,L.x,k);p.z=lerp(p.z,cz,k);turnTo(F,dt);play('0',{fade:.3});H.ground=true;if(Math.hypot(p.x-L.x,p.z-cz)<.05&&Math.abs(wrapA(F-root.rotation.y))<.08){root.rotation.y=F;L.phase='climb';}}
   else if(L.phase==='climb'){root.rotation.y=F;p.x=L.x;p.z=cz;play('437',{speed:1.3,fade:.3});const v=.31*1.3*dt;const pull=rmCurve['435']?rmAt('435',99).y:1.4;
    if(L.up){p.y+=v;if(p.y>=L.yTop-pull){p.y=L.yTop-pull;L.phase='finish';once('435',{fade:.3,then:()=>{L.phase='stand';}});}}
    else{p.y-=v;if(p.y<=L.yBot){p.y=L.yBot;play('0',{fade:.35});done();}}}
   else if(L.phase==='stand'){H.ground=true;play('0',{fade:.4});done();}
   else if(L.phase==='over'){// down: step back over the edge (the pull-up played backwards)
    const a=actions['435'];const d=a.getClip().duration;const end=rmCurve['435']?rmAt('435',99):V(0,1.4,1.06);
-   if(!L.start){root.rotation.y+=wrapA(F-root.rotation.y)*(1-Math.exp(-dt*5));const goal=V(L.x,L.yTop,cz).add(rotY(V(end.x,0,end.z),F));const k=1-Math.exp(-dt*5);p.x=lerp(p.x,goal.x,k);p.z=lerp(p.z,goal.z,k);H.ground=true;play('0',{fade:.3});
+   if(!L.start){turnTo(F,dt);const goal=V(L.x,L.yTop,cz).add(rotY(V(end.x,0,end.z),F));const k=1-Math.exp(-dt*5);p.x=lerp(p.x,goal.x,k);p.z=lerp(p.z,goal.z,k);H.ground=true;play('0',{fade:.3});
     if(Math.hypot(p.x-goal.x,p.z-goal.z)<.05&&Math.abs(wrapA(F-root.rotation.y))<.06){root.rotation.y=F;L.start=1;p.set(goal.x,L.yTop,goal.z);a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=-1;a.time=d;a.enabled=true;if(H.cur)H.cur.crossFadeTo(a,.3,false);a.play();H.cur=a;}}
    else if(a.time<=1e-3){L.phase='climb';L.start=0;}}}
 
@@ -405,7 +438,7 @@ export function createHero(ctx){
     const sweep=Math.sin(a.t*.25)*6;H.look=root.position.clone().add(V(sweep,1.2+Math.sin(a.t*.13)*.6,8));H.lookW=.8;};a.leave=cb=>cb();return a;},
   window:()=>{const a={step:'go'};const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<.8))||'bwin';goTo(wn,()=>{a.step='look';a.t=0;play(IDLE(),{fade:.6});});
    a.update=dt=>{if(a.step!=='look')return;a.t+=dt;H.face=N[wn].face??0;H.look=root.position.clone().add(V(Math.sin(a.t*.3)*3,1.6,6));H.lookW=.9;};a.leave=cb=>cb();return a;},
-  sleep:()=>{const a={step:'go'};goTo('bed_app',()=>{a.step='in';lieDown(()=>{a.step='sleep';play(has('hy_sleep')?'hy_sleep':'267',{fade:1.0});});});
+  sleep:()=>{const a={step:'go'};goTo('bed_app',()=>{a.step='in';lieDown(()=>{a.step='sleep';});});
    a.update=dt=>{};a.leave=cb=>{if(a.step==='go'){cb();return;}getUp(cb);};return a;},
   guard:()=>{const a={};const sp=ctx.guardSpot?ctx.guardSpot():'ledge';H.guardAt=sp;goTo(sp,()=>{H.state='work';play('231');H.face=N[sp]?.face??0;});a.leave=cb=>cb();return a;},
   repair:()=>{const a={};const b=ctx.brokenBoard&&ctx.brokenBoard();if(!b){H.task=null;return a;}goTo(ctx.WIN_NODE[b.group],()=>{a.go=1;a.t=0;grabTool('benchHammer','Right');});
@@ -422,13 +455,35 @@ export function createHero(ctx){
  function standUp(spot,then){H.trans=true;H.face=spot.face;const fl=spot.floor??floorTop(BD);
   H.fit={mode:'rise',base:fl,y:spot.seat+SEAT_CLEAR,hStand:hyAt(STAND,1),hSeat:hyAt(STAND,0)};
   once(STAND,{fade:.5,then:()=>{H.fit=null;H.seated=null;H.trans=false;H.ground=true;H.floorY=fl;play(IDLE(),{fade:.6});H.node=spot===N.chair?'chair_app':'bed_app';then&&then();}});}
- function lieDown(then){const ed=N.bededge,li=N.bedlie;H.face=0;
-  sitDown(ed,()=>{H.trans=true;hold(STAND,0,.7);
-   H.wait={t:rnd(1.2,2.2),then:()=>{H.swing={k:0,dur:2.8,fade:2.2,clip:has('hy_sleep')?'hy_sleep':'267',from:{p:root.position.clone(),yaw:root.rotation.y,y:ed.seat+SEAT_CLEAR},to:{p:li.p.clone(),yaw:li.face,y:li.seat+LIE_CLEAR},
-    then:()=>{H.trans=false;H.inBed=true;H.seated=null;then&&then();}};}};});}
- function getUp(then){H.trans=true;const ed=N.bededge,li=N.bedlie;
-  H.wait={t:rnd(1,2),then:()=>{H.inBed=false;H.swing={k:0,dur:2.6,fade:2.0,hold:[STAND,0],from:{p:root.position.clone(),yaw:root.rotation.y,y:li.seat+LIE_CLEAR},to:{p:V(ed.p.x,root.position.y,ed.p.z),yaw:0,y:ed.seat+SEAT_CLEAR},
-   then:()=>{H.seated=ed;H.wait={t:rnd(1,2.5),then:()=>standUp(ed,()=>{if(has('hy_stretch')&&Math.random()<.8){H.trans=true;once('hy_stretch',{fade:.6,then:()=>{H.trans=false;play(IDLE(),{fade:.7});then&&then();}});}else then&&then();})};}};}};}
+ // lying down: sit on the edge, lean onto the left hand towards the pillow, lower the body and swing the legs up.
+ // Done as a staged blend from the seated pose to the (pre-turned) sleep clip: torso leads, the legs follow; getting up is the same played backwards.
+ const _bedQ=new THREE.Quaternion();
+ function bedBlend(dir,then){const ed=N.bededge,li=N.bedlie;if(dir>0)H.edgeRoot=root.position.clone();
+  const er=H.edgeRoot||V(ed.p.x,root.position.y,ed.p.z);if(SEATQ&&actions[SLEEPB])play(SLEEPB,{fade:0});
+  H.fit=H.fit||{mode:'hold',base:floorTop(BD),y:ed.seat+SEAT_CLEAR};H.fit.mode='hold';root.rotation.y=0;H.face=0;
+  H.bedB={dir,t:0,dur:dir>0?3.6:3.2,from:{x:er.x,z:er.z,y:ed.seat+SEAT_CLEAR},to:{x:li.p.x,z:li.p.z,y:li.seat+LIE_CLEAR},then};}
+ function edgeTick(dt){const e=H.edgeHold;if(!e||H.bedB||!SEATQ)return;e.w=clamp(e.w+(e.to>e.w?1:-1)*dt/e.d,0,1);const w=smooth(0,1,e.w);
+  if(w>0){for(let i=0;i<POSEBONES.length;i++){const bn=POSEBONES[i];bn.quaternion.slerp(SEATQ.q[i],w);}bones.Hips.position.y=lerp(bones.Hips.position.y,SEATQ.hy,w);}
+  if(e.to===0&&e.w<=0)H.edgeHold=null;}
+ function bedTick(dt){const b=H.bedB;if(!b)return;b.t=Math.min(b.dur,b.t+dt);const u=b.dir>0?b.t/b.dur:1-b.t/b.dur;
+  const W={core:smooth(.04,.78,u),head:smooth(.45,1,u),la:smooth(.5,1,u),ra:smooth(.12,.85,u),leg:smooth(.3,.97,u)};b.W=W;b.u=u;
+  if(SEATQ)for(let i=0;i<POSEBONES.length;i++){const bn=POSEBONES[i];const w=W[BED_GROUP[i]];_bedQ.copy(bn.quaternion);if(i===BED_MID.i&&BED_MID.q){if(w<.55)bn.quaternion.copy(SEATQ.q[i]).slerp(BED_MID.q,smooth(0,1,w/.55));else bn.quaternion.copy(BED_MID.q).slerp(_bedQ,smooth(0,1,(w-.55)/.45));}else bn.quaternion.copy(SEATQ.q[i]).slerp(_bedQ,w);}
+  if(SEATQ)bones.Hips.position.y=lerp(SEATQ.hy,bones.Hips.position.y,W.core);
+  // first down sideways along the edge, only then in under the upper bunk
+  root.position.x=lerp(b.from.x,b.to.x,smooth(.05,.6,u));root.position.z=lerp(b.from.z,b.to.z,smooth(.38,.95,u));H.fit.y=lerp(b.from.y,b.to.y,W.core);
+  if(b.t>=b.dur){H.bedB=null;b.then&&b.then();}}
+ // left hand on the mattress while the body goes down (and pushes up on the way back)
+ function bedHand(){const b=H.bedB;if(!b||!FIT.bed)return;const u=b.u;const w=smooth(.03,.2,u)*(1-smooth(.5,.72,u));if(w<.01)return;
+  const hp=bones.Hips.getWorldPosition(V());const t=V(hp.x+.3*(FIT.bed.headDir||1),FIT.bed.mat+.04,Math.min(hp.z,FIT.bed.z1)-.12);
+  armIK('Left',t,V(0,.3,1),w);}
+ // the quilt and mattress sink under him (props.js bedPress)
+ function bedPress(on){const P=window.__props||P3;if(!P||!P.bedPress)return;try{P.bedPress(on?bones.Hips.getWorldPosition(V()):null);}catch(e){}}
+ function lieDown(then){const ed=N.bededge;H.face=0;
+  sitDown(ed,()=>{H.trans=true;hold(STAND,0,.7);H.edgeHold={w:0,to:1,d:1.1};
+   H.wait={t:rnd(1.2,2.2),then:()=>{H.edgeHold=null;bedBlend(1,()=>{H.trans=false;H.inBed=true;bedPress(true);H.seated=null;then&&then();});}};});}
+ function getUp(then){H.trans=true;const ed=N.bededge;
+  H.wait={t:rnd(1,2),then:()=>{H.inBed=false;bedPress(false);bedBlend(-1,()=>{hold(STAND,0,0);H.seated=ed;H.edgeHold={w:1,to:1,d:.8};
+   H.wait={t:rnd(1,2.5),then:()=>{if(H.edgeHold){H.edgeHold.to=0;H.edgeHold.d=.7;}standUp(ed,()=>{if(has('hy_stretch')&&Math.random()<.8){H.trans=true;once('hy_stretch',{fade:.6,then:()=>{H.trans=false;play(IDLE(),{fade:.7});then&&then();}});}else then&&then();});}};});}};}
  function swingTick(dt){const s=H.swing;if(!s)return;if(s.k===0){if(s.hold)hold(s.hold[0],s.hold[1],s.fade);else play(s.clip,{fade:s.fade});H.fit=H.fit||{mode:'hold',base:floorTop(BD),y:s.from.y};H.fit.mode='hold';}
   s.k=Math.min(1,s.k+dt/s.dur);const k=smooth(0,1,s.k);
   root.position.x=lerp(s.from.p.x,s.to.p.x,k);root.position.z=lerp(s.from.p.z,s.to.p.z,k);root.rotation.y=s.from.yaw+wrapA(s.to.yaw-s.from.yaw)*smooth(.1,.9,s.k);H.face=root.rotation.y;H.fit.y=lerp(s.from.y,s.to.y,k);
@@ -477,6 +532,7 @@ export function createHero(ctx){
   for(const [n,a,t0] of pre){const t1=a.time;if(t1===t0)continue;const w=a.getEffectiveWeight();if(w<=0)continue;const d=rmAt(n,t1).sub(rmAt(n,t0));p.add(rotY(V(d.x,0,d.z),root.rotation.y).multiplyScalar(w));if(RM[n].y)p.y+=d.y*w;}
   if(H.slide){const sl=H.slide;const k1=smooth(0,1,Math.min(1,sl.k+dt/sl.d)),k0=smooth(0,1,sl.k);sl.k=Math.min(1,sl.k+dt/sl.d);p.x+=sl.x*(k1-k0);p.z+=sl.z*(k1-k0);root.rotation.y+=sl.yaw*(k1-k0);if(sl.k>=1)H.slide=null;}
   if(H.once){const o=H.once;const a=o.a;if(a.time>=o.end-1e-3||!a.isRunning()){H.once=null;o.then&&o.then();}}
+  edgeTick(dt);bedTick(dt);
   // height: stand on the real floor, or put the hips on the seat / mattress
   if(H.fit){const f=H.fit;const hy=bones.Hips.position.y;let w=1;
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
@@ -485,9 +541,10 @@ export function createHero(ctx){
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt);else{legPlantOff();const dy=g-p.y;if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}}
+  if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}}
+  bedHand();
   if(act&&act.post)act.post(dt);
-  lookAt(dt);}
+  lookAt(dt);duck(dt);}
 
  // ---------- start: reading at the table, already seated with the book in the hands ----------
  {const s=N.chair;root.position.set(s.p.x,s.floor,s.p.z);root.rotation.y=s.face;H.face=s.face;H.seated=s;H.node='chair_app';H.task='read';H.ground=false;
