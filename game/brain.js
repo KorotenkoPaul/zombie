@@ -67,7 +67,7 @@ const EXTRA = {
   chop:      { room: 'outside',  give: { fun: -.15, comfort: -.05 }, label: 'колет дрова',          when: (h, c) => (h >= 9 && h < 17 ? .2 : -1) + (c.logs <= 2 ? .3 : 0) },
   pot:       { room: 'kitchen',  give: { hunger: -.05, comfort: -.12 }, label: 'помешивает в котелке', when: h => (h >= 17 && h < 20 ? .25 : 0) },
   stoke:     { room: 'kitchen',  give: { comfort: -.3 }, label: 'подкладывает дрова в печь', when: (h, c) => (c.ovenLow ? .6 : -.5) + (isN(h) ? .2 : 0), needLogs: true },
-  dishes:    { room: 'kitchen',  give: { tidy: -.4 }, label: 'моет посуду',               when: (h, c) => (c.justAte ? .7 : 0) },
+  dishes:    { room: 'kitchen',  give: { tidy: -.4 }, label: 'моет посуду',               when: (h, c) => (c.dirty >= 2 ? .8 : c.dirty === 1 ? (c.justAte ? .3 : -.2) : c.dirty === 0 ? -1.5 : (c.justAte ? .7 : 0)) },
   saw:       { room: 'workshop', give: { fun: -.25 }, label: 'пилит доску',               when: h => (h >= 9 && h < 17 ? .2 : -.6) },
   hammer:    { room: 'workshop', give: { fun: -.2, tidy: .03 }, label: 'стучит молотком', when: h => (h >= 9 && h < 18 ? .15 : -.8) },
   sharpen:   { room: 'workshop', give: { fun: -.12, safety: -.12 }, label: 'точит нож',   when: h => (h >= 16 && h < 20 ? .2 : 0) },
@@ -164,7 +164,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     switch (name) {
       case 'cook': return (breakfast || lunch || dinner) ? .45 : 0;
       case 'tea': return h >= 6 && h < 9.5 && !day.hadTea ? .9 : (h >= 7 && h < 10) || (h >= 15.5 && h < 17.5) ? .35 : 0;   // the morning cup is a habit
-      case 'wash': return (h >= 9 && h < 10.5) || (h >= 19 && h < 20.5) ? .2 : 0;
+      case 'wash': { const d = dirty(); if (d === 0) return -1.5; if (d >= 2) return .7; return (h >= 9 && h < 10.5) || (h >= 19 && h < 20.5) ? .2 : 0; }   // real dirty dishes in the sink (props.js)
       case 'read': return h >= 19 ? .55 : h >= 13.5 && h < 15 ? .2 : 0;
       case 'craft': return h >= 9 && h < 17 ? .35 : -.2;
       case 'look': return (h >= 6 && h < 8) || (h >= 18 && h < 20) ? .4 : isNight(h) ? -.3 : 0;
@@ -219,7 +219,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (E.room === 'outside' && raining()) return null;
     let s = 0, top = '', topV = 0;
     for (const k in E.give) { const g = -E.give[k]; if (g <= 0) continue; const v = need[k] ** 2 * g * 4; s += v; if (v > topV) { topV = v; top = k; } }
-    s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea });
+    s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty() });
     const i = recent.indexOf(n); if (i === 0) s -= 2; else if (i === 1) s -= .5; else if (i >= 2) s -= .2;
     return { name: n, s: s + rnd(0, .3), top: top || '' };
   }
@@ -323,6 +323,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
 
   // ---------- the per-frame tick (called by hero.js) ----------
   let locked = false;
+  // dirty dishes in the sink (props.js); -1 = unknown
+  const dirty = () => { try { const D = window.__props && window.__props.dishes; return D && D.state ? D.state().dirty : -1; } catch (e) { return -1; } };
   const house = () => { try { return window.__house || null; } catch (e) { return null; } };
   let pausing = 0, expected, cmdNext = false, job = null, extra = null;
   function tick(dt, v) {
@@ -478,7 +480,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (!ECON || !job || res === false || (res && res.ok === false)) { job = null; return; }
     if (job === 'hunt') { stock.meat += 2; plan.unshift({ task: 'store', opts: { item: 'meat' }, why: 'кладёт мясо в холодильник' }); }
     else if (job === 'wood') stock.logs += 3;
-    else if (job === 'eat') { stock.meal = 0; day.justAte = true; need.hunger = clamp(need.hunger - .75); need.comfort = clamp(need.comfort - .15); }
+    else if (job === 'eat') { stock.meal = 0; day.justAte = true; try { const D = window.__props && window.__props.dishes; if (D && D.setDirty) D.setDirty(Math.min(4, D.state().dirty + 1)); } catch (e) {} need.hunger = clamp(need.hunger - .75); need.comfort = clamp(need.comfort - .15); }
     job = null; showStock();
   });
   showStock();
