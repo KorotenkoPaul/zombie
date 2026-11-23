@@ -965,7 +965,8 @@ export function createHero(ctx){
   bedHand();bedLegClear(dt);
   if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);
   if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */
-  if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */}
+  if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */
+  try{window.__grab&&window.__grab.tick&&window.__grab.tick(dt,H);}catch(e){}/* GRAB HOOK: hands close round what they hold */}
 
  // ---------- overlay: an upper-body clip layered over whatever the legs do (stretch while walking off, scratch the head, sip...) ----------
  const UPPER=/^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|LeftArm|LeftForeArm|LeftHand|RightShoulder|RightArm|RightForeArm|RightHand)$/;
