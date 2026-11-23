@@ -212,7 +212,7 @@ uniform float tdCool;` + NOISE)
           // the bark detail comes from the relief below
           { vec4 mb=texture2D(map,vMapUv,5.);
             #ifdef TD_LITE
-            float mute=.6;
+            float mute=.85; // phones too: the model's painted streaks showed through as stripes and a pink cast
 #else
             float mute=.85;
 #endif
@@ -281,7 +281,7 @@ uniform float tdCool;` + NOISE)
           float lum=dot(diffuseColor.rgb,vec3(.3,.59,.11));
           // big soft patches + fine breakup
 #ifdef TD_LITE
-          float big=texture2D(tdHao,vec2(tdP.x+tdP.z*.7,tdP.y*.6)*.09).g*1.4-.35;
+          float big=texture2D(tdHao,vec2(tdP.x+tdP.y*.55,tdP.z-tdP.y*.45)*.09).g*1.4-.35; // a skewed planar read that varies across every face (the old (x+z, y) one was constant along flat root tops: stripes)
           float fine=ha.b;
 #else
           float big=td_f(tdP*vec3(.55,.35,.55));
@@ -311,12 +311,16 @@ uniform float tdCool;` + NOISE)
           diffuseColor.rgb=mix(diffuseColor.rgb,moss*(.7+2.*lum),mm*.9);
           // grey-green lichen spots on the drier upper bark
 #ifdef TD_LITE
-          float li=smoothstep(.72,.86,ha.b*.7+fract(big*7.31)*.45)*smoothstep(.6,1.,ha.r)*smoothstep(.8,2.5,y)*(1.-mm); // phones: from the bark map reads
+          float li=smoothstep(.62,.8,ha.b*.6+big*.5)*smoothstep(.6,1.,ha.r)*smoothstep(.8,2.5,y)*(1.-mm); // phones: from the bark map reads
 #else
           float li=smoothstep(.74,.82,td_n(tdP*vec3(7.,4.,7.)+big*3.))*smoothstep(.55,.7,td_n(tdP*.9+5.))*smoothstep(1.,3.,y)*(1.-mm);
 #endif
           // lichen in a few kinds: pale grey-green crust, minty foliose patches and the odd orange-yellow (Xanthoria) spot
+#ifdef TD_LITE
+          { float kind=.3; // phones: one kind (fract() of the smooth noise drew contour stripes)
+#else
           { float kind=fract(big*5.17+tdP.y*.13);
+#endif
             vec3 lc=kind<.55?vec3(.16,.18,.15):(kind<.85?vec3(.13,.19,.14):vec3(.22,.14,.04));
             diffuseColor.rgb=mix(diffuseColor.rgb,lc*(.55+lum*2.5),li*(kind<.85?.55:.45)); }
           // wet bark: darker, and glossy in the grooves' ridges (moss stays matte); streaks run down from the limbs
@@ -775,7 +779,7 @@ uniform float tdCool;` + NOISE)
       M4.compose(p.clone().addScaledVector(s0.n, -0.03), orient(s0.n.clone().lerp(UP, 0.7).normalize(), rr(0, 6.28)), S.setScalar(rr(0.3, 0.5))); ferns.setMatrixAt(nf, M4); ferns.setColorAt(nf++, col.setRGB(0.95, 0.95, 0.95));
       D.forkFerns = (D.forkFerns || 0) + 1;
     }
-    ferns.count = nf; tufts.count = nt; ferns.receiveShadow = tufts.receiveShadow = true; D.group.add(ferns, tufts); D.ferns = ferns; D.tufts = tufts;
+    ferns.count = nf; tufts.count = nt; ferns.receiveShadow = tufts.receiveShadow = true; D.group.add(ferns); if (!MOBILE) D.group.add(tufts); /* phones: the root-crevice grass tufts covered ~0.1% of the screen (Ground's grass is right there) - not worth a draw call */ D.ferns = ferns; D.tufts = tufts;
   }
 
   // ================= 6. mushrooms on the wood: bracket fungi on the trunk foot, little caps on the roots =================

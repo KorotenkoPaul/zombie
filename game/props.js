@@ -988,7 +988,11 @@ export function buildProps(ctx) {
   place('fridge', fridge(), -1.43, KT, 1.38);
   place('picture', picture(.34, .26), -1.45, KT + 1.92, 1.06, { solid: false, wall: true });
   { const s = wallShelf(.86); const items = [[-.3, jar(.14, .05, M.glazeCream)], [-.17, jar(.11, .045, M.jarGlass)], [.3, mug(M.glazeCream)]]; /* the middle is the clean-dish spot (out.dishes) */ for (const [x, o] of items) { o.position.set(x, .018, .12); s.add(o); } bake(s); place('kshelf', s, -2.3, KT + 1.97, 1.04, { solid: false, wall: true }); }
-  place('kbarrel', barrel(.78), -4.02, KT, 3.33);
+  // kitchen eating spot (Brain: no carrying the plate up to the bedroom): the corner barrel wears a loose plank top, a stool beside it
+  const kbar = place('kbarrel', barrel(.78), -4.02, KT, 3.33);
+  { const tp = new THREE.Group(); for (let i = -1; i <= 1; i++) W(tp, .2, .03, .6, i * .205, .015, 0, { mat: M.woodLight, r: .008, grain: 2 }); for (const x of [-.14, .14]) W(tp, .5, .025, .05, 0, -.0125, x, { mat: M.woodDark, r: .006, grain: 0 }); tp.rotation.y = .12;
+    tp.position.set(0, .785, 0); kbar.add(tp); bake(tp); }
+  const kst = place('kstool', stool(), -3.6, KT, 3.3, { seat: true }); out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 };
   place('kbucket', bucket(.34), -3.55, KT, 3.28);
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
@@ -1060,7 +1064,7 @@ export function buildProps(ctx) {
 
   // ================= round 6: food, wood, gear and chores =================
   // world points for the hands: out.point(name) -> Vector3 (computed on call, so room shifts are included)
-  const PT = {}; out.point = (name, t = V()) => { const p = PT[name]; if (!p) return null; p[0].updateMatrixWorld(true); return p[0].localToWorld(t.copy(p[1])); }; out.pointNames = () => Object.keys(PT);
+  const PT = {}; PT.eatTable = [kbar, V(.04, .815, -.02)]; PT.eatSeat = [kst, V(0, .48, 0)]; out.point = (name, t = V()) => { const p = PT[name]; if (!p) return null; p[0].updateMatrixWorld(true); return p[0].localToWorld(t.copy(p[1])); }; out.pointNames = () => Object.keys(PT);
   const homeOf = (o, extra = {}) => { o.userData.home = { parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.x, ...extra }; };
   const tool = (name, o, parent, x, y, z, rot = [0, 0, 0]) => { o.position.set(x, y, z); o.rotation.set(...rot); o.userData.live = true; parent.add(o); homeOf(o); out.tools[name] = o; return o; };
   const ghY = (x, z) => { const G = window.__ground; try { return G && G.heightAt ? G.heightAt(x, z) : 0; } catch (e) { return 0; } };
@@ -1252,15 +1256,36 @@ export function buildProps(ctx) {
   // bedPress(worldHip): a hollow where he sits or lies ON the quilt. bedCover(worldHip): he lies UNDER it: the quilt rises over a
   // body (head toward the pillow, +x in the bed), so his legs never show through. null releases either; both ease in and out.
   out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = false; };
-  out.bedCover = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = true; };
+  out.bedCover = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) { press.cover = true; coverBones = null; } };
   const sm = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
   function bodyLift(x, z, c) { // height of the cover over a lying body, hips at c (bed local), feet toward -x
     const u = x - c.x; if (u < -1.15 || u > .7) return 0;
     const h = u < 0 ? .09 + .05 * sm(-.95, 0, u) : .14 + .03 * sm(0, .35, u); // feet .09, hips .14, chest .17
     const w = u < 0 ? .13 + .07 * sm(-.95, 0, u) : .2 + .03 * sm(0, .3, u); const dz = (z - c.z) / w;
     return h * Math.exp(-dz * dz * 1.3) * sm(-1.15, -.95, u) * (1 - sm(.45, .7, u)); }
+  // H3b: under the quilt the cover follows his real body: every torso/limb bone of the sleeping hero lifts the cloth to its own
+  // height plus the body's thickness there (soft union of blobs), so on his back, side or stomach the quilt drapes over him.
+  // The head and hands stay out. Refreshed 5 times a second while he is in bed (breathing, turning over).
+  const COVER_B = [[/Hips$/, .15, .2], [/Spine$/, .15, .2], [/Spine1$/, .15, .2], [/Spine2$/, .15, .2], [/Neck$/, .06, .1], [/(Left|Right)Shoulder$/, .08, .12], [/(Left|Right)Arm$/, .07, .11], [/(Left|Right)ForeArm$/, .06, .1],
+    [/(Left|Right)UpLeg$/, .09, .14], [/(Left|Right)Leg$/, .07, .12], [/(Left|Right)Foot$/, .06, .11], [/(Left|Right)ToeBase$/, .05, .09]];
+  let coverBones = null, coverT = 0; const cb = [];
+  function findCoverBones() { if (coverBones) return coverBones; if (!press.at) return null; const at = bunk.localToWorld(press.at.clone()); let sk = null, best = 1e9;
+    const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
+    bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
+    const list = []; for (const bn of sk.bones) { const nm = bn.name.replace(/^.*[:_]/, ''); const d = COVER_B.find(([re]) => re.test(nm)); if (d) list.push({ b: bn, r: d[1], s: d[2] }); } return (coverBones = list.length >= 6 ? list : null); }
+  const _cv = V();
+  function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const dx = x - q.x, dz = z - q.z, d2 = (dx * dx + dz * dz) / (q.s * q.s); if (d2 > 4) continue; const h = q.y + q.r - y0; if (h <= 0) continue; acc += Math.pow(h * Math.exp(-d2), 4); } return Math.pow(acc, .25); }
   function pressQuilt(dt) {
-    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5); if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
+    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5);
+    if (press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones())) { coverT -= dt; if (coverT <= 0 || Math.abs(press.k - press.shown) >= .01) { coverT = .2; press.shown = press.k; bunk.updateMatrixWorld(true);
+        if (press.on && findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.b.getWorldPosition(_cv); bunk.worldToLocal(_cv); cb.push({ x: _cv.x, y: _cv.y, z: _cv.z, r: q.r, s: q.s }); } }
+        const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, e = .02, k = press.k;
+        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2];
+          const L0 = liftAt(x, z, y); if (L0 <= .002) continue; a[i + 1] = y + L0 * k;
+          if (nBase[i + 1] > .4) { const gx = (liftAt(x + e, z, y) - liftAt(x - e, z, y)) / (2 * e) * k, gz = (liftAt(x, z + e, y) - liftAt(x, z - e, y)) / (2 * e) * k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; } }
+        P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
+      return; }
+    if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
     const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, c = press.at, e = .01;
     for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (Math.abs(y - c.y) > .3) continue;
       if (press.cover) { const L0 = bodyLift(x, z, c); if (L0 <= 0) continue; a[i + 1] = y + L0 * press.k;
