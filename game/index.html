@@ -486,7 +486,7 @@ let hour=19.3,dayNo=1,weather='clear',rainK=0,spawnLeft=0,spawnT=0,over=false,hi
 let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSET+'brain.js',document.baseURI).href);BRAIN=createBrain({HH,lights:LIGHTS,hour:()=>hour,isNight:h=>isNight(h)});window.__brain=BRAIN;}catch(e){console.error('brain',e);}}
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return isNight(hour)?10/70:14/110;}// a day of ~3 minutes
-const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.7,.95,1.15],[6,0x3B5785,0xF2A36B,0x8A8FA0,0xFF9C5A,1.5,.4,1.0],[8,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.7,1.0],
+const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.7,.95,1.15],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.9,.7,1.08],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.7,1.0],
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.8,.95],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.6,1.0],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,1.05,1.12],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.75,1.0,1.15],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15]];
 function pal(h){let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=smooth(0,1,(h-a[0])/(b[0]-a[0]));const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 function fmt(h){const hh=Math.floor(h),mm=Math.floor((h-hh)*6)*10;return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');}
@@ -572,7 +572,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  ambL.intensity=dayK*(1-rainK*.3)*.55;
  P3.update(dt,{reading:false/* the hero turns the pages himself (hero.js) */,cooking:false,heat:LIGHTS.level('oven')});
  LIGHTS.update({dt,T,lampOn,dayK,task:hero.task,state:hero.state,asleep:!!hero.inBed});
- rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
+ rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
  WIND.update({dt,T,rainK});SMOKE.update(dt,T,scene.fog.color);

@@ -220,9 +220,9 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
  const halos=[];env.addHalo=(light,size=1.6)=>{const s=new THREE.Sprite(new THREE.SpriteMaterial({map:haloTex,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));s.scale.setScalar(size);scene.add(s);halos.push({s,l:light,size});};
 
  // ================= colour grading (after tone mapping) =================
- env.gradePass=new ShaderPass({uniforms:{tDiffuse:{value:null},sat:{value:1.22},con:{value:1.08},lift:{value:new THREE.Color(0x0c2232)},warm:{value:new THREE.Color(0xFFD9A0)},vig:{value:.32},night:{value:1}},
+ env.gradePass=new ShaderPass({uniforms:{tDiffuse:{value:null},sat:{value:1.22},con:{value:1.08},lift:{value:new THREE.Color(0x0c2232)},warm:{value:new THREE.Color(0xFFD9A0)},vig:{value:.32},night:{value:1},morn:{value:0}},
   vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-  fragmentShader:`uniform sampler2D tDiffuse;uniform float sat,con,vig,night;uniform vec3 lift,warm;varying vec2 vUv;
+  fragmentShader:`uniform sampler2D tDiffuse;uniform float sat,con,vig,night,morn;uniform vec3 lift,warm;varying vec2 vUv;
    float hi0(float l){return smoothstep(.25,.8,l);}
    void main(){vec4 c=texture2D(tDiffuse,vUv);vec3 x=c.rgb;float l=dot(x,vec3(.2126,.7152,.0722));
     // warm/cold split like the painting: warm (orange) pixels get extra saturation and glow, cold ones lean to moonlit teal-blue
@@ -231,6 +231,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
     x=(x-.5)*con+.5;
     // split toning: cold teal shadows, warm highlights (lamp light pops against the blue night)
     float sh=1.-smoothstep(0.,.45,l),hi=smoothstep(.45,1.,l);x+=lift*sh*(.6+.6*night);x=mix(x,x*warm*1.15,hi*.45*night);
+    x=mix(x,x*vec3(1.07,1.0,.9)+vec3(.03,.012,.0)*(1.-l),morn*.6);
     vec2 d=vUv-.5;x*=1.-vig*dot(d,d)*2.2;gl_FragColor=vec4(clamp(x,0.,1.),c.a);}`});
 
  // ================= cool night fill =================
@@ -246,7 +247,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
  // leave out alpha-tested and transparent objects (list refreshed now and then, other threads add objects after load)
  let cutList=[],cutAge=1e9;const isCut=o=>{const m=o.material;if(!m||o===puffs)return false;const ms=Array.isArray(m)?m:[m];return ms.some(x=>x.alphaTest>0||x.transparent||x.isSpriteMaterial||x.isPointsMaterial||x.isLineBasicMaterial);};
  const fogObjs=()=>{if(cutAge++>120){cutAge=0;cutList=[];scene.traverse(o=>{if((o.isMesh||o.isPoints||o.isLine||o.isSprite)&&isCut(o))cutList.push(o);});}return [...sheets,puffs,env.backdrop,...(env.mist||[]),...cutList];};let frameN=0;const dbs=new THREE.Vector2();
- let lastT=null;const wTmp=V();
+ let lastT=null;const wTmp=V();const dawnC=new THREE.Color(0xF0BFA0);
  env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera,hour}=s;
   {const W=window.__wind;const dt=lastT===null?0:Math.min(.1,Math.max(0,T-lastT));lastT=T;
    if(W&&W.sample){const w=W.sample(wTmp.set(0,1,0))||{};const x=w.x||0,z=w.z||0,sp=w.s!==undefined?w.s:Math.hypot(x,z);const L=Math.hypot(x,z)||1;
@@ -257,7 +258,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
    const su=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;scene.background=null;renderer.setRenderTarget(depthRT);renderer.clear(false,true,false);renderer.render(scene,camera);
    renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;/* U.wind is driven by game/wind.js now */
   const fc=tmp.copy(P.fog);
-  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),.3+nightK*.3);const dusk=hour===undefined?0:smooth(17.6,19.0,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.15+eve*.85+mornK*.5+rainK*.25;fogU.cam.value.copy(camera.position);
+  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),(.3+nightK*.3)*(1-mornK)).lerp(dawnC,mornK*.45);const dusk=hour===undefined?0:smooth(17.6,19.0,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.15+eve*.85+mornK*.3+rainK*.25;fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
   puffU.op.value=.38*dens;for(const m of mistBands)m.material.uniforms.op.value=m.userData.k*(.25+.75*Math.min(1,dens));
   {const L=halos.filter(h=>h.l.intensity>.05).map(h=>{h.l.getWorldPosition(tmpV);return [tmpV.x,tmpV.y,tmpV.z,Math.min(1,h.l.intensity/5)*h.size/1.6];}).sort((a,b)=>a[1]-b[1]);
@@ -266,9 +267,10 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
   for(const h of halos){const on=h.l.intensity>.05;h.s.visible=on;if(on){h.l.getWorldPosition(h.s.position);const k=Math.min(1,h.l.intensity/6);h.s.material.opacity=k*.85;h.s.scale.setScalar(h.size*(.85+k*.3));}}
   env.shroomGlow.value=eve*1.8;
   // dusk: thicken the distance fog once the lamps are on (the painting's 19:20 look); index.html sets near/far each frame before this
+  if(scene.fog&&scene.fog.isFog&&mornK>0){const f=scene.fog;f.color.lerp(dawnC,mornK*.3);f.far+=mornK*24;f.near+=mornK*6;}
   if(scene.fog&&scene.fog.isFog){const f=scene.fog;f.far=Math.max(f.near+34,f.far-eve*(1-nightK)*26);}
   fill.intensity=eve*1.9*(1-rainK*.4);sky.intensity=eve*.9;rim.intensity=eve*3.2;env.moonRim.strength.value=eve*(1-rainK*.5);
-  ffU.on.value=eve*(1-rainK);const g=env.gradePass.uniforms;g.night.value=eve;g.sat.value=1.2+eve*.08;g.con.value=1.08+eve*.05;};
+  ffU.on.value=eve*(1-rainK);const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=1.2+eve*.08;g.con.value=1.08+eve*.05;};
  env.sheets=sheets;env.puffs=puffs;window.__env=env;
  // called by index.html when FPS stays under 40 after pixel ratio is already at 1: fewer fog puffs, then no soft edges, then one fog sheet
  let qLevel=0;env.degrade=()=>{qLevel++;if(qLevel===1)pg.instanceCount=Math.round(PN*.6);else if(qLevel===2)softU.soft.value=0;else if(qLevel===3){sheets.slice(1).forEach(m=>m.visible=false);pg.instanceCount=Math.round(PN*.4);}return qLevel<=3;};
