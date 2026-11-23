@@ -26,6 +26,38 @@ float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*vn(p);p=mat2(1.6,1.2
 
 export function createEnv(C){
  const {scene,MOBILE,barkT,groundT,leafT}=C;
+ // ================= ground-hugging height fog (in every lit material) =================
+ // The distance fog of index.html stays; on top of it a layer of fog that is thick at the ground and thins out ~2 m up,
+ // so roots, grass and the bottom of the trunk sink into blue mist like in the reference. Strength follows how thick
+ // index.html makes the distance fog (night/morning/rain thick, day thin), so no extra uniforms are needed.
+ THREE.ShaderChunk.fog_pars_vertex='#ifdef USE_FOG\nvarying float vFogDepth;\nvarying vec3 vFogW;\n#endif';
+ THREE.ShaderChunk.fog_vertex='#ifdef USE_FOG\nvFogDepth=-mvPosition.z;\nvFogW=(inverse(viewMatrix)*mvPosition).xyz;\n#endif';
+ THREE.ShaderChunk.fog_pars_fragment=`#ifdef USE_FOG
+uniform vec3 fogColor;varying float vFogDepth;varying vec3 vFogW;
+#ifdef FOG_EXP2
+uniform float fogDensity;
+#else
+uniform float fogNear;uniform float fogFar;
+#endif
+float hfH(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float hfN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hfH(i),hfH(i+vec2(1,0)),f.x),mix(hfH(i+vec2(0,1)),hfH(i+vec2(1,1)),f.x),f.y);}
+#endif`;
+ THREE.ShaderChunk.fog_fragment=`#ifdef USE_FOG
+#ifdef FOG_EXP2
+float fogFactor=1.0-exp(-fogDensity*fogDensity*vFogDepth*vFogDepth);float hk=1.;
+#else
+float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.,fogFar-fogNear);
+#endif
+{float HH=1.7;float yc=cameraPosition.y,yp=vFogW.y;float d=length(vFogW-cameraPosition);
+ float dy=yp-yc;float ec=exp(-max(yc,0.)/HH),ep=exp(-max(yp,-1.)/HH);
+ float od=abs(dy)>.01?HH*(ec-ep)/dy:ep;
+ float n=hfN(vFogW.xz*.11)*.65+hfN(vFogW.xz*.31+7.)*.35;
+ float clear=mix(.2,1.,smoothstep(4.5,11.,length(vFogW.xz)));float tau=(.012+.14*hk)*(.45+1.1*n)*od*min(d,60.)*clear;
+ float hf=1.-exp(-tau);
+ fogFactor=max(fogFactor,0.)+hf*(1.-fogFactor);
+ vec3 haze=mix(fogColor,vec3(dot(fogColor,vec3(.33)))*1.5+vec3(.05,.09,.11),.45);gl_FragColor.rgb=mix(gl_FragColor.rgb,mix(fogColor,haze,hf),fogFactor);}
+#endif`;
+
  const R=rng(20261123);const rr=(a,b)=>a+R()*(b-a);
  const U={t:{value:0},wind:{value:1}};
  const env={U};
@@ -33,7 +65,7 @@ export function createEnv(C){
  // ================= ground =================
  // big mesh with vertex colours: moss, cold teal in the hollows, trodden earth around the roots
  {const S=MOBILE?110:150;const g=new THREE.PlaneGeometry(260,260,S,S).rotateX(-Math.PI/2);const p=g.attributes.position;const col=new Float32Array(p.count*3);const c=new THREE.Color();
-  const moss=new THREE.Color(0x6E9A6A),teal=new THREE.Color(0x4F7F86),earth=new THREE.Color(0x8A7058),deep=new THREE.Color(0x3F6470);
+  const moss=new THREE.Color(0x6A9A5E),teal=new THREE.Color(0x45735F),earth=new THREE.Color(0x8A7058),deep=new THREE.Color(0x3A5E5E);
   for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setY(i,groundH(x,z));const r=Math.hypot(x,z);
    const n=fbm2(x*.08+11,z*.08+3),m=fbm2(x*.3,z*.3);
    c.copy(teal).lerp(moss,smooth(.35,.7,n));c.lerp(earth,smooth(5.5,2.6,r+(m-.5)*2.5)*.75);c.lerp(deep,smooth(30,70,r)*.6);c.multiplyScalar(.85+m*.3);
@@ -44,9 +76,11 @@ export function createEnv(C){
   // two texture scales blended by noise: no visible tiling
   mat.onBeforeCompile=s=>{s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 vGW;').replace('#include <begin_vertex>','#include <begin_vertex>\nvGW=(modelMatrix*vec4(position,1.)).xz;');
    s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vGW;'+GLSL_NOISE)
-    .replace('#include <map_fragment>',`vec4 g1=texture2D(map,vGW/3.4);vec4 g2=texture2D(map,vGW/9.7+.37);float bn=fbm(vGW*.09);vec4 gc=mix(g1,g2,smoothstep(.35,.65,bn));
-     diffuseColor*=vec4(gc.rgb*1.55,1.);`);};
-  const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);env.ground=ground;}
+    .replace('#include <map_fragment>',`vec4 g1=texture2D(map,vGW/4.2);vec4 g2=texture2D(map,vGW/11.3+.37);float bn=fbm(vGW*.09);vec4 gc=mix(g1,g2,smoothstep(.35,.65,bn));
+     diffuseColor*=vec4(gc.rgb*1.8,1.);`);};
+  const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);env.ground=ground;
+  // painted forest floor from the reference (Fal): dark green grass, moss, teal ferns, fallen oak leaves; replaces ground2.jpg once loaded
+  new THREE.TextureLoader().load(new URL('ground3.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=8;mat.map=t;mat.needsUpdate=true;});}
 
  // ================= grass tufts (cards in a star, swaying) =================
  const grassTex=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=256;const x=cv.getContext('2d');
@@ -119,17 +153,22 @@ export function createEnv(C){
    const y=groundH(x,z);for(let k=0;k<per;k++){q.setFromEuler(new THREE.Euler(rr(-.9,.9),rr(0,6.28),rr(-.9,.9)));const sz=rr(1,1.7);m.compose(V(x+rr(-.8,.8),y+rr(.3,1),z+rr(-.8,.8)),q,V(sz,sz,sz));im.setMatrixAt(n,m);c.setRGB(.62,.75,.7);im.setColorAt(n,c);n++;}}
   im.count=n;scene.add(im);}
 
- // far forest: painted silhouette bands, tinted with the fog colour every frame (cheap depth, like the blue haze in the reference)
- const silTex=(()=>{const cv=document.createElement('canvas');cv.width=1024;cv.height=256;const x=cv.getContext('2d');const r=rng(5);
-  for(let i=0;i<26;i++){const tx=r()*1024,w=6+r()*12,h=150+r()*100;x.fillStyle='#fff';x.beginPath();x.moveTo(tx-w,256);x.lineTo(tx-w*.4,256-h);x.lineTo(tx+w*.4,256-h);x.lineTo(tx+w,256);x.fill();
-   for(let k=0;k<6;k++){x.beginPath();x.ellipse(tx+(r()-.5)*70,256-h+(r()-.3)*60,30+r()*40,20+r()*30,0,0,6.28);x.fill();}
-   x.lineWidth=4;x.strokeStyle='#fff';for(let k=0;k<3;k++){x.beginPath();const by=256-h*(.4+r()*.4);x.moveTo(tx,by);x.lineTo(tx+(r()-.5)*90,by-30-r()*40);x.stroke();}}
-  x.fillRect(0,236,1024,20);const t=new THREE.CanvasTexture(cv);t.wrapS=THREE.RepeatWrapping;return t;})();
- const silLayers=[];
- [[58,.92,30,0],[78,.6,38,.3],[100,.35,46,.6]].forEach(([rad,dark,h,off],li)=>{const g=new THREE.CylinderGeometry(rad,rad,h,48,1,true,Math.PI*.55,Math.PI*1.9);g.translate(0,h/2-1.5+li*1.5,0);
-  const uv=g.attributes.uv;for(let i=0;i<uv.count;i++)uv.setX(i,uv.getX(i)*5+off);
-  const mat=new THREE.MeshBasicMaterial({map:silTex,transparent:true,alphaTest:.3,side:THREE.BackSide,fog:false,depthWrite:false,color:0x223344});
-  const mesh=new THREE.Mesh(g,mat);mesh.renderOrder=-1;scene.add(mesh);silLayers.push({mat,dark});});
+ // far forest: a painted backdrop (Fal, from the reference: gnarled oak silhouettes in blue fog) on a cylinder around the scene.
+ // Mirrored-repeat so there is no seam; at night the painting shows as is, by day it is re-tinted with the fog colour.
+ const bgU={map:{value:null},fogc:{value:new THREE.Color()},hor:{value:new THREE.Color()},night:{value:1},ok:{value:0}};
+ new THREE.TextureLoader().load(new URL('forest-bg.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.MirroredRepeatWrapping;t.anisotropy=4;bgU.map.value=t;bgU.ok.value=1;});
+ {const RAD=96,H=64,Y0=-3;const g=new THREE.CylinderGeometry(RAD,RAD,H,64,1,true);g.translate(0,H/2+Y0,0);
+  const mat=new THREE.ShaderMaterial({uniforms:bgU,side:THREE.BackSide,transparent:true,depthWrite:false,fog:false,
+   vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+   fragmentShader:`uniform sampler2D map;uniform vec3 fogc,hor;uniform float night,ok;varying vec2 vUv;
+    void main(){vec3 c=texture2D(map,vec2(vUv.x*5.,vUv.y)).rgb;c=mix(c,fogc*1.1,.3*(1.-vUv.y*.6));float l=dot(c,vec3(.3,.55,.15));
+     vec3 day=mix(fogc*.55,mix(fogc,hor,.4)*1.25,smoothstep(.05,.55,l));
+     vec3 nt=c*.82;
+     vec3 o=mix(day,nt,night);float a=smoothstep(1.,.86,vUv.y)*ok;
+     gl_FragColor=vec4(o,a);
+     #include <colorspace_fragment>
+    }`});
+  const mesh=new THREE.Mesh(g,mat);mesh.renderOrder=-1;mesh.frustumCulled=false;scene.add(mesh);env.backdrop=mesh;}
 
  // ================= rolling ground fog =================
  // (1) horizontal sheets of domain-warped noise just above the ground
@@ -139,13 +178,13 @@ export function createEnv(C){
   fragmentShader:`uniform float t,op;uniform vec3 col,cam;varying vec3 vW;${GLSL_NOISE}
    void main(){vec2 p=vW.xz*.075+vec2(vW.y*1.7,0.);vec2 q=vec2(fbm(p+vec2(t*.018,t*.007)),fbm(p+vec2(5.2,1.3)-vec2(t*.013,0.)));
     vec2 r=vec2(fbm(p+3.*q+vec2(1.7,9.2)+t*.021),fbm(p+3.*q+vec2(8.3,2.8)-t*.016));float d=fbm(p+3.4*r);
-    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist);
-    float a=smoothstep(.3,.85,d)*op*edge;gl_FragColor=vec4(col*(.82+.4*d),a);}`});
+    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*smoothstep(4.5,10.,length(vW.xz));
+    float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze;gl_FragColor=vec4(col*(.82+.4*d),a);}`});
  const sheets=[];[[.25,1],[.7,.8],[1.3,.6]].forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(200,200).rotateX(-Math.PI/2),sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
  const PN=MOBILE?46:80;const puffU={t:U.t,col:fogU.col,op:{value:.5},night:{value:1}};
  const pg=new THREE.InstancedBufferGeometry();pg.copy(new THREE.PlaneGeometry(1,1));pg.instanceCount=PN;
- {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(3,12);}// thicker around the roots, like the reference
+ {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
    const sz=rr(2.6,6)*(r<10?.8:1.15);a.set([Math.cos(ang)*r,rr(.15,.9)*sz*.32,Math.sin(ang)*r,sz],i*4);b.set([rr(0,100),rr(.6,1.4)*(R()<.5?-1:1),rr(.55,1),rr(0,6.28)],i*4);}
   pg.setAttribute('iA',new THREE.InstancedBufferAttribute(a,4));pg.setAttribute('iB',new THREE.InstancedBufferAttribute(b,4));}
  const puffMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:false,uniforms:puffU,
@@ -189,10 +228,10 @@ export function createEnv(C){
  const tmp=new THREE.Color(),dark=new THREE.Color(0x0E1C28);
  env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera}=s;U.t.value=T;U.wind.value=1+rainK*1.5;
   const fc=tmp.copy(P.fog);
-  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),.3+nightK*.3);const eve=Math.max(nightK,lampOn||0);const dens=.35+eve*.65+mornK*.5+rainK*.2;fogU.cam.value.copy(camera.position);
+  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),.3+nightK*.3);const eve=Math.max(nightK,lampOn||0);const dens=.15+eve*.85+mornK*.5+rainK*.25;fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.3*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
   puffU.op.value=.42*dens;
-  for(const L of silLayers){L.mat.color.copy(P.fog).lerp(dark,L.dark*.55*(.4+nightK*.6)).lerp(P.hor,.15);}
+  bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
   for(const h of halos){const on=h.l.intensity>.05;h.s.visible=on;if(on){h.l.getWorldPosition(h.s.position);const k=Math.min(1,h.l.intensity/6);h.s.material.opacity=k*.85;h.s.scale.setScalar(h.size*(.85+k*.3));}}
   fill.intensity=eve*1.6*(1-rainK*.4);sky.intensity=eve*.9;rim.intensity=eve*1.4;
   const g=env.gradePass.uniforms;g.night.value=eve;g.sat.value=1.18+nightK*.08;};
