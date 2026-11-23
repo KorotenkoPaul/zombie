@@ -490,14 +490,14 @@ export function createHero(ctx){
    if(!hc.drive||!hc.ringAt){/* old house without a hand-driven lid */a.update=dt=>{a.t+=dt;if(a.t>.5){try{want?hc.open():hc.close();}catch(e){}endTask();}};return a;}
    if(want===hc.isOpen()){a.update=()=>endTask();return a;}
    const [x0,x1,,,z0,z1]=hc.box;const r0=hc.ringAt(0,V()),rO=hc.ringAt(hc.OPEN,V());
-   const S=want?V(x1+.04,lv.BD,r0.z+.12):V(x1+.04,lv.BD,rO.z+.12);// beside the opening, on the free side
+   const FOOT=x1+.17;/* both feet stay on boards: the near foot is ~12 cm off his centre */const S=want?V(FOOT,lv.BD,r0.z+.12):V(FOOT,lv.BD,rO.z+.12);// beside the opening, on the free side
    const L=hc.ladder||{top:'bl_t',bottom:'kl_b'};const start=N.bl_m?'bl_m':L.top;
    goTo(start,()=>{a.step='app';const p0=root.position;const u=V(S.x-p0.x,0,S.z-p0.z);const ul=u.length()||1;approachTo(a,S.clone().addScaledVector(u,.5/ul),.5,()=>{const p=root.position;const g=hc.grab;H.face=Math.atan2(g.x-p.x,g.z-p.z);a.step=want?'bend':'reach';a.t=0;
      if(want&&has('hy_picklog'))once('hy_picklog',{fade:.35,speed:.75});else if(want&&has('hy_take'))once('hy_take',{fade:.35,speed:.8});/* GRAB: opening, he squats down to the ring (the pick-up clip), takes it and lifts the lid as he rises */});});
    const ringW=()=>hc.grab.clone();
    a.update=dt=>{if(a.step==='approach'){a.t+=dt;if(a.t>=a.adur)a.next();return;}if(a.step==='go'||a.step==='app')return;a.t+=dt;H.look=ringW();H.lookW=1;
     const p=root.position,g=hc.grab;H.face=Math.atan2(g.x-p.x,0)||-Math.PI/2;root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*6);
-    {/* he shuffles along the edge with the ring, right shoulder level with it */const tz=clamp(g.z+.12,z0+.05,z1+.45);const m=.5*dt;p.z+=clamp(tz-p.z,-m,m);}
+    {/* he shuffles along the edge with the ring, right shoulder level with it */const tz=clamp(g.z+.12,z0+.05,z1+.45);const m=.5*dt;p.z+=clamp(tz-p.z,-m,m);if(p.x<FOOT)p.x+=Math.min(FOOT-p.x,m);}
     if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.5);if(a.t>.55){a.step='push';a.t=0;AU('hatch_open',g);}}
     else if(a.step==='push'){const G=window.__grab,gd=G?G.dist('Right'):0;/* GRAB HOOK: the lid moves only while the palm is on the ring; once it tips past where the hand can follow, he lets go and it drops */const ang=gd!=null&&gd>.035&&a.t<1.5?hc.angle:Math.max(1.12,hc.angle-dt*1.1);if(gd==null||gd<=.035||a.t>=1.5)hc.drive(ang);if(ang<=1.12||(hc.angle<1.4&&gd!=null&&gd>.03)){hc.letGo(false);a.step='after';a.t=0;}}
     else if(a.step==='bend'){// GRAB HOOK: squat, palm onto the ring, and the lid rises only as far as the hand can carry it (never ahead of it)
