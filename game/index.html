@@ -150,7 +150,7 @@ const TREE_H=16;
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
-const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:1.15,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:.95,top:.42,clear:.45}],door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
+const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:1.9,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:.95,top:.42,clear:.45}],door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
@@ -417,6 +417,13 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7
     if(r<rows-1&&rnd(0,1)<.035)continue;
     const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.1,.13),ww));SHING.setMatrixAt(SHING.count,m4);
     const k=rnd(.8,1.15)*(rnd(0,1)<.12?.75:1);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}}}
+ // ridge cap (critic T4: black "teeth" between the top rows): a row of slates over the ridge on each side, laid
+ // flatter than the field so they straddle the joint and hide the dark underlay
+ for(const s of [-1,1])for(let zz=-d/2-.03;zz<d/2+.03;){const ww=rnd(.3,.42);const zc=Math.min(zz+ww/2,d/2+.03-ww/2);zz+=ww+rnd(.005,.02);
+  const lp=V(-sl/2+.17,.15+.11,zc);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
+  q.setFromEuler(new THREE.Euler(rnd(-.04,.04),rnd(-.06,.06),-s*ang+s*.04,'ZYX'));const wp=lp.clone().applyMatrix4(g.matrixWorld);
+  m4.compose(wp,q,V(.46,.12,ww));SHING.setMatrixAt(SHING.count,m4);const k=rnd(.75,.95);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));
+  PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}
  const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
  // gable walls (Pavel / critic T4): the triangles under the roof are closed with vertical boards, back and front
  for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<gx1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
@@ -533,7 +540,7 @@ const HATCH=(()=>{const x0=-4.28,x1=-3.68,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
-roof(BX0,BX1-.32,BD+2.3,.8,3.8,1.15,BX1);/* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
+roof(BX0,BX1-.32,BD+2.3,.8,3.8,1.9,BX1);/* steep gable with its pediment to the viewer, like the photo (critic T4) *//* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
 // outside ledge between the bedroom door and the rope ladder to the deck
 floorBoards(BX1,1.8,BD,2.1,3.65,{noEdge:true});brace(V(.5,BD-1.6,2.3),V(1.6,BD-.12,2.9),.12);
 ropeLadder(1.35,BD,DK+.05,3.15);
@@ -571,7 +578,7 @@ ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[
   else if(p.kind==='wall'){const r=inRoom(p.c,.35);if(r){const n=V(0,0,1).applyQuaternion(p.q);const out=n.x*(p.c.x-(r[0]+r[1])/2)+n.z*(p.c.z-(r[4]+r[5])/2)>0;a=out?1:0;b=out?0:1;}else{a=.7;b=.7;}}
   A.setXY(p.i,a,b);}
  aWx.needsUpdate=dWx.needsUpdate=true;}
-cullLeaves([[KX0-.4,KX1+.2,KT-.3,BD+.3,.3,4.9],[BX0-.4,BX1+.4,BD-.3,BD+3.7,.3,4.3],[WX0-.4,WX1+.4,WS-.3,WS+3.5,.5,5.2],[.6,4.6,DK-.3,DK+1.6,0,3.4],[-3.6,3.4,LG-.4,LC+.6,0,4.4]]);
+cullLeaves([[KX0-.4,KX1+.2,KT-.3,BD+.3,.3,4.9],[BX0-.4,BX1+.4,BD-.3,BD+4.4,.3,4.3],[WX0-.4,WX1+.4,WS-.3,WS+3.5,.5,5.2],[.6,4.6,DK-.3,DK+1.6,0,3.4],[-3.6,3.4,LG-.4,LC+.6,0,4.4]]);
 
 // ================= furniture: models made from the concept picture =================
 const iron=new THREE.MeshStandardMaterial({color:0x2E3138,metalness:.7,roughness:.4}),copper=new THREE.MeshStandardMaterial({color:0xB8703E,metalness:.8,roughness:.35}),cloth=new THREE.MeshStandardMaterial({color:0xB5503E,roughness:.9}),linen=new THREE.MeshStandardMaterial({color:0xE9DDC2,roughness:.95});

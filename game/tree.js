@@ -50,6 +50,7 @@ export function buildTree(THREE, o) {
   const rootAng = [0.35, 0.95, 2.2, 2.75, 3.6, 4.35, 5.2, 5.85];
   const door = o.door;
   const doorAng = door.ang ?? Math.atan2(1.0, door.x - AX); // aim the hollow at the front-right
+  let ARCH = null; // the carved opening (model trunk): cut per pixel in the bark shader so its edge is a clean arch
   let R = y => {
     let r = 2.0 + 1.35 * Math.exp(-Math.max(y, 0) / 0.95);
     if (y > 3) r -= 0.03 * (y - 3);
@@ -184,6 +185,10 @@ export function buildTree(THREE, o) {
     // carve the arched hollow: a tunnel from the cave (just inside the bark) out through anything in front of it
     const ddx = Math.cos(doorAng), ddz = Math.sin(doorAng), cdist = R((door.y0 + door.y1) / 2) - 1.13;
     const ccx = AX + ddx * cdist, ccz = AZ + ddz * cdist;
+    // the thinnest bark beside the opening: the cave is clipped to it so its shell never shows through the side of the trunk
+    let rs = 9; for (let i = 0; i < P.length; i += 3) { const y = P[i + 1]; if (y < door.y0 - 0.1 || y > door.y1 + 0.5) continue;
+      const dx = P[i] - AX, dz = P[i + 2] - AZ, ad = Math.abs(angDiff(Math.atan2(dz, dx), doorAng)); if (ad < 0.3 || ad > 1.6) continue; rs = Math.min(rs, Math.hypot(dx, dz)); }
+    ARCH = { cx: ccx, cz: ccz, dx: ddx, dz: ddz, rs: rs < 9 ? rs : 0 };
     const arch = (x, y, z) => {
       const rx = x - ccx, rz = z - ccz, u = rx * ddx + rz * ddz, v = -rx * ddz + rz * ddx;
       if (u < 0.2 || u > 3) return 99;
@@ -194,7 +199,9 @@ export function buildTree(THREE, o) {
     const n3 = si ? si.count : sp.count;
     for (let t = 0; t < n3; t += 3) {
       const a = si ? si.getX(t) : t, b = si ? si.getX(t + 1) : t + 1, c = si ? si.getX(t + 2) : t + 2;
-      const m = arch((P[a * 3] + P[b * 3] + P[c * 3]) / 3, (P[a * 3 + 1] + P[b * 3 + 1] + P[c * 3 + 1]) / 3, (P[a * 3 + 2] + P[b * 3 + 2] + P[c * 3 + 2]) / 3);
+      // drop only triangles wholly inside the opening; the bark shader trims the rest along the exact arch, so the
+      // edge is a clean curve instead of broken triangles (critic N4)
+      const m = Math.max(arch(P[a * 3], P[a * 3 + 1], P[a * 3 + 2]), arch(P[b * 3], P[b * 3 + 1], P[b * 3 + 2]), arch(P[c * 3], P[c * 3 + 1], P[c * 3 + 2]));
       if (m < 1.0) continue; I.push(a, b, c);
     }
     // leaves: clumps at the limb tips and a crown at the top, with gaps between them
@@ -301,6 +308,15 @@ export function buildTree(THREE, o) {
 `)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(vec3(.38,.37,.47),vec3(1.06,1.05,1.02),pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
+    if (ARCH) {
+      sh.uniforms.aC = { value: new THREE.Vector2(ARCH.cx, ARCH.cz) }; sh.uniforms.aD = { value: new THREE.Vector2(ARCH.dx, ARCH.dz) };
+      sh.uniforms.aY = { value: new THREE.Vector3(door.y0, door.y1, door.w) };
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vAW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvAW=(modelMatrix*vec4(transformed,1.)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vAW;uniform vec2 aC;uniform vec2 aD;uniform vec3 aY;')
+        .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+{vec2 r=vAW.xz-aC;float u=dot(r,aD),v=-r.x*aD.y+r.y*aD.x,da=abs(v)/(aY.z*.5),vy=(vAW.y-aY.x)/(aY.y-aY.x);
+ if(u>.2&&u<3.&&vy>0.&&vy<1.&&(vy<.62?da:length(vec2(da,(vy-.62)/.38*1.05)))<1.)discard;}`);
+    }
   };
   mat.userData.doorGlow = { value: 0 };
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
@@ -348,10 +364,13 @@ export function buildTree(THREE, o) {
       let dx, dy, dz; do { dx = rnd(-1, 1); dy = rnd(-0.45, 1); dz = rnd(-1, 1); } while (dx * dx + dy * dy + dz * dz > 1);
       // [PERF] phones: only the outer shell of each clump (inner cards are hidden but still shaded: overdraw)
       const dir = V(dx, dy, dz); const rr = MOB(o) ? rnd(0.8, 1.0) : Math.max(0.35, dir.length()); dir.normalize();
-      const p = s.p.clone().add(V(dir.x * s.s * rr, dir.y * s.s * 0.7 * rr, dir.z * s.s * rr));
+      const p = s.p.clone().add(V(dir.x * s.s * rr, dir.y * s.s * (dir.y < 0 ? 0.5 : 0.7) * rr, dir.z * s.s * rr)); // flatter underside: clumps don't droop
       if (inB(p.x, p.y, p.z, 0.8)) continue;
       // cards turned mostly towards the viewer, like the painted clumps in the photo
-      const fw = rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
+      // the underside of a clump (Wind: low clumps under the big limb read as vertical curtains): those cards face
+      // out and down at random angles, like leaves seen from below, never a stack of upright sheets
+      const fw = dir.y < -0.1 ? dir.clone().add(V(rnd(-.6, .6), rnd(-.5, -.1), rnd(-.6, .6)))
+        : rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
       const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
       sc.setScalar(MOB(o) ? rnd(1.55, 2.3) : rnd(1.25, 2.0));
@@ -381,16 +400,16 @@ export function buildTree(THREE, o) {
     const dirx = Math.cos(doorAng), dirz = Math.sin(doorAng);
     const A = 1.55, B = hh * 0.95, Cl = Math.max(1.0, door.w * 1.0), off = Rm - 1.25;
     const cx = AX + dirx * off, cz = AZ + dirz * off, cy = door.y0 + hh * 0.38; // tall: wide at the floor, no gap under the walls
-    const U = { doorGlow: mat.userData.doorGlow, cAx: { value: new THREE.Vector2(AX, AZ) }, cDir: { value: new THREE.Vector2(dirx, dirz) }, cR: { value: Rm - 0.04 },
+    const U = { doorGlow: mat.userData.doorGlow, cAx: { value: new THREE.Vector2(AX, AZ) }, cDir: { value: new THREE.Vector2(dirx, dirz) }, cR: { value: Rm - 0.04 }, cRs: { value: ARCH && ARCH.rs ? ARCH.rs - 0.08 : 99 }, cW: { value: door.w * 0.5 + 0.12 },
       cC: { value: new THREE.Vector3(cx, cy, cz) }, cS: { value: new THREE.Vector3(A, B, Cl) } };
     const clip = sh => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvCW=(modelMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-varying vec3 vCW;uniform float doorGlow;uniform vec2 cAx;uniform vec2 cDir;uniform float cR;uniform vec3 cC;uniform vec3 cS;
+varying vec3 vCW;uniform float doorGlow;uniform vec2 cAx;uniform vec2 cDir;uniform float cR;uniform float cRs;uniform float cW;uniform vec3 cC;uniform vec3 cS;
 float cH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i),cH(i+vec2(1,0)),f.x),mix(cH(i+vec2(0,1)),cH(i+vec2(1,1)),f.x),f.y);}`)
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif(dot(vCW.xz-cAx,cDir)>cR)discard;');
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{vec2 r=vCW.xz-cAx;if(dot(r,cDir)>cR)discard;if(length(r)>cRs&&abs(-r.x*cDir.y+r.y*cDir.x)>cW)discard;}');
     };
     const cmat = new THREE.MeshStandardMaterial({ color: 0x6E4A32, roughness: 1, side: THREE.BackSide });
     cmat.onBeforeCompile = sh => {
@@ -404,10 +423,24 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
   float crack=smoothstep(.08,.0,abs(cN(vec2(atan(q.y,v)*4.,u*1.3))-.5));
   vec3 c=mix(vec3(.2,.12,.07),vec3(.34,.22,.13),fib)*(.78+.3*ring)*(1.-.5*crack);
   diffuseColor.rgb=c*mix(1.,.15,pow(inn,.8));}`)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+ {vec3 q=vCW-cC;float u=dot(q.xz,cDir);float v=-q.x*cDir.y+q.z*cDir.x;float an=atan(q.y,v);
+  float hgt=cN(vec2(an*9.,u*2.5))*.6+cN(vec2(an*31.,u*7.))*.4-smoothstep(.08,0.,abs(cN(vec2(an*4.,u*1.3))-.5));
+  vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition);float hx=dFdx(hgt),hy=dFdy(hgt);
+  vec3 r1=cross(dpy,normal),r2=cross(normal,dpx);float det=dot(dpx,r1);
+  normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.06);}`)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.3*smoothstep(-.6,1.2,u2);}');
     };
     cmat.customProgramCacheKey = () => 'hollow';
-    const cav = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 22), cmat);
+    // rough, uneven walls (critic N4: a smooth dome reads as plastic): ridges of wood fibre running into the trunk and
+    // lumps of rot, pushed inwards only so the cave never grows past the bark
+    const cgeo = new THREE.SphereGeometry(1, MOB(o) ? 40 : 64, MOB(o) ? 26 : 40);
+    { const pa = cgeo.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+        const a = Math.atan2(y, z), k = 1 - 0.07 * Math.pow(0.5 + 0.5 * Math.sin(a * 11 + x * 2.2 + Math.sin(a * 3) * 1.5), 2) - 0.05 * (0.5 + 0.5 * Math.sin(a * 5 - x * 4 + 1.3)) * (0.5 + 0.5 * Math.sin(x * 7 + a * 2))
+          - 0.03 * Math.sin(x * 13 + a * 17) * Math.sin(a * 23);
+        pa.setXYZ(i, x * k, y * (y < -0.6 ? 1 : k), z * k); }
+      cgeo.computeVertexNormals(); }
+    const cav = new THREE.Mesh(cgeo, cmat);
     cav.position.set(cx, cy, cz); cav.rotation.y = -doorAng; cav.scale.set(A, B, Cl); cav.receiveShadow = true; group.add(cav);
     // a floor of packed, rotten wood and leaf litter in the bottom of the hollow
     const fmat = new THREE.MeshStandardMaterial({ color: 0x5A3A24, roughness: 1 });
@@ -419,6 +452,45 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
     const fy = door.y0 + 0.03, k = Math.sqrt(Math.max(0, 1 - ((fy - cy) / B) ** 2));
     const fl = new THREE.Mesh(new THREE.CircleGeometry(1, 32), fmat); fl.rotation.x = -Math.PI / 2; fl.scale.set(A * k, Cl * k, 1);
     const flg = new THREE.Group(); flg.position.set(cx, fy, cz); flg.rotation.y = -doorAng; flg.add(fl); fl.receiveShadow = true; group.add(flg);
+  }
+
+  // ---------- a hewn wooden frame round the opening (critic N4): jambs and an arched header of short boards ----------
+  if (ARCH) {
+    const dirx = Math.cos(doorAng), dirz = Math.sin(doorAng), hh = door.y1 - door.y0, K = 1.07;
+    const pt = (da, vy) => { const v = da * door.w / 2, y = door.y0 + vy * hh, rr = R(y), ru = Math.sqrt(Math.max(0.01, rr * rr - v * v)) - 0.03;
+      return V(AX + dirx * ru - dirz * v, y, AZ + dirz * ru + dirx * v); };
+    const path = [[-K, -0.02], [-K, 0.62]];
+    for (let i = 1; i < 8; i++) { const t = Math.PI - i / 8 * Math.PI; path.push([Math.cos(t) * K, 0.62 + Math.sin(t) * K * 0.38 / 1.05]); }
+    path.push([K, 0.62], [K, -0.02]);
+    const pos = [], nor = [], uvs = [], col = [];
+    for (let i = 0; i + 1 < path.length; i++) {
+      const a = pt(...path[i]), b = pt(...path[i + 1]); const L = a.distanceTo(b) + 0.05, mid = a.clone().add(b).multiplyScalar(0.5);
+      const ex = b.clone().sub(a).normalize(), out = V(mid.x - AX, 0, mid.z - AZ).normalize(); const ey = out.clone().cross(ex).normalize(); out.copy(ex.clone().cross(ey));
+      const m = new THREE.Matrix4().makeBasis(ex, ey, out).setPosition(mid.clone().addScaledVector(out, 0.03));
+      m.multiply(new THREE.Matrix4().makeRotationX(rnd(-0.06, 0.06)));
+      const bg = new THREE.BoxGeometry(L, rnd(0.16, 0.19), rnd(0.13, 0.17)).toNonIndexed(); bg.applyMatrix4(m);
+      const k = rnd(0.8, 1.1), sd = rnd(0, 9);
+      for (let j = 0; j < bg.attributes.position.count; j++) {
+        pos.push(bg.attributes.position.getX(j), bg.attributes.position.getY(j), bg.attributes.position.getZ(j));
+        nor.push(bg.attributes.normal.getX(j), bg.attributes.normal.getY(j), bg.attributes.normal.getZ(j));
+        uvs.push(bg.attributes.uv.getX(j) * L + sd, bg.attributes.uv.getY(j)); col.push(k, k * 0.97, k * 0.93);
+      }
+      bg.dispose();
+    }
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); fg.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    fg.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); fg.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const frm = new THREE.MeshStandardMaterial({ color: 0x5C4030, roughness: 0.95, vertexColors: true });
+    frm.onBeforeCompile = sh => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFU;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvFU=uv;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec2 vFU;float fH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float fN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(fH(i),fH(i+vec2(1,0)),f.x),mix(fH(i+vec2(0,1)),fH(i+vec2(1,1)),f.x),f.y);}`)
+        .replace('#include <map_fragment>', `#include <map_fragment>
+{float g=fN(vec2(vFU.x*3.,vFU.y*28.))*.55+fN(vec2(vFU.x*11.,vFU.y*70.))*.45;diffuseColor.rgb*=.62+.5*g;}`);
+    };
+    frm.customProgramCacheKey = () => 'doorframe';
+    const fmesh = new THREE.Mesh(fg, frm); fmesh.castShadow = !MOB(o); fmesh.receiveShadow = true; group.add(fmesh);
   }
 
   // world-space triangle soup for physics / slicing
