@@ -609,7 +609,9 @@ const HATCH=(()=>{const x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.
  for(const xx of [-.2,.2]){const h=new THREE.Mesh(new THREE.BoxGeometry(.05,.02,.12),ring.material);h.position.set(xx,.03,-.04);lid.add(h);}
  bakeStatic(lid,m=>m===ring);const OPEN=1.95;let ang=OPEN,target=OPEN;lid.rotation.x=ang;
  const grab=new THREE.Vector3();
- return {update(dt){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;lid.rotation.x=ang;ring.getWorldPosition(grab);},
+ let fall=0,held=false;/* hero.js drives the lid by the ring while his hand holds it (drive), and lets it drop shut (drop) */
+ return {update(dt){if(fall){fall+=dt*7;ang-=fall*dt;if(ang<=0){ang=0;target=0;fall=0;try{window.__audio&&window.__audio.play('hatch_close',grab);}catch(e){}}}else if(!held){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;}lid.rotation.x=ang;ring.getWorldPosition(grab);},
+  drive(a){held=true;fall=0;ang=target=Math.max(0,Math.min(OPEN,a));lid.rotation.x=ang;lid.updateMatrixWorld(true);ring.getWorldPosition(grab);},letGo(open){held=false;if(open)target=OPEN;else{target=0;fall=fall||.01;}},ringAt(a,out){const k=lid.rotation.x;lid.rotation.x=a;lid.updateMatrixWorld(true);ring.getWorldPosition(out);lid.rotation.x=k;lid.updateMatrixWorld(true);return out;},OPEN,
   open(){target=OPEN;},close(){target=0;},toggle(){target=target===0?OPEN:0;},isOpen(){return target!==0;},
   get angle(){return ang;},grab,box:[x0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});

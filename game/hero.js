@@ -391,6 +391,14 @@ export function createHero(ctx){
   if(H.lad&&H.path[0]&&H.path[0].t==='ladder'){const first=H.path[0];H.path=[first,...(first.node===node?[]:route(first.node,node))];H.then=then;return;}
   H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));}
  const sidePole=(side,down=1)=>{const f=fwd(root.rotation.y);const right=V(-f.z,0,f.x);return right.multiplyScalar(side==='Right'?1:-1).add(V(0,-down,0)).add(f.clone().multiplyScalar(-.3));};
+ // a hand on a real point: the chest leans toward it when the arm alone can't reach (up to ~25 deg), then two-bone IK puts the palm there
+ function reachTo(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
+  for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+PALM);if(ex<=.01)break;
+   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(1.25-tot,ex*4)*w;if(ang<=.005)break;tot+=ang;
+   rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
+  const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):t;/* the palm, not the wrist, on the point */
+  armIK(side,wt,sidePole(side),clamp(w,0,1));}
+ const PALM=.06;
  function ikList(list){if(!list)return;for(const [s,t,w] of list)if(t&&w>.001)armIK(s,t,sidePole(s),clamp(w,0,1));}
 
  // a small pot on the stove while cooking
@@ -438,12 +446,28 @@ export function createHero(ctx){
     const v=a.knob.clone().sub(from);const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);if(!a.low)ikList([['Right',from.add(v),w]]);};
    return a;},
   // open or close the floor hatch over the kitchen ladder: go to its top or bottom, reach for the ring, it moves at the touch
-  hatch:(o={})=>{const a={step:'go',t:0};const hc=window.__house&&window.__house.hatch;if(!hc){a.update=()=>endTask();return a;}
-   const want=o.open!=null?!!o.open:!hc.isOpen();const L=hc.ladder||{top:'bl_t',bottom:'kl_b'};const up=o.side==='top'?true:o.side==='bottom'?false:root.position.y>(lv.KT+lv.BD)/2-.3;const node=up?L.top:L.bottom;
-   goTo(node,()=>{a.step='reach';a.t=0;const g=hc.grab;const p=root.position;H.face=Math.atan2(g.x-p.x,g.z-p.z);a.low=g.y-p.y<.8;if(a.low&&has('hy_take'))once('hy_take',{fade:.35,then:()=>play(IDLE(),{fade:.4})});});
-   a.update=dt=>{if(a.step!=='reach')return;a.t+=dt;const g=hc.grab;H.look=g.clone();H.lookW=1;const tT=a.low&&has('hy_take')?durOf('hy_take')*.45:.45;
-    if(a.t>tT&&!a.done){a.done=true;try{want?hc.open():hc.close();}catch(e){}}if(a.t>(a.low&&has('hy_take')?durOf('hy_take'):1.0))endTask();};
-   a.post=()=>{if(a.step!=='reach'||a.low)return;const w=smooth(0,.4,a.t)*(1-smooth(.65,1,a.t));const from=bones.RightArm.getWorldPosition(V());const v=hc.grab.clone().sub(from);if(v.length()>armLen*.97)v.setLength(armLen*.97);ikList([['Right',from.add(v),w]]);};
+  // open or close the floor hatch BY HAND: stand beside the opening, take the ring, and the lid moves only with the hand.
+  // closing: push the standing lid past upright, let go, it drops shut; opening: crouch, take the ring, lift as he stands, flick it open
+  hatch:(o={})=>{const a={step:'go',t:0,w:0};const hc=window.__house&&window.__house.hatch;if(!hc){a.update=()=>endTask();return a;}
+   const want=o.open!=null?!!o.open:!hc.isOpen();if(want===hc.isOpen()&&!hc.drive){a.update=()=>endTask();return a;}
+   if(!hc.drive||!hc.ringAt){/* old house without a hand-driven lid */a.update=dt=>{a.t+=dt;if(a.t>.5){try{want?hc.open():hc.close();}catch(e){}endTask();}};return a;}
+   if(want===hc.isOpen()){a.update=()=>endTask();return a;}
+   const [x0,x1,,,z0,z1]=hc.box;const r0=hc.ringAt(0,V()),rO=hc.ringAt(hc.OPEN,V());
+   const S=want?V(x1+.04,lv.BD,r0.z+.12):V(x1+.04,lv.BD,rO.z+.12);// beside the opening, on the free side
+   const L=hc.ladder||{top:'bl_t',bottom:'kl_b'};const start=N.bl_m?'bl_m':L.top;
+   goTo(start,()=>{a.step='app';const p0=root.position;const u=V(S.x-p0.x,0,S.z-p0.z);const ul=u.length()||1;approachTo(a,S.clone().addScaledVector(u,.5/ul),.5,()=>{const p=root.position;const g=hc.grab;H.face=Math.atan2(g.x-p.x,g.z-p.z);a.step=want?'bend':'reach';a.t=0;
+     if(want&&has('hy_take'))once('hy_take',{fade:.35,speed:.8});});});
+   const ringW=()=>hc.grab.clone();
+   a.update=dt=>{if(a.step==='approach'){a.t+=dt;if(a.t>=a.adur)a.next();return;}if(a.step==='go'||a.step==='app')return;a.t+=dt;H.look=ringW();H.lookW=1;
+    const p=root.position,g=hc.grab;H.face=Math.atan2(g.x-p.x,0)||-Math.PI/2;root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*6);
+    {/* he shuffles along the edge with the ring, right shoulder level with it */const tz=clamp(g.z+.12,z0+.05,z1+.45);const m=.5*dt;p.z+=clamp(tz-p.z,-m,m);}
+    if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.5);if(a.t>.55){a.step='push';a.t=0;AU('hatch_open',g);}}
+    else if(a.step==='push'){const ang=Math.max(1.12,hc.angle-dt*1.1);hc.drive(ang);if(ang<=1.12){hc.letGo(false);a.step='after';a.t=0;}}
+    else if(a.step==='bend'){const d=has('hy_take')?durOf('hy_take')/.8:1.2;const k=a.t/d;a.w=smooth(.25,.42,k);
+     if(k>.42){if(!a.held){a.held=true;AU('hatch_open',g);}hc.drive(1.3*smooth(.45,.95,k));}if(k>=.97){hc.letGo(true);a.step='after';a.t=0;play(IDLE(),{fade:.4});}}
+    else if(a.step==='after'){a.w=Math.max(0,a.w-dt/.35);if(a.t>.9){play(IDLE(),{fade:.4});endTask({ok:true,open:want});}}};
+   a.post=()=>{if(a.w>.01)reachTo('Right',ringW(),a.w);};
+   a.leave=cb=>{try{if(hc.drive&&a.step!=='after'&&a.step!=='go'&&a.step!=='app')hc.letGo(hc.angle>1);}catch(e){}cb();};
    return a;},
   // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
   micro:(o={})=>{const a={step:'do',t:0};const c=o.clip&&has(o.clip)?o.clip:IDLE();const one=['hy_stretch','hy_inspect','hy_take','hy_drink'].includes(c);
@@ -914,8 +938,8 @@ export function createHero(ctx){
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
   if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   bedHand();bedLegClear(dt);
-  if(act&&act.post)act.post(dt);
-  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);}
+  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);
+  if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */}
 
  // ---------- overlay: an upper-body clip layered over whatever the legs do (stretch while walking off, scratch the head, sip...) ----------
  const UPPER=/^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|LeftArm|LeftForeArm|LeftHand|RightShoulder|RightArm|RightForeArm|RightHand)$/;
