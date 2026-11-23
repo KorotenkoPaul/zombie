@@ -8,7 +8,7 @@
 const fs=require('fs'),path=require('path');const {open}=require('../anim/lib');
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const OUT=path.resolve(arg('out','/tmp/hero-watch'));const EVERY=+arg('every',6),CALM=+arg('calm',30),SEED=+arg('seed',1);
-const SZ=+arg('size',400);const FAST=!process.argv.includes('--post');const VIEW=arg('view','body');const MAXS=+arg('max',75);
+const SZ=+arg('size',400);const FAST=!process.argv.includes('--post');const VIEW=arg('view','body');const MAXS=+arg('max',75);const AT=arg('at',null)?arg('at').split(',').map(Number):null;
 // task, hour, opts, seconds after start to keep filming
 const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes',9],['wash',9],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
  ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],['supplies',11],
@@ -38,7 +38,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
     // chest point: hips bone if available
     let c=new T.Vector3(P.x,P.y+.75,P.z);try{const hb=__dbg.heroBones||__dbg.HH.bones;const hip=hb&&(hb.Hips||hb.mixamorigHips);if(hip){hip.getWorldPosition(c);c.y+=.1;}}catch(e){}
     if(view==='hands'){try{const hb=__dbg.HH.bones;const a=new T.Vector3(),b=new T.Vector3();hb.RightHand.getWorldPosition(a);hb.LeftHand.getWorldPosition(b);c=a.distanceTo(b)<.45?a.add(b).multiplyScalar(.5):a;}catch(e){}}
-    const fy=H.yaw||0;const want=view==='hands'?1.0:2.5,pitch=view==='hands'?.35:.22;
+    const fwd=H.root.getWorldDirection(new T.Vector3());let fy=Math.atan2(fwd.x,fwd.z);if(window.__watchFlip)fy+=Math.PI;const want=view==='hands'?1.0:2.5,pitch=view==='hands'?.35:.22;
     const score=yaw=>{const d=new T.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch));
      // clearance along the ray and from the head and feet too (full body visible)
      const a=clear(c,d,want),b=clear(c.clone().add(new T.Vector3(0,view==='hands'?.15:.55,0)),d,want),f=clear(c.clone().add(new T.Vector3(0,view==='hands'?-.15:-.6,0)),d,want);return Math.min(a,b,f);};
@@ -57,6 +57,11 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
     cam.updateMatrixWorld();__noRender(false);if(window.__watchFast)__realRender.call(__renderer,scene,cam);else __qaComposer.render();__noRender(true);if(window.__watchFast){cam.far=far0;cam.updateProjectionMatrix();}
     return {dist:+dist.toFixed(2),yaw:+W.yaw.toFixed(2)};},
    reset(){W.yaw=null;},
+   inspect(bone,yaw,dist,pitch){const hb=__dbg.HH.bones;const c=new T.Vector3();(hb[bone]||hb.RightHand).getWorldPosition(c);
+    const cam=__qaCamera;cam.position.set(c.x+Math.sin(yaw)*Math.cos(pitch)*dist,c.y+Math.sin(pitch)*dist,c.z+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(c);cam.fov=50;cam.far=18;cam.updateProjectionMatrix();cam.updateMatrixWorld();
+    __noRender(false);__realRender.call(__renderer,scene,cam);__noRender(true);
+    const hits=[];const bb=new T.Box3();scene.traverse(o=>{if(!o.isMesh||mine(o)||o.isInstancedMesh)return;bb.setFromObject(o);if(bb.distanceToPoint(c)<.04){let n='';let x=o;while(x&&x!==scene){if(x.name)n=x.name+'/'+n;x=x.parent;}hits.push({n:n||o.geometry.type,min:bb.min.toArray().map(v=>+v.toFixed(3)),max:bb.max.toArray().map(v=>+v.toFixed(3))});}});
+    return {hand:c.toArray().map(v=>+v.toFixed(3)),near:hits.slice(0,8)};},
    st(){const h=H;const cur=h.cur;let clip=null;try{clip=cur&&(cur.getClip?cur.getClip().name:(cur.name||cur._clip&&cur._clip.name));}catch(e){}
     if(!clip&&h.actions){for(const [k,a] of Object.entries(h.actions)){if(a===cur){clip=k;break;}}}
     return {task:h.task,state:h.state,clip,root:h.root.position.toArray().map(v=>+v.toFixed(3)),yaw:+(h.yaw||0).toFixed(3),lad:!!h.lad,seated:!!h.seated,bed:!!h.inBed,path:h.path.length,swing:!!h.swing,trans:!!h.trans,hour:__th.state().hour};}};
@@ -83,7 +88,8 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
    // dense while moving / changing pose / on ladders, sparse while steady
    const moving=s.path>0||s.lad||s.swing||s.trans||!last||s.clip!==last.clip||s.state!==last.state||Math.hypot(s.root[0]-last.root[0],s.root[1]-last.root[1],s.root[2]-last.root[2])>.01;
    const gap=moving?EVERY:CALM;
-   if(seen&&frames-lastShot>=gap){const ts=Date.now();log.push(await shoot(dir));lastShot=frames;log[log.length-1].ms=Date.now()-ts;if(log.length%10==0)fs.writeFileSync(dir+'/log.json',JSON.stringify({task:t,hour:h,seen,log}));}
+   if(AT){if(AT.includes(total)){for(const [bn,yw,ds,pt] of [['RightHand',0,.8,.6],['RightHand',1.57,.8,.6],['RightHand',3.14,.8,.6],['RightHand',4.71,.8,.6],['RightHand',0,.5,1.4]]){const r=await p.evaluate(a=>__watch.inspect(...a),[bn,yw,ds,pt]);const file=`${dir}/at${total}_${bn}_${yw}_${pt}.png`;await p.locator('canvas').first().screenshot({path:file});log.push({f:total,bn,yw,...r});}console.log('inspected',total);}if(total>Math.max(...AT))break;}
+   else if(seen&&frames-lastShot>=gap){const ts=Date.now();log.push(await shoot(dir));lastShot=frames;log[log.length-1].ms=Date.now()-ts;if(log.length%10==0)fs.writeFileSync(dir+'/log.json',JSON.stringify({task:t,hour:h,seen,log}));}
    last=s;
    if(seen&&s.task!==t&&t!=='walkabout'){if(++afterEnd>=Math.round(4*60/EVERY))break;}
    await step(EVERY);frames+=EVERY;}
