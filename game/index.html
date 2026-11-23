@@ -45,6 +45,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildTree, TREE_AXIS } from './tree.js';
+import { buildProps } from './props.js';
 import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
 
 const $=id=>document.getElementById(id);
@@ -55,7 +56,7 @@ const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ASSET=window.__ASSET||'';
 const V=(x,y,z)=>new THREE.Vector3(x,y,z);
-let loaded=0;const TOTAL=23;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
+let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
 
 await RAPIER.init();prog();
 // ================= renderer =================
@@ -75,7 +76,7 @@ const tex=(n,rep=1,srgb=true)=>new Promise(res=>TL.load(ASSET+n,t=>{t.colorSpace
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 const [woodT,barkT,roofT,groundT,leafT,treeG,heroG,zombG]=await Promise.all([tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('tree-glb.txt'),glb('hero-glb.txt'),glb('zombie-glb.txt')]);
-const PROPS={};await Promise.all(['barrel','basket','bucket','bunkbed','chair','counter','door','fridge','pegboard','pendant','shelf','stove','telescope','workbench'].map(n=>glb(n+'-glb.txt').then(g=>{PROPS[n]=g;})));
+const PROPS={};// furniture is modelled in code now: see props.js
 
 // ================= lights & sky =================
 const hemi=new THREE.HemisphereLight(0xC9DAF5,0x4A5233,.7);scene.add(hemi);const ambL=new THREE.AmbientLight(0xFFE6C8,0);scene.add(ambL);
@@ -289,37 +290,19 @@ const glass=new THREE.MeshStandardMaterial({color:0x9CC4E0,emissive:0x5E8CC0,emi
 function win(x0,x1,y0,y1,z,side){const g=new THREE.Group();const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),glass);g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}
  if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);}
 win(-2.7,-1.95,KT+1.15,KT+1.85,1.04);win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2);win(-.75,-.05,BD+1.05,BD+1.75,.99);win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2);win(3.2,3.95,WS+1.05,WS+1.75,1.24);win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2);
-// kitchen
-prop('stove',-3.2,KT,1.45,{h:.95});prop('counter',-2.28,KT,1.45,{h:.92});prop('fridge',-1.45,KT,1.42,{h:1.55,bright:1.3});
-prop('pendant',-3.2,KT+1.6,1.6,{h:.75,bright:1.4,solid:false});prop('barrel',-4.0,KT,3.0,{h:.78,bright:1.4});prop('bucket',-3.55,KT,3.25,{h:.35,bright:1.4});
-rug(-2.6,KT,2.75,1.7,1.0,'#B5503E','#E9C98A');
-{const s=box(.9,.04,.22,darkBoard,-2.28,KT+1.95,1.15);for(let i=0;i<5;i++)mesh(new THREE.CylinderGeometry(.05,.05,rnd(.12,.2),10),new THREE.MeshStandardMaterial({color:[0xC96A3F,0x8AB86A,0xE0C060,0x9AC0D0][i%4],roughness:.3}),-2.62+i*.17,KT+2.06,1.15);}
-// workshop
-prop('workbench',2.75,WS,1.86,{w:1.7});prop('pegboard',2.55,WS+1.0,1.26,{w:1.4,solid:false});prop('shelf',4.42,WS+.95,2.55,{w:1.15,ry:-Math.PI/2,solid:false});
-prop('barrel',1.55,WS,1.55,{h:.8,bright:1.4});prop('bucket',4.05,WS,3.4,{h:.38,bright:1.4});prop('pendant',2.75,WS+1.45,2.3,{h:.7,bright:1.4,solid:false});
-{const g=new THREE.Group();g.position.set(1.85,WS,2.6);scene.add(g);const t=new THREE.Mesh(new THREE.CylinderGeometry(.2,.2,.05,16),boardMat);t.position.y=.48;t.castShadow=true;g.add(t);for(let i=0;i<3;i++){const l=new THREE.Mesh(new THREE.CylinderGeometry(.03,.035,.48,6),darkBoard);const a=i*2.1;l.position.set(Math.cos(a)*.13,.24,Math.sin(a)*.13);l.castShadow=true;g.add(l);}}
-rug(2.8,WS,3.05,1.6,.95,'#4F6B4A','#D9C38A');
-// bedroom
-const bunk=prop('bunkbed',-2.4,BD,1.71,{w:2.05,bright:1.35,seat:true});prop('basket',-3.75,BD,2.95,{h:.45,bright:1.2});const chairO=prop('chair',-.58,BD,2.3,{h:.95,ry:Math.PI,bright:1.35,seat:true});
-{const g=new THREE.Group();g.position.set(-.35,BD,1.45);scene.add(g);const t=new THREE.Mesh(new THREE.BoxGeometry(.8,.05,.55),boardMat);t.position.y=.74;t.castShadow=t.receiveShadow=true;g.add(t);for(const [x,z] of [[-.34,-.22],[.34,-.22],[-.34,.22],[.34,.22]]){const l=new THREE.Mesh(new THREE.BoxGeometry(.05,.72,.05),darkBoard);l.position.set(x,.36,z);l.castShadow=true;g.add(l);}
- const bk=new THREE.Mesh(new THREE.BoxGeometry(.22,.04,.16),new THREE.MeshStandardMaterial({color:0x2F5D7C}));bk.position.set(.15,.79,.05);g.add(bk);const cup=new THREE.Mesh(new THREE.CylinderGeometry(.045,.04,.09,10),linen);cup.position.set(-.2,.81,-.05);g.add(cup);}
-OBST.push({x0:-.75,x1:.05,z0:1.17,z1:1.73,y:BD,n:'table'});
-{const d=prop('door',.3,BD,1.82,{h:2.0,ry:-Math.PI/2,bright:1.3,solid:false});}
-rug(-2.0,BD,2.85,1.8,1.05,'#6E8FB0','#E9DDC2');
-// deck
-prop('telescope',3.5,DK,1.3,{h:1.45,ry:-.6});prop('basket',1.4,DK,.95,{h:.4,bright:1.2});
-// low landings
-prop('barrel',-2.6,LL,1.4,{h:.75,bright:1.4});prop('bucket',-1.9,LL,1.8,{h:.35,bright:1.4});
+// all furniture and objects: props.js (bevelled, textured, interactive). P3.oven / P3.book / P3.tools / P3.surfaces
+const P3=buildProps({scene,renderer,OBST,floors:[boards,beams],L:{KT,BD,WS,DK,LL}});window.__props=P3;
+const chairO=P3.chairO,bunk=P3.bunk;
 // the glowing doorway in the trunk (bottom right)
 // the glowing hollow in the trunk (bottom right) is carved into the tree mesh itself (game/tree.js)
 const doorDir=V(Math.cos(TREE.doorAngle),0,Math.sin(TREE.doorAngle)),doorZ=TAX[1]+doorDir.z*TREE.R(LG+.7);
 const doorLight=new THREE.PointLight(0xFF9A40,0,4,1.6);doorLight.position.set(TAX[0]+doorDir.x*(TREE.R(LG+.7)-.3),LG+.75,TAX[1]+doorDir.z*(TREE.R(LG+.7)-.3));scene.add(doorLight);
 // lanterns
 const lanterns=[];
-function lantern(x,y,z,hang,noLight){const g=new THREE.Group();g.position.set(x,y,z);scene.add(g);if(!hang){const cage=new THREE.Mesh(new THREE.CylinderGeometry(.08,.1,.22,8,1,true),iron);g.add(cage);const cap=new THREE.Mesh(new THREE.ConeGeometry(.11,.08,8),iron);cap.position.y=.15;g.add(cap);}
+function lantern(x,y,z,hang,noLight){const g=new THREE.Group();g.position.set(x,y,z);scene.add(g);if(!hang)P3.lanternHousing(g,.2);
  const bulbM=new THREE.MeshStandardMaterial({color:0xFFE0A0,emissive:0xFF9A30,emissiveIntensity:0});const bulb=new THREE.Mesh(new THREE.SphereGeometry(hang?.07:.065,12,10),bulbM);g.add(bulb);
  const l=noLight?{intensity:0}:new THREE.PointLight(0xFFA14A,0,6.5,1.6);if(!noLight)g.add(l);lanterns.push({g,l,bulbM,seed:rnd(0,9)});}
-lantern(-3.2,KT+1.66,1.6,true);lantern(2.75,WS+1.5,2.3,true);lantern(-2.0,BD+1.95,2.5);lantern(.7,DK+1.15,3.0,false,true);lantern(-.62,LC+1.25,3.84);lantern(-2.4,KT+1.5,3.5,false,true);
+lantern(-2.3,KT+1.78,1.75,true);lantern(2.75,WS+1.5,2.3,true);lantern(-2.0,BD+1.95,2.5);lantern(.7,DK+1.15,3.0,false,true);lantern(-.62,LC+1.25,3.84);lantern(-2.4,KT+1.5,3.5,false,true);
 lanterns.forEach(L=>{if(L.l.isLight)ENV.addHalo(L.l,1.5);});ENV.addHalo(doorLight,2.4);
 const stoveLight=new THREE.PointLight(0xFF7A2A,0,4,1.8);stoveLight.position.set(-3.2,KT+.45,2.0);scene.add(stoveLight);
 const fills=[].map(([x,y,z])=>{const l=new THREE.PointLight(0xFFE8CC,0,6,1.2);l.position.set(x,y,z);scene.add(l);return l;});
@@ -590,7 +573,7 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  for(const L of lanterns){const f=.86+Math.sin(T*9+L.seed)*.06+Math.sin(T*23+L.seed*2)*.05;L.l.intensity=lampOn*6*f;L.bulbM.emissiveIntensity=lampOn*5*f;}
  ambL.intensity=dayK*(1-rainK*.3)*.55+.12;doorLight.intensity=(1+lampOn*3)*(.9+Math.sin(T*7)*.08);TREE.bark.material.userData.doorGlow.value=(.35+lampOn*.9)*(.9+Math.sin(T*7)*.08);
- const cooking=hero.task==='cook'&&hero.state==='work';stoveLight.intensity=(cooking?3.5:.6+lampOn*1.5)*(.85+Math.sin(T*11)*.1);
+ const cooking=hero.task==='cook'&&hero.state==='work';P3.update(dt,{reading:hero.task==='read'&&hero.state==='work',cooking,heat:lampOn*.35});stoveLight.intensity=(cooking?3.5:.6+lampOn*1.5)*(.85+Math.sin(T*11)*.1);
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera});
