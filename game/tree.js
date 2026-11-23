@@ -51,9 +51,9 @@ export function buildTree(THREE, o) {
   const door = o.door;
   const doorAng = door.ang ?? Math.atan2(1.0, door.x - AX); // aim the hollow at the front-right
   const R = y => {
-    let r = 1.66 + 1.25 * Math.exp(-Math.max(y, 0) / 0.95);
+    let r = 2.0 + 1.35 * Math.exp(-Math.max(y, 0) / 0.95);
     if (y > 3) r -= 0.03 * (y - 3);
-    if (y > 9.5) r -= 0.09 * (y - 9.5);
+    if (y > 9.5) r -= 0.12 * (y - 9.5);
     return r;
   };
   const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
@@ -156,16 +156,16 @@ export function buildTree(THREE, o) {
 
   // ---------- bark: the painted texture along the wood, relief from the same texture, cool-warm painted shading ----------
   const barkT = o.barkT; barkT.wrapS = barkT.wrapT = THREE.RepeatWrapping; barkT.repeat.set(1, 1);
-  const mat = new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 2.2, roughness: 0.92, color: 0xB49C8C });
+  const mat = new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 2.2, roughness: 0.9, color: 0xE6CCB4 });
   mat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float glow;varying float vGlow;varying float vY;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGlow=glow;vY=(modelMatrix*vec4(transformed,1.)).y;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlow;varying float vY;uniform float doorGlow;')
       .replace('#include <map_fragment>', `#include <map_fragment>
         float lum=dot(diffuseColor.rgb,vec3(.33));
-        diffuseColor.rgb=mix(vec3(lum),diffuseColor.rgb,.62);
+        diffuseColor.rgb=mix(vec3(lum),diffuseColor.rgb,.85);
         diffuseColor.rgb=mix(diffuseColor.rgb*vec3(.8,.86,1.),diffuseColor.rgb*vec3(1.1,.98,.86),smoothstep(.1,.3,lum));
-        diffuseColor.rgb*=mix(.62,1.,smoothstep(-.3,2.2,vY));
+        diffuseColor.rgb*=mix(.78,1.,smoothstep(-.3,2.2,vY));
 `)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
