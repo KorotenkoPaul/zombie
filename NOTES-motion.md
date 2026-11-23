@@ -67,3 +67,14 @@ tests/mm scenario: frozen while walking 0, peak hips acceleration 7.5 m/s², pla
 Full tests/anim day, per 1000 frames (r2 before -> r2 after -> r3): robot 1.09 -> 1.91 -> 0.39, P1 jumps 12.0 -> 12.4 -> 6.4,
 P1 penetration 6.7 -> 6.7 -> 3.6. Left: ladder exit speeds up (1), ladder entry slows (2), slow walk starts after work (5),
 creep to the hatch (1). Ladder exit/entry need the step-off / grab clips (prompts-loco.json) once fal is topped up.
+
+## Round 5 (2026-11-23 ~21:30 UTC): no clip switch pops
+`motion.js` final pass (`final()`): after everything that touches the skeleton in a frame (hero.js clips + IK, motion matching,
+collide.js), each bone's rotation is checked against its own constant-velocity prediction; a break (> 0.06 rad within 0.6 s of an
+action / state change, > 0.3 rad elsewhere) is inertialized (half-life 0.11 s) from the pose that was on screen. Legs held by a
+foot lock are left to the lock. Hooked by wrapping `HH.update` (outermost, re-wraps if collide.js wraps later): no hero.js change.
+`window.__noPops = true` (or `tests/mm/scenario.js --nopops`) switches it off. `node tests/mm/pops.js DIR` measures pose pops per
+clip switch (worst bone acceleration in the hero's own frame within -5..+25 frames).
+Full tests/anim day, off -> on (days diverge: 100k vs 97k frames, 484 vs 482 switches): pose at a switch median 8.0 -> 3.7,
+p90 19.8 -> 8.9, max 67 -> 26 cm/frame²; switches over 3 cm/frame² 84% -> 63%; P1 jumps per 1000 frames 8.9 -> 6.1.
+Left: ladder>ladder (pull-up / climb hand IK, p90 12) and ladder>work (26): hero.js ladder hand targets.
