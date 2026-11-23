@@ -252,8 +252,11 @@ export function createMotion({ hero, db, opts = {} }) {
     const off = !FP.on || window.__noPops;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
     let any = false, hit = 0;
+    // GRAB HOOK: a deliberately sharp move (a hammer blow) on one arm is not a pop; hero.js sets H.noPop each frame it swings
+    const NP = H.noPop && H.noPop.age < .25 ? H.noPop.side : null; if (H.noPop) H.noPop.age += dt;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const i3 = b*3;
-      if (!off && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
+      if (NP && /Arm|Hand|Shoulder/.test(names[b]) && names[b].includes(NP)) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; fV[i3] = fV[i3+1] = fV[i3+2] = 0; }
+      else if (!off && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
         if (dv > (FP.hot > 0 ? FP.thrHot : FP.thr)) { // start from what was on screen last frame
           const t = [0, 0, 0, 0]; qmul(fShown, b*4, [-fRaw[b*4], -fRaw[b*4+1], -fRaw[b*4+2], fRaw[b*4+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], fX, i3); fV[i3] = fV[i3+1] = fV[i3+2] = 0; hit++; } }
       if (off) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; }
