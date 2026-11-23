@@ -503,7 +503,7 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  const cooking=hero.task==='cook'&&hero.state==='work';P3.update(dt,{reading:false/* the hero turns the pages himself (hero.js) */,cooking,heat:lampOn*.35});stoveLight.intensity=(cooking?3.5:.6+lampOn*1.5)*(.85+Math.sin(T*11)*.1);
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
- ENV.update({T,P,nightK,mornK,rainK,lampOn,camera});
+ ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
  rain.m.opacity=rainK*.5;if(rainK>.02){const a=rain.pos;for(let i=0;i<rain.n;i++){const j=i*6;a[j+1]-=dt*14;a[j+4]-=dt*14;a[j]+=dt*.7;a[j+3]+=dt*.7;if(a[j+4]<0){const x=rnd(-16,16),y=rnd(20,24),z=rnd(-6,10);a.set([x,y,z,x+.04,y-.5,z],j);}}rain.l.geometry.attributes.position.needsUpdate=true;}
  if(amb){amb.wind.gain.value=.012+nightK*.01;amb.rain.gain.value=rainK*.05;}
  // --- spawn ---
