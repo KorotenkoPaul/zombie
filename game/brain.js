@@ -39,6 +39,7 @@ const NEEDS = {
   tidy:      { drift: .07,  label: 'Порядок' },
   comfort:   { drift: .09,  label: 'Уют' },        // cold, damp, wants to be cosy (faster at night)
   curiosity: { drift: .16,  label: 'Любопытство' },
+  safety:    { drift: .05,  label: 'Тревога' },     // shelter mood: grows at dusk, at night and in the rain; bolt, listening, radio calm it
 };
 
 // what each activity gives per real second of doing it, where it happens, how long he tends to do it
@@ -60,6 +61,30 @@ const JOBS = {
   wood: { task: 'trip', opts: { kind: 'wood' }, label: 'идёт за брёвнами', top: 'comfort' },
   eat:  { task: 'eat',  opts: {},               label: 'ест', top: 'hunger' },
 };
+// small self-ending chores and habits (hero.js tasks; each is used only when HH.hasTask(task) says the body can do it).
+// give = what one go does to the needs; when(h, ctx) = habit bonus for the hour / situation.
+const EXTRA = {
+  chop:      { room: 'outside',  give: { fun: -.15, comfort: -.05 }, label: 'колет дрова',          when: (h, c) => (h >= 9 && h < 17 ? .2 : -1) + (c.logs <= 2 ? .3 : 0) },
+  pot:       { room: 'kitchen',  give: { hunger: -.05, comfort: -.12 }, label: 'помешивает в котелке', when: h => (h >= 17 && h < 20 ? .25 : 0) },
+  stoke:     { room: 'kitchen',  give: { comfort: -.3 }, label: 'подкладывает дрова в печь', when: (h, c) => (c.ovenLow ? .6 : -.5) + (isN(h) ? .2 : 0), needLogs: true },
+  dishes:    { room: 'kitchen',  give: { tidy: -.4 }, label: 'моет посуду',               when: (h, c) => (c.justAte ? .7 : 0) },
+  saw:       { room: 'workshop', give: { fun: -.25 }, label: 'пилит доску',               when: h => (h >= 9 && h < 17 ? .2 : -.6) },
+  hammer:    { room: 'workshop', give: { fun: -.2, tidy: .03 }, label: 'стучит молотком', when: h => (h >= 9 && h < 18 ? .15 : -.8) },
+  sharpen:   { room: 'workshop', give: { fun: -.12, safety: -.12 }, label: 'точит нож',   when: h => (h >= 16 && h < 20 ? .2 : 0) },
+  fixlamp:   { room: 'workshop', give: { fun: -.12, comfort: -.05 }, label: 'чинит фонарь', when: h => (h >= 15 && h < 19 ? .15 : 0) },
+  stretch:   { room: null,       give: { comfort: -.1 }, label: 'потягивается',           when: (h, c) => (c.justWoke ? 1.2 : -.3) },
+  diary:     { room: 'bedroom',  give: { fun: -.15, safety: -.1, comfort: -.08 }, label: 'пишет в дневник', when: (h, c) => (h >= 20 && h < 23 ? .5 : -.4) },
+  sweep:     { room: null,       give: { tidy: -.35 }, label: 'подметает',                when: h => (h >= 8 && h < 12 ? .15 : 0) },
+  water:     { room: null,       give: { tidy: -.1, comfort: -.06 }, label: 'поливает цветок', when: h => (h >= 7 && h < 10 ? .3 : -.2) },
+  listen:    { room: null,       give: { safety: -.25, curiosity: -.2 }, label: 'прислушивается у окна', when: h => (h >= 18.5 || h < 5 ? .3 : -.3) },
+  bolt:      { room: null,       give: { safety: -.5 }, label: 'проверяет засов',         when: (h, c) => (h >= 19 && h < 23 && !c.bolted ? .8 : -.6) },
+  supplies:  { room: 'kitchen',  give: { safety: -.15, tidy: -.1 }, label: 'перебирает припасы', when: h => (h >= 10 && h < 16 ? .1 : 0) },
+  radio:     { room: null,       give: { safety: -.3, fun: -.2, curiosity: -.15 }, label: 'слушает радио', when: h => (h >= 19 && h < 22.5 ? .45 : -.2) },
+  telescope: { room: 'outside',  give: { curiosity: -.45, safety: -.1 }, label: 'смотрит в подзорную трубу', when: h => ((h >= 6 && h < 8) || (h >= 17.5 && h < 20) ? .35 : 0) },
+  ledge:     { room: 'outside',  give: { comfort: -.15, curiosity: -.2, fun: -.1 }, label: 'сидит на краю площадки', when: h => (h >= 16 && h < 19.5 ? .3 : -.2) },
+  firewood:  { room: 'outside',  give: { comfort: -.05 }, label: 'носит дрова снизу',     when: (h, c) => (c.logs <= 1 ? .5 : -.4) + (h >= 8 && h < 18 ? 0 : -1) },
+};
+const isN = h => !(h >= 6 && h < 20);
 // graph node -> room (for lights and "where am I")
 const ROOM_OF = n => {
   if (!n) return 'outside';
@@ -84,7 +109,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   const stock = { meat: 2, logs: 4, meal: 0 };
   const ECON = !!(HH.hasTask && HH.hasTask('trip') && HH.hasTask('eat'));
   const showStock = () => { try { const P = window.__props; P && P.fridge && P.fridge.setStock && P.fridge.setStock(stock.meat); P && P.woodpile && P.woodpile.setCount && P.woodpile.setCount(stock.logs); } catch (e) {} };
-  const need = { hunger: .35, energy: .8, fun: .4, tidy: .25, comfort: .3, curiosity: .3 };
+  const need = { hunger: .35, energy: .8, fun: .4, tidy: .25, comfort: .3, curiosity: .3, safety: .2 };
   let mood = .6;
   let lastH = hour();
   let cur = null;           // {name, t, dur, min, opts}
@@ -113,6 +138,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       let r = NEEDS[k].drift;
       if (asleep) r = k === 'energy' ? .16 : k === 'hunger' ? .03 : k === 'fun' || k === 'curiosity' ? -.05 : 0;
       if (k === 'comfort' && isNight(h)) r *= 1.8;
+      if (k === 'safety') r = asleep ? -.04 : (isNight(h) ? .12 : h >= 17 ? .08 : .015) * (raining() ? 1.5 : 1);
       if (k === 'energy' && !asleep && H.state === 'walk') r *= 1.4;
       need[k] = clamp(need[k] + r * dh);
     }
@@ -122,7 +148,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       for (const k in g) { if (ECON && cur.name === 'cook' && k === 'hunger') continue; need[k] = clamp(need[k] + g[k] * dt); }
     }
     // mood: slowly follows the average comfort of all needs
-    const bad = (need.hunger ** 2 + (1 - need.energy) ** 2 + need.fun ** 2 + need.tidy ** 2 * .5 + need.comfort ** 2 + need.curiosity ** 2 * .5) / 5;
+    const bad = (need.hunger ** 2 + (1 - need.energy) ** 2 + need.fun ** 2 + need.tidy ** 2 * .5 + need.comfort ** 2 + need.curiosity ** 2 * .5 + need.safety ** 2 * .6) / 5.6;
     mood = lerp(mood, clamp(1 - bad * 1.6), 1 - Math.exp(-dt * .05));
   }
 
@@ -137,7 +163,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const breakfast = h >= 6.5 && h < 9, lunch = h >= 12 && h < 14, dinner = h >= 17.5 && h < 19.5;
     switch (name) {
       case 'cook': return (breakfast || lunch || dinner) ? .45 : 0;
-      case 'tea': return (h >= 7 && h < 10) || (h >= 15.5 && h < 17.5) ? .35 : 0;
+      case 'tea': return h >= 6 && h < 9.5 && !day.hadTea ? .9 : (h >= 7 && h < 10) || (h >= 15.5 && h < 17.5) ? .35 : 0;   // the morning cup is a habit
       case 'wash': return (h >= 9 && h < 10.5) || (h >= 19 && h < 20.5) ? .2 : 0;
       case 'read': return h >= 19 ? .55 : h >= 13.5 && h < 15 ? .2 : 0;
       case 'craft': return h >= 9 && h < 17 ? .35 : -.2;
@@ -158,6 +184,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       s += v; if (v > topV) { topV = v; top = k; }
     }
     s += habit(name, h);
+    if (name === 'cook' && need.hunger > .75) s += 1;   // really hungry: food first
     if (A.room === 'outside' && raining()) s -= 2;   // nobody stands on the deck in the rain
     s -= travel(A.node) * (.15 + (1 - need.energy) * .25);
     // cabin fever: the longer he stays in one room, the more the other rooms call
@@ -180,8 +207,23 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const i = recent.indexOf(n); if (i === 0 && n !== 'eat') s -= .6;
     return { name: n, s: s + rnd(0, .25), top: JOBS[n].top };
   }
+  // the small chores: each go fixes a little; habits of the hour; never the same thing twice in a row
+  const day = { hadTea: false, bolted: false, justWoke: false, justAte: false };
+  const canDo = n => { const E = EXTRA[n]; if (E.task) return true; return !!(HH.hasTask && HH.hasTask(n)); };
+  function extraScore(n, h) {
+    if (!canDo(n)) return null;
+    const E = EXTRA[n];
+    if (E.needLogs && ECON && !stock.logs) return null;
+    if (E.room === 'outside' && raining()) return null;
+    let s = 0, top = '', topV = 0;
+    for (const k in E.give) { const g = -E.give[k]; if (g <= 0) continue; const v = need[k] ** 2 * g * 4; s += v; if (v > topV) { topV = v; top = k; } }
+    s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea });
+    const i = recent.indexOf(n); if (i === 0) s -= 2; else if (i === 1) s -= .5; else if (i >= 2) s -= .2;
+    return { name: n, s: s + rnd(0, .3), top: top || '' };
+  }
   function decide(h) {
     scores = Object.keys(ACTS).map(n => score(n, h));
+    for (const n in EXTRA) { const x = extraScore(n, h); if (x) scores.push(x); }
     if (ECON) { for (const x of scores) if (x.name === 'cook') { if (!stock.meat || !stock.logs || stock.meal) x.s -= 9; } for (const n in JOBS) scores.push(jobScore(n, h)); }
     scores.sort((a, b) => b.s - a.s);
     if (h >= bedTime || h < 5) return scores.find(x => x.name === 'sleep');   // past bedtime: bed, no lottery
@@ -197,7 +239,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // ---------- plan an activity: lights first, a pause maybe, then the thing ----------
   function planFor(name, h, reason) {
     plan.length = 0;
-    const from = ROOM_OF(H.node), A = ACTS[name] || { room: name === 'eat' ? 'kitchen' : 'outside' };
+    const from = ROOM_OF(H.node), A = ACTS[name] || EXTRA[name] || { room: name === 'eat' ? 'kitchen' : 'outside' };
     const to = A.room || from;
     // leaving a lit room in the dark: usually switch it off (sometimes he forgets)
     if (from !== to && ROOM_LAMP[from] && lampOn(ROOM_LAMP[from]) && dark(h) && Math.random() < .8)
@@ -211,7 +253,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // the candle on the reading table: he blows it out when he stops reading, and lights it to read in the dark
     if (name !== 'read' && from === 'bedroom' && candleOn()) plan.unshift({ task: 'switch', opts: { light: 'candle', on: false }, why: 'задувает свечу' });
     // trips: the bow from the workshop for the hunt; the jacket from the hook when it rains or is chilly (sometimes he skips it)
-    if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, lantern: dark(h), bow: name === 'hunt', jacket: raining() || ((h < 9 || h > 17) && Math.random() < .7) || Math.random() < .2 }, why: reason, job: name });
+    if (EXTRA[name]) { const E = EXTRA[name]; plan.push({ task: E.task || name, opts: {}, why: reason, extra: name }); }
+    else if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, lantern: dark(h), bow: name === 'hunt', jacket: raining() || ((h < 9 || h > 17) && Math.random() < .7) || Math.random() < .2 }, why: reason, job: name });
     else plan.push({ task: name, opts: ECON && name === 'cook' ? { fromFridge: true } : {}, why: reason });
   }
 
@@ -220,11 +263,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (!st) return false;
     why = st.why || why;
     // he leaves the stove after really cooking: a portion of meat and a log are used, a meal waits
-    if (st.task !== 'cook') bookCook();
-    job = st.job || null;
+    if (st.task !== 'cook' && !(st.task === 'switch' && plan.some(p => p.task === 'cook'))) bookCook();
+    job = st.job || null; extra = st.extra || null;
+    if (extra) { recent.unshift(extra); recent.length = 4; }
     // he stops reading: from now on the candle is his to blow out (or to forget)
     if (cur && cur.name === 'read' && st.task !== 'read' && hasCandle) lights.set('candle', candleOn());
     expected = st.task;
+    if (st.task === 'tea') day.hadTea = true;
     // reading in the dark: the candle lights itself when he sits down (lights.js); only putting it out is his job
     if (st.task === 'read' && hasCandle && lights.auto) lights.auto('candle');
     const A = ACTS[st.task];
@@ -262,7 +307,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   }
 
   // ---------- the per-frame tick (called by hero.js) ----------
-  let pausing = 0, expected, cmdNext = false, job = null;
+  let pausing = 0, expected, cmdNext = false, job = null, extra = null;
   function tick(dt, v) {
     const dh = gameHours();
     drift(dt, dh, v);
@@ -292,6 +337,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (v.task === 'sleep') {
       if ((h >= wake && h < 12 && need.energy > .6) || (h >= wake + 1.2 && h < 12)) {
         wake = rnd(5.6, 6.6); bedTime = rnd(20.8, 21.6);
+        day.hadTea = false; day.bolted = false; day.justWoke = true; day.justAte = false;
         const d = decide(h); planFor(d.name, h, 'проснулся, хочет: ' + reasonOf(d)); startNext();
       }
       return;
@@ -335,7 +381,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   function choose(h) {
     bookCook();
     const d = decide(h);
-    planFor(d.name, h, (ACTS[d.name] || JOBS[d.name]).label + ' (' + reasonOf(d) + ')');
+    planFor(d.name, h, (ACTS[d.name] || JOBS[d.name] || EXTRA[d.name]).label + ' (' + reasonOf(d) + ')');
     if (cur && ACTS[cur.name] && cur.name !== 'sleep' && d.name !== 'sleep') micro(h);
     // a short thoughtful pause before setting off (longer when tired)
     pausing = Math.random() < .3 ? rnd(.4, 1.2) * (1 + (1 - need.energy)) : 0;
@@ -368,7 +414,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     let h = `<b>Мысли героя</b><div class="now">${H.task === 'sleep' ? 'спит' : why || '…'}</div>`;
     for (const k in NEEDS) { const v = k === 'energy' ? 1 - need[k] : need[k]; h += row(k === 'energy' ? 'Усталость' : NEEDS[k].label, v, col(v)); }
     h += row('Настроение', mood, mood > .6 ? '#7FC08A' : mood > .35 ? '#E3B55A' : '#E0705A');
-    h += `<div class="s">Шаг: ${(HH.gait ? HH.gait.speed : 1).toFixed(2)} · варианты:<br>` + scores.slice(0, 4).map(s => `${(ACTS[s.name] || JOBS[s.name]).label} ${s.s.toFixed(2)}`).join('<br>') + '</div>';
+    h += `<div class="s">Шаг: ${(HH.gait ? HH.gait.speed : 1).toFixed(2)} · варианты:<br>` + scores.slice(0, 4).map(s => `${(ACTS[s.name] || JOBS[s.name] || EXTRA[s.name]).label} ${s.s.toFixed(2)}`).join('<br>') + '</div>';
     if (ECON) h += `<div class="s">Мясо: ${stock.meat} · брёвна: ${stock.logs}${stock.meal ? ' · обед готов' : ''}</div>`;
     panel.innerHTML = h;
   }
@@ -395,10 +441,15 @@ export function createBrain({ HH, lights, hour, isNight }) {
   ui();
   // a job ended: book what it brought (hero.js may pass a result; a missing result counts as success)
   if (HH.onTaskEnd) HH.onTaskEnd((name, res) => {
+    if (extra && EXTRA[extra] && res !== false) { const E = EXTRA[extra]; for (const k in E.give) need[k] = clamp(need[k] + E.give[k]);
+      if (extra === 'bolt') day.bolted = true; if (extra === 'stretch') day.justWoke = false; if (extra === 'dishes') day.justAte = false;
+      if (extra === 'stoke' && ECON) { stock.logs = Math.max(0, stock.logs - 1); showStock(); }
+      if (extra === 'firewood' && ECON) { stock.logs += 2; showStock(); }
+      extra = null; }
     if (!ECON || !job || res === false || (res && res.ok === false)) { job = null; return; }
     if (job === 'hunt') { stock.meat += 2; plan.unshift({ task: 'store', opts: { item: 'meat' }, why: 'кладёт мясо в холодильник' }); }
     else if (job === 'wood') stock.logs += 3;
-    else if (job === 'eat') { stock.meal = 0; need.hunger = clamp(need.hunger - .75); need.comfort = clamp(need.comfort - .15); }
+    else if (job === 'eat') { stock.meal = 0; day.justAte = true; need.hunger = clamp(need.hunger - .75); need.comfort = clamp(need.comfort - .15); }
     job = null; showStock();
   });
   showStock();
