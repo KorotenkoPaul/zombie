@@ -44,7 +44,7 @@ const PLACE = {
 const L = {
   // ---- night ----
   cricket: { clips: ['cricket_a', 'cricket_b', 'cricket_c'], n: 5, place: 'ground', vol: .22, pitch: .07, p: 1,
-    act: (h, e) => nightW(h, 19.8, 5.2, 1.4) * SEASON_K(e.season, { summer: 1, spring: .55, autumn: .45, winter: 0 }) * (1 - .75 * e.rain),
+    act: (h, e) => nightW(h, 19.8, 5.2, 1.4) * SEASON_K(e.season, { summer: 1, spring: .55, autumn: .3, winter: 0 }) * (1 - .75 * e.rain),
     texture: [2.5, 6], gap: [.3, 2.5], rest: [.3, 2.5] },
   frog: { clips: ['frog_a', 'frog_b', 'frog_c', 'frog_d', 'toad_a'], n: 3, place: 'pond', vol: .34, pitch: .06, p: .9,
     act: (h, e) => nightW(h, 20.3, 4.6, 1.2) * SEASON_K(e.season, { summer: 1, spring: 1, autumn: .25, winter: 0 }) * (1 + .7 * e.rain),
@@ -102,6 +102,16 @@ const L = {
   insects: { clips: ['fly_a', 'grasshopper_a'], n: 2, place: 'ground', vol: .12, pitch: .06, p: .8,
     act: (h, e) => win(h, 11, 17, 1.2) * SEASON_K(e.season, { summer: 1, spring: .3, autumn: .2, winter: 0 }) * (1 - e.rain),
     texture: [3, 6], gap: [4, 14], rest: [4, 14] },
+  // ---- autumn ----
+  geese: { clips: ['geese_a', 'geese_b', 'cranes_a'], n: 1, place: 'far', vol: .42, pitch: .04, p: .8, fly: true,
+    act: (h, e) => (win(h, 6.5, 11, 1) + .8 * win(h, 15, 19.5, 1)) * SEASON_K(e.season, { autumn: 1, spring: .5, summer: 0, winter: 0 }),
+    bout: [1, 1], rest: [40, 110] },
+  deer: { clips: ['deer_a', 'deer_b', 'elk_a'], n: 1, place: 'veryfar', vol: .5, pitch: .04, p: .55, rev: .7,
+    act: (h, e) => (nightW(h, 18.5, 6.5, 1)) * SEASON_K(e.season, { autumn: 1, winter: .2, summer: .15, spring: 0 }) * (1 - .6 * e.rain),
+    bout: [1, 2], gap: [5, 12], rest: [35, 90] },
+  damp: { clips: ['wetdrip_a', 'drip_a'], n: 3, place: 'house', vol: .2, pitch: .12, p: 1,
+    act: (h, e) => SEASON_K(e.season, { autumn: .8, winter: .1, summer: 0, spring: .3 }) * (1 - e.rain),
+    texture: [1.2, 3], gap: [5, 16], rest: [6, 16] },
   coldwind: { clips: ['windw_a', 'windw_b'], n: 2, place: 'far', vol: .16, pitch: .06, p: 1,
     act: (h, e) => SEASON_K(e.season, { winter: 1, autumn: .35, summer: 0, spring: 0 }) * (.6 + .4 * nightW(h, 19, 6, 2)),
     texture: [4, 7], gap: [6, 18], rest: [4, 10] },
@@ -128,7 +138,7 @@ export function createAudio(ctx) {
   function season() {
     if (season0) return season0;
     const s = typeof window.__season === 'function' ? window.__season() : window.__season;
-    return s || (ctx.season && ctx.season()) || 'summer';
+    return s || (ctx.season && ctx.season()) || 'autumn';   // the reference world is autumn
   }
 
   function buildGraph() {
@@ -141,8 +151,15 @@ export function createAudio(ctx) {
     rev = A.createConvolver(); rev.buffer = ir; revIn = A.createGain(); revIn.gain.value = .55; revIn.connect(rev).connect(master);
   }
 
+  let actLoaded = false;
   async function load() {
-    const url = new URL((ctx.asset || '') + 'sounds-mp3.txt', document.baseURI).href;
+    await loadPack('sounds-mp3.txt');
+    loaded = true; console.log('audio: ' + Object.keys(B).length + ' forest clips ready');
+    await loadPack('sounds-act-mp3.txt').catch(e => console.warn('audio actions', e));   // the hero's foley comes second
+    actLoaded = true;
+  }
+  async function loadPack(file) {
+    const url = new URL((ctx.asset || '') + file, document.baseURI).href;
     const pack = await fetch(url).then(r => r.json());
     await Promise.all(Object.keys(pack).map(async k => {
       try {
@@ -150,7 +167,6 @@ export function createAudio(ctx) {
         B[k] = await new Promise((res, rej) => A.decodeAudioData(u8.buffer, res, rej));
       } catch (e) { console.warn('audio clip', k, e); }
     }));
-    loaded = true; console.log('audio: ' + Object.keys(B).length + ' clips ready');
   }
 
   function start() {
@@ -176,7 +192,7 @@ export function createAudio(ctx) {
 
   // play a buffer at a world position. o: {gain, rate, offset, dur, ref, rev, fadeIn, fadeOut, pos|null, pan}
   function voice(name, o) {
-    const buf = B[name]; if (!buf || !A || (!o.bed && voices.size >= MAXV)) return null;
+    const buf = B[name]; if (!buf || !A || (!o.bed && voices.size >= (o.prio ? MAXV + 6 : MAXV))) return null;   // the hero's own sounds get extra room
     const t = A.currentTime + (o.delay || 0);
     const src = A.createBufferSource(); src.buffer = buf; src.playbackRate.value = o.rate || 1;
     const off = Math.min(o.offset || 0, Math.max(0, buf.duration - .3));
@@ -192,6 +208,7 @@ export function createAudio(ctx) {
       const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.max(1400, 16000 * Math.exp(-dist / (o.far ? 45 : 70))); lp.Q.value = .5;
       const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = o.ref || 10; p.rolloffFactor = o.roll ?? .9; p.maxDistance = 400;
       if (p.positionX) { p.positionX.value = o.pos.x; p.positionY.value = o.pos.y; p.positionZ.value = o.pos.z; } else p.setPosition(o.pos.x, o.pos.y, o.pos.z);
+      if (o.move) { const m = o.move; if (p.positionX) { p.positionX.setValueAtTime(o.pos.x, t); p.positionX.linearRampToValueAtTime(m.x, t + realDur); p.positionY.setValueAtTime(o.pos.y, t); p.positionY.linearRampToValueAtTime(m.y, t + realDur); p.positionZ.setValueAtTime(o.pos.z, t); p.positionZ.linearRampToValueAtTime(m.z, t + realDur); } }
       src.connect(lp).connect(g).connect(p).connect(master); out = p;
     } else {
       const sp = A.createStereoPanner ? A.createStereoPanner() : null;
@@ -221,7 +238,7 @@ export function createAudio(ctx) {
       ind[k] = Array.from({ length: n }, () => ({ pos: place(S.place), pitch: 1 + rnd(-S.pitch, S.pitch), next: now + rnd(0, 2), bout: 0, lazy: rnd(.7, 1.3) }));
     }
   }
-  const NIGHT = ['cricket', 'frog', 'owl', 'wolf', 'fox', 'nightjar', 'twig'];
+  const NIGHT = ['cricket', 'frog', 'owl', 'wolf', 'fox', 'nightjar', 'twig', 'deer'];
   const DAY = Object.keys(L).filter(k => !NIGHT.includes(k));
 
   function call(k, I, act, env) {
@@ -230,6 +247,8 @@ export function createAudio(ctx) {
     const o = { pos: I.pos, rate, gain: S.vol * rnd(.6, 1.05) * (.55 + .45 * Math.min(1, act)), rev: S.rev, far: S.place === 'veryfar', ref: S.place === 'house' ? 4 : 10 };
     if (S.texture) { o.dur = rnd(S.texture[0], S.texture[1]); o.offset = rnd(0, Math.max(0, buf.duration - o.dur)); o.fadeIn = rnd(.4, 1.2); o.fadeOut = rnd(.6, 1.5); }
     else if (S.song && Math.random() < .3) { o.dur = buf.duration * rnd(.45, .8); o.fadeOut = .35; }   // a shorter phrase now and then
+    // a flock passes over: from one side of the sky to the other
+    if (S.fly) { const a = rnd(0, Math.PI * 2), r = rnd(35, 60), y = rnd(25, 45); o.pos = { x: Math.cos(a) * r, y, z: Math.sin(a) * r }; o.move = { x: -Math.cos(a) * r, y, z: -Math.sin(a) * r }; o.ref = 30; }
     // birds sing from a slightly different twig each time
     if (S.place === 'trees') o.pos = { x: I.pos.x + rnd(-1.5, 1.5), y: I.pos.y + rnd(-1, 1), z: I.pos.z + rnd(-1.5, 1.5) };
     voice(name, o);
@@ -280,7 +299,7 @@ export function createAudio(ctx) {
   }
   // wind.js events: a gust reaching the tree rustles the crown, big limbs creak in strong wind
   let windHooked = false, lastGust = -9, gustNext = 4;
-  const gustClips = env => env.season === 'winter' ? ['windw_a', 'windw_b', 'rustle_c'] : ['rustle_a', 'rustle_b', 'rustle_c'];
+  const gustClips = env => env.season === 'winter' ? ['windw_a', 'windw_b', 'rustle_c'] : env.season === 'autumn' ? ['leaves_a', 'leaves_b', 'rustle_a', 'rustle_c'] : ['rustle_a', 'rustle_b', 'rustle_c'];
   function gustSound(amp, env) {
     if (now - lastGust < 2.5) return; lastGust = now;
     const a = rnd(0, Math.PI * 2), r = rnd(5, 16);
@@ -310,6 +329,7 @@ export function createAudio(ctx) {
     if (!loaded || muted || A.state !== 'running') return;
     // real seconds from the audio clock: the frame dt is clamped and slows down on weak devices
     const t = A.currentTime; dt = clamp01(t - (update.t ?? t)); update.t = t; now += dt;
+    if (loops.size) tickLoops();
     const h = ctx.hour ? ctx.hour() : 12;
     const rain = clamp01(ctx.rain ? ctx.rain() : 0);
     wind = windLevel(dt);
@@ -348,6 +368,70 @@ export function createAudio(ctx) {
     }
   }
 
+  // ---------- the hero's actions (foley) ----------
+  // __audio.play(name, pos?, {gain, rate, delay}) -> one sound at pos (THREE.Vector3, [x,y,z] or {x,y,z}; default: the hero's chest).
+  // __audio.loop(name, pos?) -> handle {stop(fade), move(pos), set(gain)} for long actions (radio music, sizzling, sweeping...).
+  // Every call picks a variant and nudges pitch and level, so repeated hits never sound identical.
+  // A layer name (e.g. 'owl') plays one call of that creature (debug).
+  const ACT = {
+    kettle: { c: ['kettle_whistle'], v: .26 }, tea_pour: { c: ['tea_pour'], v: .45 }, cup: { c: ['cup_set'], v: .4 }, sip: { c: ['sip'], v: .3 },
+    chop_veg: { c: ['knife_board'], v: .42 }, stir: { c: ['stir_pot'], v: .38 }, firewood_oven: { c: ['log_in_stove'], v: .5 },
+    oven_open: { c: ['stove_door_open'], v: .45 }, oven_close: { c: ['stove_door_close'], v: .45 }, wash: { c: ['wash_dishes'], v: .4 },
+    saw: { c: ['saw_a'], v: .45 }, hammer: { c: ['hammer_a', 'hammer_b'], v: .5 }, sharpen: { c: ['sharpen'], v: .4 },
+    lantern_fix: { c: ['lantern_fix'], v: .4 }, match: { c: ['match_strike'], v: .4 }, lamp_light: { c: ['lamp_light'], v: .4 },
+    stretch: { c: ['stretch'], v: .32 }, yawn: { c: ['yawn'], v: .3 }, write: { c: ['pencil_write'], v: .35 }, sweep: { c: ['sweep_a'], v: .38 },
+    water: { c: ['water_plant'], v: .38 }, bucket: { c: ['bucket_water'], v: .42 }, window: { c: ['window_open'], v: .4 }, shutter: { c: ['shutter'], v: .4 },
+    bolt: { c: ['bolt_lock', 'bolt_open'], v: .45 }, bolt_lock: { c: ['bolt_lock'], v: .45 }, bolt_open: { c: ['bolt_open'], v: .45 },
+    supplies: { c: ['supplies'], v: .38 }, drawer: { c: ['drawer'], v: .4 }, chest: { c: ['chest_open'], v: .4 },
+    radio_on: { c: ['radio_on'], v: .3 }, radio_off: { c: ['radio_off'], v: .32 }, radio_tune: { c: ['radio_tune'], v: .26 }, radio_music: { c: ['radio_music'], v: .2, rate: .01 },
+    telescope: { c: ['telescope'], v: .4 }, edge_sit: { c: ['edge_sit', 'creak_a'], v: .4 },
+    firewood_carry: { c: ['firewood_carry'], v: .35 }, firewood_drop: { c: ['firewood_drop'], v: .45 }, logs_stack: { c: ['logs_stack'], v: .42 }, axe: { c: ['axe_chop_a', 'axe_chop_b'], v: .5 },
+    step: { c: ['step_wood_a', 'step_wood_b', 'step_wood_c'], v: .22, rate: .08 }, ladder: { c: ['ladder_step'], v: .28 }, rope_ladder: { c: ['rope_ladder'], v: .32 },
+    sit: { c: ['chair_sit'], v: .35 }, stand: { c: ['chair_stand'], v: .35 }, bed: { c: ['bed_lie'], v: .35 }, blanket: { c: ['blanket'], v: .3 },
+    page: { c: ['page_a'], v: .3 }, book_close: { c: ['book_close'], v: .35 }, tool: { c: ['tool_pickup'], v: .35 }, plank: { c: ['plank_place'], v: .42 },
+    sizzle: { c: ['sizzle'], v: .3 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
+  };
+  // the 20 approved actions by their plain names (Character may call either)
+  const ALIAS = { tea: 'tea_pour', kettle_tea: 'kettle', chopping: 'chop_veg', vegetables: 'chop_veg', stir_pot: 'stir', stove_wood: 'firewood_oven', dishes: 'wash',
+    sawing: 'saw', nail: 'hammer', hammering: 'hammer', sharpening: 'sharpen', fix_lantern: 'lantern_fix', diary: 'write', writing: 'write', sweeping: 'sweep',
+    water_plant: 'water', watering: 'water', door_bolt: 'bolt', check_bolt: 'bolt', count_supplies: 'supplies', radio: 'radio_tune', ledge_sit: 'edge_sit',
+    carry_firewood: 'firewood_carry', armful: 'firewood_carry', listen: 'window' };
+  const P0 = { x: 0, y: 0, z: 0 };
+  function toPos(p) {
+    if (!p) { const r = ctx.hero && ctx.hero.root; return r ? { x: r.position.x, y: r.position.y + 1, z: r.position.z } : P0; }
+    if (Array.isArray(p)) return { x: p[0], y: p[1], z: p[2] };
+    return { x: p.x, y: p.y, z: p.z };
+  }
+  function actOpts(a, pos, o = {}) {
+    const sp = a.rate ?? .04;
+    return { pos: toPos(pos), gain: (o.gain ?? 1) * a.v * rnd(.82, 1.05), rate: (o.rate ?? 1) * (1 + rnd(-sp, sp)), ref: 3.5, roll: 1, rev: .06, delay: o.delay || 0, fadeIn: .01, fadeOut: .12, prio: true };
+  }
+  function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; v.g.gain.cancelScheduledValues(t); v.g.gain.setValueAtTime(v.g.gain.value, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
+  function playAct(name, pos, o = {}) {
+    if (!A || muted || !loaded) return null;
+    if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
+    const a = ACT[name] || ACT[ALIAS[name]];
+    const v = a ? voice(pick(a.c), actOpts(a, pos, o)) : B[name] ? voice(name, actOpts({ v: .4 }, pos, o)) : null;
+    if (!a && !B[name]) console.warn('audio: no sound', name);
+    return v ? { stop: (f = .15) => stopVoice(v, f) } : null;
+  }
+  const loops = new Set();
+  function loopAct(name, pos, o = {}) {
+    const a = ACT[name] || ACT[ALIAS[name]]; if (!a) return null;
+    const Lp = { a, pos, o, gain: 1, cur: null };
+    loops.add(Lp);
+    return { stop: (f = .6) => { loops.delete(Lp); stopVoice(Lp.cur, f); }, move: p => { Lp.pos = p; }, set: g => { Lp.gain = g; } };
+  }
+  function tickLoops() {
+    for (const Lp of loops) {
+      if (Lp.cur && Lp.cur.end - A.currentTime > 1.2) continue;
+      const name = pick(Lp.a.c), buf = B[name]; if (!buf) continue;
+      const o = actOpts(Lp.a, Lp.pos, Lp.o); o.gain *= Lp.gain; o.bed = true; o.fadeIn = Lp.cur ? 1.2 : .25; o.fadeOut = 1.2;
+      if (Lp.cur && buf.duration > 4) o.offset = rnd(0, buf.duration * .4);
+      Lp.cur = voice(name, o);
+    }
+  }
+
   function setMute(b) {
     muted = !!b; try { localStorage.setItem('th_mute', muted ? '1' : '0'); } catch (e) {}
     if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER, A.currentTime, .15);
@@ -357,11 +441,12 @@ export function createAudio(ctx) {
   document.addEventListener('visibilitychange', () => { if (!A) return; if (document.hidden) A.suspend(); else if (started) A.resume(); });
 
   const api = {
-    start, update, mute: setMute, muted: () => muted, started: () => started,
+    start, update, mute: setMute, muted: () => muted, started: () => started, loaded: () => loaded, actionsReady: () => actLoaded, actions: () => Object.keys(ACT).concat(Object.keys(ALIAS)),
+    loop: loopAct,
     setSeason: s => { season0 = s || null; populate(Object.keys(L), { season: season(), rain: 0, wind }); },
     state: () => { const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
-    play: k => { const I = ind[k] && ind[k][0]; if (I) call(k, I, 1, {}); else if (B[k]) voice(k, { gain: .5 }); },
+    play: playAct,
   };
   window.__audio = api;
   return api;

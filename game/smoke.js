@@ -25,7 +25,7 @@ export function createSmoke({ THREE, scene, wind, P3, heat = () => 0, MOBILE = f
        vec3 w=vec3(0.);
 #ifdef WIND
        float s=windStrength(uSrc);w=vec3(uWind.x,0.,uWind.y)*s*tt*1.2*(1.-exp(-tt*.8));
-       vec2 sw=windSway(p+w,.4)*.12*tt;w.xz+=sw;p.y-=s*s*tt*.12;
+       vec2 sw=windSwayS(p+w,.4)*.12*tt;w.xz+=sw;p.y-=s*s*tt*.12;
 #endif
        p+=w+vec3(sin(tt*1.3+aS.y*6.28),0.,cos(tt*1.1+aS.z*6.28))*.05*tt;
        vec4 mv=viewMatrix*vec4(p,1.);

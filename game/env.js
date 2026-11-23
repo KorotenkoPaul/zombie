@@ -55,10 +55,10 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  float dy=yp-yc;float ec=exp(-max(yc,0.)/HH),ep=exp(-max(yp,-1.)/HH);
  float od=abs(dy)>.01?HH*(ec-ep)/dy:ep;
  float n=hfN(vFogW.xz*.11)*.65+hfN(vFogW.xz*.31+7.)*.35;
- float clear=mix(.5,1.,smoothstep(5.,13.,length(vFogW.xz)));float tau=(.012+.085*hk)*(.45+1.1*n)*od*min(d,60.)*clear;
+ float clear=mix(.25,1.,smoothstep(5.,13.,length(vFogW.xz)));float tau=(.012+.085*hk)*(.45+1.1*n)*od*min(d,60.)*clear;
  float hf=1.-exp(-tau);
  // aerial haze: the forest behind the oak dissolves into blue mist at dusk/night, as in the painting
- fogFactor=max(fogFactor,smoothstep(hz0,hz0+50.,d)*.6*hk);
+ fogFactor=max(fogFactor,smoothstep(hz0,hz0+50.,d)*.45*hk);
  fogFactor=fogFactor+hf*(1.-fogFactor);
  vec3 haze=mix(fogColor,vec3(dot(fogColor,vec3(.33)))*1.5+vec3(.05,.09,.11),.45);gl_FragColor.rgb=mix(gl_FragColor.rgb,mix(fogColor,haze,hf),fogFactor);}
 #endif`;
@@ -66,6 +66,8 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const R=rng(20261123);const rr=(a,b)=>a+R()*(b-a);
  const U={t:{value:0},wind:{value:1}};
  const env={U};
+ env.wet={value:0};// 0 dry .. 1 soaked; follows rainK, dries slowly after the rain (for wet sheen in other threads' materials)
+
 
  // ground, grass, rocks, ferns, mushrooms and bushes moved to ground.js (ground & vegetation thread).
  // the mushroom glow uniform stays here: update() drives it, ground.js reads it.
@@ -167,7 +169,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
     vec4 mv=viewMatrix*vec4(cpos,1.);vW=cpos+vec3(0.,iA.w*.3,0.);float sz=iA.w*(1.+.08*sin(t*.11+iB.x));mv.xy+=position.xy*vec2(sz*1.6,sz);vWy=(inverse(viewMatrix)*mv).y;
     vFade=smoothstep(2.,8.,-mv.z);
     // keep the trunk base and roots clear: puffs between the camera side and the trunk fade out (fog stays around and behind them, as in the photo)
-    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*.35;gl_Position=projectionMatrix*mv;}`,
+    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*.7;gl_Position=projectionMatrix*mv;}`,
   fragmentShader:`uniform float t,op,wlv;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${GLSL_NOISE}${SOFT_GLSL}
    void main(){vec2 p=vUv-.5;float r=length(p*vec2(1.,1.25));
     // swirl: rotate the noise domain by an amount that depends on radius and time, so the clump churns
@@ -205,7 +207,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
    vertexShader:`attribute vec4 aF;uniform float t,on,px;varying float vB;
     void main(){float s=aF.x,sp=aF.y;vec3 p=position+vec3(sin(t*.31*sp+s)*aF.z,sin(t*.47*sp+s*1.3)*.35+sin(t*.13+s)*.25,cos(t*.27*sp+s*.7)*aF.z);
 #ifdef WIND
-     p.xz+=windSway(p,.6)*.35;/* [WIND] fireflies drift with the wind (game/wind.js) */
+     p.xz+=windSwayS(position,.6)*.35;/* [WIND] fireflies drift with the wind (game/wind.js) */
 #endif
 
      vec4 mv=viewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*aF.w*1.3+s*4.)),6.);vB=(.25+.75*bl)*on;
@@ -247,7 +249,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
  // leave out alpha-tested and transparent objects (list refreshed now and then, other threads add objects after load)
  let cutList=[],cutAge=1e9;const isCut=o=>{const m=o.material;if(!m||o===puffs)return false;const ms=Array.isArray(m)?m:[m];return ms.some(x=>x.alphaTest>0||x.transparent||x.isSpriteMaterial||x.isPointsMaterial||x.isLineBasicMaterial);};
  const fogObjs=()=>{if(cutAge++>120){cutAge=0;cutList=[];scene.traverse(o=>{if((o.isMesh||o.isPoints||o.isLine||o.isSprite)&&isCut(o))cutList.push(o);});}return [...sheets,puffs,env.backdrop,...(env.mist||[]),...cutList];};let frameN=0;const dbs=new THREE.Vector2();
- let lastT=null;const wTmp=V();const dawnC=new THREE.Color(0xF0BFA0);
+ let lastT=null;const wTmp=V();const dawnC=new THREE.Color(0xF0BFA0),rainC=new THREE.Color(0x8E9EA8);
  env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera,hour}=s;
   {const W=window.__wind;const dt=lastT===null?0:Math.min(.1,Math.max(0,T-lastT));lastT=T;
    if(W&&W.sample){const w=W.sample(wTmp.set(0,1,0))||{};const x=w.x||0,z=w.z||0,sp=w.s!==undefined?w.s:Math.hypot(x,z);const L=Math.hypot(x,z)||1;
@@ -258,7 +260,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
    const su=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;scene.background=null;renderer.setRenderTarget(depthRT);renderer.clear(false,true,false);renderer.render(scene,camera);
    renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;/* U.wind is driven by game/wind.js now */
   const fc=tmp.copy(P.fog);
-  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),(.3+nightK*.3)*(1-mornK)).lerp(dawnC,mornK*.45);const dusk=hour===undefined?0:smooth(17.6,19.0,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.15+eve*.85+mornK*.3+rainK*.25;fogU.cam.value.copy(camera.position);
+  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),(.2+nightK*.2)*(1-mornK)).lerp(dawnC,mornK*.45);const dusk=hour===undefined?0:smooth(17.6,19.0,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.15+eve*.85+mornK*.3+rainK*.25;fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
   puffU.op.value=.38*dens;for(const m of mistBands)m.material.uniforms.op.value=m.userData.k*(.25+.75*Math.min(1,dens));
   {const L=halos.filter(h=>h.l.intensity>.05).map(h=>{h.l.getWorldPosition(tmpV);return [tmpV.x,tmpV.y,tmpV.z,Math.min(1,h.l.intensity/5)*h.size/1.6];}).sort((a,b)=>a[1]-b[1]);
@@ -269,8 +271,12 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
   // dusk: thicken the distance fog once the lamps are on (the painting's 19:20 look); index.html sets near/far each frame before this
   if(scene.fog&&scene.fog.isFog&&mornK>0){const f=scene.fog;f.color.lerp(dawnC,mornK*.3);f.far+=mornK*24;f.near+=mornK*6;}
   if(scene.fog&&scene.fog.isFog){const f=scene.fog;f.far=Math.max(f.near+34,f.far-eve*(1-nightK)*26);}
-  fill.intensity=eve*1.9*(1-rainK*.4);sky.intensity=eve*.9;rim.intensity=eve*3.2;env.moonRim.strength.value=eve*(1-rainK*.5);
-  ffU.on.value=eve*(1-rainK);const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=1.2+eve*.08;g.con.value=1.08+eve*.05;};
+  fill.intensity=eve*1.25*(1-rainK*.4);sky.intensity=eve*.55;rim.intensity=eve*3.2;env.moonRim.strength.value=eve*(1-rainK*.5);
+  // rain: wetness lags the rain, forest bark goes dark and glossy, fog turns grey-blue and thick, colours go muted
+  {const dt=lastT===null?0:.016;const w=env.wet.value;env.wet.value=rainK>w?Math.min(rainK,w+.006):Math.max(rainK,w-.0008);}
+  const wt=env.wet.value;barkMat.roughness=1-wt*.55;barkMat.color.setRGB(.6*(1-wt*.35),.55*(1-wt*.35),.5*(1-wt*.3));
+  if(rainK>0){fogU.col.value.lerp(rainC,rainK*.5);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
+  ffU.on.value=eve*(1-rainK);const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.18);g.con.value=1.08+eve*.05;};
  env.sheets=sheets;env.puffs=puffs;window.__env=env;
  // called by index.html when FPS stays under 40 after pixel ratio is already at 1: fewer fog puffs, then no soft edges, then one fog sheet
  let qLevel=0;env.degrade=()=>{qLevel++;if(qLevel===1)pg.instanceCount=Math.round(PN*.6);else if(qLevel===2)softU.soft.value=0;else if(qLevel===3){sheets.slice(1).forEach(m=>m.visible=false);pg.instanceCount=Math.round(PN*.4);}return qLevel<=3;};

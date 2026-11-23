@@ -68,18 +68,41 @@ export function createTreeDress(C) {
     const mat = TREE.bark.material, prev = mat.onBeforeCompile;
     const ENVR = (C.env || window.__env || {}).moonRim || { color: { value: new THREE.Color(0x86C2F0) }, strength: { value: 0 }, dir: { value: V(-1, .7, .2).normalize() } };
     // wetness: a little dew at night, soaked in the rain. Rain is read back from the wind uniform (env: wind = 1 + rain*1.5).
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 } };
+    // real oak bark relief: tileable maps baked from a Fal photo of oak bark (pipeline/bark_maps.py), mapped triplanar in
+    // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
+    const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
+    const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
+    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 },
+      nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 } };
     D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.35, rain); };
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
       sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.;' + NOISE)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.,tdFade=0.,tdH=.5;vec3 tdBl=vec3(0.,0.,1.);
+uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
+// triplanar sample, bark furrows run up the trunk (y is stretched)
+vec4 tdTri(sampler2D t,vec3 p,vec3 bl,float s){return texture2D(t,vec2(p.z,p.y*.42)*s)*bl.x+texture2D(t,p.xz*s)*bl.y+texture2D(t,vec2(p.x,p.y*.42)*s)*bl.z;}
+// triplanar normal (UDN blend): returns the world-space perturbation to add to the surface normal
+vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
+ vec3 tx=texture2D(tdNrm,vec2(p.z,p.y*.42)*s).xyz*2.-1.,ty=texture2D(tdNrm,p.xz*s).xyz*2.-1.,tz=texture2D(tdNrm,vec2(p.x,p.y*.42)*s).xyz*2.-1.;
+ return (vec3(0.,tx.y,tx.x)*bl.x+vec3(ty.x,0.,ty.y)*bl.y+vec3(tz.x,tz.y,0.)*bl.z)*k;}` + NOISE)
         .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 wn=normalize(tdN); float y=tdP.y;
+          // ---- bark relief: light worn crust on the ridges, deep dark furrows, fibrous detail up close ----
+          tdBl=pow(abs(wn),vec3(4.));tdBl/=tdBl.x+tdBl.y+tdBl.z;
+          tdFade=1.-smoothstep(5.,16.,length(cameraPosition-tdP));
+          vec4 ha=tdTri(tdHao,tdP,tdBl,tdScale), hb=tdTri(tdHao,tdP*1.0+7.3,tdBl,tdScale*4.);
+          tdH=ha.r;float cav=ha.g*mix(1.,.6+.4*hb.g,tdFade);
+          float rel=tdRelief;
+          diffuseColor.rgb*=mix(1.,mix(.3,1.3,smoothstep(.05,.95,tdH))*mix(.35,1.,cav),rel);
+          diffuseColor.rgb*=mix(1.,.82+.36*hb.b,tdFade*rel);
+          { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel); }
           vec2 ax=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float rd=length(ax);
           float lum=dot(diffuseColor.rgb,vec3(.3,.59,.11));
           // big soft patches + fine breakup
@@ -98,6 +121,7 @@ export function createTreeDress(C) {
           float mm=smoothstep(.18,.6,face+(big-.5)*.9+(fine-.5)*.35)*zone;
           mm*=smoothstep(.32,.55,big+zone*.25);
           mm*=1.-rootTop*.45;
+          mm+=(1.-tdH)*.18*smoothstep(.05,.3,mm); // moss settles into the furrows first
           mm=clamp(mm*tdMoss,0.,1.)*(1.-clamp(vGlow*2.5,0.,1.));
           // linear colours: deep olive in the shade, a little brighter yellow-green where it catches light
           vec3 moss=mix(vec3(.030,.048,.014),vec3(.085,.125,.028),smoothstep(.3,.8,fine));
@@ -112,6 +136,14 @@ export function createTreeDress(C) {
           diffuseColor.rgb*=1.-tdWM*.3;
           tdMM=mm;tdL=lum;
         }`)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          vec3 wn=normalize(tdN);
+          vec3 dn=tdTriN(tdP,tdBl,tdScale,4.5)+tdTriN(tdP+7.3,tdBl,tdScale*4.,1.6)*tdFade;
+          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
+          vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
+          normal=normalize(mix(normal,nv,.92));
+        }`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.32,tdWM);')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
@@ -123,7 +155,7 @@ export function createTreeDress(C) {
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress2';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress3';
     mat.needsUpdate = true;
   }
 

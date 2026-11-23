@@ -18,3 +18,18 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
   index.html attaches the brain only if HH.setBrain exists.
 - Debug: 🧠 button bottom-left shows needs, mood, current reason and the top options; `window.__brain`.
 - Offline test: a mock hero in node (see thread) runs 3 days: meals at habit hours, lamp off before sleep, sleep 21.5-0.5, wake 6.3-7.6.
+
+## Update 2026-11-23 evening (v89+)
+- Player commands: `__th.task(n)` -> `BRAIN.command(n)`: the request wins over needs (min = shortest duration, max = longest);
+  he drops it only if energy < .03 or deep in the night.
+- Random start: index.html sets a random hour, `BRAIN.prime(hour)` gives needs/stocks that fit, then runs HH.update off-screen
+  for 900–2400 steps (≤ 2.5 s) so the first frame catches him mid-action. `?start=fixed` keeps the old start.
+- Lamps (Pavel): lit only where he is; leaving at night he switches off ~80%, forgets ~20% (stays on until he is back, nothing
+  goes out by itself); bedroom lamp always off before sleep; candle lights itself when he reads (lights.auto), he blows it out by hand
+  when he stops reading in the bedroom; otherwise it burns until he comes back.
+- Gait .88–1.12 (Character maps it to a mood factor on a fixed 1.05 m/s); 1.12 in the rain. Rain: no deck, back under the roof.
+- Economy (active only when HH.hasTask('trip') && HH.hasTask('eat')): stock {meat, logs, meal}. Food only through the full cycle:
+  'trip' {kind:'hunt', bow:true, jacket, lantern} -> +2 meat -> 'store' {item:'meat'} -> 'cook' {fromFridge:true} (uses 1 meat + 1 log,
+  leaves a meal) -> 'eat'. 'trip' {kind:'wood'} -> +3 logs. Trips by day; at night only when starving (with the lantern).
+  Results are booked in onTaskEnd(name, res); res === false / {ok:false} = failed trip. Props hooks: __props.fridge.setStock(n),
+  __props.woodpile.setCount(n).
