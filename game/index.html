@@ -99,7 +99,7 @@ function placeTree(x,z,h,ry){const t=treeG.scene.clone(true);const b=new THREE.B
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
-const TREE=buildTree(THREE,{model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:Math.atan2(1.0-TREE_AXIS[1],1.45-TREE_AXIS[0]),y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
+const TREE=buildTree(THREE,{model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
  avoidLeaves:[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]]});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 const barkTris=TREE.tris;
@@ -131,7 +131,8 @@ float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i
 vec3 plank(vec3 lp,vec3 sz,float sd){
  float L=lp.x*sz.x, Wm=lp.y*sz.y;
  vec3 c0=vec3(.58,.33,.17),c1=vec3(.80,.53,.30);
- vec3 col=mix(c0,c1,pH(sd));col*=.92+.16*pH(sd+4.1);
+ float wall=step(99.5,sd);
+ vec3 col=mix(c0,c1,mix(pH(sd),.8,wall*.75));col*=.95+mix(.10,.04,wall)*pH(sd+4.1);
  float wob=pN(vec2(L*.9,sd))*2.2+pN(vec2(L*3.1,sd+7.))*.5;
  float g=sin(Wm*95.+wob*4.)*.5+.5; g=pow(g,3.);
  float fine=pN(vec2(L*7.,Wm*260.+sd));
@@ -141,7 +142,7 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
   col*=mix(1.,.55,smoothstep(.045,.0,r))*(1.-.18*smoothstep(.11,.05,r)*(.5+.5*sin(r*160.)));}
  float ew=(.5-abs(lp.y))*sz.y, el=(.5-abs(lp.x))*sz.x;
  float top=step(.499,abs(lp.z));
- col*=mix(.42,1.,smoothstep(.0,.022,ew)*smoothstep(.0,.04,el));
+ col*=mix(mix(.42,.62,wall),1.,smoothstep(.0,mix(.022,.012,wall),ew)*smoothstep(.0,.04,el));
  col*=1.+.16*smoothstep(.045,.02,ew)*step(0.,lp.y)*smoothstep(.0,.012,ew)*top;
  col*=mix(.62,1.,top);
  return pow(col,vec3(2.2));}`;
@@ -162,7 +163,7 @@ const tM=new THREE.Matrix4(),tQ=new THREE.Quaternion(),tP=V(),tS=V();
 function board(c,len,w,t,rot,opt={}){const q=new THREE.Quaternion().setFromEuler(rot||new THREE.Euler());
  const rb=world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(c.x,c.y,c.z).setRotation({x:q.x,y:q.y,z:q.z,w:q.w}));
  const col=world.createCollider(RAPIER.ColliderDesc.cuboid(len/2,w/2,t/2).setDensity(600).setFriction(.8).setRestitution(.15),rb);
- const dark=!!opt.dark;const mesh=dark?beams:boards;const i=mesh.count++;const rowA=dark?dRow:aRow,tileA=dark?dTile:aTile;rowA.setX(i,rnd(0,97));tileA.setX(i,Math.max(.04,len/3.84));mesh.setColorAt(i,new THREE.Color().setScalar(opt.tint??rnd(.9,1.04)));
+ const dark=!!opt.dark;const mesh=dark?beams:boards;const i=mesh.count++;const rowA=dark?dRow:aRow,tileA=dark?dTile:aTile;rowA.setX(i,rnd(0,97)+(opt.wall?100:0));tileA.setX(i,Math.max(.04,len/3.84));mesh.setColorAt(i,new THREE.Color().setScalar(opt.tint??rnd(.9,1.04)));
  const b={rb,col,size:V(len,w,t),mesh,i,dark,breakable:!!opt.breakable,hp:opt.hp||4,group:opt.group||null,loose:false,home:{c:c.clone(),q:q.clone()}};B.push(b);col.userData=b;syncBoard(b);return b;}
 function syncBoard(b){const p=b.rb.translation(),q=b.rb.rotation();tM.compose(tP.set(p.x,p.y,p.z),tQ.set(q.x,q.y,q.z,q.w),b.size);b.mesh.setMatrixAt(b.i,tM);}
 const colToBoard=new Map();
@@ -184,16 +185,16 @@ function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const 
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
-  const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.2,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
+  const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.3,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
   // shingles: rows from the ridge down, each row overlapping the one below, staggered
-  const rows=Math.ceil(sl/.21);
-  for(let r=0;r<rows;r++){const t=(r+.5)/rows;const along=-sl/2+t*sl;const off=(r%2)*.15;
-   for(let zz=-d/2+.15-off;zz<d/2+.05;zz+=.3){const ww=rnd(.26,.31),ll=rnd(.3,.34);if(zz-ww/2<-d/2-.06||zz+ww/2>d/2+.06)continue;
-    const lp=V(along,.12+.025,zz);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
+  const rows=Math.ceil(sl/.27);
+  for(let r=0;r<rows;r++){const t=(r+.5)/rows;const along=-sl/2+t*sl;const off=(r%2)*.19;
+   for(let zz=-d/2+.19-off;zz<d/2+.05;zz+=.38){const ww=rnd(.33,.39),ll=rnd(.38,.44);if(zz-ww/2<-d/2-.06||zz+ww/2>d/2+.06)continue;
+    const lp=V(along,.15+.04,zz);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
     q.setFromEuler(new THREE.Euler(rnd(-.05,.05),rnd(-.08,.08),-s*ang+s*(.09+rnd(-.03,.03)),'ZYX'));
-    const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,.05,ww));SHING.setMatrixAt(SHING.count,m4);
-    const k=rnd(.75,1.1);c.setRGB(.17*k,.21*k,.29*k*rnd(.95,1.1));SHING.setColorAt(SHING.count,c);SHING.count++;}}}
- const ridge=new THREE.Mesh(new THREE.BoxGeometry(.22,.2,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
+    const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,.075,ww));SHING.setMatrixAt(SHING.count,m4);
+    const k=rnd(.8,1.25);c.setRGB(.2*k,.24*k,.31*k*rnd(.95,1.1));SHING.setColorAt(SHING.count,c);SHING.count++;}}}
+ const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
  // gable trim boards on the front like the photo's dark fascia
  for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
  SHING.instanceMatrix.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
@@ -204,20 +205,20 @@ function post(x,y0,y1,z){board(V(x,(y0+y1)/2,z),y1-y0,.2,.2,new THREE.Euler(0,0,
 // round landings get planks radiating around the trunk. Top of every floor stays at y+0.035 (the hero raycasts it).
 function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z))&&!(o.holes||[]).some(h=>x>h[0]&&x<h[1]&&z>h[2]&&z<h[3])&&!inTrunk(x,y,z)&&!inTrunk(x,y-.12,z);
  const flat=a=>new THREE.Euler(-Math.PI/2+rnd(-.01,.01),a+rnd(-.006,.006),rnd(-.004,.004),'YXZ');
- if(o.radial){const [cx,cz,R,zmin]=o.radial;const n=Math.round(Math.PI*R*.62/.25);
+ if(o.radial){const [cx,cz,R,zmin]=o.radial;const n=Math.round(Math.PI*R*.82/.25);
   for(let k=0;k<=2*n;k++){const a=-Math.PI+k*Math.PI/n;const dx=Math.cos(a),dz=Math.sin(a);if(cz+dz*R*.6<zmin-.3)continue;
-   for(const [r0,r1] of runs(r=>ok(cx+dx*r,cz+dz*r),0,R,.04,.25)){const r1b=r1-rnd(0,.06);const rm=(r0+r1b)/2;board(V(cx+dx*rm,y+rnd(-.006,.006),cz+dz*rm),r1b-r0,.25,.07,flat(-a));}}
+   for(const [r0,r1] of runs(r=>ok(cx+dx*r,cz+dz*r),0,R,.04,.25)){const r1b=r1-rnd(0,.015);const rm=(r0+r1b)/2;board(V(cx+dx*rm,y+rnd(-.006,.006),cz+dz*rm),r1b-r0,.25,.07,flat(-a));}}
   // thick dark rim along the round edge, in short straight pieces
-  for(let k=0;k<2*n;k+=2){const a0=-Math.PI+k*Math.PI/n,a1=a0+2*Math.PI/n,am=(a0+a1)/2;const rr=R-.07;const px=cx+Math.cos(am)*rr,pz=cz+Math.sin(am)*rr;if(!ok(cx+Math.cos(am)*(R-.15),cz+Math.sin(am)*(R-.15)))continue;
-   board(V(px,y-.1,pz),2*rr*Math.sin(Math.PI/n)+.03,.26,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
+  for(let k=0;k<2*n;k++){const a0=-Math.PI+k*Math.PI/n,a1=a0+Math.PI/n,am=(a0+a1)/2;const rr=R-.07;const px=cx+Math.cos(am)*rr,pz=cz+Math.sin(am)*rr;if(!ok(cx+Math.cos(am)*(R-.15),cz+Math.sin(am)*(R-.15)))continue;
+   board(V(px,y-.1,pz),2*rr*Math.sin(Math.PI/n/2)+.02,.26,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
   for(let x=cx-R+.4;x<cx+R;x+=1.1)for(const [a2,b2] of runs(z=>ok(x,z),z0,z1,.05,.3))board(V(x,y-.12,(a2+b2)/2),b2-a2,.18,.13,new THREE.Euler(0,Math.PI/2,0),{dark:true});
   return;}
  for(let x=x0+.125;x<x1;x+=.25)for(const [a,b2] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e=b2>=z1-.05?b2+rnd(-.05,.05):b2;board(V(x,y+rnd(-.006,.006),(a+e)/2),e-a,.24,.07,flat(-Math.PI/2));}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
  if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
-function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.105;x<x1;x+=.21)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.006,.006)),b2-a,.2,.05,new THREE.Euler(rnd(-.01,.01),0,Math.PI/2+rnd(-.006,.006)),{tint:rnd(1.45,1.7)});}
-function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.105;z<z1;z+=.21)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.006,.006),(a+b2)/2,z),b2-a,.2,.05,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.006,.006)),{tint:rnd(1.3,1.5)});}
+function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.16;x<x1;x+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.004,.004)),b2-a,.305,.05,new THREE.Euler(rnd(-.006,.006),0,Math.PI/2+rnd(-.004,.004)),{tint:rnd(1.6,1.75),wall:true});}
+function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.16;z<z1;z+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.004,.004),(a+b2)/2,z),b2-a,.305,.05,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.004,.004)),{tint:rnd(1.45,1.6),wall:true});}
 const disc=(cx,cz,r,zmin)=>(x,z)=>(x-cx)**2+(z-cz)**2<=r*r&&z>=zmin;
 function brace(a,b2,w=.16){const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),{dark:true});}
 function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.42));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;post(x,y,y+.95,z);}

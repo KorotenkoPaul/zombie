@@ -149,9 +149,9 @@ export function buildTree(THREE, o) {
     const sp = sg.attributes.position, su = sg.attributes.uv, si = sg.index;
     let y0 = 1e9, y1 = -1e9; for (let i = 0; i < sp.count; i++) { const y = sp.getY(i); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     const H = y1 - y0; let cx = 0, cz = 0, cn = 0;
-    for (let i = 0; i < sp.count; i++) { const t = (sp.getY(i) - y0) / H; if (t > 0.42 && t < 0.55) { cx += sp.getX(i); cz += sp.getZ(i); cn++; } }
+    for (let i = 0; i < sp.count; i++) { const t = (sp.getY(i) - y0) / H; if (t > 0.12 && t < 0.24) { cx += sp.getX(i); cz += sp.getZ(i); cn++; } }
     cx /= cn; cz /= cn; let rr = 0, rn = 0;
-    for (let i = 0; i < sp.count; i++) { const t = (sp.getY(i) - y0) / H; if (t > 0.42 && t < 0.55) { const d = Math.hypot(sp.getX(i) - cx, sp.getZ(i) - cz); if (d < H * 0.25) { rr += d; rn++; } } }
+    for (let i = 0; i < sp.count; i++) { const t = (sp.getY(i) - y0) / H; if (t > 0.12 && t < 0.24) { const d = Math.hypot(sp.getX(i) - cx, sp.getZ(i) - cz); if (d < H * 0.25) { rr += d; rn++; } } }
     rr /= rn; const k = (o.height || 18) / H; const _k = k, ry = o.modelRot || 0, cr = Math.cos(ry), sr = Math.sin(ry);
     parts.length = 0; P.length = 0; UV.length = 0; G.length = 0; I.length = 0; leafSpots.length = 0;
     for (let i = 0; i < sp.count; i++) {
@@ -165,15 +165,35 @@ export function buildTree(THREE, o) {
     for (let b = 1; b < 260; b++) if (!Rt[b]) Rt[b] = Rt[b - 1]; for (let b = 258; b >= 0; b--) if (!Rt[b]) Rt[b] = Rt[b + 1];
     const Rs = Float32Array.from(Rt, (v, b) => { let a = 0, n = 0; for (let j = -3; j <= 3; j++) { const q = Rt[Math.min(259, Math.max(0, b + j))]; if (q) { a += q; n++; } } return n ? a / n : 1.5; });
     R = y => Rs[Math.min(259, Math.max(0, Math.round(y * 10)))];
-    // carve the arched hollow into the front of the trunk, glow around its lip
-    const outer = i => { const dx = P[i * 3] - AX, dz = P[i * 3 + 2] - AZ; return Math.hypot(dx, dz) > R(P[i * 3 + 1]) - 0.55; };
-    const mk = i => doorMask(Math.atan2(P[i * 3 + 2] - AZ, P[i * 3] - AX), P[i * 3 + 1]);
-    for (let i = 0; i < P.length / 3; i++) { if (!outer(i)) continue; const m = mk(i); if (m < 1.5) G[i] = Math.max(0, 1 - (m - 0.9) / 0.6) * 0.5; }
+    // around the hollow, measure the real front surface with rays so the opening and the cave sit in the bark
+    {
+      const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      const tri = []; const n3 = si ? si.count : sp.count; for (let t = 0; t < n3; t++) tri.push(si ? si.getX(t) : t); tg.setIndex(tri);
+      const tm = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); const rc = new THREE.Raycaster();
+      const dx = Math.cos(doorAng), dz = Math.sin(doorAng);
+      for (let b = Math.round((door.y0 - 0.6) * 10); b <= Math.round((door.y1 + 0.6) * 10); b++) {
+        const y = b / 10; rc.set(V(AX + dx * 9, y, AZ + dz * 9), V(-dx, 0, -dz)); rc.far = 9;
+        const h = rc.intersectObject(tm, false).find(q => 9 - q.distance < 3.2); if (h) Rs[b] = 9 - h.distance;
+      }
+      const lo = Math.round((door.y0 - 0.6) * 10), hi = Math.round((door.y1 + 0.6) * 10), cp = Rs.slice();
+      for (let b = lo; b <= hi; b++) { let a = 0, n = 0; for (let j = -2; j <= 2; j++) { a += cp[Math.min(259, Math.max(0, b + j))]; n++; } Rs[b] = a / n; }
+      tg.dispose();
+    }
+    // carve the arched hollow: a tunnel from the cave (just inside the bark) out through anything in front of it
+    const ddx = Math.cos(doorAng), ddz = Math.sin(doorAng), cdist = R((door.y0 + door.y1) / 2) - 1.13;
+    const ccx = AX + ddx * cdist, ccz = AZ + ddz * cdist;
+    const arch = (x, y, z) => {
+      const rx = x - ccx, rz = z - ccz, u = rx * ddx + rz * ddz, v = -rx * ddz + rz * ddx;
+      if (u < 0.2 || u > 3) return 99;
+      const da = Math.abs(v) / (door.w / 2), vy = (y - door.y0) / (door.y1 - door.y0);
+      if (vy < 0 || vy > 1) return 99; if (vy < 0.62) return da; return Math.hypot(da, (vy - 0.62) / 0.38 * 1.05);
+    };
+    for (let i = 0; i < P.length / 3; i++) { const m = arch(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]); if (m < 1.5 && m > 0.9) G[i] = (1 - (m - 0.9) / 0.6) * 0.5; }
     const n3 = si ? si.count : sp.count;
     for (let t = 0; t < n3; t += 3) {
       const a = si ? si.getX(t) : t, b = si ? si.getX(t + 1) : t + 1, c = si ? si.getX(t + 2) : t + 2;
-      const inA = outer(a) && mk(a) < 0.97, inB = outer(b) && mk(b) < 0.97, inC = outer(c) && mk(c) < 0.97;
-      if (inA && inB && inC) continue; I.push(a, b, c);
+      const m = arch((P[a * 3] + P[b * 3] + P[c * 3]) / 3, (P[a * 3 + 1] + P[b * 3 + 1] + P[c * 3 + 1]) / 3, (P[a * 3 + 2] + P[b * 3 + 2] + P[c * 3 + 2]) / 3);
+      if (m < 1.0) continue; I.push(a, b, c);
     }
     // leaves: clumps at the limb tips and a crown at the top, with gaps between them
     const cand = [];
@@ -264,16 +284,16 @@ export function buildTree(THREE, o) {
   // ---------- the cave behind the glowing hollow: a warm little room carved into the trunk ----------
   {
     const yc0 = door.y0 - 0.02, hh = door.y1 - door.y0, cr = door.w * 0.62, dep = door.depth || 0.95;
-    const cd = 0.95, dist = R(yc0 + hh / 2) - cd + 0.12;
+    const cd = 1.25, dist = R(yc0 + hh / 2) - cd + 0.12;
     const cx = AX + Math.cos(doorAng) * dist, cz = AZ + Math.sin(doorAng) * dist;
-    const cmat = new THREE.MeshStandardMaterial({ color: 0x7A4A2A, roughness: 0.95, side: THREE.BackSide });
+    const cmat = new THREE.MeshStandardMaterial({ map: barkT, color: 0xC88A5A, roughness: 0.95, side: THREE.BackSide });
     cmat.onBeforeCompile = sh => {
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float doorGlow;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.55;');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.45;');
       sh.uniforms.doorGlow = mat.userData.doorGlow;
     };
     const cave = new THREE.Group(); cave.position.set(cx, yc0, cz); cave.rotation.y = -doorAng; group.add(cave);
-    const sh0 = new THREE.Group(); sh0.scale.set(cd / cr, 1, door.w * 0.56 / cr); cave.add(sh0);
+    const sh0 = new THREE.Group(); sh0.scale.set(cd / cr, 1, door.w * 0.8 / cr); cave.add(sh0);
     const wall = new THREE.Mesh(new THREE.CylinderGeometry(cr, cr * 1.08, hh * 0.65, 20, 1, true), cmat); wall.position.y = hh * 0.325; sh0.add(wall);
     const dome = new THREE.Mesh(new THREE.SphereGeometry(cr, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), cmat); dome.scale.y = hh * 0.35 / cr / 0.95; dome.position.y = hh * 0.65; sh0.add(dome);
     // plank floor, slightly worn, lit by the glow
