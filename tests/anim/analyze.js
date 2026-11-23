@@ -19,7 +19,7 @@ const LIMITS={
  detour:1.35,      // walked length / straight distance for one walk
  // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
  // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
- walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:100,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,supportCm:3,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+ walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:70,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,supportCm:3,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
 };
 const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -184,6 +184,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  {const gi=n=>GN.indexOf(n);const need=f=>f.fl.includes('B')?['head','hips','torso','shins','feet']:f.task==='ledge'?['hips']:['hips','feet'];
   for(const G of ['head','hips','torso','shins','feet']){const g=gi(G);if(g<0)continue;
    runs(i=>{const f=F[i];if(!f.sup||/[WT]/.test(f.fl)||!need(f).includes(G))return null;return f.sup[g]>=lim.supportCm?f.sup[g]:null;},30,(a,b,i,v)=>add('unsupported',i,{bone:G,value:v,unit:'cm gap under it ('+(F[i].fl.includes('B')?'lying':'sitting')+')',limit:lim.supportCm,what:G+' hangs in the air instead of resting on the bed/seat/floor',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}}
+ // standing: at least one foot on the floor (rule 3.1): both toes > 4 cm above whatever is under them while not walking/climbing/seated
+ {runs(i=>{const f=F[i];if(f.fl!==''||i<1)return null;const g1=f.gnd[1],g3=f.gnd[3];if(g1==null||g3==null)return null;const l=bone(f,'LeftToeBase')[1]-g1,r=bone(f,'RightToeBase')[1]-g3;const m=Math.min(l,r);return m>.04?+(m*100).toFixed(1):null;},20,
+   (a,b,i,v)=>add('unsupported',i,{bone:'feet',value:v,unit:'cm both feet above the floor (standing)',limit:4,what:'stands on air',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}
  // held tools: the palm holding it should be on it (< 5 cm from the tool's mesh) the whole time it is held
  {const ev={};F.forEach((f,i)=>{for(const [nm,k,d] of f.grip||[]){const key=nm+'|'+k;let e=ev[key]&&ev[key][ev[key].length-1];if(!e||i-e.i1>3){e={i0:i,i1:i,d:[]};(ev[key]=ev[key]||[]).push(e);}e.i1=i;e.d.push(d);}});
   tempo.grip=[];for(const key in ev)for(const e of ev[key]){if(e.d.length<10)continue;const s2=e.d.slice().sort((a,b)=>a-b);const med=s2[s2.length>>1];const [nm,k]=key.split('|');
