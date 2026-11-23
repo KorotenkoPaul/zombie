@@ -40,6 +40,7 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -76,7 +77,14 @@ const camera=new THREE.PerspectiveCamera(38,1,.2,300);
 
 // ================= assets =================
 const TL=new THREE.TextureLoader();
-const tex=(n,rep=1,srgb=true)=>new Promise(res=>TL.load(ASSET+n,t=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;prog();res(t);}));
+// [PERF] textures with a <name>-ktx2.txt twin (pipeline/ktx2.mjs) load as Basis KTX2 and stay compressed on the GPU
+// (ASTC/ETC2 on iPhone: ~1 byte per pixel instead of 4, mipmaps included); anything that fails falls back to the jpg/png
+const KTX2N=new Set(/[?&]noktx/.test(location.search)?[]:['bark2.jpg','roof2.jpg','ground2.jpg','leaf2.png']);
+const ktx2=new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/').detectSupport(renderer);
+const texSetup=(t,rep,srgb)=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;t.needsUpdate=true;prog();return t;};
+const texImg=n=>new Promise((res,rej)=>TL.load(ASSET+n,res,undefined,rej));
+const texKtx=n=>fetch(ASSET+n.replace(/\.(jpg|png)$/,'-ktx2.txt')).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(b=>{const u=URL.createObjectURL(new Blob([Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0))]));return ktx2.loadAsync(u).finally(()=>URL.revokeObjectURL(u));});
+const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('ktx2 fallback',n,e);return texImg(n);}):texImg(n)).then(t=>texSetup(t,rep,srgb));
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
@@ -632,6 +640,8 @@ PERF.addStep('bloom',()=>{if(!bloom.enabled)return false;bloom.enabled=false;},(
 if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),15);PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),50);}
 if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LIGHTS.winGlow(true),45);
 // fog simplification can't be undone: last resort
+// [PERF] thermal guard: when even px 1.5 can't keep up, hold a steady 30 FPS instead of thrashing (phones heat up fast)
+PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
 if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+i);
 // [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
 let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
@@ -666,7 +676,7 @@ addEventListener('resize',resize);
 
 // ================= main loop =================
 const clock=new THREE.Clock();let acc=0,fr=0,ft=0,perf=false;
-function frame(){requestAnimationFrame(frame);try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
+function frame(){requestAnimationFrame(frame);if(PERF.skip())return;try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
 function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;HATCH.update(dt);
  const wasN=isNight(hour);hour+=dt*hps()*TS;if(hour>=24)hour-=24;const nowN=isNight(hour);
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}

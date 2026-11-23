@@ -26,6 +26,10 @@ export function createPerf({ renderer, MOBILE }) {
   const N = 120, ft = new Float32Array(N), js = new Float32Array(N); let k = 0, n = 0;
   let vmin = 1e9, vT = 0, t0 = 0, last = performance.now(), lastDraw = { calls: 0, tris: 0 }, vs = 16.7, miss = 0;
 
+  // frame cap: 1 = every screen refresh, 2 = every 2nd (30 FPS on a 60 Hz screen). A steady 30 runs much cooler
+  // than a phone thrashing between 10 and 40; the governor uses it as one of its steps (index.html).
+  P.cap = 1; let lastR = 0;
+  P.skip = () => { if (P.cap <= 1) return false; const t = performance.now(); if (t - lastR < vs * P.cap - 4) return true; lastR = t; return false; };
   P.addStep = (name, down, up = null, order = 50) => { const s = { name, down, up, order }; P.steps.push(s); P.steps.sort((a, b) => a.order - b.order); return s; };
   // start below the top (e.g. phones begin at a modest pixel ratio and climb if there is room): steps are applied in the given order
   P.preset = list => { for (const s of list) { if (!s || P.applied.includes(s)) continue; let ok = true; try { ok = s.down() !== false; } catch (e) { ok = false; } if (ok) { P.applied.push(s); P.level++; } } };
@@ -51,24 +55,31 @@ export function createPerf({ renderer, MOBILE }) {
     if (warm > 0) { warm -= dt; return; }                     // let loading hitches settle
     // refresh interval: the shortest frames of the last ~4 s, never above 16.7 ms (a slow phone must not look "on time")
     vmin = Math.min(vmin, dtm); vT += dt; if (vT > 4) { vs = Math.min(16.7, Math.max(6, vmin)); vmin = 1e9; vT = 0; }
-    winT += dt; winF++; if (dtm > vs * 1.3 && dtm < 100) winMiss++;
+    winT += dt; winF++; if (dtm > vs * P.cap * 1.3 && dtm < 150) winMiss++;
     if (P.frozen) { winT = 0; winF = 0; winMiss = 0; }
     if (winT >= WIN) {
       miss = winMiss / Math.max(1, winF); P.fps = winF / winT; winT = 0; winF = 0; winMiss = 0;
       if (cool > 0) { cool--; calm = 0; }
-      else if (miss > DOWN) { calm = 0; if (stepDown()) { cool = 1; if (clock - lastUpAt < 10) { blockUntil = clock + backoff; backoff = Math.min(240, backoff * 2); } } }
+      else if (miss > DOWN) { calm = 0; if (miss > .6 && clock - lastUpAt > 10) stepDown(); if (stepDown()) { cool = 1; if (clock - lastUpAt < 10) { blockUntil = clock + backoff; backoff = Math.min(240, backoff * 2); } } }
       else if (miss < UP) { calm++; if (calm >= 2 && clock >= blockUntil && P.applied.some(s => s.up)) { if (stepUp()) { lastUpAt = clock; cool = 1; } calm = 0; } }
       else calm = 0;
     }
-    if (hud && hud.on) drawHud();
+    if (hud && hud.on) drawHud(); else if ((++bF & 127) === 0) checkBudget();
   };
   P.stats = () => {
     const a = []; for (let i = 0; i < n; i++) a.push(ft[i]); a.sort((x, y) => x - y);
     const avg = a.reduce((s, x) => s + x, 0) / Math.max(1, n); let jsA = 0; for (let i = 0; i < n; i++) jsA += js[i]; jsA /= Math.max(1, n);
     return { fps: +(1000 / avg).toFixed(1), ms: +avg.toFixed(1), p95: +(a[Math.floor(n * .95)] || 0).toFixed(1), worst: +(a[n - 1] || 0).toFixed(1), js: +jsA.toFixed(1),
       vsync: +vs.toFixed(1), miss: Math.round(miss * 100), calls: lastDraw.calls, tris: lastDraw.tris, geo: info.memory.geometries, tex: info.memory.textures, progs: info.programs ? info.programs.length : 0,
-      pr: +renderer.getPixelRatio().toFixed(2), level: P.level, applied: P.applied.map(s => s.name), steps: P.steps.map(s => s.name), blocked: clock < blockUntil, hist: hist.slice(), mobile: !!MOBILE };
+      cap: P.cap, pr: +renderer.getPixelRatio().toFixed(2), level: P.level, applied: P.applied.map(s => s.name), steps: P.steps.map(s => s.name), blocked: clock < blockUntil, hist: hist.slice(), mobile: !!MOBILE };
   };
+
+  // ---------- phone budget (all passes of one frame, incl. shadows). Over budget shows red in the readout and
+  // warns once in the console with the numbers, so owners see it in their own tests. ----------
+  P.budget = MOBILE ? { calls: 300, tris: 450000 } : { calls: 900, tris: 2000000 };
+  let warned = false, bF = 0;
+  P.overBudget = () => { const o = []; if (lastDraw.calls > P.budget.calls) o.push('вызовов ' + lastDraw.calls + '>' + P.budget.calls); if (lastDraw.tris > P.budget.tris) o.push('треуг. ' + Math.round(lastDraw.tris / 1000) + 'k>' + Math.round(P.budget.tris / 1000) + 'k'); return o; };
+  const checkBudget = () => { const o = P.overBudget(); if (o.length && !warned && clock > 8) { warned = true; console.warn('[perf] over the phone budget:', o.join(', '), '- see NOTES-perf.md'); } return o; };
 
   // ---------- readout ----------
   let hud = null, hudT = 0;
@@ -81,9 +92,10 @@ export function createPerf({ renderer, MOBILE }) {
   function drawHud() {
     const t = performance.now(); if (t - hudT < 500) return; hudT = t; const s = P.stats();
     const col = s.fps >= 55 ? '#8CF59A' : s.fps >= 40 ? '#FFD36B' : '#FF7B6B';
+    const ob = checkBudget(), red = t => `<span style="color:#FF7B6B">${t}</span>`;
     hud.el.innerHTML = `<span style="color:${col};font-size:13px">${s.fps.toFixed(0)} FPS</span>  ${s.ms} ms\n` +
-      `худший ${s.worst} · 95% ${s.p95} ms\nJS ${s.js} ms · вызовов ${s.calls}\nтреуг. ${(s.tris / 1000).toFixed(0)}k · px ${s.pr}\n` +
-      `пропуски ${s.miss}% · кадр ${s.vsync} ms\nкачество −${s.level}${s.applied.length ? ' (' + [...new Set(s.applied)].join(', ') + ')' : ''}`;
+      `худший ${s.worst} · 95% ${s.p95} ms\nJS ${s.js} ms · ${s.calls > P.budget.calls ? red('вызовов ' + s.calls) : 'вызовов ' + s.calls}\n${s.tris > P.budget.tris ? red('треуг. ' + (s.tris / 1000).toFixed(0) + 'k') : 'треуг. ' + (s.tris / 1000).toFixed(0) + 'k'} · px ${s.pr}\n` +
+      `пропуски ${s.miss}% · кадр ${s.vsync} ms${s.cap > 1 ? ' · предел ' + Math.round(1000 / (s.vsync * s.cap)) + ' FPS' : ''}\nкачество −${s.level}${s.applied.length ? ' (' + [...new Set(s.applied)].join(', ') + ')' : ''}`;
   }
   P.show = on => { if (!hud) hud = makeHud(); hud.on = on; hud.el.style.display = on ? 'block' : 'none'; try { localStorage.setItem('perfHud', on ? '1' : '0'); } catch (e) {} };
   let want = /[?&#]fps/.test(location.href); try { want = want || localStorage.getItem('perfHud') === '1'; } catch (e) {}
