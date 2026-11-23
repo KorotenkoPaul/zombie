@@ -90,6 +90,11 @@ import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.
 
 const $=id=>document.getElementById(id);
 const rnd=(a,b)=>a+Math.random()*(b-a);
+// [PERF][SAFETY] three.js keys a shader hook by its source text (onBeforeCompile.toString()). Wrappers that chain hooks
+// (e.g. rain's wet boards, props' injectors) have the same text for every material they wrap, so two materials whose
+// generated shaders differ could get one compiled program: on iPhone the boards drew with another material's shader
+// (white house, 2026-11-23). Default key now = identity of the hook function; owners' own customProgramCacheKey still wins.
+{const D=THREE.Material.prototype.onBeforeCompile,ids=new WeakMap();let nx=1;THREE.Material.prototype.customProgramCacheKey=function(){const f=this.onBeforeCompile;if(f===D)return f.toString();let i=ids.get(f);if(!i){i=nx++;ids.set(f,i);}return 'obc#'+i;};}
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const lerp=(a,b,k)=>a+(b-a)*k;
 const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
@@ -722,6 +727,7 @@ barricade('Забор кухни',V(-3.0,KT+.55,3.88),2.8);
 barricade('Забор мастерской',V(3.0,WS+.55,4.43),3.15);
 boards.instanceMatrix.needsUpdate=true;beams.instanceMatrix.needsUpdate=true;aRow.needsUpdate=true;aTile.needsUpdate=true;dRow.needsUpdate=true;dTile.needsUpdate=true;
 const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+3.5,1.0,4.2],[WX0+.05,WX1-.05,WS+.05,WS+3.3,1.25,5.3]];
+if(ENV.setInterior)ENV.setInterior(ROOMS);/* [ENV] interior night ambient cut (Lights) */
 // ---- age (round 3): which face of each board is outside. Floors inside a room are sheltered, landings/deck are not;
 // a wall's outer face is the one facing away from its room; beams, posts and frames are out in the weather.
 ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[3],0,0);});
