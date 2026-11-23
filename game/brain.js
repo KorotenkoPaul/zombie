@@ -354,15 +354,31 @@ export function createBrain({ HH, lights, hour, isNight }) {
 
   // ---------- the per-frame tick (called by hero.js) ----------
   let locked = false;
+  // a strange sound in the night: he startles, stops, turns toward it and listens; if it gets to him, he checks the bolt
+  let uneaseOff = null, startleT = 0;
+  function onUnease(e) {
+    need.safety = clamp(need.safety + .06 + (e && e.anx ? e.anx * .04 : 0));
+    if (H.task === 'sleep' || H.inBed || startleT > 0) return;
+    startleT = 25;
+    const p = e && e.pos ? { x: e.pos[0], y: e.pos[1], z: e.pos[2] } : null;
+    const steps = [{ task: 'micro', opts: { clip: '336', dur: rnd(3, 5), look: p }, why: 'что это было? прислушивается' }];
+    if (need.safety > .55 && !day.bolted && HH.hasTask && HH.hasTask('bolt')) steps.push({ task: 'bolt', opts: { lock: true }, why: 'на всякий случай проверяет засов', extra: 'bolt' });
+    if (cur && ACTS[cur.name] && cur.name !== 'sleep') steps.push({ task: cur.name, opts: {}, why: 'возвращается к делу' });
+    plan.unshift(...steps.concat(plan.splice(0)));
+    cur = null; pausing = 0; startNext();
+  }
   // dirty dishes in the sink (props.js); -1 = unknown
   const dirty = () => { try { const D = window.__props && window.__props.dishes; return D && D.state ? D.state().dirty : -1; } catch (e) { return -1; } };
   const house = () => { try { return window.__house || null; } catch (e) { return null; } };
   let pausing = 0, expected, cmdNext = false, job = null, extra = null;
   function tick(dt, v) {
     const dh = gameHours();
+    // night noises (audio.js): subscribe once the sound system exists
+    if (!uneaseOff) { try { const A = window.__audio; if (A && A.on) uneaseOff = A.on('unease', onUnease) || true; } catch (e) { uneaseOff = true; } }
     { const W = propsWater(); if (W) { stock.clean = W.clean; stock.dirtyW = W.dirty; } }
     drift(dt, dh, v);
     lingerCool -= dt;
+    startleT -= dt;
     { const r = ROOM_OF(H.node); if (r !== roomNow) { roomNow = r; roomT = 0; } else if (!(v.inBed)) roomT += dt; }
     if (!v.free) return;
     const h = v.hour;
