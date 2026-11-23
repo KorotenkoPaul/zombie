@@ -300,6 +300,11 @@ export function createHero(ctx){
   // string-pull: if the node after this one is in plain sight, head straight for it
   while(H.path.length>1&&H.path[0].t!=='ladder'&&H.path[1].t!=='ladder'&&!N[H.path[0].node].tight&&!(H.path[2]&&H.path[2].t==='ladder'&&false)){const nx=N[H.path[1].node].p,p0=root.position;
    if(Math.abs(nx.y-p0.y)>.25||Math.abs(N[H.path[0].node].p.y-p0.y)>.25||!segClear(p0,nx))break;H.node=H.path[0].node;H.path.shift();}
+  // MOTION HOOK: no hairpin at the start of a walk: a node right next to him that would send him one way and then straight back is skipped
+  // when the corner after it can be cut (a bit of the way along), so he sets off toward where he is really going
+  if(motion&&H.path.length>1&&H.path[0].t!=='ladder'&&H.path[1].t!=='ladder'&&!N[H.path[0].node].tight){const p0=root.position,a=N[H.path[0].node].p,b=N[H.path[1].node].p;const d0=Math.hypot(a.x-p0.x,a.z-p0.z);
+   if(d0<.7&&d0>.02&&Math.abs(a.y-p0.y)<.25&&Math.abs(b.y-p0.y)<.25){const ux=(a.x-p0.x)/d0,uz=(a.z-p0.z)/d0,l=Math.hypot(b.x-a.x,b.z-a.z)||1;const cosT=(ux*(b.x-a.x)+uz*(b.z-a.z))/l;
+    if(cosT<-.2){const m=p0.clone().lerp(a,.5);if(segClear(p0,m)&&segClear(m,b)){H.node=H.path[0].node;H.path.shift();}}}}
   const step=H.path[0];const target=N[step.node].p;const p=root.position;const nxt=H.path[1];const isLast=!nxt;
   // aim a little past the corner so the path rounds it
   let aim=target.clone();const toT=Math.hypot(target.x-p.x,target.z-p.z);if(!isLast&&toT<.55){const n2=N[nxt.node].p;aim.lerp(n2,clamp((.55-toT)/.55,0,1)*.5);}
@@ -310,9 +315,9 @@ export function createHero(ctx){
   H.v+=clamp(vmax*align-H.v,-3.2*dt,(H.v<.5?3.2:2.4)*dt);
   stuckCheck(dt);
   // turn rate depends on speed: on the spot it takes small steps
-  const rate=lerp(3.4,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
+  const rate=lerp(4.2,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
   // turning has inertia: angular speed ramps up and down, so there is never a snap in heading
-  const wav=clamp(da*3,-rate,rate);H.av=(H.av||0)+clamp(wav-(H.av||0),-10*dt,10*dt);root.rotation.y+=H.av*dt;H.face=root.rotation.y;
+  const wav=clamp(da*3,-rate,rate);H.av=(H.av||0)+clamp(wav-(H.av||0),-11*dt,11*dt);root.rotation.y+=H.av*dt;H.face=root.rotation.y;
   const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
   const moving=H.v>.06||Math.abs(da)>.25;
   // MOTION HOOK: with motion matching a one-off action clip (stretching, a gesture) keeps playing on the upper body while he walks off
