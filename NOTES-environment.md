@@ -13,8 +13,16 @@
 - Light: blue night fill + rim directional + hemisphere (no shadows) so bark and leaves get the reference's moonlit blue; K palette for 19.3/20.5/night made lighter blue like the photo; additive halos on lamps (works on phones without bloom).
 - Grading pass: saturation, contrast, teal shadows / warm highlights, vignette.
 
+## Checkpoint 2 (2026-11-23, v20)
+- Fal works from this cloud (queue.fal.run + v3*.fal.media). `pipeline/fal.py` + nano-banana-pro/edit with the reference photo.
+- `game/forest-bg.jpg`: painted far forest (gnarled oaks in blue fog) on a 96 m cylinder, mirrored 5x; night shows it as painted, day re-tints with fog colour. Replaced the crude silhouette rings. Source: assets/textures-src/forest-bg-src.jpg.
+- `game/ground3.jpg`: painted forest floor (grass, moss, teal ferns, oak leaves), seamless; swapped into the ground material after load.
+- Height fog: env.js patches THREE.ShaderChunk fog_* globally. Every fog:true material gets an analytic exponential ground fog (H=1.7 m) with static world noise. Strength comes from index.html's (fogFar-fogNear), so night/morning/rain are thicker. Clears within ~5-13 m of the trunk so the roots read dark (Tree thread ask).
+- Puffs: lit warm by the 6 lowest lamp/door halos (uniform lp[6]); fade near ground (no hard cut lines); fade in front of the trunk.
+- Sheets fade when seen edge-on (no water look). `window.__env` exposes sheets/puffs for debugging.
+
 ## Testing in this cloud
-jsdelivr is blocked by the proxy here; `npm i three@0.160.0 @dimforge/rapier3d-compat@0.12.0` in a scratch dir and route `cdn.jsdelivr.net/npm/**` to node_modules in Playwright (`page.route`). Swiftshader gives ~1 fps; use `__th.view(yaw,pitch,zoom)` and `__th.setHour(h)` for stills.
+jsdelivr was blocked earlier (it works now); if blocked: `npm i three@0.160.0 @dimforge/rapier3d-compat@0.12.0` in a scratch dir and route `cdn.jsdelivr.net/npm/**` to node_modules in Playwright (`page.route`). Swiftshader gives ~1 fps; use `__th.view(yaw,pitch,zoom)` and `__th.setHour(h)` for stills.
 
 ## Next steps
 - Compare side by side with the reference at 19:20 more: canopy still darker than the photo (leaf material is in the tree code), sky between branches should be lighter blue.
