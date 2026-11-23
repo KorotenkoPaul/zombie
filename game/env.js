@@ -106,7 +106,22 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
     q.setFromEuler(new THREE.Euler(rr(-1.2,1.2),rr(0,6.28),rr(-1.2,1.2)));const sz=rr(1.6,2.6)*t.s*csz;m.compose(p,q,V(sz,sz,sz));im.setMatrixAt(n,m);
     // deeper in the forest the leaves turn bluer and darker, like the painted reference
     const far=smooth(16,60,t.d);c.setRGB(.78-far*.25,.88-far*.25,.82-far*.1);im.setColorAt(n,c);n++;}}
-  im.count=n;im.castShadow=!MOBILE;im.name='forestCanopy';scene.add(im);env.canopy=im;}
+  im.count=n;im.castShadow=!MOBILE;im.name='forestCanopy';scene.add(im);env.canopy=im;
+  // phones: impostors. One leaf clump (48 cards) is rendered once into a 256px texture, and every branch tip gets a single
+  // upright camera-facing quad with it instead of 18 cards: the far crowns were stacking ~23 alpha-tested layers per pixel.
+  if(MOBILE&&renderer){try{const S=256,rt=new THREE.WebGLRenderTarget(S,S,{depthBuffer:true});rt.texture.generateMipmaps=true;rt.texture.minFilter=THREE.LinearMipmapLinearFilter;
+   const bs=new THREE.Scene(),bm=new THREE.MeshBasicMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide}),NB=48,bim=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),bm,NB);const rb=rng(91);
+   for(let k=0;k<NB;k++){const d=V(rb()*2-1,(rb()*2-1)*.75+.1,rb()*2-1).normalize().multiplyScalar(Math.pow(rb(),.5)*3.4);q.setFromEuler(new THREE.Euler((rb()-.5)*2.4,rb()*6.28,(rb()-.5)*2.4));const sz=1.6+rb()*1.1;
+    m.compose(d,q,V(sz,sz,sz));bim.setMatrixAt(k,m);const sh=.62+.45*((d.y+3.4)/6.8)+(d.z>0?.08:-.08)+(rb()-.5)*.12;bim.setColorAt(k,c.setRGB(sh,sh,sh));}// lighter on top and front: the clump keeps its volume
+   bs.add(bim);const oc=new THREE.OrthographicCamera(-4.8,4.8,4.8,-4.8,.1,30);oc.position.set(0,0,12);oc.lookAt(0,0,0);
+   const prev=renderer.getRenderTarget(),cc=renderer.getClearColor(new THREE.Color()),ca=renderer.getClearAlpha();renderer.setRenderTarget(rt);renderer.setClearColor(0x000000,0);renderer.clear();renderer.render(bs,oc);
+   renderer.setRenderTarget(prev);renderer.setClearColor(cc,ca);bim.geometry.dispose();bm.dispose();
+   const imat=new THREE.MeshBasicMaterial({map:rt.texture,alphaTest:.45});
+   imat.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <project_vertex>',`vec3 ctr=instanceMatrix[3].xyz;float isz=length(instanceMatrix[0].xyz);
+     vec3 rgt=normalize(vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]));vec4 mvPosition=viewMatrix*vec4(ctr+rgt*transformed.x*isz+vec3(0.,transformed.y*isz,0.),1.);gl_Position=projectionMatrix*mvPosition;`);};
+   const NI=tips.length,iq=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),imat,NI);let j=0;
+   for(const t of tips){const far=smooth(16,60,t.d);m.compose(t.p,q.identity(),V(9.6*t.s*1.08,9.6*t.s*1.08,1));iq.setMatrixAt(j,m);iq.setColorAt(j,c.setRGB(.78-far*.25,.88-far*.25,.82-far*.1));j++;}
+   iq.frustumCulled=false;iq.name='forestCanopyImpostors';scene.add(iq);scene.remove(im);im.dispose();env.canopy=iq;env.canopyTex=rt.texture;}catch(e){console.warn('canopy impostors',e);}}}
 
  // far forest: a painted backdrop (Fal, from the reference: gnarled oak silhouettes in blue fog) on a cylinder around the scene.
  // Mirrored-repeat so there is no seam; at night the painting shows as is, by day it is re-tinted with the fog colour.
