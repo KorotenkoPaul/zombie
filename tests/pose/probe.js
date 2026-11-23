@@ -23,12 +23,12 @@ const SC=[
  {name:'read',setup:`H.spawn('read');`,frames:600,shots:[300,600]},
  {name:'ledge',setup:`H.spawn('look');H.H.path=[];setTimeout(()=>{},0);`,after:`H.startTask('ledge');`,afterAt:5,frames:3600,shots:[2700,3000,3600]},
  {name:'telescope',setup:`H.spawn('telescope');`,frames:1500,shots:[1100,1500]},
- {name:'sleep-back',setup:`window.__sleepPose='back';H.spawn('sleep');`,frames:500,shots:[480]},
- {name:'sleep-sideL',setup:`window.__sleepPose='sideL';H.spawn('sleep');`,frames:500,shots:[480]},
- {name:'sleep-sideR',setup:`window.__sleepPose='sideR';H.spawn('sleep');`,frames:500,shots:[480]},
- {name:'sleep-bellyL',setup:`window.__sleepPose='bellyL';H.spawn('sleep');`,frames:500,shots:[480]},
+ {name:'sleep-back',setup:`window.__sleepPose='back';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0],[-.5,.5,.9,'LeftFoot']]},
+ {name:'sleep-sideL',setup:`window.__sleepPose='sideL';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0],[-.5,.5,.9,'LeftFoot']]},
+ {name:'sleep-sideR',setup:`window.__sleepPose='sideR';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0]]},
+ {name:'sleep-bellyL',setup:`window.__sleepPose='bellyL';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0],[-.5,.5,.9,'LeftFoot']]},
  {name:'getup',setup:`window.__sleepPose='back';H.spawn('sleep');setTimeout(()=>{},0);`,after:`H.startTask('look');`,afterAt:240,frames:900,shots:[300,400,500,600,700]},
- {name:'liedown',setup:`H.spawn('window');`,after:`H.startTask('sleep');`,afterAt:30,frames:1500,shots:[900,1050,1200,1350,1500]},
+ {name:'liedown',setup:`H.spawn('window');`,after:`H.startTask('sleep');`,afterAt:30,frames:1700,shots:[1000,1100,1200,1300,1700],view:[[0,.3,2.6]]},
  {name:'fix_board',setup:`H.spawn('fix_board');`,frames:1500,shots:[1100,1500]},
  {name:'clear_roof',setup:`H.spawn('clear_roof');`,frames:1500,shots:[1100,1500]},
  {name:'pond',setup:`H.spawn('fetchwater');`,frames:3000,shots:[]},
@@ -64,12 +64,12 @@ const summ=rows=>{const S={};const keys=['headHips','headChest','ankL','ankR','p
  return S;};
 // diagnostic shot: own camera at the hero, every mesh between the camera and the body hidden for the frame (walls, beams, leaves)
 async function shot(p,file,view){for(const [k,v] of (view||[[.6,.25,2.3],[2.3,.25,2.3]]).entries()){
- await p.evaluate(([yo,pitch,dist])=>{const T=__dbg.THREE,HH=__dbg.HH,B=HH.bones;const c=B.Hips.getWorldPosition(new T.Vector3());c.y+=.05;const yaw=HH.root.rotation.y+yo;
+ await p.evaluate(([yo,pitch,dist,bn])=>{const T=__dbg.THREE,HH=__dbg.HH,B=HH.bones;const c=B[bn||'Hips'].getWorldPosition(new T.Vector3());if(!bn)c.y+=.05;const yaw=HH.root.rotation.y+yo;
   const cam=__qaCamera;cam.position.set(c.x+Math.sin(yaw)*Math.cos(pitch)*dist,c.y+Math.sin(pitch)*dist,c.z+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(c);cam.fov=40;cam.updateProjectionMatrix();cam.updateMatrixWorld();
-  const sc=HH.root.parent;let hero=new Set();HH.root.traverse(o=>hero.add(o));const hid=[];const rc=new T.Raycaster();const ms=[];sc.traverseVisible(o=>{if(o.isMesh&&!o.isSprite&&!hero.has(o)&&!o.isInstancedMesh)ms.push(o);});
+  const sc=HH.root.parent;let hero=new Set();HH.root.traverse(o=>hero.add(o));const hid=[];const rc=new T.Raycaster();const ms=[];sc.traverseVisible(o=>{if(o.isMesh&&!o.isSprite&&!hero.has(o))ms.push(o);});
   for(const t of ['Hips','Head','LeftFoot','RightFoot','LeftHand','RightHand','LeftLeg','RightLeg']){const q=B[t].getWorldPosition(new T.Vector3());const d=q.clone().sub(cam.position);const L=d.length();rc.set(cam.position,d.normalize());rc.far=L-.12;
-   for(let it=0;it<12;it++){const h=rc.intersectObjects(ms.filter(o=>o.visible),false).find(h=>h.object.isMesh&&h.object.visible&&!hero.has(h.object)&&!/bed|quilt|cover|mattress|chair|pillow/i.test(h.object.name));if(!h)break;h.object.visible=false;hid.push(h.object);}}
-  if(window.__camera&&window.__camera.dof)window.__camera.dof(false);__noRender(false);__qaComposer.render();__noRender(true);for(const o of hid)o.visible=true;},v);
+   for(let it=0;it<12;it++){const h=rc.intersectObjects(ms.filter(o=>o.visible),false).find(h=>h.object.isMesh&&h.object.visible&&!hero.has(h.object)&&!(()=>{for(let q=h.object;q;q=q.parent)if(/bed|quilt|cover|mattress|chair|pillow/i.test(q.name||''))return true;return false;})());if(!h)break;h.object.visible=false;hid.push(h.object);}}
+  const amb=new T.AmbientLight(0xffffff,__qaCamera&&window.__PRlight||1.2);sc.add(amb);if(window.__camera&&window.__camera.dof)window.__camera.dof(false);__noRender(false);__qaComposer.render();__noRender(true);sc.remove(amb);for(const o of hid)o.visible=true;},v);
  await p.locator('canvas').first().screenshot({path:file+'_'+k+'.png'});}}
 (async()=>{const res={};
  for(const sc of SC){if(ONLY&&!ONLY.split(',').includes(sc.name))continue;const t0=Date.now();

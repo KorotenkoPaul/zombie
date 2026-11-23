@@ -992,7 +992,7 @@ export function buildProps(ctx) {
   const kbar = place('kbarrel', barrel(.78), -4.02, KT, 3.33);
   { const tp = new THREE.Group(); for (let i = -1; i <= 1; i++) W(tp, .2, .03, .6, i * .205, .015, 0, { mat: M.woodLight, r: .008, grain: 2 }); for (const x of [-.14, .14]) W(tp, .5, .025, .05, 0, -.0125, x, { mat: M.woodDark, r: .006, grain: 0 }); tp.rotation.y = .12;
     tp.position.set(0, .785, 0); kbar.add(tp); bake(tp); }
-  const kst = place('kstool', stool(), -3.6, KT, 3.3, { seat: true }); out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 };
+  const kst = place('kstool', stool(), -3.53, KT, 3.3, { seat: true }); out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 };
   place('kbucket', bucket(.34), -3.55, KT, 3.28);
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
@@ -1057,7 +1057,7 @@ export function buildProps(ctx) {
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
 
   // ---------- deck and landings ----------
-  place('telescope', telescope(), 3.5, DK, 1.3, { ry: -.6 + Math.PI });
+  place('telescope', telescope(), 3.5, DK, 1.3, { ry: -.6 + Math.PI }).position.y += .018; /* feet on the boards, not in them */
   place('dbasket', basket(), 1.4, DK, .95);
   place('lbarrel', barrel(.75), -2.6, LL, 1.4);
   place('lbucket', bucket(.34), -1.9, LL, 1.8);
@@ -1251,7 +1251,7 @@ export function buildProps(ctx) {
     for (const p of puffs) { if (p.age >= p.life) { p.s.visible = false; continue; } p.age += dt; const t = p.age / p.life; p.s.position.addScaledVector(p.v, dt); p.v.x += Math.sin(tAcc * 2 + p.life * 9) * .02 * dt; p.s.scale.setScalar(.04 + t * .22); p.s.material.opacity = .32 * Math.sin(Math.PI * Math.min(1, t * 1.3)) * (1 - t); }
   }
   // ---- the quilt sinks where someone lies on it: Character calls __props.bedPress(worldHipPos) / bedPress(null) ----
-  const quiltMesh = (() => { let q = null; bunk.traverse(o => { if (o.isMesh && o.material === M.quilt) q = o; }); return q; })();
+  const quiltMesh = (() => { let q = null; bunk.traverse(o => { if (o.isMesh && o.material === M.quilt && (!q || o.position.y < q.position.y)) q = o; }); return q; })(); // the LOWER bunk's quilt (he sleeps there; the last match was the upper one, so the cover never rose over him)
   const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null, nBase = quiltMesh ? quiltMesh.geometry.attributes.normal.array.slice() : null;
   const press = { at: null, k: 0, shown: -1, cover: false };
   // bedPress(worldHip): a hollow where he sits or lies ON the quilt. bedCover(worldHip): he lies UNDER it: the quilt rises over a
@@ -1274,6 +1274,7 @@ export function buildProps(ctx) {
     const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
     const list = []; for (const bn of sk.bones) { const nm = bn.name.replace(/^.*[:_]/, ''); const d = COVER_B.find(([re]) => re.test(nm)); if (d) list.push({ b: bn, r: d[1], s: d[2] }); } return (coverBones = list.length >= 6 ? list : null); }
+  out._quiltDbg = () => ({ mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V();
   function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const dx = x - q.x, dz = z - q.z, d2 = (dx * dx + dz * dz) / (q.s * q.s); if (d2 > 4) continue; const h = q.y + q.r - y0; if (h <= 0) continue; acc += Math.pow(h * Math.exp(-d2), 4); } return Math.pow(acc, .25); }
   function pressQuilt(dt) {

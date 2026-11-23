@@ -153,6 +153,8 @@ export function createAudio(ctx) {
   const RAW = {}, B = {}, USED = {}, PENDING = {};
   const BUDGET_S = 140;   // seconds of decoded audio kept at most (~27 MB at 48 kHz, ~18 MB at 32 kHz)
   let decodedS = 0;
+  // play now if decoded, else right after decoding (a first use must not be lost)
+  function vplay(k, o) { if (B[k] || k.startsWith('syn_')) return voice(k, o); decode(k).then(b => { if (b && !muted) voice(k, o); }); return null; }
   function getBuf(k) { if (k.charCodeAt(0) === 115 && k.startsWith('syn_')) return synBuf(k); const b = B[k]; if (b) { USED[k] = now; return b; } decode(k); return null; }
   function decode(k) {
     if (B[k]) return Promise.resolve(B[k]); if (PENDING[k]) return PENDING[k]; if (!RAW[k] || !A) return Promise.resolve(null);
@@ -173,7 +175,7 @@ export function createAudio(ctx) {
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) try { f(e); } catch (er) { console.error('audio', k, er); } };
   const MOB = !!ctx.mobile;
   const MAXV = MOB ? 9 : 14;   // phones: fewer simultaneous voices (each is a panner + filter + gain)
-  let pondSig = null, pondFar = false, layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
+  let gameDay = 0, pondSig = null, pondFar = false, layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
   const ind = {};          // individuals per layer
   const mult = {};         // today's / tonight's personality per layer
   const center = { x: 0, z: 0 };
@@ -530,6 +532,10 @@ export function createAudio(ctx) {
   function hookCritters() {
     if (critHooked) return; const G = window.__ground; if (!G || typeof G.on !== 'function') return; critHooked = true;
     G.on('critter', critter);
+    // the bucket dips into the pond: a splash, then the water rushing in (the hero's own bucket_fill gurgle follows)
+    G.on('pond', e => { if (!e || !loaded || muted || (e.act && e.act !== 'splash')) return; const k = clamp01(e.k ?? .7), q = toPos(e.pos);
+      vplay(pick(['slosh_a', 'slosh_b']), { pos: q, gain: .22 + .3 * k, rate: rnd(1.05, 1.2), dur: rnd(.45, .7), offset: 0, fadeIn: .004, fadeOut: .2, ref: 3, roll: 1, rev: .25, prio: true });
+      if (k > .4) vplay('drip_bucket_a', { pos: q, gain: .18 * k, rate: rnd(.6, .75), delay: rnd(.08, .16), fadeIn: .003, fadeOut: .15, ref: 3, roll: 1, rev: .3, prio: true }); });
   }
 
   // ---------- house sway (Wind): ropes strain, lantern hooks squeak, hinges creak, a loose shutter knocks ----------
@@ -657,12 +663,13 @@ export function createAudio(ctx) {
     if (wState === 'storm' && !wHooked && now > thunderNext) { if (thunderNext > 0) thunder(rnd(1200, 4000), rnd(.4, .8)); thunderNext = now + rnd(25, 60); }
     // the hero getting up in the morning wakes the garden
     if (wasAsleep && !asleep && h > 4 && h < 10.5) kick = 1;
-    wasAsleep = asleep; kick = Math.max(0, kick - dt / 70);
+    wasAsleep = asleep; kick = Math.max(0, kick - dt / 180);   // the wake-up chorus fades over ~3 game hours (1 game hour = 1 real minute)
     // a new night / a new day: new personalities, new territories
     if (lastH === null) { populate(Object.keys(L), env); }
     else {
       if (lastH < 18 && h >= 18) populate(NIGHT, env);
       if (lastH < 4 && h >= 4) populate(DAY, env);
+      if (h < lastH - 12) gameDay++;                                    // midnight
     }
     lastH = h;
     { const P = pondGeo(), sig = P.x + P.z * 7 + P.r * 13; if (sig !== pondSig) { if (pondSig !== null) for (const k in L) if (L[k].pondy && ind[k]) for (const I of ind[k]) I.pos = place('pond'); pondSig = sig; } }
@@ -676,7 +683,7 @@ export function createAudio(ctx) {
     bed('rain', ['rain_a'], rain * rk, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
     // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
     bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
-    rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 60);
+    rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 120);   // the ground stays wet ~2 game hours after rain
     if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
     // the oven fire, where the oven is
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
@@ -723,8 +730,8 @@ export function createAudio(ctx) {
     if (window.__feetLog) window.__feetLog.push(['TC', +gnow.toFixed(3), e.tool || e.kind, +(e.dur || 0).toFixed(2)]);
     const q = toPos(e.pos), k = clamp01(e.strength ?? .8), t = e.tool;
     if (t === 'hammer' || e.kind === 'hit') { TS.last = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); if (Math.random() < .5) playAct('nails', q, { gain: .35 * k, delay: .012, internal: 1 }); return; }
-    if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); if (B[c]) voice(c, o); else decode(c); TS.last = now; return; }
-    if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); if (B[c]) voice(c, o); else decode(c); TS.last = now; }
+    if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); vplay(c, o); TS.last = now; return; }
+    if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); vplay(c, o); TS.last = now; }
   }
   function toolSync(hero) {
     if (!toolAuto || !hero || !hero.hold || !ctx.bones || !ctx.bones.RightHand) { TS.tool = null; return; }
@@ -956,7 +963,7 @@ export function createAudio(ctx) {
     const dk = t < duckUntil; if (mDuck && dk !== tickMusic.dk) { tickMusic.dk = dk; holdGain(mDuck.gain, t); mDuck.gain.setTargetAtTime(dk ? .3 : 1, t, dk ? .15 : 1.2); }
     if (!mSession) {
       if (now < mRestUntil) return;
-      const dusk = h >= 18.3 && h < 20.6, day = Math.floor(gnow / 180);
+      const dusk = h >= 18.3 && h < 20.6, day = gameDay;   // one dusk session at most per game day
       let start = !!tickMusic.force; tickMusic.force = false;
       if (dusk && mDuskDay !== day && Math.random() < .7) { start = true; mDuskDay = day; }
       else if (quietMoment(h) && Math.random() < dt / 90) start = true;                // in a quiet moment: about once in a minute and a half
