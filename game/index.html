@@ -908,7 +908,7 @@ if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LI
 PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
 if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+i);
 // [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
-let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
+let sunEvery=MOBILE?2:1,sunF=0,sunN=0;const sunHP=new THREE.Vector3(),sunLD=new THREE.Vector3();window.__sunShadowN=()=>sunN;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
 PERF.addStep('sunShadow',()=>{if(sunEvery>=3)return false;sunEvery=3;},()=>{sunEvery=MOBILE?2:1;},30);
 const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
 // [WIND] shared half-resolution fog pass (game/fogpass.js): Environment's fog sheets, puffs and mist bands plus the
@@ -1025,7 +1025,15 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  else rig.update(dt,{drift:RM?0:Math.sin(T*.07)*.03,shake:(RM||tr<1e-4)?null:V(Math.sin(T*47)*.12*tr,Math.cos(T*41)*.12*tr,0)});
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  if(!camOv)DOF.update(dt,rig.focusDist);
- if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
+ {/* [LIGHTS] phone heat: redraw the sun/moon shadow map only as often as its content changes. Hero walking/climbing or the light
+    direction turning by >0.3 deg -> every sunEvery frames (as before); hero standing at a task -> half as often; at night the moon
+    shadow is soft (radius 6) and faint -> half again (walking: at most every 4th); a thin moon or rain clouds -> standing, every 16th. Desktop unchanged. */
+  let ev=sunEvery;
+  if(MOBILE){const hp=hero.root.position,mv=sunHP.distanceTo(hp)>Math.max(dt,1/60)*.25;sunHP.copy(hp);
+   if(sunLD.dot(sun.position)<sun.position.length()*sunLD.length()*.999986)sunF=ev;           // the light turned: redraw now
+   const moonPow=(.28+.72*moonIll)*(1-rainK*.85);
+   ev=mv?Math.min(4,ev*(nightK>.5?2:1)):Math.min(16,ev*2*(nightK>.5?2:1)*(nightK>.5&&moonPow<.45?2:1));}   /* walking: never under ~8 redraws/s */
+  if(++sunF>=ev){sunF=0;sun.shadow.needsUpdate=true;sunLD.copy(sun.position);sunN++;}}
  hud();if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
