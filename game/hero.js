@@ -1133,7 +1133,12 @@ export function createHero(ctx){
   if(FZ.ft>1.5){p.y=fl;H.floorY=fl;FZ.ft=0;}
   if(FZ.t>6||FZ.lt>2.5){FZ.t=0;FZ.lt=0;console.warn('[hero] freeze guard: recover',H.task,nm,p.toArray().map(v=>+v.toFixed(2)));H.trans=false;H.lad=null;H.stk=null;H.once=null;
    play(IDLE(),{fade:.5});const n=H.task;if(n&&act){if(act.leave&&!act.left){act.left=true;try{act.leave(()=>{endTask(false);});}catch(e){endTask(false);}}else endTask(false);}}}
- function update(dt){if(dt<=0)return;H._dt=dt;freezeGuard(dt);if(SPL.length)splashTick(dt);
+ // ===== HERO-RULES.md section 1: one pose pipeline. Modules register per slot; slots run in this order every frame =====
+ const SLOTS=['clip','motion','support','look','contacts','collide','grab','guard'];const STAGES={};for(const k of SLOTS)STAGES[k]=[];
+ function stage(slot,fn){if(!STAGES[slot])throw new Error('unknown slot '+slot);STAGES[slot].push(fn);return ()=>{const i=STAGES[slot].indexOf(fn);if(i>=0)STAGES[slot].splice(i,1);};}
+ function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt,H);}catch(e){console.error('stage '+slot,e);L.splice(i--,1);}}}
+ function update(dt){if(dt<=0)return;const r=updateCore(dt);if(!window.__heroFast){runSlot('collide',dt);runSlot('grab',dt);runSlot('guard',dt);}return r;}
+ function updateCore(dt){if(dt<=0)return;H._dt=dt;freezeGuard(dt);if(SPL.length)splashTick(dt);
   // ===== BRAIN HOOK: an attached brain (game/brain.js) decides what to do; the body below only carries it out =====
   if(brain){if(H.wait){H.wait.t-=dt;if(H.wait.t<=0){const f=H.wait.then;H.wait=null;f&&f();}}
    const mode=ctx.mode?ctx.mode():null;if(mode&&mode!==H.task&&(mode==='guard'||mode==='repair')&&!H.trans)startTask(mode);
@@ -1186,6 +1191,7 @@ export function createHero(ctx){
    const sq=H.squat||0;const f=floorAt(p.x,p.y+sq,p.z,.32);if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion&&!window.__heroFast){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
+  runSlot('motion',dt);runSlot('support',dt);
   sleepTick(dt);lidTick(dt);coatTick(dt);
   if(window.__heroFast)return;/* off-screen fast-forward (the random start): no IK polish, nobody sees these frames */
   root.updateMatrixWorld(true);
@@ -1199,9 +1205,10 @@ export function createHero(ctx){
     if(need>.002)ik2(U,L,F,a.clone().add(V(0,need,0)),k.clone().sub(hp.clone().add(a).multiplyScalar(.5)),1,true);
     const T=bones[s+'ToeBase'];if(T){const t=T.getWorldPosition(V());const tf=floorAt(t.x,gb+.05,t.z,.1,.15);if(tf!=null&&t.y<tf+.035)turnBone(F,t,t.clone().add(V(0,tf+.035-t.y,0)),1);}}}
   bedHand();bedLegClear(dt);
-  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);
+  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);
   if(H.reach){const R=H.reach;R.t+=dt;const k=R.t/R.d;const w=smooth(0,.4,k)*(1-smooth(.62,1,k));if(w>.01)reachTo(R.side,R.pt,w);H.look=R.pt;H.lookW=.9;}
   if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */
+  runSlot('contacts',dt);
   if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */
   if(act&&act.fr)fridgePost(act);/* GRAB HOOK */
   try{window.__grab&&window.__grab.tick&&window.__grab.tick(dt,H);}catch(e){}/* GRAB HOOK: hands close round what they hold */}
@@ -1240,7 +1247,7 @@ export function createHero(ctx){
  spawn('read');
 
  return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,openEdge,
-  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],get act(){return act;},get gear(){return GEAR;},BFWD,setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
+  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,get act(){return act;},get gear(){return GEAR;},BFWD,setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }
