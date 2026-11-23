@@ -67,7 +67,8 @@ export function createHero(ctx){
  // k: 0 open .. 1 closed (the lid grows down from the brow)
  const EYEM=root.getObjectByName('eyelids');const EYEI=EYEM&&EYEM.morphTargetDictionary?EYEM.morphTargetDictionary.blink:null;
  if(EYEI!=null&&LIDS)for(const p of LIDS)p.parent.remove(p);
- function setLids(k){if(EYEI!=null){EYEM.morphTargetInfluences[EYEI]=k;return;}if(!LIDS)return;for(const p of LIDS){p.visible=k>.02;p.scale.set(1,Math.max(.02,k),1);}}
+ if(EYEM)EYEM.castShadow=false;/* perf: no shadow pass for the lids, and drawn only while they are (partly) closed */
+ function setLids(k){if(EYEI!=null){EYEM.morphTargetInfluences[EYEI]=k;EYEM.visible=k>.01;return;}if(!LIDS)return;for(const p of LIDS){p.visible=k>.02;p.scale.set(1,Math.max(.02,k),1);}}
 
  // ---------- clips ----------
  const rmCurve={},hipsY={};
@@ -1061,11 +1062,14 @@ export function createHero(ctx){
  function bedPress(on){const P=window.__props||P3;if(!P)return;const hp=on?bones.Hips.getWorldPosition(V()):null;// asleep he lies under the quilt (props bedCover: a body-shaped mound)
   try{if(P.bedCover){P.bedCover(hp);if(P.bedPress)P.bedPress(null);}else if(P.bedPress)P.bedPress(hp);}catch(e){}}
  function lieDown(then){const ed=N.bededge;H.face=0;
-  sitDown(ed,()=>{H.trans=true;hold(STAND,0,.7);H.edgeHold={w:0,to:1,d:.8};
+  sitDown(ed,()=>{H.trans=true;hold(STAND,0,.7);H.edgeHold={w:0,to:1,d:.8};undress(true);
    H.wait={t:rnd(.6,1.2),then:()=>{H.edgeHold=null;bedBlend(1,()=>{H.trans=false;H.inBed=true;bedPress(true);H.seated=null;then&&then();});}};});}
+ // the detailed hero has a separate vest and boots: off on the bed edge before lying down, on again when he sits up
+ const VEST=root.getObjectByName('vest'),BOOTS=root.getObjectByName('boots');
+ function undress(off,quiet){if(!VEST&&!BOOTS)return;if(BOOTS)BOOTS.visible=!off;if(VEST)VEST.visible=!off;if(!quiet)AU(off?'unzip':'zip',root.position);}
  function getUp(then){H.trans=true;const ed=N.bededge;
   H.wait={t:rnd(.4,.9),then:()=>{H.inBed=false;bedPress(false);bedBlend(-1,()=>{hold(STAND,0,0);H.seated=ed;H.edgeHold={w:1,to:1,d:.8};
-   H.wait={t:rnd(.5,1.2),then:()=>{if(H.edgeHold){H.edgeHold.to=0;H.edgeHold.d=.5;}standUp(ed,()=>{if(has('hy_stretch')&&Math.random()<.8)overlay('hy_stretch',{fade:.5,speed:1.1});then&&then();});}};});}};}
+   undress(false);H.wait={t:rnd(.9,1.6),then:()=>{if(H.edgeHold){H.edgeHold.to=0;H.edgeHold.d=.5;}standUp(ed,()=>{if(has('hy_stretch')&&Math.random()<.8)overlay('hy_stretch',{fade:.5,speed:1.1});then&&then();});}};});}};}
  function swingTick(dt){const s=H.swing;if(!s)return;if(s.k===0){if(s.hold)hold(s.hold[0],s.hold[1],s.fade);else play(s.clip,{fade:s.fade});H.fit=H.fit||{mode:'hold',base:floorTop(BD),y:s.from.y};H.fit.mode='hold';}
   s.k=Math.min(1,s.k+dt/s.dur);const k=smooth(0,1,s.k);
   root.position.x=lerp(s.from.p.x,s.to.p.x,k);root.position.z=lerp(s.from.p.z,s.to.p.z,k);root.rotation.y=s.from.yaw+wrapA(s.to.yaw-s.from.yaw)*smooth(.1,.9,s.k);H.face=root.rotation.y;H.fit.y=lerp(s.from.y,s.to.y,k);
@@ -1168,7 +1172,7 @@ export function createHero(ctx){
   if(left<=0){H.ov=null;ov.then&&ov.then();return;}
   const tt=Math.min(ov.t,ov.T.dur);for(const k of ov.T.tracks){const v=k.it.evaluate(tt);_ovq.fromArray(v);k.b.quaternion.slerp(_ovq,ov.w*(k.spine&&H.path.length?.6:1));}}
  // ---------- start anywhere: drop him into the middle of any activity (used for a random start, any time of day) ----------
- function resetBody(){H.lad=null;H.path=[];H.stk=null;try{dropGearNow();}catch(e){}root.visible=true;for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
+ function resetBody(){try{undress(false,true);}catch(e){}H.lad=null;H.path=[];H.stk=null;try{dropGearNow();}catch(e){}root.visible=true;for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
   if(bookObj&&bookHome&&bookObj.parent!==bookHome.parent){bookHome.parent.add(bookObj);bookObj.position.copy(bookHome.pos);bookObj.quaternion.copy(bookHome.quat);}
   if(H.inBed)bedPress(false);
   Object.assign(H,{path:[],then:null,wait:null,swing:null,bedB:null,edgeHold:null,lad:null,slide:null,once:null,trans:false,seated:null,inBed:false,fit:null,ground:true,v:0,av:0,look:null,lookW:0,pending:null,linger:0,turnStep:false});
@@ -1177,7 +1181,7 @@ export function createHero(ctx){
   if(task==='read'&&!o.walking){const s=N.chair;root.position.set(s.p.x,s.floor,s.p.z);root.rotation.y=s.face;H.face=s.face;H.seated=s;H.node='chair_app';H.task='read';H.ground=false;
    H.fit={mode:'hold',base:s.floor,y:s.seat+SEAT_CLEAR};play(READ,{fade:0});act=MAKE.read({seated:true});act.name='read';lastAct=['read'];actDur=rnd(25,40);return;}
   if(task==='sleep'&&!o.walking&&N.bedlie){const li=N.bedlie,ed=N.bededge;root.position.set(li.p.x,floorTop(BD),li.p.z);root.rotation.y=0;H.face=0;H.node='bed_app';H.ground=false;H.inBed=true;
-   H.edgeRoot=V(ed.p.x,root.position.y,ed.p.z);H.fit={mode:'hold',base:floorTop(BD),y:li.seat+LIE_CLEAR};play(SLEEPB,{fade:0});H.task='sleep';act=MAKE.sleep({inBed:true});act.name='sleep';
+   H.edgeRoot=V(ed.p.x,root.position.y,ed.p.z);undress(true,true);H.fit={mode:'hold',base:floorTop(BD),y:li.seat+LIE_CLEAR};play(SLEEPB,{fade:0});H.task='sleep';act=MAKE.sleep({inBed:true});act.name='sleep';
    H.wait={t:.05,then:()=>bedPress(true)};return;}
   const A=ACT[task]||{};let at=typeof A.at==='string'?A.at:null;if(task==='window')at=pick(WINDOWS);
   let from=at&&N[at]&&!N[at].seat&&!o.walking?at:null;
