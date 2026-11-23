@@ -131,6 +131,10 @@ module.exports=function install(cfg){
   if(!o.isMesh&&!o.isGroup&&o.type!=='Object3D')return;const nm=propName(o)||[o.name,o.parent&&o.parent.name,o.parent&&o.parent.parent&&o.parent.parent.name].filter(Boolean).join('<')||(o.geometry?o.geometry.type:o.type);
   const wp=new THREE.Vector3();o.getWorldPosition(wp);let kids=0;o.traverse(()=>kids++);MOV.push({o,last:o.matrixWorld.elements.slice(),nm,id:MOV.length,n:0,at:[+wp.x.toFixed(2),+wp.y.toFixed(2),+wp.z.toFixed(2)],kids});});
  const BX=new THREE.Box3(),HP=[V(),V()],FA=V();const MI=new Map(MOV.map(m=>[m.o,m]));
+ // the hatch lid swings or falls on its own after letGo (real gravity): mark those frames so the no-touch check skips them
+ const HT=window.__house&&window.__house.hatch;let hatchFree=false;
+ if(HT&&HT.letGo&&!HT.__qa){HT.__qa=1;const lg=HT.letGo.bind(HT),dr=HT.drive.bind(HT);HT.letGo=o=>{hatchFree=true;return lg(o);};HT.drive=a=>{hatchFree=false;return dr(a);};}
+ const HAND=[heroBones.LeftHand,heroBones.RightHand];
  const QB=['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase'].map(n=>heroBones[n]);
  const out={frames:[],GN,BN,nColl:C.length,skipped,verts:VS.length,rungs:RUNGS,QN:['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase']};
  const vp=V(),q=new THREE.Quaternion();
@@ -154,7 +158,10 @@ module.exports=function install(cfg){
    const moved=new Set();for(const m of MOV){const e=m.o.matrixWorld.elements;let d=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-m.last[k]);if(x>d)d=x;}if(d>2e-4){moved.add(m.o);for(let k=0;k<16;k++)m.last[k]=e[k];}}
    for(const o of moved){if(o.parent&&moved.has(o.parent))continue;const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
     BX.setFromObject(o);if(BX.isEmpty())continue;const dh=Math.min(BX.distanceToPoint(HP[0]),BX.distanceToPoint(HP[1]));pr.push([m.id,+(dh*100).toFixed(1)]);}
-   if(pr.length)r.mv=pr;}
+   if(pr.length)r.mv=pr;if(hatchFree)r.hfree=1;
+   // held tools: anything hung under a hand bone (not a bone); distance from that palm to the tool's mesh
+   const gr=[];HAND.forEach((hb,k)=>{for(const ch of hb.children){if(ch.isBone||!ch.visible||ch.isLight)continue;BX.setFromObject(ch);if(BX.isEmpty()||BX.getSize(vp).length()>1.5)continue;gr.push([propName(ch)||ch.name||(ch.children[0]&&ch.children[0].name)||'tool',k,+(BX.distanceToPoint(HP[k])*100).toFixed(1)]);}});
+   if(gr.length)r.grip=gr;}
   out.frames.push(r);}
 
  window.__A={sample,out,movNames:()=>MOV.map(m=>[m.nm,m.n,m.at,m.kids]),C,depth,query,floorUnder,collNames:()=>C.map(s=>s.name)};

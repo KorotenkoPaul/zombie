@@ -33,3 +33,12 @@ Suggested fix: make `solid` test the trunk only (e.g. distance to the axis < `TR
 ## Pick cost (2026-11-23, perf round)
 - Zoom pick skips meshes under `forest*` / `litter*` and gives meshes with 1500+ triangles a three-mesh-bvh tree (CDN 0.7.8, dynamic import, built one mesh per frame after load; edited geometry falls back to the plain raycast). Phone profile: pick 14.4 -> 1.5 ms, first pick of a pinch 23 -> 4.6 ms. Anchors are identical to the plain raycast (tests/camera/profile.js compares both in the same frame: max diff 0).
 - The composer depth textures created by createDOF are also read by fogpass.js (soft fog edges on phones), so they stay even when DOF is off.
+
+## Classic camera (Pavel, 2026-11-23 22:00) - DEFAULT
+Pavel asked for the camera as it was before the free camera: zoom only toward the hero, less freedom. camera.js `CLASSIC`
+(default; the free camera stays behind `?cam=free`): one finger turns the view (yaw ±0.75, pitch 0.02..0.6), pinch / wheel
+zoom 0.32..1 of the home distance (closest ≈10.7 m on an iPhone portrait screen, hero ≈1/4 of the screen height), focus
+slides from the whole house (0,7.4,2.4) to the hero as you zoom in (lerp dt*2.5, as the original), no pan, no pick,
+no double tap, no inertia, ◎ zooms in on the hero, ⌂ back to the whole house. Safety kept: trunk / wall / limb guards,
+ground lift, no auto-movement except the breathing drift, iOS double pinch fix. BVH library is not loaded in classic.
+- 22:16 Pavel: zoom out up to 1.2x the home distance (ZMAX); start and ⌂ stay at 1x.

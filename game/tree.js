@@ -403,14 +403,14 @@ export function buildTree(THREE, o) {
   // A few leaf cards are rendered once into a small atlas (two sub-clumps, lit top/front, with the odd autumn-yellow
   // leaf), and each clump gets a handful of camera-facing quads with it: far less overlap than hundreds of cards, the
   // same full silhouette. Quads turn to the camera in the vertex shader, so they never show as flat planes edge-on.
-  if (MOB(o) && o.renderer && o.leafImpostors !== false) {
+  if (MOB(o) && o.renderer && o.leafImpostors !== false) { // (2026-11-23 the first try baked off-atlas at the phone's pixel ratio: no foliage)
     try {
       const R2 = o.renderer, S = 256, rt = new THREE.WebGLRenderTarget(S * 2, S, { depthBuffer: true });
       rt.texture.generateMipmaps = true; rt.texture.minFilter = THREE.LinearMipmapLinearFilter; rt.texture.colorSpace = leafT.colorSpace;
       const bs = new THREE.Scene(), bm = new THREE.MeshBasicMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide }), NB = 90;
       const bq = new THREE.PlaneGeometry(1, 1), cam = new THREE.OrthographicCamera(-1.25, 1.25, 1.25, -1.25, 0.1, 20); cam.position.set(0, 0, 8); cam.lookAt(0, 0, 0);
       const prev = R2.getRenderTarget(), cc = R2.getClearColor(new THREE.Color()), ca = R2.getClearAlpha(), vp = new THREE.Vector4(); R2.getViewport(vp);
-      R2.setRenderTarget(rt); R2.setClearColor(0x000000, 0); R2.clear();
+      const ac = R2.autoClear; R2.autoClear = false; /* each render would clear the other half */ R2.setRenderTarget(rt); R2.setClearColor(0x000000, 0); R2.clear();
       for (let v = 0; v < 2; v++) {
         const bim = new THREE.InstancedMesh(bq, bm, NB); bs.clear(); bs.add(bim);
         for (let k = 0; k < NB; k++) {
@@ -424,9 +424,14 @@ export function buildTree(THREE, o) {
           if (rnd(0, 1) < 0.08) col.setRGB(1.45 * sh, 1.2 * sh, 0.45 * sh);
           bim.setColorAt(k, col);
         }
-        R2.setViewport(v * S, 0, S, S); R2.render(bs, cam); bim.dispose();
+        // the target's own viewport (setViewport would scale by the device pixel ratio and miss the atlas on phones)
+        rt.viewport.set(v * S, 0, S, S); R2.setRenderTarget(rt); R2.render(bs, cam); bim.dispose();
       }
-      R2.setRenderTarget(prev); R2.setViewport(vp); R2.setClearColor(cc, ca); bm.dispose(); bq.dispose();
+      // safety: if the bake came out empty (any GPU surprise), keep the leaf cards
+      { const px = new Uint8Array(S * 2 * S * 4); R2.readRenderTargetPixels(rt, 0, 0, S * 2, S, px); let on = [0, 0];
+        for (let i = 3; i < px.length; i += 4 * 7) if (px[i] > 128) on[((i >> 2) % (S * 2)) < S ? 0 : 1]++;
+        if (on[0] < 1500 || on[1] < 1500) { rt.viewport.set(0, 0, S * 2, S); R2.setRenderTarget(prev); R2.setClearColor(cc, ca); R2.autoClear = ac; throw new Error('empty bake ' + on); } }
+      rt.viewport.set(0, 0, S * 2, S); R2.setRenderTarget(prev); R2.autoClear = ac; R2.setClearColor(cc, ca); bm.dispose(); bq.dispose();
       const imat = new THREE.MeshLambertMaterial({ map: rt.texture, alphaTest: 0.5, side: THREE.DoubleSide });
       imat.onBeforeCompile = sh => {
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aVar;varying float vDep;')
