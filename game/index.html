@@ -484,7 +484,8 @@ const rig=createCameraRig({camera,dom:cv,scene,
  onUser:()=>{ac();startAmb();if(over)location.reload();},
  onFollow:on=>{$('bF').classList.toggle('on',on);},
  onTap:(x,y)=>{const z=pickZombie(x,y);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}});
-rig.nearFade(scene);rig.nearFade(TREE.group,.9,()=>true);
+// whatever sits between the camera and the focus dithers away (leaves up to 2.2 m, bark/walls/props up to 1.2 m, scaled by zoom): the free camera never shows the inside of a board
+{const solidMat=mt=>mt.isMeshStandardMaterial||mt.isMeshLambertMaterial||mt.isMeshPhongMaterial;const nf=()=>{rig.nearFade(scene,2.2,undefined,.7);rig.nearFade(TREE.group,1.2,()=>true,.45);rig.nearFade(scene,1.2,solidMat,.45,.25);};nf();setTimeout(nf,8000);}
 $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
