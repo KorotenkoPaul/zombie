@@ -143,6 +143,7 @@ function makeMaterials(renderer) {
 }
 
 // ---------------- merge static meshes per material (keeps draw calls low) ----------------
+const std2 = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: .85 });
 function bake(group) {
   group.updateMatrixWorld(true); const inv = group.matrixWorld.clone().invert(); const by = new Map(); const kill = [];
   group.traverse(o => { if (!o.isMesh || o.userData.live) return; let p = o.parent; while (p && p !== group) { if (p.userData.live) return; p = p.parent; } let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); if (!by.has(o.material)) by.set(o.material, []); by.get(o.material).push(g); kill.push(o); });
@@ -333,6 +334,9 @@ function sinkCounter() {
   const bx = (sx0 + sx1) / 2, bw = sx1 - sx0, bd = D - .1, bz = .04;
   add(g, rb(bw, .025, bd, .01), M.ceramic, bx, H - .2, bz); for (const s of [-1, 1]) add(g, rb(.03, .2, bd, .012), M.ceramic, bx + s * (bw / 2 - .015), H - .1, bz); add(g, rb(bw, .2, .03, .012), M.ceramic, bx, H - .1, bz - bd / 2 + .015); add(g, rb(bw + .02, .24, .045, .018, 3), M.ceramic, bx, H - .12, bz + bd / 2);
   add(g, new THREE.CylinderGeometry(.022, .022, .004, 16), M.steel, bx, H - .185, bz);
+  // two washed plates leaning in the basin and a cup upside down beside them
+  for (const [dz, a] of [[-.06, .35], [.0, .42]]) add(g, lathe([[0, 0], [.07, 0], [.1, .012], [.104, .016], [.06, .006], [0, .006]], 24), M.ceramic, bx - .05, H - .2 + .1 * Math.cos(a) + .005, bz + dz, 0, 0, Math.PI / 2 - a);
+  add(g, lathe([[0, 0], [.035, 0], [.04, .07], [.036, .07], [.031, .004], [0, .004]], 16), M.glazeBlue, bx + .1, H - .187 + .07, bz + .05, Math.PI, 0, 0);
   // faucet
   const fz = -D / 2 + .07; add(g, new THREE.CylinderGeometry(.022, .026, .03, 14), M.chrome, bx, H + .015, fz);
   add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(0, 0, 0), V(0, .2, 0), V(0, .27, .05), V(0, .25, .13), V(0, .2, .15)]), 24, .012, 10), M.chrome, bx, H + .02, fz);
@@ -402,6 +406,8 @@ function workbench() {
   { const t = can(.13, .045, M.cans[1]); t.position.set(.62, H, -.2); g.add(t); for (let i = 0; i < 4; i++) { const sd = screwdriver([M.gripRed, M.gripYellow, M.gripBlue, M.gripRed][i], .17); sd.position.set(.62 + Math.cos(i * 1.6) * .02, H + .05, -.2 + Math.sin(i * 1.6) * .02); sd.rotation.set(rr(-.2, .2), 0, rr(-.25, .25)); g.add(sd); } }
   { const b = new THREE.Group(); b.position.set(.35, H, -.18); g.add(b); W(b, .16, .05, .1, 0, .025, 0, { mat: M.woodDark, r: .006 }); for (let i = 0; i < 10; i++) add(b, new THREE.CylinderGeometry(.002, .002, .05, 5), M.steel, rr(-.06, .06), .05, rr(-.035, .035), rr(-.6, .6), 0, Math.PI / 2 + rr(-.3, .3)); }
   { const p = new THREE.Group(); p.position.set(-.5, H, -.15); p.rotation.y = .4; g.add(p); W(p, .22, .05, .06, 0, .025, 0, { mat: M.woodRed, r: .012 }); add(p, rb(.12, .04, .05, .015), M.iron, -.01, .065, 0); add(p, new THREE.SphereGeometry(.02, 10, 8), M.woodRed, .07, .07, 0); }
+  // curled shavings from the plane
+  { const sm = std2(0xE6B87A); for (let i = 0; i < 9; i++) { const s = add(g, new THREE.TorusGeometry(rr(.012, .02), rr(.002, .004), 4, 10, rr(3, 5.5)), sm, -.38 + rr(-.08, .1), H + .012, -.1 + rr(-.08, .1), Math.PI / 2 + rr(-.4, .4), rr(0, 6), 0); s.scale.z = rr(1.5, 2.5); } }
   // more bench clutter like the photo: offcut blocks, tape measure, a carpenter's pencil, a C-clamp at the front edge
   for (const [x, z, w, h, a] of [[.22, .16, .2, .05, .3], [.3, .2, .12, .04, -.2], [.26, .17, .09, .09, .5]]) W(g, w, h, .07, x, H + h / 2 + (h > .06 ? .0 : 0), z, { mat: M.woodLight, ry: a, r: .006 });
   { const t = new THREE.Group(); t.position.set(.72, H, .16); t.rotation.y = -.4; g.add(t); add(t, rb(.07, .07, .035, .012), M.gripYellow, 0, .018, 0, Math.PI / 2); add(t, new THREE.CylinderGeometry(.012, .012, .036, 12), M.iron, 0, .036, 0); add(t, rb(.12, .002, .018, .0008), M.gripYellow, .09, .002, .0); }
@@ -459,6 +465,10 @@ function workshopShelves(w = .95) { const g = new THREE.Group(); const levels = 
   [[-.3, M.cans[2]], [-.18, M.cans[3]], [.05, M.cans[1]]].forEach(([x, m]) => { const c = can(rr(.08, .12), rr(.035, .045), m); c.position.set(x, .438, .12); g.add(c); });
   { const j = jar(.1, .05, M.jarGlass); j.position.set(.28, .438, .12); g.add(j); }
   W(g, .22, .1, .16, -.25, .018 + .05, .12, { mat: M.woodRed }); { const j = jar(.09, .04, M.glazeBlue); j.position.set(.05, .018, .12); g.add(j); } { const c = can(.13, .05, M.cans[3]); c.position.set(.25, .018, .12); g.add(c); }
+  // denser like the photo: books on the middle shelf, more jars on top, a jar and a tin below
+  { let x = .08; for (let k = 0; k < 3; k++) { const bw = rr(.03, .04), bh = rr(.16, .2); const b = closedBook(bw, bh, .15, M.covers[(k + 3) % M.covers.length]); b.position.set(x, .438, .11); g.add(b); x += bw + .004; } }
+  for (const [x, h, r] of [[-.08, .09, .035], [.08, .12, .04]]) { const jj = jar(h, r, M.jarGlass); jj.position.set(x, .858, .1); g.add(jj); }
+  { const jj = jar(.1, .035, M.glazeCream); jj.position.set(-.42, .018, .12); g.add(jj); const c = can(.07, .05, M.cans[0]); c.position.set(.4, .018, .1); g.add(c); }
   return bake(g); }
 
 function sideBench() {
@@ -603,7 +613,7 @@ export function buildProps(ctx) {
     add(g, new THREE.CylinderGeometry(.01, .16, .1, 16), M.iron, xo, top + .12, z); for (const s of [-1, 1]) add(g, rb(.012, .08, .012, .003), M.iron, xo + s * .045, top + .04, z);
     bake(g); g.traverse(o => { if (o.isMesh) o.castShadow = false; }); scene.add(g); out.chimneyTop = V(xo, top, z); }
   shiftRooms();
-  // ---------- light sources for lights.js: world positions + the emissive materials to switch ----------
+  // ---------- light sources (computed before the static merge below, from the real positions) for lights.js: world positions + the emissive materials to switch ----------
   // each: { pos: Vector3 (world), obj, mats: [materials whose emissive/opacity show the source is on] }
   { const wp = (o, x = 0, y = 0, z = 0) => { o.updateMatrixWorld(true); return o.localToWorld(V(x, y, z)); };
     const st = placed.stove, kl = placed.klamp, wl = placed.wlamp;
@@ -615,6 +625,17 @@ export function buildProps(ctx) {
     };
     out.materials = { fire: M.fire, ovenGlass: M.ovenGlass, flame: out.oven.flameMat, lampGlass: M.glass, domeInner: wl.userData.inner, candleFlame: candleObj.userData.flame };
   }
+  // ---------- merge every static prop into one mesh per material (and shadow flag) for the whole house ----------
+  // kept separate: interactive or raycast objects (chair, bunk bed, stove with its door, lamps that lights.js
+  // finds by position, tools, the open book, the candle flame). The emptied groups stay in place with their boxes.
+  { const KEEP = new Set(['chair', 'bunkbed', 'stove', 'klamp', 'wlamp']);
+    const roots = []; for (let i = nScene0; i < scene.children.length; i++) { const o = scene.children[i]; if (KEEP.has(o.name) || o.userData.live || o.userData.book || Object.values(out.tools).includes(o)) continue; roots.push(o); }
+    const by = new Map(); const kill = [];
+    for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
+      let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
+      const key = o.material.uuid + (o.castShadow ? 's' : 'n'); if (!by.has(key)) by.set(key, { mat: o.material, cast: o.castShadow, gs: [] }); by.get(key).gs.push(g); kill.push(o); }); }
+    for (const o of kill) o.removeFromParent();
+    const sg = new THREE.Group(); sg.name = 'propsStatic'; for (const { mat, cast, gs } of by.values()) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = cast; m.receiveShadow = true; sg.add(m); gs.forEach(x => x.dispose()); } scene.add(sg); out.staticGroup = sg; }
   out.surfaces.bed = bunk.userData.info.levels.map(l => ({ top: bunk.userData.floorY + l.top, x0: bunk.position.x + l.x0, x1: bunk.position.x + l.x1, z0: bunk.position.z + l.z0, z1: bunk.position.z + l.z1, headDir: '+x' }));
   return out;
 }
