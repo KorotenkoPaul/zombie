@@ -68,3 +68,9 @@
 - Pond geometry: `window.__ground.pond` = {x, z, r} or {center|pos: Vector3, radius|r} (read every 0.1 s; if it appears or moves, the pond creatures re-seat). Until Ground adds it: a spot ~20 m back-left.
 - Layers (all reuse existing clips, no new generation): frogs (around the pond edge, now also at dusk 18:50-20:35), `lap` (slosh clips pitched down, density follows the wind), `fish` (deep plop: drip clip at half speed, rare, mostly by day), `dragonfly` (fly clip sped up, little flights with a moving source, summer/autumn days).
 - Cost: lap/fish/dragonfly are not played at all while the camera is > 45 m from the pond.
+
+## Round 11: weather
+- `weatherState()` reads `window.__weather.state()` (string or `{state}`): clear | calm | drizzle | rain | storm | mist. Until Wind ships it, the state is derived: rain level picks drizzle/rain/storm (storm also needs wind > .65), 4:48–8:30 with little wind is mist, 17:30–21:30 with little wind is calm.
+- Drizzle: rain bed ×.55 and slightly higher pitch. Storm: ×1.35, lower pitch; gusts follow the wind level.
+- Thunder is procedural (`thunder(dist, strength)`, also `__audio.thunder()` for testing): it arrives dist/343 s after the flash (max 12 s), a close strike (<1 km) has a crack, and a far one is a low rolling rumble of 4–9 s. It hooks `__weather.on('lightning', {pos|dist, strength})`; without those events a storm rumbles far away every 25–60 s.
+- Mist: forest bus −30 % and low-passed to 4.5 kHz, songbirds ×.55. Calm evenings: only strong gusts make a sound.

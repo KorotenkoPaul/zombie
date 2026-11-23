@@ -144,6 +144,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   if(s0>=0)eps.push({f0:F[s0].f,f1:F[F.length-1].f,h0:F[s0].hour,h1:F[F.length-1].hour,dur:+((F.length-s0)*lim.dt).toFixed(1),open:true});tempo.sleep=eps;
   for(let k=1;k<eps.length;k++){const gap=(eps[k].f0-eps[k-1].f1)*lim.dt;const night=h=>h>=21||h<5.5;if(night(eps[k-1].h1)&&night(eps[k].h0)&&gap<120)add('sleep-turnover',F.findIndex(f=>f.f===eps[k-1].f1),{bone:'root',value:+gap.toFixed(1),unit:'s out of bed in the night before lying down again',limit:0,what:'gets up in the night and goes back to bed'});}}
  // ---- merge repeated flags of the same kind (same type+bone within 0.5 s) keeping the worst ----
+ // the tour forces a task (the game may place him at once): ignore the 0.5 s around each forced switch
+ {const cut=new Uint8Array(F.length);for(let i=1;i<F.length;i++)if(F[i].tag!==F[i-1].tag&&/^tour/.test(F[i].tag||''))for(let k=Math.max(0,i-5);k<Math.min(F.length,i+30);k++)cut[k]=1;
+  for(let j=iss.length-1;j>=0;j--)if(cut[iss[j].i]&&iss[j].type!=='turn-back'&&iss[j].type!=='short-stay')iss.splice(j,1);}
  iss.sort((a,b)=>a.i-b.i);const merged=[];const last={};
  for(const q of iss){const k=q.type+'|'+q.bone+'|'+(q.into||'').replace(/#\d+.*/,'')+'|'+(q.what||'');const m=last[k];
   if(m&&q.i-m.i1<=30){m.i1=q.i;m.count++;if(q.value>m.value&&q.type!=='detour'){Object.assign(m,{...q,i1:q.i,count:m.count,first:m.first});}}else{const n={...q,i1:q.i,count:1,first:q.f};merged.push(n);last[k]=n;}}
