@@ -42,6 +42,12 @@
 - `__props.materials`: `fire` (ember bed, emissive), `ovenGlass` (emissive), `flame` (additive flame cones, opacity), `lampGlass` (lantern panes, shared by all lantern housings), `domeInner` (workshop dome lining, emissive 0 = off), `candleFlame` (opacity 0 = unlit).
 - The bulbs and PointLights of the hanging/standing lanterns (bedroom, kitchen, landing, deck) are made by `lantern()` in index.html, not here.
 
+## Round 5 APIs
+- `__props.chimneyTop` (Vector3): top opening of the stovepipe, for smoke.js.
+- `__props.bedPress(worldPos | null)`: the quilt sinks in an elongated hollow around the hips (bunk quilts); call with the hips position when the hero lies down, `null` when he gets up. Eases in/out by itself.
+- Kettle steam: automatic while `heat > .3` (from lights.js) and the kettle sits on the stove.
+- `__props.staticGroup`: all static props merged per material. Kept separate: chair, bunkbed, stove, klamp, wlamp, grabbable tools, the book, the candle flame.
+
 ## Known issues / next steps
 - Oven: fire is a flat plane; rack rods look slanted; add a baking tray and flame flicker.
 - Tool wall: hammer/saw partly hidden behind the workshop dome lamp in the default view; consider moving the lamp forward.
