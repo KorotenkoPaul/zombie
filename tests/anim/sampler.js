@@ -8,7 +8,7 @@ module.exports=function install(cfg){
  const solidMat=o=>{const m=Array.isArray(o.material)?o.material[0]:o.material;if(!m)return false;if(m.transparent&&m.opacity<.6)return false;if(m.depthWrite===false||m.blending===THREE.AdditiveBlending)return false;return true;};
  const visible=o=>{while(o){if(!o.visible)return false;o=o.parent;}return true;};
  // ---------- colliders: oriented boxes, cylinders and spheres in world space ----------
- const VOX={n:0,cells:0};const C=[];const m4=new THREE.Matrix4(),mi=new THREE.Matrix4();
+ const VOX={n:0,cells:0},VCACHE=new Map();const C=[];const m4=new THREE.Matrix4(),mi=new THREE.Matrix4();
  function addShape(geo,mw,name,kind){if(!geo.boundingBox)geo.computeBoundingBox();const bb=geo.boundingBox;const t=geo.type,pr=geo.parameters||{};
   const e=mw.elements;const ax=[V(e[0],e[1],e[2]),V(e[4],e[5],e[6]),V(e[8],e[9],e[10])];const sc=ax.map(a=>a.length());if(sc.some(s=>s<1e-6))return;ax.forEach((a,i)=>a.multiplyScalar(1/sc[i]));
   const lc=bb.getCenter(V()),lh=bb.getSize(V()).multiplyScalar(.5);
@@ -23,7 +23,13 @@ module.exports=function install(cfg){
   if(/Plane|Circle|Shape|Ring/.test(t)){skipped[t]=(skipped[t]||0)+1;return;}
   const name=label(o);
   if(o.isInstancedMesh){if(o.count>1500){skipped['inst>1500 '+name]=o.count;return;}
-   for(let i=0;i<o.count;i++){o.getMatrixAt(i,mi);m4.multiplyMatrices(o.matrixWorld,mi);addShape(o.geometry,m4,name+'#'+i,'inst');}return;}
+   // foliage and grass are soft: not colliders
+   if(/grass|leaf|leaves|fern|moss|bush|flower|crown/i.test(name)||t==='IcosahedronGeometry'){skipped['foliage '+name]=(skipped['foliage '+name]||0)+o.count;return;}
+   const boxy=o.geometry.attributes.position.count<=24;if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();const gs=o.geometry.boundingBox.getSize(V());
+   for(let i=0;i<o.count;i++){o.getMatrixAt(i,mi);m4.multiplyMatrices(o.matrixWorld,mi);
+    if(boxy||/Box|Cylinder|Sphere/.test(t)){addShape(o.geometry,m4,name+'#'+i,'inst');continue;}
+    const sw=V().setFromMatrixScale(m4);if(Math.hypot(gs.x*sw.x,gs.y*sw.y,gs.z*sw.z)>(cfg.maxVoxDiag||3.2)){skipped['big inst '+name]=(skipped['big inst '+name]||0)+1;continue;}
+    voxShape(o,name+'#'+i,m4.clone());}return;}
   if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();const s=o.geometry.boundingBox.getSize(V());const sw=V().setFromMatrixScale(o.matrixWorld);const diag=Math.hypot(s.x*sw.x,s.y*sw.y,s.z*sw.z);
   // only primitive-like meshes: boxes/cylinders/spheres, or other meshes small enough that their box is a fair hull
   if(/Box|Cylinder|Sphere/.test(t)){addShape(o.geometry,o.matrixWorld,name,'mesh');return;}
@@ -34,9 +40,10 @@ module.exports=function install(cfg){
  // entering/leaving counted by the triangle normal (works for overlapping closed parts), then a chamfer distance
  // transform gives the depth (cm) of any inside voxel.
 
- function voxShape(o,name){const g=o.geometry;const P=g.attributes.position;const I=g.index?g.index.array:null;const nt=I?I.length/3:P.count/3;if(nt<4)return;
+
+ function voxShape(o,name,MW){o.updateMatrixWorld();const mw=MW||o.matrixWorld;const g=o.geometry;const P=g.attributes.position;const I=g.index?g.index.array:null;const nt=I?I.length/3:P.count/3;if(nt<4)return;
   if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox.clone();const sz=bb.getSize(V());const pad=.02;bb.min.subScalar(pad);bb.max.addScalar(pad);sz.addScalar(2*pad);
-  const sc=V().setFromMatrixScale(o.matrixWorld);const sMin=Math.min(sc.x,sc.y,sc.z);
+  const sc=V().setFromMatrixScale(mw);const cached=VCACHE.get(g.uuid);if(cached){pushVox(cached,mw,sc,bb,sz,name);return;}const sMin=Math.min(sc.x,sc.y,sc.z);
   let cs=Math.max((cfg.vox||.012)/sMin,Math.cbrt(sz.x*sz.y*sz.z/2.5e6));const nx=Math.ceil(sz.x/cs),ny=Math.ceil(sz.y/cs),nz=Math.ceil(sz.z/cs);
   const occ=new Uint8Array(nx*ny*nz);const idx=(i,j,k)=>(k*ny+j)*nx+i;
   // bin triangles over (j,k) rows
@@ -61,9 +68,10 @@ module.exports=function install(cfg){
     for(const [a,b,c,wt] of W){const ii=i-dir*c,jj=j-dir*b,kk2=k-dir*a;// neighbours already visited in this pass (z-major order)
      if(ii<0||jj<0||kk2<0||ii>=nx||jj>=ny||kk2>=nz){m=Math.min(m,wt);continue;}const v=D[idx(ii,jj,kk2)]+wt;if(v<m)m=v;}
     for(const [a,b,c,wt] of [[0,0,1,10],[0,1,0,10]]){}D[q]=m;}}
-  o.updateMatrixWorld();const inv=o.matrixWorld.clone().invert();
-  const c=bb.getCenter(V()).applyMatrix4(o.matrixWorld);const e=o.matrixWorld.elements;const ax=[V(e[0],e[1],e[2]).normalize(),V(e[4],e[5],e[6]).normalize(),V(e[8],e[9],e[10]).normalize()];
-  C.push({c,ax,h:[sz.x*sc.x/2,sz.y*sc.y/2,sz.z*sc.z/2],shape:'vox',inv,bmin:bb.min.clone(),cs,nx,ny,nz,D,sMin,name,kind:'vox'});VOX.n++;VOX.cells+=D.length;}
+  const data={cs,nx,ny,nz,D};VCACHE.set(g.uuid,data);pushVox(data,mw,sc,bb,sz,name);VOX.cells+=D.length;}
+ function pushVox(d,mw,sc,bb,sz,name){const inv=mw.clone().invert();const sMin=Math.min(sc.x,sc.y,sc.z);
+  const c=bb.getCenter(V()).applyMatrix4(mw);const e=mw.elements;const ax=[V(e[0],e[1],e[2]).normalize(),V(e[4],e[5],e[6]).normalize(),V(e[8],e[9],e[10]).normalize()];
+  C.push({c,ax,h:[sz.x*sc.x/2,sz.y*sc.y/2,sz.z*sc.z/2],shape:'vox',inv,bmin:bb.min.clone(),cs:d.cs,nx:d.nx,ny:d.ny,nz:d.nz,D:d.D,sMin,name,kind:'vox'});VOX.n++;}
  // ---------- spatial hash ----------
  const CS=.25,G=new Map();const key=(i,j,k)=>i+','+j+','+k;
  C.forEach((s,idx)=>{let mn=V(1e9,1e9,1e9),mx=V(-1e9,-1e9,-1e9);for(const sx of [-1,1])for(const sy of [-1,1])for(const sz of [-1,1]){const p=s.c.clone().addScaledVector(s.ax[0],sx*s.h[0]).addScaledVector(s.ax[1],sy*s.h[1]).addScaledVector(s.ax[2],sz*s.h[2]);mn.min(p);mx.max(p);}
