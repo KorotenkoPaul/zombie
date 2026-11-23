@@ -156,9 +156,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     let lights = [];
     if (!MOBILE) { const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l); lights = [{ l, I: 1.6, sway: .012 }]; }
     add('candle', 'bedroom', 'candle', cPos, { lights, opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
-      // lit for reading; after reading it keeps burning a while so the hero can blow it out himself
-      // (Brain/Character: lights.set('candle', false) at lights.pos('candle')); nobody comes -> it goes out on its own
-      autoFn: c => (c.task === 'read' || c.candleT > 0) && c.lamps > .25 });
+      // lit when he reads in the dark; only the hero puts it out (lights.set('candle', false) at lights.pos('candle'))
+      autoFn: () => false });
   }
 
   // ---------- outside: lantern by the ladder landing (the deck lantern was removed: it read as a lantern on the bedroom roof) ----------
@@ -247,12 +246,37 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const n = V(0, 0, 1).applyQuaternion(w.g.quaternion); n.y = 0; n.normalize();
     const out = p.clone().sub(ROOMS[w.room].c); out.y = 0; if (out.dot(n) < 0) n.negate();
     const hp = p.clone().addScaledVector(n, .12);
-    w.n = n; w.room0 = ROOMS[w.room].c;
+    w.n = n; w.room0 = ROOMS[w.room].c; w.glowAt = p.clone().addScaledVector(n, .5);
     if (ENV && ENV.addHalo) { const h = Object.assign(new THREE.Object3D(), { intensity: 0 }); h.position.copy(hp); scene.add(h); ENV.addHalo(h, 1.25); glows.push({ room: w.room, halo: h, I: 2.6 }); }
     const back = Math.abs(n.z) > .7;
     if (back && !MOBILE) { const l = new THREE.PointLight(0xFFA850, 0, 3.4, 1.6); l.position.copy(p).addScaledVector(n, .45); scene.add(l); glows.push({ room: w.room, l, I: 2.4, spill: true }); }
   }
   const warm = {};
+
+  // ---------- lit windows warm the leaves and branches right next to them (photo) ----------
+  // No lights: the oak's bark and leaf shaders (tree.js) get two small uniform arrays, one warm point per window,
+  // and add a soft emissive glow that fades out within ~1.8 m. Chained onto Tree's own onBeforeCompile.
+  const WG_N = 6, wgP = { value: Array.from({ length: WG_N }, () => new THREE.Vector4(0, -99, 0, 0)) }, wgC = { value: Array.from({ length: WG_N }, () => new THREE.Vector3()) };
+  const wgWins = windows.filter(w => w.glowAt).slice(0, WG_N);
+  wgWins.forEach((w, i) => wgP.value[i].set(w.glowAt.x, w.glowAt.y, w.glowAt.z, 2.6));
+  function treeGlow(mat) {
+    if (!mat || mat.userData.winGlow) return; mat.userData.winGlow = true;
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (sh, r) => {
+      if (prev) prev.call(mat, sh, r);
+      sh.uniforms.wgP = wgP; sh.uniforms.wgC = wgC;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWGp;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\n{vec4 q=vec4(transformed,1.);\n#ifdef USE_INSTANCING\nq=instanceMatrix*q;\n#endif\nvWGp=(modelMatrix*q).xyz;}');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWGp;uniform vec4 wgP[${WG_N}];uniform vec3 wgC[${WG_N}];`)
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+{vec3 wg=vec3(0.);for(int i=0;i<${WG_N};i++){float d=distance(vWGp,wgP[i].xyz)/max(wgP[i].w,.001);float k=clamp(1.-d,0.,1.);wg+=wgC[i]*k*k;}
+ totalEmissiveRadiance+=wg*diffuseColor.rgb;}`);
+    };
+    const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
+    mat.customProgramCacheKey = () => key() + '|winglow';
+    mat.needsUpdate = true;
+  }
+  if (TREE && wgWins.length) { if (TREE.bark) treeGlow(TREE.bark.material); if (TREE.leaves) treeGlow(TREE.leaves.material); }
 
   // ---------- daytime: sunbeams through the windows, with warm dust drifting in them ----------
   // A soft additive prism from each window pane, along the real sun direction (the scene's shadow-casting
@@ -362,14 +386,12 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     t += dt; frame++;
     const cooking = task === 'cook' && state === 'work';
     cookT = cooking ? 40 : Math.max(0, cookT - dt);     // the fire is fed while cooking and burns a while after
-    candleT = task === 'read' ? 90 : Math.max(0, candleT - dt);
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT, candleT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
-      // once it is properly light, a lamp left burning goes out on its own after a while (the oil runs low,
-      // nobody needs it): it hands itself back to the day/night logic, which says off in daylight
-      if (s.manual === true && s.kind !== 'fire' && dayK > .7) { s.dayOn = (s.dayOn || 0) + dt; if (s.dayOn > 45) { s.manual = null; s.dayOn = 0; } }
-      else s.dayOn = 0;
+      // Pavel: a lamp or candle never goes out by itself. If the hero forgot it, it keeps burning until he puts it out.
+      // The candle lights when he sits down to read in the dark and then stays lit (manual) until set('candle', false).
+      if (s.name === 'candle' && s.manual === null && ctx.task === 'read' && ctx.state === 'work' && ctx.lamps > .25) s.manual = true;
       const want = s.manual !== null ? s.manual : !!s.autoFn(ctx);
       setOn(s, want);
       const K = KINDS[s.kind];
@@ -394,6 +416,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       const share = s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
+    wgWins.forEach((w, i) => { const v = Math.min(1, warm[w.room] || 0) * (1 - dayK) * 1.6; wgC.value[i].set(1.0 * v, .58 * v, .26 * v); });
     for (const g of glows) { const v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
     updateBeams(dayK, T); updateWisps(dt); updateHand(dt);
     for (const w of windows) {

@@ -25,14 +25,18 @@ Lamp housings near a source get castShadow=false and their own pane material (gl
 - Perf: the workshop's extra bounce light is gone (folded into the room glow); on phones the candle has no light of its own (flame, halo and room warmth stay). Shadow maps are never drawn for a lamp that is off, and while on they are redrawn every 2nd frame (desktop) / 3rd (phone): only the hero moves.
 - `__lights.quality(q)` for a frame-rate governor (perf.js): 2 full; 1 no lantern point shadows, shadows redrawn every 4th frame, no window spill lights; 0 no lamp shadows at all. `degrade()` / `upgrade()` step it. Room look (lights, bounce, halos) is unchanged at every level.
 - Day: soft sunbeams from each window that faces the sun (real direction of the shadow-casting sun light), longer and stronger when the sun is low, with warm dust drifting in them (GPU-only, no per-frame meshing). Morning: kitchen + bedroom side windows; afternoon: workshop side window.
-- A lamp left on by hand in full daylight goes out on its own after ~45 s and returns to auto.
+- (removed in Round 5: lamps never go out by themselves)
 
 - T14 (critic): window panes are dark night glass seen from inside (navy pane + faint sky reflection, sky blue by day), never a warm self-glow; warm window light lives outside (halo + spill). lights.js skips panes that are transparent or have userData.ownGlass (Tree's real glass).
 
-- Candle: lit while reading, then keeps burning up to 90 s so the hero can blow it out himself (Brain: plan a 'switch' to lights.pos('candle') and call lights.set('candle', false)); otherwise it goes out on its own. Putting out a candle or oil lamp leaves a thin curl of smoke.
+- Candle: see Round 5 (no timeout any more).
 
 ## Round 4 (2026-11-23): nothing floats, door spill, hand lantern, phone light budget
 - `hang(pos)`: every lantern lights.js places hangs on an iron chain from whatever is above it (raycast up, ignoring leaves/transparent/shader meshes); with nothing above, an iron bracket comes out of the nearest wall/trunk; with nothing near, a small wooden lamp post stands on the floor below. Bedroom and landing lanterns use it.
 - Door: the hollow has one light inside (reach 3.6) plus a soft SpotLight that throws a warm wedge out of the doorway onto the landing, roots and path. The old separate mouth light is gone.
 - Hand lantern (source 'hand'): `__lights.attachHand(bone, offset?)` shows a small lantern hanging upright from the bone, swinging with the walk; `set('hand', true)` lights it; `detachHand()` hides and puts it out. Character decides when (going down at night).
 - Phone light budget (Optimization): ≤8 point lights. Phones: kitchen and bedroom lanterns get a longer, softer falloff instead of separate bounce lights, no candle light, no window spill lights → 7 point + 2 spot lights (measured). Desktop keeps bounce + spill lights.
+
+## Round 5 (2026-11-23)
+- Pavel: lamps and candles NEVER go out by themselves. If the hero forgot one, it keeps burning until he switches it off. Removed the 45 s daylight burn-out and the candle's 90 s timeout. The candle lights when he sits down to read in the dark (becomes manual) and only `set('candle', false)` puts it out. Outdoor landing lantern and trunk door still follow dusk/dawn (nobody carries them).
+- Window glow on the oak: no lights. lights.js chains onto Tree's bark and leaf onBeforeCompile and adds uniforms wgP[6] (window point + radius 2.6 m) / wgC[6] (warm colour × room warmth × night): a soft emissive warm spot on bark/leaves next to each lit window.
