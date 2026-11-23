@@ -35,3 +35,13 @@ Debug: `__treedress.stats()`.
 ## Next ideas
 - Hanging moss / roots dangling from the big limbs? (not in the photo, only if Pavel wants more life)
 - Ivy higher up between the rooms if Pavel wants more green.
+
+## Round 5 (trunk and roots vs the photo, weather marks)
+- Roots/limbs: the bark mapping's "across" coordinate was dot(p, tangent), constant along every radial line, so the plates were
+  smeared into wood-grain rings across the roots. Now it is the arc length around the trunk (angle * TDR, explicit gradients,
+  one turn = whole tiles at every octave), with bigger plates on roots (TDRS .68). End-on projection runs furrows along B.
+- Foot darkening .9 -> .62 so the base and the roots read at night like the photo (still darker than the trunk).
+- Rain now comes from Wind (`__wind.raining()`); the old `U.wind` scalar is wind strength, which made the bark glossy in strong wind.
+- Soaked bark (`barkU.damp`): soaks in ~25 s of rain, dries over ~4 min; dark runs down the bark that shrink as it dries
+  (furrows, streaks, foot hold water longest). Gloss only while it rains. One extra texture read, only while damp.
+- Frost on root tops: not done, Environment exposes no temperature.

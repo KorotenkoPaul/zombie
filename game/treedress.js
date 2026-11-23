@@ -72,19 +72,29 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 },
+    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
-    D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.08, rain); /* dew is only a faint sheen; really wet only in the rain */ };
+    // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
+    D.update = () => {
+      const now = performance.now() / 1000, dt = Math.min(0.5, Math.max(0, now - (D._lt || now))); D._lt = now;
+      const W = window.__wind, on = W && W.raining ? W.raining() : 0;
+      D._rk = (D._rk || 0) + (on - (D._rk || 0)) * Math.min(1, dt / 6); const rain = D._rk;
+      const night = Math.min(1, ENVR.strength.value / 0.8 || 0);
+      D.barkU.wet.value = Math.max(night * 0.08, rain); /* dew is only a faint sheen; glossy only while it rains */
+      /* soaked bark: soaks up in ~25 s of rain, then dries over ~4 min, last in the furrows, the runs down the bark and the foot */
+      const d = D.barkU.damp; d.value = rain > 0.05 ? Math.min(1, d.value + dt * rain / 25) : Math.max(0, d.value - dt / 240); };
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
 ${MOBILE ? '#define TD_LITE' : ''}
-varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.,tdFade=0.,tdH=.5;
+#define TDRS .68
+#define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -94,22 +104,37 @@ vec3 tdW(vec3 n,vec3 A,vec3 B,vec3 C){vec3 b=pow(abs(vec3(dot(n,B),dot(n,C),dot(
  b=max(b-min(b.x,min(b.y,b.z)),0.);
 #endif
  return b/max(b.x+b.y+b.z,1e-4);}
-vec4 tdS(sampler2D t,vec3 p,vec3 n,vec3 A,vec3 B,vec3 C,float s){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8;
- vec4 r=vec4(0.);if(w.x>0.)r+=texture2D(t,vec2(dot(p,C),a)*s)*w.x;if(w.y>0.)r+=texture2D(t,vec2(dot(p,B),a)*s)*w.y;if(w.z>0.)r+=texture2D(t,vec2(dot(p,B),dot(p,C))*s)*w.z;return r;}
-vec3 tdSN(vec3 p,vec3 n,vec3 A,vec3 B,vec3 C,float s,float k){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8;
+// Each projection reads two coordinates: the "across" one (cc) and the "along" one (a = along A, stretched) or B.
+// The trunk frame uses world z for cc. Roots and limbs radiate from the trunk, so there cc must be the arc length around the
+// trunk (tdU = angle * TDR): dot(p, tangent) is constant along every radial line, which smeared the plates into rings of
+// wood grain across the roots. TDR makes one turn a whole number of tiles at every octave; the gradients are explicit
+// (from the continuous tdUd), so the angle's wrap leaves no mip seam.
+float tdU=0.;vec2 tdUd=vec2(0.);vec3 tdDx=vec3(0.),tdDy=vec3(0.);
+vec4 tdTex(sampler2D t,vec2 uv,vec2 gx,vec2 gy){return textureGrad(t,uv,gx,gy);}
+vec4 tdS(sampler2D t,vec3 p,float m,float cc,vec2 cd,vec3 n,vec3 A,vec3 B,vec3 C,float s){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8,b=dot(p,B);
+ vec3 dx=tdDx*m*s,dy=tdDy*m*s;vec2 ax=vec2(dot(dx,A)*.8,dot(dy,A)*.8),bx=vec2(dot(dx,B),dot(dy,B)),cx=cd*m*s;
+ vec4 r=vec4(0.);if(w.x>0.)r+=tdTex(t,vec2(cc,a)*s,vec2(cx.x,ax.x),vec2(cx.y,ax.y))*w.x;if(w.y>0.)r+=tdTex(t,vec2(b,a)*s,vec2(bx.x,ax.x),vec2(bx.y,ax.y))*w.y;
+ if(w.z>0.)r+=tdTex(t,vec2(cc,b)*s,vec2(cx.x,bx.x),vec2(cx.y,bx.y))*w.z;return r;}
+vec3 tdSN(vec3 p,float m,float cc,vec2 cd,vec3 n,vec3 A,vec3 B,vec3 C,float s,float k){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8,b=dot(p,B);
+ vec3 dx=tdDx*m*s,dy=tdDy*m*s;vec2 ax=vec2(dot(dx,A)*.8,dot(dy,A)*.8),bx=vec2(dot(dx,B),dot(dy,B)),cx=cd*m*s;
  vec3 tx=vec3(0.),ty=vec3(0.),tz=vec3(0.);
- if(w.x>0.)tx=texture2D(tdNrm,vec2(dot(p,C),a)*s).xyz*2.-1.;if(w.y>0.)ty=texture2D(tdNrm,vec2(dot(p,B),a)*s).xyz*2.-1.;if(w.z>0.)tz=texture2D(tdNrm,vec2(dot(p,B),dot(p,C))*s).xyz*2.-1.;
- return ((C*tx.x+A*tx.y)*w.x+(B*ty.x+A*ty.y)*w.y+(B*tz.x+C*tz.y)*w.z)*k;}
-// both mappings, blended between the trunk and the roots / limbs
+ if(w.x>0.)tx=tdTex(tdNrm,vec2(cc,a)*s,vec2(cx.x,ax.x),vec2(cx.y,ax.y)).xyz*2.-1.;if(w.y>0.)ty=tdTex(tdNrm,vec2(b,a)*s,vec2(bx.x,ax.x),vec2(bx.y,ax.y)).xyz*2.-1.;
+ if(w.z>0.)tz=tdTex(tdNrm,vec2(cc,b)*s,vec2(cx.x,bx.x),vec2(cx.y,bx.y)).xyz*2.-1.;
+ return ((C*tx.x+A*tx.y)*w.x+(B*ty.x+A*ty.y)*w.y+(C*tz.x+B*tz.y)*w.z)*k;}
+// p = tdP*m+o. Both mappings, blended between the trunk and the roots / limbs.
 #ifdef TD_LITE
 vec3 tdFA(){return normalize(mix(vec3(0.,1.,0.),tdA,tdLf));}vec3 tdFC(){return normalize(mix(vec3(0.,0.,1.),tdC,tdLf)+vec3(1e-4));}
-vec4 tdTri(sampler2D t,vec3 p,vec3 n,float s){vec3 A=tdFA(),C=tdFC(),B=normalize(cross(C,A));return tdS(t,p,n,A,B,C,s);}
-vec3 tdTriN(vec3 p,vec3 n,float s,float k){vec3 A=tdFA(),C=tdFC(),B=normalize(cross(C,A));return tdSN(p,n,A,B,C,s,k);}
+vec4 tdTri(sampler2D t,float m,vec3 o,vec3 n,float s){vec3 p=tdP*m+o,A=tdFA(),C=tdFC(),B=normalize(cross(C,A));
+ return tdS(t,p,m,mix(p.z,tdU*m+o.z,tdLf),mix(vec2(tdDx.z,tdDy.z),tdUd,tdLf),n,A,B,C,s*mix(1.,TDRS,tdLf));}
+vec3 tdTriN(float m,vec3 o,vec3 n,float s,float k){vec3 p=tdP*m+o,A=tdFA(),C=tdFC(),B=normalize(cross(C,A));
+ return tdSN(p,m,mix(p.z,tdU*m+o.z,tdLf),mix(vec2(tdDx.z,tdDy.z),tdUd,tdLf),n,A,B,C,s*mix(1.,TDRS,tdLf),k);}
 #else
-vec4 tdTri(sampler2D t,vec3 p,vec3 n,float s){vec4 a=vec4(0.),b=vec4(0.);
- if(tdLf<.99)a=tdS(t,p,n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s);if(tdLf>.01)b=tdS(t,p,n,tdA,tdB,tdC,s);return mix(a,b,tdLf);}
-vec3 tdTriN(vec3 p,vec3 n,float s,float k){vec3 a=vec3(0.),b=vec3(0.);
- if(tdLf<.99)a=tdSN(p,n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s,k);if(tdLf>.01)b=tdSN(p,n,tdA,tdB,tdC,s,k);return mix(a,b,tdLf);}
+vec4 tdTri(sampler2D t,float m,vec3 o,vec3 n,float s){vec3 p=tdP*m+o;vec4 a=vec4(0.),b=vec4(0.);
+ if(tdLf<.99)a=tdS(t,p,m,p.z,vec2(tdDx.z,tdDy.z),n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s);
+ if(tdLf>.01)b=tdS(t,p,m,tdU*m+o.z,tdUd,n,tdA,tdB,tdC,s*TDRS);return mix(a,b,tdLf);}
+vec3 tdTriN(float m,vec3 o,vec3 n,float s,float k){vec3 p=tdP*m+o;vec3 a=vec3(0.),b=vec3(0.);
+ if(tdLf<.99)a=tdSN(p,m,p.z,vec2(tdDx.z,tdDy.z),n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s,k);
+ if(tdLf>.01)b=tdSN(p,m,tdU*m+o.z,tdUd,n,tdA,tdB,tdC,s*TDRS,k);return mix(a,b,tdLf);}
 #endif
 uniform float tdCool;` + NOISE)
         .replace('#include <map_fragment>', `#include <map_fragment>
@@ -129,23 +154,24 @@ uniform float tdCool;` + NOISE)
           // ---- bark relief: light worn crust on the ridges, deep dark furrows, fibrous detail up close ----
           { vec2 rv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float r=length(rv); vec3 rad=r>1e-3?vec3(rv.x/r,0.,rv.y/r):vec3(1.,0.,0.);
             // roots and limbs: furrows along them. Near the ground the roots run outwards; higher up the limbs rise a little as they go out.
-            tdA=normalize(rad+vec3(0.,y>3.?.25:0.,0.)); tdC=vec3(-rad.z,0.,rad.x); tdB=normalize(cross(tdC,tdA));
-            tdLf=smoothstep(2.5,3.7,r); }
+            tdA=normalize(rad+vec3(0.,.25*smoothstep(2.5,4.,y),0.)); tdC=vec3(-rad.z,0.,rad.x); tdB=normalize(cross(tdC,tdA));
+            tdLf=smoothstep(2.5,3.7,r);
+            tdDx=dFdx(tdP);tdDy=dFdy(tdP); tdU=atan(rv.y,rv.x)*TDR; tdUd=vec2(rv.x*tdDx.z-rv.y*tdDx.x,rv.x*tdDy.z-rv.y*tdDy.x)/max(r*r,1e-4)*TDR; }
           tdFade=1.-smoothstep(5.,16.,length(cameraPosition-tdP));
           // phones: one macro read and no close-up octave (GPU-bound at night); desktop: anti-tiling second read + micro detail up close
           vec4 hb=vec4(.5,1.,.5,1.);
 #ifdef TD_LITE
-          vec4 ha=tdTri(tdHao,tdP,wn,tdScale);
+          vec4 ha=tdTri(tdHao,1.,vec3(0.),wn,tdScale);
 #else
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
-          vec4 ha=tdTri(tdHao,tdP,wn,tdScale);
-          if(brk>.01)ha=mix(ha,tdTri(tdHao,tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale),brk);
-          if(tdFade>.01)hb=tdTri(tdHao,tdP+7.3,wn,tdScale*3.3);
+          vec4 ha=tdTri(tdHao,1.,vec3(0.),wn,tdScale);
+          if(brk>.01)ha=mix(ha,tdTri(tdHao,15./11.,vec3(3.1,1.7,5.3),wn,tdScale),brk);
+          if(tdFade>.01)hb=tdTri(tdHao,36./11.,vec3(7.3),wn,tdScale);
 #endif
           tdH=ha.r;float cav=ha.g*mix(1.,.6+.4*hb.g,tdFade);
           float rel=tdRelief;
           diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.6,1.,cav),rel);
-          diffuseColor.rgb*=mix(1.,.82+.36*hb.b,tdFade*rel);
+          diffuseColor.rgb*=mix(1.,.82+.36*hb.b,tdFade*rel*(1.-.6*tdLf));
           { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
             // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
             diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
@@ -163,7 +189,7 @@ uniform float tdCool;` + NOISE)
           // damp foot: the bark gets darker, cooler and a little greener towards the ground (photo: the base sinks into the fog)
           float foot=1.-smoothstep(-.3,4.8,y+(big-.5)*1.2);
           float rootTop=smoothstep(.25,.75,wn.y)*smoothstep(1.9,3.2,rd);
-          diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.34,.38,.42),foot*.9*tdFoot*(1.-rootTop*.65));
+          diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.34,.38,.42),foot*.62*tdFoot*(1.-rootTop*.7));
           // contact AO where the roots meet the ground, and under overhangs
           diffuseColor.rgb*=mix(1.,.55,(1.-smoothstep(-.35,.45,y))*tdFoot);
           diffuseColor.rgb*=mix(.72,1.,smoothstep(-.7,.15,wn.y));
@@ -197,18 +223,24 @@ uniform float tdCool;` + NOISE)
 #endif
           tdWM=tdWet*(1.-mm*.8)*(.55+.45*smoothstep(.3,.7,streak));
           diffuseColor.rgb*=1.-tdWM*.3;
+          // soaked bark after the rain: dark streaks running down the trunk and the roots that shrink as it dries
+          // (water stays longest in the furrows, in the runs down the bark and at the damp foot)
+          if(tdDamp>.003){ float run=texture2D(tdHao,vec2((tdP.x+tdP.z*.71)*.42,tdP.y*.045+.31)).g;
+            float hold=run*.62+(1.-tdH)*.28+foot*.3-mm*.25;
+            float dm=smoothstep(1.02-tdDamp*.85,1.2-tdDamp*.85,hold)*smoothstep(0.,.25,tdDamp);
+            diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*diffuseColor.rgb*2.2,dm*.45); diffuseColor.rgb*=1.-dm*.32; tdDM=dm; }
           tdMM=mm;tdL=lum;
         }`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec3 wn=normalize(tdN);
 #ifdef TD_LITE
-          vec3 dn=tdTriN(tdP,wn,tdScale,3.);
+          vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
 #else
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
-          vec3 dn=tdTriN(tdP,wn,tdScale,3.);
-          if(brk>.01)dn=mix(dn,tdTriN(tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
-          if(tdFade>.01)dn+=tdTriN(tdP+7.3,wn,tdScale*3.3,1.1)*tdFade;
+          vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
+          if(brk>.01)dn=mix(dn,tdTriN(15./11.,vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
+          if(tdFade>.01)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.7*tdLf); // on roots the fine octave read as wood grain
 #endif
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
@@ -733,6 +765,6 @@ uniform float tdCool;` + NOISE)
 
   // phones: small dressing neither casts nor receives shadows (cheaper shaders, nothing in the shadow pass)
   if (MOBILE) D.group.children.forEach(m => { m.castShadow = false; m.receiveShadow = false; });
-  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, caught: D.caughtLeaves, baseShroom: D.baseShroom, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
+  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, caught: D.caughtLeaves, baseShroom: D.baseShroom, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), damp: +D.barkU.damp.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
   return D;
 }
