@@ -793,7 +793,7 @@ function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guar
  setTimeout(()=>{if(hero.task==='guard')HH.play('231',{fade:.2});},1050);return true;}
 // camera input lives in camera.js (free orbit / pinch-to-point / pan / double-tap fly-to / hero follow)
 const isHeroObj=o=>{for(;o;o=o.parent)if(o===hero.root)return true;return false;};
-const rig=createCameraRig({camera,dom:cv,scene,
+const rig=createCameraRig({camera,dom:cv,scene,rooms:()=>ROOMS,
  solid:(x,y,z)=>trunkSolid(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
  isHero:isHeroObj,follow:()=>hero.root.position.clone().add(V(0,1,0)),
  onUser:()=>{ac();startAmb();if(over)location.reload();},
