@@ -157,11 +157,11 @@ export function createTreeDress(C) {
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}');
     };
-    const N = Math.round(150 * MUL), im = new THREE.InstancedMesh(g, mat, N);
+    const NUP = Math.round(150 * MUL), N = NUP + Math.round(170 * MUL), im = new THREE.InstancedMesh(g, mat, N);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
-    for (let k = 0; k < N * 4 && n < N; k++) {
+    for (let k = 0; k < NUP * 4 && n < NUP; k++) {
       const s = (k % 3 === 2 ? limbs : roots)(); if (!s) continue;
       const { p } = s; if (blocked(p.x, p.y, p.z, 0.15) || nearDoor(p.x, p.y, p.z)) continue;
       // grow in small colonies: keep a sample only if the big moss noise is high here (matches the shader patches loosely)
@@ -170,6 +170,40 @@ export function createTreeDress(C) {
       M4.compose(p.clone().addScaledVector(s.n, -sz * 0.15), orient(s.n, rr(0, 6.28)), S.set(sz * rr(1, 1.6), sz * rr(0.28, 0.45), sz * rr(0.8, 1.3)));
       im.setMatrixAt(n, M4);
       const v = rr(0.85, 1.15); col.setRGB(0.05 * v, 0.075 * v * rr(0.95, 1.08), 0.022 * v); im.setColorAt(n, col); n++;
+    }
+    // roofs: moss creeps over the shingles in a few patches, mostly low on the slope near the eaves and against the trunk
+    const roofs = C.roofs; const qi = new THREE.Quaternion(), pi = V(), si = V(), nrm = V();
+    if (roofs && roofs.isInstancedMesh) {
+      const idx = [...Array(roofs.count).keys()];
+      for (let k = 0; k < idx.length && n < NUP + Math.round(110 * MUL); k++) {
+        const i = idx[Math.floor(R() * idx.length)]; roofs.getMatrixAt(i, M4); M4.decompose(pi, qi, si);
+        nrm.set(0, 1, 0).applyQuaternion(qi); if (nrm.y < 0.3) continue;
+        // patchy: a low-frequency mask in world space, denser on the back (shady, -z) half and near the trunk
+        const patch = Math.sin(pi.x * 2.1 + pi.z * 1.3) + Math.sin(pi.z * 2.7 - pi.y * 1.9) + (pi.z < AZ + 1.6 ? 0.5 : -0.4) + (radial(pi.x, pi.z) < 3 ? 0.4 : 0);
+        if (patch < 0.6 || R() < 0.35) continue;
+        const p = pi.clone().addScaledVector(nrm, si.y * 0.5).add(V(rr(-0.08, 0.08), 0, rr(-0.08, 0.08)));
+        const sz = rr(0.07, 0.15);
+        M4.compose(p, orient(nrm, rr(0, 6.28)), S.set(sz * rr(1.2, 1.9), sz * 0.3, sz * rr(1, 1.4))); im.setMatrixAt(n, M4);
+        const v = rr(0.8, 1.2); col.setRGB(0.055 * v, 0.08 * v, 0.025 * v); im.setColorAt(n++, col);
+      }
+    }
+    // plank landings and the deck: moss along the back (north) edges and the board ends, where water stays longest
+    const boardsIM = (C.blockers || [])[0];
+    if (boardsIM && boardsIM.isInstancedMesh) {
+      if (!boardsIM.geometry.boundingBox) boardsIM.geometry.computeBoundingBox(); const gb = boardsIM.geometry.boundingBox;
+      for (let k = 0; k < 4000 && n < N; k++) {
+        const i = Math.floor(R() * boardsIM.count); boardsIM.getMatrixAt(i, M4); M4.decompose(pi, qi, si);
+        nrm.set(0, 1, 0).applyQuaternion(qi); if (nrm.y < 0.9) continue;
+        // a point on the top face, pushed to one of the board's ends
+        const lx = (R() < 0.5 ? -1 : 1) * rr(0.3, 0.48), lz = rr(-0.45, 0.45);
+        const p = V(gb.min.x + (lx + 0.5) * (gb.max.x - gb.min.x), gb.max.y, gb.min.z + (lz + 0.5) * (gb.max.z - gb.min.z)).applyMatrix4(M4);
+        if (inBox(avoid, p.x, p.y, p.z, 0.25)) continue; // not inside the rooms
+        if (p.z > AZ + 2.2 && R() < 0.8) continue; // mostly the back / trunk side
+        if (Math.sin(p.x * 3.1 + p.z * 2.3) + Math.sin(p.z * 1.7 - p.x * 2.2) < 0.2) continue;
+        const sz = rr(0.05, 0.11);
+        M4.compose(p, orient(UP, rr(0, 6.28)), S.set(sz * rr(1.2, 2.2), sz * 0.25, sz * rr(0.8, 1.2))); im.setMatrixAt(n, M4);
+        const v = rr(0.8, 1.2); col.setRGB(0.05 * v, 0.075 * v, 0.024 * v); im.setColorAt(n++, col);
+      }
     }
     im.count = n; im.receiveShadow = true; D.group.add(im); D.moss = im;
   }
@@ -224,7 +258,7 @@ export function createTreeDress(C) {
   // ================= 4. ivy climbing the lower trunk =================
   {
     // trunk surface radius by (angle, height), read from the oak mesh
-    const NA = 144, NY = 90, HY = 0.1, RS = new Float32Array(NA * NY);
+    const NA = 144, NY = 140, HY = 0.1, RS = new Float32Array(NA * NY);
     for (let i = 0; i < T.length; i += 3) {
       const x = T[i], y = T[i + 1], z = T[i + 2]; if (y < 0 || y >= NY * HY) continue; const d = radial(x, z); if (d > 4.8) continue;
       const ai = Math.floor(((Math.atan2(z - AZ, x - AX) + Math.PI) / (Math.PI * 2)) * NA) % NA, yi = Math.floor(y / HY);
@@ -248,7 +282,7 @@ export function createTreeDress(C) {
     })();
     const leafG = new THREE.PlaneGeometry(1, 1); leafG.translate(0, 0.5, 0);
     const imat = swayMat(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex }), U, 0.05, FLUTTER);
-    const NLV = Math.round(520 * MUL), leaves = new THREE.InstancedMesh(leafG, imat, NLV); let nl = 0;
+    const NLV = Math.round(900 * MUL), leaves = new THREE.InstancedMesh(leafG, imat, NLV); let nl = 0;
     const stems = [];
     // a few vines: mostly on the sides and the back, one wandering across the front-left under the kitchen landing
     const vines = [[2.05, 4.6], [2.6, 3.4], [3.3, 5.6], [-2.4, 4.2], [-1.2, 3.0], [-0.35, 2.4], [0.25, 4.8]];
@@ -280,6 +314,47 @@ export function createTreeDress(C) {
       D.vineLen = (D.vineLen || []).concat([[+a.toFixed(2), pts.length ? +pts[0].y.toFixed(1) : -1, +y.toFixed(1)]]);
     };
     for (const [a0, top] of vines) { const a = a0 + rr(-0.1, 0.1); let y = 0.1; while (y < 1.6 && surf(a, y) > 3.0) y += 0.1; climb(a, y, top * (MOBILE ? 0.9 : 1), 0); }
+    // higher up: short vines on the trunk between the rooms (they start in a free gap and stop at the next floor or wall)
+    {
+      let made = 0;
+      for (let k = 0; k < 400 && made < (MOBILE ? 5 : 9); k++) {
+        const a = k % 3 ? rr(0.5, 2.5) : rr(-Math.PI, Math.PI), y = rr(3.8, 11.5), r = surf(a, y); // mostly the front half, where it shows between the rooms
+        if (r > 2.6) continue; const p = V(AX + Math.cos(a) * r, y, AZ + Math.sin(a) * r);
+        if (blocked(p.x, p.y, p.z, 0.2) || blocked(p.x, p.y + 0.6, p.z, 0.1)) continue;
+        const before = stems.length; climb(a, y, y + rr(1.2, 2.6), 0); if (stems.length > before && stems[stems.length - 1].pts.length > 6) { made++; (D.upperAt = D.upperAt || []).push([+p.x.toFixed(1), +p.y.toFixed(1), +p.z.toFixed(1), stems[stems.length - 1].pts.length]); }
+      }
+      D.upperVines = made;
+    }
+    // hanging ivy: strands dropping from the beams under the landings and the deck
+    const beamsIM = (C.blockers || [])[1];
+    if (beamsIM && beamsIM.isInstancedMesh) {
+      if (!beamsIM.geometry.boundingBox) beamsIM.geometry.computeBoundingBox();
+      const cand = []; const bb = new THREE.Box3();
+      for (let i = 0; i < beamsIM.count; i++) {
+        beamsIM.getMatrixAt(i, M4); bb.copy(beamsIM.geometry.boundingBox).applyMatrix4(M4);
+        const dx = bb.max.x - bb.min.x, dz = bb.max.z - bb.min.z, dy = bb.max.y - bb.min.y;
+        if (dy > 0.45 || Math.max(dx, dz) < 0.7 || bb.max.y < 1.5) continue;
+        const c = bb.getCenter(V()); if (inBox(avoid, c.x, c.y, c.z, 0.1)) continue;
+        cand.push(bb.clone());
+      }
+      let strands = 0;
+      for (let k = 0; k < 120 && strands < (MOBILE ? 10 : 18) && cand.length; k++) {
+        const b = cand[Math.floor(R() * cand.length)];
+        const x = rr(b.min.x, b.max.x), z = rr(b.min.z, b.max.z), y0 = b.min.y - 0.01;
+        if (z < AZ && R() < 0.6) continue;
+        const L = rr(0.3, 1.1), pts = []; let ok = true;
+        const bend = V(rr(-0.15, 0.15), 0, rr(-0.05, 0.2));
+        for (let t = 0; t <= 1.0001; t += 0.1) { const p = V(x, y0 - t * L, z).addScaledVector(bend, t * t); if (t > 0.15 && blocked(p.x, p.y, p.z, 0.02)) { ok = false; break; } pts.push(p); }
+        if (!ok || pts.length < 4) continue;
+        stems.push({ pts, r: 0.007 }); strands++; (D.strandAt = D.strandAt || []).push([+x.toFixed(1), +y0.toFixed(1), +z.toFixed(1)]);
+        for (let j = 1; j < pts.length; j++) {
+          const p = pts[j]; const out = V(rr(-1, 1), rr(-0.2, 0.3), rr(0.2, 1)).normalize();
+          if (R() < 0.8) addLeaf(p.clone().add(V(rr(-0.05, 0.05), 0, rr(-0.05, 0.05))), out, rr(0.09, 0.15) * (1.1 - j / pts.length * 0.4));
+          if (R() < 0.4) addLeaf(p.clone().add(V(rr(-0.06, 0.06), 0, rr(-0.06, 0.06))), out.clone().negate().setY(0.2).normalize(), rr(0.08, 0.13));
+        }
+      }
+      D.strands = strands;
+    }
     leaves.count = nl; leaves.receiveShadow = true; leaves.castShadow = !MOBILE; D.group.add(leaves); D.ivy = leaves;
     const sgs = stems.map(s => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), Math.max(4, s.pts.length * 2), s.r, 4, false));
     if (sgs.length) { const sm = new THREE.Mesh(mergeGeometries(sgs), new THREE.MeshStandardMaterial({ color: 0x3a3424, roughness: 0.9 })); sm.receiveShadow = true; D.group.add(sm); D.ivyStems = sm; }
@@ -329,8 +404,8 @@ export function createTreeDress(C) {
       `{vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float k=clamp(position.y/.5,0.,1.);k*=k;transformed.x+=sin(uT*2.+ip.x*1.7+ip.z)*SW*k*uW;transformed.z+=sin(uT*1.5+ip.z*1.9)*SW*.6*k*uW;}`);
     tmat.onBeforeCompile = (prev => (s, r) => { prev(s, r); s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=mix(.35,1.15,tdH);'); s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying float tdH;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntdH=clamp(position.y/.45,0.,1.);'); s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying float tdH;'); })(tmat.onBeforeCompile);
 
-    const NF = Math.round(26 * MUL), NTF = Math.round(110 * MUL);
-    const ferns = new THREE.InstancedMesh(fernG, fmat, NF), tufts = new THREE.InstancedMesh(tuftG, tmat, NTF);
+    const NF = Math.round(26 * MUL), NFK = Math.round(14 * MUL), NF2 = NF + NFK, NTF = Math.round(110 * MUL);
+    const ferns = new THREE.InstancedMesh(fernG, fmat, NF2), tufts = new THREE.InstancedMesh(tuftG, tmat, NTF);
     let nf = 0, nt = 0;
     // crevices: where two roots meet the trunk foot (ground just next to wood, close to the axis)
     const crev = [];
@@ -351,6 +426,20 @@ export function createTreeDress(C) {
       const q = orient(top.n.clone().lerp(UP, 0.6).normalize(), rr(0, 6.28));
       if (k % 2 && nf < NF && R() < 0.5) { M4.compose(p.clone().addScaledVector(top.n, -0.02), q, S.setScalar(rr(0.3, 0.5))); ferns.setMatrixAt(nf, M4); ferns.setColorAt(nf++, col.setRGB(0.95, 0.95, 0.95)); }
       else if (nt < NTF) { M4.compose(p.clone().addScaledVector(top.n, -0.02), q, S.setScalar(rr(0.45, 0.85))); tufts.setMatrixAt(nt, M4); const v = rr(0.8, 1.1); tufts.setColorAt(nt++, col.setRGB(0.1 * v, 0.17 * v, 0.06 * v)); }
+    }
+    // forks of the big branches: where a limb leaves the trunk or splits, a little soil gathers and ferns sprout
+    // column grid: for each 0.25 m xz cell, the wood heights (tri centres) above 4 m, to tell a fork from a plain limb top
+    const CG = new Map(); for (const q of tri) { if (q.c.y < 4.5) continue; const key = Math.round(q.c.x * 4) + ',' + Math.round(q.c.z * 4); let l = CG.get(key); if (!l) CG.set(key, l = []); l.push(q.c.y); }
+    const colTop = (x, z, y) => { const l = CG.get(Math.round(x * 4) + ',' + Math.round(z * 4)); if (!l) return -99; let best = -99; for (const h of l) if (h > y + 0.15 && h < y + 0.8) best = Math.max(best, h); return best; };
+    const highForks = sampler(q => q.n.y > 0.75 && q.c.y > 5 && q.c.y < 16 && radial(q.c.x, q.c.z) > 1.2 && radial(q.c.x, q.c.z) < 6.5);
+    for (let k = 0; k < 600 && nf < NF2; k++) {
+      const s0 = highForks(); if (!s0) break; const p = s0.p;
+      if (blocked(p.x, p.y + 0.3, p.z, 0.3)) continue;
+      // a fork: wood rises again close by on at least one side (the surface curves up around this spot)
+      let walls = 0; for (const [dx, dz] of [[0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45]]) { const hs = colTop(p.x + dx, p.z + dz, p.y); if (hs > p.y + 0.15 && hs < p.y + 0.8) walls++; }
+      if (walls < 2) continue;
+      M4.compose(p.clone().addScaledVector(s0.n, -0.03), orient(s0.n.clone().lerp(UP, 0.7).normalize(), rr(0, 6.28)), S.setScalar(rr(0.3, 0.5))); ferns.setMatrixAt(nf, M4); ferns.setColorAt(nf++, col.setRGB(0.95, 0.95, 0.95));
+      D.forkFerns = (D.forkFerns || 0) + 1;
     }
     ferns.count = nf; tufts.count = nt; ferns.receiveShadow = tufts.receiveShadow = true; D.group.add(ferns, tufts); D.ferns = ferns; D.tufts = tufts;
   }
@@ -403,6 +492,6 @@ export function createTreeDress(C) {
   // keep the bark's wet/rim uniforms in step with the time of day and the rain, without touching the main loop
   { const prev = TREE.bark.onBeforeRender; TREE.bark.onBeforeRender = function (...a) { D.update(); if (prev) prev.apply(this, a); }; }
 
-  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, vines: D.vineLen, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
+  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
   return D;
 }

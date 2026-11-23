@@ -77,7 +77,7 @@ export function createCameraRig(o) {
     goal.dist = nd; flyK = 0; atHome = false;
     if (followOn && point && k > 0) { const f = follow(); if (!f || f.distanceTo(point) > 1.5) stopFollow(); }
   }
-  function stopFollow() { if (followOn) { followOn = false; o.onFollow && o.onFollow(false); } }
+  function stopFollow() { fHave = false; if (followOn) { followOn = false; o.onFollow && o.onFollow(false); } }
   function pan(dx, dy) {               // screen pixels
     const h = dom.clientHeight || innerHeight;
     const s = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * goal.dist / h;
@@ -325,6 +325,30 @@ export function createCameraRig(o) {
   }
   function stopFollowSilent() { if (followOn) stopFollow(); }
 
+  // ---------- soft hero follow ----------
+  // The hero's position is smoothed into a velocity; the focus leads a little in the direction he walks and
+  // trails softly, slower vertically, so ladders and room changes glide instead of jerking.
+  const fPrev = new THREE.Vector3(), fVel = new THREE.Vector3(), fLead = new THREE.Vector3(), fWant = new THREE.Vector3();
+  let fHave = false;
+  function followStep(dt) {
+    const f = follow(); if (!f) return;
+    if (!fHave || dt <= 0) { fPrev.copy(f); fVel.set(0, 0, 0); fHave = true; }
+    else {
+      tmp.copy(f).sub(fPrev).divideScalar(Math.max(dt, 1e-3));
+      if (tmp.length() > 8) tmp.set(0, 0, 0);            // teleport / snap: no lead spike
+      fVel.lerp(tmp, damp(3, dt));
+      fPrev.copy(f);
+    }
+    fLead.set(fVel.x * 0.55, fVel.y * 0.25, fVel.z * 0.55);
+    const L = Math.hypot(fLead.x, fLead.z); if (L > 0.9) { fLead.x *= 0.9 / L; fLead.z *= 0.9 / L; }
+    fLead.y = clamp(fLead.y, -0.4, 0.4);
+    fWant.copy(f).add(fLead);
+    const kh = damp(2.6, dt), kv = damp(1.6, dt);
+    goal.target.x += (fWant.x - goal.target.x) * kh;
+    goal.target.z += (fWant.z - goal.target.z) * kh;
+    goal.target.y += (fWant.y - goal.target.y) * kv;
+  }
+
   // ---------- per frame ----------
   const camPos = new THREE.Vector3(), dir = new THREE.Vector3(), p = new THREE.Vector3();
   function inside(t, out) {      // nearest point inside the bounds
@@ -343,7 +367,7 @@ export function createCameraRig(o) {
   }
   function update(dt, extra = {}) {
     pickAge += dt; idle += dt;
-    if (followOn) { const f = follow(); if (f) goal.target.lerp(f, damp(6, dt)); }
+    if (followOn) followStep(dt);
     stepInertia(dt);
     stepCine(dt);
     for (const U of fadeU) U.u.value = clamp(cur.dist * U.k, U.min, U.max);
@@ -435,7 +459,7 @@ export function createCameraRig(o) {
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;')
             .replace('#include <project_vertex>', '#include <project_vertex>\nvCamDNF=length(mvPosition.xyz);');
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;uniform float ' + name + ';uniform float uNFHole,uNFFocus;uniform vec2 uNFRes;')
-            .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{float nf=smoothstep(' + name + '*0.3,' + name + ',vCamDNF);if(uNFHole>0.01&&vCamDNF<uNFFocus-0.35){vec2 q=(gl_FragCoord.xy-0.5*uNFRes)/uNFRes.y;nf=min(nf,1.0-(1.0-smoothstep(0.18,0.32,length(q)))*uNFHole);}float hd=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))));if(hd>nf)discard;}');
+            .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{float nf=smoothstep(' + name + '*0.12,' + name + ',vCamDNF);nf=nf*nf*(3.0-2.0*nf);if(uNFHole>0.01&&vCamDNF<uNFFocus-0.35){vec2 q=(gl_FragCoord.xy-0.5*uNFRes)/uNFRes.y;nf=min(nf,1.0-(1.0-smoothstep(0.14,0.36,length(q)))*uNFHole);}float hd=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))));if(hd>nf)discard;}');
         };
         mt.customProgramCacheKey = () => key + '|' + name;
         mt.needsUpdate = true;

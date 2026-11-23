@@ -4,7 +4,7 @@
 // tree meshes at load time, so the plants follow whatever trunk/roots tree.js builds.
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
-import { groundH } from './env.js';
+import { groundH as groundH0 } from './env.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 
 function rng(seed){let s=seed>>>0;return ()=>{s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};}
@@ -37,17 +37,18 @@ const smoothIco=d=>{const g=new THREE.IcosahedronGeometry(1,d);g.deleteAttribute
 export function createGround(C){
  const {scene,MOBILE,leafT,groundT,U,obstacles=[]}=C;WIND=C.wind||null;
  const R=rng(777123);const rr=(a,b)=>a+R()*(b-a);
+ let moundAt=()=>0;const groundH=(x,z)=>groundH0(x,z)+moundAt(x,z);
  const G={};
 
  // ================= roots map =================
  // A 0.25 m grid over the clearing. Every bark vertex near the ground marks its cell, then a distance field tells
  // each spot how far it is from the trunk/roots: plants stay out of the wood, grass and moss crowd along its edges,
  // and the ground gets a soft contact shadow under the roots.
- const GS=128,GE=16,CELL=GE*2/GS;const occ=new Uint8Array(GS*GS);const dist=new Float32Array(GS*GS).fill(99);
+ const GS=128,GE=16,CELL=GE*2/GS;const occ=new Uint8Array(GS*GS);const minY=new Float32Array(GS*GS).fill(99);const dist=new Float32Array(GS*GS).fill(99);
  {const v=new THREE.Vector3();
   for(const o of obstacles)o.traverse(m=>{if(!m.isMesh||m.isInstancedMesh||!m.geometry)return;const p=m.geometry.attributes.position;if(!p)return;m.updateWorldMatrix(true,false);
    for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i).applyMatrix4(m.matrixWorld);if(Math.abs(v.x)>=GE||Math.abs(v.z)>=GE)continue;
-    if(v.y>groundH(v.x,v.z)+.9)continue;const gx=Math.floor((v.x+GE)/CELL),gz=Math.floor((v.z+GE)/CELL);occ[gz*GS+gx]=1;}});
+    if(v.y>groundH0(v.x,v.z)+.9)continue;const gx=Math.floor((v.x+GE)/CELL),gz=Math.floor((v.z+GE)/CELL);occ[gz*GS+gx]=1;minY[gz*GS+gx]=Math.min(minY[gz*GS+gx],v.y-groundH0(v.x,v.z));}});
   // vertices are sparse on big roots: close small gaps (one dilate + erode pass would eat thin roots, so only fill holes)
   const o2=occ.slice();for(let z=1;z<GS-1;z++)for(let x=1;x<GS-1;x++){if(occ[z*GS+x])continue;let n=0;for(let dz=-1;dz<=1;dz++)for(let dx=-1;dx<=1;dx++)n+=occ[(z+dz)*GS+x+dx];if(n>=4)o2[z*GS+x]=1;}occ.set(o2);
   // chamfer distance transform (metres)
@@ -59,6 +60,17 @@ export function createGround(C){
  const rootD=(x,z)=>{if(Math.abs(x)>=GE-CELL||Math.abs(z)>=GE-CELL)return 99;const fx=(x+GE)/CELL-.5,fz=(z+GE)/CELL-.5;const ix=Math.max(0,Math.floor(fx)),iz=Math.max(0,Math.floor(fz));const tx=fx-ix,tz=fz-iz;
   const a=dist[iz*GS+ix],b=dist[iz*GS+ix+1],c=dist[(iz+1)*GS+ix],d=dist[(iz+1)*GS+ix+1];return (a*(1-tx)+b*tx)*(1-tz)+(c*(1-tx)+d*tx)*tz-CELL*.5;};
  G.rootD=rootD;
+ // ---- soil mounds: wherever the underside of a root sits above the ground, the earth is heaped up to meet it and
+ // slopes gently away (~20 cm per metre), so no root hangs in the air at any zoom. Only right at the wood (<1 m),
+ // so the paths the hero walks stay flat.
+ {const mh=new Float32Array(GS*GS);for(let i=0;i<GS*GS;i++)if(occ[i]&&minY[i]<99)mh[i]=Math.min(.3,Math.max(0,minY[i]+.04));
+  const dec=CELL*.2,dec2=dec*1.4142;
+  for(let z=1;z<GS-1;z++)for(let x=1;x<GS-1;x++){const i=z*GS+x;mh[i]=Math.max(mh[i],mh[i-1]-dec,mh[i-GS]-dec,mh[i-GS-1]-dec2,mh[i-GS+1]-dec2);}
+  for(let z=GS-2;z>0;z--)for(let x=GS-2;x>0;x--){const i=z*GS+x;mh[i]=Math.max(mh[i],mh[i+1]-dec,mh[i+GS]-dec,mh[i+GS+1]-dec2,mh[i+GS-1]-dec2);}
+  for(let i=0;i<GS*GS;i++)mh[i]*=smooth(1.1,.5,dist[i]);
+  moundAt=(x,z)=>{if(Math.abs(x)>=GE-CELL||Math.abs(z)>=GE-CELL)return 0;const fx=(x+GE)/CELL-.5,fz=(z+GE)/CELL-.5;const ix=Math.max(0,Math.floor(fx)),iz=Math.max(0,Math.floor(fz));const tx=fx-ix,tz=fz-iz;
+   return (mh[iz*GS+ix]*(1-tx)+mh[iz*GS+ix+1]*tx)*(1-tz)+(mh[(iz+1)*GS+ix]*(1-tx)+mh[(iz+1)*GS+ix+1]*tx)*tz;};}
+ G.heightAt=groundH;
  // ---- the hero's trodden path: from the foot of the ground rope ladder (x 0, z 4) out into the clearing ----
  const PATH=[[0,4.3],[.5,5.6],[1.4,7.2],[1.2,9],[.2,10.8],[-.6,12.6],[-.4,14.5]];
  const pathD=(x,z)=>{let best=99;for(let i=0;i<PATH.length-1;i++){const [ax,az]=PATH[i],[bx,bz]=PATH[i+1];const dx=bx-ax,dz=bz-az;const t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz)));best=Math.min(best,Math.hypot(x-ax-dx*t,z-az-dz*t));}
@@ -83,11 +95,15 @@ export function createGround(C){
  // the painted Fal forest floor (ground3.jpg) gives the detail at two scales, plus moss fuzz and root contact shadows.
  {const S=MOBILE?110:150;const g=new THREE.PlaneGeometry(260,260,S,S).rotateX(-Math.PI/2);const p=g.attributes.position;const col=new Float32Array(p.count*3);const c=new THREE.Color();
   const moss=new THREE.Color(0x5E8C55),teal=new THREE.Color(0x3F6B5C),earth=new THREE.Color(0x6E5A47),deep=new THREE.Color(0x36585A);
-  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setY(i,groundH(x,z));const r=Math.hypot(x,z);
-   const n=fbm2(x*.08+11,z*.08+3),m=fbm2(x*.3,z*.3);
-   c.copy(teal).lerp(moss,smooth(.35,.7,n));c.lerp(earth,smooth(5.,2.4,r+(m-.5)*2.5)*.6);c.lerp(deep,smooth(30,70,r)*.6);c.multiplyScalar(.82+m*.3);
+  const colAt=(x,z)=>{const r=Math.hypot(x,z);const n=fbm2(x*.08+11,z*.08+3),m=fbm2(x*.3,z*.3);
+   c.copy(teal).lerp(moss,smooth(.35,.7,n));c.lerp(earth,smooth(5.,2.4,r+(m-.5)*2.5)*.6);c.lerp(deep,smooth(30,70,r)*.6);c.multiplyScalar(.82+m*.3);return c;};
+  // the big mesh is coarse (1.7 m), so in the middle it sits 4 cm low and a fine 25 cm patch carries the real shape
+  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);const inner=Math.max(Math.abs(x),Math.abs(z))<15.6;p.setY(i,groundH0(x,z)-(inner?.04:0));colAt(x,z);
    col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;}
   g.setAttribute('color',new THREE.BufferAttribute(col,3));g.computeVertexNormals();
+  const pg=new THREE.PlaneGeometry(32,32,MOBILE?96:128,MOBILE?96:128).rotateX(-Math.PI/2);{const pp=pg.attributes.position;const pc=new Float32Array(pp.count*3);
+   for(let i=0;i<pp.count;i++){const x=pp.getX(i),z=pp.getZ(i);pp.setY(i,groundH(x,z));colAt(x,z);pc[i*3]=c.r;pc[i*3+1]=c.g;pc[i*3+2]=c.b;}
+   pg.setAttribute('color',new THREE.BufferAttribute(pc,3));pg.computeVertexNormals();}
   const gt=groundT.clone();gt.needsUpdate=true;gt.repeat.set(1,1);gt.wrapS=gt.wrapT=THREE.RepeatWrapping;
   const mat=new THREE.MeshStandardMaterial({map:gt,vertexColors:true,roughness:1,metalness:0});
   mat.onBeforeCompile=s=>{s.uniforms.uAO={value:aoTex};s.uniforms.uGE={value:GE};
@@ -109,13 +125,14 @@ export function createGround(C){
       pathK=ao.b*smoothstep(.35,.75,ao.b+(fbm(vGW*2.3)-.5)*.8)*(.55+.25*fbm(vGW*.8));pathC=vec3(.25,.2,.15)*(.65+.6*fbm(vGW*7.))*(.7+.6*lum)*(1.-ao.r*.4);}`);};
   {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');};}
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);G.ground=ground;
+  const patch=new THREE.Mesh(pg,mat);patch.receiveShadow=true;scene.add(patch);G.groundPatch=patch;
   let lastT=performance.now();
   ground.onBeforeRender=(r,sc,cam)=>{const now=performance.now(),dt=Math.min(.1,(now-lastT)/1000);lastT=now;
    // wet: dusk and night dew, morning dew, rain; puddles fill in rain and dry slowly after it
    const want=Math.max(Math.min(1,glowU.value/1.8),ST.mornK*.9,ST.rainK);wetU.value+=(want-wetU.value)*Math.min(1,dt*1.5);
    ST.puddle=ST.rainK>.05?Math.min(1,ST.puddle+dt*ST.rainK/25):Math.max(0,ST.puddle-dt/90);if(G.updatePuddles)G.updatePuddles(cam);
    const h=window.__dbg&&window.__dbg.hero&&window.__dbg.hero.root;if(h){const p=h.position;heroU.value.set(p.x,p.y,p.z);}
-   if(G.updateGrass)G.updateGrass(cam);};
+   if(G.updateGrass)G.updateGrass(cam);if(G.updateFootprints)G.updateFootprints();};
   new THREE.TextureLoader().load(new URL('ground3.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=8;mat.map=t;mat.needsUpdate=true;});}
 
  // scatter helper: tries spots until `ok` accepts; returns [x,z] or null
@@ -154,10 +171,10 @@ export function createGround(C){
    s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vDew;').replace('#include <begin_vertex>','#include <begin_vertex>\nvDew=vec3(uv,instanceMatrix[3][0]*3.1+instanceMatrix[3][2]*7.7);');
    s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vDew;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\n{vec2 g=vec2(vDew.x*3.,vDew.y*48.)+vDew.z;vec2 q=floor(g),f=fract(g)-.5;f.y*=.35;float h=fract(sin(dot(q,vec2(12.9898,78.233)))*43758.5453);totalEmissiveRadiance+=vec3(.75,.85,1.)*step(.96,h)*smoothstep(.22,.05,length(f))*step(.15,vDew.y)*smoothstep(.3,.8,uWet)*.9;}');s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vColor.rgb*vColor.rgb*.06;');};}
  // variants: tall spiky (the photo's tufts), short dense, and a cheap far version
- const tuftA=tuftGeo(MOBILE?9:13,MOBILE?3:6,11,.2,.46,.1),tuftB=tuftGeo(MOBILE?10:15,MOBILE?3:4,23,.08,.2,.16),tuftF=tuftGeo(7,2,37,.22,.5,.14);
- // Grass is cut into 10 m chunks, one InstancedMesh per chunk and detail level, so the camera's frustum culls what is
+ const tuftA=tuftGeo(MOBILE?7:13,MOBILE?3:6,11,.2,.46,.1),tuftB=tuftGeo(MOBILE?8:15,MOBILE?2:4,23,.08,.2,.16),tuftF=tuftGeo(7,2,37,.22,.5,.14);
+ // Grass is cut into 14 m chunks (24 m far out), one InstancedMesh per chunk and detail level, so the camera's frustum culls what is
  // off screen, and chunks far from the camera swap to a cheaper tuft (fewer blades and segments) or switch off.
- const CH=10,grassChunks=[];
+ const CH=14,grassChunks=[];
  function scatterGrass(geo,lo,N,gen,size,name,far){const pts=[];let guard=0;
   while(pts.length<N&&guard++<N*40){// clumps: a seed spot, a few tufts around it
    const s=gen();const cnt=2+Math.floor(R()*6);
@@ -167,14 +184,14 @@ export function createGround(C){
     const dens=Math.max(smooth(1.4,.15,d)*.9,smooth(.38,.62,fbm2(x*.18+2,z*.18+9))*(.25+.75*smooth(3,6,r)));if(R()>dens)continue;
     const sz=rr(size[0],size[1])*(1+smooth(10,40,r)*.5);const m=new THREE.Matrix4().compose(V(x,groundH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),V(sz*rr(.85,1.2),sz*rr(.8,1.25),sz*rr(.85,1.2)));
     const dry=smooth(.6,.85,fbm2(x*.4,z*.4+20));const c=new THREE.Color().setHSL(rr(.27,.38)-dry*.12,rr(.22,.38)-dry*.04,rr(.33,.47)+dry*.06);pts.push({x,z,m,c});}}
-  const buckets=new Map();for(const p of pts){const k=Math.floor(p.x/CH)+','+Math.floor(p.z/CH);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(p);}
+  const buckets=new Map();for(const p of pts){const cs=far?24:CH;const k=Math.floor(p.x/cs)+','+Math.floor(p.z/cs);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(p);}
   for(const list of buckets.values()){const mk=g=>{if(!g)return null;const im=new THREE.InstancedMesh(g,grassMat,list.length);list.forEach((p,i)=>{im.setMatrixAt(i,p.m);im.setColorAt(i,p.c);});
     im.computeBoundingSphere();im.receiveShadow=true;im.castShadow=false;im.name=name;im.visible=false;scene.add(im);return im;};
    let cx=0,cz=0;for(const p of list){cx+=p.x;cz+=p.z;}grassChunks.push({c:V(cx/list.length,0,cz/list.length),hi:mk(geo),lo:mk(lo),far,n:list.length});}}
  // detail levels: hi near the camera, lo further out, nothing past the fog
- const tuftAlo=tuftGeo(MOBILE?6:7,2,11,.2,.46,.1),tuftBlo=tuftGeo(MOBILE?6:8,2,23,.08,.2,.16);
- scatterGrass(tuftA,tuftAlo,MOBILE?440:900,ring(2.4,18),[.7,1.25],'grassTall');
- scatterGrass(tuftB,tuftBlo,MOBILE?380:800,ring(2.2,14),[.8,1.3],'grassShort');
+ const tuftAlo=tuftGeo(MOBILE?5:7,2,11,.2,.46,.1),tuftBlo=tuftGeo(MOBILE?4:8,MOBILE?1:2,23,.08,.2,.16);
+ scatterGrass(tuftA,tuftAlo,MOBILE?380:900,ring(2.4,18),[.7,1.25],'grassTall');
+ scatterGrass(tuftB,tuftBlo,MOBILE?300:800,ring(2.2,14),[.8,1.3],'grassShort');
  scatterGrass(tuftF,null,MOBILE?260:450,ring(16,48,.85),[1.3,2.1],'grassFar',true);
  G.grass=grassChunks;
  const LOD_HI=MOBILE?11:16,LOD_OFF=MOBILE?55:75;
@@ -251,7 +268,7 @@ export function createGround(C){
  // Desktop: a real planar mirror at low resolution (lit windows, the moon, the oak), only rendered while there is water.
  // Phones: the same puddles as glossy dark water that catches the lamps and the moon as highlights.
  {const spots=[];for(let t=0;t<400&&spots.length<(MOBILE?5:7);t++){const onPath=spots.length<3;const [x,z]=onPath?(()=>{const i=1+Math.floor(R()*4),f=R();return [PATH[i][0]+(PATH[i+1][0]-PATH[i][0])*f+rr(-.2,.2),PATH[i][1]+(PATH[i+1][1]-PATH[i][1])*f];})():ring(3.5,11)();
-   if(rootD(x,z)<.6||Math.hypot(x,z)>12||spots.some(q=>Math.hypot(q[0]-x,q[1]-z)<2.2))continue;spots.push([x,z,rr(.55,1.15),rr(.6,1),rr(0,6.28)]);}
+   if(rootD(x,z)<1.2||Math.hypot(x,z)>12||spots.some(q=>Math.hypot(q[0]-x,q[1]-z)<2.2))continue;spots.push([x,z,rr(.55,1.15),rr(.6,1),rr(0,6.28)]);}
   const parts=[];spots.forEach(([x,z,r,e,a],i)=>{const g=new THREE.CircleGeometry(1,28);const p=g.attributes.position;const sd=new Float32Array(p.count).fill(i*7.3+1);
    g.setAttribute('aSeed',new THREE.BufferAttribute(sd,1));const lp=new Float32Array(p.count*2);for(let k=0;k<p.count;k++){lp[k*2]=p.getX(k);lp[k*2+1]=p.getY(k);}g.setAttribute('aLP',new THREE.BufferAttribute(lp,2));
    g.scale(r,r*e,1);g.rotateZ(a);g.translate(x,-z,0);parts.push(g);});
@@ -283,6 +300,32 @@ export function createGround(C){
     mesh=new THREE.Mesh(geo,mat);}
    mesh.rotation.x=-Math.PI/2;mesh.position.y=.012;mesh.renderOrder=1;scene.add(mesh);G.puddles=mesh;
    G.updatePuddles=cam=>{levelU.value=ST.puddle;rainU.value=ST.rainK;timeU.value=ST.T;mesh.visible=ST.puddle>.02;};}}
+
+ // ================= footprints in the mud =================
+ // After rain the path turns to mud: the hero's boots leave prints (a ring of the last ~48 steps, left/right alternate),
+ // plus a few older prints along the path. They show while the ground is muddy and fade as it dries.
+ {const tex=(()=>{const cv=document.createElement('canvas');cv.width=64;cv.height=128;const x=cv.getContext('2d');x.fillStyle='#fff';
+   x.beginPath();x.ellipse(32,40,19,30,0,0,Math.PI*2);x.fill();x.beginPath();x.ellipse(32,98,15,20,0,0,Math.PI*2);x.fill();
+   // tread: darker bars (multiplied below)
+   x.globalCompositeOperation='destination-out';x.fillStyle='rgba(0,0,0,.45)';for(let y=16;y<70;y+=9)x.fillRect(14,y,36,3.5);for(let y=86;y<114;y+=8)x.fillRect(18,y,28,3);
+   const t=new THREE.CanvasTexture(cv);return t;})();
+  const mudU={value:0};
+  const mat=new THREE.MeshStandardMaterial({color:0x1E1610,alphaMap:tex,transparent:true,depthWrite:false,roughness:.25,polygonOffset:true,polygonOffsetFactor:-2});
+  mat.onBeforeCompile=sh=>{sh.uniforms.uMud=mudU;sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float uMud;').replace('#include <alphamap_fragment>','#include <alphamap_fragment>\ndiffuseColor.a*=uMud*.75;');};
+  const g=new THREE.PlaneGeometry(.12,.28).rotateX(-Math.PI/2);const NF=48,NS=MOBILE?14:24;const im=new THREE.InstancedMesh(g,mat,NF+NS);im.frustumCulled=false;
+  const hide=new THREE.Matrix4().makeScale(0,0,0);for(let i=0;i<NF+NS;i++)im.setMatrixAt(i,hide);
+  const put=(i,x,z,yaw,side)=>{Q.setFromAxisAngle(V(0,1,0),yaw);const o=V(Math.cos(yaw)*.09*side,0,-Math.sin(yaw)*.09*side);M.compose(V(x+o.x,groundH(x,z)+.006,z+o.z),Q,Sc.set(1,1,1));im.setMatrixAt(i,M);};
+  // older prints along the path (someone walked here yesterday)
+  for(let i=0;i<NS;i++){const k=Math.min(PATH.length-2,Math.floor(i/NS*(PATH.length-1)));const f=(i/NS*(PATH.length-1))%1;const [ax,az]=PATH[k],[bx,bz]=PATH[k+1];
+   put(NF+i,ax+(bx-ax)*f,az+(bz-az)*f,Math.atan2(bx-ax,bz-az)+rr(-.15,.15),i%2?1:-1);}
+  im.instanceMatrix.needsUpdate=true;im.renderOrder=1;scene.add(im);G.footprints=im;
+  let head=0,side=1,last=null;
+  G.updateFootprints=()=>{const want=Math.min(1,ST.puddle*1.6+ST.rainK*.5);mudU.value+=(want-mudU.value)*.02;im.visible=mudU.value>.02;
+   const h=window.__dbg&&window.__dbg.hero&&window.__dbg.hero.root;if(!h)return;const p=h.position;
+   // on the ground, and only where it is muddy enough (on the path or near puddles)
+   if(p.y>.25||mudU.value<.05){last=null;return;}if(pathD(p.x,p.z)>.4&&!(G.puddleSpots||[]).some(q=>Math.hypot(q[0]-p.x,q[1]-p.z)<q[2]+.6)){last=null;return;}
+   if(!last){last=p.clone();return;}const d=Math.hypot(p.x-last.x,p.z-last.z);if(d<.36)return;
+   const yaw=Math.atan2(p.x-last.x,p.z-last.z);put(head,p.x,p.z,yaw,side);side=-side;head=(head+1)%NF;im.instanceMatrix.needsUpdate=true;last.copy(p);};}
 
  // ================= acorns =================
  // fallen from the big oak: a glossy brown nut in a rough cap, lying on its side, gathered under the crown
@@ -387,7 +430,13 @@ export function createGround(C){
    for(let t=0;t<NT*50&&n<NT;t++){const a=rr(0,6.28),rad=rr(16,26);const x=Math.cos(a)*rad,z=Math.sin(a)*rad;if(!edgeOK(x,z))continue;
     const sz=rr(.75,1.25);M.compose(V(x,groundH(x,z)-.1,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz,sz*rr(.9,1.2),sz));ti.setMatrixAt(n,M);ci.setMatrixAt(n,M);
     Col.setHSL(rr(.28,.38),rr(.2,.35),rr(.42,.56));ci.setColorAt(n,Col);n++;}
-   for(const im of [ti,ci]){im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);}G.youngTrees=ti;}}
+   for(const im of [ti,ci]){im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);}G.youngTrees=ti;}
+  // ---- where the clearing meets the painted far forest (a 96 m cylinder): a ring of big, fog-tinted undergrowth hides
+  // the line where the ground plane meets the painting, so the forest floor runs into the trees with no seam
+  {const bg=mkBush(13,MOBILE?10:14);const NR=MOBILE?40:70;const im=new THREE.InstancedMesh(bg,mat,NR);let n=0;
+   for(let i=0;i<NR;i++){const a=i/NR*Math.PI*2+rr(-.03,.03),r=rr(86,93);const x=Math.cos(a)*r,z=Math.sin(a)*r;const sz=rr(5,8);
+    M.compose(V(x,groundH(x,z)-1,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(1.4,2),sz*rr(.6,.9),sz*rr(1.4,2)));im.setMatrixAt(n,M);Col.setHSL(.42,.18,rr(.22,.3));im.setColorAt(n,Col);n++;}
+   im.count=n;im.computeBoundingSphere();scene.add(im);G.seamRing=im;}}
 
  return G;
 }

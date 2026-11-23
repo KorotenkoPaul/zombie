@@ -19,6 +19,12 @@ Debug: `__treedress.stats()`.
 - Mushrooms: small glowing caps in clusters on root tops (same env.shroomGlow as Ground's), bracket fungi shelves on the lower trunk sides.
 - Note: `__th.cam(1,2,9)` gives a half-black frame (camera inside something); not related to treedress.
 
+## Round 3
+- Upper ivy: short vines on the trunk between the rooms (seeded in free gaps, mostly the front half, stop at the next floor/wall). `__treedress.upperAt`.
+- Hanging ivy strands from beams under landings and room floors (beams = blockers[1]). `__treedress.strandAt`.
+- Moss patches on roof shingles (index.html passes `roofs:SHING`) and on landing/deck board ends (back side), same moss InstancedMesh.
+- Ferns in high forks (limb tops where wood rises again within 0.45 m on 2+ sides), same fern InstancedMesh. Draw calls unchanged (9).
+
 ## Next ideas
 - Hanging moss / roots dangling from the big limbs? (not in the photo, only if Pavel wants more life)
 - Ivy higher up between the rooms if Pavel wants more green.

@@ -18,6 +18,15 @@ Took over from env.js: ground mesh, grass, rocks, ferns, mushrooms, edge bushes.
 - Sway now comes from the Wind thread's game/wind.js (marked [WIND] in ground.js); new plants: W.hook(shader) + windSway/windLocal.
 - Publishing rule: push to master first, then publish ONLY changed files (ground.js); use the live page as file_path if index.html is unchanged.
 
+## Checkpoint 3 (v56, v66)
+- Trodden path PATH (ladder foot x0 z4 → clearing), pathD(x,z) exposed; packed earth via AO texture blue channel, applied after color_fragment.
+- Wet/dew: wetU follows env eve, morning (mornK) and rain. ground.js wraps window.__env.update to read rainK/mornK/nightK/T (no env.js/index.html edit). State: __ground.state.
+- Acorns, more twigs under the oak.
+- Grass in 14 m chunks (24 m far), hi/lo LOD by camera distance, ~32 chunk meshes, frustum culled. G.updateGrass(cam) in ground.onBeforeRender.
+- Grass bends away from the hero (reads window.__dbg.hero.root).
+- Puddles: 5-7 spots (3 on the path). Desktop: three Reflector 384px, rendered only while wet; phones: glossy dark water. Fill in rain, dry over ~90 s. Ripples while raining. Debug: __ground.state.puddle=1.
+- Far edge: thicket bushes r15-24 and 26 young trees r16-26, outside the camera's view line.
+
 ## Next
 - Compare with the photo at 19:20: grass colour vs fog, bush size at the sides, moss amount.
 - Ground fog interplay with Environment (tufts poking through fog).
