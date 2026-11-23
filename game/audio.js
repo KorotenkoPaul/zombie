@@ -578,11 +578,12 @@ export function createAudio(ctx) {
     if (env.season === 'autumn') return Math.random() < .65 ? 'leaves' : 'dirt';
     return 'dirt';
   }
-  function step(side, pos, surface, gain = 1, delay = 0) {
+  function step(side, pos, surface, gain = 1, delay = 0, shuffle = false) {
     if (!loaded || muted) return;
     const list = FT[surface] || FT.boards, q = toPos(pos);
     if (surface === 'roof' && Math.random() < .45) { const o2 = { pos: q, gain: .035 * gain, rate: rnd(1.1, 1.4), fadeIn: .003, fadeOut: .05, ref: 3, roll: 1, rev: .15, delay: rnd(.03, .09) }; voice('syn_peck_' + (Math.random() < .5 ? 0 : 1), o2); }   // a loose shingle ticks
     const clip = pick(list), o = { pos: q, gain: (FV[surface] || .2) * gain * rnd(.75, 1.05), rate: surface === 'roof' ? rnd(1.15, 1.3) : rnd(.9, 1.1), ref: 3, roll: 1, rev: .15, prio: true, indoor: q.y > .6, fadeIn: .005, fadeOut: .08, delay };
+    if (shuffle) { o.gain *= .3; o.rate *= 1.08; o.dur = rnd(.1, .16); o.offset = rnd(.02, .06); o.fadeIn = .02; o.fadeOut = .06; o.prio = false; }   // a soft scuff
     if (B[clip]) voice(clip, o); else decode(clip).then(() => voice(clip, o));
   }
   const _w = { x: 0, y: 0, z: 0 };
@@ -601,7 +602,7 @@ export function createAudio(ctx) {
       if (gnow > ladderNext + 1.2) { step('L', { x: p.x, y: p.y + .2, z: p.z }, surf); ladderNext = gnow + rnd(.4, .55); }   // no bone signal (an old clip): a rung by cadence
       footSt.L.lx = footSt.R.lx = null; return; }
     footSt.L.rung = footSt.R.rung = 0; footSt.L.ly = footSt.R.ly = null;
-    if (mv < .25) { footSt.L.armed = footSt.R.armed = false; footSt.L.lx = footSt.R.lx = footSt.L.lsp = footSt.R.lsp = null; moving = false; return; }
+    if (mv < .12) { footSt.L.armed = footSt.R.armed = false; footSt.L.lx = footSt.R.lx = footSt.L.lsp = footSt.R.lsp = footSt.L.lsp2 = footSt.R.lsp2 = null; moving = false; return; }
     // clothes rustle as he sets off, and now and then on the way; heavier breath when carrying something
     if (!moving || gnow > clothNext) { if (!moving && Math.random() < .55 || moving) playAct('cloth', { x: p.x, y: p.y + 1.1, z: p.z }); clothNext = gnow + rnd(4, 9); }
     moving = true;
@@ -621,11 +622,14 @@ export function createAudio(ctx) {
       const prev = st.lsp ?? sp; st.lsp = sp;
       if (FL) FL.push(['H', +gnow.toFixed(3), side, +sp.toFixed(3), +mv.toFixed(3)]);
       const up = Math.max(1.1, 1.5 * mv), thr = Math.max(.3, .3 * mv);
-      if (sp > up && gnow - (st.last ?? -9) > .3) st.armed = true;              // one strike per stride: never twice within .3 s
-      else if (st.armed) {
+      const med = Math.max(Math.min(sp, prev), Math.min(Math.max(sp, prev), st.lsp2 ?? sp)); st.lsp2 = prev;   // median of 3: a one-frame foot snap is not a swing
+      if (med > up && gnow - (st.last ?? -9) > .3) { if (!st.armed) st.peak = 0; st.armed = true; }        // one strike per stride: never twice within .3 s
+      if (st.armed) st.peak = Math.max(st.peak || 0, med);
+      const shuf = (st.peak || 0) < Math.max(1.6, 1.9 * mv);                    // a small re-plant (turning, starting, stopping): a soft shuffle, not a footstep
+      if (st.armed && !(med > up)) {
         const next = sp + (sp - prev);                                          // the speed one frame on
-        if (sp < thr) { st.armed = false; st.last = gnow; step(side, w, surfaceAt(w, env), Math.min(1.2, .6 + mv * .4)); if (FL) FL.push(['S', +gnow.toFixed(3), side, 'now']); }
-        else if (sp < prev && sp < 2.2 * thr && next < thr) { st.armed = false; st.last = gnow; const dl = Math.min(fdt, fdt * (sp - thr) / Math.max(1e-3, sp - next)) / Math.max(.25, gameRate); step(side, w, surfaceAt(w, env), Math.min(1.2, .6 + mv * .4), dl); if (FL) FL.push(['S', +(gnow + dl * gameRate).toFixed(3), side, 'pred']); }
+        if (sp < thr) { st.armed = false; st.last = gnow; step(side, w, surfaceAt(w, env), Math.min(1.2, .6 + mv * .4), 0, shuf); if (FL) FL.push(['S', +gnow.toFixed(3), side, shuf ? 'shuffle' : 'now']); }
+        else if (sp < prev && sp < 2.2 * thr && next < thr) { st.armed = false; st.last = gnow; const dl = Math.min(fdt, fdt * (sp - thr) / Math.max(1e-3, sp - next)) / Math.max(.25, gameRate); step(side, w, surfaceAt(w, env), Math.min(1.2, .6 + mv * .4), dl, shuf); if (FL) FL.push(['S', +(gnow + dl * gameRate).toFixed(3), side, shuf ? 'shuffle' : 'pred']); }
       }
     }
   }

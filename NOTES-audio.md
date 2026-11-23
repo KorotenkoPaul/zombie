@@ -149,3 +149,12 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
   - the oven door (`__props.oven.open` crossing .15 or .08) plays oven_open or oven_close at the handle;
   - a hand taking a tool or item (`hero.hold[hand]` changes) plays tool_pickup, and putting it back plays it softer and lower;
   - the hatch ring and the door bolt were already wired in round 16.
+
+## Round 20: footstep sync on the original hero, plus shuffles
+- The original hero is the default again; the new hero loads with `?hero=new`. Same detector, re-verified with `tests/audio/feet_sync.js` (30 fps, virtual clock).
+- Small re-plants (turning, starting, stopping) now play a soft scuff instead of a full step: 30 % of the gain, 0.1–0.16 s long, and they don't duck the music. A step counts as a re-plant when the foot's peak swing speed (median of 3 frames, so a one-frame foot snap doesn't count) stays under max(1.6, 1.9×walk).
+- Feet are now tracked down to walking speed .12 instead of .25, which catches the first and last steps of a walk.
+- `feet_sync_report.py` now counts full hits, soft hits, misses and extra full steps separately. Result on the original hero, both feet:
+  - 90 strikes, 70 hit by a full step and 15 by a shuffle, 5 missed (5.5 %).
+  - 9 extra full steps out of 79 (11 %, previously 13–18 %).
+  - Timing: median −6 to −23 ms, p10 −53 / −39 ms, p90 +6 / +10 ms.
