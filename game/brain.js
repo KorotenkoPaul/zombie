@@ -323,7 +323,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // reading in the dark: the candle lights itself when he sits down (lights.js); only putting it out is his job
     if (st.task === 'read' && hasCandle && lights.auto) lights.auto('candle');
     const A = ACTS[st.task];
-    cur = { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? Math.max(8, A.dur[0] * .8) : 0 };
+    cur = st.cmd ? { name: st.task, t: 0, opts: st.opts, dur: A ? A.dur[1] * .7 : 0, min: A ? A.dur[0] * .7 : 0, cmd: true }
+      : { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? Math.max(8, A.dur[0] * .8) : 0 };
     if (A) { recent.unshift(st.task); recent.length = 4; }
     setGait();
     HH.startTask(st.task, st.opts);
@@ -580,7 +581,16 @@ export function createBrain({ HH, lights, hour, isNight }) {
     },
     get locked() { return locked; },
     command(name, opts) {
-      plan.length = 0; pausing = 0; cmdNext = false; expected = name;
+      plan.length = 0; pausing = 0; cmdNext = false;
+      // a known activity, job or chore: plan it like his own (lamps off when leaving, the lantern at night, hatch, job -> body task),
+      // and the last step is the request itself, which the brain then does not overrule
+      if (ACTS[name] || JOBS[name] || EXTRA[name]) {
+        const h = hour(); const lab = (ACTS[name] || JOBS[name] || EXTRA[name]).label + ' (попросили)';
+        planFor(name, h, lab);
+        const last = plan[plan.length - 1]; if (last) { last.cmd = true; if (opts) last.opts = { ...last.opts, ...opts }; }
+        cur = null; tr('command:' + name); why = lab; startNext(); return;
+      }
+      expected = name;
       if (!opts && EXTRA[name]) opts = repairTarget(name);
       extra = EXTRA[name] ? name : null; job = JOBS[name] ? name : null; lastOpts = opts || {};
       // a direct request is his task from now on: the brain does not overrule it (only falling asleep on his feet does)
@@ -602,7 +612,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (!job || res === false || (res && res.ok === false)) { job = null; return; }
     if (job === 'hunt') { stock.meat += 2; plan.unshift({ task: 'store', opts: { item: 'meat' }, why: 'кладёт мясо в холодильник' }); }
     else if (job === 'wood') stock.logs += 3;
-    else if (job === 'fetch') { plan.unshift({ task: 'setbucket', opts: {}, why: 'ставит ведро под кран' }); stock.clean = 1; const W = propsWater(); W && W.setClean && W.setClean(1); }
+    else if (job === 'fetch') { /* the body's fetchwater already sets the bucket on the shelf above the sink */ stock.clean = 1; const W = propsWater(); W && W.setClean && W.setClean(1); }
     else if (job === 'dump') { stock.dirtyW = 0; const W = propsWater(); W && W.setDirty && W.setDirty(0); }
     else if (job === 'eat') { stock.meal = 0; day.justAte = true; try { const D = window.__props && window.__props.dishes; if (D && D.setDirty) D.setDirty(Math.min(4, D.state().dirty + 1)); } catch (e) {} need.hunger = clamp(need.hunger - .75); need.comfort = clamp(need.comfort - .15); }
     job = null; showStock();

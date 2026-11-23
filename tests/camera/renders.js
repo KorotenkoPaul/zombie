@@ -6,7 +6,16 @@ const { spawn } = require('child_process');
 const path = require('path');
 const OUT = process.argv[2] || path.join(__dirname, 'out'), PORT = 8129;
 require('fs').mkdirSync(OUT, { recursive: true });
-const VIEWS = [
+const VIEWS = process.env.POST ? [
+  ['post-a', { target: [3.5, 6.0, 3.0], yaw: 0.75, pitch: 0.12, dist: 4 }],
+  ['post-b', { target: [4.0, 5.6, 4.0], yaw: 0.6, pitch: 0.1, dist: 3 }],
+  ['post-c', { target: [2.6, 5.8, 2.6], yaw: 0.75, pitch: 0.25, dist: 6 }],
+  ['post-d', { target: [4.6, 5.5, 3.0], yaw: 0.4, pitch: 0.1, dist: 3 }],
+] : process.env.POND ? [
+  ['pond-left-limit', { target: [0, 7.4, 2.4], yaw: -0.7, pitch: 0.13, k: 1.2 }],
+  ['pond-left-high', { target: [0, 7.4, 2.4], yaw: -0.7, pitch: 0.35, k: 1.2 }],
+  ['pond-zoomed', { target: [-8.4, 0.5, 9.2], yaw: -0.5, pitch: 0.3, dist: 9 }],
+] : [
   ['home', { target: [0, 7.4, 2.4], yaw: 0.05, pitch: 0.13, k: 1 }],
   ['top-limit', { target: [0, 7.4, 2.4], yaw: 0.05, pitch: 0.6, k: 1.1 }],
   ['bedroom-close', { target: [-2.0, 9.2, 1.4], yaw: 0.3, pitch: 0.12, dist: 1.6 }],
@@ -25,7 +34,7 @@ const VIEWS = [
   const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text().slice(0, 200)); });
   await p.goto(`http://localhost:${PORT}/index.html`);
   await p.waitForFunction(() => window.__th && window.__th.rig, null, { timeout: 300000, polling: 1000 });
-  await p.evaluate(() => window.__th.setHour(21.5));
+  await p.evaluate(h => window.__th.setHour(h), +(process.env.HOUR || 21.5));
   await p.waitForTimeout(8000);
   for (const [name, v] of VIEWS) {
     await p.evaluate(v => { const r = window.__th.rig, T = window.__dbg.THREE; r.set({ target: new T.Vector3(...v.target), yaw: v.yaw, pitch: v.pitch, dist: v.dist || r.homeDist * v.k, snap: true }); }, v);
