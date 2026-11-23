@@ -259,11 +259,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const WG_N = 6, wgP = { value: Array.from({ length: WG_N }, () => new THREE.Vector4(0, -99, 0, 0)) }, wgC = { value: Array.from({ length: WG_N }, () => new THREE.Vector3()) };
   const wgWins = windows.filter(w => w.glowAt).slice(0, WG_N);
   wgWins.forEach((w, i) => wgP.value[i].set(w.glowAt.x, w.glowAt.y, w.glowAt.z, 2.6));
+  let wgOn = true; const wgMats = [];
   function treeGlow(mat) {
-    if (!mat || mat.userData.winGlow) return; mat.userData.winGlow = true;
+    if (!mat || mat.userData.winGlow) return; mat.userData.winGlow = true; wgMats.push(mat);
     const prev = mat.onBeforeCompile;
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
+      if (!wgOn) return;
       sh.uniforms.wgP = wgP; sh.uniforms.wgC = wgC;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWGp;')
         .replace('#include <project_vertex>', '#include <project_vertex>\n{vec4 q=vec4(transformed,1.);\n#ifdef USE_INSTANCING\nq=instanceMatrix*q;\n#endif\nvWGp=(modelMatrix*q).xyz;}');
@@ -273,7 +275,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
  totalEmissiveRadiance+=wg*diffuseColor.rgb;}`);
     };
     const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => key() + '|winglow';
+    mat.customProgramCacheKey = () => key() + (wgOn ? '|winglow' : '');
     mat.needsUpdate = true;
   }
   if (TREE && wgWins.length) { if (TREE.bark) treeGlow(TREE.bark.material); if (TREE.leaves) treeGlow(TREE.leaves.material); }
@@ -464,6 +466,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // detachHand() hides it again (and puts it out)
     attachHand: (bone, off = V(0, -.04, .02)) => { if (!bone) return false; const ws = bone.getWorldScale(V()).x || 1; bone.add(hand.g); hand.g.scale.setScalar(1 / ws); hand.g.position.copy(off).multiplyScalar(1 / ws); hand.g.visible = true; hand.attached = bone; bone.getWorldPosition(hand.prev); return true; },
     detachHand: () => { const s = src.get('hand'); if (s) { s.manual = null; setOn(s, false); } scene.add(hand.g); hand.g.visible = false; hand.attached = null; },
+    // window glow on the oak can be compiled out (one shader rebuild) by a frame-rate governor
+    winGlow: on => { if (on === undefined) return wgOn; on = !!on; if (on === wgOn) return false; wgOn = on; for (const m of wgMats) m.needsUpdate = true; return true; },
     update, degrade, upgrade, quality: q => q === undefined ? quality : setQuality(q),
   };
   return api;

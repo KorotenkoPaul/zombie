@@ -333,7 +333,7 @@ export function createHero(ctx){
  let brain=null;const gait={speed:1,turn:1};const endCbs=[];
  function endTask(){const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n);}catch(e){console.error(e);}}}
  // lamps with a wall switch (props.js switchPlate): the hand goes to the plate, not to the lamp
- const SWITCH_AT={bedroom:V(.37,lv.BD+1.15,2.5)};
+ const SWITCH_AT=(ctx.props&&ctx.props.switches)?Object.fromEntries(Object.entries(ctx.props.switches).map(([k,v])=>[k,v.clone()])):{bedroom:V(.372,lv.BD+1.15,3.5)};// wall switch positions come from props.js
  const LAMP=()=>window.__lights||ctx.lights||null;
  function nearNode(p){let best=null,bd=1e9;for(const k in N){const n=N[k];if(!n||!n.p||n.seat!=null||!adj[k])continue;if(Math.abs(n.p.y-p.y)>2.6||n.p.y>p.y+.2)continue;const d=Math.hypot(n.p.x-p.x,n.p.z-p.z)+Math.max(0,p.y-n.p.y-2.4)*3;if(d<bd){bd=d;best=k;}}return best;}
  // ===== END BRAIN HOOK state =====
