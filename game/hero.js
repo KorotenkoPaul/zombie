@@ -60,6 +60,10 @@ export function createHero(ctx){
    const ln=new THREE.Mesh(lash,lashM);ln.scale.set(.26*d,.1*d,.05*d);ln.position.set(0,-.3*d,.1*d*.45);piv.add(ln);
    piv.visible=false;bones.Head.add(piv);out.push(piv);}
   return out;})();
+ // the lips in world space (for breath vapour etc.): below the eyes, a touch forward
+ try{const hq=new THREE.Quaternion();window.__hero=window.__hero||{};window.__hero.mouth=(t=V())=>{const Hd=bones.Head;if(!Hd)return t.set(0,0,0);Hd.getWorldQuaternion(hq);const up=V(0,1,0).applyQuaternion(hq),fw=V(0,0,1).applyQuaternion(hq);
+   if(LIDS&&LIDS.length===2&&LIDS[0].parent){const a=LIDS[0].getWorldPosition(V()),b=LIDS[1].getWorldPosition(V());const d=a.distanceTo(b);return t.copy(a).add(b).multiplyScalar(.5).addScaledVector(up,-.85*d).addScaledVector(fw,.15*d);}
+   return Hd.getWorldPosition(t).addScaledVector(up,.07).addScaledVector(fw,.09);};}catch(e){}
  // k: 0 open .. 1 closed (the lid grows down from the brow)
  const EYEM=root.getObjectByName('eyelids');const EYEI=EYEM&&EYEM.morphTargetDictionary?EYEM.morphTargetDictionary.blink:null;
  if(EYEI!=null&&LIDS)for(const p of LIDS)p.parent.remove(p);
