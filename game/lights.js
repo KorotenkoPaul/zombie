@@ -337,6 +337,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     curtains.push({ w, W, mat, panels, closed: 0 });
     w.leak = 1;
   }
+  window.__curtains = curtains;   // [WIND] housewind.js lets them stir in a draught on gusty days
   let lockK = 0, curForce = false;
   function updateCurtains(dt, dayK) {
     const locked = curForce || !!(window.__brain && window.__brain.locked);
