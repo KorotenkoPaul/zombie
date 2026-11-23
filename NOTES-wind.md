@@ -82,3 +82,9 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Rope ladders: they already sway in their shader (windRope). `W.swayAt(p, freq)` is the CPU twin of windSwayS, used to track their free-end swing.
 - Events for Sound: `__wind.on('sway', e)` at the end of each swing: {part 'lantern'|'telescope'|'ladder', id, pos, amp 0..1}. `W.emit(k, e)` is now public for wind-thread modules.
 - Breath now uses Character's `window.__hero.mouth()`, and falls back to the Head bone.
+
+## Round 15: rain on the phone, glow near camera fix
+- The height map now includes InstancedMeshes (count <= 4000): Planks builds the decks as instanced boards, and rain had been falling through them.
+- Drips run on `uDK = max(rainK*1.2, wet^1.4*.85)`, so they keep falling after the rain and thin out as things dry. Big drops from the leaf tips (18 on phones / 40 on desktop, sampled from TREE.leaves) share the same single draw.
+- Wet boards: every MeshStandardMaterial that is the top surface somewhere under the sky (recorded while building the height map) gets a chained hook. Where the height map says nothing is above it, it darkens by 34% and its roughness drops to .22. On flat boards in a long rain (wet > .55) shallow water films form (roughness .04) in noise patches. Uniform names are uWetB/uHB/uBoxB, because Ground declares uWet. It runs after Planks' roughness (injected after metalnessmap_fragment).
+- index.html motes ([WIND] fix): point size capped at 18 px*dpr, and faded out within 2 m of the camera. Before, a mote at the lens became a huge soft green disc at night.
