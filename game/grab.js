@@ -49,7 +49,7 @@ export function createGrab({ THREE, bones }) {
         const mats = Array.isArray(o.material) ? o.material : [o.material]; mats.forEach(m => { m.needsUpdate = true; }); FIST.push({ mesh: o, idx }); } });
   }
   // per frame: each hand closes while it holds something (a tool on the hand bone, or a grip registered here) and opens after
-  function tick(dt, H) { for (const s of ['Left', 'Right']) { const holds = !!grip[s] || !!(H && H.hold && H.hold[s]) || !!handHasTool(s); fistT[s] = holds ? 1 : 0;
+  function tick(dt, H) { tweens(dt); for (const s of ['Left', 'Right']) { const holds = !!grip[s] || !!(H && H.hold && H.hold[s]) || !!handHasTool(s); fistT[s] = holds ? 1 : 0;
       const r = 1 - Math.exp(-dt * (fistT[s] > fistK[s] ? 14 : 9)); fistK[s] += (fistT[s] - fistK[s]) * r; if (Math.abs(fistT[s] - fistK[s]) < .002) fistK[s] = fistT[s];
       for (const F of FIST) if (F.idx[s] != null) F.mesh.morphTargetInfluences[F.idx[s]] = fistK[s] * (window.__noFist ? 0 : 1); } }
   function handHasTool(s) { const b = bones[s + 'Hand']; if (!b) return false; for (const c of b.children) if (c.visible && (c.isMesh || c.isGroup) && !c.userData.noGrip) return true; return false; }
@@ -86,12 +86,32 @@ export function createGrab({ THREE, bones }) {
     const at = c.c.clone(); if (G0.fwd) at.y += .01; if (G0.pinch) at.add(V(c.ps * .012, .045, 0));
     return { q, at, g }; }
   // props.js grab(): a tool put on a hand bone goes into the fist by its spec (any offset / rot the caller passes is for an open hand)
-  function wrapProps(P) { if (!P || !P.grab || P.grab.__grab) return; const orig = P.grab;
+  function wrapProps(P) { PROPS = P; if (!P || !P.grab || P.grab.__grab) return; const orig = P.grab;
     const g2 = (name, bone, o = {}) => { const side = bone && /LeftHand$/.test(bone.name) ? 'Left' : bone && /RightHand$/.test(bone.name) ? 'Right' : null;
       const r = orig(name, bone, o); if (!r || !side || window.__noGripFix) return r; const tp = toolPose(name, side, r); if (!tp) return r;
       r.quaternion.copy(tp.q); r.position.copy(tp.at).sub(tp.g.multiplyScalar(r.scale.x).applyQuaternion(tp.q)); r.userData.gripSide = side; return r; };
-    g2.__grab = true; P.grab = g2; }
+    g2.__grab = true; P.grab = g2;
+    // release(name, {blend}) from a hand: the tool settles onto its hook pivoting round its grip point (the bit the palm holds)
+    // instead of its origin flying across; the hand is expected to be there (hero.js lets go only with the palm on the hook)
+    const origR = P.release; P.release = (name, o = {}) => { const ob = P.tools && P.tools[name]; const h = ob && ob.userData.home;
+      if (!ob || !h || !(o.blend > 0) || window.__noGripFix || !ob.userData.gripSide) { if (ob) delete ob.userData.gripSide; tw.delete(ob); return origR(name, o); }
+      const G0 = GRIP[name]; const g = G0 && G0.g ? V(...G0.g) : (ob.userData.grip ? ob.userData.grip.clone() : V()); h.parent.attach(ob); delete ob.userData.gripSide;
+      const s0 = ob.scale.x, s1 = h.scale || 1; const gl0 = g.clone().multiplyScalar(s0).applyQuaternion(ob.quaternion).add(ob.position), gl1 = g.clone().multiplyScalar(s1).applyQuaternion(h.quat).add(h.pos);
+      tw.set(ob, { name, g, q0: ob.quaternion.clone(), q1: h.quat.clone(), gl0, gl1, s0, s1, t: 0, d: Math.max(.08, o.blend), orig: origR }); };
+  }
+  const tw = new Map();
+  function tweens(dt) { for (const [ob, m] of tw) { m.t = Math.min(1, m.t + dt / m.d); const e = m.t * m.t * (3 - 2 * m.t); ob.quaternion.copy(m.q0).slerp(m.q1, e); const sc = m.s0 + (m.s1 - m.s0) * e; ob.scale.setScalar(sc);
+      ob.position.copy(m.gl0).lerp(m.gl1, e).sub(m.g.clone().multiplyScalar(sc).applyQuaternion(ob.quaternion)); if (m.t >= 1) { tw.delete(ob); m.orig(m.name); } } }
+  // the fist's grip point in the world (where a held handle's grip point sits), and where a tool's grip point is when it hangs at home
+  function gripPoint(side, out = V()) { const c = CH[side], b = bones[side + 'Hand']; if (!c || !b) return palm(side, out); return b.localToWorld(out.copy(c.c)); }
+  let PROPS = null;
+  function toolGripHome(name, out = V()) { const P = PROPS; const o = P && P.tools && P.tools[name]; const h = o && o.userData.home; if (!h) return null; const G0 = GRIP[name];
+    const g = G0 && G0.g ? V(...G0.g) : (o.userData.grip ? o.userData.grip.clone() : V()); h.parent.updateMatrixWorld(true);
+    const m = new THREE.Matrix4().compose(h.pos, h.quat, V(1, 1, 1).multiplyScalar(h.scale || 1)); return out.copy(g).applyMatrix4(m).applyMatrix4(h.parent.matrixWorld); }
+  // the target to hand to a palm IK (palm = wrist + 6 cm) so that the fist's grip point lands on p
+  function palmTarget(side, p, out = V()) { const pa = palm(side), gp = gripPoint(side); return out.copy(p).sub(gp.sub(pa)); }
   const api = {
+    gripPoint, toolGripHome, palmTarget, setProps(P) { PROPS = P; },
     wrapProps, toolPose, GRIP,
     buildFists, tick, channel: s => CH[s], get fist() { return fistK; },
     hold(side, obj, handle) { grip[side] = obj ? { obj, handle } : null; },

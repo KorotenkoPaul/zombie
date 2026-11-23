@@ -608,8 +608,10 @@ export function createHero(ctx){
   a.update=dt=>{a.t+=dt;const s=sp();
    if(a.step==='approach'){H.look=s;H.lookW=.6;if(a.t>=a.adur){a.next();}return;}
    if(a.step==='take'){// reach each tool's home and close the hand on it
-    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=toolHome(n)||s;H.look=h;H.lookW=1;a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];
-    if(a.t>.5&&!a.gotIt){a.gotIt=true;grabTool(n,hand);AU('cloth');}if(a.t>.95){a.held.push(n);a.gotIt=false;a.t=0;a.ik=null;if(a.held.length>=tools.length)work();}return;}
+    // GRAB HOOK: the palm goes onto the tool where it hangs; the tool leaves its hook only when the palm is on it, then the hand comes back
+    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=gripHome(n)||s;H.look=h;H.lookW=1;const pd=palmTo(hand,h);
+    if(!a.gotIt){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h,a.rw];if((a.rw>=1&&pd<.03)||a.t>1.6){a.gotIt=true;a.tg=a.t;grabTool(n,hand);AU('cloth');}}
+    else{a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h,a.rw]:null;if(a.rw<=0){a.held.push(n);a.gotIt=false;a.t=0;a.reach=null;a.rw=0;if(a.held.length>=tools.length)work();}}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
     // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
     if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
@@ -619,12 +621,21 @@ export function createHero(ctx){
     if(!o.loop&&o.clip&&o.reps&&!H.once&&!a.pause&&a.T<dur-1)once(o.clip,{fade:.4,speed:o.speed||1});
     if(a.T>=dur){a.step='put';a.t=0;o.end&&o.end(a);play(IDLE(),{fade:.5});}return;}
    if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=toolHome(n)||s;H.look=h;H.lookW=1;
-    a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];if(a.t>.5&&!a.rel){a.rel=true;relTool(hand,n);}if(a.t>.95){a.held.pop();a.rel=false;a.t=0;a.ik=null;}}};
-  const finish=()=>{a.ik=null;endTask(o.result?o.result(a):undefined);};
-  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);};
-  a.leave=cb=>{for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
+    // GRAB HOOK: carried to the hook in the hand, let go only once the palm is there (a short settle, no flying home), then the hand leaves
+    const h2=gripHome(n)||h;const pd=palmTo(hand,h2);a.hp=h2;if(!a.rel){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h2,a.rw];if((a.rw>=1&&pd<.03)||a.t>1.6){a.rel=true;a.trel=a.t;relTool(hand,n,.14);}}
+    else if(a.t-a.trel>.16){a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h2,a.rw]:null;if(a.rw<=0){a.held.pop();a.rel=false;a.t=0;a.reach=null;a.rw=0;}}}};
+  const finish=()=>{a.ik=null;if(a.leaveCb){const c=a.leaveCb;a.leaveCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
+  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
+  // GRAB HOOK: called away in the middle of a job, he first hangs the tools back by hand (no tool flies home by itself)
+  a.leave=cb=>{if(a.step==='take'&&a.gotIt){const [n]=tools[a.held.length]||[];if(n)a.held.push(n);a.gotIt=false;}
+   if(a.held.length&&!window.__noGripFix&&(a.step==='work'||a.step==='take')){o.end&&o.end(a);a.step='put';a.t=0;a.rw=0;a.rel=false;a.reach=null;a.ik=null;a.leaveCb=cb;play(IDLE(),{fade:.4});return;}
+   for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
- function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
+ // GRAB HOOK: how far the palm is from a point (m)
+ function palmTo(side,t){const G=window.__grab;const p=G&&G.gripPoint?G.gripPoint(side):bones[side+'Hand'].getWorldPosition(V());return p&&t?p.distanceTo(t):9;}
+ const gripHome=n=>{const G=window.__grab;return G&&G.toolGripHome?G.toolGripHome(n):toolHome(n);};
+ function reachGrip(side,t,w){const G=window.__grab;reachTo(side,G&&G.palmTarget?G.palmTarget(side,t):t,w);}
+ function relTool(hand,n,bl=.35){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:bl});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
  const telePt=()=>{const P=window.__props||P3;const t=P&&P.placed&&P.placed.telescope;if(t&&t.position)return t.position.clone().add(V(0,1.35,0));return V(3.5,DK+1.35,1.3);};
  // the edge of the platform in front of a node: step forward until the boards end
  function edgeFrom(node){const n=N[node];if(!n)return null;const f=fwd(n.face??0);const p=n.p.clone();let last=null;
