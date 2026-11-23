@@ -705,9 +705,61 @@ export function createAudio(ctx) {
       frameDt = frameDt * .8 + Math.min(.5, rawDt) * .2;
       dbgF = [+mv.toFixed(2), +vy.toFixed(2), +frameDt.toFixed(3), +p.y.toFixed(2)];
       if (autoFeet) feet(p, mv, vy, env);
-      houseWatch(hero, mv);
+      houseWatch(hero, mv); toolSync(hero);
       if (!asleep && mv < .1 && Math.abs(vy) < .1 && now > idleBreath) { idleBreath = now + rnd(3, 4.2); const at = { x: p.x, y: p.y + 1.5, z: p.z }; if (nearCam(at, 3.5)) voice('syn_breath_' + Math.floor(Math.random() * 2), { pos: at, gain: .045, rate: rnd(1.3, 1.45), ref: 1, roll: 1.6, rev: .08, indoor: true, fadeIn: .05, fadeOut: .25 }); }
       if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
+    }
+  }
+
+  // ---------- tool contact (hammer hits, saw strokes, stir scrapes) ----------
+  // Character can send exact contacts: __audio.contact({tool, kind:'hit'|'stroke'|'scrape', pos, strength, dur, dir}).
+  // Until it does, they are read from the right hand while it holds a tool: a hammer hits when the downward swing stops,
+  // a saw stroke starts at each reversal along the facing direction (and lasts as long as the last one did), a stir scrape
+  // plays at each peak of hand speed. While this runs, hero.js's timer-based hammer / nails / saw calls are muted.
+  let toolAuto = true; const TS = { tool: null, lx: 0, ly: 0, lz: 0, vy: 0, vs: 0, s: 0, ls: null, lt: 0, strokeT: .45, sp: 0, lsp: 0, last: -9 };
+  const TOOLK = n => !n ? null : /hammer/i.test(n) ? 'hammer' : /saw/i.test(n) ? 'saw' : /ladle|spoon/i.test(n) ? 'spoon' : null;
+  function contact(e, internal) {
+    if (!e || !loaded || muted) return; if (!internal) toolAuto = false;
+    if (window.__feetLog) window.__feetLog.push(['TC', +gnow.toFixed(3), e.tool || e.kind, +(e.dur || 0).toFixed(2)]);
+    const q = toPos(e.pos), k = clamp01(e.strength ?? .8), t = e.tool;
+    if (t === 'hammer' || e.kind === 'hit') { TS.last = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); if (Math.random() < .5) playAct('nails', q, { gain: .35 * k, delay: .012, internal: 1 }); return; }
+    if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); if (B[c]) voice(c, o); else decode(c); TS.last = now; return; }
+    if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); if (B[c]) voice(c, o); else decode(c); TS.last = now; }
+  }
+  function toolSync(hero) {
+    if (!toolAuto || !hero || !hero.hold || !ctx.bones || !ctx.bones.RightHand) { TS.tool = null; return; }
+    const h = hero.hold.Right, tool = TOOLK(h && (h.tool || h.name || (typeof h === 'string' ? h : '')));
+    if (tool !== TS.tool) { TS.tool = tool; TS.ls = null; TS.vy = 0; TS.sp = TS.lsp = 0; TS.ext = TS.ext0 = null; TS.lt = 0; TS.pk = 0; }
+    if (!tool) return;
+    const fdt = Math.max(1e-3, frameDtG), r = hero.root, w = ctx.bones.RightHand.getWorldPosition(ctx.v6 || (ctx.v6 = new r.position.constructor()));
+    const x = w.x - r.position.x, y = w.y - r.position.y, z = w.z - r.position.z;
+    if (TS.ls === null) { TS.lx = x; TS.ly = y; TS.lz = z; TS.ls = 0; TS.lt = gnow; return; }
+    const vx = (x - TS.lx) / fdt, vy = (y - TS.ly) / fdt, vz = (z - TS.lz) / fdt; TS.lx = x; TS.ly = y; TS.lz = z;
+    const at = { x: w.x, y: w.y - .05, z: w.z };
+    if (window.__feetLog) window.__feetLog.push(['TH', +gnow.toFixed(3), tool, +y.toFixed(3), +vy.toFixed(2), +(vx * Math.sin(r.rotation.y) + vz * Math.cos(r.rotation.y)).toFixed(2), +Math.hypot(vx, vz).toFixed(2)]);
+    if (tool === 'hammer') {                                        // the head comes down fast, then stops on the nail
+      // impact: after a downswing (peak < -1 m/s) the hand brakes hard on the nail; the hit is when its speed falls under
+      // 40 % of the peak, interpolated inside the frame
+      if (vy < -1) TS.pk = Math.min(TS.pk || 0, vy);
+      if ((TS.pk || 0) < -1 && vy > .4 * TS.pk) { const k = clamp01((.4 * TS.pk - TS.vy) / Math.max(1e-3, vy - TS.vy)), dl = Math.max(0, (1 - k) * fdt) * 0;
+        if (gnow - (TS.hitG ?? -9) > .25) { TS.hitG = gnow; contact({ tool: 'hammer', kind: 'hit', pos: at, strength: clamp01(-TS.pk / 3) }, true); } TS.pk = 0; }
+      if (vy > .3) TS.pk = 0;                                        // lifted again without a hit
+      TS.vy = vy; return;
+    }
+    if (tool === 'saw') {                                           // strokes along the way he faces: a reversal is 1.5 cm back from the last extreme
+      const f = r.rotation.y, sx = x * Math.sin(f) + z * Math.cos(f);
+      if (TS.ext == null) { TS.ext = TS.ext0 = sx; TS.dir = 1; }
+      if (TS.dir > 0 ? sx > TS.ext : sx < TS.ext) TS.ext = sx;             // follow the stroke to its end
+      if (Math.abs(sx - TS.ext) > .008) {                                   // it came back 8 mm: the stroke turned
+        const nd = -TS.dir, half = TS.lt ? Math.min(1, Math.max(.2, gnow - TS.lt)) : TS.strokeT; TS.strokeT = half; TS.lt = gnow;
+        const amp = Math.abs(TS.ext - TS.ext0); TS.ext0 = TS.ext; TS.ext = sx; TS.dir = nd;
+        if (amp > .012) contact({ tool: "saw", kind: 'stroke', pos: at, strength: clamp01(.35 + amp / .15), dur: half / Math.max(.25, gameRate), dir: nd }, true);
+      }
+      return;
+    }
+    if (tool === 'spoon') {                                         // a scrape at each peak of the stirring hand's speed
+      const sp = Math.hypot(vx, vz); if (TS.lsp > TS.sp && TS.lsp > sp && TS.lsp > .15 && gnow - (TS.scrG ?? -9) > .45) { TS.scrG = gnow; contact({ tool: 'spoon', kind: 'scrape', pos: at, strength: clamp01(TS.lsp / .5), dur: .5 / Math.max(.25, gameRate) }, true); }
+      TS.sp = TS.lsp; TS.lsp = sp;
     }
   }
 
@@ -817,7 +869,8 @@ export function createAudio(ctx) {
   function playAct(name, pos, o = {}) {
     if (!A || muted || !loaded) return null;
     if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
-    if (name === 'bolt') return null;                                  // houseWatch plays lock / unlock from the door's real bolt
+    if (name === 'bolt') return null;
+    if (!o.internal && TS.tool && toolAuto && ((TS.tool === 'hammer' && /^(hammer|nails)$/.test(name)) || (TS.tool === 'saw' && name === 'saw') || (TS.tool === 'spoon' && name === 'stir'))) return null;   // contact-synced instead                                  // houseWatch plays lock / unlock from the door's real bolt
     if (/^hatch_/.test(name)) { if (now - HW.hatchT < 1.5) return null; HW.hatchT = now; }
     const a = ACT[name] || ACT[ALIAS[name]];
     const clip = a ? pick(a.c) : RAW[name] ? name : null;
@@ -948,7 +1001,7 @@ export function createAudio(ctx) {
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
       const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
-    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter, _task: t => { HW.force = t || null; },
+    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter, contact: e => contact(e), _task: t => { HW.force = t || null; },
   };
   window.__audio = api;
   return api;
