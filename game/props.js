@@ -357,19 +357,6 @@ function sinkCounter() {
   add(g, lathe([[0, 0], [.045, 0], [.047, .11], [.035, .12], [0, .12]], 18), M.glazeBlue, -.12, H, -.2);
   bake(g); g.userData.info = { top: H }; return g;
 }
-function fridge() {
-  const g = new THREE.Group(); const Wd = .64, D = .6, H = 1.58, split = 1.02;
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(g, new THREE.CylinderGeometry(.025, .03, .05, 10), M.rubber, sx * (Wd / 2 - .07), .025, sz * (D / 2 - .08));
-  add(g, rb(Wd, H - .05, D - .05, .09, 5), M.fridge, 0, .05 + (H - .05) / 2, -.025);
-  add(g, rb(Wd - .01, split - .07, .06, .05, 4), M.fridge, 0, .06 + (split - .07) / 2, D / 2 - .05);
-  add(g, rb(Wd - .01, H - split - .02, .06, .07, 4), M.fridge, 0, split + (H - split - .02) / 2, D / 2 - .05);
-  add(g, rb(Wd - .04, .012, .02, .004), M.rubber, 0, split - .006, D / 2 - .07);
-  const hd = (y0, y1) => { const x = -Wd / 2 + .07, z = D / 2 + .035; add(g, rb(.035, y1 - y0, .03, .014, 3), M.chrome, x, (y0 + y1) / 2, z + .02); for (const y of [y0 + .02, y1 - .02]) add(g, rb(.03, .03, .04, .01), M.chrome, x, y, z); };
-  hd(split - .3, split - .06); hd(split + .05, split + .27);
-  for (const y of [.25, split - .2, split + .15, H - .15]) add(g, rb(.03, .07, .03, .01), M.chrome, Wd / 2 - .02, y, D / 2 - .03);
-  add(g, rb(.14, .025, .006, .006), M.chrome, .1, H - .12, D / 2 - .016);
-  return bake(g);
-}
 function barrel(h = .78, mat) { const g = new THREE.Group(); const r0 = h * .3, b = h * .055; const pts = []; for (let i = 0; i <= 12; i++) { const y = i / 12 * h; pts.push([r0 + b * Math.sin(Math.PI * i / 12), y]); } pts.push([r0 - .02, h], [r0 - .02, h - .03], [0, h - .03]);
   add(g, lathe([[0, 0], ...pts], 32), mat || M.stave); add(g, new THREE.CylinderGeometry(r0 - .02, r0 - .02, .01, 32), M.staveDark, 0, h - .03, 0);
   for (const t of [.1, .3, .7, .9]) { const y = t * h, r = r0 + b * Math.sin(Math.PI * t) + .006; const tor = add(g, new THREE.TorusGeometry(r, .012, 6, 40), M.iron, 0, y, 0, Math.PI / 2); tor.scale.z = 1.8; } return bake(g); }
@@ -393,10 +380,25 @@ function domeShade(rod) { const g = new THREE.Group(); const m = add(g, lathe([[
   { const n = Math.max(2, Math.round(rod / .035)); const lg = new THREE.TorusGeometry(.011, .0028, 5, 10); for (let i = 0; i < n; i++) add(g, lg, M.iron, 0, .185 + i * rod / n + .012, 0, 0, (i % 2) * Math.PI / 2, 0).scale.set(1, 1.5, 1);
     add(g, new THREE.CylinderGeometry(.03, .04, .025, 14), M.iron, 0, .18 + rod + .012, 0); }
   add(g, new THREE.TorusGeometry(.2, .008, 6, 32), M.iron, 0, 0, 0, Math.PI / 2); return g; }
-function plankDoor(h = 2.0, w = .86) { const g = new THREE.Group(); const n = 5, pw = w / n; for (let i = 0; i < n; i++) W(g, pw - .008, h - .01, .045, -w / 2 + pw * (i + .5), h / 2, 0, { mat: M.wood, r: .01, grain: 1 });
-  for (const y of [.35, h - .35]) W(g, w - .06, .12, .03, 0, y, -.035, { mat: M.woodDark }); for (const [ww, hh, x, y] of [[.09, h + .09, -w / 2 - .045, h / 2], [.09, h + .09, w / 2 + .045, h / 2], [w + .18, .09, 0, h + .045]]) W(g, ww, hh, .07, x, y, .01, { mat: M.woodDark });
-  for (const y of [.35, h - .35]) { add(g, rb(.2, .035, .008, .004), M.iron, w / 2 - .1, y, .027); for (const k of [0, 1, 2]) screw(g, w / 2 - .17 + k * .06, y, .032); }
-  add(g, rb(.05, .16, .012, .006), M.brass, -w / 2 + .1, h * .48, .028); knob(g, -w / 2 + .1, h * .46, .03, M.brass, .022); return bake(g); }
+// plank door in its frame. The leaf hangs on a live pivot at its hinge edge (local x = +w/2), so it can swing;
+// a slide bolt on the room side (+z) shoots into a keeper on the latch-side post.
+function plankDoor(h = 1.9, w = .77) { const g = new THREE.Group(); const fr = new THREE.Group(); g.add(fr);
+  for (const [ww, hh, x, y] of [[.09, h + .09, -w / 2 - .045, h / 2], [.09, h + .09, w / 2 + .045, h / 2], [w + .18, .09, 0, h + .045]]) W(fr, ww, hh, .07, x, y, .01, { mat: M.woodDark });
+  const piv = new THREE.Group(); piv.position.set(w / 2, 0, .0); piv.userData.live = true; g.add(piv); const leaf = new THREE.Group(); leaf.position.x = -w / 2; piv.add(leaf);
+  const n = 5, pw = w / n; for (let i = 0; i < n; i++) W(leaf, pw - .008, h - .02, .045, -w / 2 + pw * (i + .5), h / 2 + .005, 0, { mat: M.wood, r: .01, grain: 1 });
+  for (const y of [.35, h - .35]) W(leaf, w - .06, .12, .03, 0, y, .035, { mat: M.woodDark });
+  W(leaf, .1, Math.hypot(w - .2, h - .9) , .028, 0, h / 2, .033, { mat: M.woodDark, rz: Math.atan2(w - .2, h - .9) }); // Z brace: worn shelter door
+  for (const y of [.35, h - .35]) { add(leaf, rb(.2, .035, .008, .004), M.iron, w / 2 - .1, y, .052); for (const k of [0, 1, 2]) screw(leaf, w / 2 - .17 + k * .06, y, .056); }
+  knob(leaf, -w / 2 + .1, h * .46, .05, M.iron, .022);
+  // slide bolt: plate + sliding bar + knob, above the handle
+  const by = h * .55; add(leaf, rb(.16, .045, .008, .003), M.iron, -w / 2 + .14, by, .054);
+  const bar = new THREE.Group(); bar.position.set(-w / 2 + .14, by, .066); leaf.add(bar); bar.userData.live = true;
+  add(bar, new THREE.CylinderGeometry(.009, .009, .17, 10), M.steel, 0, 0, 0, 0, 0, Math.PI / 2); add(bar, new THREE.CylinderGeometry(.006, .006, .03, 8), M.steel, .02, .018, 0); add(bar, new THREE.SphereGeometry(.011, 10, 8), M.steel, .02, .034, 0);
+  for (const x of [-.06, .06]) add(leaf, rb(.02, .03, .022, .003), M.iron, -w / 2 + .14 + x, by, .062);
+  add(fr, rb(.035, .04, .03, .004), M.iron, -w / 2 - .03, by, .06); // keeper on the latch-side post
+  bake(fr); bake(leaf);
+  g.userData.door = { piv, bar, w, h, barX: -w / 2 + .14 };
+  return g; }
 function switchPlate() { const g = new THREE.Group(); add(g, rb(.08, .12, .012, .006), M.ceramic, 0, 0, .006); add(g, rb(.018, .035, .02, .004), M.ceramic, 0, 0, .014); return g; }
 
 // ------------- workshop -------------
@@ -519,6 +521,170 @@ function telescope() {
   bake(g); g.userData.tube = tube; return g;
 }
 
+// ================= round 6: things the hero handles (food, wood, gear, chores) =================
+let MX = null;
+function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, ...o });
+  MX = { terracotta: s(0xB8603A, { roughness: .9 }), soil: s(0x3A2A1E, { roughness: 1 }), leaf: s(0x557F3C, { roughness: .6, side: THREE.DoubleSide }), leafDark: s(0x36572A, { roughness: .65, side: THREE.DoubleSide }),
+    carrot: s(0xE07A2A, { roughness: .6 }), onion: s(0xC8964E, { roughness: .45 }), potato: s(0xB08A58, { roughness: .9 }), stone: s(0x8E908A, { roughness: .95 }), stoneDark: s(0x5A5650, { roughness: .85 }),
+    straw: s(0xC9A45A, { roughness: 1 }), zinc: s(0x6F8A72, { metalness: .5, roughness: .45, envMap: M.env }), bark: s(0x5A4230, { roughness: 1 }), endgrain: new THREE.MeshStandardMaterial({ map: texOf(canvas(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 4, 64, 64, 64); r.addColorStop(0, '#B8834F'); r.addColorStop(.85, '#D9AE78'); r.addColorStop(.93, '#8A5A34'); r.addColorStop(1, '#4A3020'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); g.strokeStyle = 'rgba(120,75,40,.45)'; for (let i = 6; i < 56; i += 4 + Math.random() * 4) { g.lineWidth = .8 + Math.random(); g.beginPath(); g.ellipse(64 + Math.random() * 2, 64 + Math.random() * 2, i, i * (.94 + Math.random() * .06), Math.random(), 0, Math.PI * 2); g.stroke(); } g.strokeStyle = 'rgba(60,35,20,.7)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + 50 * Math.cos(1), 64 + 50 * Math.sin(1)); g.stroke(); })), roughness: .9 }),
+    grille: s(0x8A7350, { roughness: 1 }), meat: s(0xA2343A, { roughness: .5 }), fat: s(0xEEDCCB, { roughness: .6 }), paper: s(0xD8C7A0, { roughness: .95 }), sack: s(0xB59B6E, { roughness: 1 }),
+    jacket: s(0x4F5A3C, { roughness: .95 }), jacketDark: s(0x3A4230, { roughness: .95 }), patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x6A4128, { roughness: .7 }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
+    rope: s(0xB09A6A, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
+  return MX; }
+// a box between two points (legs, struts) and a tapered rod between two points
+function strut(parent, a, b, w, d, mat) { const dir = b.clone().sub(a); const m = add(parent, rb(w, dir.length(), d, Math.min(w, d) * .25), mat, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); m.quaternion.setFromUnitVectors(V(0, 1, 0), dir.normalize()); return m; }
+function rod(parent, a, b, r0, r1, mat, seg = 10) { const dir = b.clone().sub(a); const m = add(parent, new THREE.CylinderGeometry(r1, r0, dir.length(), seg), mat, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); m.quaternion.setFromUnitVectors(V(0, 1, 0), dir.normalize()); return m; }
+// a stack of logs as two instanced meshes (bark + end grain); slots go bottom-up so setCount(n) takes logs off the top
+function logStack(slots, len) {
+  const X = mx(), n = slots.length, g = new THREE.Group(); g.userData.live = true;
+  const bg = new THREE.CylinderGeometry(1, 1.05, 1, 12); bg.rotateX(Math.PI / 2); const eg = new THREE.CircleGeometry(.95, 12);
+  const bark = new THREE.InstancedMesh(bg, X.bark, n), ends = new THREE.InstancedMesh(eg, X.endgrain, 2 * n);
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  slots.forEach((s, i) => { const L = len * (s.l || 1), z = s.z || 0; q.setFromEuler(e.set(0, 0, s.rz)); m.compose(V(s.x, s.y, z), q, V(s.r, s.r, L)); bark.setMatrixAt(i, m);
+    for (const k of [0, 1]) { const sg = k ? 1 : -1; q.setFromEuler(e.set(0, sg > 0 ? 0 : Math.PI, s.rz)); m.compose(V(s.x, s.y, z + sg * (L / 2 + .002)), q, V(s.r, s.r, 1)); ends.setMatrixAt(2 * i + k, m); } });
+  for (const im of [bark, ends]) { im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); im.computeBoundingBox && im.computeBoundingBox(); g.add(im); }
+  g.userData.logs = { max: n, count: n, slots, setCount(k) { k = Math.max(0, Math.min(n, Math.round(k))); bark.count = k; ends.count = 2 * k; this.count = k; } };
+  return g;
+}
+function pyramidSlots(rows, r, gap, rnd = .006) { const out = []; let y = r; rows.forEach((cnt, j) => { for (let i = 0; i < cnt; i++) out.push({ x: (i - (cnt - 1) / 2) * gap + rr(-rnd, rnd), y: y + rr(-rnd, rnd) * .5, z: rr(-.02, .02), r: r * rr(.85, 1.08), rz: rr(0, 6), l: rr(.92, 1.04) }); y += gap * .87; }); return out; }
+function logPiece(len, r) { const X = mx(), g = new THREE.Group(); add(g, new THREE.CylinderGeometry(r, r * 1.05, len, 12), X.bark, 0, 0, 0, Math.PI / 2); for (const s of [-1, 1]) add(g, new THREE.CircleGeometry(r * .95, 12), X.endgrain, 0, 0, s * (len / 2 + .002), 0, s > 0 ? 0 : Math.PI, 0); return g; }
+
+// fridge with a hollow food compartment, a hinged lower door and meat on the shelves that follows the stock
+function fridge() {
+  const g = new THREE.Group(); const Wd = .64, D = .6, H = 1.58, split = 1.02, X = mx();
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) add(g, new THREE.CylinderGeometry(.025, .03, .05, 10), M.rubber, sx * (Wd / 2 - .07), .025, sz * (D / 2 - .08));
+  const bz = -.025, bd = D - .05, z0 = bz - bd / 2, z1 = bz + bd / 2, t = .035, y0 = .05;
+  add(g, rb(Wd, H - split, bd, .09, 5), M.fridge, 0, split + (H - split) / 2, bz); // freezer block
+  for (const s of [-1, 1]) add(g, rb(t, split - y0 + .04, bd, .02), M.fridge, s * (Wd / 2 - t / 2), (y0 + split) / 2, bz);
+  add(g, rb(Wd, t + .02, bd, .02), M.fridge, 0, y0 + (t + .02) / 2, bz); add(g, rb(Wd, split - y0, t, .015), M.fridge, 0, (y0 + split) / 2, z0 + t / 2);
+  // cream liner, wire shelves, a bottle and a jar that always stay
+  const lw = Wd - 2 * t, lb = y0 + t + .02, lt = split - .005; add(g, new THREE.PlaneGeometry(lw, lt - lb), M.ceramic, 0, (lb + lt) / 2, z0 + t + .002);
+  add(g, new THREE.PlaneGeometry(lw, bd - t), M.ceramic, 0, lt - .001, z0 + t + (bd - t) / 2, Math.PI / 2);
+  const shelfY = [lb + .3, lb + .6]; for (const y of shelfY) { add(g, rb(lw - .01, .008, bd - t - .04, .003), M.steel, 0, y, z0 + t + (bd - t - .04) / 2); }
+  { const b = lathe([[0, 0], [.028, 0], [.028, .14], [.012, .18], [.01, .21], [0, .21]], 14); add(g, b, M.jarGlass, .2, shelfY[1] + .004, z0 + .1); const j = jar(.1, .04, M.glazeCream); j.position.set(-.18, shelfY[0] + .004, z0 + .09); g.add(j); }
+  // gasket line and the freezer door (fixed) as before, both a little proud of the body
+  add(g, rb(Wd - .01, H - split - .02, .06, .07, 4), M.fridge, 0, split + (H - split - .02) / 2, z1 + .03);
+  add(g, rb(Wd - .04, .012, .02, .004), M.rubber, 0, split - .006, z1 + .01);
+  const hd = (p, y0_, y1_, x, z) => { add(p, rb(.035, y1_ - y0_, .03, .014, 3), M.chrome, x, (y0_ + y1_) / 2, z + .02); for (const y of [y0_ + .02, y1_ - .02]) add(p, rb(.03, .03, .04, .01), M.chrome, x, y, z); };
+  hd(g, split + .05, split + .27, -Wd / 2 + .07, z1 + .075);
+  for (const y of [.25, split - .2, split + .15, H - .15]) add(g, rb(.03, .07, .03, .01), M.chrome, Wd / 2 - .02, y, z1 + .02);
+  add(g, rb(.14, .025, .006, .006), M.chrome, .1, H - .12, z1 + .064);
+  // lower door on a live pivot at the hinge side (+x); a door shelf with a bottle on the inside
+  const piv = new THREE.Group(); piv.position.set(Wd / 2 - .005, 0, z1); piv.userData.live = true; g.add(piv);
+  const dw = Wd - .01; add(piv, rb(dw, split - .07, .06, .05, 4), M.fridge, -dw / 2, .06 + (split - .07) / 2, .03);
+  add(piv, new THREE.PlaneGeometry(dw - .08, split - .17), M.ceramic, -dw / 2, .06 + (split - .07) / 2, -.001, 0, Math.PI, 0);
+  add(piv, rb(dw - .1, .05, .06, .01), M.ceramic, -dw / 2, .55, -.03); add(piv, lathe([[0, 0], [.025, 0], [.025, .12], [.01, .16], [0, .16]], 12), M.glass, -dw / 2 + .12, .575, -.035);
+  hd(piv, split - .3, split - .06, -dw + .065, .075);
+  bake(piv);
+  // meat: up to 6 pieces, half of them wrapped in butcher paper; setStock(n) shows the first n
+  const meat = []; const spots = [[-.13, shelfY[0]], [.08, shelfY[0]], [-.12, shelfY[1]], [.1, lb], [-.1, lb], [.12, shelfY[1] + .0]];
+  spots.forEach(([x, y], i) => { const p = new THREE.Group(); p.position.set(x, y + .006, z0 + t + .17 + (i % 2) * .05); p.rotation.y = rr(-.4, .4); p.userData.live = true; g.add(p);
+    if (i % 2) { add(p, rb(.15, .045, .11, .02), X.paper, 0, .0225, 0); add(p, new THREE.TorusGeometry(.06, .002, 4, 16), X.rope, 0, .0225, 0, 0, Math.PI / 2, 0).scale.set(1, .45, 1); }
+    else { add(p, rb(.14, .035, .1, .018), X.meat, 0, .0175, 0); add(p, rb(.14, .037, .02, .008), X.fat, 0, .0185, -.045); }
+    bake(p); meat.push(p); });
+  g.userData.fridge = { piv, meat, inside: V(0, (lb + split) / 2, z0 + bd / 2), handle: V(-dw + .065, split - .18, .11) };
+  return bake(g);
+}
+
+function fryPan() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.1, 0], [.112, .035], [.106, .037], [.094, .006], [0, .006]], 28), M.iron); rod(g, V(.105, .03, 0), V(.27, .05, 0), .011, .009, M.iron, 8); add(g, rb(.09, .022, .026, .008), M.woodDark, .24, .05, 0, 0, 0, -.1); return g; }
+function steak() { const X = mx(), g = new THREE.Group(); const sh = new THREE.Shape(); sh.moveTo(-.06, -.03); sh.quadraticCurveTo(-.075, .035, -.02, .042); sh.quadraticCurveTo(.05, .05, .068, .01); sh.quadraticCurveTo(.07, -.04, .0, -.045); sh.quadraticCurveTo(-.05, -.05, -.06, -.03);
+  const m = new THREE.MeshStandardMaterial({ color: X.meat.color.clone(), roughness: .45 }); add(g, EX(sh, .016, .004), m, 0, .012, 0, -Math.PI / 2); add(g, new THREE.TorusGeometry(.045, .006, 5, 18, 2.2), X.fat, -.004, .012, .0, Math.PI / 2, 0, 2.6); g.userData.mat = m; return g; }
+function plateOfFood() { const X = mx(), g = new THREE.Group(); add(g, lathe([[0, 0], [.07, 0], [.095, .013], [.1, .018], [.06, .007], [0, .007]], 28), M.ceramic);
+  const food = []; const st = steak(); st.scale.setScalar(.85); st.position.set(-.02, .0, .01); g.add(st); food.push(st);
+  for (let i = 0; i < 4; i++) { const p = add(g, new THREE.SphereGeometry(.018, 8, 6), X.potato, .045 + rr(-.012, .012), .017, -.04 + i * .022); p.scale.set(1.2, .8, 1); food.push(p); }
+  for (let i = 0; i < 3; i++) { const c = add(g, new THREE.CylinderGeometry(.012, .012, .006, 10), X.carrot, -.04 + i * .018, .012, -.05); food.push(c); }
+  g.userData.food = food; return g; }
+function choppingBoard() { const X = mx(), g = new THREE.Group(); W(g, .28, .022, .2, 0, .011, 0, { mat: M.woodLight, r: .008 }); add(g, new THREE.CylinderGeometry(.012, .012, .024, 12), M.darkInside, .12, .011, 0);
+  { const c = lathe([[0, 0], [.016, .01], [.017, .05], [.011, .11], [0, .13]], 12); add(g, c, X.carrot, .04, .039, .045, 0, 0, Math.PI / 2); add(g, new THREE.ConeGeometry(.01, .045, 6), X.leaf, .062, .039, .045, 0, 0, -Math.PI / 2); }
+  for (const [x, z] of [[.08, -.04], [.1, -.02], [.06, -.06]]) add(g, new THREE.CylinderGeometry(.015, .015, .007, 12), X.carrot, x, .0255, z, 0, 0, rr(-.1, .1));
+  add(g, new THREE.SphereGeometry(.032, 14, 10), X.onion, -.08, .052, .05).scale.set(1, .9, 1); add(g, new THREE.SphereGeometry(.028, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), X.fat, -.08, .022, -.04);
+  add(g, new THREE.SphereGeometry(.028, 10, 8), X.potato, -.02, .045, -.05).scale.set(1.25, .8, 1); return bake(g); }
+function knife() { const g = new THREE.Group(); const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.12, 0); sh.quadraticCurveTo(.15, .01, .16, .03); sh.lineTo(0, .03); sh.lineTo(0, 0); add(g, EX(sh, .0015, .0005), M.steel, .01, -.015, 0); add(g, rb(.095, .02, .016, .007), M.woodDark, -.045, 0, 0); for (const x of [-.07, -.03]) add(g, new THREE.CylinderGeometry(.003, .003, .018, 6), M.brass, x, 0, 0, Math.PI / 2); g.userData.grip = V(-.045, 0, 0); return bake(g); }
+function pantryShelf() { const g = new THREE.Group(), X = mx(); const w = .5, d = .26, h = 1.45; const tools = {};
+  for (const s of [-1, 1]) W(g, .03, h, d, s * (w / 2 - .015), h / 2, d / 2, { mat: M.woodDark, grain: 1 });
+  W(g, w - .02, h - .08, .012, 0, h / 2, .008, { mat: M.wood, grain: 1 });
+  const ys = [.05, .42, .78, 1.12, h - .015]; for (const y of ys) W(g, w - .06, .025, d - .01, 0, y, d / 2 + .004, { mat: M.woodLight });
+  const top = i => ys[i] + .0125;
+  for (const [x, s] of [[-.1, 1], [.11, .85]]) { const sk = add(g, lathe([[0, 0], [.08, 0], [.1, .05], [.1, .15], [.075, .21], [.03, .24], [.045, .27], [0, .27]], 16), X.sack, x, top(0), .13); sk.scale.set(s, s, s * .9); add(g, new THREE.TorusGeometry(.035, .006, 5, 12), X.rope, x, top(0) + .235 * s, .13, Math.PI / 2); }
+  [-.17, -.08, .01].forEach((x, i) => { const c = can(.11, .038, M.cans[i]); c.position.set(x, top(1), .14); g.add(c); }); { const c = can(.11, .038, M.cans[3]); c.position.set(-.125, top(1) + .11, .14); g.add(c); }
+  [[-.16, .14, .05, M.jarGlass], [-.05, .12, .045, M.glazeCream], [.06, .1, .04, M.jarGlass]].forEach(([x, hh, r, m]) => { const j = jar(hh, r, m); j.position.set(x, top(2), .14); g.add(j); });
+  [[-.15, .07, .05, M.cans[1]], [-.04, .07, .05, M.cans[2]]].forEach(([x, hh, r, m]) => { const c = can(hh, r, m); c.position.set(x, top(3), .14); g.add(c); });
+  { const b = lathe([[0, 0], [.035, 0], [.035, .15], [.014, .2], [.012, .23], [0, .23]], 14); add(g, b, M.jarGlass, .1, top(3), .14); }
+  const tc = can(.11, .038, M.cans[0]); tc.position.set(.13, top(1), .15); bake(tc); tc.userData.live = true; g.add(tc); tools.supplyCan = tc;
+  const tj = jar(.13, .045, M.glazeCream); tj.position.set(.16, top(2), .15); bake(tj); tj.userData.live = true; g.add(tj); tools.supplyJar = tj;
+  bake(g); g.userData.tools = tools; return g; }
+function crate(w = .36, h = .4, d = .36) { const g = new THREE.Group(); for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { W(g, w - .02, .1, .018, 0, .065 + i * .125, s * (d / 2 - .009), { mat: i === 1 && s > 0 ? M.woodRed : M.wood }); W(g, .018, .1, d - .036, s * (w / 2 - .009), .065 + i * .125, 0, { mat: M.wood }); }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) W(g, .04, h - .02, .04, sx * (w / 2 - .025), (h - .02) / 2, sz * (d / 2 - .025), { mat: M.woodDark, grain: 1 });
+  for (let i = 0; i < 3; i++) W(g, w, .02, d / 3 - .006, 0, h - .01, -d / 3 + i * d / 3, { mat: M.woodLight }); return bake(g); }
+function radio() { const g = new THREE.Group(), X = mx(); const w = .3, h = .22, d = .14;
+  const arch = (ww, hh) => { const s = new THREE.Shape(); s.moveTo(-ww / 2, 0); s.lineTo(ww / 2, 0); s.lineTo(ww / 2, hh * .6); s.quadraticCurveTo(ww / 2, hh, 0, hh); s.quadraticCurveTo(-ww / 2, hh, -ww / 2, hh * .6); s.lineTo(-ww / 2, 0); return s; };
+  add(g, EX(arch(w, h), d, .008), M.woodRed); const gr = new THREE.ShapeGeometry(arch(w - .07, h - .085), 12); add(g, gr, X.grille, 0, .07, d / 2 + .0085);
+  for (const x of [-.04, 0, .04]) add(g, rb(.008, .11, .006, .002), M.woodDark, x, .07 + .055, d / 2 + .01);
+  const dm = new THREE.MeshStandardMaterial({ color: 0x4A3218, emissive: 0xFFB050, emissiveIntensity: 0, roughness: .3 }); add(g, rb(.13, .03, .004, .003), dm, 0, .04, d / 2 + .009);
+  add(g, rb(.136, .036, .003, .004), M.brass, 0, .04, d / 2 + .007);
+  const needle = add(g, rb(.002, .024, .002, .0005), M.gripRed, -.05, .04, d / 2 + .013); needle.userData.live = true;
+  add(g, new THREE.CylinderGeometry(.017, .019, .02, 16), M.woodDark, -.11, .04, d / 2 + .016, Math.PI / 2);
+  const knob = add(g, new THREE.CylinderGeometry(.017, .019, .02, 16), M.woodDark, .11, .04, d / 2 + .016, Math.PI / 2); knob.userData.live = true;
+  add(knob, rb(.004, .014, .004, .001), M.brass, 0, -.011, .006); // pointer line on the knob (child turns with it)
+  for (const x of [-.11, .11]) add(g, rb(.03, .012, .04, .004), M.rubber, x, .006, 0);
+  bake(g); g.userData.radio = { needle, knob, dm, knobLocal: V(.11, .04, d / 2 + .03) }; return g; }
+function plant() { const g = new THREE.Group(), X = mx();
+  add(g, lathe([[0, 0], [.085, 0], [.09, .01], [.112, .19], [.124, .2], [.124, .226], [.111, .226], [.104, .2], [0, .2]], 24), X.terracotta);
+  add(g, new THREE.CircleGeometry(.105, 20), X.soil, 0, .206, 0, -Math.PI / 2);
+  const ls = new THREE.Shape(); ls.moveTo(0, 0); ls.quadraticCurveTo(.04, .05, 0, .15); ls.quadraticCurveTo(-.04, .05, 0, 0); const lg = new THREE.ShapeGeometry(ls, 6);
+  for (let i = 0; i < 16; i++) { const st = new THREE.Group(); st.position.set(rr(-.02, .02), .206, rr(-.02, .02)); st.rotation.y = i * 2.4; g.add(st); const tilt = .15 + (i % 4) * .22, len = rr(.12, .26) * (1 - (i % 4) * .12);
+    const tip = V(0, len * Math.cos(tilt), len * Math.sin(tilt)); rod(st, V(), tip, .004, .003, X.leafDark, 5); const lf = add(st, lg, i % 3 ? X.leaf : X.leafDark, tip.x, tip.y, tip.z, -Math.min(1.45, tilt + .45), 0, 0); lf.rotation.x = Math.min(1.45, tilt + .45); lf.scale.setScalar(rr(.8, 1.15)); }
+  // one dry yellowed leaf on the soil: a cared-for plant, but not a showroom one
+  add(g, lg, std2(0xA88A3A), .03, .208, .02, -Math.PI / 2 + .1, 0, .8).scale.setScalar(.7);
+  return bake(g); }
+function wateringCan() { const g = new THREE.Group(), X = mx(); add(g, lathe([[0, 0], [.075, 0], [.08, .01], [.08, .16], [.072, .18], [.045, .19], [.045, .2], [0, .2]], 22), X.zinc);
+  rod(g, V(.07, .03, 0), V(.27, .22, 0), .016, .009, X.zinc, 10); rod(g, V(.265, .215, 0), V(.29, .24, 0), .014, .026, X.zinc, 12);
+  add(g, new THREE.TorusGeometry(.085, .009, 6, 18, Math.PI), X.zinc, -.01, .18, 0); add(g, new THREE.TorusGeometry(.06, .008, 6, 14, Math.PI), X.zinc, -.08, .1, 0, 0, 0, Math.PI / 2);
+  g.userData.grip = V(-.01, .265, 0); g.userData.spout = V(.29, .24, 0); return bake(g); }
+function broom() { const g = new THREE.Group(), X = mx(); add(g, new THREE.CylinderGeometry(.013, .015, 1.2, 10), M.woodLight, 0, .2 + .6, 0);
+  const hd = add(g, lathe([[0, 0], [.13, 0], [.12, .05], [.07, .17], [.035, .25], [0, .26]], 16), X.straw); hd.scale.set(.3, 1, 1);
+  for (const y of [.17, .21]) add(g, new THREE.TorusGeometry(.06 - (y - .17) * .6, .006, 5, 14), X.rope, 0, y, 0, Math.PI / 2).scale.set(.4, 1, 1);
+  g.userData.grip = V(0, 1.0, 0); return bake(g); }
+function diary() { const X = mx(), g = new THREE.Group(); const w = .13, d = .18, t = .026; add(g, rb(w, t, d, .004), X.leather, 0, t / 2, 0); add(g, rb(w - .006, t - .008, d - .008, .002), M.pageEdge, .005, t / 2, 0);
+  add(g, rb(.018, t + .004, d + .004, .002), X.leather, w / 2 - .01, t / 2, 0); add(g, rb(w + .004, t + .003, .014, .002), std2(0x3E2618), 0, t / 2, .04);
+  add(g, new THREE.PlaneGeometry(.008, .07), X.ribbon, -.02, .002, -d / 2 - .03, -Math.PI / 2 + .1); return bake(g); }
+function pencil() { const g = new THREE.Group(); add(g, new THREE.CylinderGeometry(.0045, .0045, .14, 6), M.gripYellow, 0, .0045, 0, 0, 0, Math.PI / 2); add(g, new THREE.ConeGeometry(.0045, .02, 6), M.woodLight, .08, .0045, 0, 0, 0, -Math.PI / 2); add(g, new THREE.CylinderGeometry(.0047, .0047, .012, 8), M.brass, -.076, .0045, 0, 0, 0, Math.PI / 2); return bake(g); }
+function whetstone() { const X = mx(), g = new THREE.Group(); W(g, .24, .035, .085, 0, .0175, 0, { mat: M.woodDark }); add(g, rb(.2, .022, .055, .004), X.stoneDark, 0, .046, 0); add(g, rb(.2, .022, .055, .004), X.stone, 0, .067, 0);
+  add(g, lathe([[0, 0], [.025, 0], [.025, .06], [.008, .075], [.004, .1], [0, .1]], 12), M.brass, .16, 0, .02); return bake(g); }
+function repairLantern() { const g = new THREE.Group(); const L = lanternHousing(.01); L.scale.setScalar(.75); L.position.y = .09; g.add(L); add(g, new THREE.TorusGeometry(.075, .004, 6, 18, Math.PI), M.iron, 0, .17, 0);
+  add(g, new THREE.CylinderGeometry(.004, .004, .02, 6), M.linen, 0, .03, 0); g.userData.grip = V(0, .245, 0); return bake(g); }
+function jacket() { const X = mx(), g = new THREE.Group(); // origin = the hanging loop, the jacket faces +z
+  add(g, new THREE.TorusGeometry(.014, .003, 4, 10), X.jacketDark, 0, -.012, 0);
+  const b = new THREE.Shape(); b.moveTo(-.07, 0); b.lineTo(.07, 0); b.quadraticCurveTo(.17, -.02, .2, -.07); b.lineTo(.215, -.7); b.lineTo(-.215, -.7); b.lineTo(-.2, -.07); b.quadraticCurveTo(-.17, -.02, -.07, 0);
+  add(g, EX(b, .08, .022), X.jacket, 0, -.03, 0); add(g, rb(.17, .06, .11, .02), X.jacketDark, 0, -.05, 0);
+  for (const s of [-1, 1]) { strut(g, V(s * .19, -.1, .0), V(s * .225, -.64, .035), .1, .085, X.jacket); add(g, rb(.1, .05, .09, .015), X.jacketDark, s * .227, -.63, .037); }
+  add(g, rb(.008, .62, .006, .002), X.jacketDark, 0, -.4, .062); for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(.008, .008, .006, 10), M.iron, .018, -.15 - i * .11, .065, Math.PI / 2);
+  for (const s of [-1, 1]) add(g, rb(.11, .03, .012, .004), X.jacketDark, s * .1, -.46, .065);
+  add(g, rb(.08, .09, .005, .002), X.patch, .1, -.28, .064, 0, 0, .15); add(g, rb(.06, .06, .005, .002), X.patch, -.23, -.4, .08, 0, -.2, .05); // patched elbow and chest: an old, mended coat
+  g.userData.grip = V(0, -.05, .05); return bake(g); }
+function bowOnWall() { const X = mx(), g = new THREE.Group(); // in the y-z plane, bulging toward +z; origin at the grip
+  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); add(g, new THREE.TubeGeometry(c, 28, .015, 7), std2(0x6B4528));
+  add(g, new THREE.CylinderGeometry(.0025, .0025, 1.12, 4), std2(0xE8E2D0), 0, 0, .002); add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
+function quiver() { const X = mx(), g = new THREE.Group(); // origin at the strap ring on top
+  add(g, lathe([[0, -.52], [.04, -.52], [.05, -.5], [.055, -.05], [.058, 0], [.05, 0], [.047, -.05], [0, -.05]], 16), X.leather);
+  add(g, new THREE.TorusGeometry(.057, .005, 5, 16), std2(0x3E2618), 0, -.25, 0, Math.PI / 2);
+  for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025; add(g, new THREE.CylinderGeometry(.003, .003, .2, 4), std2(0xC9A875), x, .05, z); add(g, new THREE.PlaneGeometry(.025, .06), X.fletch, x, .12, z, 0, a, 0); }
+  return bake(g); }
+function meatBag() { const X = mx(), g = new THREE.Group(); const s = add(g, lathe([[0, 0], [.09, 0], [.13, .05], [.14, .14], [.1, .22], [.04, .26], [.05, .3], [0, .3]], 16), X.sack, 0, -.3, 0); s.scale.set(1, 1, .8);
+  add(g, new THREE.TorusGeometry(.04, .008, 5, 12), X.rope, 0, -.04, 0, Math.PI / 2); add(g, rb(.08, .04, .06, .012), X.meat, .05, -.06, .05, .4, 0, .3); g.userData.grip = V(0, 0, 0); return bake(g); }
+function logArmful() { const X = mx(), g = new THREE.Group(); for (const [x, y] of [[-.06, 0], [.06, 0], [0, .1]]) { const l = logPiece(.5, .055); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
+  for (const z of [-.14, .14]) add(g, new THREE.TorusGeometry(.12, .007, 5, 18), X.rope, 0, .04, z).scale.set(1.05, .95, 1); g.userData.grip = V(0, .05, 0); return bake(g); }
+function sawhorse() { const X = mx(), g = new THREE.Group(); const L = .95, H = .62;
+  W(g, L, .08, .09, 0, H - .04, 0, { mat: M.wood });
+  for (const sx of [-1, 1]) { for (const sz of [-1, 1]) strut(g, V(sx * (L / 2 - .1), H - .07, sz * .03), V(sx * (L / 2 - .05), 0, sz * .22), .055, .045, M.woodDark); W(g, .03, .06, .36, sx * (L / 2 - .075), .22, 0, { mat: M.wood }); }
+  W(g, 1.15, .035, .2, .1, H + .0175, 0, { mat: M.woodLight }); // the plank, sawn part way across near the end
+  W(g, .22, .035, .2, .62, .02, .12, { mat: M.woodLight, ry: .6, rz: .05 }); // an off-cut on the ground
+  add(g, new THREE.CircleGeometry(.22, 14), X.sawdust, .5, .004, .02, -Math.PI / 2).scale.set(1, .7, 1);
+  return bake(g); }
+function handSaw() { const g = new THREE.Group(); const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.5, 0); sh.lineTo(.5, .06); sh.lineTo(0, .12); sh.lineTo(0, 0); add(g, EX(sh, .0015, .0005), M.steel);
+  const hs = new THREE.Shape(); hs.moveTo(-.02, -.01); hs.lineTo(-.15, .0); hs.quadraticCurveTo(-.17, .08, -.13, .15); hs.lineTo(-.02, .14); hs.lineTo(-.02, -.01); const hole = new THREE.Path(); hole.absellipse(-.09, .07, .028, .045, 0, Math.PI * 2, true); hs.holes.push(hole);
+  add(g, EX(hs, .024, .004), M.woodRed); for (const [x, y] of [[-.01, .03], [-.01, .1]]) add(g, new THREE.CylinderGeometry(.005, .005, .03, 8), M.brass, x, y, 0, Math.PI / 2); g.userData.grip = V(-.09, .07, 0); return bake(g); }
+
 // ================= placement =================
 export function buildProps(ctx) {
   let shiftRooms = () => {}, candleObj = null;
@@ -565,7 +731,32 @@ export function buildProps(ctx) {
   const tbl = place('table', table(), -.35, BD, 1.45); const tTop = tbl.userData.floorY + .74;
   const bk = book({ cover: M.covers[0] }); bk.position.set(-.33, tTop, 1.6); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
   { const m = bake(mug(M.glazeBlue)); m.position.set(-.06, tTop, 1.35); scene.add(m); const c = bake(candle()); c.position.set(-.62, tTop, 1.32); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62, tTop, 1.6); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
-  place('door', plankDoor(2.0), .33, BD, 1.82, { ry: -Math.PI / 2, solid: false });
+  // door in Tree's opening of the right wall (z 2.3..3.25, up to BD+2.0); hinge at the front (z≈3.2), opens into the room.
+  // It rests open (~95°) along z≈3.2 so the way in stays clear; __props.door.setOpen(k) swings it (0 shut), setBolt(k) slides the bolt (1 locked).
+  { const dg = place('door', plankDoor(1.9, .77), .4, BD, 2.775, { ry: -Math.PI / 2, solid: false }); const D = dg.userData.door;
+    const ds = { open: 1, bolt: 0, toO: 1, toB: 0 };
+    const apply = () => { D.piv.rotation.y = ds.open * 1.66; D.bar.position.x = D.barX - ds.bolt * .055; };
+    out.door = { obj: dg, get open() { return ds.open; }, get bolt() { return ds.bolt; },
+      setOpen(k) { ds.open = ds.toO = clamp01(k); if (ds.open > .02) ds.bolt = ds.toB = 0; apply(); },
+      setBolt(k) { ds.bolt = ds.toB = ds.open > .02 ? 0 : clamp01(k); apply(); },
+      openTo(k) { ds.toO = clamp01(k); }, boltTo(k) { ds.toB = clamp01(k); },
+      // world points for the hand: the knob on the latch edge, and the bolt knob
+      handle(t = V()) { D.piv.updateMatrixWorld(true); return D.piv.children[0].localToWorld(t.set(-D.w / 2 + .1, D.h * .46, .07)); },
+      boltKnob(t = V()) { D.bar.updateMatrixWorld(true); return D.bar.localToWorld(t.set(.02, .034, .01)); },
+      update(dt) { let ch = false; for (const [k, t, r] of [['open', 'toO', .9], ['bolt', 'toB', 3]]) { if (ds[k] !== ds[t]) { const d = ds[t] - ds[k]; ds[k] = Math.abs(d) < r * dt ? ds[t] : ds[k] + Math.sign(d) * r * dt; ch = true; } } if (ch) { if (ds.open > .02) ds.bolt = ds.toB = 0; apply(); }
+        wind(dt); } };
+    // wind: an open, unattended door swings on a spring toward the wind; in a strong gust (s > ~1) it slams shut-ish and bangs.
+    // Not while someone moves it (open != toO) and never when bolted shut.
+    const sw = { a: 0, v: 0, cd: 0 }; const wp = V();
+    function wind(dt) { const Wd = window.__wind; if (!Wd || !Wd.sample || ds.open !== ds.toO || ds.open < .05) { if (sw.a) { sw.a = 0; sw.v = 0; apply(); } return; }
+      dg.getWorldPosition(wp); wp.y += 1; let f = 0; try { const w = Wd.sample(wp); const s = w.s || 0; // push toward closing when the wind blows into the room through the doorway (-x), open when it blows out
+        f = (-(w.x || 0)) * (s > 1 ? 2.2 : .6) + Math.sin(performance.now() * .0013) * .05 * s; } catch (e) { f = 0; }
+      sw.v += (f - sw.a * 9 - sw.v * 2.2) * dt; sw.a += sw.v * dt; sw.cd -= dt;
+      const lo = -ds.open * 1.66 + .02, hi = .06; // can't open past the wall stop, can close all the way
+      if (sw.a < lo || sw.a > hi) { const hit = Math.abs(sw.v); sw.a = Math.max(lo, Math.min(hi, sw.a)); sw.v *= -.3;
+        if (hit > .9 && sw.cd <= 0 && window.__audio && window.__audio.play) { try { window.__audio.play('shutter', wp, { gain: Math.min(1.2, hit / 2) }); } catch (e) { /* no sound */ } sw.cd = .6; } }
+      D.piv.rotation.y = ds.open * 1.66 + sw.a; }
+    apply(); }
   place('hooks', bake(coatHooks()), .17, BD + 1.6, .97, { solid: false, wall: true });
   { const b = closedBook(.035, .2, .15, M.covers[4]); b.rotation.set(0, .6, Math.PI / 2); b.position.set(.25, 1.07 + .045 + .15 + .03, .12); bunk.add(b); }
   // light switch: flush on the solid wall just inside the room, right of the door opening (the opening is z 2.3..3.25),
@@ -595,10 +786,76 @@ export function buildProps(ctx) {
   place('lbarrel', barrel(.75), -2.6, LL, 1.4);
   place('lbucket', bucket(.34), -1.9, LL, 1.8);
 
+  // ================= round 6: food, wood, gear and chores =================
+  // world points for the hands: out.point(name) -> Vector3 (computed on call, so room shifts are included)
+  const PT = {}; out.point = (name, t = V()) => { const p = PT[name]; if (!p) return null; p[0].updateMatrixWorld(true); return p[0].localToWorld(t.copy(p[1])); }; out.pointNames = () => Object.keys(PT);
+  const homeOf = (o, extra = {}) => { o.userData.home = { parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.x, ...extra }; };
+  const tool = (name, o, parent, x, y, z, rot = [0, 0, 0]) => { o.position.set(x, y, z); o.rotation.set(...rot); o.userData.live = true; parent.add(o); homeOf(o); out.tools[name] = o; return o; };
+  const ghY = (x, z) => { const G = window.__ground; try { return G && G.heightAt ? G.heightAt(x, z) : 0; } catch (e) { return 0; } };
+  // --- kitchen: firewood by the stove (its size follows the stock), supply shelf, chopping board, stew pot + ladle, pan with meat, plate of food
+  const wp = place('woodpile', logStack(pyramidSlots([4, 3, 2, 1], .058, .128), .42), -4.04, KT, 1.33);
+  out.woodpile = { obj: wp, max: wp.userData.logs.max, get count() { return wp.userData.logs.count; }, setCount: k => wp.userData.logs.setCount(k) };
+  PT.woodpile = [wp, V(0, .5, .05)];
+  const pantry = place('pantry', pantryShelf(), -4.37, KT, 2.0, { ry: Math.PI / 2 }); for (const [k, o] of Object.entries(pantry.userData.tools)) { homeOf(o); out.tools[k] = o; }
+  PT.pantry = [pantry, V(0, 1.0, .3)];
+  const cn = placed.counter, cTop = cn.userData.floorY + .9;
+  tool('board', choppingBoard(), scene, -2.62, cTop, 1.4, [0, .05, 0]); tool('knife', knife(), scene, -2.6, cTop + .023, 1.33, [0, -.15, 0]);
+  const plateO = tool('plate', bake(plateOfFood()), scene, -2.375, cTop, 1.4); const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
+  // food on the plate: setFood(1) full, (.5) half eaten, (0) empty. (Meshes are merged per material, so we scale the food meshes down.)
+  out.plate = { obj: plateO, setFood(k) { k = clamp01(k); for (const m of food) { m.visible = k > .02; m.scale.setScalar(.35 + .65 * k); } } }; out.plate.setFood(0);
+  PT.board = [out.tools.board, V(0, .03, 0)]; PT.sink = [cn, V(.23, .76, .04)];
+  { // the stew pot loses its lid and gets a ladle; both are tools now
+    let potO = null; st.children.forEach(c => { if (!potO && c.position && Math.abs(c.position.x - .19) < .001 && Math.abs(c.position.z - .13) < .001) potO = c; });
+    if (potO) { potO.removeFromParent(); }
+    const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); }
+    tool('pot', bake(pg), st, .19, .93, .13); tool('ladle', bake(ladle(.3)), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
+    const fp = bake(fryPan()); fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; fp.add(stk);
+    const raw = new THREE.Color(0xA2343A), done = new THREE.Color(0x6A3A22);
+    // the pan: setMeat(true/false) puts a steak in it, setCook(0..1) browns it
+    out.pan = { obj: fp, setMeat(on) { stk.visible = !!on; }, setCook(k) { stk.userData.mat.color.copy(raw).lerp(done, clamp01(k)); } };
+    PT.pan = [fp, V(0, .05, 0)]; PT.pot = [st, V(.19, 1.06, .13)]; PT.oven = [st, V(0, .45, .45)]; }
+  { // fridge API (the lower door is on a hinge; meat inside follows the stock)
+    const F = placed.fridge.userData.fridge; const fs = { open: 0, to: 0, n: 0 };
+    const apply = () => { F.piv.rotation.y = fs.open * 1.75; };
+    out.fridge = { obj: placed.fridge, max: F.meat.length, get stock() { return fs.n; }, get open() { return fs.open; },
+      setStock(n) { fs.n = Math.max(0, Math.min(F.meat.length, Math.round(n))); F.meat.forEach((m, i) => { m.visible = i < fs.n; }); },
+      setOpen(k) { fs.open = fs.to = clamp01(k); apply(); }, openTo(k) { fs.to = clamp01(k); },
+      handle(t = V()) { F.piv.updateMatrixWorld(true); return F.piv.localToWorld(t.copy(F.handle)); }, inside(t = V()) { return placed.fridge.localToWorld(t.copy(F.inside)); },
+      update(dt) { if (fs.open !== fs.to) { const d = fs.to - fs.open; fs.open = Math.abs(d) < dt * 1.6 ? fs.to : fs.open + Math.sign(d) * dt * 1.6; apply(); } } };
+    out.fridge.setStock(2); PT.fridge = [placed.fridge, F.inside.clone()]; }
+  // --- bedroom: crate nightstand with the radio, broom, potted plant + watering can, diary and pencil
+  const crt = place('crate', crate(), -3.96, BD, 1.17); const cY = crt.userData.floorY + .4;
+  const rad = radio(); rad.position.set(-3.96, cY, 1.17); rad.rotation.y = .55; scene.add(rad); rad.userData.live = true;
+  { const R = rad.userData.radio; const rs = { on: 0, tune: .3 }; R.knob.rotation.y = rs.tune * 5;
+    out.radio = { obj: rad, get on() { return rs.on; }, setOn(k) { rs.on = clamp01(k); R.dm.emissiveIntensity = rs.on * 1.6; }, setTune(k) { rs.tune = clamp01(k); R.needle.position.x = -.05 + .1 * rs.tune; R.knob.rotation.y = rs.tune * 5; }, knob(t = V()) { return rad.localToWorld(t.copy(R.knobLocal)); }, dialMat: R.dm };
+    out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
+  tool('broom', broom(), scene, -4.03, floorAt(-4.03, BD, 1.62), 1.62, [0, 0, .11]);
+  const plantO = place('plant', plant(), -3.97, BD, 2.62); PT.plant = [plantO, V(0, .3, 0)];
+  tool('wateringCan', wateringCan(), scene, -3.94, floorAt(-3.94, BD, 3.08), 3.08, [0, -.9, 0]);
+  tool('diary', diary(), scene, -.37, tTop, 1.31, [0, .22, 0]); tool('pencil', pencil(), scene, -.22, tTop, 1.3, [0, .5, 0]);
+  PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
+  // --- workshop: whetstone and a lantern to repair on the bench; jacket on a peg by the open side; bow and quiver on the left wall
+  { const bt = wb.userData.floorY + .9; const ws = whetstone(); ws.position.set(2.63, bt, 1.62); ws.rotation.y = .08; scene.add(ws); PT.whetstone = [ws, V(0, .08, 0)];
+    tool('lantern', repairLantern(), scene, 2.88, bt, 1.63); PT.nails = [wb, V(.35, .95, -.18)]; PT.bench = [wb, V(0, .92, .1)]; }
+  const peg = (x, y, z, ry) => { const p = new THREE.Group(); add(p, new THREE.CylinderGeometry(.014, .016, .09, 10), M.woodDark, 0, 0, .045, Math.PI / 2); add(p, new THREE.SphereGeometry(.02, 10, 8), M.woodDark, 0, 0, .09); add(p, rb(.06, .1, .015, .005), M.woodDark, 0, 0, .0075); p.position.set(x, y, z); p.rotation.y = ry; scene.add(p); return p; };
+  { const pj = peg(4.575, WS + 1.72, 3.72, -Math.PI / 2); const jk = jacket(); tool('jacket', jk, scene, 4.575 - .07, WS + 1.72 - .005, 3.72, [0, -Math.PI / 2, 0]); jk.position.x = 4.575 - .06 - .02; PT.jacketPeg = [pj, V(0, 0, .09)]; }
+  { const pb = [peg(.925, WS + 1.82, 2.1, Math.PI / 2), peg(.925, WS + 1.1, 2.1, Math.PI / 2)]; tool('bow', bowOnWall(), scene, .925 + .1, WS + 1.45, 2.1, [0, 0, 0]); PT.bowPeg = [pb[0], V(0, 0, .09)];
+    const pq = peg(.925, WS + 1.62, 1.72, Math.PI / 2); tool('quiver', quiver(), scene, .925 + .1, WS + 1.62, 1.72, [0, 0, -.12]); PT.quiverPeg = [pq, V(0, 0, .09)]; }
+  // gear hanging at home: setHere(name, false) hides it (he has it on / with him), true shows it on its peg again
+  out.setHere = (name, on) => { const o = out.tools[name]; if (o) o.visible = !!on; };
+  // --- things he carries in from outside: hidden until grabbed, hidden again on release
+  for (const [k, f] of [['meatBag', meatBag], ['logArmful', logArmful]]) { const o = f(); o.visible = false; tool(k, o, scene, 0, -50, 0); o.userData.home.hide = true; }
+  // --- outside at the foot of the oak: a big log pile and a sawhorse with a half-sawn plank and the saw in the cut
+  { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .2, .01), .72); lp.position.set(x, ghY(x, z) - .01, z); lp.rotation.y = .5; scene.add(lp); lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(lp); lp.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'logpile' }); PT.logpile = [lp, V(0, .9, .2)]; }
+  { const x = -3.6, z = 1.95; const sh = sawhorse(); sh.position.set(x, ghY(x, z), z); sh.rotation.y = Math.PI / 2; scene.add(sh); sh.name = 'sawhorse'; placed.sawhorse = sh; sh.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(sh); sh.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'sawhorse' });
+    tool('plankSaw', handSaw(), sh, .45, .62 + .035 + .13, .24, [0, Math.PI / 2, -.6]); PT.sawhorse = [sh, V(.45, .7, 0)]; }
+
   // ---------- grab / release for the hero's hands ----------
   const tq = new THREE.Quaternion();
   out.grab = (name, bone, { offset = V(0, .08, .03), rot = null } = {}) => {
-    const o = out.tools[name]; if (!o || !bone) return null; const ws = bone.getWorldScale(V()).x || 1; bone.add(o);
+    const o = out.tools[name]; if (!o || !bone) return null; const ws = bone.getWorldScale(V()).x || 1; bone.add(o); o.visible = true; homing.delete(o);
     o.scale.setScalar(((o.userData.home && o.userData.home.scale) || 1) / ws); if (rot) o.quaternion.copy(rot); else o.quaternion.identity();
     const grip = (o.userData.grip || V()).clone().applyQuaternion(o.quaternion).multiplyScalar(o.scale.x); o.position.copy(offset).multiplyScalar(1 / ws).sub(grip); return o;
   };
@@ -606,7 +863,7 @@ export function buildProps(ctx) {
   const homing = new Map();
   out.release = (name, { blend = 0 } = {}) => { const o = out.tools[name]; const h = o && o.userData.home; if (!h) return;
     if (blend > 0 && o.parent !== h.parent) { h.parent.attach(o); homing.set(o, { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.x, t: 0, d: blend, h }); return; }
-    homing.delete(o); h.parent.add(o); o.position.copy(h.pos); o.quaternion.copy(h.quat); o.scale.setScalar(h.scale || 1); };
+    homing.delete(o); h.parent.add(o); if (h.hide) o.visible = false; o.position.copy(h.pos); o.quaternion.copy(h.quat); o.scale.setScalar(h.scale || 1); };
   // world spot where the tool lives (hook or bench), so the hand can reach there before release
   out.toolHome = (name, target = V()) => { const o = out.tools[name]; const h = o && o.userData.home; if (!h) return null; h.parent.updateMatrixWorld(true); return target.copy(h.pos).applyMatrix4(h.parent.matrixWorld); };
   // chair: chairPull(k) slides it back from the table by k * 0.2 m (0 = its home, where the seated pose is fitted).
@@ -651,7 +908,7 @@ export function buildProps(ctx) {
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
     out.oven.setHeat(heat); void cooking; /* lights.js owns the oven heat (passed in as heat) */ tAcc += dt; out.oven.flicker(tAcc);
-    tweens(dt);
+    tweens(dt); out.door.update(dt); out.fridge.update(dt);
   };
   // ---------- stovepipe: from the hood duct across the kitchen ceiling, out through the left wall,
   // then up outside the bedroom wall past the eaves, with a rain cap (smoke.js reads out.chimneyTop) ----------
