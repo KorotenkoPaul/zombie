@@ -81,14 +81,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     src.set(name, s); return s;
   }
 
-  // ---------- kitchen: hanging lantern over the counter + a small one on the front counter ----------
+  // ---------- kitchen: hanging lantern over the counter (the old front lantern hung in mid-air and was removed) ----------
   const kPos = PL.kitchenLamp ? PL.kitchenLamp.pos.clone() : V(-2.3, KT + 1.78, 1.75);
   {
     const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     const panes = claimHousing(kPos);
     const b = bulbMesh(kPos, .07);
-    const front = V(-2.4, KT + 1.5, 3.5); housing(front); claimHousing(front, .3); const fb = bulbMesh(front, .06);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: 6 }], emis: [[b, 5], [fb, 4], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: 6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
