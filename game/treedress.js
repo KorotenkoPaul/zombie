@@ -30,16 +30,21 @@ float td_n(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
 float td_f(vec3 p){return td_n(p)*.55+td_n(p*2.13+3.1)*.3+td_n(p*4.37+7.7)*.15;}`;
 
 // leaf flutter for instanced cards: small rotation-ish wobble growing with distance from the stem (uv.y)
+// ivy leaves: tip flutter driven by Wind (wind.js windSway: ~.1 calm, ~.4 breeze, ~2 in a gust), so gusts visibly ruffle them
 const FLUTTER = `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
- float gust=.55+.45*sin(uT*.35+ip.x*.05-ip.z*.04);
- float k=clamp(uv.y,0.,1.)*SW*uW*gust;
- transformed.z+=sin(uT*2.3+ip.x*3.1+ip.y*2.7)*k;
- transformed.x+=sin(uT*1.7+ip.z*2.9+ip.y*1.3)*k*.5;}`;
+ float k=clamp(uv.y,0.,1.)*SW;
+#ifdef WIND_GLSL_ON
+ vec2 w=windSway(ip,2.6);
+ transformed+=windLocal(vec3(w.x,0.,w.y))*k*.6+windLocal(vec3(0.,0.,1.))*sin(uT*7.3+ip.x*13.1+ip.y*7.7)*k*.04*length(w);
+#else
+ transformed.z+=sin(uT*2.3+ip.x*3.1+ip.y*2.7)*k*uW;
+#endif
+}`;
 function swayMat(mat, U, amp, chunk) {
   mat.onBeforeCompile = s => {
     if (mat.userData.AX !== undefined) branchHook(s, mat.userData.AX, mat.userData.AZ);
     s.uniforms.uT = U.t; s.uniforms.uW = U.wind;
-    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;')
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;' + (s.vertexShader.includes('windSway') ? '\n#define WIND_GLSL_ON' : ''))
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n{const float SW=${amp.toFixed(3)};${chunk}}`);
   };
   return mat;
@@ -300,6 +305,7 @@ uniform float tdCool;` + NOISE)
           // linear colours: deep olive in the shade, a little brighter yellow-green where it catches light
           vec3 moss=mix(vec3(.030,.048,.014),vec3(.085,.125,.028),smoothstep(.3,.8,fine));
           moss=mix(moss,vec3(.028,.045,.035),foot*.5);
+          moss*=mix(vec3(1.),vec3(.72,1.08,.62),tdDamp); // soaked moss: deeper and greener
           diffuseColor.rgb=mix(diffuseColor.rgb,moss*(.7+2.*lum),mm*.9);
           // grey-green lichen spots on the drier upper bark
 #ifdef TD_LITE
@@ -417,7 +423,17 @@ uniform float tdCool;` + NOISE)
       branchHook(sh, AX, AZ);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
-        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}');
+        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}')
+        // weather (same uniforms as the bark): soaked moss deeper and greener, hoar frost on the tops of the cushions on cold nights.
+        // Only the green instances (moss), not the brown soil lumps that share this mesh.
+        .replace('#include <color_fragment>', `#include <color_fragment>
+{ vec3 c=diffuseColor.rgb; float green=smoothstep(.05,.3,(c.g-c.r)/max(c.g,1e-3));
+  c=mix(c,c*vec3(.72,1.1,.6),tdDamp*green);
+  vec3 wN=normalize((vec4(vNormal,0.)*viewMatrix).xyz); float top=smoothstep(.3,.85,wN.y);
+  float fr=tdFrost*top*green*(.35+.65*smoothstep(.4,.65,td_n(tdP*70.)));
+  c=mix(c,vec3(.24,.26,.3),fr*.45); diffuseColor.rgb=c; }`)
+        .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost;');
+      sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost;
     };
     const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
