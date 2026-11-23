@@ -6,7 +6,7 @@
 // A height map of everything solid under the sky (roofs, decks, landings, rails) is built once after load, a few
 // rays per frame, so drops stop on the roofs instead of falling into the rooms, and splashes/drips know where to be.
 
-export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], crown = null, MOBILE = false }) {
+export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], crown = null, MOBILE = false, renderer = null }) {
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const rnd = (a, b) => a + Math.random() * (b - a);
   // the rain box: around the tree, where the camera looks
@@ -110,7 +110,7 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
     const sk = new Set(); for (const s of skip) s && s.traverse(x => sk.add(x));
     targets = []; scene.updateMatrixWorld(true);
     scene.traverse(m => {
-      if (!m.isMesh || sk.has(m) || m === drops || !m.visible) return;   // instanced boards count too (Planks builds decks that way)
+      if (!m.isMesh || m.isSkinnedMesh || sk.has(m) || m === drops || !m.visible) return;   // not the hero (he moves)   // instanced boards count too (Planks builds decks that way)
       const mats = Array.isArray(m.material) ? m.material : [m.material];
       if (mats.some(x => !x || x.transparent || x.isShaderMaterial || x.alphaTest > 0 || x.side === THREE.BackSide)) return;
       let b;
@@ -124,7 +124,55 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
       for (let bz = Math.max(0, Math.floor((b.min.z - Z0) / BS)); bz <= Math.min(BZ - 1, Math.floor((b.max.z - Z0) / BS)); bz++)
         for (let bx = Math.max(0, Math.floor((b.min.x - X0) / BS)); bx <= Math.min(BX - 1, Math.floor((b.max.x - X0) / BS)); bx++) buckets[bz * BX + bx].push(t[0]); }
   }
+  // ---- the fast way (renderer given): ONE top-down render of the targets' world height, read back once ----
+  // (the rays cost up to ~38 ms each on big merged meshes and instanced decks: a 2 s hitch after load on the phone)
+  // An orthographic camera looks straight down at the box; a tiny override shader writes each fragment's world y packed
+  // into RGBA8 (three's packDepthToRGBA); depth test keeps the topmost. SUB texels per cell, so the roof-edge search and
+  // the leaf-tip drips can still look between cell centres. Same targets as the rays (everything else hidden for it).
+  const SUB = 8, HX = NX * SUB, HZ = NZ * SUB, YLO = -2, YSPAN = 40; let hi = null;
+  function renderTop() {
+    const rt = new THREE.WebGLRenderTarget(HX, HZ, { type: THREE.UnsignedByteType, depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    const cam = new THREE.OrthographicCamera(X0, X0 + W, -Z0, -(Z0 + D), 0.1, 80);   // looking down -y: screen x = world x, screen up = world -z
+    cam.position.set(0, 60, 0); cam.up.set(0, 0, -1); cam.lookAt(0, 0, 0); cam.layers.enableAll(); cam.updateMatrixWorld(true);
+    const mat = new THREE.ShaderMaterial({ side: THREE.DoubleSide,
+      vertexShader: `varying float vY;void main(){vec4 p=vec4(position,1.);
+#ifdef USE_INSTANCING
+p=instanceMatrix*p;
+#endif
+vec4 w=modelMatrix*p;vY=w.y;gl_Position=projectionMatrix*viewMatrix*w;}`,
+      fragmentShader: `#include <packing>
+varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFixed(1)}))/${YSPAN.toFixed(1)},.0001,.9999));}` });
+    const keep = new Set(targets.map(t => t[0])); const hid = [];
+    scene.traverse(o => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible && !keep.has(o)) { o.visible = false; hid.push(o); } });
+    const prevRT = renderer.getRenderTarget(), ov = scene.overrideMaterial, bg = scene.background, fog = scene.fog, su = renderer.shadowMap.autoUpdate, ac = renderer.autoClear;
+    const cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha(), mwa = scene.matrixWorldAutoUpdate;
+    try {
+      scene.overrideMaterial = mat; scene.background = null; scene.fog = null; renderer.shadowMap.autoUpdate = false; renderer.autoClear = true; scene.matrixWorldAutoUpdate = false;
+      renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, cam);
+      const px = new Uint8Array(HX * HZ * 4); renderer.readRenderTargetPixels(rt, 0, 0, HX, HZ, px);
+      hi = new Float32Array(HX * HZ);
+      const UD = 255 / 256 / 255;   // three's UnpackDownscale over the byte range
+      for (let i = 0; i < HX * HZ; i++) { const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2], a = px[i * 4 + 3];
+        if (!(r | g | b | a)) { hi[i] = -99; continue; }
+        const v = (r / 16777216 + g / 65536 + b / 256 + a) * UD; hi[i] = YLO + v * YSPAN; }
+    } finally {
+      renderer.setRenderTarget(prevRT); scene.overrideMaterial = ov; scene.background = bg; scene.fog = fog; renderer.shadowMap.autoUpdate = su; renderer.autoClear = ac;
+      renderer.setClearColor(cc, ca); scene.matrixWorldAutoUpdate = mwa; for (const o of hid) o.visible = true; rt.dispose(); mat.dispose();
+    }
+    // the materials of whatever is the top surface somewhere (they get wet): a target whose own height range holds the
+    // map's height at a few points inside its footprint
+    for (const [m, b] of targets) {
+      const mats = (Array.isArray(m.material) ? m.material : [m.material]).filter(x => x && x.isMeshStandardMaterial); if (!mats.length || mats.every(x => topMats.has(x))) continue;
+      const sx = Math.max(0.1, (b.max.x - b.min.x) / 7), sz = Math.max(0.1, (b.max.z - b.min.z) / 7); let hit = false;
+      for (let x = b.min.x + sx / 2; x < b.max.x && !hit; x += sx) for (let z = b.min.z + sz / 2; z < b.max.z && !hit; z += sz) {
+        const y = hiAt(x, z); if (y != null && y >= b.min.y - 0.02 && y <= b.max.y + 0.02 && y > groundH(x, z) + 0.05) hit = true; }
+      if (hit) for (const x of mats) topMats.add(x);
+    }
+  }
+  // world -> texel: screen x = world x, screen y (row 0 at the bottom) = from z = Z0 + D down to Z0
+  function hiAt(x, z) { const ix = Math.floor((x - X0) / W * HX), iz = Math.floor((Z0 + D - z) / D * HZ); if (ix < 0 || iz < 0 || ix >= HX || iz >= HZ) return null; const y = hi[iz * HX + ix]; return y > -50 ? y : null; }
   function castDown(x, z) {
+    if (hi) { const g = groundH(x, z), y = hiAt(x, z); return y != null && y > g ? y : g; }
     const bx = Math.floor((x - X0) / BS), bz = Math.floor((z - Z0) / BS); const g = groundH(x, z);
     const list = bx >= 0 && bz >= 0 && bx < BX && bz < BZ ? buckets[bz * BX + bx] : [];
     if (!list.length) return g;
@@ -182,9 +230,10 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
       // build the map in the background, starting a little after load
       if (!R.ready) {
         if (wait-- > 0) return;
-        if (!targets) collect();
-        // a few ms per frame at most, so building the map never shows as a hitch
-        const t0 = performance.now(), budget = MOBILE ? 3 : 5;
+        if (!targets) { collect(); return; }                       // one frame: the target list; the next: the map
+        if (renderer && !hi && !R._noFast) { try { renderTop(); } catch (e) { hi = null; R._noFast = true; console.warn('rain: top-down map failed, using rays', e); } }
+        // rays (fallback only): a few ms per frame at most, so building the map never shows as a hitch
+        const t0 = performance.now(), budget = hi ? 1e9 : (MOBILE ? 3 : 5);
         for (; scan < NX * NZ && performance.now() - t0 < budget; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
           const y = castDown(x, z); hm[scan] = y; kind[scan] = y > groundH(x, z) + 0.6 ? 1 : 0; }
         if (scan >= NX * NZ) { R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; wetBoards(topMats); }
