@@ -25,7 +25,7 @@ float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h21(i
 float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<4;i++){v+=a*vn(p);p=mat2(1.6,1.2,-1.2,1.6)*p+vec2(3.1,7.7);a*=.5;}return v;}`;
 
 export function createEnv(C){
- const {scene,MOBILE,barkT,groundT,leafT}=C;
+ const {scene,MOBILE,barkT,groundT,leafT,renderer}=C;
  // ================= ground-hugging height fog (in every lit material) =================
  // The distance fog of index.html stays; on top of it a layer of fog that is thick at the ground and thins out ~2 m up,
  // so roots, grass and the bottom of the trunk sink into blue mist like in the reference. Strength follows how thick
@@ -209,17 +209,28 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
 
  // ================= rolling ground fog =================
  // (1) horizontal sheets of domain-warped noise just above the ground
- const fogU={t:U.t,col:{value:new THREE.Color(0x8FB8CC)},op:{value:.5},cam:{value:V()}};
+ // soft edges (desktop): a half-resolution depth pre-pass of the opaque scene lets the fog fade where it meets the trunk, roots and house
+ // instead of cutting them with a hard line. Phones skip it (SOFT 0) to save a scene pass.
+ const SOFT=!MOBILE&&!!renderer;
+ const softU={tDepth:{value:null},uRes:{value:new THREE.Vector2(1,1)},cNear:{value:.1},cFar:{value:500},soft:{value:SOFT?1:0}};
+ const SOFT_GLSL=`
+#include <packing>
+uniform sampler2D tDepth;uniform vec2 uRes;uniform float cNear,cFar,soft;
+float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragCoord.xy/uRes).x;
+ float sz=-perspectiveDepthToViewZ(sd,cNear,cFar);float fz=-perspectiveDepthToViewZ(gl_FragCoord.z,cNear,cFar);return clamp((sz-fz)/range,0.,1.);}`;
+ let depthRT=null;const depthMat=new THREE.MeshBasicMaterial({colorWrite:false});
+ if(SOFT){depthRT=new THREE.WebGLRenderTarget(4,4,{depthBuffer:true});depthRT.depthTexture=new THREE.DepthTexture(4,4);depthRT.depthTexture.type=THREE.UnsignedIntType;softU.tDepth.value=depthRT.depthTexture;}
+ const fogU={t:U.t,col:{value:new THREE.Color(0x8FB8CC)},op:{value:.5},cam:{value:V()},...softU};
  const sheetMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:false,uniforms:fogU,
   vertexShader:`varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
-  fragmentShader:`uniform float t,op;uniform vec3 col,cam;varying vec3 vW;${GLSL_NOISE}
+  fragmentShader:`uniform float t,op;uniform vec3 col,cam;varying vec3 vW;${GLSL_NOISE}${SOFT_GLSL}
    void main(){vec2 p=vW.xz*.075+vec2(vW.y*1.7,0.);vec2 q=vec2(fbm(p+vec2(t*.018,t*.007)),fbm(p+vec2(5.2,1.3)-vec2(t*.013,0.)));
     vec2 r=vec2(fbm(p+3.*q+vec2(1.7,9.2)+t*.021),fbm(p+3.*q+vec2(8.3,2.8)-t*.016));float d=fbm(p+3.4*r);
     float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*smoothstep(5.,13.,length(vW.xz));
-    float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze;gl_FragColor=vec4(col*(.82+.4*d),a);}`});
+    float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6);gl_FragColor=vec4(col*(.82+.4*d),a);}`});
  const sheets=[];[[.25,1],[.7,.8],[1.3,.6]].forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(200,200).rotateX(-Math.PI/2),sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
- const PN=MOBILE?46:80;const puffU={t:U.t,col:fogU.col,op:{value:.5},night:{value:1},lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
+ const PN=MOBILE?46:80;const puffU={t:U.t,col:fogU.col,op:{value:.5},night:{value:1},...softU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
  const pg=new THREE.InstancedBufferGeometry();pg.copy(new THREE.PlaneGeometry(1,1));pg.instanceCount=PN;
  {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}else if(i<PN*.55){ang=rr(3.6,5.9);r=rr(6,13);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
    const sz=rr(2.6,6)*(r<10?.8:1.15);a.set([Math.cos(ang)*r,rr(.15,.9)*sz*.32,Math.sin(ang)*r,sz],i*4);b.set([rr(0,100),rr(.6,1.4)*(R()<.5?-1:1),rr(.55,1),rr(0,6.28)],i*4);}
@@ -234,7 +245,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
     vFade=smoothstep(2.,8.,-mv.z);
     // keep the trunk base and roots clear: puffs between the camera side and the trunk fade out (fog stays around and behind them, as in the photo)
     float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*.9;gl_Position=projectionMatrix*mv;}`,
-  fragmentShader:`uniform float t,op;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${GLSL_NOISE}
+  fragmentShader:`uniform float t,op;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${GLSL_NOISE}${SOFT_GLSL}
    void main(){vec2 p=vUv-.5;float r=length(p*vec2(1.,1.25));
     // swirl: rotate the noise domain by an amount that depends on radius and time, so the clump churns
     float sw=(1.-r)*2.2+t*.05*sign(vS-50.);float cs=cos(sw),sn=sin(sw);vec2 rp=mat2(cs,-sn,sn,cs)*p;
@@ -243,7 +254,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
     // fog lit by the lamps, the stove and the glowing door: warm light soaks into the nearby mist
     vec3 warm=vec3(0.);for(int i=0;i<6;i++){vec3 d=vW-lp[i].xyz;warm+=lp[i].w/(1.+dot(d,d)*.12);}
     vec3 cc=col*(.85+.35*n+.12*(vUv.y))+vec3(1.,.55,.22)*min(warm,1.)*(.18+.3*n);
-    gl_FragColor=vec4(cc,a*op*vA*vFade*smoothstep(-.1,1.1,vWy)*(1.+min(warm,1.)*.25));}`});
+    gl_FragColor=vec4(cc,a*op*vA*vFade*smoothstep(-.1,1.1,vWy)*softK(1.4)*(1.+min(warm,1.)*.25));}`});
  const puffs=new THREE.Mesh(pg,puffMat);puffs.frustumCulled=false;puffs.renderOrder=6;scene.add(puffs);
 
  // ================= lamp halos (glow around lamps; works on phones where bloom is off) =================
@@ -268,7 +279,16 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
 
  // ================= per-frame =================
  const tmp=new THREE.Color(),tmpV=V();
- env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera}=s;U.t.value=T;U.wind.value=1+rainK*1.5;
+ // the depth pre-pass draws everything with one plain material, so leaf/grass cards would become solid rectangles in it:
+ // leave out alpha-tested and transparent objects (list refreshed now and then, other threads add objects after load)
+ let cutList=[],cutAge=1e9;const isCut=o=>{const m=o.material;if(!m||o===puffs)return false;const ms=Array.isArray(m)?m:[m];return ms.some(x=>x.alphaTest>0||x.transparent||x.isSpriteMaterial||x.isPointsMaterial||x.isLineBasicMaterial);};
+ const fogObjs=()=>{if(cutAge++>120){cutAge=0;cutList=[];scene.traverse(o=>{if((o.isMesh||o.isPoints||o.isLine||o.isSprite)&&isCut(o))cutList.push(o);});}return [...sheets,puffs,env.backdrop,...cutList];};let frameN=0;const dbs=new THREE.Vector2();
+ env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera}=s;
+  if(SOFT&&softU.soft.value>.5&&(frameN++&1)===0){renderer.getDrawingBufferSize(dbs);const w=Math.max(4,dbs.x>>1),h=Math.max(4,dbs.y>>1);
+   if(depthRT.width!==w||depthRT.height!==h)depthRT.setSize(w,h);softU.uRes.value.copy(dbs);softU.cNear.value=camera.near;softU.cFar.value=camera.far;
+   const hid=fogObjs().filter(o=>o&&o.visible);hid.forEach(o=>o.visible=false);const ov=scene.overrideMaterial,bg=scene.background,prev=renderer.getRenderTarget();
+   const su=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;scene.background=null;renderer.setRenderTarget(depthRT);renderer.clear(false,true,false);renderer.render(scene,camera);
+   renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;U.wind.value=1+rainK*1.5;
   const fc=tmp.copy(P.fog);
   fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),.3+nightK*.3);const eve=Math.max(nightK,lampOn||0);const dens=.15+eve*.85+mornK*.5+rainK*.25;fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
@@ -283,5 +303,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
   fill.intensity=eve*1.9*(1-rainK*.4);sky.intensity=eve*.9;rim.intensity=eve*2.6;
   const g=env.gradePass.uniforms;g.night.value=eve;g.sat.value=1.18+nightK*.08;};
  env.sheets=sheets;env.puffs=puffs;window.__env=env;
+ // called by index.html when FPS stays under 40 after pixel ratio is already at 1: fewer fog puffs, then no soft edges, then one fog sheet
+ let qLevel=0;env.degrade=()=>{qLevel++;if(qLevel===1)pg.instanceCount=Math.round(PN*.6);else if(qLevel===2)softU.soft.value=0;else if(qLevel===3){sheets[1].visible=sheets[2].visible=false;pg.instanceCount=Math.round(PN*.4);}return qLevel<=3;};
  return env;
 }

@@ -91,7 +91,7 @@ scene.add(new THREE.Mesh(new THREE.SphereGeometry(220,32,16),new THREE.ShaderMat
 const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.MeshBasicMaterial({color:0xF2F0E6,fog:false}));scene.add(moon);
 
 // ================= ground, forest, fog, grading: see env.js =================
-const ENV=(await import(new URL(ASSET+'env.js',document.baseURI).href)).createEnv({scene,MOBILE,barkT,groundT,leafT});
+const ENV=(await import(new URL(ASSET+'env.js',document.baseURI).href)).createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});
 
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
@@ -652,7 +652,7 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  camera.position.set(look.x+Math.sin(yw)*Math.cos(pitch)*cd+(RM?0:Math.sin(T*47)*.12*tr),look.y+Math.sin(pitch)*cd+(RM?0:Math.cos(T*41)*.12*tr),look.z+Math.cos(yw)*Math.cos(pitch)*cd);camera.lookAt(look);
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  hud();composer.render();
- fr++;ft+=dt;if(fr>=90){const fps=fr/ft;fr=0;ft=0;if(fps<40){if(bloom.enabled&&MOBILE)bloom.enabled=false;else if(PR>1.01){PR=Math.max(1,PR-.2);renderer.setPixelRatio(PR);resize();}}}
+ fr++;ft+=dt;if(fr>=90){const fps=fr/ft;fr=0;ft=0;if(fps<40){if(bloom.enabled&&MOBILE)bloom.enabled=false;else if(PR>1.01){PR=Math.max(1,PR-.2);renderer.setPixelRatio(PR);resize();}else if(ENV.degrade)ENV.degrade();}}
  }
 resize();hero.task='read';hero.state='work';hero.seated=true;heroNode='bread_app';hero.face=Math.PI;hero.root.rotation.y=Math.PI;snapPlay('33');hud();$('load').classList.add('hide');
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode,path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>startTask(n),
