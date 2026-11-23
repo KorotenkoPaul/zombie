@@ -355,8 +355,6 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if ((h >= wake && h < 12 && need.energy > .6) || (h >= wake + 1.2 && h < 12)) {
         wake = rnd(5.6, 6.6); bedTime = rnd(20.8, 21.6);
         day.hadTea = false; day.bolted = false; day.justWoke = true; day.justAte = false;
-        // morning: open the hatch again (not while the house is locked down)
-        { const H8 = house(); if (!locked && H8 && H8.hatch && H8.hatch.isOpen && !H8.hatch.isOpen() && HH.hasTask && HH.hasTask('hatch')) { plan.length = 0; plan.push({ task: 'hatch', opts: { open: true }, why: 'утром открывает люк' }); const d = decide(h); planFor(d.name, h, 'проснулся, хочет: ' + reasonOf(d)); plan.unshift({ task: 'hatch', opts: { open: true }, why: 'утром открывает люк' }); startNext(); return; } }
         const d = decide(h); planFor(d.name, h, 'проснулся, хочет: ' + reasonOf(d)); startNext();
       }
       return;
