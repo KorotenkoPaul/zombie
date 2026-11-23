@@ -84,7 +84,6 @@ export function createCameraRig(o) {
       goal.target.copy(tmp);
     }
     goal.dist = nd; endFly(); atHome = false;
-    if (followOn && point && k > 0) { const f = follow(); if (!f || f.distanceTo(point) > 1.5) stopFollow(); }
   }
   function stopFollow() { fHave = false; if (followOn) { followOn = false; o.onFollow && o.onFollow(false); } }
   // a flight (double tap, home, follow start) taken over by the fingers stops where it is instead of
@@ -149,7 +148,8 @@ export function createCameraRig(o) {
   function setFollow(on) {
     followOn = on; atHome = false;
     if (on) {   // look at him from the open (front) side of the house
-      stopInertia();
+      stopInertia(); if (cine.on) stopCine();
+      const f = follow(); if (f) { goal.target.copy(f); fHave = false; }   // fly straight to him, then trail softly
       goal.dist = clamp(Math.min(goal.dist, 4.2), MIN_D, maxD());
       goal.yaw = home.yaw + Math.round((goal.yaw - home.yaw) / (Math.PI * 2)) * Math.PI * 2;
       goal.pitch = clamp(goal.pitch, 0.1, 0.45);
@@ -200,6 +200,7 @@ export function createCameraRig(o) {
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { dom.setPointerCapture(e.pointerId); } catch (_) {}
     idle = 0; stopCine(); stopInertia(); recording = true;
+    stopFollow();                      // following the hero ends on any touch: the fingers take over from where it is
     if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -221,7 +222,7 @@ export function createCameraRig(o) {
       const d = Math.max(10, Math.hypot(a.x - b.x, a.y - b.y));
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       pinch.mv = (pinch.mv || 0) + Math.hypot(mx - pinch.mx, my - pinch.my);
-      if (!followOn || pinch.mv > 40) pan(mx - pinch.mx, my - pinch.my);
+      pan(mx - pinch.mx, my - pinch.my);
       zoomAt(pinch.d / d, pinch.p);
       pinch.d = d; pinch.mx = mx; pinch.my = my;
       return;
@@ -269,7 +270,7 @@ export function createCameraRig(o) {
   }
 
   dom.addEventListener('wheel', e => {
-    e.preventDefault(); idle = 0; stopCine();
+    e.preventDefault(); idle = 0; stopCine(); stopFollow();
     let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
     const f = Math.exp(clamp(dy * (e.ctrlKey ? 0.01 : 0.0016), -0.35, 0.35)); // ctrlKey = trackpad pinch; one notch at most ±35 %
     zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null);
@@ -283,7 +284,7 @@ export function createCameraRig(o) {
 
   addEventListener('keydown', e => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
-    idle = 0; stopCine();
+    idle = 0; stopCine(); stopFollow();
     const s = 24;
     if (e.key === 'ArrowLeft') orbit(-s, 0); else if (e.key === 'ArrowRight') orbit(s, 0);
     else if (e.key === 'ArrowUp') orbit(0, -s); else if (e.key === 'ArrowDown') orbit(0, s);
