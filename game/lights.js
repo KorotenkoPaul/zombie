@@ -77,7 +77,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       if (!haloObj.parent) { haloObj.position.copy(pos); scene.add(haloObj); }
       ENV.addHalo(haloObj, haloSize);
     }
-    const s = { name, room, kind, pos: pos.clone(), lights, emis, opac, haloObj, extra, autoFn, on: false, level: 0, manual: null, seed: Math.random() * 9, flare: 0 };
+    const s = { idx: src.size, name, room, kind, pos: pos.clone(), lights, emis, opac, haloObj, extra, autoFn, on: false, level: 0, manual: null, seed: Math.random() * 9, flare: 0 };
     src.set(name, s); return s;
   }
 
@@ -98,11 +98,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     sp.target.position.copy(wPos).add(V(-.35, -2, -.25)); scene.add(sp, sp.target);
     sp.castShadow = true; sp.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); sp.shadow.camera.near = .08; sp.shadow.camera.far = 6;
     sp.shadow.bias = -.002; sp.shadow.normalBias = .03; sp.shadow.radius = 3; sp.shadow.autoUpdate = false;
-    const bounce = new THREE.PointLight(0xFFB070, 0, 3.6, 2); bounce.position.copy(wPos).add(V(-.4, -1.05, -.3)); scene.add(bounce);
     claimHousing(wPos, .3);
     const b = bulbMesh(wPos.clone().add(V(0, .05, 0)), .055, 0xFFF0C8);
     const emis = [[b, 6]]; if (pm.domeInner) { pm.domeInner.emissive = new THREE.Color(0xFFD9A0); emis.push([pm.domeInner, .9]); }
-    add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 14 }, { l: bounce, I: 1.4 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
+    add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 14 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
@@ -116,8 +115,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
   if (PL.candle) {
     const cPos = PL.candle.pos.clone();
-    const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l);
-    add('candle', 'bedroom', 'candle', cPos, { lights: [{ l, I: 1.6, sway: .012 }], opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
+    let lights = [];
+    if (!MOBILE) { const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l); lights = [{ l, I: 1.6, sway: .012 }]; }
+    add('candle', 'bedroom', 'candle', cPos, { lights, opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
       autoFn: c => c.task === 'read' && c.lamps > .25 });
   }
 
@@ -167,7 +167,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const ROOMS = {
     kitchen:  { c: V(-2.65, KT + 1.05, 2.5), bounce: 2.0 },
     bedroom:  { c: V(-1.9, BD + 1.1, 2.3), bounce: 1.6 },
-    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.2 },
+    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
   };
   const glows = [];
   for (const [room, R] of Object.entries(ROOMS)) {
@@ -180,16 +180,85 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const n = V(0, 0, 1).applyQuaternion(w.g.quaternion); n.y = 0; n.normalize();
     const out = p.clone().sub(ROOMS[w.room].c); out.y = 0; if (out.dot(n) < 0) n.negate();
     const hp = p.clone().addScaledVector(n, .12);
+    w.n = n; w.room0 = ROOMS[w.room].c;
     if (ENV && ENV.addHalo) { const h = Object.assign(new THREE.Object3D(), { intensity: 0 }); h.position.copy(hp); scene.add(h); ENV.addHalo(h, 1.25); glows.push({ room: w.room, halo: h, I: 2.6 }); }
     const back = Math.abs(n.z) > .7;
-    if (back && !MOBILE) { const l = new THREE.PointLight(0xFFA850, 0, 3.4, 1.6); l.position.copy(p).addScaledVector(n, .45); scene.add(l); glows.push({ room: w.room, l, I: 2.4 }); }
+    if (back && !MOBILE) { const l = new THREE.PointLight(0xFFA850, 0, 3.4, 1.6); l.position.copy(p).addScaledVector(n, .45); scene.add(l); glows.push({ room: w.room, l, I: 2.4, spill: true }); }
   }
   const warm = {};
+
+  // ---------- daytime: sunbeams through the windows, with warm dust drifting in them ----------
+  // A soft additive prism from each window pane, along the real sun direction (the scene's shadow-casting
+  // directional light), only for windows that face the sun, strongest when the sun is low (morning/evening).
+  // Positions are built on the GPU from the window corners and the sun vector, so nothing is re-meshed per frame.
+  let sunL = null; scene.traverse(o => { if (o.isDirectionalLight && o.castShadow && !sunL) sunL = o; });
+  const beamU = { uT: { value: 0 } };
+  // beam prism: position = (u, v, t) on the window (u, v) pushed t along the light; aS = across coordinate for soft edges
+  const beamVS = `
+    attribute float aS; uniform vec3 c0, eu, ev, dir; varying float vS, vT;
+    void main(){ vS = aS; vT = position.z; vec3 p = c0 + eu*position.x + ev*position.y + dir*position.z;
+      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.); }`;
+  const beamFS = `
+    uniform float k; varying float vS, vT;
+    void main(){ float a = k * pow(sin(3.14159*vS), 1.6) * pow(1.-vT, 1.4) * smoothstep(0., .06, vT);
+      gl_FragColor = vec4(vec3(1., .86, .62) * a, 1.); }`;
+  const dustVS = `
+    attribute vec4 aD; uniform vec3 c0, eu, ev, dir; uniform float uT, px; varying float vA;
+    void main(){ float t = fract(aD.z + uT*.012*(.5+aD.w));
+      float u = clamp(aD.x + sin(uT*.31 + aD.w*40.)*.05, 0., 1.), v = clamp(aD.y + sin(uT*.23 + aD.w*70.)*.06, 0., 1.);
+      vec3 p = c0 + eu*u + ev*v + dir*t; vec4 mv = viewMatrix * vec4(p, 1.);
+      vA = sin(3.14159*u) * sin(3.14159*v) * (1.-t) * smoothstep(0., .08, t) * (.55 + .45*sin(uT*2.1 + aD.w*90.));
+      gl_PointSize = px * (1.2 + aD.w*1.6) * 3. / max(.5, -mv.z); gl_Position = projectionMatrix * mv; }`;
+  const dustFS = `
+    uniform float k; varying float vA;
+    void main(){ vec2 q = gl_PointCoord - .5; float d = 1. - smoothstep(.15, .5, length(q)); gl_FragColor = vec4(vec3(1., .85, .6) * d * vA * k, 1.); }`;
+  const prism = (() => {
+    const pos = [], across = [];
+    for (const [a, b] of [[[0, 0], [1, 0]], [[1, 0], [1, 1]], [[1, 1], [0, 1]], [[0, 1], [0, 0]]]) {
+      for (const [e, t] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) { const c = e ? b : a; pos.push(c[0], c[1], t); across.push(e); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('aS', new THREE.Float32BufferAttribute(across, 1)); return g;
+  })();
+  const beams = [];
+  const nDust = MOBILE ? 22 : 40;
+  for (const w of windows) {
+    const pane = w.g && w.g.children[0];
+    if (!pane || !pane.geometry || !pane.geometry.parameters || !w.n) continue;
+    const { width: pw, height: ph } = pane.geometry.parameters;
+    pane.updateMatrixWorld(true);
+    const corner = (x, y) => pane.localToWorld(V(x * pw * .46, y * ph * .46, 0));
+    const c0 = corner(-1, -1);
+    const U = { c0: { value: c0 }, eu: { value: corner(1, -1).sub(c0) }, ev: { value: corner(-1, 1).sub(c0) }, dir: { value: V() }, uT: beamU.uT };
+    const bm = new THREE.ShaderMaterial({ uniforms: { ...U, k: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, vertexShader: beamVS, fragmentShader: beamFS });
+    const m = new THREE.Mesh(prism, bm); m.frustumCulled = false; m.renderOrder = 3; m.visible = false; scene.add(m);
+    const dg = new THREE.BufferGeometry(); const d = new Float32Array(nDust * 4);
+    for (let i = 0; i < nDust * 4; i++) d[i] = Math.random();
+    dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nDust * 3), 3)); dg.setAttribute('aD', new THREE.BufferAttribute(d, 4));
+    const dm = new THREE.ShaderMaterial({ uniforms: { ...U, k: { value: 0 }, px: { value: MOBILE ? 1.5 : 2 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexShader: dustVS, fragmentShader: dustFS });
+    const pts = new THREE.Points(dg, dm); pts.frustumCulled = false; pts.renderOrder = 3; pts.visible = false; scene.add(pts);
+    beams.push({ w, U, m, pts });
+  }
+  const sunV = V();
+  function updateBeams(dayK, T) {
+    beamU.uT.value = T;
+    let on = 0;
+    if (sunL && dayK > .05) { sunV.copy(sunL.position).sub(sunL.target.position).normalize(); on = dayK * Math.min(1, sunL.intensity / 2.2); }
+    const low = 1 - Math.min(1, Math.max(0, sunV.y - .15) / .7);      // low sun: long golden beams
+    for (const b of beams) {
+      const face = on > 0 ? sunV.x * b.w.n.x + sunV.z * b.w.n.z : 0;     // sun on the outer side of this window?
+      const k = on * Math.max(0, Math.min(1, (face - .05) * 3)) * (.35 + .65 * low);
+      b.m.visible = b.pts.visible = k > .01;
+      if (!b.m.visible) continue;
+      b.U.dir.value.copy(sunV).multiplyScalar(-(2.2 + low * 1.3));
+      b.m.material.uniforms.k.value = k * .16; b.pts.material.uniforms.k.value = k;
+    }
+  }
 
   // ---------- the switching logic ----------
   function fire(name, on) { for (const cb of listeners) { try { cb(name, on); } catch (e) { console.error(e); } } }
   function setOn(s, on) { if (s.on === on) return; s.on = on; if (on) s.flare = 1; fire(s.name, on); }
-  let cookT = 0, t = 0;
+  let cookT = 0, t = 0, frame = 0;
+  let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
 
   // smooth 1D value noise in [-1, 1]: flames breathe instead of pulsing like a sine
   const hash = n => { const x = Math.sin(n * 127.1) * 43758.5453; return (x - Math.floor(x)) * 2 - 1; };
@@ -206,12 +275,16 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
-    t += dt;
+    t += dt; frame++;
     const cooking = task === 'cook' && state === 'work';
     cookT = cooking ? 40 : Math.max(0, cookT - dt);     // the fire is fed while cooking and burns a while after
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
+      // once it is properly light, a lamp left burning goes out on its own after a while (the oil runs low,
+      // nobody needs it): it hands itself back to the day/night logic, which says off in daylight
+      if (s.manual === true && s.kind !== 'fire' && dayK > .7) { s.dayOn = (s.dayOn || 0) + dt; if (s.dayOn > 45) { s.manual = null; s.dayOn = 0; } }
+      else s.dayOn = 0;
       const want = s.manual !== null ? s.manual : !!s.autoFn(ctx);
       setOn(s, want);
       const K = KINDS[s.kind];
@@ -227,7 +300,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       for (const L of s.lights) {
         L.l.intensity = L.I * k * f * (1 + open * 1.2);
         if (L.sway) { if (!L.home) L.home = L.l.position.clone(); const a = T * 1.7 + s.seed * 5; L.l.position.set(L.home.x + noise(a) * L.sway, L.home.y + noise(a + 40) * L.sway * .6, L.home.z + noise(a + 80) * L.sway); }
-        if (L.l.castShadow) L.l.shadow.autoUpdate = k > .01;      // no shadow passes for a lamp that is off
+        if (L.l.castShadow) { const lit = k > .01; if (lit && (!L.wasLit || (frame + s.idx) % shadowEvery === 0)) L.l.shadow.needsUpdate = true; L.wasLit = lit; }
       }
       for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
@@ -236,7 +309,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       const share = s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
-    for (const g of glows) { const v = (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
+    for (const g of glows) { const v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
+    updateBeams(dayK, T);
     for (const w of windows) {
       const lit = Math.min(1, warm[w.room] || 0);
       // panes are see-through glass (Pavel): only a faint warm tint while the room is lit, no cold self-glow;
@@ -252,11 +326,18 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     return v;
   }
 
-  // performance step-down: drop point-light shadows first (Environment's FPS watch calls degrade on its own)
-  function degrade() {
-    for (const s of src.values()) for (const L of s.lights) if (L.l.isPointLight && L.l.castShadow) { L.l.castShadow = false; return true; }
-    return false;
+  // quality for a frame-rate governor: 2 full, 1 no lantern (point) shadows + slower shadow redraws + no window spill
+  // lights, 0 no shadows at all. The look of the rooms stays (same lights, bounce, halos); only shadows thin out.
+  const shadowed = []; for (const s of src.values()) for (const L of s.lights) if (L.l.castShadow) shadowed.push(L.l);
+  function setQuality(q) {
+    q = Math.max(0, Math.min(2, q | 0)); if (q === quality) return quality; quality = q;
+    for (const l of shadowed) { l.castShadow = l.isSpotLight ? q >= 1 : q >= 2; l.shadow.needsUpdate = true; }
+    shadowEvery = q >= 2 ? (MOBILE ? 3 : 2) : 4;
+    for (const g of glows) if (g.spill) g.off = q < 2;
+    return quality;
   }
+  const degrade = () => quality > 0 && setQuality(quality - 1) !== null;
+  const upgrade = () => quality < 2 && setQuality(quality + 1) !== null;
 
   const view = s => ({ name: s.name, room: s.room, kind: s.kind, on: s.on, level: +s.level.toFixed(2), auto: s.manual === null, pos: s.pos.clone() });
   const api = {
@@ -270,7 +351,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     room: roomLevel,
     onChange: cb => listeners.push(cb),
     level: n => src.has(n) ? src.get(n).level : 0,
-    update, degrade,
+    update, degrade, upgrade, quality: q => q === undefined ? quality : setQuality(q),
   };
   return api;
 }

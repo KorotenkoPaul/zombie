@@ -20,3 +20,9 @@ Lamp housings near a source get castShadow=false and their own pane material (gl
 - Light leaves through windows: halo proxies just outside every window (fog glow), and on desktop a small spill light outside each back window that warms the trunk.
 - Flicker: smooth value noise (oil lanterns steady with a slow breath and rare gutter dips; candle livelier; oven fire strongest). Candle and oven lights sway a few cm so their shadows move.
 - Lantern colour moved from orange 0xFFA14A to warmer amber 0xFFB25E (photo).
+
+## Round 3 (2026-11-23): phones + daytime
+- Perf: the workshop's extra bounce light is gone (folded into the room glow); on phones the candle has no light of its own (flame, halo and room warmth stay). Shadow maps are never drawn for a lamp that is off, and while on they are redrawn every 2nd frame (desktop) / 3rd (phone): only the hero moves.
+- `__lights.quality(q)` for a frame-rate governor (perf.js): 2 full; 1 no lantern point shadows, shadows redrawn every 4th frame, no window spill lights; 0 no lamp shadows at all. `degrade()` / `upgrade()` step it. Room look (lights, bounce, halos) is unchanged at every level.
+- Day: soft sunbeams from each window that faces the sun (real direction of the shadow-casting sun light), longer and stronger when the sun is low, with warm dust drifting in them (GPU-only, no per-frame meshing). Morning: kitchen + bedroom side windows; afternoon: workshop side window.
+- A lamp left on by hand in full daylight goes out on its own after ~45 s and returns to auto.
