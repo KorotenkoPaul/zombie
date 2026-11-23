@@ -42,6 +42,17 @@ frozen-while-walking 316 -> 68 frames, P1/P2 jumps while walking 92 -> 65, in wo
 Turning in place only uses motion matching for turns over ~50° (small pivots at a bench stay hero.js clips); in layered
 mode the action's spine is re-based on the matched pelvis so the chest does not swing with each step.
 
+## Round 2 (2026-11-23 ~20:30 UTC): more data
++7 Hunyuan Motion clips (fal, our own): quick stops (3 seeds), stand-turn-around-and-walk (3), start walking (1); generated
+from pipeline/mm/prompts-loco.json, retargeted with pipeline/motion/retarget.mjs, smoothed (sigma 1.5 frames) in pack.mjs,
+turn-back clips trimmed of their idle start. DB: 10,488 frames (x2 mirrored). Rejected: start-while-turning (barely moves),
+walk-stop-turn (barely walks), quickstop2 (jogging 2 m/s). Ladder grab / step-off clips were not generated: fal balance ran out.
+Same scenario, old DB -> new DB: frames frozen while walking 49 -> 5, peak hips acceleration 18.3 -> 10.4 m/s²,
+planted ankle 0.091 -> 0.077 m/s, P1+P2 jumps 126 -> 119.
+The QA "robot" checks measure the navigation root (hero.js); motion matching does not move it, so they stay hero.js work:
+ladder exit (pull-up ends standing, then a walk from rest) and the turn-on-the-spot before walking off. tests/mm/scenario.js
+now also reports the same robot checks on the hips track (`robotVisible`).
+
 ## Known / next
 - Remaining P1 jumps on walks are mostly hero.js root moves (pushOut / floor raycast steps, e.g. a 14 cm root jump at the
   kitchen landing) and the ladder exit (pull-up pose -> walk); the root is not motion.js's.

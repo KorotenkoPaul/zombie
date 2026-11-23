@@ -24,7 +24,12 @@ async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log
    await p.evaluate(([t,h])=>{__th.setHour(h);__th.task(t);},[t,h]);let settled=0,n=0;
    while(n<60*60){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>{const h=__dbg.hero;return {path:h.path.length,state:h.state,rm:!!h.swing||!!h.trans,lad:!!h.lad}});
     if(s.path==0&&!s.rm&&!s.lad&&s.state==='work'){if(++settled>=8)break;}else settled=0;}
-   log('tour',t,'frames',n);}}
+   log('tour',t,'frames',n);}
+  // newer behaviours (brain.js): only the ones the body can do on this version
+  for(const t of ['hatch','bolt','repair','fetchwater','trip','eat']){const ok=await p.evaluate(t=>{const B=window.__brain,HH=__dbg.HH;return !!((HH.hasTask&&HH.hasTask(t))||(B&&B.command&&t==='repair'));},t);if(!ok){log('tour',t,'not available');continue;}
+   await p.evaluate(t=>{__th.setHour(10);__th.task(t);},t);let n=0,seen=false,idle=0;
+   while(n<60*45){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>({task:__dbg.hero.task,path:__dbg.hero.path.length}));if(s.task===t)seen=true;if(seen&&s.task!==t){if(++idle>=3)break;}}
+   log('tour',t,seen?'ran':'never started','frames',n);}}
  return {info,total};
 }
 module.exports={simulate,TASKS};
