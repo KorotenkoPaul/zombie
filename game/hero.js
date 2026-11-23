@@ -462,12 +462,12 @@ export function createHero(ctx){
     const p=root.position,g=hc.grab;H.face=Math.atan2(g.x-p.x,0)||-Math.PI/2;root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*6);
     {/* he shuffles along the edge with the ring, right shoulder level with it */const tz=clamp(g.z+.12,z0+.05,z1+.45);const m=.5*dt;p.z+=clamp(tz-p.z,-m,m);}
     if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.5);if(a.t>.55){a.step='push';a.t=0;AU('hatch_open',g);}}
-    else if(a.step==='push'){const ang=Math.max(1.12,hc.angle-dt*1.1);hc.drive(ang);if(ang<=1.12){hc.letGo(false);a.step='after';a.t=0;}}
+    else if(a.step==='push'){const G=window.__grab,gd=G?G.dist('Right'):0;/* GRAB HOOK: the lid moves only while the palm is on the ring; once it tips past where the hand can follow, he lets go and it drops */const ang=gd!=null&&gd>.035&&a.t<1.5?hc.angle:Math.max(1.12,hc.angle-dt*1.1);if(gd==null||gd<=.035||a.t>=1.5)hc.drive(ang);if(ang<=1.12||(hc.angle<1.4&&gd!=null&&gd>.03)){hc.letGo(false);a.step='after';a.t=0;}}
     else if(a.step==='bend'){const d=has('hy_take')?durOf('hy_take')/.8:1.2;const k=a.t/d;a.w=smooth(.25,.42,k);
      if(k>.42){if(!a.held){a.held=true;AU('hatch_open',g);}hc.drive(1.3*smooth(.45,.95,k));}if(k>=.97){hc.letGo(true);a.step='after';a.t=0;play(IDLE(),{fade:.4});}}
     else if(a.step==='after'){a.w=Math.max(0,a.w-dt/.35);if(a.t>.9){play(IDLE(),{fade:.4});endTask({ok:true,open:want});}}};
-   a.post=()=>{if(a.w>.01)reachTo('Right',ringW(),a.w);};
-   a.leave=cb=>{try{if(hc.drive&&a.step!=='after'&&a.step!=='go'&&a.step!=='app')hc.letGo(hc.angle>1);}catch(e){}cb();};
+   a.post=()=>{if(a.w>.01)reachTo('Right',ringW(),a.w);const G=window.__grab;if(G){if(a.w>.3&&(a.step==='push'||a.step==='bend'||a.step==='reach'))G.hold('Right',hc.lid,ringW);else G.free(hc.lid);}};// GRAB HOOK: the hand on the ring is a grip (collide.js leaves it there)
+   a.leave=cb=>{try{window.__grab&&window.__grab.free(hc.lid);}catch(e){}try{if(hc.drive&&a.step!=='after'&&a.step!=='go'&&a.step!=='app')hc.letGo(hc.angle>1);}catch(e){}cb();};
    return a;},
   // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
   micro:(o={})=>{const a={step:'do',t:0};const c=o.clip&&has(o.clip)?o.clip:IDLE();const one=['hy_stretch','hy_inspect','hy_take','hy_drink'].includes(c);
