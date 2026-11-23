@@ -265,7 +265,10 @@ export function buildTree(THREE, o) {
  float s=windStrength(ip);vec2 wv=windSway(ip,2.3)*.15;
  float h=fract(sin(dot(ip,vec3(12.99,78.23,37.71)))*4375.5);
  float a=sin(uWT*(6.+h*5.)+h*30.)*(.04+.25*s),b=sin(uWT*(4.7+h*4.)+h*17.)*(.03+.15*s);
- transformed.z+=a*position.x+b*position.y;
+ // flutter as ripples running across the cupped card (the centre stays, the rim waves in several places at
+ // different phases), never a tilt of the whole card, which would show it as a flat plane
+ float r2=dot(position.xy,position.xy)*2.;
+ transformed.z+=r2*(a*sin(position.x*7.+uWT*3.1+h*9.)+b*sin(position.y*6.+uWT*2.4+h*13.)+.5*(a+b)*sin((position.x+position.y)*9.+uWT*4.3))*.45;
  transformed+=windLocal(vec3(wv.x,wv.x*.15,wv.y)+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)})));}`);
     }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\nfloat ff=smoothstep(.18,.6,vFacing)*smoothstep(.8,3.,vDep);diffuseColor.a*=step(length(vMapUv-.5)*2.,ff*1.3);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
