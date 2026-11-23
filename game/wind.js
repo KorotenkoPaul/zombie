@@ -11,12 +11,14 @@
 //   uWT   float  wind time, seconds
 //   uWind vec4   (dirX, dirZ, base strength 0..~1, 0)   dir = where the wind blows TO, in world xz
 //   uGust vec4   (front, 1/width, amplitude, tail)       front = position of the gust front along dir (metres)
+//   uDrift vec2  how far the air has carried things so far (metres, world xz) - scroll fog noise by it
 //
 // GLSL (W.glsl, paste after #include <common>):
 //   float windStrength(vec3 wp)          0 calm, ~.45 breeze, ~.85 windy, up to ~2 inside a strong gust
 //   vec2  windSway(vec3 wp, float freq)  world xz offset for a flexible thing, ~.1 calm, ~.4 breeze, ~2 in a gust.
 //                                        Multiply by your own amplitude in metres; freq ~1.2 heavy, ~1.7 grass, ~2.5 leaves
 //   vec3  windRope(vec3 wp, float t, float len)  offset for a hanging rope: t 0 at the knot .. 1 at the free end
+//   vec3  windBranch(vec3 wp, vec2 trunkAxisXZ)  smooth sway of the oak's big limbs (bark and leaves both add it)
 //   vec3  windLocal(vec3 w)              turns a world offset into the instance's local space (InstancedMesh);
 //                                        without instancing it returns w unchanged
 //
@@ -39,7 +41,7 @@ const PREVAIL = Math.atan2(0.66, 0.75); // blows from the far left-back corner t
 const SPAN = 60; // gusts start this far upwind of the tree and run this far past it
 
 export const WIND_GLSL = `
-uniform float uWT;uniform vec4 uWind;uniform vec4 uGust;
+uniform float uWT;uniform vec4 uWind;uniform vec4 uGust;uniform vec2 uDrift;
 float windGust(vec3 p){float x=uGust.x-dot(p.xz,uWind.xy);
  return uGust.z*(x<0.?exp(-x*x*uGust.y*uGust.y*6.):exp(-x/uGust.w));}
 float windStrength(vec3 p){float n=sin(dot(p.xz,vec2(.11,.17))+uWT*.37)*.5+.5;return uWind.z*(.8+.4*n)+windGust(p);}
@@ -51,6 +53,12 @@ vec2 windSway(vec3 p,float freq){float s=windStrength(p);vec2 d=uWind.xy,q=vec2(
 // a hanging rope or rope ladder: t = 0 at the knot it hangs from .. 1 at its free end, len = its length in metres.
 // Slow pendulum sway, mostly downwind, the free end moves most. Returns a world offset.
 vec3 windRope(vec3 p,float t,float len){vec2 w=windSway(p,1.1)*.05*len*t*t;return vec3(w.x,0.,w.y);}
+// the big limbs of the oak: a slow, smooth sway (no per-vertex randomness, so a branch moves as one piece).
+// ax = the trunk axis (x,z). Still near the trunk and the house; the far limbs and the top of the crown move a few cm,
+// ~15 cm in a strong gust. Leaf cards add the same offset at their centre, so they stay on their branch.
+vec3 windBranch(vec3 p,vec2 ax){float d=length(p.xz-ax);float a=.09*max(smoothstep(5.5,10.,d),smoothstep(14.,19.,p.y));
+ float s=windStrength(p);vec2 dd=uWind.xy,q=vec2(-dd.y,dd.x);float ph=uWT*.7-dot(p.xz,dd)*.12,sh=.1+.6*s;
+ vec2 o=dd*(.4*s*s+sin(ph)*sh*.6)+q*sin(ph*1.37+1.)*sh*.3;return vec3(o.x,0.,o.y)*a;}
 vec3 windLocal(vec3 w){
 #ifdef USE_INSTANCING
  return inverse(mat3(instanceMatrix))*w;
@@ -64,9 +72,10 @@ export function createWind(opt = {}) {
   const R = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const rr = (a, b) => a + R() * (b - a);
 
-  const U = { uWT: { value: 0 }, uWind: { value: [0, 0, 0, 0] }, uGust: { value: [-1e4, 0.1, 0, 10] } };
+  const U = { uWT: { value: 0 }, uWind: { value: [0, 0, 0, 0] }, uGust: { value: [-1e4, 0.1, 0, 10] }, uDrift: { value: [0, 0] } };
   // three.js wants Vector4 for vec4 uniforms; take the class from the caller so this file has no imports
   const V4 = opt.THREE ? opt.THREE.Vector4 : null;
+  if (opt.THREE) U.uDrift.value = new opt.THREE.Vector2(0, 0);
   if (V4) { U.uWind.value = new V4(0, 0, 0, 0); U.uGust.value = new V4(-1e4, 0.1, 0, 10); }
   const setV = (u, a, b, c, d) => { const v = u.value; if (v.set) v.set(a, b, c, d); else { v[0] = a; v[1] = b; v[2] = c; v[3] = d; } };
 
@@ -90,12 +99,12 @@ export function createWind(opt = {}) {
 
   const W = {
     U, glsl: WIND_GLSL,
-    hook(sh) { sh.uniforms.uWT = U.uWT; sh.uniforms.uWind = U.uWind; sh.uniforms.uGust = U.uGust;
+    hook(sh) { sh.uniforms.uWT = U.uWT; sh.uniforms.uWind = U.uWind; sh.uniforms.uGust = U.uGust; sh.uniforms.uDrift = U.uDrift;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + WIND_GLSL); return sh; },
 
     // for a THREE.ShaderMaterial (no #include <common>): adds the uniforms, puts the GLSL in front of the vertex shader
     // and defines WIND, so the owner can write `#ifdef WIND ... #endif` and still compile without this file
-    hookRaw(mat) { Object.assign(mat.uniforms, { uWT: U.uWT, uWind: U.uWind, uGust: U.uGust }); mat.vertexShader = WIND_GLSL + '\n' + mat.vertexShader; mat.defines = Object.assign(mat.defines || {}, { WIND: '' }); mat.needsUpdate = true; return mat; },
+    hookRaw(mat) { Object.assign(mat.uniforms, { uWT: U.uWT, uWind: U.uWind, uGust: U.uGust, uDrift: U.uDrift }); mat.vertexShader = WIND_GLSL + '\n' + mat.vertexShader; mat.defines = Object.assign(mat.defines || {}, { WIND: '' }); mat.needsUpdate = true; return mat; },
 
     update({ dt = 1 / 60, T: t, rainK = 0 } = {}) {
       dt = Math.min(0.1, Math.max(0, dt)); T = t ?? T + dt;
@@ -112,6 +121,7 @@ export function createWind(opt = {}) {
       else { gustWait -= dt * (1 + rainK); if (gustWait <= 0) { startGust(); gustWait = rr(0.4, 1.6) * MODES[mode].gustEvery; } }
       const dx = Math.cos(ang), dz = Math.sin(ang);
       U.uWT.value = T;
+      { const s0 = base + W.gustAt(0, 0), d = U.uDrift.value; const ax = dx * s0 * 1.6 * dt, az = dz * s0 * 1.6 * dt; if (d.set) d.set(d.x + ax, d.y + az); else { d[0] += ax; d[1] += az; } }
       setV(U.uWind, dx, dz, base, 0);
       if (gust) setV(U.uGust, gust.front, gust.inv, gust.amp, gust.tail); else setV(U.uGust, -1e4, 0.1, 0, 10);
       if (legacy) legacy.value = 0.25 + W.level() * 1.1;
