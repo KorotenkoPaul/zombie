@@ -936,6 +936,16 @@ let noPost=false;
  let lv=[];PERF.addTest('лампы',()=>{lv=[];scene.traverse(o=>{if((o.isPointLight||o.isSpotLight)&&o.visible){lv.push(o);o.visible=false;}});},()=>{lv.forEach(o=>o.visible=true);lv=[];});
  let dofW=false;PERF.addTest('DOF',()=>{dofW=DOF.enabled;DOF.enabled=false;},()=>{DOF.enabled=dofW;});
  PERF.addTest('постобработка',()=>{noPost=true;},()=>{noPost=false;});
+ /* [ENV] the environment's layers one by one */
+ {const E=ENV,vis=(list,on)=>list.filter(Boolean).forEach(o=>o.visible=on);let ck=0;
+  PERF.addTest('env: полосы тумана',()=>vis(E.sheets,false),()=>vis(E.sheets,true));
+  PERF.addTest('env: клубы тумана',()=>vis([E.puffs],false),()=>vis([E.puffs],true));
+  PERF.addTest('env: дымка',()=>vis(E.mist||[],false),()=>vis(E.mist||[],true));
+  PERF.addTest('env: дальние кольца',()=>vis(E.farRings||[],false),()=>vis(E.farRings||[],true));
+  PERF.addTest('env: фон-картина',()=>vis([E.backdrop],false),()=>vis([E.backdrop],true));
+  PERF.addTest('env: кроны леса',()=>vis([E.canopy,E.forestTrunks],false),()=>vis([E.canopy,E.forestTrunks],true));
+  PERF.addTest('env: облака неба',()=>{ck=1;},()=>{ck=0;});window.__skyNoCloud=()=>ck;
+  PERF.addTest('env: цветокоррекция',()=>{E.gradePass.uniforms.gOn.value=0;},()=>{E.gradePass.uniforms.gOn.value=1;});}
  let prW=1;PERF.addTest('пикселей ×¼',()=>{prW=PR;renderer.setPixelRatio(PR/2);resize();},()=>{renderer.setPixelRatio(prW);resize();});}
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
@@ -953,7 +963,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  {const ph=((MOON0+dayNo/8)%1)*Math.PI*2;moonU.ph.value=ph;moonIll=.5-.5*Math.cos(ph);}
  const P=pal(hour);rainK=lerp(rainK,weather==='rain'?WIND.rainAmt():0,dt*.6);/* [WIND] drizzle .35, rain .75, storm 1 */const dim=1-rainK*.45;
  const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));
- skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
+ skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
  sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)));sun.shadow.radius=3+nightK*3;/* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI;hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp;
