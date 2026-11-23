@@ -175,11 +175,16 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
      tempo.ladderGrip.push(row);}s0=-1;}}}
  // contactless: something moves near him (lid, door, bolt, oven door, bucket...) while neither palm is on it
  if(D.mov){const ambient=new Set(D.mov.map((m,id)=>m[1]>F.length*.1?id:-1));const ev={};
-  F.forEach((f,i)=>{if(i<30)return;for(const [id,d] of f.mv||[]){if(ambient.has(id))continue;let e=ev[id]&&ev[id][ev[id].length-1];if(!e||i-e.i1>12){e={i0:i,i1:i,d:[]};(ev[id]=ev[id]||[]).push(e);}e.i1=i;e.d.push(d);}});
+  F.forEach((f,i)=>{if(i<30)return;for(const [id,d] of f.mv||[]){if(f.hfree&&/^Group$|hatch/.test(D.mov[id][0]))continue;if(ambient.has(id))continue;let e=ev[id]&&ev[id][ev[id].length-1];if(!e||i-e.i1>12){e={i0:i,i1:i,d:[]};(ev[id]=ev[id]||[]).push(e);}e.i1=i;e.d.push(d);}});
   tempo.touch=[];for(const id in ev)for(const e of ev[id]){if(e.d.length<3)continue;const s2=e.d.slice().sort((a,b)=>a-b);const med=s2[s2.length>>1],mn=s2[0];const nm=D.mov[id][0];
    tempo.touch.push({obj:nm,at:D.mov[id][2],f:F[e.i0].f,task:F[e.i0].task,frames:e.d.length,medCm:med,minCm:mn});
    if(mn>150||/^PlaneGeometry/.test(nm))continue;// never within 1.5 m of a palm: something the game moves by itself (shutters, curtains), not his interaction
    if(med>lim.touchCm)add('no-touch',e.i0,{bone:'hands',into:nm,value:med,unit:'cm from the nearer palm while it moves (median)',limit:lim.touchCm,what:'moves without being touched ('+F[e.i0].task+')',minCm:mn,from:F[e.i0].f,to:F[e.i1].f,dur:+((e.i1-e.i0+1)*lim.dt).toFixed(2)});}}
+ // held tools: the palm holding it should be on it (< 5 cm from the tool's mesh) the whole time it is held
+ {const ev={};F.forEach((f,i)=>{for(const [nm,k,d] of f.grip||[]){const key=nm+'|'+k;let e=ev[key]&&ev[key][ev[key].length-1];if(!e||i-e.i1>3){e={i0:i,i1:i,d:[]};(ev[key]=ev[key]||[]).push(e);}e.i1=i;e.d.push(d);}});
+  tempo.grip=[];for(const key in ev)for(const e of ev[key]){if(e.d.length<10)continue;const s2=e.d.slice().sort((a,b)=>a-b);const med=s2[s2.length>>1];const [nm,k]=key.split('|');
+   tempo.grip.push({tool:nm,hand:k==='0'?'L':'R',f:F[e.i0].f,frames:e.d.length,medCm:med,maxCm:s2[s2.length-1]});
+   if(med>lim.touchCm)add('grip',e.i0,{bone:(k==='0'?'Left':'Right')+'Hand',into:nm,value:med,unit:'cm from the palm to the held tool (median)',limit:lim.touchCm,what:'holds the tool without touching it ('+F[e.i0].task+')',from:F[e.i0].f,to:F[e.i1].f,dur:+((e.i1-e.i0+1)*lim.dt).toFixed(2)});}}
  // ---- 9. stays: how long he stays where he walked to; turning back right away; sleep turnover ----
  // a stay = from the end of one walk (or ladder) to the start of the next; chained chores (switch, hatch, bolt, micro) are short on purpose
  const CHAIN=/^(switch|hatch|bolt|micro|null|guard)$/;tempo.stays=[];
@@ -211,7 +216,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   else if(q.type==='owl-head')P=q.value>=(q.limit+20)?1:2;
   else if(q.type==='foot-bend')P=Math.abs(q.value)>=q.limit+15?1:2;
   else if(q.type==='ladder-grip')P=q.unit.startsWith('cm')?(q.value>=q.limit*1.6?1:2):2;
-  else if(q.type==='no-touch')P=q.value>=15?1:2;
+  else if(q.type==='no-touch'||q.type==='grip')P=q.value>=15?1:2;
   else if(q.type==='turn-back')P=q.value<8?1:2;
   else if(q.type==='short-stay')P=q.value<8?2:3;
   else if(q.type==='sleep-turnover')P=2;
