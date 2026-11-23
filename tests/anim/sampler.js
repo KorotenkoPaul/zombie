@@ -146,9 +146,14 @@ module.exports=function install(cfg){
   r.q=[];for(const b of QB){b.getWorldQuaternion(q);r.q.push(+q.x.toFixed(4),+q.y.toFixed(4),+q.z.toFixed(4),+q.w.toFixed(4));}
   // penetration: deepest vertex per group, and which shape
   const pen=GN.map(()=>[0,-1,null]);
+  // lying / sitting: how far the lowest part of each body group is above whatever is under it (1 cm steps down to 40 cm)
+  const supOn=!!(H.inBed||H.seated)&&!H.swing;const sup=GN.map(()=>40);const sp=V();
+  const solidAt=p=>{let r=false;query(p,(sh)=>{if(!r&&depth(sh,p)>.002)r=true;});return r;};
   for(const [vi,g] of VS){vp.fromBufferAttribute(pos,vi);M.applyBoneTransform(vi,vp);vp.applyMatrix4(M.matrixWorld);
+   if(supOn&&(vi/step)%2===0&&sup[g]>0){sp.copy(vp);let k=0;for(;k<sup[g]&&k<40;k++){if(solidAt(sp))break;sp.y-=.01;}if(k<sup[g])sup[g]=k;}
    query(vp,(s,ci)=>{const d=depth(s,vp);if(d>pen[g][0]){pen[g][0]=d;pen[g][1]=ci;pen[g][2]=[+vp.x.toFixed(3),+vp.y.toFixed(3),+vp.z.toFixed(3)];}});
    if((vi/step)%2===0){const d=trunkDepth(vp);if(d>pen[g][0]){pen[g][0]=d;pen[g][1]=TRUNK;pen[g][2]=[+vp.x.toFixed(3),+vp.y.toFixed(3),+vp.z.toFixed(3)];}}}
+  if(supOn)r.sup=sup;
   r.pen=pen.map(([d,ci,p])=>ci<0?0:[+(d*100).toFixed(2),ci,p]);
   // ground under each toe/ankle
   r.gnd=[7,8,12,13].map(i=>{const p=V(r.b[i*3],r.b[i*3+1],r.b[i*3+2]);const u=floorUnder(p,.25,1.0);return u?+u[0].toFixed(4):null;});

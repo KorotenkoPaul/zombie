@@ -123,3 +123,13 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Any future pass that renders `scene` with a narrowed camera layer mask must enable that layer on the lights too.
 - Wind thread JS share: ~0.11 ms of 19.5 (wind .06, fogpass .05 self, particles .03, fogbank .01, housewind .01).
   Own static meshes (leaves, litter, rain, particles, smoke, fog sheets) now have matrixAutoUpdate = false.
+
+## Round 22: rain height map from one top-down render (rain.js renderTop)
+- The map was ~2560 downward raycasts plus ~200 more for drip edges and leaf tips. Big merged meshes and instanced
+  decks cost up to ~38 ms a ray, and buildSplashes was unbudgeted, which caused a 2 s hitch after load (Camera's spike profiler).
+- Now: an orthographic camera renders only the same targets once (512x320, an override ShaderMaterial packs world y into
+  RGBA8 with packDepthToRGBA), one readRenderTargetPixels, and castDown samples that (8 texels per cell). Wet-board
+  materials are the targets whose height range holds the map height inside their footprint. Rays stay as a fallback.
+- Headless: 1231 ms of rays (worst frame 363 ms) became 179 ms total, almost all of it the one-off shader compile on SwiftShader.
+  Map vs rays: 97% of cells within 10 cm. The rest are roof cells now 10–19 cm higher, because the rays (Raycaster layer 0)
+  missed the shingles on layer 5, so rain now stops on the shingles as it should.
