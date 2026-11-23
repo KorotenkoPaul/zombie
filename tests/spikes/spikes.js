@@ -75,7 +75,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
     pw(THREE.Raycaster.prototype, 'intersectObjects', 'raycast (three)'); pw(THREE.Raycaster.prototype, 'intersectObject', 'raycast (three)');
     // who calls slow raycasts / compiles: keep the stack of any call over 30 ms
     window.__slow = [];
-    for (const name of ['intersectObjects', 'intersectObject']) { const f = THREE.Raycaster.prototype[name]; THREE.Raycaster.prototype[name] = function () { const t = window.__realNow(); try { return f.apply(this, arguments); } finally { const el = window.__realNow() - t; if (el > 30) window.__slow.push(['raycast ' + el.toFixed(0) + ' ms', new Error().stack.split('\n').slice(2, 9).map(s => s.trim().replace(/https?:\/\/[^/]+\//, '')).join(' < ')]); } }; }
+    for (const name of ['intersectObjects', 'intersectObject']) { const f = THREE.Raycaster.prototype[name]; THREE.Raycaster.prototype[name] = function () { const t = window.__realNow(); try { return f.apply(this, arguments); } finally { const el = window.__realNow() - t; if (el > 0.3) { const st = new Error().stack.split('\n'), site = (st[2] || '').trim().replace(/https?:\/\/[^/]+\//, '').replace(/^at /, ''); const RC = window.__rcSites = window.__rcSites || {}; RC[site] = (RC[site] || 0) + el; } if (el > 30) window.__slow.push(['raycast ' + el.toFixed(0) + ' ms', new Error().stack.split('\n').slice(2, 9).map(s => s.trim().replace(/https?:\/\/[^/]+\//, '')).join(' < ')]); } }; }
     pw(THREE.AnimationMixer.prototype, 'update', 'animation mixers');
     pw(THREE.Object3D.prototype, 'updateMatrixWorld', 'matrix updates');
     pw(THREE.Skeleton.prototype, 'update', 'skinning (skeleton)');
@@ -99,7 +99,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
           if (f % 2 === 0) rig.orbit(Math.sin(u * Math.PI * 6) * 26, Math.cos(u * Math.PI * 4) * 10);
           if (f === 120) rig.setFollow(true); if (f === 240) rig.goHome();
         }
-        T.acc = {}; T.stack.length = 0;
+        T.acc = {}; T.stack.length = 0; window.__rcSites = {};
         window.__VT.add(1000 / fps);
         const cb = window.__rafCb; window.__rafCb = null;
         const m0 = mem(), t = window.__realNow();
@@ -108,6 +108,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
         const acc = T.acc; let sum = 0; for (const k in acc) sum += acc[k];
         acc['render + index.html (rest)'] = ms - sum;
         if (m0 - m1 > 1e6) acc['GC (heap dropped ' + ((m0 - m1) / 1e6).toFixed(1) + ' MB)'] = 0;
+        for (const k in window.__rcSites) if (window.__rcSites[k] > 5) acc['  (of which raycast from ' + k + ')'] = window.__rcSites[k];
         out.push({ f, ms, acc });
       }
       const slow = window.__slow.splice(0); return { out, st: window.__th.state(), slow };
