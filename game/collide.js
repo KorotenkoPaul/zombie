@@ -252,11 +252,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // ---------- per frame ----------
   const off = { root: V(), head: V(), limb: [null, null, V(), V(), V(), V()] };
   const anim = [null, null, V(), V(), V(), V()]; // animated end-effector positions (after root + head corrections)
-  let on = true, applied = V(); const st = { ms: 0, msMax: 0, iters: 0, pushes: 0, frames: 0, worst: 0, floorFix: 0, pts: PTS.length, shapes: S.length, vox: 0, pending: 0 };
+  let on = true, applied = V(); const st = { ms: 0, msMax: 0, iters: 0, pushes: 0, frames: 0, worst: 0, floorFix: 0, freed: 0, pts: PTS.length, shapes: S.length, vox: 0, pending: 0 };
   const push = [V(), V(), V(), V(), V(), V()], pd = new Float32Array(6), sumN = [V(), V()], sumW = [0, 0];
   // smoothness: a correction may grow only so fast (m/frame) and speed up only so fast (m/frame per frame); it is held
   // while still needed and released slowly afterwards, so push / release never alternate (no jitter, no pops)
-  const MAXS = [.03, .02, .025, .025, .025, .025], ACC = [.009, .01, .014, .014, .014, .014];
+  const MAXS = [.005, .02, .025, .025, .03, .03], ACC = [.0012, .01, .014, .014, .03, .03];
   const grow = new Float32Array(6), lastGrow = new Float32Array(6), hold = new Float32Array(6);
   const budget = c => Math.max(0, Math.min(MAXS[c], lastGrow[c] + ACC[c]) - grow[c]);
   const take = (c, v) => { const L = v.length(), b = budget(c); if (L > b) v.multiplyScalar(b / Math.max(L, 1e-9)); grow[c] += Math.min(L, b); return v; };
@@ -269,19 +269,21 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         const top = s.c.y + s.h[u] * Math.abs(s.ax[u].y) + (l1 * s.ax[a1].y + l2 * s.ax[a2].y); if (top < y - down || top > y + up) continue; if (best == null || top > best) best = top; } }
     return best;
   }
-  let guardV = 0;
-  function floorGuard(dt) { // the root never stands below the boards (hero.js only climbs back up from 12 cm)
-    if (!hero.ground || hero.fit || hero.lad || hero.swing || hero.inBed || (hero.path[0] && hero.path[0].t === 'ladder')) return; const p = root.position; const top = boardTop(p.x, p.y, p.z); if (top == null) return;
-    const gap = top - p.y; if (gap <= .004) { guardV = 0; return; } guardV = Math.min(guardV + .004, .03); const k = Math.min(gap, guardV); p.y += k; hero.floorY = top; st.floorFix++; root.updateMatrixWorld(true);
+  let guardV = 0, guardT = 0, prevGap = 0;
+  function floorGuard(dt) { if (window.__colOff && window.__colOff.floor) return; // the root never stands below the boards (hero.js only climbs back up from 12 cm)
+    if (!hero.ground || hero.fit || hero.lad || hero.swing || hero.inBed || (hero.path[0] && hero.path[0].t === 'ladder')) return; const p = root.position; if (p.y < 1.5) return; /* house floors only: on the ground hero.js follows the terrain */ const top = boardTop(p.x, p.y, p.z); if (top == null) return;
+    const gap = top - p.y; if (gap <= .004) { guardV = 0; guardT = 0; prevGap = 0; return; }
+    // hero.js climbs back onto the boards itself in most cases: step in only when he stays under them (0.4 s without rising)
+    if (!guardV) { guardT = (prevGap - gap > .002) ? 0 : guardT + dt; prevGap = gap; if (guardT < .4) return; } guardV = Math.min(guardV + .004, .03); const k = Math.min(gap, guardV); p.y += k; hero.floorY = top; st.floorFix++; root.updateMatrixWorld(true);
   }
   function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++;
     buildSome(1.5);
     floorGuard(dt);
-    const rel = Math.exp(-dt * 2.5);// release of a correction once it is no longer needed (~0.4 s)
+    const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 14);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGrow[c] = grow[c]; grow[c] = 0; }
-    if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) off.limb[c].multiplyScalar(rel);
+    if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) off.limb[c].multiplyScalar(c >= 4 ? relFoot : rel);
     const fit = !!hero.fit, lying = !!(hero.inBed || hero.swing);
     root.position.add(off.root); applied.copy(off.root); root.updateMatrixWorld(true);
     if (off.head.lengthSq() > 1e-8) bendHead(off.head);
@@ -294,18 +296,26 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         anyP = true;
         // body and head: the excess-weighted mean way out (contacts on opposite sides cancel instead of bouncing between them);
         // a shin or foot caught at the side (bed rail, bench) also moves the body away, like a step aside
-        const tc = (P.chain >= 4 && Math.abs(OUT.n.y) < .5) ? 0 : P.chain;
+        const tc = P.chain;
         if (tc <= 1) { sumN[tc].addScaledVector(OUT.n, ex); sumW[tc] += ex; if (ex > pd[tc]) pd[tc] = ex; }
-        if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); }
+        // legs: only lift a foot / shin out of what is under it; a sideways nudge of a planted foot is a visible slide
+        if (P.chain >= 4 && OUT.n.y < .5) continue;
+        if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
       // on a ladder only hands and feet are corrected (moving the body or bending the head pops on the pull-up)
       if (hero.lad) { pd[0] = 0; pd[1] = 0; anyP = pd.some(v => v > 0); }
       for (const c of [0, 1]) if (sumW[c] > 0) push[c].copy(sumN[c]).multiplyScalar(1 / sumW[c]).multiplyScalar(pd[c] + .001);
-      if (!anyP) break; st.pushes++; for (let c = 0; c < 6; c++) if (pd[c] > 0) hold[c] = .35;
+      // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall) and no foot
+      // lift (it reads as sliding); only arms and head give way. Walking into things is the walk graph's job.
+      if (hero.path && hero.path.length && !hero.lad) { pd[0] = 0; pd[4] = pd[5] = 0; anyP = pd.some(v => v > 0); }
+      { const X = window.__colOff; if (X) { if (X.root) pd[0] = 0; if (X.head) pd[1] = 0; if (X.arms) pd[2] = pd[3] = 0; if (X.legs) pd[4] = pd[5] = 0; anyP = pd.some(v => v > 0); } }
+      if (!anyP) break; st.pushes++; for (let c = 0; c < 6; c++) if (pd[c] > 0) hold[c] = c >= 4 ? 0 : .35;
       // root: sideways (and up while seated / lying); a push straight down or up while standing goes to the head / spine instead
       if (pd[0] > 0) {
-        const pr = push[0].clone(); if (!fit || pr.y < 0) pr.y = 0; const hl = Math.hypot(pr.x, pr.z);
-        if (hl > .25 * pd[0] || pr.y > 0) { take(0, pr); root.position.add(pr); applied.add(pr); off.root.add(pr); root.updateMatrixWorld(true); for (let c = 2; c < 6; c++) anim[c].add(pr); }
+        // the body itself moves only for a real contact, sideways, at most 0.3 m/s, and stays where it was pushed (no offset
+        // that is released later: nothing surges while he walks freely); never while seated, lying or on a ladder
+        const pr = push[0].clone(); pr.y = 0; const hl = Math.hypot(pr.x, pr.z);
+        if (!fit && !lying && hl > .25 * pd[0]) { take(0, pr); if (pr.lengthSq() > 1e-10) { root.position.add(pr); root.updateMatrixWorld(true); for (let c = 2; c < 6; c++) anim[c].add(pr); } }
         else if (pd[1] < pd[0]) { pd[1] = pd[0]; push[1].copy(push[0]); }
       }
       if (pd[1] > 0) {
@@ -334,7 +344,19 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     for (const k in HH.N) { const n = HH.N[k]; if (lad.has(k) || n.sit || n.seat != null || n.tight) continue; const p = n.p; if (clearance(p.x, p.y, p.z) <= .003) continue;
       let best = null; for (let r = .03; r <= .3 && !best; r += .03) for (let a = 0; a < 16; a++) { const x = p.x + Math.cos(a * Math.PI / 8) * r, z = p.z + Math.sin(a * Math.PI / 8) * r; if (clearance(x, p.y, z) <= .003) { best = [x, z]; break; } }
       if (best) { navMoved.push([k, +(best[0] - p.x).toFixed(3), +(best[1] - p.z).toFixed(3)]); p.x = best[0]; p.z = best[1]; } } }
+  // free(p): move a standing / walking spot (root on the floor) to the nearest place where the body has room:
+  // legs, swinging arms and head clear of everything solid. hero.js calls it from pushOut (walking, approaching a job).
+  const RAD = [[.35, .17], [.7, .22], [.95, .26], [1.25, .23]], fp = V();
+  function room(x, y, z) { let worst = 0; for (const [hy, r] of RAD) for (let a = 0; a < 12; a++) { fp.set(x + Math.cos(a * Math.PI / 6) * r, y + hy, z + Math.sin(a * Math.PI / 6) * r); const d = probe(fp, 7, false); if (d > worst) { worst = d; if (worst > .02) return worst; } } return worst; }
+  const freeC = { x: 1e9, y: 0, z: 0, ox: 0, oz: 0 };
+  function free(p) {
+    if (!on) return p; if (Math.abs(p.x - freeC.x) < .015 && Math.abs(p.z - freeC.z) < .015 && Math.abs(p.y - freeC.y) < .05) { p.x += freeC.ox; p.z += freeC.oz; return p; }
+    freeC.x = p.x; freeC.y = p.y; freeC.z = p.z; freeC.ox = freeC.oz = 0;
+    if (room(p.x, p.y, p.z) <= .004) return p;
+    for (let r = .04; r <= .3; r += .04) for (let a = 0; a < 12; a++) { const x = p.x + Math.cos(a * Math.PI / 6) * r, z = p.z + Math.sin(a * Math.PI / 6) * r; if (room(x, p.y, z) <= .004) { freeC.ox = x - p.x; freeC.oz = z - p.z; p.x = x; p.z = z; st.freed++; return p; } }
+    return p;
+  }
   const api = { stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
-    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), navReport, clearance, navMoved, buildAll: () => buildSome(1e9) };
+    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
   return api;
 }
