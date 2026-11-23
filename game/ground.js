@@ -132,7 +132,7 @@ export function createGround(C){
    const want=Math.max(Math.min(1,glowU.value/1.8),ST.mornK*.9,ST.rainK);wetU.value+=(want-wetU.value)*Math.min(1,dt*1.5);
    ST.puddle=ST.rainK>.05?Math.min(1,ST.puddle+dt*ST.rainK/25):Math.max(0,ST.puddle-dt/90);if(G.updatePuddles)G.updatePuddles(cam);
    const h=window.__dbg&&window.__dbg.hero&&window.__dbg.hero.root;if(h){const p=h.position;heroU.value.set(p.x,p.y,p.z);}
-   if(G.updateGrass)G.updateGrass(cam);if(G.updateFootprints)G.updateFootprints();};
+   if(G.updateGrass)G.updateGrass(cam);if(G.updateFootprints)G.updateFootprints();if(G.updateLife)G.updateLife(dt,cam);};
   new THREE.TextureLoader().load(new URL('ground3.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=8;mat.map=t;mat.needsUpdate=true;});}
 
  // scatter helper: tries spots until `ok` accepts; returns [x,z] or null
@@ -246,11 +246,20 @@ export function createGround(C){
   const g=new THREE.PlaneGeometry(1,1,2,2).rotateX(-Math.PI/2);const p=g.attributes.position;for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setY(i,x*x*.35+z*z*.12+.01);}g.computeVertexNormals();
   const nr=g.attributes.normal;for(let i=0;i<nr.count;i++){const n=V(nr.getX(i),nr.getY(i),nr.getZ(i)).lerp(V(0,1,0),.6).normalize();nr.setXYZ(i,n.x,n.y,n.z);}
   const mat=new THREE.MeshStandardMaterial({map:tex,alphaTest:.5,side:THREE.DoubleSide,roughness:.9});
-  const N=MOBILE?260:520;const im=new THREE.InstancedMesh(g,mat,N);let n=0;
+  const N=MOBILE?260:520,ND=MOBILE?220:480;const im=new THREE.InstancedMesh(g,mat,N+ND);let n=0;
   const pal=[[.07,.7,.36],[.04,.65,.3],[.1,.65,.4],[.16,.45,.32],[.02,.55,.26],[.12,.4,.26]];
   for(let i=0;i<N*20&&n<N;i++){const s=pick(R()<.7?ring(2.3,11):ring(11,30),(x,z)=>rootD(x,z)>.05&&pathD(x,z)>-.1,5);if(!s)continue;const [x,z]=s;
    const sz=rr(.08,.14);const q=slopeQ(x,z,rr(0,6.28));q.multiply(new THREE.Quaternion().setFromEuler(E.set(rr(-.25,.25),0,rr(-.25,.25))));M.compose(V(x,groundH(x,z)+.012,z),q,Sc.set(sz,sz,sz*1.15));im.setMatrixAt(n,M);
    const c=pal[Math.floor(R()*pal.length)];Col.setHSL(c[0]+rr(-.02,.02),c[1],c[2]+rr(-.05,.05));im.setColorAt(n,Col);n++;}
+  // autumn drifts: the wind piles leaves up against the roots and the foot of the trunk, layer on layer, in clumps
+  const stack=new Map();let nd=0;
+  for(let i=0;i<ND*30&&nd<ND;i++){const s=pick(ring(2.2,10),(x,z)=>{const d=rootD(x,z);return d>.02&&d<.5&&pathD(x,z)>0&&fbm2(x*.6+7,z*.6)>.42;},6);if(!s)continue;
+   for(let j=0;j<4&&nd<ND;j++){const x=s[0]+rr(-.18,.18),z=s[1]+rr(-.18,.18);const d=rootD(x,z);if(d<.01)continue;
+    const key=Math.round(x*8)+','+Math.round(z*8);const h=stack.get(key)||0;stack.set(key,h+1);
+    const sz=rr(.08,.14);const q=slopeQ(x,z,rr(0,6.28));q.multiply(new THREE.Quaternion().setFromEuler(E.set(rr(-.45,.45),0,rr(-.45,.45))));
+    // closer to the wood the pile is higher and the leaves tilt up against it
+    M.compose(V(x,groundH(x,z)+.014+h*.012+smooth(.5,0,d)*.03,z),q,Sc.set(sz,sz,sz*1.15));im.setMatrixAt(n,M);
+    const c=pal[Math.floor(R()*pal.length)];Col.setHSL(c[0]+rr(-.02,.03),c[1],c[2]+rr(-.08,.04));im.setColorAt(n,Col);n++;nd++;}}
   im.count=n;im.receiveShadow=true;scene.add(im);G.leaves=im;}
 
  // ================= twigs =================
@@ -438,5 +447,66 @@ export function createGround(C){
     M.compose(V(x,groundH(x,z)-1,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(1.4,2),sz*rr(.6,.9),sz*rr(1.4,2)));im.setMatrixAt(n,M);Col.setHSL(.42,.18,rr(.22,.3));im.setColorAt(n,Col);n++;}
    im.count=n;im.computeBoundingSphere();scene.add(im);G.seamRing=im;}}
 
+
+ // ================= small life =================
+ const eve=()=>Math.min(1,glowU.value/1.8);
+ // ---- glow-worms: tiny green-gold lights right down in the grass at night (Environment's fireflies fly higher) ----
+ {const NG=MOBILE?40:80;const g=new THREE.BufferGeometry();const p=new Float32Array(NG*3),a=new Float32Array(NG*2);let n=0;
+  for(let t=0;t<NG*30&&n<NG;t++){const s=pick(ring(3,16),(x,z)=>rootD(x,z)>.1&&pathD(x,z)>.2,4);if(!s)continue;p.set([s[0],groundH(s[0],s[1])+rr(.04,.35),s[1]],n*3);a.set([rr(0,100),rr(.4,1.2)],n*2);n++;}
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('aF',new THREE.BufferAttribute(a,2));g.setDrawRange(0,n);
+  const u={t:{value:0},on:{value:0},px:{value:Math.min(2,window.devicePixelRatio||1)}};
+  const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:u,
+   vertexShader:`attribute vec2 aF;uniform float t,on,px;varying float vB;void main(){float s=aF.x;vec3 q=position+vec3(sin(t*.4+s)*.12,sin(t*.7+s*1.7)*.05,cos(t*.33+s)*.12);
+    vec4 mv=viewMatrix*vec4(q,1.);float bl=smoothstep(.2,1.,sin(t*aF.y+s*3.)*.5+.5);vB=bl*on;gl_PointSize=clamp(40./-mv.z,1.5,7.)*px;gl_Position=projectionMatrix*mv;}`,
+   fragmentShader:`varying float vB;void main(){float r=length(gl_PointCoord-.5);float k=smoothstep(.5,0.,r);gl_FragColor=vec4(vec3(.75,1.,.4)*(k*k+smoothstep(.15,0.,r)),k*vB);}`});
+  const pts=new THREE.Points(g,m);pts.frustumCulled=false;pts.renderOrder=6;scene.add(pts);G.glowWorms=pts;
+  G._gw=dt=>{u.t.value+=dt;u.on.value=smooth(.4,.9,eve())*(1-ST.rainK);pts.visible=u.on.value>.01;};}
+
+ // ---- moths: a few pale moths fluttering round the lit windows at night ----
+ {let wins=null;const NM=MOBILE?8:16;const g=new THREE.BufferGeometry();const p=new Float32Array(NM*3);g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  const u={on:{value:0},px:{value:Math.min(2,window.devicePixelRatio||1)},t:{value:0}};
+  const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:u,
+   vertexShader:`uniform float on,px,t;varying float vF;void main(){vec4 mv=viewMatrix*vec4(position,1.);vF=abs(sin(t*38.+position.x*40.));gl_PointSize=clamp(28./-mv.z,1.5,6.)*px;gl_Position=projectionMatrix*mv;}`,
+   fragmentShader:`uniform float on;varying float vF;void main(){vec2 d=gl_PointCoord-.5;d.x/=(.35+.65*vF);float k=smoothstep(.5,.2,length(d));gl_FragColor=vec4(vec3(.95,.9,.78),k*on*.9);}`});
+  const pts=new THREE.Points(g,m);pts.frustumCulled=false;pts.renderOrder=6;scene.add(pts);G.moths=pts;const st=[];
+  G._moths=(dt)=>{u.t.value+=dt;const on=smooth(.5,.9,eve())*(1-ST.rainK*.8);u.on.value=on;pts.visible=on>.01;if(!pts.visible)return;
+   if(!wins){wins=[];scene.traverse(o=>{if(o.isMesh&&o.material&&o.material.userData&&o.material.userData.ownGlass){const w=new THREE.Vector3();o.getWorldPosition(w);const nrm=new THREE.Vector3(0,0,1).applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()));wins.push({w,nrm});}});
+    if(!wins.length)return;for(let i=0;i<NM;i++){const W=wins[i%wins.length];st.push({W,ph:rr(0,100),r:rr(.18,.45),sp:rr(1.5,3.2)});}}
+   const T=u.t.value;st.forEach((o,i)=>{const a=T*o.sp+o.ph;const c=o.W.w.clone().addScaledVector(o.W.nrm,.25+.12*Math.sin(a*1.7));
+    // erratic loops in front of the glass, now and then a dart against it
+    p[i*3]=c.x+Math.cos(a)*o.r+Math.sin(a*3.1)*.06;p[i*3+1]=c.y+Math.sin(a*1.3)*o.r*.6+Math.sin(a*5.3)*.04;p[i*3+2]=c.z+Math.sin(a*.9)*o.r*.5;});g.attributes.position.needsUpdate=true;};}
+
+ // ---- a hedgehog or a mouse crosses the clearing now and then (code animation) ----
+ {const mk=(kind)=>{const grp=new THREE.Group();
+   if(kind==='hog'){const body=new THREE.Mesh(new THREE.SphereGeometry(1,14,10).scale(.11,.075,.15),new THREE.MeshStandardMaterial({color:0x7E6650,roughness:1}));body.position.y=.07;grp.add(body);
+    // spines: little cones over the back, darker with pale tips
+    const parts=[];for(let i=0;i<(MOBILE?110:180);i++){const u=R()*2-1,th=R()*Math.PI*2;const d=V(Math.sqrt(1-u*u)*Math.cos(th),Math.abs(u)*.9+.1,Math.sqrt(1-u*u)*Math.sin(th));if(d.z>.75)continue;
+     const c=new THREE.ConeGeometry(.007,.05,3);c.translate(0,.025,0);c.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0,1,0),d.clone().add(V(0,0,-.5)).normalize()));c.translate(d.x*.1,.07+d.y*.06,d.z*.13);parts.push(c);}
+    const sp=new THREE.Mesh(mergeGeometries(parts),new THREE.MeshStandardMaterial({color:0x5A4634,roughness:.85}));grp.add(sp);
+    const head=new THREE.Mesh(new THREE.ConeGeometry(.045,.1,8).rotateX(Math.PI/2),new THREE.MeshStandardMaterial({color:0x8A7058,roughness:1}));head.position.set(0,.06,.17);grp.add(head);
+    const nose=new THREE.Mesh(new THREE.SphereGeometry(.012,6,4),new THREE.MeshStandardMaterial({color:0x111111,roughness:.3}));nose.position.set(0,.06,.225);grp.add(nose);
+    grp.userData={speed:.28,step:7,bob:.006,head};}
+   else{const mat=new THREE.MeshStandardMaterial({color:0x6E6862,roughness:1});const body=new THREE.Mesh(new THREE.SphereGeometry(1,12,8).scale(.035,.03,.06),mat);body.position.y=.032;grp.add(body);
+    const head=new THREE.Mesh(new THREE.ConeGeometry(.022,.05,8).rotateX(Math.PI/2),mat);head.position.set(0,.035,.075);grp.add(head);
+    for(const sx of [-1,1]){const ear=new THREE.Mesh(new THREE.CircleGeometry(.012,8),new THREE.MeshStandardMaterial({color:0xB48C84,side:THREE.DoubleSide}));ear.position.set(sx*.016,.058,.06);grp.add(ear);}
+    const tail=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(0,.03,-.055),V(.01,.02,-.1),V(-.02,.012,-.15),V(.01,.01,-.19)]),8,.0035,4),new THREE.MeshStandardMaterial({color:0xA88880}));grp.add(tail);
+    grp.userData={speed:1.1,step:22,bob:.004,head,dash:true};}
+   grp.traverse(o=>{if(o.isMesh){o.castShadow=!MOBILE;o.receiveShadow=true;}});grp.visible=false;scene.add(grp);return grp;};
+  const critters={hog:mk('hog'),mouse:mk('mouse')};G.critters=critters;
+  let cur=null,wait=rr(25,50),route=null,ti=0,pause=0,dist=0;
+  // a route from the forest edge, around the trunk (never through the roots), into the forest on the other side
+  const plan=()=>{const a0=rr(0,6.28),a1=a0+Math.PI*rr(.6,1.4)*(R()<.5?1:-1);const pts=[];const N=14;
+   for(let i=0;i<=N;i++){const t=i/N;const a=a0+(a1-a0)*t;const r=lerp3(17,rr(6,9),17,t);pts.push(V(Math.cos(a)*r,0,Math.sin(a)*r));}
+   for(const q of pts){let k=0;while(rootD(q.x,q.z)<.4&&k++<20){q.multiplyScalar(1.05);}q.y=groundH(q.x,q.z);}return new THREE.CatmullRomCurve3(pts);};
+  const lerp3=(a,b,c,t)=>t<.5?a+(b-a)*smooth(0,.5,t):b+(c-b)*smooth(.5,1,t);
+  G._critters=(dt)=>{if(!cur){wait-=dt*(1+eve());if(wait>0)return;cur=critters[R()<.55?'hog':'mouse'];route=plan();dist=0;pause=0;cur.visible=true;return;}
+   const u=cur.userData;const L=route.getLength();
+   if(pause>0){pause-=dt;u.head.rotation.y=Math.sin(pause*6)*.4;}
+   else{dist+=dt*u.speed*(u.dash?(.6+.8*Math.abs(Math.sin(dist*2.3))):1);if(R()<dt*(u.dash?.5:.25))pause=rr(.6,2.2);u.head.rotation.y*=.9;}
+   const t=Math.min(1,dist/L);const pos=route.getPointAt(t),ahead=route.getPointAt(Math.min(1,t+.01));
+   cur.position.copy(pos);cur.position.y=groundH(pos.x,pos.z)+(pause>0?0:Math.abs(Math.sin(dist*u.step))*u.bob);cur.rotation.y=Math.atan2(ahead.x-pos.x,ahead.z-pos.z);
+   if(t>=1){cur.visible=false;cur=null;wait=rr(70,160);}};
+  G.spawnCritter=k=>{wait=0;if(cur){cur.visible=false;cur=null;}if(k){cur=critters[k];route=plan();dist=0;pause=0;cur.visible=true;}};}
+ G.updateLife=(dt)=>{G._gw(dt);G._moths(dt);G._critters(dt);};
  return G;
 }
