@@ -31,3 +31,20 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 ## Round 5 (2026-11-23)
 - `uWet` uniform / `__wind.wet()` 0..1: soaks within ~10 s of rain, dries over ~2 min. `windRope` sways up to 45 % less when wet.
 - `__rain.wetGlass(mats)`: beads running down the window glass in 3 cm lanes + still droplets, strength = uWet. Hooked onto the WINS glass materials in index.html (chains their onBeforeCompile; glass coordinates are world metres, so any pane size works).
+
+## Round 6 (2026-11-23)
+- Fix: windSway has a per-position random phase, so it must only get a FIXED point (instance centre). Moving things (fireflies, motes, smoke, rope vertices) use `windSwayS` (smooth) - otherwise the phase jumps every frame (Pavel saw "twitching crickets").
+- Cost (code count, phone settings): drops 1 draw / 3.2k tris, splashes 1 / 440, drips 1 / 52, falling leaves 1 / 32, smoke 1 / 24 points, wet glass 0 extra draws (fragment work on 5 panes, skipped when dry), fog bank 1 sheet. JS: < 0.01 ms/frame for all weather. SwiftShader frame times are too noisy to measure GPU cost (±7%).
+- __perf steps: wetGlass (25), rainDrops half (35), leafFall half (55), rainSplash half (55).
+- Morning fog bank: wind.js rolls one in on ~70% of mornings (4.6-6.4 h start, lifts after 7.6 h), front travels along the wind (`uFogBank`, `__wind.fogBank()`, `fogBankAt(x,z)`, event 'fogbank'); game/fogbank.js draws 1 (phone) / 2 low noise sheets only while it's out. index passes `hour` to WIND.update.
+
+## Round 7 (2026-11-23)
+- Falling leaves land on whatever is under them (`surfaceH` = `__rain.heightAt`, decks/landings/roofs) instead of falling through; leaves on decks lie 25-45 s; a gust (s > .7) picks a lying leaf up and skitters it along the boards. Horizontal drag 1.4 (was 2.2: windy spells blew every leaf 50 m away).
+- `__rain.covered(pos)`: something solid above the point (for Character: clothes/hair react to `__wind.sample(pos)` only outside).
+- Close-up pass in a forced gust (rope ladder, deck, crown): ropes smooth, rungs on their knots, nothing detached.
+
+## Round 8: phone GPU (2026-11-23)
+- windLocal: transpose/scale² instead of inverse() per vertex (every grass/bush/fern/leaf vertex runs it).
+- Shared baked noise: `__wind.noiseTexture(THREE)` 128² RGBA tiling fbm (R and an inverted variant in G). fogbank.js reads it twice instead of 3 octaves of procedural noise. Offered to Environment for its fog sheets/puffs/mist bands.
+- Smoke: 16 puffs on phones, point size capped (48 px × pixel ratio on phones) so a close camera can't fill the screen with smoke quads.
+- Overdraw (estimates from geometry, phone): rain streaks ~4 % of the screen, splashes/drips < 1 %, wet glass = window pixels only, fog bank 1 sheet ≈ 0.5 screen (dawn only, discards ahead of the front), smoke ≤ 16 × 72² px. None of it is on in a normal clear day/night.

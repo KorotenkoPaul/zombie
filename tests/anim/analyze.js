@@ -19,7 +19,7 @@ const LIMITS={
  detour:1.35,      // walked length / straight distance for one walk
  // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
  // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
- walkMin:.85,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+ walkMin:.85,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
 };
 const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -108,6 +108,28 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  for(const f of F){if(!f.clip)continue;const c=tempo.clipScale[f.clip]||(tempo.clipScale[f.clip]={n:0,sum:0,min:9});c.n++;c.sum+=f.ts;c.min=Math.min(c.min,f.ts);}
  for(const k in tempo.clipScale){const c=tempo.clipScale[k];c.avg=+(c.sum/c.n).toFixed(2);c.sec=+(c.n*lim.dt).toFixed(1);delete c.sum;c.min=+c.min.toFixed(2);}
  for(const k in tempo.clipScale){const c=tempo.clipScale[k];if(c.sec>2&&c.avg<lim.clipScaleMin&&c.avg>0){const i=F.findIndex(f=>f.clip===k);add('slow',i,{bone:'clip '+k,value:c.avg,unit:'x playback speed (average)',limit:lim.clipScaleMin,what:'animation played slowed down for '+c.sec+' s in total'});}}
+ // ---- 8. robot / slow-motion transitions: how long it takes to get going and to stop, and dead pauses between phases ----
+ // (a person reaches walking pace in ~2 steps, 0.5-0.8 s, stops in ~0.5-0.7 s, and chains actions with < 0.4 s of standing)
+ const spd=F.map((f,i)=>{const a=F[Math.max(0,i-3)].root,b=F[Math.min(F.length-1,i+3)].root;const n=Math.min(F.length-1,i+3)-Math.max(0,i-3);return n?Math.hypot(b[0]-a[0],b[2]-a[2])/(n*lim.dt):0;});
+ tempo.trans=[];
+ for(const wk of walks){const n=wk.i1-wk.i0;if(n<40)continue;const ss=spd.slice(wk.i0,wk.i1+1).slice().sort((a,b)=>a-b);const cruise=ss[Math.floor(ss.length*.75)];if(cruise<.15)continue;
+  let k=wk.i0;while(k<wk.i1&&spd[k]<.8*cruise)k++;const acc=(k-wk.i0)*lim.dt;
+  let e=wk.i1;while(e>wk.i0&&spd[e]<.8*cruise)e--;const dec=(wk.i1-e)*lim.dt;
+  const prev=activity(F[Math.max(0,wk.i0-1)]),next=activity(F[Math.min(F.length-1,wk.i1+1)]);
+  tempo.trans.push({f:F[wk.i0].f,task:wk.task,cruise:+cruise.toFixed(2),accel:+acc.toFixed(2),decel:+dec.toFixed(2),from:prev,to:next});
+  if(acc>lim.accelMax)add('robot',wk.i0,{bone:'root',value:+acc.toFixed(2),unit:'s to reach walking pace',limit:lim.accelMax,what:'slow start of the walk ('+prev+' -> walk, cruise '+cruise.toFixed(2)+' m/s)',from:F[wk.i0].f,to:F[k].f});
+  if(dec>lim.decelMax)add('robot',e,{bone:'root',value:+dec.toFixed(2),unit:'s braking before the stop',limit:lim.decelMax,what:'creeping to the stop (walk -> '+next+', cruise '+cruise.toFixed(2)+' m/s)',from:F[e].f,to:F[wk.i1].f});}
+ // dead time at a junction: between one phase ending and the next starting, the root does not move and nothing is being done
+ const phase=f=>f.fl.includes('L')?'ladder':f.fl.includes('P')?'walk':f.fl.includes('Fs')||f.fl.includes('Fr')||f.fl.includes('W')?'trans':f.state==='work'||f.fl.includes('S')||f.fl.includes('B')?'act':'idle';
+ {let i=0;while(i<F.length){const ph=phase(F[i]);let j=i;while(j<F.length&&phase(F[j])===ph)j++;
+   if(ph==='idle'&&i>0&&j<F.length){const before=phase(F[i-1]),after=phase(F[j]);const d=(j-i)*lim.dt;
+    if(before!==after||before==='walk'||before==='ladder'){if(d>lim.pauseMax&&d<20)add('robot',i,{bone:'root',value:+d.toFixed(2),unit:'s standing still between phases',limit:lim.pauseMax,what:'pause '+before+' -> '+after+' ('+F[j].task+')',from:F[i].f,to:F[j-1].f});}}
+   i=j;}}
+ // ladder entry/exit: speed jump between walking and climbing
+ {for(let i=1;i<F.length;i++){const a=F[i-1].fl.includes('L'),b=F[i].fl.includes('L');if(a===b)continue;
+   const w=(i0,i1)=>{let s=0,c=0;for(let k=Math.max(1,i0);k<Math.min(F.length,i1);k++){const p=F[k].root,q=F[k-1].root;s+=Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2])/lim.dt;c++;}return c?s/c:0;};
+   const before=w(i-30,i),after=w(i,i+30);tempo.trans.push({f:F[i].f,ladder:b?'enter':'exit',before:+before.toFixed(2),after:+after.toFixed(2)});
+   if(Math.max(before,after)>.05&&Math.max(before,after)/Math.max(.02,Math.min(before,after))>2.5)add('robot',i,{bone:'root',value:+(Math.max(before,after)/Math.max(.02,Math.min(before,after))).toFixed(1),unit:'x speed change at the ladder ('+before.toFixed(2)+' -> '+after.toFixed(2)+' m/s)',limit:2.5,what:'ladder '+(b?'entry':'exit')+': '+(after>before?'speeds up':'slows down')+' abruptly'});}}
  // ---- merge repeated flags of the same kind (same type+bone within 0.5 s) keeping the worst ----
  iss.sort((a,b)=>a.i-b.i);const merged=[];const last={};
  for(const q of iss){const k=q.type+'|'+q.bone+'|'+(q.into||'').replace(/#\d+.*/,'')+'|'+(q.what||'');const m=last[k];
@@ -120,6 +142,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='foot-slide')P=q.value>=8?1:q.value>=4?2:3;
   else if(q.type==='detour')P=q.unit.startsWith('deg')?(q.value>80?1:2):(q.value>1.7?1:2);
+  else if(q.type==='robot')P=q.value>=q.limit*2?1:2;
   else if(q.type==='slow')P=(q.limit&&q.value<q.limit*.7)||q.value>q.limit*1.5?1:2;
   else if(q.type==='sharp-turn')P=r>=2?1:2;else if(q.type==='crab-walk')P=q.value>70?1:2;
   q.P=P;}

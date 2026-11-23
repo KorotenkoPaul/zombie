@@ -218,5 +218,309 @@
 "bcreak_b": [
 "a thick tree limb creaking and groaning softly as it sways in the wind, wooden, natural recording, isolated",
 4
+],
+"geese_a": [
+"a flock of wild geese honking as they fly high overhead in autumn, passing by and fading, natural field recording, no wind",
+9
+],
+"geese_b": [
+"distant migrating geese calling while flying over a forest in autumn, faint honks, natural recording",
+8
+],
+"cranes_a": [
+"common cranes trumpeting as a flock flies over in autumn, distant, natural recording",
+8
+],
+"deer_a": [
+"a red deer stag roaring once in an autumn forest far away, deep bellow, natural recording, isolated",
+5
+],
+"deer_b": [
+"a roe deer barking twice in a misty forest, distant, natural recording, isolated",
+3
+],
+"elk_a": [
+"a moose elk bull grunting call in a distant autumn forest, natural recording, isolated",
+4
+],
+"leaves_a": [
+"dry autumn leaves skittering and tumbling across the ground in a gust of wind, natural recording, no birds",
+4
+],
+"leaves_b": [
+"a gust shaking dry autumn leaves on a tree, crisp papery rustle, natural recording",
+4
+],
+"wetdrip_a": [
+"sparse slow water drops falling from wet branches onto fallen leaves in a damp autumn forest, natural recording",
+6
+],
+"kettle_whistle": [
+"a kettle on a stove starting to whistle, the whistle rising gently then steady, mellow tone, close, natural recording",
+5
+],
+"tea_pour": [
+"pouring hot tea from a kettle into a ceramic mug, close, indoor, natural recording",
+3
+],
+"cup_set": [
+"setting a ceramic mug down on a wooden table, single soft clink, close",
+1
+],
+"sip": [
+"a person taking a quiet sip of hot tea from a mug, close, natural recording",
+1.5
+],
+"axe_chop_a": [
+"a single axe chop splitting a log of firewood outdoors, crisp wood impact, natural recording",
+1.5
+],
+"axe_chop_b": [
+"an axe striking a wooden chopping block once, log splits and falls, outdoors, natural recording",
+1.5
+],
+"saw_a": [
+"a hand saw cutting through a wooden plank, several back and forth strokes, close, natural recording",
+4
+],
+"hammer_a": [
+"a hammer striking a nail into wood once, close, natural recording",
+1
+],
+"hammer_b": [
+"two hammer hits driving a nail into a wooden plank, close, natural recording",
+1.5
+],
+"sweep_a": [
+"sweeping a wooden floor with a straw broom, a few strokes, close, indoor, natural recording",
+4
+],
+"radio_on": [
+"an old vintage tube radio switching on with a click and soft warm old-time music fading in, distant and quiet, lo-fi",
+6
+],
+"radio_off": [
+"switching off an old vintage radio with a click, music stops",
+1.5
+],
+"radio_music": [
+"instrumental only: a gentle old 1940s acoustic guitar and accordion waltz playing quietly from a small vintage radio speaker, warm lo-fi, no vocals, no singing",
+12
+],
+"bolt_lock": [
+"sliding a heavy iron door bolt shut on a wooden door, metallic clack, close, natural recording",
+1.5
+],
+"bolt_open": [
+"sliding an iron door bolt open on a wooden door, close, natural recording",
+1.5
+],
+"logs_stack": [
+"placing split firewood logs onto a pile, wooden knocks, close, natural recording",
+3
+],
+"log_in_stove": [
+"putting a log into a cast iron wood stove, wood knock and the fire flares up, close, natural recording",
+3
+],
+"stove_door_open": [
+"opening a small cast iron stove door with a metal creak, close, natural recording",
+1.5
+],
+"stove_door_close": [
+"closing a cast iron stove door with a metallic clunk, close, natural recording",
+1
+],
+"wash_dishes": [
+"washing dishes by hand in a basin of water, gentle splashing and clinking plates, close, indoor",
+5
+],
+"sizzle": [
+"food gently sizzling in a cast iron frying pan on a wood stove, close, natural recording",
+6
+],
+"knife_board": [
+"chopping vegetables with a knife on a wooden cutting board, steady rhythm, close, natural recording",
+4
+],
+"match_strike": [
+"striking a wooden match and it flares, close, natural recording",
+2
+],
+"lamp_light": [
+"a match flares, then an oil lamp wick catches with a soft whoosh of flame, close, foley",
+3
+],
+"pencil_write": [
+"writing with a pencil on paper in a notebook, close, natural recording",
+4
+],
+"drawer": [
+"opening and closing an old wooden drawer, close, natural recording",
+2
+],
+"chest_open": [
+"opening the lid of an old wooden chest with a creak, close, natural recording",
+2
+],
+"shutter": [
+"closing a wooden window shutter with a soft knock, natural recording",
+1.5
+],
+"telescope": [
+"sliding the brass sections of an old telescope open, smooth metal tube sliding and a soft click, close, foley, quiet background",
+2
+],
+"step_wood_a": [
+"a single footstep on an old wooden plank floor, boot, close, natural recording",
+0.7
+],
+"step_wood_b": [
+"one soft footstep on creaky wooden boards, close, natural recording",
+0.7
+],
+"step_wood_c": [
+"a single heavy boot step on a wooden deck, close, natural recording",
+0.7
+],
+"ladder_step": [
+"a foot stepping on a wooden ladder rung with a light creak, close, natural recording",
+0.8
+],
+"rope_ladder": [
+"slow climbing on a hanging rope ladder: thick hemp rope creaking and stretching under weight, wooden rung bumps, close, foley",
+3
+],
+"chair_sit": [
+"sitting down on an old wooden chair, soft creak, close, natural recording",
+1.2
+],
+"chair_stand": [
+"getting up from a wooden chair, chair legs scrape the floor, close, natural recording",
+1.2
+],
+"bed_lie": [
+"lying down on a bed with a quilt, soft rustle of blankets and a wooden bed creak, close",
+2
+],
+"blanket": [
+"pulling a thick wool quilt over, soft fabric rustle, close, natural recording",
+2
+],
+"bucket_water": [
+"pouring a bucket of water into a basin, close, natural recording",
+2.5
+],
+"book_close": [
+"closing an old book with a soft thud, close, natural recording",
+1
+],
+"tool_pickup": [
+"picking up a metal hand tool from a wooden workbench, light clink, close",
+1
+],
+"plank_place": [
+"laying a wooden plank down onto a wooden floor, hollow knock, close, natural recording",
+1.2
+],
+"stir_pot": [
+"a wooden spoon slowly stirring thick soup in a heavy pot, soft wet swirling and gentle bubbling, close, natural recording, no metal clinks",
+4
+],
+"sharpen": [
+"sharpening a knife on a whetstone, several slow strokes, close, natural recording",
+4
+],
+"lantern_fix": [
+"tinkering with a small metal oil lantern, light metallic clicks and a glass chimney clink, close, natural recording",
+4
+],
+"stretch": [
+"a person stretching with soft clothing rustle and a quiet relaxed exhale, close, natural recording, no speech",
+2.5
+],
+"yawn": [
+"a soft quiet sleepy yawn of a young man, close, natural recording, no words",
+2.5
+],
+"water_plant": [
+"watering a potted plant with a small metal watering can, gentle trickle into soil, close, natural recording",
+4
+],
+"supplies": [
+"moving glass jars and tin cans on a wooden shelf, soft clinks and knocks, close, natural recording",
+4
+],
+"radio_tune": [
+"tuning an old vintage tube radio dial: short soft crackles and brief snatches of distant old music and a faint voice drifting in and out, quiet, lo-fi",
+7
+],
+"firewood_carry": [
+"carrying an armful of firewood logs, logs knocking together softly with each step, close, natural recording",
+4
+],
+"firewood_drop": [
+"dropping an armful of firewood logs onto a wooden floor, hollow wooden clatter, close, natural recording",
+2
+],
+"edge_sit": [
+"sitting down on the edge of a wooden platform, boards creak softly, close, natural recording",
+1.5
+],
+"window_open": [
+"opening a small wooden window with a creak, close, natural recording",
+2
+],
+"bow_draw": [
+"drawing back a wooden hunting bow, clearly audible creak of the bending bow limbs and taut string, close up recording",
+2
+],
+"bow_release": [
+"shooting an arrow from a wooden bow: sharp string twang and a quick arrow whoosh, clearly audible, close up recording",
+1.5
+],
+"arrow_quiver": [
+"pulling a wooden arrow out of a leather quiver, clearly audible leather and wood rustle, close up recording",
+1.2
+],
+"jacket_on": [
+"putting on a heavy leather vest and wool sweater, leather creak and fabric rustle, close, foley",
+2.5
+],
+"fridge_open": [
+"opening an old vintage refrigerator door, chrome handle clunk and rubber seal unsticking, close, foley",
+1.5
+],
+"fridge_close": [
+"closing an old vintage refrigerator door with a solid soft thunk, close, foley",
+1.2
+],
+"meat_pan": [
+"a piece of raw meat placed into a hot cast iron pan, loud sizzle that settles into gentle frying, close",
+5
+],
+"eat": [
+"a person eating a meal quietly at a wooden table, fork tapping a ceramic plate and soft chewing, close, foley",
+4
+],
+"plate_set": [
+"setting a ceramic plate down on a wooden table, close, foley",
+1
+],
+"forest_steps": [
+"slow footsteps walking on dry autumn leaves and small twigs on a forest floor, close, foley",
+5
+],
+"backpack": [
+"swinging a canvas backpack onto the shoulders, buckles and fabric rustle, close, foley",
+2
+],
+"trunk_door": [
+"an old heavy wooden door creaking open slowly, close, natural recording",
+2.5
+],
+"trunk_door_close": [
+"closing an old heavy wooden door with a soft thud and latch click, close",
+1.5
 ]
 }
