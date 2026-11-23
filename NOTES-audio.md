@@ -84,3 +84,8 @@ Mix targets (mix bus RMS, camera at the default orbit):
 - Silence: no stretch longer than about 7 s by day and 6 s at night without a creature (the lull guard). A rest of 3–8 s is fine: quiet is part of the mood.
 - Texture layers should never read as a constant wash: pond lapping now plays every 3–8 s (it was every 1–3 s), and dew drips now come mostly at night and in the morning, not all day.
 Found and fixed: music too loud at dusk; pond lapping almost constant; autumn middays and the 17:00 hand-over went 10–15 s with no life; drips in dry afternoons. Pond voices sit on the real pond from `__ground.pond` (x −8.4, z 9.2, r 2.3) and move there automatically if the pond moves.
+
+## Round 13: house sway
+- `__wind.on('sway', {part, id, pos, amp, hit?})` (Wind, fc33e5b) fires when a part turns back at the end of a swing. Parts: 'landing lantern' (a hook squeak: creak_a pitched up, short), the telescope (a pivot creak, gusts only), 'ladder-ground' and 'ladder-deck' (rope strain: fs_rope_a/b slowed). `hit` gives a knock (shutter / trunk_door_close) for future shutters. The door is Props' own (it plays 'shutter').
+- Cost and taste: each id sounds at most once every 1.3–2.4 s, there are at most ~3 sway sounds a second overall, and swings below .12 are skipped. Larger swings are more likely to creak. Amp is scaled by the wind level, so a breeze creaks softly and a storm creaks hard.
+- Positional on the forest bus, so the room muffling (−55 % and a 1.5 kHz low-pass indoors) applies by itself. `__audio.sway(e)` plays one by hand for tests.
