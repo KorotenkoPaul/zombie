@@ -723,7 +723,95 @@ export function createGround(C){const __before=new Set(C.scene.children);
    const hp=heroU.value;const onGround=hp.y>-50&&hp.y<groundH(hp.x,hp.z)+.35;hv+=((onGround?night:0)-hv)*Math.min(1,dt*.8);
    hm.position.set(hp.x,groundH(hp.x,hp.z),hp.z);setOn(hm,hv);
    const cp=critU.value;cv+=((cp.y>-50?night:0)-cv)*Math.min(1,dt*1.5);if(cp.y>-50)cm.position.set(cp.x,cp.y,cp.z);setOn(cm,cv);};}
- G.updateLife=(dt,cam)=>{G._gw(dt);G._moths(dt);G._critters(dt);G._mist(dt);if(G._pond)G._pond(dt,cam);};
+ // ================= daytime life: butterflies, ground birds, a squirrel =================
+ // All code-animated and instanced (one draw call each), only by day, and they all keep away from the hero.
+ const dayK=()=>1-eve();
+ // events for Sound: __ground.on('critter', e => ...) with e = {kind, act, pos:[x,y,z], id, dur?}
+ const LST={};G.on=(type,fn)=>{(LST[type]=LST[type]||[]).push(fn);return ()=>{LST[type]=LST[type].filter(f=>f!==fn);};};
+ const emit=(kind,act,x,y,z,id,extra)=>{const L=LST.critter;if(!L||!L.length)return;const e=Object.assign({kind,act,pos:[x,y,z],id},extra||{});for(const f of L){try{f(e);}catch(err){console.error(err);}}};
+ const heroNear=(x,z,r)=>{const h=heroU.value;return h.y>-50&&h.y<groundH(h.x,h.z)+.6&&Math.hypot(h.x-x,h.z-z)<r;};
+ const paintV=(g,c)=>{g=g.index?g.toNonIndexed():g;const a=new Float32Array(g.attributes.position.count*3);for(let i=0;i<a.length;i+=3)a.set(c,i);g.setAttribute('color',new THREE.BufferAttribute(a,3));if(g.attributes.uv)g.deleteAttribute('uv');return g;};
+ const IM=new THREE.Matrix4(),IQ=new THREE.Quaternion(),IE=new THREE.Euler(),IS=V(1,1,1),IP=V();
+ // ---- butterflies: two hinged wings flapped in the vertex shader; they drift round a home spot (pond, clearing edge, flowers) ----
+ {const NB=MOBILE?5:8;const wingT=(()=>{const cv=document.createElement('canvas');cv.width=128;cv.height=128;const x=cv.getContext('2d');
+   // one wing seen from above (fore + hind lobe), dark rim and a pale spot; white base so instanceColor tints it
+   x.fillStyle='#fff';x.beginPath();x.ellipse(70,46,50,34,-.35,0,6.283);x.fill();x.beginPath();x.ellipse(52,92,34,28,.4,0,6.283);x.fill();
+   x.globalCompositeOperation='source-atop';x.strokeStyle='#222';x.lineWidth=9;x.beginPath();x.ellipse(70,46,50,34,-.35,0,6.283);x.stroke();x.beginPath();x.ellipse(52,92,34,28,.4,0,6.283);x.stroke();
+   x.fillStyle='#F6EFD8';x.beginPath();x.arc(92,38,7,0,6.283);x.fill();x.fillStyle='rgba(0,0,0,.35)';x.fillRect(0,0,14,128);
+   const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const wl=new THREE.PlaneGeometry(.05,.05).rotateX(-Math.PI/2).translate(.025,0,0);const wr=wl.clone().scale(-1,1,1);
+  {const u=wr.attributes.uv;for(let i=0;i<u.count;i++)u.setX(i,u.getX(i));}
+  const g=mergeGeometries([wl,wr]);const mat=new THREE.MeshStandardMaterial({map:wingT,alphaTest:.5,side:THREE.DoubleSide,roughness:.8});
+  const bu={t:{value:0}};mat.onBeforeCompile=sh=>{sh.uniforms.uBT=bu.t;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nuniform float uBT;').replace('#include <begin_vertex>',`#include <begin_vertex>
+    {float ph=instanceMatrix[3][0]*7.+instanceMatrix[3][2]*3.;float a=(.15+.95*(.5+.5*sin(uBT*19.+ph)))*(1.-.6*step(.5,fract(uBT*.31+ph)));
+     float ax=abs(transformed.x);transformed.y=ax*sin(a);transformed.x=sign(transformed.x)*ax*cos(a);}`);};
+  const im=new THREE.InstancedMesh(g,mat,NB);im.frustumCulled=false;im.visible=false;scene.add(im);G.butterflies=im;
+  const cols=[[.95,.55,.15],[.98,.85,.3],[.95,.95,.9],[.55,.7,.95],[.95,.6,.2],[.9,.9,.6],[.98,.98,.95],[.85,.45,.1]];
+  const homes=()=>{const r=R();if(r<.35&&G.pond){const a=rr(0,6.28);return [G.pond.x+Math.cos(a)*rr(2.5,3.8),G.pond.z+Math.sin(a)*rr(2,3)];}const a=rr(0,6.28),d=rr(5,11);return [Math.cos(a)*d,Math.sin(a)*d*.9];};
+  const B=[];for(let i=0;i<NB;i++){const [hx,hz]=homes();B.push({hx,hz,x:hx,z:hz,y:.6,ph:rr(0,100),sp:rr(.35,.6),flee:0});im.setColorAt(i,Col.setRGB(...cols[i%cols.length]));}
+  G._butter=(dt)=>{const k=dayK()*(1-ST.rainK);im.visible=k>.3;if(!im.visible)return;bu.t.value+=dt;const T=bu.t.value;
+   B.forEach((b,i)=>{if(b.flee<=0&&heroNear(b.x,b.z,2.2)){b.flee=6;}
+    if(b.flee>0){b.flee-=dt;// flutter up and away from him, then settle at a new home
+     const h=heroU.value;const dx=b.x-h.x,dz=b.z-h.z,d=Math.hypot(dx,dz)||1;b.x+=dx/d*dt*1.4;b.z+=dz/d*dt*1.4;b.y=Math.min(2.6,b.y+dt*.5);if(b.flee<=0){const [hx,hz]=homes();b.hx=hx;b.hz=hz;}}
+    else{// lazy figure-of-eight wander round home, dipping toward the grass
+     const a=T*b.sp+b.ph;const tx=b.hx+Math.sin(a)*1.3+Math.sin(a*2.3)*.4,tz=b.hz+Math.sin(a*.8)*Math.cos(a)*1.1;const k2=Math.min(1,dt*1.2);b.x+=(tx-b.x)*k2;b.z+=(tz-b.z)*k2;
+     b.y+=((groundH(b.x,b.z)+.35+.3*Math.sin(a*1.7)+.15*Math.sin(a*5.1))-b.y)*Math.min(1,dt*1.5);}
+    const yaw=Math.atan2(Math.cos(T*b.sp+b.ph),-Math.sin(T*b.sp+b.ph))+Math.sin(T*3+b.ph)*.3;
+    IM.compose(IP.set(b.x,b.y+Math.sin(T*9+b.ph)*.02,b.z),IQ.setFromEuler(IE.set(0,yaw,0)),IS.set(1.4,1.4,1.4));im.setMatrixAt(i,IM);});
+   im.instanceMatrix.needsUpdate=true;};}
+ // ---- ground birds (robin-like): hop, peck, look about on the open grass in the morning and by day; flush when he comes near ----
+ {const NBD=MOBILE?3:5;const parts=[paintV(new THREE.SphereGeometry(.05,8,6).scale(1,.85,1.35),[.42,.33,.25]),paintV(new THREE.SphereGeometry(.043,8,6).scale(1,.8,1.1).translate(0,-.012,.03),[.85,.42,.18]),
+   paintV(new THREE.SphereGeometry(.03,8,6).translate(0,.04,.055),[.4,.32,.25]),paintV(new THREE.ConeGeometry(.007,.022,4).rotateX(Math.PI/2).translate(0,.038,.093),[.2,.17,.12]),
+   paintV(new THREE.BoxGeometry(.04,.006,.06).rotateX(-.35).translate(0,.01,-.085),[.3,.24,.18]),paintV(new THREE.SphereGeometry(.006,4,3).translate(.02,.048,.07),[.02,.02,.02]),paintV(new THREE.SphereGeometry(.006,4,3).translate(-.02,.048,.07),[.02,.02,.02]),
+   paintV(new THREE.CylinderGeometry(.003,.003,.04,3).translate(.015,-.04,0),[.3,.25,.2]),paintV(new THREE.CylinderGeometry(.003,.003,.04,3).translate(-.015,-.04,0),[.3,.25,.2])];
+  const g=mergeGeometries(parts);g.translate(0,.062,0);const im=new THREE.InstancedMesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85}),NBD);im.frustumCulled=false;im.visible=false;scene.add(im);G.birds=im;
+  const spot=()=>{for(let k=0;k<40;k++){const a=rr(0,6.28),r=rr(3.5,11);const x=Math.cos(a)*r,z=Math.sin(a)*r*.9;if(rootD(x,z)>.5&&(!G.pondD||G.pondD(x,z)>.6))return [x,z];}return [5,8];};
+  const Bd=[];for(let i=0;i<NBD;i++){const [x,z]=spot();Bd.push({x,z,y:groundH(x,z),yaw:rr(0,6.28),st:'look',t:rr(.3,2),hop:0,hx:0,hz:0,peck:0,air:0,gone:0});}
+  G._birds=(dt)=>{const k=dayK()*(1-ST.rainK);const want=k>.5;im.visible=want;if(!want)return;
+   Bd.forEach((b,i)=>{if(b.gone>0){b.gone-=dt;if(b.gone<=0){const [x,z]=spot();Object.assign(b,{x,z,st:'land',air:1.2,t:1});}else{IM.makeScale(0,0,0);im.setMatrixAt(i,IM);return;}}
+    if(b.st!=='fly'&&heroNear(b.x,b.z,3)){emit('bird','flee',b.x,groundH(b.x,b.z),b.z,'bird'+i);b.st='fly';const h=heroU.value;b.hx=Math.sign(b.x-h.x||1);b.hz=Math.sign(b.z-h.z||1);b.t=2.5;}
+    let pitch=0,bob=0;b.t-=dt;
+    if(b.st==='fly'){// flush: up and away over the bushes
+     b.x+=b.hx*dt*4;b.z+=b.hz*dt*4;b.air+=dt*2.2;b.yaw=Math.atan2(b.hx,b.hz);if(b.t<=0){b.gone=rr(20,50);b.air=0;}}
+    else if(b.st==='land'){b.air=Math.max(0,b.air-dt*1.6);if(b.air<=0){emit('bird','land',b.x,groundH(b.x,b.z),b.z,'bird'+i);b.st='look';b.t=rr(.5,1.5);}}
+    else if(b.st==='hop'){if(b.hop===0)emit('bird','hop',b.x,groundH(b.x,b.z),b.z,'bird'+i);b.hop+=dt/.22;const f=Math.min(1,b.hop);b.x+=Math.sin(b.yaw)*dt*.7;b.z+=Math.cos(b.yaw)*dt*.7;bob=Math.sin(f*Math.PI)*.05;if(b.hop>=1){b.hop=0;if(b.t<=0||rootD(b.x,b.z)<.3||(G.pondD&&G.pondD(b.x,b.z)<.4)){b.st=R()<.5?'peck':'look';b.t=rr(.4,1.6);b.pk=0;if(rootD(b.x,b.z)<.3)b.yaw+=Math.PI;}}}
+    else if(b.st==='peck'){const pk=Math.floor((b.peck+Math.PI*1.5)/(Math.PI*2));b.peck+=dt*9;if(Math.floor((b.peck+Math.PI*1.5)/(Math.PI*2))>pk)emit('bird','peck',b.x,groundH(b.x,b.z),b.z,'bird'+i);pitch=Math.max(0,Math.sin(b.peck))*.9;if(b.t<=0){b.st='look';b.t=rr(.4,1.2);}}
+    else{// look: sharp little head turns (whole bird), then hop on
+     if(R()<dt*3)b.yaw+=rr(-.8,.8);if(b.t<=0){b.st='hop';b.t=rr(.3,1.4);b.hop=0;}}
+    const y=groundH(b.x,b.z)+bob+b.air;IM.compose(IP.set(b.x,y,b.z),IQ.setFromEuler(IE.set(pitch,b.yaw,0,'YXZ')),IS.set(1,1,1));im.setMatrixAt(i,IM);});
+   im.instanceMatrix.needsUpdate=true;};}
+ // ---- a red squirrel: now and then (by day) it bounds in from the edge, up onto a big root, sits up, flicks its tail, bounds off ----
+ {const P=[paintV(new THREE.SphereGeometry(.06,8,6).scale(1,.9,1.6),[.62,.3,.14]),paintV(new THREE.SphereGeometry(.045,8,6).translate(0,.04,.1),[.64,.32,.15]),
+   paintV(new THREE.SphereGeometry(.03,6,4).scale(.9,.8,1).translate(0,-.005,-.02),[.9,.82,.7]),paintV(new THREE.ConeGeometry(.012,.03,4).translate(.022,.085,.09),[.6,.28,.12]),paintV(new THREE.ConeGeometry(.012,.03,4).translate(-.022,.085,.09),[.6,.28,.12]),
+   paintV(new THREE.SphereGeometry(.006,4,3).translate(.025,.05,.135),[.02,.02,.02]),paintV(new THREE.SphereGeometry(.006,4,3).translate(-.025,.05,.135),[.02,.02,.02])];
+  // the big bushy tail: a fat curl up the back
+  const tc=new THREE.CatmullRomCurve3([V(0,.01,-.08),V(0,.07,-.17),V(0,.17,-.16),V(0,.22,-.08),V(0,.2,-.03)]);const tail=new THREE.TubeGeometry(tc,8,.034,6,false);
+  {const p=tail.attributes.position;const c=V();for(let i=0;i<=8;i++){tc.getPointAt(i/8,c);const k=.55+.45*Math.sin(Math.min(1,i/8*1.3)*Math.PI*.9);for(let j=0;j<=6;j++){const vi=i*7+j;p.setXYZ(vi,c.x+(p.getX(vi)-c.x)*k,c.y+(p.getY(vi)-c.y)*k,c.z+(p.getZ(vi)-c.z)*k);}}tail.computeVertexNormals();}
+  P.push(paintV(tail,[.68,.34,.16]));const g=mergeGeometries(P);g.translate(0,.055,0);
+  const sq=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:1}));sq.visible=false;sq.castShadow=!MOBILE;scene.add(sq);G.squirrel=sq;
+  // root perches: big root tops 2.5-5 m from the trunk, found by casting down onto the tree once
+  const perches=[];{const rc=new THREE.Raycaster();for(let k=0;k<200&&perches.length<8;k++){const a=rr(0,6.28),r=rr(2.2,5);const x=Math.cos(a)*r,z=Math.sin(a)*r;if(rootD(x,z)>.01)continue;
+    rc.set(V(x,3,z),V(0,-1,0));const h=rc.intersectObjects(obstacles,true)[0];if(h&&h.point.y>groundH(x,z)+.12&&h.point.y<1.1)perches.push(V(x,h.point.y,z));}}
+  let S0=null,wait=rr(30,70);G.spawnSquirrel=()=>{wait=0;};G._perches=perches;
+  G._squirrel=(dt)=>{if(!S0){if(!perches.length||dayK()<.6||ST.rainK>.3){sq.visible=false;return;}wait-=dt;if(wait>0)return;
+    // straight runs from the edge to the perch and away again, never through the pond or across the paths' busy bit
+    const clear=(A,Bp)=>{for(let k=0;k<=20;k++){const x=A.x+(Bp.x-A.x)*k/20,z=A.z+(Bp.z-A.z)*k/20;if(G.pondD&&G.pondD(x,z)<.5)return false;}return true;};
+    let p,e,o;for(let k=0;k<30;k++){p=perches[Math.floor(R()*perches.length)];const a=Math.atan2(p.z,p.x)+rr(-.8,.8);e=V(Math.cos(a)*16,0,Math.sin(a)*16);
+     const a2=a+rr(.6,1.4)*(R()<.5?1:-1);o=V(Math.cos(a2)*16,0,Math.sin(a2)*16);if(clear(e,p)&&clear(p,o))break;}
+    e.y=groundH(e.x,e.z);o.y=groundH(o.x,o.z);
+    S0={from:e,p,to:o,ph:'in',t:0,sit:rr(4,9),pos:e.clone(),yaw:0,up:0};sq.visible=true;}
+   const s=S0;const go=(tgt,speed)=>{const d=V(tgt.x-s.pos.x,0,tgt.z-s.pos.z);const L=d.length();if(L<.05)return true;const st=Math.min(L,speed*dt);s.pos.x+=d.x/L*st;s.pos.z+=d.z/L*st;
+     // bounding gait: little arcs; climbs smoothly onto the root near the perch
+     const near=Math.hypot(s.pos.x-s.p.x,s.pos.z-s.p.z);const gy=groundH(s.pos.x,s.pos.z);s.pos.y=near<.6?gy+(s.p.y-gy)*(1-near/.6):gy;s.t+=dt;s.pos.y+=Math.abs(Math.sin(s.t*11))*.05;
+     const want=Math.atan2(d.x,d.z);let dd=want-s.yaw;dd=Math.atan2(Math.sin(dd),Math.cos(dd));s.yaw+=dd*Math.min(1,dt*10);return false;};
+   if(s.ph!=='out'&&heroNear(s.pos.x,s.pos.z,3.5)){emit('squirrel','chitter',s.pos.x,s.pos.y,s.pos.z,'squirrel');emit('squirrel','flee',s.pos.x,s.pos.y,s.pos.z,'squirrel');s.ph='out';}
+   if(s.ph==='in'&&!s.climbed&&Math.hypot(s.pos.x-s.p.x,s.pos.z-s.p.z)<.7){s.climbed=true;emit('squirrel','climb',s.pos.x,s.pos.y,s.pos.z,'squirrel',{dur:.35});}
+   if(s.ph==='in'){if(go(s.p,2.2)){s.ph='sit';s.pos.copy(s.p);}}
+   else if(s.ph==='sit'){s.sit-=dt;s.ch=(s.ch??rr(.5,2))-dt;if(s.ch<=0){s.ch=rr(1.5,4);emit('squirrel','chitter',s.pos.x,s.pos.y,s.pos.z,'squirrel');}s.up=Math.min(1,s.up+dt*3);s.yaw+=Math.sin(s.sit*2.1)*dt*1.5;if(s.sit<=0)s.ph='out';}
+   else{s.up=Math.max(0,s.up-dt*5);if(go(s.to,3.2)){sq.visible=false;S0=null;wait=rr(60,150);return;}}
+   // sitting up: tilt back on the haunches, a quick tail flick
+   sq.position.copy(s.pos);sq.rotation.set(-.55*s.up+(s.ph==='sit'?Math.max(0,Math.sin(s.sit*9))*.08:0),s.yaw,0,'YXZ');};}
+ G.updateLife=(dt,cam)=>{G._gw(dt);G._moths(dt);G._critters(dt);G._mist(dt);if(G._pond)G._pond(dt,cam);G._butter(dt);G._birds(dt);G._squirrel(dt);};
  // everything this module added to the scene (for the perf budget checks)
  G.objects=C.scene.children.filter(o=>!__before.has(o));
  return G;

@@ -127,10 +127,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- kitchen: hanging lantern over the counter (the old front lantern hung in mid-air and was removed) ----------
   const kPos = PL.kitchenLamp ? PL.kitchenLamp.pos.clone() : V(-2.3, KT + 1.78, 1.75);
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
+    const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     const panes = claimHousing(kPos);
     const b = bulbMesh(kPos, .07);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 5.2 : 4.6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: 4.6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -149,10 +149,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
   const bPos = V(-2.0, BD + 1.95, 2.5);
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
+    const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
     housing(bPos); hang(bPos); const panes = claimHousing(bPos);
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: MOBILE ? 7 : 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -166,13 +166,16 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
 
   // ---------- outside: lantern by the ladder landing (the deck lantern was removed: it read as a lantern on the bedroom roof) ----------
   {
-    const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.PointLight(0xFFB25E, 0, 5, 1.6); l.position.copy(p); scene.add(l);
+    // it hangs below the kitchen floor: a downward cone (no light upward), so it lights the landing and the ladders but
+    // can't shine up through the boards into the kitchen and make it look lit (no shadow map on this one)
+    const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.SpotLight(0xFFB25E, 0, 5.5, 1.1, .7, 1.6); l.position.copy(p);
+    l.target.position.copy(p).add(V(0, -3, .2)); scene.add(l, l.target);
     const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
     add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
     // [WIND] the whole lantern (body, bulb, light, chain) hangs from one pivot at the chain's top: game/housewind.js swings it
     if (lastHang) { const piv = new THREE.Group(); piv.position.copy(lastHang.top); scene.add(piv); piv.updateMatrixWorld(true);
       let bm = null; scene.traverse(o => { if (o.isMesh && o.material === b) bm = o; });
-      for (const o of [hg, lastHang.chain, bm, l]) if (o) piv.attach(o);
+      for (const o of [hg, lastHang.chain, bm, l, l.target]) if (o) piv.attach(o);
       (window.__swing = window.__swing || []).push({ name: 'landing lantern', piv, len: lastHang.top.y - p.y + .1, mass: 1 }); }
   }
 
@@ -198,7 +201,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 8), bm); bulb.position.y = -.17; g.add(bulb);
     // a carried oil lantern lights a pool of ground ~3 m round him and the fog around it (the halo, and Environment's fog
     // puffs pick up the lowest lit halos). Indoors it is dimmer so it doesn't fight the room lamps.
-    const l = new THREE.PointLight(0xFFB25E, 0, 6, 1.5); l.position.y = -.17; g.add(l);
+    const l = new THREE.PointLight(0xFFB25E, 0, 3.8, 1.5); l.position.y = -.17; g.add(l);   // short reach: no shadow map, so it must not climb through the floors above
     hand.bulbPos = bulb; hand.light = l; hand.bulb = bulb;
     const s0 = add('hand', 'outside', 'oil', V(), { lights: [{ l, I: 3.4 }], emis: [[bm, 5]], haloSize: 1.5, autoFn: () => false });
     hand.L = s0.lights[0];
@@ -235,7 +238,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
         gl_FragColor=vec4(col*a*k*(.55+.45*edge),1.);}` });
     const m = new THREE.Mesh(geo, mat); m.position.set(cx, y, cz); m.renderOrder = 3; m.frustumCulled = false; m.visible = false; scene.add(m);
     let spot = null;
-    if (!MOBILE) { spot = new THREE.SpotLight(0xFFB060, 0, depth + 1.2, .5, .7, 1.4); spot.position.set(cx, y + .25, cz); spot.target.position.set(cx, LV.KT, cz + .15); scene.add(spot, spot.target); }
+    if (!MOBILE) { spot = new THREE.SpotLight(0xFFB060, 0, depth + 1.2, .3, .8, 1.4); spot.position.set(cx, y + .25, cz); spot.target.position.set(cx, LV.KT, cz + .15); scene.add(spot, spot.target); }
     return { m, u, spot, y };
   })();
   function updateHatch(dayK) {
@@ -245,7 +248,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const down = Math.max(0, bed - kit * .6), upK = Math.max(0, kit - bed * .6);
     const k = open * Math.max(down, upK) * (1 - dayK * .85);
     hatchFx.u.k.value = k * .5; hatchFx.u.up.value = upK > down ? 1 : 0; hatchFx.m.visible = k > .01;
-    if (hatchFx.spot) hatchFx.spot.intensity = open * down * 3.2 * (1 - dayK * .8);
+    if (hatchFx.spot) hatchFx.spot.intensity = open * down * 2.2 * (1 - dayK * .8);
   }
 
   // ---------- the glowing door in the trunk ----------
@@ -285,7 +288,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   let cam = null;
   { const prev = scene.onBeforeRender; scene.onBeforeRender = function (r, sc, c, ...a) { cam = c; if (prev) prev.call(this, r, sc, c, ...a); }; }
   for (const [room, R] of Object.entries(ROOMS)) {
-    if (MOBILE && room !== 'workshop') continue;      // phones: the lantern itself has a softer, longer falloff instead (fewer lights)
+    // (phones: these go through the light pool below like every other point light)
     // bounce = light thrown back by the lit walls: no falloff inside the room (decay 0, soft cut at the walls), so it
     // never makes a hot spot on whatever stands next to it (the upper bunk sat 10 cm from the old one and burned white)
     const b = new THREE.PointLight(0xFFBE80, 0, 3.6, 0); b.position.copy(R.c); scene.add(b);
@@ -451,7 +454,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
     t += dt; frame++;
     const cooking = task === 'cook' && state === 'work';
-    cookT = cooking ? 40 : Math.max(0, cookT - dt);     // the fire is fed while cooking and burns a while after
+    cookT = cooking ? 9 : Math.max(0, cookT - dt);      // fed while cooking, then burns down in ~1.3 game hours (a night hour is ~7 s)
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
@@ -495,6 +498,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       }
     }
     updateBeams(dayK, T); updateWisps(dt); updateHand(dt); updateHatch(dayK);
+    if (pool) updatePool(dt);
     for (const w of windows) {
       // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
       // no warm self-glow (critic T14). The warm glow of a lit window lives outside: halo + spill light (room glow).
@@ -525,6 +529,44 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const upgrade = () => quality < 2 && setQuality(quality + 1) !== null;
 
   const view = s => ({ name: s.name, room: s.room, kind: s.kind, on: s.on, level: +s.level.toFixed(2), auto: s.manual === null, pos: s.pos.clone() });
+  // ---------- phones: a small pool of real point lights ----------
+  // Every lit shader on a phone loops over all lights in the scene. So on phones the sources' point lights are only
+  // bookkeeping (kept invisible: three.js leaves invisible lights out of the shaders, and their .intensity still drives
+  // the halos and fog glow), and POOL_N real lights take the place of the ones that matter most this frame: lit, and
+  // near the hero or the camera. A slot fades out before it moves to another source, so nothing pops. Sources without a
+  // slot still glow (bulb emissive, halo, warm windows and bark glow). The light count never changes: no recompiles.
+  const POOL_N = 3;
+  let pool = null;
+  if (MOBILE) {
+    const virt = [];
+    for (const s of src.values()) for (const L of s.lights) if (L.l.isPointLight) virt.push(L.l);
+    for (const g of glows) if (g.l && g.l.isPointLight) virt.push(g.l);
+    for (const l of virt) { l.visible = false; l.castShadow = false; }
+    const slots = Array.from({ length: POOL_N }, () => { const l = new THREE.PointLight(0xFFB25E, 0, 5, 1.5); scene.add(l); return { l, v: null, w: 0 }; });
+    pool = { virt, slots, wp: V(), hero: V() };
+  }
+  function updatePool(dt) {
+    const { virt, slots, wp } = pool;
+    const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root;
+    const hp = hr ? pool.hero.copy(hr.position).add(V(0, 1, 0)) : null;
+    const score = l => { if (l.intensity < .02) return 0; l.getWorldPosition(wp);
+      const dh = hp ? wp.distanceTo(hp) : 99, dc = cam ? wp.distanceTo(cam.position) * .7 : 99, d = Math.min(dh, dc);
+      return l.intensity / (.5 + d * d); };
+    const ranked = virt.map(l => [l, score(l)]).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1]).slice(0, POOL_N).map(e => e[0]);
+    for (const sl of slots) {
+      if (sl.v && !ranked.includes(sl.v)) sl.w = Math.max(0, sl.w - dt * 4);       // leaving: fade out first
+      if (sl.v && sl.w === 0 && !ranked.includes(sl.v)) sl.v = null;
+    }
+    for (const l of ranked) if (!slots.some(sl => sl.v === l)) { const free = slots.find(sl => !sl.v); if (free) { free.v = l; free.w = 0; } }
+    for (const sl of slots) {
+      const l = sl.l, v = sl.v;
+      if (!v) { l.intensity = 0; continue; }
+      if (ranked.includes(v)) sl.w = Math.min(1, sl.w + dt * 4);
+      v.getWorldPosition(l.position); l.color.copy(v.color); l.distance = v.distance; l.decay = v.decay;
+      l.intensity = v.intensity * sl.w;
+    }
+  }
+
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),

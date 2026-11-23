@@ -153,7 +153,7 @@ export function createAudio(ctx) {
   const RAW = {}, B = {}, USED = {}, PENDING = {};
   const BUDGET_S = 140;   // seconds of decoded audio kept at most (~27 MB at 48 kHz, ~18 MB at 32 kHz)
   let decodedS = 0;
-  function getBuf(k) { const b = B[k]; if (b) { USED[k] = now; return b; } decode(k); return null; }
+  function getBuf(k) { if (k.charCodeAt(0) === 115 && k.startsWith('syn_')) return synBuf(k); const b = B[k]; if (b) { USED[k] = now; return b; } decode(k); return null; }
   function decode(k) {
     if (B[k]) return Promise.resolve(B[k]); if (PENDING[k]) return PENDING[k]; if (!RAW[k] || !A) return Promise.resolve(null);
     return PENDING[k] = new Promise(res => A.decodeAudioData(RAW[k].slice().buffer, res, () => res(null))).then(b => {
@@ -248,12 +248,24 @@ export function createAudio(ctx) {
   // mist hushes the forest (softer, darker); a storm makes it rougher. Folded into the acoustics bus targets.
   let mistK = 0;
   // ---------- rooms: where the camera is decides what we hear ----------
-  const LV = ctx.lv || { KT: 5.0, BD: 7.4, WS: 3.6 };
+  const LV = ctx.lv || { KT: 6.0, BD: 8.4, WS: 4.6 };   // index.html levels include HY = 1.0
   const ROOMS = ctx.rooms || [
     { n: 'kitchen', c: { x: -2.65, y: LV.KT + 1.05, z: 2.5 }, r: 2.8 },
     { n: 'bedroom', c: { x: -1.9, y: LV.BD + 1.1, z: 2.3 }, r: 2.6 },
     { n: 'workshop', c: { x: 2.75, y: LV.WS + 1.1, z: 2.9 }, r: 2.8 },
   ];
+  // each room's own colour: the bedroom's quilts and bunks soak up the highs and the ring; the kitchen's pots, kettle and
+  // bare walls ring brightest; the workshop's tools and timber sit between. Outside a room (deck, landings, ladders,
+  // the roof) a sound is in the open air: forest bus and forest reverb, no room ring.
+  const ROOMC = { kitchen: { send: 1.3, lp: 16000 }, bedroom: { send: .5, lp: 4800 }, workshop: { send: 1, lp: 9000 } };
+  function roomOf(p) {
+    let best = null, bd = 1e9;
+    for (const R of ROOMS) { const dx = p.x - R.c.x, dy = (p.y - R.c.y) * 1.6, dz = p.z - R.c.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz) / R.r; if (d < bd) { bd = d; best = R; } }
+    return bd < 1.15 ? best : null;
+  }
+  // the two roofs (index.html buildTree roofs): x/z extent and base height; standing on one = shingles underfoot
+  const ROOFS = ctx.roofs || [{ x0: -4.65, x1: .85, z0: .45, z1: 4.15, yb: 10.7 }, { x0: .45, x1: 5.05, z0: .65, z1: 4.35, yb: 6.9 }];
+  const onRoof = p => ROOFS.some(R => p.x > R.x0 - .5 && p.x < R.x1 + .5 && p.z > R.z0 - .5 && p.z < R.z1 + .5 && p.y > R.yb - .3);
   function indoorK(p) {     // 0 outside .. 1 well inside a room
     let k = 0; for (const R of ROOMS) { const dx = p.x - R.c.x, dy = (p.y - R.c.y) * 1.6, dz = p.z - R.c.z; const d = Math.sqrt(dx * dx + dy * dy + dz * dz); k = Math.max(k, 1 - smooth(R.r * .8, R.r * 1.7, d)); }   // the rooms are open to the camera: being zoomed close counts as being in the room
     return k;
@@ -320,6 +332,7 @@ export function createAudio(ctx) {
 
   // play a buffer at a world position. o: {gain, rate, offset, dur, ref, rev, fadeIn, fadeOut, pos|null, pan}
   function voice(name, o) {
+    let room = null; if (o.indoor && o.pos && !o.bed) { room = roomOf(o.pos); if (!room) o = Object.assign({}, o, { indoor: false }); }
     if (!A || (!o.bed && voices.size >= (o.prio ? MAXV + 6 : MAXV))) return null;   // the hero's own sounds get extra room
     const buf = getBuf(name); if (!buf) return null;
     if (o.prio) { duckUntil = A.currentTime + 3; lastActT = now; }   // the music steps back for the hero's sounds
@@ -335,7 +348,7 @@ export function createAudio(ctx) {
     let dist = 10;
     if (o.pos) {
       const l = listener(); dist = Math.hypot(o.pos.x - l.x, o.pos.y - l.y, o.pos.z - l.z);
-      const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.max(1400, NYQ * Math.exp(-dist / (o.far ? 45 : 70))); lp.Q.value = .5;
+      const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.min(room ? Math.min(NYQ, ROOMC[room.n].lp) : NYQ, Math.max(1400, NYQ * Math.exp(-dist / (o.far ? 45 : 70)))); lp.Q.value = .5;
       const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = o.ref || 10; p.rolloffFactor = o.roll ?? .9; p.maxDistance = 400;
       if (p.positionX) { p.positionX.value = o.pos.x; p.positionY.value = o.pos.y; p.positionZ.value = o.pos.z; } else p.setPosition(o.pos.x, o.pos.y, o.pos.z);
       if (o.move) { const m = o.move; if (p.positionX) { p.positionX.setValueAtTime(o.pos.x, t); p.positionX.linearRampToValueAtTime(m.x, t + realDur); p.positionY.setValueAtTime(o.pos.y, t); p.positionY.linearRampToValueAtTime(m.y, t + realDur); p.positionZ.setValueAtTime(o.pos.z, t); p.positionZ.linearRampToValueAtTime(m.z, t + realDur); } }
@@ -344,12 +357,12 @@ export function createAudio(ctx) {
       const sp = A.createStereoPanner ? A.createStereoPanner() : null;
       const bus = o.indoor ? inBus : outBus; if (sp) { sp.pan.value = o.pan || 0; src.connect(g).connect(sp).connect(bus); } else src.connect(g).connect(bus);
     }
-    const sendAmt = o.rev ?? clamp01(.12 + dist / 60);
+    const sendAmt = (o.rev ?? clamp01(.12 + dist / 60)) * (room ? ROOMC[room.n].send : 1);
     if (sendAmt > .01) { const s = A.createGain(); s.gain.value = sendAmt; g.connect(s).connect(o.indoor ? roomIn : revIn); }
     src.start(t, off, dur);
     const v = { src, g, end: t + realDur, name };
     LOG.push([+now.toFixed(1), name]); if (LOG.length > 60) LOG.shift();
-    if (window.__audioTrace) window.__audioTrace.push([+t.toFixed(2), name, +(o.gain || 0).toFixed(3), +dist.toFixed(1), o.indoor ? 1 : 0]);   // mix QA only
+    if (window.__audioTrace) window.__audioTrace.push([+t.toFixed(2), name, +(o.gain || 0).toFixed(3), +dist.toFixed(1), o.indoor ? (room ? room.n : 1) : 0]);   // mix QA only
     voices.add(v); src.onended = () => { voices.delete(v); try { out.disconnect(); g.disconnect(); } catch (e) {} };
     return v;
   }
@@ -464,16 +477,89 @@ export function createAudio(ctx) {
 
   const FRIDGE = ctx.fridge || { x: -1.43, y: (ctx.lv ? ctx.lv.KT : 5.0) + .8, z: 1.38 };
   let fridgeOn = false, fridgeT = 0;
+  // ---------- daytime critters (Ground): bird hops and pecks, squirrel chitter and claws on bark, wing flutters ----------
+  // No clips (no SFX budget): small procedural buffers, synthesized once per variant, never evicted (~0.8 MB in all).
+  // __ground.on('critter', {kind:'bird'|'squirrel'|'butterfly', act:'hop'|'peck'|'chitter'|'climb'|'flee'|'land', pos, id, dur})
+  // or __audio.critter(e). Rate-limited per critter; dropped beyond 30 m. Butterflies are silent.
+  const SYN = {};
+  function synth(kind, v) {
+    const sr = A.sampleRate, R = Math.random;
+    const len = { peck: .5, hop: .7, flutter: .9, claws: 2.2, chitter: 1.4 }[kind], n = Math.floor(sr * len), d = new Float32Array(n);
+    // RBJ band-pass, run in place over a segment
+    const bp = (x, f, Q) => { const w = 2 * Math.PI * f / sr, al = Math.sin(w) / (2 * Q), a0 = 1 + al, b0 = al / a0, a1 = -2 * Math.cos(w) / a0, a2 = (1 - al) / a0; let x1 = 0, x2 = 0, y1 = 0, y2 = 0; for (let i = 0; i < x.length; i++) { const y = b0 * x[i] - b0 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = x[i]; y2 = y1; y1 = y; x[i] = y; } return x; };
+    const burst = (at, ms, f, Q, amp, tau) => { const m = Math.floor(sr * ms / 1000), s = Math.floor(at * sr); if (s >= n) return; const x = new Float32Array(m); for (let i = 0; i < m; i++) x[i] = (R() * 2 - 1) * Math.exp(-i / (sr * tau / 1000)); bp(x, f, Q); for (let i = 0; i < m && s + i < n; i++) d[s + i] += x[i] * amp; };
+    if (kind === 'peck') { let t = .01; for (let k = 0, m = 2 + (v % 3); k < m; k++) { burst(t, 8, 2600 + R() * 1400, 2.5, 3, .7); burst(t, 20, 700, 1.2, .5, 3); t += .08 + R() * .07; } }
+    else if (kind === 'hop') { let t = .01; for (let k = 0, m = 2 + (v % 2); k < m; k++) { burst(t, 30, 600 + R() * 300, 1, 1.2, 6); for (let j = 0; j < 4; j++) burst(t + R() * .03, 4, 3500 + R() * 2500, 2, .6 * R(), .6); t += .15 + R() * .1; } }
+    else if (kind === 'flutter') { const x = new Float32Array(n); for (let i = 0; i < n; i++) x[i] = R() * 2 - 1; bp(x, 900 + v * 250, .7); let ph = 0; const T = .55 + v * .1;
+      for (let i = 0; i < n; i++) { const t = i / sr, f = 24 - 10 * Math.min(1, t / T); ph += f / sr; const flap = Math.pow(Math.abs(Math.sin(Math.PI * ph)), 3); d[i] = x[i] * (.3 + .7 * flap) * Math.exp(-t / (T * .55)) * Math.min(1, t / .01) * 2.2; } }
+    else if (kind === 'claws') { let t = .005; while (t < len - .05) { const g = 3 + Math.floor(R() * 4); for (let j = 0; j < g; j++) burst(t + j * (.009 + R() * .008), 4, 2200 + R() * 2800, 2.5, .5 + R(), .9); t += .06 + R() * .14; } }
+    else if (kind === 'chitter') { let t = .01, gap = .085 + R() * .02; const m = 8 + Math.floor(R() * 8) + v * 2;
+      for (let k = 0; k < m && t < len - .05; k++) { const s = Math.floor(t * sr), L = Math.floor(sr * (.02 + R() * .008)), f0 = 4300 + R() * 600, f1 = 2500 + R() * 400; let ph = 0;
+        const nz = new Float32Array(L); for (let i = 0; i < L; i++) nz[i] = R() * 2 - 1; bp(nz, 3200, 2);
+        for (let i = 0; i < L && s + i < n; i++) { const u = i / L, f = f0 + (f1 - f0) * u; ph += 2 * Math.PI * f / sr; const env = Math.min(1, u * 25) * Math.pow(1 - u, 1.5); d[s + i] += (Math.tanh(1.5 * Math.sin(ph)) * .55 + nz[i] * .9) * env * .5; }
+        t += gap * (k > m * .6 ? .7 : 1) + R() * .012; } }
+    { let y = 0; const a = 1 - Math.exp(-2 * Math.PI * 6500 / sr); for (let i = 0; i < n; i++) { y += a * (d[i] - y); d[i] = y; } }   // soften the edges: nothing synthetic-bright
+    let pk = 0; for (let i = 0; i < n; i++) pk = Math.max(pk, Math.abs(d[i])); const k = pk > 0 ? .9 / pk : 0; for (let i = 0; i < n; i++) d[i] *= k;
+    const b = A.createBuffer(1, n, sr); b.getChannelData(0).set(d); return b;
+  }
+  function synBuf(name) { if (SYN[name]) return SYN[name]; const m = /^syn_(\w+)_(\d)$/.exec(name); if (!m || !A) return null; return SYN[name] = synth(m[1], +m[2]); }
+  const CRIT = { hop: ['hop', .05, .12, 2], peck: ['peck', .05, .1, 3], chitter: ['chitter', .16, 3, 2], climb: ['claws', .07, .9, 2], flee: ['flutter', .14, .8, 3], land: ['flutter', .06, .8, 3] };
+  const critLast = {}; let critHooked = false;
+  function critter(e) {
+    if (!loaded || muted || !e || e.kind === 'butterfly' || !A) return;
+    const C = CRIT[e.act]; if (!C) return; const q = e.pos || [0, 0, 8], p = { x: q[0] ?? q.x, y: q[1] ?? q.y, z: q[2] ?? q.z };
+    const l = listener(); if (Math.hypot(p.x - l.x, p.y - l.y, p.z - l.z) > 45) return;
+    const id = (e.id || e.kind) + e.act; if (now - (critLast[id] ?? -9) < C[2]) return; critLast[id] = now;
+    let kind = C[0]; if (e.kind === 'squirrel' && e.act === 'flee') kind = 'claws';
+    const name = 'syn_' + kind + '_' + Math.floor(Math.random() * C[3]);
+    const dur = kind === 'claws' ? Math.min(2.1, e.dur || rnd(.6, 1.4)) : undefined;
+    voice(name, { pos: p, gain: C[1] * rnd(.8, 1.15) * (e.act === 'land' ? .7 : 1), rate: rnd(.9, 1.12) * (e.kind === 'squirrel' && kind === 'flutter' ? .8 : 1), dur, offset: kind === 'claws' ? rnd(0, .4) : 0,
+      fadeIn: .004, fadeOut: kind === "claws" ? .12 : .05, ref: 4, roll: 1.2, rev: .12 });
+  }
+  function hookCritters() {
+    if (critHooked) return; const G = window.__ground; if (!G || typeof G.on !== 'function') return; critHooked = true;
+    G.on('critter', critter);
+  }
+
+  // ---------- house sway (Wind): ropes strain, lantern hooks squeak, hinges creak, a loose shutter knocks ----------
+  // __wind.on('sway', {part, id, pos:[x,y,z], amp 0..1, hit?}) at each swing reversal. Rate-limited per object and
+  // overall; routed to the forest bus, so indoors it is quieter and muffled like the rest of the outside.
+  // Parts (Wind, fc33e5b): 'landing lantern', telescope (gusts only), 'ladder-ground' / 'ladder-deck'. The door is Props' own.
+  const SWAY = {
+    ladder: { c: ['fs_rope_a', 'fs_rope_b'], g: [.05, .2], rate: [.7, .9], dur: [.5, .9], ref: 3 },
+    rope: { c: ['fs_rope_a', 'fs_rope_b'], g: [.04, .16], rate: [.75, .95], dur: [.4, .8], ref: 3 },
+    lantern: { c: ['creak_a'], g: [.03, .11], rate: [1.5, 1.9], dur: [.22, .38], ref: 2 },
+    telescope: { c: ['creak_a'], g: [.03, .1], rate: [1.2, 1.4], dur: [.25, .4], ref: 2 },
+    door: { c: ['creak_a'], g: [.05, .18], rate: [.85, 1.05], dur: [.6, 1.2], ref: 3 },
+    shutter: { c: ['creak_a'], g: [.04, .15], rate: [1, 1.2], dur: [.4, .8], ref: 3 },
+    hit: { c: ['shutter', 'trunk_door_close'], g: [.06, .22], rate: [.9, 1.1], dur: [.25, .4], ref: 3 },
+  };
+  const swayLast = {}; let swayHooked = false, swayLastT = -9;
+  function swaySound(e) {
+    if (!loaded || muted || !e) return;
+    const amp = clamp01(e.amp ?? .5) * (.35 + .65 * clamp01(wind / .6)), key = e.hit ? 'hit' : e.part, S = SWAY[key] || SWAY.rope, id = (e.id || e.part || '?') + (e.hit ? '!' : '');
+    if (now - (swayLast[id] ?? -9) < (e.hit ? .8 : rnd(1.3, 2.4)) || now - swayLastT < .3) return;
+    if (amp < .12 || Math.random() > .25 + .7 * amp) return;                                   // small swings mostly pass in silence
+    swayLast[id] = now; swayLastT = now;
+    const q = e.pos || [rnd(-6, 6), rnd(9, 16), rnd(-3, 1)], dur = rnd(S.dur[0], S.dur[1]);
+    voice(pick(S.c), { pos: { x: q[0] ?? q.x, y: q[1] ?? q.y, z: q[2] ?? q.z }, gain: S.g[0] + (S.g[1] - S.g[0]) * amp, rate: rnd(S.rate[0], S.rate[1]),
+      offset: e.hit ? 0 : rnd(0, 1.2), dur, fadeIn: e.hit ? .005 : .06, fadeOut: Math.min(.25, dur * .4), ref: S.ref, roll: 1.2, rev: .18 });
+  }
+  function hookSway() {
+    if (swayHooked) return; const W = window.__wind; if (!W || typeof W.on !== 'function') return; swayHooked = true;
+    W.on('sway', swaySound);
+  }
   let dripNext = 0, creakNext = 6, autoSleep = true, snoreNext = 0, turnNext = 0;
   // ---------- footsteps: surface under the foot, at the moment the foot lands ----------
   // Character can drive them exactly with __audio.footstep(side, pos?, {surface}); until it does, audio.js watches
   // the toe bones itself: a foot that comes down to the floor after being lifted is a step.
   let gnow = 0, breathNext = 0, clothNext = 0, moving = false, carrying = false, dbgF = null, autoFeet = true, ladderNext = 0, cadNext = 0, cadSide = 'L', frameDt = .016;
   const FT = { boards: ['step_wood_a', 'step_wood_b', 'step_wood_c'], dirt: ['fs_dirt_a', 'fs_dirt_b', 'fs_dirt_c'], wet: ['fs_wet_a', 'fs_wet_b', 'fs_wet_c'],
-    leaves: ['fs_leaves_a', 'fs_leaves_b', 'fs_leaves_c'], ladder: ['fs_ladder_a', 'fs_ladder_b'], rope: ['fs_rope_a', 'fs_rope_b'] };
-  const FV = { boards: .2, dirt: .2, wet: .22, leaves: .24, ladder: .22, rope: .24 };
+    leaves: ['fs_leaves_a', 'fs_leaves_b', 'fs_leaves_c'], ladder: ['fs_ladder_a', 'fs_ladder_b'], rope: ['fs_rope_a', 'fs_rope_b'], roof: ['step_wood_c', 'step_wood_a'] };
+  const FV = { boards: .2, dirt: .2, wet: .22, leaves: .24, ladder: .22, rope: .24, roof: .15 };
   const footSt = { L: { armed: false }, R: { armed: false } };
   function surfaceAt(p, env) {
+    if (onRoof(p)) return 'roof';
     if (p.y > .6) return 'boards';
     if (env.rain > .2 || rainMem > .3) return 'wet';
     if (env.season === 'autumn') return Math.random() < .65 ? 'leaves' : 'dirt';
@@ -482,7 +568,8 @@ export function createAudio(ctx) {
   function step(side, pos, surface, gain = 1) {
     if (!loaded || muted) return;
     const list = FT[surface] || FT.boards, q = toPos(pos);
-    const clip = pick(list), o = { pos: q, gain: (FV[surface] || .2) * gain * rnd(.75, 1.05), rate: rnd(.9, 1.1), ref: 3, roll: 1, rev: .15, prio: true, indoor: q.y > .6, fadeIn: .005, fadeOut: .08 };
+    if (surface === 'roof' && Math.random() < .45) { const o2 = { pos: q, gain: .035 * gain, rate: rnd(1.1, 1.4), fadeIn: .003, fadeOut: .05, ref: 3, roll: 1, rev: .15, delay: rnd(.03, .09) }; voice('syn_peck_' + (Math.random() < .5 ? 0 : 1), o2); }   // a loose shingle ticks
+    const clip = pick(list), o = { pos: q, gain: (FV[surface] || .2) * gain * rnd(.75, 1.05), rate: surface === 'roof' ? rnd(1.15, 1.3) : rnd(.9, 1.1), ref: 3, roll: 1, rev: .15, prio: true, indoor: q.y > .6, fadeIn: .005, fadeOut: .08 };
     if (B[clip]) voice(clip, o); else decode(clip).then(() => voice(clip, o));
   }
   const _w = { x: 0, y: 0, z: 0 };
@@ -525,7 +612,7 @@ export function createAudio(ctx) {
     const hero = ctx.hero, asleep = !!(hero && hero.inBed);
     let anx = .3; try { const nb = window.__brain && window.__brain.need; if (nb && nb.safety != null) anx = clamp01(nb.safety); } catch (e) {}
     const env = envNow = { season: season(), rain, wind, awake: !asleep, anx };
-    hookWind(); hookWeather();
+    hookWind(); hookWeather(); hookSway(); hookCritters();
     wState = weatherState(h, rain, wind); env.w = wState;
     if (wState === 'storm' && !wHooked && now > thunderNext) { if (thunderNext > 0) thunder(rnd(1200, 4000), rnd(.4, .8)); thunderNext = now + rnd(25, 60); }
     // the hero getting up in the morning wakes the garden
@@ -765,7 +852,7 @@ export function createAudio(ctx) {
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
       const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
-    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState,
+    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter,
   };
   window.__audio = api;
   return api;
