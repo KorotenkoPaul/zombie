@@ -298,7 +298,8 @@ function colorize(g, c, a, met) { if (met !== undefined) g.setAttribute('vmet', 
 // bake(group, keepCast): merge the group's static meshes (not inside a userData.live node, not hidden) into one mesh per material.
 // keepCast: also split by each part's own castShadow flag (the late pass, after small parts were set not to cast).
 function bake(group, keepCast = false) {
-  group.updateMatrixWorld(true); const inv = group.matrixWorld.clone().invert(); const by = new Map(); const kill = [];
+  /* ancestors too: lodGeo's getWorldScale refreshes the parents' world matrices, so a stale parent here would shift every rebuilt part (the telescope tube floated 1.2 m up) */
+  group.updateWorldMatrix(true, true); const inv = group.matrixWorld.clone().invert(); const by = new Map(); const kill = [];
   group.traverse(o => { if (!o.isMesh || o === group || Array.isArray(o.material) || o.userData.live || (keepCast && o.material.userData.keep) || o.isInstancedMesh || o.isSkinnedMesh || !o.visible || o.userData.keepMesh) return; if (o.morphTargetInfluences) return; let p = o.parent; while (p && p !== group) { if (p.userData.live || !p.visible) return; p = p.parent; } let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); let mat = o.material; const pm = plainOf(mat); if (pm) { if (mat.flatShading) g.computeVertexNormals(); colorize(g, mat.color, mat.roughness, mat.metalness); mat = pm; } else if (mat.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1)); const key = keepCast ? mat.uuid + (o.castShadow ? 's' : 'n') + (o.receiveShadow ? 'r' : '') : mat.uuid; if (!by.has(key)) by.set(key, { mat, cast: o.castShadow, rec: o.receiveShadow, gs: [], os: [] }); by.get(key).gs.push(g); by.get(key).os.push(o); });
   for (const e of by.values()) { if (keepCast && e.gs.length < 2) { e.gs[0].dispose(); e.skip = true; continue; } e.os.forEach(o => o.removeFromParent()); }
   for (const { mat, cast, rec, gs, skip } of by.values()) { if (skip) continue; const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = keepCast ? cast : true; m.receiveShadow = keepCast ? rec : true; group.add(m); gs.forEach(g => g.dispose()); }
@@ -693,11 +694,12 @@ function sideBench() {
 
 // ------------- deck -------------
 function telescope() {
-  const g = new THREE.Group(); const top = 1.08;
+  /* tripod tall enough for the hero's eye: eyepiece ~1.34 m (Grab); the legs stretch, the tube and brass keep their size */
+  const g = new THREE.Group(); const top = 1.36, LK = top / 1.08;
   // aged brass (less candy-yellow than TB) and a dark lacquered tube body, like an old field telescope
   const TB = new THREE.MeshStandardMaterial({ color: 0xB48C48, metalness: .9, roughness: .36, envMap: M.env, envMapIntensity: 1.1 }), LAC = new THREE.MeshStandardMaterial({ color: 0x1C2633, roughness: .3, metalness: .35, envMap: M.env, envMapIntensity: 1.2 });
-  for (let i = 0; i < 3; i++) { const l = new THREE.Group(); l.position.set(0, top, 0); l.rotation.y = i * Math.PI * 2 / 3 + .4; g.add(l); W(l, .035, 1.16, .025, 0, -.55, .19, { mat: M.woodDark, grain: 1, r: .008, rx: -.33 }); add(l, rb(.04, .025, .035, .008), TB, 0, -.02, .02); add(l, rb(.022, .016, .13, .004), M.woodDark, 0, -.5, .105); add(l, new THREE.CylinderGeometry(.006, .006, .03, 6), TB, 0, -1.08, .38); }
-  add(g, new THREE.CylinderGeometry(.065, .065, .014, 3), M.woodDark, 0, top - .5, 0); // spreader tray
+  for (let i = 0; i < 3; i++) { const l = new THREE.Group(); l.position.set(0, top, 0); l.rotation.y = i * Math.PI * 2 / 3 + .4; l.scale.set(1, LK, LK); g.add(l); W(l, .035, 1.16, .025, 0, -.55, .19, { mat: M.woodDark, grain: 1, r: .008, rx: -.33 }); add(l, rb(.04, .025, .035, .008), TB, 0, -.02, .02); add(l, rb(.022, .016, .13, .004), M.woodDark, 0, -.5, .105); add(l, new THREE.CylinderGeometry(.006, .006, .03, 6), TB, 0, -1.08, .38); }
+  add(g, new THREE.CylinderGeometry(.065, .065, .014, 3), M.woodDark, 0, top - .5 * LK, 0); // spreader tray
   add(g, new THREE.CylinderGeometry(.05, .06, .05, 20), TB, 0, top, 0);
   const yoke = new THREE.Group(); yoke.position.set(0, top + .05, 0); g.add(yoke);
   for (const s of [-1, 1]) add(yoke, rb(.015, .1, .03, .006), TB, 0, .05, s * .06);
