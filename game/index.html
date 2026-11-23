@@ -370,7 +370,7 @@ const puffs=[];function puff(p,n,col=0xCFC8BB,size=1){for(let i=0;i<n;i++){const
 const motesMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{t:{value:0},night:{value:0},day:{value:1},px:{value:PR}},
  vertexShader:`attribute float ph;uniform float t,night,day,px;varying float a;varying vec3 col;void main(){vec3 p=position;p.x+=sin(t*.3+ph)*.8;p.y+=sin(t*.23+ph*2.)*.5;p.z+=cos(t*.27+ph)*.6;
 #ifdef WIND
-p.xz+=windSway(p,.5)*.6;
+p.xz+=windSwayS(position,.5)*.6;
 #endif
 vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=night*bl+day*.3;col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=(day*2.+night*5.)*px*(26./-mv.z);gl_Position=projectionMatrix*mv;}`,
  fragmentShader:`varying float a;varying vec3 col;void main(){float k=smoothstep(.5,0.,length(gl_PointCoord-.5));gl_FragColor=vec4(col*1.8*k*a,k*a);}`});

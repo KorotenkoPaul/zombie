@@ -20,6 +20,8 @@
 //                                        Multiply by your own amplitude in metres; freq ~1.2 heavy, ~1.7 grass, ~2.5 leaves
 //   vec3  windRope(vec3 wp, float t, float len)  offset for a hanging rope: t 0 at the knot .. 1 at the free end
 //   vec3  windBranch(vec3 wp, vec2 trunkAxisXZ)  smooth sway of the oak's big limbs (bark and leaves both add it)
+//   vec2  windSwayS(vec3 wp, float freq)  same, but smooth in space: use it for anything that MOVES (particles),
+//                                        or pass the point's rest position. windSway's per-position phase jumps otherwise.
 //   vec3  windLocal(vec3 w)              turns a world offset into the instance's local space (InstancedMesh);
 //                                        without instancing it returns w unchanged
 //
@@ -49,14 +51,18 @@ uniform float uWT,uWet;uniform vec4 uWind;uniform vec4 uGust;uniform vec2 uDrift
 float windGust(vec3 p){float x=uGust.x-dot(p.xz,uWind.xy);
  return uGust.z*(x<0.?exp(-x*x*uGust.y*uGust.y*6.):exp(-x/uGust.w));}
 float windStrength(vec3 p){float n=sin(dot(p.xz,vec2(.11,.17))+uWT*.37)*.5+.5;return uWind.z*(.8+.4*n)+windGust(p);}
-vec2 windSway(vec3 p,float freq){float s=windStrength(p);vec2 d=uWind.xy,q=vec2(-d.y,d.x);
- float ph=uWT*freq-dot(p.xz,d)*.45+fract(sin(dot(p.xz,vec2(12.9898,78.233)))*43758.5453)*.8;
+vec2 windSwayH(vec3 p,float freq,float hp){float s=windStrength(p);vec2 d=uWind.xy,q=vec2(-d.y,d.x);
+ float ph=uWT*freq-dot(p.xz,d)*.45+hp;
  float o1=sin(ph)*.6+sin(ph*2.17+1.3)*.4,o2=sin(ph*1.31+2.1);
  float shake=.1+.9*s,lean=.35*s*s;
  return d*(lean+o1*shake*.55)+q*o2*shake*.3;}
+// for things that stay put (a plant, a leaf card): each gets its own random phase from its position
+vec2 windSway(vec3 p,float freq){return windSwayH(p,freq,fract(sin(dot(p.xz,vec2(12.9898,78.233)))*43758.5453)*.8);}
+// for things that move (fireflies, motes, smoke, rope vertices): smooth in space, no jumps as the point moves
+vec2 windSwayS(vec3 p,float freq){return windSwayH(p,freq,0.);}
 // a hanging rope or rope ladder: t = 0 at the knot it hangs from .. 1 at its free end, len = its length in metres.
 // Slow pendulum sway, mostly downwind, the free end moves most. Returns a world offset.
-vec3 windRope(vec3 p,float t,float len){vec2 w=windSway(p,1.1)*.05*len*t*t*(1.-.45*uWet);/* wet rope: heavier, sways less */return vec3(w.x,0.,w.y);}
+vec3 windRope(vec3 p,float t,float len){vec2 w=windSwayS(p,1.1)*.05*len*t*t*(1.-.45*uWet);/* wet rope: heavier, sways less */return vec3(w.x,0.,w.y);}
 // the big limbs of the oak: a slow, smooth sway (no per-vertex randomness, so a branch moves as one piece).
 // ax = the trunk axis (x,z). Still near the trunk and the house; the far limbs and the top of the crown move a few cm,
 // ~15 cm in a strong gust. Leaf cards add the same offset at their centre, so they stay on their branch.

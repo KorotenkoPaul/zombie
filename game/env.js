@@ -205,7 +205,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
    vertexShader:`attribute vec4 aF;uniform float t,on,px;varying float vB;
     void main(){float s=aF.x,sp=aF.y;vec3 p=position+vec3(sin(t*.31*sp+s)*aF.z,sin(t*.47*sp+s*1.3)*.35+sin(t*.13+s)*.25,cos(t*.27*sp+s*.7)*aF.z);
 #ifdef WIND
-     p.xz+=windSway(p,.6)*.35;/* [WIND] fireflies drift with the wind (game/wind.js) */
+     p.xz+=windSwayS(position,.6)*.35;/* [WIND] fireflies drift with the wind (game/wind.js) */
 #endif
 
      vec4 mv=viewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*aF.w*1.3+s*4.)),6.);vB=(.25+.75*bl)*on;

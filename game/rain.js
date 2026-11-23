@@ -170,7 +170,7 @@ float wetDrops(vec2 p){float acc=0.;
  vec2 c=floor(p*70.);float h2=gh(c.x*7.1+c.y*13.7);if(h2>.78){vec2 f=fract(p*70.)-.5-(vec2(gh(h2*3.),gh(h2*5.))-.5)*.4;acc+=smoothstep(.22,.08,length(f))*.7;}
  return acc;}`)
             .replace('#include <dithering_fragment>', `#include <dithering_fragment>
-{float wd=wetDrops(vGp)*uWet;gl_FragColor.rgb+=vec3(.55,.62,.7)*wd*.55;gl_FragColor.a=max(gl_FragColor.a,min(.6,wd*.5));}`);
+if(uWet>.003){float wd=wetDrops(vGp)*uWet;gl_FragColor.rgb+=vec3(.55,.62,.7)*wd*.55;gl_FragColor.a=max(gl_FragColor.a,min(.6,wd*.5));}`);
         };
         m.needsUpdate = true; }
     },
