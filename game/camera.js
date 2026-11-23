@@ -28,9 +28,10 @@ export function createCameraRig(o) {
   const goal = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   const cur = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   let followOn = false, atHome = true, flyK = 0, idle = 0;
-  const MIN_D = 1.0, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
+  const MIN_D = 1.43, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
   const AXIS = o.axis || [0, -0.6];
-  const maxD = () => home.dist * 1.0, hardD = () => home.dist * 1.2;   // Pavel: max zoom-out 20 % less far (was 1.25 / 1.5)
+  // zoom-out as it was originally (Pavel 20:52): soft limit 1.25x home with a rubber band up to 1.5x
+  const maxD = () => home.dist * 1.25, hardD = () => home.dist * 1.5;
 
   // ---------- picking ----------
   const ray = new THREE.Raycaster();
@@ -76,9 +77,6 @@ export function createCameraRig(o) {
     const k = 1 - nd / goal.dist;
     if (point) {
       tmp.copy(goal.target).lerp(point, k);
-      // a far pick (forest, sky) would drag the focus metres per step while the distance barely changes: cap the shift
-      const sh = tmp.distanceTo(goal.target), cap = Math.abs(goal.dist - nd) * 3 + 0.05;
-      if (sh > cap) tmp.sub(goal.target).multiplyScalar(cap / sh).add(goal.target);
       // like pan: the focus may leave the soft bounds a little (rubber band), never far (sky / far ground picks)
       limitOut(tmp);
       goal.target.copy(tmp);
@@ -272,7 +270,7 @@ export function createCameraRig(o) {
   dom.addEventListener('wheel', e => {
     e.preventDefault(); idle = 0; stopCine(); stopFollow();
     let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-    const f = Math.exp(clamp(dy * (e.ctrlKey ? 0.01 : 0.0016), -0.35, 0.35)); // ctrlKey = trackpad pinch; one notch at most ±35 %
+    const f = Math.exp(clamp(dy, -200, 200) * (e.ctrlKey ? 0.01 : 0.0016)); // ctrlKey = trackpad pinch
     zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null);
   }, { passive: false });
 
