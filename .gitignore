@@ -1,1 +1,3 @@
 __pycache__/
+pipeline/motion/node_modules
+pipeline/motion/src/
