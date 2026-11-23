@@ -296,7 +296,8 @@ export function createHero(ctx){
   let aim=target.clone();const toT=Math.hypot(target.x-p.x,target.z-p.z);if(!isLast&&toT<.55){const n2=N[nxt.node].p;aim.lerp(n2,clamp((.55-toT)/.55,0,1)*.5);}
   const dx=aim.x-p.x,dz=aim.z-p.z;const want=Math.atan2(dx,dz);const da=wrapA(want-root.rotation.y);
   // ===== MOTION HOOK: with motion matching the stop is a human one (constant deceleration over the last step), no creeping =====
-  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):1);const align=smooth(-.17,.8,Math.cos(da));
+  const ladNext=motion&&nxt&&nxt.t==='ladder';// MOTION HOOK: slow down over the last steps to the ladder foot (to ~.4 m/s, the approach pace), not at it
+  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):ladNext?clamp(Math.sqrt(.16+2*1.6*Math.max(0,toT-.32))/H.walkV,0,1):1);const align=smooth(-.17,.8,Math.cos(da));
   H.v+=clamp(vmax*align-H.v,-3.2*dt,2.4*dt);
   stuckCheck(dt);
   // turn rate depends on speed: on the spot it takes small steps
