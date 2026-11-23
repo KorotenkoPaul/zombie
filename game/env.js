@@ -131,6 +131,18 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
 
  // ================= rolling ground fog =================
  // (1) horizontal sheets of domain-warped noise just above the ground
+ // ---- baked fog noise: a 128x128 tiling texture with two independent 4-octave fbm channels (R, G), made once on load.
+ // Fog shaders read it 1-3 times per pixel instead of running 4-octave procedural noise up to 5 times per layer (phone GPUs).
+ const fogNoise=(()=>{const S=128,d=new Uint8Array(S*S*4);
+  const lat=(n,seed)=>{const r=rng(seed);const a=new Float32Array(n*n);for(let i=0;i<n*n;i++)a[i]=r();return a;};
+  const ch=[[[8,.5,11],[16,.25,23],[32,.125,37],[64,.0625,53]],[[8,.5,71],[16,.25,83],[32,.125,97],[64,.0625,101]]].map(o=>o.map(([n,a,s])=>[n,a,lat(n,s)]));
+  const sm=t=>t*t*(3-2*t);
+  for(let y=0;y<S;y++)for(let x=0;x<S;x++){const i=(y*S+x)*4;ch.forEach((oct,c)=>{let v=0;for(const [n,a,L] of oct){const fx=x/S*n,fy=y/S*n,ix=Math.floor(fx),iy=Math.floor(fy),tx=sm(fx-ix),ty=sm(fy-iy);
+    const g=(i,j)=>L[((j%n+n)%n)*n+((i%n+n)%n)];v+=a*((g(ix,iy)*(1-tx)+g(ix+1,iy)*tx)*(1-ty)+(g(ix,iy+1)*(1-tx)+g(ix+1,iy+1)*tx)*ty);}d[i+c]=Math.min(255,v/.94*255);});d[i+2]=0;d[i+3]=255;}
+  const t=new THREE.DataTexture(d,S,S,THREE.RGBAFormat);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.magFilter=THREE.LinearFilter;t.minFilter=THREE.LinearMipmapLinearFilter;t.generateMipmaps=true;t.needsUpdate=true;return t;})();
+ // p is in "noise units" like the old fbm (one coarse cell = 1 unit; the texture tiles every 8 units)
+ const FOG_NOISE=`uniform sampler2D tNoise;vec2 nz2(vec2 p){return texture2D(tNoise,p*.125).rg*.94;}float fbm(vec2 p){return nz2(p).r;}`;
+
  // soft edges (desktop): a half-resolution depth pre-pass of the opaque scene lets the fog fade where it meets the trunk, roots and house
  // instead of cutting them with a hard line. Phones skip it (SOFT 0) to save a scene pass.
  const SOFT=!MOBILE&&!!renderer;
@@ -144,18 +156,18 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
  if(SOFT){depthRT=new THREE.WebGLRenderTarget(4,4,{depthBuffer:true});depthRT.depthTexture=new THREE.DepthTexture(4,4);depthRT.depthTexture.type=THREE.UnsignedIntType;softU.tDepth.value=depthRT.depthTexture;}
  // wind (wind.js, window.__wind): fog noise drifts downwind and puffs lean/churn with the gusts
  const windU={drift:{value:new THREE.Vector2()},wdir:{value:new THREE.Vector2(1,0)},wlv:{value:0}};
- const fogU={t:U.t,col:{value:new THREE.Color(0x8FB8CC)},op:{value:.5},cam:{value:V()},...softU,...windU};
+ const fogU={tNoise:{value:fogNoise},t:U.t,col:{value:new THREE.Color(0x8FB8CC)},op:{value:.5},cam:{value:V()},...softU,...windU};
  const FOGDEF=MOBILE?{FBM_OCT:3}:{};// phones: one octave less in the fog noise (the sheets run it 5x per pixel)
  const sheetMat=new THREE.ShaderMaterial({defines:FOGDEF,transparent:true,depthWrite:false,fog:false,uniforms:fogU,
   vertexShader:`varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
-  fragmentShader:`uniform float t,op;uniform vec3 col,cam;uniform vec2 drift;varying vec3 vW;${GLSL_NOISE}${SOFT_GLSL}
-   void main(){vec2 p=(vW.xz-drift)*.075+vec2(vW.y*1.7,0.);vec2 q=vec2(fbm(p+vec2(t*.018,t*.007)),fbm(p+vec2(5.2,1.3)-vec2(t*.013,0.)));
-    vec2 r=vec2(fbm(p+3.*q+vec2(1.7,9.2)+t*.021),fbm(p+3.*q+vec2(8.3,2.8)-t*.016));float d=fbm(p+3.4*r);
+  fragmentShader:`uniform float t,op;uniform vec3 col,cam;uniform vec2 drift;varying vec3 vW;${FOG_NOISE}${SOFT_GLSL}
+   void main(){vec2 p=(vW.xz-drift)*.075+vec2(vW.y*1.7,0.);vec2 q=nz2(p+vec2(t*.018,t*.007));
+    vec2 r=nz2(p+3.*q+vec2(1.7,9.2)+t*.02);float d=fbm(p+3.4*r);
     float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(.45,1.,smoothstep(4.,12.,length(vW.xz)));
     float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6);gl_FragColor=vec4(col*(.82+.4*d),a);}`});
  const sheets=[];(MOBILE?[[.3,1.1],[.9,.85]]:[[.25,1],[.7,.8],[1.3,.6]]).forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(200,200).rotateX(-Math.PI/2),sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
- const PN=MOBILE?46:80;const puffU={t:U.t,col:fogU.col,op:{value:.5},night:{value:1},...softU,...windU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
+ const PN=MOBILE?46:80;const puffU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},night:{value:1},...softU,...windU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())}};
  const pg=new THREE.InstancedBufferGeometry();pg.copy(new THREE.PlaneGeometry(1,1));pg.instanceCount=PN;
  {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}else if(i<PN*.55){ang=rr(3.6,5.9);r=rr(6,13);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
    const sz=rr(2.6,6)*(r<10?.8:1.15);a.set([Math.cos(ang)*r,rr(.15,.9)*sz*.32,Math.sin(ang)*r,sz],i*4);b.set([rr(0,100),rr(.6,1.4)*(R()<.5?-1:1),rr(.55,1),rr(0,6.28)],i*4);}
@@ -170,7 +182,7 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
     vFade=smoothstep(2.,8.,-mv.z);
     // keep the trunk base and roots clear: puffs between the camera side and the trunk fade out (fog stays around and behind them, as in the photo)
     float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*.7;gl_Position=projectionMatrix*mv;}`,
-  fragmentShader:`uniform float t,op,wlv;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${GLSL_NOISE}${SOFT_GLSL}
+  fragmentShader:`uniform float t,op,wlv;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${FOG_NOISE}${SOFT_GLSL}
    void main(){vec2 p=vUv-.5;float r=length(p*vec2(1.,1.25));
     // swirl: rotate the noise domain by an amount that depends on radius and time, so the clump churns
     float sw=(1.-r)*2.2+t*.05*sign(vS-50.)*(1.+wlv*1.5);float cs=cos(sw),sn=sin(sw);vec2 rp=mat2(cs,-sn,sn,cs)*p;
@@ -185,10 +197,10 @@ float softK(float range){if(soft<.5)return 1.;float sd=texture2D(tDepth,gl_FragC
  // ================= mist between the distant trunks =================
  // curved bands of slow noise mist at several depths behind and beside the oak: the forest fades out layer by layer like the painting.
  // Bands face inwards; they thin out near the top and bottom and where they cross the camera side, cost is a few full-screen layers.
- const mistU={t:U.t,col:fogU.col,op:{value:.5},drift:windU.drift};
+ const mistU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},drift:windU.drift};
  const mistMat=new THREE.ShaderMaterial({defines:FOGDEF,uniforms:mistU,transparent:true,depthWrite:false,fog:false,side:THREE.DoubleSide,
   vertexShader:`varying vec2 vUv;varying vec3 vW;void main(){vUv=uv;vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
-  fragmentShader:`uniform float t,op;uniform vec3 col;uniform vec2 drift;varying vec2 vUv;varying vec3 vW;${GLSL_NOISE}
+  fragmentShader:`uniform float t,op;uniform vec3 col;uniform vec2 drift;varying vec2 vUv;varying vec3 vW;${FOG_NOISE}
    void main(){float ang=atan(vW.z,vW.x);vec2 p=vec2(ang*9.+drift.x*.02,vW.y*.22)+vec2(t*.012,0.);
     float n=fbm(p+vec2(fbm(p*1.7+t*.01),0.)*1.3);float a=smoothstep(.35,.8,n)*smoothstep(0.,.25,vUv.y)*smoothstep(1.,.45,vUv.y)*op;
     gl_FragColor=vec4(col*(.9+.3*n),a);}`});
