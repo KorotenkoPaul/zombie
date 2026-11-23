@@ -522,5 +522,81 @@
 "trunk_door_close": [
 "closing an old heavy wooden door with a soft thud and latch click, close",
 1.5
+],
+"fs_dirt_a": [
+"a single footstep of a boot on packed forest dirt, close, isolated, natural recording",
+0.7
+],
+"fs_wet_a": [
+"a single footstep of a boot on wet muddy ground, soft squelch, close, isolated, natural recording",
+0.7
+],
+"fs_leaves_a": [
+"a single footstep on dry autumn leaves, crisp crunch, close, isolated, natural recording",
+0.7
+],
+"fs_dirt_b": [
+"a single footstep of a boot on packed forest dirt, close, isolated, natural recording",
+0.7
+],
+"fs_wet_b": [
+"a single footstep of a boot on wet muddy ground, soft squelch, close, isolated, natural recording",
+0.7
+],
+"fs_leaves_b": [
+"a single footstep on dry autumn leaves, crisp crunch, close, isolated, natural recording",
+0.7
+],
+"fs_dirt_c": [
+"a single footstep of a boot on packed forest dirt, close, isolated, natural recording",
+0.7
+],
+"fs_wet_c": [
+"a single footstep of a boot on wet muddy ground, soft squelch, close, isolated, natural recording",
+0.7
+],
+"fs_leaves_c": [
+"a single footstep on dry autumn leaves, crisp crunch, close, isolated, natural recording",
+0.7
+],
+"fs_rope_a": [
+"one foot stepping onto a rope ladder rung, rope creaks and wooden rung knocks softly, close, isolated",
+0.9
+],
+"fs_ladder_a": [
+"one boot stepping on a wooden ladder rung, short wooden knock and slight creak, close, isolated",
+0.7
+],
+"fs_rope_b": [
+"one foot stepping onto a rope ladder rung, rope creaks and wooden rung knocks softly, close, isolated",
+0.9
+],
+"fs_ladder_b": [
+"one boot stepping on a wooden ladder rung, short wooden knock and slight creak, close, isolated",
+0.7
+],
+"un_crack": [
+"a heavy tree branch cracking and breaking somewhere far away in a dark night forest, distant, eerie, natural recording",
+3
+],
+"un_cry": [
+"an unclear faint distant cry echoing across a dark foggy forest at night, ambiguous, could be an animal, far away, eerie, quiet",
+4
+],
+"un_metal": [
+"a distant metal sheet creaking and banging once in the wind somewhere far away at night, eerie, faint",
+3
+],
+"un_thud": [
+"a dull heavy thud far away in a night forest, as if something fell, distant, eerie, faint",
+2
+],
+"un_moan": [
+"a long low distant wail carried by the wind across a dark valley at night, ambiguous and faint, eerie",
+5
+],
+"un_rustle": [
+"something moving through bushes in the dark forest not far away, slow rustle then silence, eerie, natural recording",
+3
 ]
 }
