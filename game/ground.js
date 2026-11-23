@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { groundH } from './env.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
 function rng(seed){let s=seed>>>0;return ()=>{s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return ((t^(t>>>14))>>>0)/4294967296;};}
 const V=(x,y,z)=>new THREE.Vector3(x,y,z);
@@ -66,6 +67,11 @@ export function createGround(C){
  G.pathD=pathD;
  // ---- dew: grass, moss and stones get a wet moonlit sheen and tiny glints at dusk and night (follows env's evening factor) ----
  const glowU=C.shroomGlow||{value:0};const wetU={value:0};G.wet=wetU;
+ // weather/time read from Environment's per-frame update (rain, morning, night) without touching env.js or index.html
+ const ST={rainK:0,mornK:0,nightK:0,T:0,puddle:0};G.state=ST;
+ {const E=window.__env;if(E&&E.update&&!E.__groundHook){const o=E.update;E.update=s=>{ST.rainK=s.rainK||0;ST.mornK=s.mornK||0;ST.nightK=s.nightK||0;ST.T=s.T||0;return o(s);};E.__groundHook=true;}}
+ // the hero's feet: grass leans away from him when he walks through it
+ const heroU={value:new THREE.Vector3(0,-99,0)};
  const wetFrag=(k)=>`{float wet=uWet*${k};roughnessFactor=mix(roughnessFactor,.32,wet);}`;
  const addWet=(s,k)=>{s.uniforms.uWet=wetU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nuniform float uWet;').replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+wetFrag(k));};
  // contact-shadow texture for the ground shader: dark right at the wood, fading over ~1 m
@@ -103,7 +109,13 @@ export function createGround(C){
       pathK=ao.b*smoothstep(.35,.75,ao.b+(fbm(vGW*2.3)-.5)*.8)*(.55+.25*fbm(vGW*.8));pathC=vec3(.25,.2,.15)*(.65+.6*fbm(vGW*7.))*(.7+.6*lum)*(1.-ao.r*.4);}`);};
   {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');};}
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);G.ground=ground;
-  ground.onBeforeRender=()=>{wetU.value+=(Math.min(1,glowU.value/1.8)-wetU.value)*.05;};
+  let lastT=performance.now();
+  ground.onBeforeRender=(r,sc,cam)=>{const now=performance.now(),dt=Math.min(.1,(now-lastT)/1000);lastT=now;
+   // wet: dusk and night dew, morning dew, rain; puddles fill in rain and dry slowly after it
+   const want=Math.max(Math.min(1,glowU.value/1.8),ST.mornK*.9,ST.rainK);wetU.value+=(want-wetU.value)*Math.min(1,dt*1.5);
+   ST.puddle=ST.rainK>.05?Math.min(1,ST.puddle+dt*ST.rainK/25):Math.max(0,ST.puddle-dt/90);if(G.updatePuddles)G.updatePuddles(cam);
+   const h=window.__dbg&&window.__dbg.hero&&window.__dbg.hero.root;if(h){const p=h.position;heroU.value.set(p.x,p.y,p.z);}
+   if(G.updateGrass)G.updateGrass(cam);};
   new THREE.TextureLoader().load(new URL('ground3.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=8;mat.map=t;mat.needsUpdate=true;});}
 
  // scatter helper: tries spots until `ok` accepts; returns [x,z] or null
@@ -134,24 +146,40 @@ export function createGround(C){
   g.setAttribute('color',new THREE.Float32BufferAttribute(Cc,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(UV,2));g.setIndex(I);return g;}
  const grassMat=swayMat(new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:.85,metalness:0}),U,.07,'uv.y');
  {// a little translucency: the lit tips glow a touch so tufts read against the dark ground
-  const ob=grassMat.onBeforeCompile;grassMat.onBeforeCompile=s=>{ob(s);addWet(s,'.9');
+  const ob=grassMat.onBeforeCompile;grassMat.onBeforeCompile=s=>{ob(s);addWet(s,'.9');s.uniforms.uHero=heroU;
+   s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nuniform vec3 uHero;').replace('#include <project_vertex>',`{vec3 ipw=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);vec2 dv=ipw.xz-uHero.xz;float dd=length(dv);
+     float f=smoothstep(.55,.1,dd)*step(abs(ipw.y-uHero.y),.6)*uv.y;vec2 pd=dd>.001?dv/dd:vec2(1.,0.);
+     transformed+=windLocal(vec3(pd.x*.22,-.12,pd.y*.22)*f*length(instanceMatrix[1].xyz)*.6);}
+    #include <project_vertex>`);
    s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vDew;').replace('#include <begin_vertex>','#include <begin_vertex>\nvDew=vec3(uv,instanceMatrix[3][0]*3.1+instanceMatrix[3][2]*7.7);');
-   s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vDew;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\n{vec2 q=floor(vec2(vDew.x*2.,vDew.y*22.)+vDew.z);float h=fract(sin(dot(q,vec2(12.9898,78.233)))*43758.5453);totalEmissiveRadiance+=vec3(.75,.85,1.)*step(.975,h)*step(.15,vDew.y)*uWet*.55;}');s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vColor.rgb*vColor.rgb*.06;');};}
+   s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vDew;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\n{vec2 g=vec2(vDew.x*3.,vDew.y*48.)+vDew.z;vec2 q=floor(g),f=fract(g)-.5;f.y*=.35;float h=fract(sin(dot(q,vec2(12.9898,78.233)))*43758.5453);totalEmissiveRadiance+=vec3(.75,.85,1.)*step(.96,h)*smoothstep(.22,.05,length(f))*step(.15,vDew.y)*smoothstep(.3,.8,uWet)*.9;}');s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vColor.rgb*vColor.rgb*.06;');};}
  // variants: tall spiky (the photo's tufts), short dense, and a cheap far version
  const tuftA=tuftGeo(MOBILE?9:13,MOBILE?3:6,11,.2,.46,.1),tuftB=tuftGeo(MOBILE?10:15,MOBILE?3:4,23,.08,.2,.16),tuftF=tuftGeo(7,2,37,.22,.5,.14);
- function scatterGrass(geo,N,gen,size,name){const im=new THREE.InstancedMesh(geo,grassMat,N);let n=0,guard=0;
-  while(n<N&&guard++<N*40){// clumps: a seed spot, a few tufts around it
+ // Grass is cut into 10 m chunks, one InstancedMesh per chunk and detail level, so the camera's frustum culls what is
+ // off screen, and chunks far from the camera swap to a cheaper tuft (fewer blades and segments) or switch off.
+ const CH=10,grassChunks=[];
+ function scatterGrass(geo,lo,N,gen,size,name,far){const pts=[];let guard=0;
+  while(pts.length<N&&guard++<N*40){// clumps: a seed spot, a few tufts around it
    const s=gen();const cnt=2+Math.floor(R()*6);
-   for(let j=0;j<cnt&&n<N;j++){const x=s[0]+rr(-.9,.9),z=s[1]+rr(-.9,.9);const d=rootD(x,z);if(d<.06)continue;const r=Math.hypot(x,z);
+   for(let j=0;j<cnt&&pts.length<N;j++){const x=s[0]+rr(-.9,.9),z=s[1]+rr(-.9,.9);const d=rootD(x,z);if(d<.06)continue;const r=Math.hypot(x,z);
     // density: dense along root edges, sparse on bare trodden earth near the trunk, patchy elsewhere
     const pd=pathD(x,z);if(pd<-.05||(pd<.25&&R()<.7))continue;
     const dens=Math.max(smooth(1.4,.15,d)*.9,smooth(.38,.62,fbm2(x*.18+2,z*.18+9))*(.25+.75*smooth(3,6,r)));if(R()>dens)continue;
-    const sz=rr(size[0],size[1])*(1+smooth(10,40,r)*.5);M.compose(V(x,groundH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz*rr(.85,1.2),sz*rr(.8,1.25),sz*rr(.85,1.2)));im.setMatrixAt(n,M);
-    const dry=smooth(.6,.85,fbm2(x*.4,z*.4+20));Col.setHSL(rr(.27,.38)-dry*.12,rr(.22,.38)-dry*.04,rr(.33,.47)+dry*.06);im.setColorAt(n,Col);n++;}}
-  im.count=n;im.receiveShadow=true;im.castShadow=false;im.name=name;scene.add(im);return im;}
- G.grass=[scatterGrass(tuftA,MOBILE?440:900,ring(2.4,18),[.7,1.25],'grassTall'),
-  scatterGrass(tuftB,MOBILE?380:800,ring(2.2,14),[.8,1.3],'grassShort'),
-  scatterGrass(tuftF,MOBILE?260:450,ring(16,48,.85),[1.3,2.1],'grassFar')];
+    const sz=rr(size[0],size[1])*(1+smooth(10,40,r)*.5);const m=new THREE.Matrix4().compose(V(x,groundH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),V(sz*rr(.85,1.2),sz*rr(.8,1.25),sz*rr(.85,1.2)));
+    const dry=smooth(.6,.85,fbm2(x*.4,z*.4+20));const c=new THREE.Color().setHSL(rr(.27,.38)-dry*.12,rr(.22,.38)-dry*.04,rr(.33,.47)+dry*.06);pts.push({x,z,m,c});}}
+  const buckets=new Map();for(const p of pts){const k=Math.floor(p.x/CH)+','+Math.floor(p.z/CH);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(p);}
+  for(const list of buckets.values()){const mk=g=>{if(!g)return null;const im=new THREE.InstancedMesh(g,grassMat,list.length);list.forEach((p,i)=>{im.setMatrixAt(i,p.m);im.setColorAt(i,p.c);});
+    im.computeBoundingSphere();im.receiveShadow=true;im.castShadow=false;im.name=name;im.visible=false;scene.add(im);return im;};
+   let cx=0,cz=0;for(const p of list){cx+=p.x;cz+=p.z;}grassChunks.push({c:V(cx/list.length,0,cz/list.length),hi:mk(geo),lo:mk(lo),far,n:list.length});}}
+ // detail levels: hi near the camera, lo further out, nothing past the fog
+ const tuftAlo=tuftGeo(MOBILE?6:7,2,11,.2,.46,.1),tuftBlo=tuftGeo(MOBILE?6:8,2,23,.08,.2,.16);
+ scatterGrass(tuftA,tuftAlo,MOBILE?440:900,ring(2.4,18),[.7,1.25],'grassTall');
+ scatterGrass(tuftB,tuftBlo,MOBILE?380:800,ring(2.2,14),[.8,1.3],'grassShort');
+ scatterGrass(tuftF,null,MOBILE?260:450,ring(16,48,.85),[1.3,2.1],'grassFar',true);
+ G.grass=grassChunks;
+ const LOD_HI=MOBILE?11:16,LOD_OFF=MOBILE?55:75;
+ G.updateGrass=cam=>{for(const ch of grassChunks){const d=Math.hypot(cam.position.x-ch.c.x,cam.position.z-ch.c.z);
+   if(ch.far){ch.hi.visible=d<LOD_OFF;continue;}const hi=d<LOD_HI;ch.hi.visible=hi||!ch.lo;if(ch.lo)ch.lo.visible=!hi&&d<LOD_OFF;}};
 
  // ================= moss cushions =================
  // soft lumpy pillows of moss where the roots meet the ground and on the sides of stones (the cosy, overgrown look)
@@ -217,6 +245,44 @@ export function createGround(C){
   for(let i=0;i<N*20&&n<N;i++){const s=pick(n<N*.6?ring(2.2,8):ring(2.4,16),(x,z)=>rootD(x,z)>.2&&pathD(x,z)>.1,5);if(!s)continue;const [x,z]=s;const sz=rr(.6,1.4);
    M.compose(V(x,groundH(x,z)-.015,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz,sz));im.setMatrixAt(n,M);Col.setScalar(rr(.7,1.2));im.setColorAt(n,Col);n++;}
   im.count=n;im.receiveShadow=true;scene.add(im);G.twigs=im;}
+
+ // ================= puddles =================
+ // Rain fills the low, flat spots of the clearing (often on the trodden path) and they dry slowly afterwards.
+ // Desktop: a real planar mirror at low resolution (lit windows, the moon, the oak), only rendered while there is water.
+ // Phones: the same puddles as glossy dark water that catches the lamps and the moon as highlights.
+ {const spots=[];for(let t=0;t<400&&spots.length<(MOBILE?5:7);t++){const onPath=spots.length<3;const [x,z]=onPath?(()=>{const i=1+Math.floor(R()*4),f=R();return [PATH[i][0]+(PATH[i+1][0]-PATH[i][0])*f+rr(-.2,.2),PATH[i][1]+(PATH[i+1][1]-PATH[i][1])*f];})():ring(3.5,11)();
+   if(rootD(x,z)<.6||Math.hypot(x,z)>12||spots.some(q=>Math.hypot(q[0]-x,q[1]-z)<2.2))continue;spots.push([x,z,rr(.55,1.15),rr(.6,1),rr(0,6.28)]);}
+  const parts=[];spots.forEach(([x,z,r,e,a],i)=>{const g=new THREE.CircleGeometry(1,28);const p=g.attributes.position;const sd=new Float32Array(p.count).fill(i*7.3+1);
+   g.setAttribute('aSeed',new THREE.BufferAttribute(sd,1));const lp=new Float32Array(p.count*2);for(let k=0;k<p.count;k++){lp[k*2]=p.getX(k);lp[k*2+1]=p.getY(k);}g.setAttribute('aLP',new THREE.BufferAttribute(lp,2));
+   g.scale(r,r*e,1);g.rotateZ(a);g.translate(x,-z,0);parts.push(g);});
+  if(spots.length){const geo=mergeGeometries(parts);G.puddleSpots=spots;
+   const levelU={value:0},rainU={value:0},timeU={value:0};
+   const MASK=`float pmask(vec2 lp,float sd,float lev){float r=length(lp);float n=vn(lp*2.3+sd)*.55+vn(lp*5.1+sd*1.7)*.3;float edge=1.-r+(n-.45)*.6;return smoothstep(.0,.12,edge-(1.-lev)*.85);}
+    float ripple(vec2 wp,float t,float rain){float v=0.;for(int i=0;i<3;i++){vec2 c=floor(wp*3.+float(i)*.37);float h=h21(c+float(i)*11.);float ph=fract(t*.9+h);vec2 o=vec2(h21(c+3.1),h21(c+7.7));float d=length(fract(wp*3.+float(i)*.37)-o);v+=sin((d-ph*.5)*60.)*smoothstep(.5,0.,abs(d-ph*.5)*6.)*(1.-ph)*step(h,rain);}return v;}`;
+   let mesh;
+   if(!MOBILE){
+    mesh=new Reflector(geo,{textureWidth:384,textureHeight:384,clipBias:.003,shader:{name:'Puddle',
+     uniforms:{color:{value:new THREE.Color(0x6F7F86)},tDiffuse:{value:null},textureMatrix:{value:null},uLevel:levelU,uRain:rainU,uTime:timeU},
+     vertexShader:`uniform mat4 textureMatrix;attribute float aSeed;attribute vec2 aLP;varying vec4 vUv;varying vec2 vLP;varying float vSd;varying vec3 vW;
+      void main(){vLP=aLP;vSd=aSeed;vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;vUv=textureMatrix*vec4(position,1.);gl_Position=projectionMatrix*viewMatrix*w;}`,
+     fragmentShader:`uniform vec3 color;uniform sampler2D tDiffuse;uniform float uLevel,uRain,uTime;varying vec4 vUv;varying vec2 vLP;varying float vSd;varying vec3 vW;`+GLSL_NOISE+MASK+`
+      void main(){float m=pmask(vLP,vSd,uLevel);if(m<.01)discard;float rp=ripple(vW.xz,uTime,uRain);vec4 uv=vUv;uv.xy+=vec2(rp*.012,rp*.008)*uv.w;
+       vec3 refl=texture2DProj(tDiffuse,uv).rgb;vec3 V=normalize(cameraPosition-vW);float fr=.25+.75*pow(1.-max(V.y,0.),4.);
+       vec3 water=vec3(.03,.045,.05);vec3 c=mix(water,refl*color*1.35,fr);gl_FragColor=vec4(c,m*.92);
+       #include <tonemapping_fragment>
+       #include <colorspace_fragment>
+      }`}});
+    const u=mesh.material.uniforms;u.uLevel=levelU;u.uRain=rainU;u.uTime=timeU;// Reflector clones the uniforms: re-link the live ones
+    mesh.material.transparent=true;mesh.material.depthWrite=false;
+    // skip the extra render while the clearing is dry
+    const orig=mesh.onBeforeRender;mesh.onBeforeRender=function(...a){if(levelU.value<.02)return;orig.apply(this,a);};
+   }else{
+    const mat=new THREE.MeshStandardMaterial({color:0x0A1012,roughness:.06,metalness:.2,transparent:true,depthWrite:false});
+    mat.onBeforeCompile=sh=>{sh.uniforms.uLevel=levelU;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aSeed;attribute vec2 aLP;varying vec2 vLP;varying float vSd;').replace('#include <begin_vertex>','#include <begin_vertex>\nvLP=aLP;vSd=aSeed;');
+     sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float uLevel;varying vec2 vLP;varying float vSd;'+GLSL_NOISE+MASK).replace('#include <alphamap_fragment>','#include <alphamap_fragment>\ndiffuseColor.a*=pmask(vLP,vSd,uLevel)*.9;');};
+    mesh=new THREE.Mesh(geo,mat);}
+   mesh.rotation.x=-Math.PI/2;mesh.position.y=.012;mesh.renderOrder=1;scene.add(mesh);G.puddles=mesh;
+   G.updatePuddles=cam=>{levelU.value=ST.puddle;rainU.value=ST.rainK;timeU.value=ST.T;mesh.visible=ST.puddle>.02;};}}
 
  // ================= acorns =================
  // fallen from the big oak: a glossy brown nut in a rough cap, lying on its side, gathered under the crown
@@ -299,7 +365,29 @@ export function createGround(C){
     if(rootD(x,z)<1)continue;
     const sz=rr(1.1,2.2)*(r>25?1.4:1);M.compose(V(x,groundH(x,z)-.15,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(.9,1.4),sz*rr(.7,1),sz*rr(.9,1.3)));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.38),rr(.2,.35),rr(.48,.6));im.setColorAt(n,Col);n++;}
-   im.count=n;im.receiveShadow=true;scene.add(im);});}
+   im.count=n;im.receiveShadow=true;scene.add(im);});
+  // ---- the far edge of the clearing: a dense wall of undergrowth and young trees in front of the painted forest ----
+  // It gives depth: near plants, then this thicket, then the far trees and the fog. Kept out of the camera's view line.
+  const edgeOK=(x,z)=>!(z>1&&Math.abs(x)<13)&&rootD(x,z)>1.5;
+  {const bg=mkBush(5,MOBILE?14:20);const NE=MOBILE?50:90;const im=new THREE.InstancedMesh(bg,mat,NE);let n=0;
+   for(let t=0;t<NE*40&&n<NE;t++){const a=rr(0,6.28),r=rr(15,24)+(vnoise(a*3,1)-.5)*3;const x=Math.cos(a)*r,z=Math.sin(a)*r*.95;if(!edgeOK(x,z))continue;
+    const sz=rr(1.2,2.4);M.compose(V(x,groundH(x,z)-.25,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(1,1.6),sz*rr(.8,1.25),sz*rr(1,1.5)));im.setMatrixAt(n,M);
+    Col.setHSL(rr(.3,.4),rr(.18,.32),rr(.38,.52));im.setColorAt(n,Col);n++;}
+   im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);G.thicket=im;}
+  {// young trees: a slim, slightly crooked trunk with a few side twigs, and two or three leaf clumps up top
+   const r=rng(9);const parts=[];let px=0,pz=0;const pts=[];for(let i=0;i<=6;i++){const y=i/6*4.2;px+=(r()-.5)*.18;pz+=(r()-.5)*.18;pts.push(V(px,y,pz));}
+   const cu=new THREE.CatmullRomCurve3(pts);const tg=new THREE.TubeGeometry(cu,10,1,6,false);{const p=tg.attributes.position;const tmp=V();
+    // taper: pull each ring towards the curve by height
+    for(let i=0;i<p.count;i++){tmp.fromBufferAttribute(p,i);const t=Math.min(1,Math.max(0,tmp.y/4.2));const c=cu.getPoint(t);const k=(.11*(1-t)+.025)*(1+.6*smooth(.12,0,t));tmp.sub(c).multiplyScalar(k).add(c);p.setXYZ(i,tmp.x,tmp.y,tmp.z);}tg.computeVertexNormals();}
+   parts.push(tg);for(let b=0;b<3;b++){const y0=1.8+b*.7,a=r()*6.28;const c0=cu.getPoint(y0/4.2);const c1=c0.clone().add(V(Math.cos(a)*.7,.45,Math.sin(a)*.7));parts.push(new THREE.TubeGeometry(new THREE.LineCurve3(c0,c1),2,.025,4,false));}
+   const trunkG=mergeGeometries(parts.map(g=>{g.deleteAttribute('uv');return g.index?g.toNonIndexed():g;}));
+   const tmat=new THREE.MeshStandardMaterial({color:0x4B3B30,roughness:.95});
+   const crownG=mergeGeometries([mkBush(7,MOBILE?10:14).translate(0,3.6,0),mkBush(8,MOBILE?8:10).scale(.8,.8,.8).translate(.6,3.0,.3),mkBush(11,MOBILE?7:9).scale(.7,.7,.7).translate(-.5,4.3,-.2)]);
+   const NT=MOBILE?14:26;const ti=new THREE.InstancedMesh(trunkG,tmat,NT),ci=new THREE.InstancedMesh(crownG,mat,NT);let n=0;
+   for(let t=0;t<NT*50&&n<NT;t++){const a=rr(0,6.28),rad=rr(16,26);const x=Math.cos(a)*rad,z=Math.sin(a)*rad;if(!edgeOK(x,z))continue;
+    const sz=rr(.75,1.25);M.compose(V(x,groundH(x,z)-.1,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz,sz*rr(.9,1.2),sz));ti.setMatrixAt(n,M);ci.setMatrixAt(n,M);
+    Col.setHSL(rr(.28,.38),rr(.2,.35),rr(.42,.56));ci.setColorAt(n,Col);n++;}
+   for(const im of [ti,ci]){im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);}G.youngTrees=ti;}}
 
  return G;
 }

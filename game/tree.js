@@ -255,7 +255,7 @@ export function buildTree(THREE, o) {
   const lmat = new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
   // soft, lit-from-above clumps: cards near the clump centre are darker (painted volume)
   lmat.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\nvFacing=abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));');
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\nvFacing=abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));vDep=-mvPosition.z;');
     // [WIND] leaves sway with the global wind (game/wind.js): each card drifts with its clump and flutters on its own
     const W = o.wind || window.__wind;
     if (W) {
@@ -268,11 +268,13 @@ export function buildTree(THREE, o) {
  transformed.z+=a*position.x+b*position.y;
  transformed+=windLocal(vec3(wv.x,wv.x*.15,wv.y)+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)})));}`);
     }
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;').replace('#include <alphatest_fragment>', 'diffuseColor.a*=smoothstep(.12,.5,vFacing);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\nfloat ff=smoothstep(.18,.6,vFacing)*smoothstep(.8,3.,vDep);diffuseColor.a*=step(length(vMapUv-.5)*2.,ff*1.3);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
-  const total = MOB(o) ? 700 : 1100;
+  const total = MOB(o) ? 1700 : 2800;
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
-  const qg = new THREE.PlaneGeometry(1, 1);
+  // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
+  const qg = new THREE.PlaneGeometry(1, 1, 4, 4);
+  { const pa = qg.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i); pa.setZ(i, 0.28 * (0.5 - (x * x + y * y))); } qg.computeVertexNormals(); }
   const im = new THREE.InstancedMesh(qg, lmat, total);
   const shade = new Float32Array(total);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = V(1, 1, 1), col = new THREE.Color();
@@ -289,7 +291,7 @@ export function buildTree(THREE, o) {
       const fw = rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
       const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
-      sc.setScalar(rnd(2.3, 3.3));
+      sc.setScalar(rnd(1.25, 2.0));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1));
       // lighter, yellow-green leaves on the clump edges and the odd autumn-yellow card, like the photo
