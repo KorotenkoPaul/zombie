@@ -21,7 +21,7 @@ const MEASURE=()=>{const {hero,THREE}=window.__dbg;let scene=hero.root;while(sce
   bodyZ:[Math.min(...xs),Math.max(...xs)],bodyX:[Math.min(...V.map(p=>p[0])),Math.max(...V.map(p=>p[0]))],bed:{x:[bed.x0,bed.x1],z:[bed.z0,bed.z1],top:bed.top},bedFrac:nBody?inBed/nBody:0,task:hero.task,state:hero.state,clip:hero.cur&&hero.cur.getClip().name};};
 const shot=async(p,name,rp,yaw,pitch,dist)=>{await p.evaluate(([rp,y,pi,d])=>{__noRender(false);__th.cam(rp[0],rp[1]+.6,d,rp[2]);__th.view(y,pi,1);},[rp,yaw,pitch,dist]);await p.waitForTimeout(1500);await p.screenshot({path:O+'/'+name+'.png'});await p.evaluate(()=>{__th.cam();__noRender(true);});};
 (async()=>{const res={};
- for(const run of ['seated','sleep','cook','craft']){const {b,p,errs}=await open({});
+ for(const run of (process.env.RUNS||'seated,sleep,cook,craft').split(',')){const {b,p,errs}=await open({});
   await p.evaluate(()=>{const R=window.__renderer;const real=R.render;window.__noRender=on=>{R.render=on?function(s){s&&s.updateMatrixWorld&&s.updateMatrixWorld();}:real;};__noRender(true);});
   await p.evaluate(r=>{__th.setHour(r==='sleep'?22.5:r==='seated'?11:10);if(r!=='seated')__th.task(r);else __th.task('read');},run);
   // wait until working

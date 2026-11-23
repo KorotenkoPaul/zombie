@@ -61,3 +61,9 @@ now also reports the same robot checks on the hips track (`robotVisible`).
 - hero.js bug seen in the full QA day: a task change during a ladder descent left H.lad set (58 s 'on the ladder' while
   reading, then a root teleport). Reported to Character.
 - Ladder approach (`mount` phase) still lerps exponentially in hero.js; motion matching animates the steps.
+
+## Round 3 (2026-11-23, master f58e5ff: Character's walk-while-turning + ladder-top momentum)
+tests/mm scenario: frozen while walking 0, peak hips acceleration 7.5 m/s², planted ankle 0.061 m/s.
+Full tests/anim day, per 1000 frames (r2 before -> r2 after -> r3): robot 1.09 -> 1.91 -> 0.39, P1 jumps 12.0 -> 12.4 -> 6.4,
+P1 penetration 6.7 -> 6.7 -> 3.6. Left: ladder exit speeds up (1), ladder entry slows (2), slow walk starts after work (5),
+creep to the hatch (1). Ladder exit/entry need the step-off / grab clips (prompts-loco.json) once fal is topped up.

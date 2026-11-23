@@ -270,9 +270,16 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- lit windows warm the leaves and branches right next to them (photo) ----------
   // No lights: the oak's bark and leaf shaders (tree.js) get two small uniform arrays, one warm point per window,
   // and add a soft emissive glow that fades out within ~1.8 m. Chained onto Tree's own onBeforeCompile.
-  const WG_N = 6, wgP = { value: Array.from({ length: WG_N }, () => new THREE.Vector4(0, -99, 0, 0)) }, wgC = { value: Array.from({ length: WG_N }, () => new THREE.Vector3()) };
+  const WG_N = 12, wgP = { value: Array.from({ length: WG_N }, () => new THREE.Vector4(0, -99, 0, 0)) }, wgC = { value: Array.from({ length: WG_N }, () => new THREE.Vector3()) };
   const wgWins = windows.filter(w => w.glowAt).slice(0, WG_N);
-  wgWins.forEach((w, i) => wgP.value[i].set(w.glowAt.x, w.glowAt.y, w.glowAt.z, 2.6));
+  // each entry: a warm point, its reach, and how bright it is now (photo: the bark around the house is warm brown at night,
+  // lit by the windows, the lanterns and the open room fronts). Windows reach 3.4 m; the rooms' open fronts and the
+  // outdoor lanterns reach further. Lit with a soft wrap toward the source, so the bark keeps its relief.
+  const wgSrc = wgWins.map(w => ({ p: w.glowAt, r: 3.4, k: () => Math.min(1, warm[w.room] || 0) * 4.5 }));
+  for (const [room, R] of Object.entries(ROOMS)) wgSrc.push({ p: R.c, r: 5.5, k: () => Math.min(1, warm[room] || 0) * 3.2 });
+  for (const [n, r, I] of [['landing', 3.6, 6], ['door', 3.2, 5]]) { const s0 = src.get(n); if (s0) wgSrc.push({ p: s0.pos, r, k: () => s0.level * I }); }
+  wgSrc.length = Math.min(wgSrc.length, WG_N);
+  wgSrc.forEach((w, i) => wgP.value[i].set(w.p.x, w.p.y, w.p.z, w.r));
   let wgOn = true; const wgMats = [];
   function treeGlow(mat) {
     if (!mat || mat.userData.winGlow) return; mat.userData.winGlow = true; wgMats.push(mat);
@@ -285,14 +292,14 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
         .replace('#include <project_vertex>', '#include <project_vertex>\n{vec4 q=vec4(transformed,1.);\n#ifdef USE_INSTANCING\nq=instanceMatrix*q;\n#endif\nvWGp=(modelMatrix*q).xyz;}');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>\nvarying vec3 vWGp;uniform vec4 wgP[${WG_N}];uniform vec3 wgC[${WG_N}];`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-{vec3 wg=vec3(0.);for(int i=0;i<${WG_N};i++){float d=distance(vWGp,wgP[i].xyz)/max(wgP[i].w,.001);float k=clamp(1.-d,0.,1.);wg+=wgC[i]*k*k;}
+{vec3 wg=vec3(0.);vec3 nW=normalize((vec4(normal,0.)*viewMatrix).xyz);for(int i=0;i<${WG_N};i++){vec3 dv=wgP[i].xyz-vWGp;float d=length(dv)/max(wgP[i].w,.001);float k=clamp(1.-d,0.,1.);float wr=clamp(dot(nW,dv/max(length(dv),.001))*.6+.4,0.,1.);wg+=wgC[i]*k*k*wr;}
  totalEmissiveRadiance+=wg*diffuseColor.rgb;}`);
     };
     const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
     mat.customProgramCacheKey = () => key() + (wgOn ? '|winglow' : '');
     mat.needsUpdate = true;
   }
-  if (TREE && wgWins.length) { if (TREE.bark) treeGlow(TREE.bark.material); if (TREE.leaves) treeGlow(TREE.leaves.material); }
+  if (TREE && wgSrc.length) { if (TREE.bark) treeGlow(TREE.bark.material); if (TREE.leaves) treeGlow(TREE.leaves.material); }
 
   // ---------- daytime: sunbeams through the windows, with warm dust drifting in them ----------
   // A soft additive prism from each window pane, along the real sun direction (the scene's shadow-casting
@@ -432,7 +439,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       const share = s.kind === 'glow' ? .04 : s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
-    wgWins.forEach((w, i) => { const v = Math.min(1, warm[w.room] || 0) * (1 - dayK) * 1.6; wgC.value[i].set(1.0 * v, .58 * v, .26 * v); });
+    wgSrc.forEach((w, i) => { const v = w.k() * (1 - dayK); wgC.value[i].set(1.0 * v, .58 * v, .26 * v); });
     for (const g of glows) {
       let v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8);
       if (g.l) g.l.intensity = v;
