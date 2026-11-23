@@ -318,7 +318,9 @@ export function createHero(ctx){
   const rate=lerp(4.2,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
   // turning has inertia: angular speed ramps up and down, so there is never a snap in heading
   const wav=clamp(da*3,-rate,rate);H.av=(H.av||0)+clamp(wav-(H.av||0),-11*dt,11*dt);root.rotation.y+=H.av*dt;H.face=root.rotation.y;
-  const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
+  const px0=p.x,pz0=p.z;const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
+  // MOTION HOOK: when a push around furniture slides him sideways, the body turns with the way he is really going (no crab-walk): facing stays within 30 deg of travel
+  if(motion&&dt>0){const mx=p.x-px0,mz=p.z-pz0,ms=Math.hypot(mx,mz)/dt;if(ms>.25){const ca=wrapA(Math.atan2(mx,mz)-root.rotation.y),ex=Math.abs(ca)-.52;if(ex>0){const k=1-Math.exp(-dt*10);const r=Math.sign(ca)*Math.min(ex*k,2.6*dt,Math.max(0,4.4-Math.abs(H.av||0))*dt);root.rotation.y+=r;H.face=root.rotation.y;}}}
   const moving=H.v>.06||Math.abs(da)>.25;
   // MOTION HOOK: with motion matching a one-off action clip (stretching, a gesture) keeps playing on the upper body while he walks off
   if(motion&&H.once){}else if(moving){play('30',{fade:.4});actions['30'].timeScale=clamp(Math.max(H.v,Math.abs(da)>.25?.45:0)/walkSpeed,.5,1.75);}else play(H.idleClip||'0',{fade:.5});
