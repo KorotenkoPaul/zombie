@@ -60,7 +60,7 @@ div.brainP{left:var(--sl);bottom:calc(var(--sb) + var(--ib) + var(--gap));width:
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <div id="stage"></div>
 <div class="hud"><div class="grp"><span class="chip"><span id="ic">☀︎</span><span id="tod">День 1 · 08:00</span></span></div><div class="grp"><span class="chip" id="zc" hidden style="display:none">🧟 <span id="zn">0</span></span><span class="chip hearts" id="hearts" style="display:none">♥♥♥</span></div></div>
-<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button><button class="ib" id="bS" aria-label="Звук">🔊</button></div>
+<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button><button class="ib" id="bS" aria-label="Звук">🔊</button><button class="ib" id="bM" aria-label="Музыка">♫</button></div>
 <div class="hint" id="hint"><b>Веди пальцем</b> — повернуть вокруг дерева, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
 <div class="toast" id="toast"></div>
 <div class="load" id="load"><span id="loadTx">Загружаем лес…</span><i><b id="loadBar"></b></i></div>
@@ -187,11 +187,18 @@ const BOARD_ROWS=8;
 // tone and weathering, and the grain, the cupping across the board and the nail heads bend the normal (bump from the
 // texture, so the lamp light rakes over the grain). End faces show end grain rings, the board sides fall into shadow.
 const [woodWallT,woodDarkT]=await Promise.all([tex('wood-wall.jpg'),tex('wood-dark.jpg')]);
+// wear map for the floors (round 3): 7 levels side by side, each 12 x 8 m of the house at ~9 cm, 0..1 = how worn by feet
+const WEAR={W:896,H:96,lv:[LG_,2.45,3.4+HY,3.6+HY,5.0+HY,7.4+HY,9.0+HY],ra:[0,1,2].map(()=>new THREE.Vector4(0,0,0,-99)),rb:[0,1,2].map(()=>new THREE.Vector4(-99,-99,0,0))};
+WEAR.f=new Float32Array(WEAR.W*WEAR.H);WEAR.u8=new Uint8Array(WEAR.W*WEAR.H);
+WEAR.tex=new THREE.DataTexture(WEAR.u8,WEAR.W,WEAR.H,THREE.RedFormat,THREE.UnsignedByteType);WEAR.tex.magFilter=WEAR.tex.minFilter=THREE.LinearFilter;WEAR.tex.needsUpdate=true;
+WEAR.stamp=(x,y,z,amt,rad=.25)=>{let li=0,bd=9;WEAR.lv.forEach((l,i)=>{const d=Math.abs(y-l);if(d<bd){bd=d;li=i;}});if(bd>.3)return false;
+ const tw=WEAR.W/7,px=(x+6)/12*tw,pz=(z+1)/8*WEAR.H,r=rad/12*tw;for(let j=Math.floor(pz-r);j<=Math.ceil(pz+r);j++)for(let i=Math.floor(px-r);i<=Math.ceil(px+r);i++){if(i<0||i>=tw||j<0||j>=WEAR.H)continue;
+ const d=Math.hypot(i-px,j-pz)/r;if(d>=1)continue;const k=j*WEAR.W+li*Math.round(tw)+i;WEAR.f[k]=Math.min(1,WEAR.f[k]+amt*(1-d*d));WEAR.u8[k]=WEAR.f[k]*255;}WEAR.dirty=true;return true;};
 const boardMat=new THREE.MeshStandardMaterial({roughness:.8});
 const PLANK_GLSL=`float pH(float n){return fract(sin(n*127.1)*43758.5453);}
 float pH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i),pH2(i+vec2(1,0)),f.x),mix(pH2(i+vec2(0,1)),pH2(i+vec2(1,1)),f.x),f.y);}
-uniform sampler2D tWoodA,tWoodB;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;
+uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];
 vec2 pDH=vec2(0.);float pRgh=.8;
 vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);return normalize(abs(det)*sn-g);}
 // nail heads over every joist / batten: two per crossing. returns (dome height 0..1, rust halo 0..1, distance)
@@ -203,7 +210,7 @@ float pTop(vec2 mm,vec3 sz,float sd,float wall){float yw=mm.y/max(sz.y*.5,.01);f
 vec3 pTex(vec2 uv,float wall,float bias){return wall>.5?texture2D(tWoodB,uv,bias).rgb:texture2D(tWoodA,uv,bias).rgb;}
 float pL(vec3 c){return dot(c,vec3(.3,.6,.1));}
 vec3 plank(vec3 lp,vec3 sz,float sd){
- float wall=step(99.5,sd);vec3 m=lp*sz;vec3 an=abs(vN0);
+ float wall=step(99.5,sd);vec3 m=lp*sz;vec3 an=abs(vN0);float fr=vFresh,old=1.-fr;
  // which face: 0 the broad face, 1 the long sides (seen down in the gaps), 2 the sawn ends
  float face=an.x>an.y&&an.x>an.z?2.:(an.y>an.z?1.:0.);
  vec2 off=vec2(pH(sd+.7)*7.,pH(sd+1.9)*3.);
@@ -216,7 +223,7 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  float vr=pH(sd+2.2);col*=mix(vec3(.72,.68,.64),vec3(1.16,1.06,.95),vr);
  float gr=pH(sd+4.4);col=mix(col,vec3(dot(col,vec3(.3,.55,.15)))*vec3(1.05,.98,.9),gr*gr*gr*mix(.35,.1,wall));
  // a soft stain / water mark now and then
- col*=1.-.18*smoothstep(.62,.9,pN(vec2(m.x*1.3+sd*3.,m.y*4.)))*step(.5,pH(sd+8.));
+ col*=1.-.18*old*smoothstep(.62,.9,pN(vec2(m.x*1.3+sd*3.,m.y*4.)))*step(.5,pH(sd+8.));
  // relief from a blurred tap of the scan, differenced in texture space (smooth, no 2x2 blocks), in metres
  vec2 ux=dFdx(uv),uy=dFdy(uv);float hb=pL(pTex(uv,wall,2.5));
  vec2 dH=vec2(pL(pTex(uv+ux,wall,2.5))-hb,pL(pTex(uv+uy,wall,2.5))-hb)*uBump;
@@ -234,13 +241,35 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
   vec2 c=vec2((pH(sd+5.)-.5)*.3,-.12-pH(sd+6.)*.3);float r=length(vec2(m.y,m.z)-c);
   float ring=fract(r*95.+pN(vec2(m.y,m.z)*28.)*.7);col*=.55*(.62+.38*smoothstep(.15,.75,ring));pRgh=.92;
  }
+
+ // ---- age (round 3): weather on the outside faces, feet on the floors, dirt in the corners; none of it on fresh wood
+ // exterior faces turn silver-grey and sun-bleached in patches along the grain, rougher, the soft grain eroded deeper
+ float ex=face==0.?(vN0.z>0.?vWx.x:vWx.y):max(vWx.x,vWx.y)*.6;
+ float e=ex*(.35+.65*pH(sd+12.))*smoothstep(.25,.8,pN(m.xy*vec2(.7,5.)+sd)+.2*pN(m.xy*vec2(3.,30.)))*old;
+ vec3 grey=vec3(dot(col,vec3(.3,.55,.15)))*vec3(1.08,.98,.86);
+ col=mix(col,grey*mix(1.05,1.2,uNails),e*.5);pRgh=mix(pRgh,.93,e);dH*=1.+e*1.2;
+ // upright outside boards: rain runs down from their top end (under the eaves, under a sill) in dark streaks; splash at the foot
+ if(abs(vUpX)>.7){float tp=lp.x*sign(vUpX);float st=pow(pN(vec2(m.y*38.+sd*5.,m.x*.9)),3.)*smoothstep(-.4,.45,tp);float spl=smoothstep(-.32,-.5,tp);
+  col*=1.-ex*old*(.5*st+.2*spl);}
+ if(wall<.5&&uNails>.5&&face==0.&&vN0.z>0.){
+  // where he walks most the boards are worn pale and smooth (wear map from his paths, stamped as he walks)
+  int li=0;float bd=9.;for(int i=0;i<7;i++){float d=abs(vW.y-.035-uLv[i]);if(d<bd){bd=d;li=i;}}
+  float w=0.;if(bd<.15){vec2 t=clamp(vec2((vW.x+6.)/12.,(vW.z+1.)/8.),.001,.999);w=texture2D(tWear,vec2((float(li)+t.x)/7.,t.y)).r;}
+  w*=old*(.65+.35*pN(m.xy*vec2(2.,9.)+sd));
+  col=mix(col,col*vec3(1.12,1.07,.98)+.01,w*.75);pRgh=mix(pRgh,.5,w);dH*=1.-.6*w;
+  // grime and dust gather along the walls and in the corners of the rooms
+  float dt=0.;for(int i=0;i<3;i++){vec4 A=uRoomA[i],R=uRoomB[i];if(vW.y>R.x-.3&&vW.y<R.y&&vW.x>A.x-.15&&vW.x<A.y+.15&&vW.z>A.z-.15&&vW.z<A.w){float d=min(min(vW.x-A.x,A.y-vW.x),vW.z-A.z);dt=max(dt,smoothstep(.4,.02,d));}}
+  dt*=old*(.5+.5*pN(vW.xz*6.));col=mix(col,col*vec3(.5,.46,.42),dt*.7);pRgh=mix(pRgh,.95,dt);
+ }
+ // fresh, just repaired wood: pale and clean
+ col=mix(col,col*vec3(1.32,1.2,1.0),fr);
  pDH=dH;return col;}`;
-function plankShader(m,o={}){const U={tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
+function plankShader(m,o={}){const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv},uRoomA:{value:WEAR.ra},uRoomB:{value:WEAR.rb},tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
  m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U);
- sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow;attribute vec3 aBev;uniform float uBev;varying float vSeed;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;')
+ sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec2 aWx;attribute vec3 aBev;varying float vSeed,vFresh,vUpX;varying vec2 vWx;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
-  .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.007,.28*min(vSz.x,min(vSz.y,vSz.z)))/vSz;\n#endif\nvSeed=aRow;vLP=transformed;');
- sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;\n'+PLANK_GLSL)
+  .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.007,.28*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;vUpX=normalize((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).xyz).y;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;vUpX=0.;\n#endif\nvSeed=aRow;vLP=transformed;vFresh=aFresh;vWx=aWx;');
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed,vFresh,vUpX;varying vec2 vWx;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+PLANK_GLSL)
   .replace('#include <map_fragment>','diffuseColor.rgb*=plank(vLP,vSz,vSeed);')
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=pRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=pnArb(-vViewPosition,normal,pDH,faceDirection);');};}
@@ -266,12 +295,16 @@ const MAXB=1500;
 const boardGeo=bevelBoxGeo();
 const boards=new THREE.InstancedMesh(boardGeo,boardMat,MAXB);boards.castShadow=true;boards.receiveShadow=true;boards.count=0;scene.add(boards);
 const aRow=new THREE.InstancedBufferAttribute(new Float32Array(MAXB),1),aTile=new THREE.InstancedBufferAttribute(new Float32Array(MAXB),1);boardGeo.setAttribute('aRow',aRow);boardGeo.setAttribute('aTile',aTile);
+const aWx=new THREE.InstancedBufferAttribute(new Float32Array(MAXB*2),2),aFresh=new THREE.InstancedBufferAttribute(new Float32Array(MAXB),1);boardGeo.setAttribute('aWx',aWx);boardGeo.setAttribute('aFresh',aFresh);
 const darkGeo=bevelBoxGeo();const dRow=new THREE.InstancedBufferAttribute(new Float32Array(900),1),dTile=new THREE.InstancedBufferAttribute(new Float32Array(900),1);darkGeo.setAttribute('aRow',dRow);darkGeo.setAttribute('aTile',dTile);
+const dWx=new THREE.InstancedBufferAttribute(new Float32Array(900*2),2),dFresh=new THREE.InstancedBufferAttribute(new Float32Array(900),1);darkGeo.setAttribute('aWx',dWx);darkGeo.setAttribute('aFresh',dFresh);
+// every board, beam and slate of the house, for the wear/repair API (window.__planks)
+const PL=[];
 const beams=new THREE.InstancedMesh(darkGeo,darkBoard,900);beams.castShadow=true;beams.receiveShadow=true;beams.count=0;scene.add(beams);
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
 // `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
-function beamInst(m){const i=beams.count++;beams.setMatrixAt(i,m);dRow.setX(i,rnd(0,97));beams.setColorAt(i,new THREE.Color().setScalar(rnd(.9,1.04)));beams.instanceMatrix.needsUpdate=true;dRow.needsUpdate=true;if(beams.instanceColor)beams.instanceColor.needsUpdate=true;}
+function beamInst(m){const i=beams.count++;{const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:beams,i,kind:'beam',c:p,q});}beams.setMatrixAt(i,m);dRow.setX(i,rnd(0,97));beams.setColorAt(i,new THREE.Color().setScalar(rnd(.9,1.04)));beams.instanceMatrix.needsUpdate=true;dRow.needsUpdate=true;if(beams.instanceColor)beams.instanceColor.needsUpdate=true;}
 function meshesToBeams(g){g.updateMatrixWorld(true);for(const o of [...g.children]){if(!o.isMesh||o.material!==darkBoard||!o.geometry.parameters||o.geometry.parameters.width===undefined)continue;const p=o.geometry.parameters;
  beamInst(_bm.copy(o.matrixWorld).multiply(_bs.makeScale(p.width,p.height,p.depth)));g.remove(o);o.geometry.dispose();}}
 const B=[];// all boards {rb, size, q, inst, breakable, hp, group, loose}
@@ -281,7 +314,7 @@ function board(c,len,w,t,rot,opt={}){const q=new THREE.Quaternion().setFromEuler
  const rb=world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(c.x,c.y,c.z).setRotation({x:q.x,y:q.y,z:q.z,w:q.w}));
  const col=world.createCollider(RAPIER.ColliderDesc.cuboid(len/2,w/2,t/2).setDensity(600).setFriction(.8).setRestitution(.15),rb);
  const dark=!!opt.dark;const mesh=dark?beams:boards;const i=mesh.count++;const rowA=dark?dRow:aRow,tileA=dark?dTile:aTile;rowA.setX(i,rnd(0,97)+(opt.wall?100:0));tileA.setX(i,Math.max(.04,len/3.84));mesh.setColorAt(i,new THREE.Color().setScalar(opt.tint??rnd(.9,1.04)));
- const b={rb,col,size:V(len,w,t),mesh,i,dark,breakable:!!opt.breakable,hp:opt.hp||4,group:opt.group||null,loose:false,home:{c:c.clone(),q:q.clone()}};B.push(b);col.userData=b;syncBoard(b);return b;}
+ PL.push({mesh,i,kind:dark?'beam':(opt.wall?'wall':'floor'),c:c.clone(),q:q.clone()});const b={rb,col,size:V(len,w,t),mesh,i,dark,breakable:!!opt.breakable,hp:opt.hp||4,group:opt.group||null,loose:false,home:{c:c.clone(),q:q.clone()}};B.push(b);col.userData=b;syncBoard(b);return b;}
 function syncBoard(b){const p=b.rb.translation(),q=b.rb.rotation();tM.compose(tP.set(p.x,p.y,p.z),tQ.set(q.x,q.y,q.z,q.w),b.size);b.mesh.setMatrixAt(b.i,tM);}
 const colToBoard=new Map();
 function breakBoard(b,impulse){if(b.loose)return;b.loose=true;b.rb.setBodyType(RAPIER.RigidBodyType.Dynamic,true);b.rb.wakeUp();
@@ -311,7 +344,7 @@ float sMoss(vec3 w,float sd){float n=sN(w.xz*1.3+sd*.0)*.65+sN(w.xz*4.1+3.)*.35;
 float sCrack(vec2 mm,vec3 sz,float sd){if(sH(sd+3.)>.16)return 0.;vec2 c=vec2((sH(sd+4.)-.5)*sz.x*.5,(sH(sd+5.)-.5)*sz.z*.4);float a=sH(sd+6.)*3.14;vec2 dir=vec2(cos(a),sin(a));
  float d=abs(dot(mm-c,vec2(-dir.y,dir.x))+.012*(sN(vec2(dot(mm,dir)*25.,sd))-.5));float along=abs(dot(mm-c,dir));return -.003*smoothstep(.005,.0,d)*smoothstep(sz.z*.55,sz.z*.2,along);}
 vec3 slate(vec3 lp,vec3 sz,float sd){
- vec3 m=lp*sz;vec3 an=abs(vN0);float top=step(an.x,an.y)*step(an.z,an.y)*step(0.,vN0.y);
+ float old=1.-vFresh;vec3 m=lp*sz;vec3 an=abs(vN0);float top=step(an.x,an.y)*step(an.z,an.y)*step(0.,vN0.y);
  vec2 off=vec2(sH(sd+.7),sH(sd+1.9))*5.;
  vec2 uv=(top>.5?m.xz:(an.x>an.z?m.zy:m.xy))/.9+off;
  vec3 tx=texture2D(tSlate,uv).rgb;float lum=dot(tx,vec3(.3,.6,.1));
@@ -323,24 +356,25 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  vec2 ux=dFdx(uv),uy=dFdy(uv);float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
  vec2 dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004;
  if(top>.5){
-  vec2 mx=dFdx(m.xz),my=dFdy(m.xz);float c0=sCrack(m.xz,sz,sd);dH+=vec2(sCrack(m.xz+mx,sz,sd)-c0,sCrack(m.xz+my,sz,sd)-c0);col*=1.-.75*smoothstep(0.,-.003,c0);
+  vec2 mx=dFdx(m.xz),my=dFdy(m.xz);float c0=sCrack(m.xz,sz,sd);dH+=vec2(sCrack(m.xz+mx,sz,sd)-c0,sCrack(m.xz+my,sz,sd)-c0);col*=1.-.75*old*smoothstep(0.,-.003,c0);dH*=mix(1.,.3,vFresh);
   // pale lichen rosettes
-  float li=smoothstep(.9,.95,sN(m.xz*90.+sd))*smoothstep(.55,.8,sN(m.xz*6.+sd*2.))*step(.6,sH(sd+11.));col=mix(col,vec3(.16,.17,.13),li*.6);
+  float li=smoothstep(.9,.95,sN(m.xz*90.+sd))*smoothstep(.55,.8,sN(m.xz*6.+sd*2.))*step(.6,sH(sd+11.));col=mix(col,vec3(.16,.17,.13),li*.6*old);
  }else col*=.8; // split edges: a little darker, rougher
  // moss, raised a few mm over the stone
- float mo=sMoss(vW,sd)*mix(.5,1.,top);
+ float mo=sMoss(vW,sd)*mix(.5,1.,top)*old;
  if(mo>.001){vec3 wx=dFdx(vW),wy=dFdy(vW);dH+=vec2(sMoss(vW+wx,sd)-sMoss(vW,sd),sMoss(vW+wy,sd)-sMoss(vW,sd))*.006*mix(.5,1.,top);
   vec3 mc=texture2D(tMoss,vW.xz*1.7+vec2(vW.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
+ col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
 shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT}});
- sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow;attribute vec3 aBev;varying float vSeed;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
+ sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
-  .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.018,.3*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;\n#endif\nvSeed=aRow;vLP=transformed;');
- sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+SHING_GLSL)
+  .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.018,.3*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;\n#endif\nvSeed=aRow;vFresh=aFresh;vLP=transformed;');
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed,vFresh;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+SHING_GLSL)
   .replace('#include <map_fragment>','diffuseColor.rgb*=slate(vLP,vSz,vSeed);')
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=sRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=snArb(-vViewPosition,normal,sDH,faceDirection);');};
-const shingGeo=bevelBoxGeo();const sRow=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aRow',sRow);
+const shingGeo=bevelBoxGeo();const sRow=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aRow',sRow);const sFresh=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aFresh',sFresh);
 const SHING=new THREE.InstancedMesh(shingGeo,shingleMat,2000);SHING.count=0;SHING.castShadow=!MOBILE;/* [PERF] the roof slabs still cast the roof's shadow on phones */SHING.receiveShadow=true;scene.add(SHING);
 // [PERF] shingles live on layer 5: the main camera and the sun's shadow camera see it, lamp (point) shadow cameras don't
 SHING.layers.set(5);camera.layers.enable(5);sun.shadow.camera.layers.enable(5);
@@ -350,7 +384,7 @@ function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matr
   if(!by.has(m.material))by.set(m.material,[]);by.get(m.material).push({geo,m});rm.push(m);});
  for(const [mat,L] of by){if(L.length<2)continue;const mg=mergeGeometries(L.map(x=>x.geo));if(!mg)continue;for(const x of L)x.m.parent.remove(x.m);
   const me=new THREE.Mesh(mg,mat);me.castShadow=L.some(x=>x.m.castShadow);me.receiveShadow=L.some(x=>x.m.receiveShadow);g.add(me);}}
-function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
+function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
@@ -367,10 +401,10 @@ function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const 
     // a few slates have slipped out over the years: the dark wood underlay shows (never in the bottom row, it would leak)
     if(r<rows-1&&rnd(0,1)<.035)continue;
     const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.1,.13),ww));SHING.setMatrixAt(SHING.count,m4);
-    const k=rnd(.8,1.15)*(rnd(0,1)<.12?.75:1);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));SHING.count++;}}}
+    const k=rnd(.8,1.15)*(rnd(0,1)<.12?.75:1);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}}}
  const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
  // gable walls (Pavel / critic T4): the triangles under the roof are closed with vertical boards, back and front
- for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<x1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
+ for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<gx1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
   if(inTrunk(xx,y+hg/2,gz,.05))continue;board(V(xx,y+hg/2+.02,gz),hg+.04,.305,.05,new THREE.Euler(0,rnd(-.03,.03),Math.PI/2),{tint:rnd(.93,1.07),wall:true});}
  // gable trim boards on the front like the photo's dark fascia
  for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
@@ -467,10 +501,10 @@ post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);brace(V(-2.2,KT-2.3,frontZ(-2.2,
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
-floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.7,2.02,2.95]]});/* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.32) and steps off behind it (z 1.62) */
+floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.28,-3.68,2.32,3.25]]});/* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
-const HATCH=(()=>{const x0=-4.3,x1=-3.7,z0=2.02,z1=2.95,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+const HATCH=(()=>{const x0=-4.28,x1=-3.68,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
  const lid=new THREE.Group();g.add(lid);const L=z1-z0;
  for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.145,.05,L-.01),boardMat);m.position.set(x0-(x0+x1)/2+.08+i*.148,0,-L/2);m.castShadow=m.receiveShadow=true;lid.add(m);}
  for(const zz of [-.18,-L+.18]){const m=new THREE.Mesh(new THREE.BoxGeometry(.58,.04,.09),darkBoard);m.position.set(0,-.04,zz);lid.add(m);}
@@ -484,7 +518,7 @@ const HATCH=(()=>{const x0=-4.3,x1=-3.7,z0=2.02,z1=2.95,y=BD+.035,g=new THREE.Gr
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
-roof(BX0,BX1,BD+2.3,.8,3.8,1.15);post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
+roof(BX0,BX1-.32,BD+2.3,.8,3.8,1.15,BX1);/* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
 // outside ledge between the bedroom door and the rope ladder to the deck
 floorBoards(BX1,1.8,BD,2.1,3.65,{noEdge:true});brace(V(.5,BD-1.6,2.3),V(1.6,BD-.12,2.9),.12);
 ropeLadder(1.35,BD,DK+.05,3.15);
@@ -506,13 +540,22 @@ const glassFresnel=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <commo
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <opaque_fragment>','gl_FragColor=vec4(outgoingLight,mix(diffuseColor.a,.55,pow(vFr,3.)));');};
 glass.onBeforeCompile=glassFresnel;glass.userData.ownGlass=true;
 // kitchen ladders: landing↑kitchen (through a hatch), kitchen↑bedroom (through a hatch)
-ladder(-1.22,LC,KT+.05,3.45);ladder(-4.0,KT,BD+.05,2.0);
+ladder(-1.22,LC,KT+.05,3.45);ladder(-3.98,KT,BD+.05,2.3);/* critic H2: in front of the stove, not beside it */
 // barricades the zombies have to break
 barricade('Калитка',V(0,LC+.55,3.86),1.3);
 barricade('Забор кухни',V(-3.0,KT+.55,3.88),2.8);
 barricade('Забор мастерской',V(3.0,WS+.55,4.43),3.15);
 boards.instanceMatrix.needsUpdate=true;beams.instanceMatrix.needsUpdate=true;aRow.needsUpdate=true;aTile.needsUpdate=true;dRow.needsUpdate=true;dTile.needsUpdate=true;
 const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+3.5,1.0,4.2],[WX0+.05,WX1-.05,WS+.05,WS+3.3,1.25,5.3]];
+// ---- age (round 3): which face of each board is outside. Floors inside a room are sheltered, landings/deck are not;
+// a wall's outer face is the one facing away from its room; beams, posts and frames are out in the weather.
+ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[3],0,0);});
+{const inRoom=(c,m=0)=>ROOMS.find(r=>c.x>r[0]-m&&c.x<r[1]+m&&c.z>r[4]-m&&c.z<r[5]+m&&c.y>r[2]-.35&&c.y<r[3]+.2);
+ for(const p of PL){if(p.kind==='shingle')continue;const A=p.kind==='beam'?dWx:aWx;let a=.8,b=.8;
+  if(p.kind==='floor'){a=inRoom(p.c,-.05)?0:1;b=.25;}
+  else if(p.kind==='wall'){const r=inRoom(p.c,.35);if(r){const n=V(0,0,1).applyQuaternion(p.q);const out=n.x*(p.c.x-(r[0]+r[1])/2)+n.z*(p.c.z-(r[4]+r[5])/2)>0;a=out?1:0;b=out?0:1;}else{a=.7;b=.7;}}
+  A.setXY(p.i,a,b);}
+ aWx.needsUpdate=dWx.needsUpdate=true;}
 cullLeaves([[KX0-.4,KX1+.2,KT-.3,BD+.3,.3,4.9],[BX0-.4,BX1+.4,BD-.3,BD+3.7,.3,4.3],[WX0-.4,WX1+.4,WS-.3,WS+3.5,.5,5.2],[.6,4.6,DK-.3,DK+1.6,0,3.4],[-3.6,3.4,LG-.4,LC+.6,0,4.4]]);
 
 // ================= furniture: models made from the concept picture =================
@@ -604,6 +647,23 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
 // motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
 try{const mdb=await fetch(ASSET+'motion-db.txt').then(r=>r.ok?r.text():null).catch(()=>null);if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
+// ---- age (round 3): wear paths seeded from his walking graph, then stamped wherever he actually walks; repair API for Brain
+{for(const [a,b,t] of HH.E||[]){if(t||!N[a]||!N[b])continue;const A=N[a].p,Bp=N[b].p;const n=Math.ceil(A.distanceTo(Bp)/.05);for(let k=0;k<=n;k++){const p=A.clone().lerp(Bp,k/n);WEAR.stamp(p.x,p.y,p.z,.03,.3);}}
+ for(const k in N){const n=N[k];if(n.face!==undefined)WEAR.stamp(n.p.x,n.p.y,n.p.z,.45,.32);else WEAR.stamp(n.p.x,n.p.y,n.p.z,.2,.3);}
+ WEAR.tex.needsUpdate=true;WEAR.dirty=false;
+ setInterval(()=>{const p=hero&&hero.root&&hero.root.position;if(p)WEAR.stamp(p.x,p.y,p.z,.004,.22);if(WEAR.dirty&&(WEAR.n=(WEAR.n||0)+1)%5===0){WEAR.tex.needsUpdate=true;WEAR.dirty=false;}},1000);}
+const freshAttr=m=>m===boards?aFresh:m===beams?dFresh:sFresh;
+// window.__planks: every board / beam / slate of the house.
+//  list(kind?)        -> [{id, kind:'floor'|'wall'|'beam'|'shingle', pos:[x,y,z], fresh}]   (id = index into this list)
+//  setFresh(id, f)    -> f 1 = just repaired, new wood/slate (pale, clean, no moss/wear/weather); 0 = old (default). Brain can fade it back over days.
+//  fresh(id)          -> current value
+//  near(x,y,z,r,kind?)-> ids within r metres
+//  wear(x,y,z,amt)    -> add foot wear on the floor at that point (0..1)
+window.__planks={list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
+ setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,0,1));A.needsUpdate=true;return true;},
+ fresh:id=>PL[id]?freshAttr(PL[id].mesh).getX(PL[id].i):null,
+ near:(x,y,z,r=.5,k)=>PL.map((p,id)=>[p,id]).filter(([p])=>(!k||p.kind===k)&&p.c.distanceTo(V(x,y,z))<r).map(([,id])=>id),
+ wear:(x,y,z,a=.1)=>WEAR.stamp(x,y,z,a)&&(WEAR.tex.needsUpdate=true)};
 const bow=makeBow();heroBones.LeftHand.add(bow);bow.position.set(0,.07,.03);bow.rotation.set(0,0,0);bow.scale.setScalar(1/Math.max(.001,heroBones.LeftHand.getWorldScale(V()).x));
 function play(c,name,{loop=true,fade=.25,speed=1}={}){const a=c.actions[name];if(!a||c.cur===a)return a;a.reset();a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);a.clampWhenFinished=!loop;a.timeScale=speed;a.enabled=true;if(c.cur)c.cur.crossFadeTo(a,fade,false);a.play();c.cur=a;return a;}
 
@@ -689,6 +749,7 @@ $('bW').onclick=()=>{ac();startAmb();WIND.setRain(weather==='clear');};
 // [WIND] rain comes and goes with the weather (game/wind.js); the button just starts or stops a rain spell
 WIND.on('rain',e=>{weather=e.on?'rain':'clear';$('bW').textContent=e.on?'☂︎':'☁︎';});
 {const bS=$('bS'),sy=()=>{bS.textContent=AUDIO&&AUDIO.muted()?'🔇':'🔊';};sy();bS.onclick=()=>{if(!AUDIO)return;const first=!AUDIO.started();ac();startAmb();AUDIO.mute(first?false:!AUDIO.muted());sy();};}
+{const bM=$('bM'),sy=()=>{const on=!AUDIO||AUDIO.music();bM.style.opacity=on?1:.4;bM.setAttribute('aria-pressed',on);};sy();bM.onclick=()=>{if(!AUDIO)return;ac();startAmb();AUDIO.music(!AUDIO.music());sy();};}
 $('bN').onclick=()=>{ac();startAmb();if(!isNight(hour)&&hour<19.2)hour=19.2;};
 
 // ================= aiming (drag back, release) =================
