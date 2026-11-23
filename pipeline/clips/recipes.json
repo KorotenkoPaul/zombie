@@ -253,5 +253,11 @@
  "sit_ground": {
   "src": "82_05",
   "note": "Sitting on the ground relaxing (hips 0.27 m). 18.7 s loop close 1.0."
+ },
+ "sit_tired": {
+  "src": "13_05",
+  "t0": 17.6,
+  "t1": 23.4,
+  "note": "Bed P5 / evening. Real mocap seated on a low seat, forearms on the knees, hands together in front of the chest, small fidgets, calm. 5.8 s, loop close 0.8."
  }
 }
