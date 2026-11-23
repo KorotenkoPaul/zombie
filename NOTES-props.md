@@ -28,6 +28,15 @@
   Each has `userData.grip` (local grip point, handle along local +y) and `userData.home`.
 - `grab(name, bone, {offset, rot})` re-parents a tool to a hand bone (compensates bone scale); `release(name)` puts it back home.
 
+## Round 2 (Fal AI thread)
+- Fal AI textures (nano-banana-pro/edit from the reference photo): `game/quilt.jpg` (4x4 patchwork), `rug-blue.jpg`, `rug-orange.jpg`, `rug-green.jpg`; sources in `assets/textures-src/fal-*.png`. Loaded by `upgrade()` over the canvas fallback, so they must be in the artifact `files`.
+- Quilts are puffy (each patch bulges, stitched seams), UVs follow the unfolded cloth so the hanging sides are no longer smeared stripes.
+- Oven: logs, ember bed, 6 flickering flames (`oven.flicker(t)`, called from `update`), baking tray with buns; glass is see-through.
+- Hood is steel grey. Telescope: dark tripod, eyepiece, finder scope. Wrenches chunkier.
+- Workshop: dome lamp moved to the right corner (3.75, WS+1.44, 2.45) so the tool wall is visible (its lantern light in index.html moved too); new L-side bench `sidebench` under the right shelves (pencil cup, jars, toolbox, oil can, rag, crate of offcuts).
+- Room offsets: buildProps reads optional `L.dxL` (kitchen+bedroom) and `L.dxR` (workshop) and shifts props, OBST, tool homes and surfaces. Default 0.
+- `__th.nav()` reports 3 crossings (kmid-kl_b:stove, bl_t-bmid:basket, bmid-bread_app:table); same on master before this round, hero nav owner should check.
+
 ## Known issues / next steps
 - Oven: fire is a flat plane; rack rods look slanted; add a baking tray and flame flicker.
 - Tool wall: hammer/saw partly hidden behind the workshop dome lamp in the default view; consider moving the lamp forward.

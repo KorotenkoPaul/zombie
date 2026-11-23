@@ -265,7 +265,7 @@ const lanterns=[];
 function lantern(x,y,z,hang,noLight){const g=new THREE.Group();g.position.set(x,y,z);scene.add(g);if(!hang)P3.lanternHousing(g,.2);
  const bulbM=new THREE.MeshStandardMaterial({color:0xFFE0A0,emissive:0xFF9A30,emissiveIntensity:0});const bulb=new THREE.Mesh(new THREE.SphereGeometry(hang?.07:.065,12,10),bulbM);g.add(bulb);
  const l=noLight?{intensity:0}:new THREE.PointLight(0xFFA14A,0,6.5,1.6);if(!noLight)g.add(l);lanterns.push({g,l,bulbM,seed:rnd(0,9)});}
-lantern(-2.3,KT+1.78,1.75,true);lantern(2.75,WS+1.5,2.3,true);lantern(-2.0,BD+1.95,2.5);lantern(.7,DK+1.15,3.0,false,true);lantern(-.62,LC+1.25,3.84);lantern(-2.4,KT+1.5,3.5,false,true);
+lantern(-2.3,KT+1.78,1.75,true);lantern(3.75,WS+1.5,2.45,true);lantern(-2.0,BD+1.95,2.5);lantern(.7,DK+1.15,3.0,false,true);lantern(-.62,LC+1.25,3.84);lantern(-2.4,KT+1.5,3.5,false,true);
 lanterns.forEach(L=>{if(L.l.isLight)ENV.addHalo(L.l,1.5);});ENV.addHalo(doorLight,2.4);
 const stoveLight=new THREE.PointLight(0xFF7A2A,0,4,1.8);stoveLight.position.set(-3.2,KT+.45,2.0);scene.add(stoveLight);
 const fills=[].map(([x,y,z])=>{const l=new THREE.PointLight(0xFFE8CC,0,6,1.2);l.position.set(x,y,z);scene.add(l);return l;});
