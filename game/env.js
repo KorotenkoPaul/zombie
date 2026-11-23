@@ -102,7 +102,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  {const byV=[[],[],[],[]];spots.forEach(s=>byV[s.v].push(s));const m=new THREE.Matrix4(),q=new THREE.Quaternion();
   // all forest trunks baked into ONE mesh (one draw call instead of one per variant; they surround the scene, so culling saved nothing)
   const baked=[];byV.forEach((list,vi)=>{list.forEach(s=>{q.setFromAxisAngle(V(0,1,0),s.ry);m.compose(V(s.x,groundH(s.x,s.z),s.z),q,V(s.s,s.s,s.s));baked.push(variants[vi].g.clone().applyMatrix4(m));
-    for(const e of variants[vi].ends){const w=e.clone().multiplyScalar(s.s).applyQuaternion(q).add(V(s.x,groundH(s.x,s.z),s.z));tips.push({p:w,s:s.s,d:Math.hypot(s.x,s.z)});}});});
+    for(const e of variants[vi].ends){const w=e.clone().multiplyScalar(s.s).applyQuaternion(q).add(V(s.x,groundH(s.x,s.z),s.z));tips.push({p:w,s:s.s,d:Math.hypot(s.x,s.z),tr:s});}});});
   if(baked.length){const fm=new THREE.Mesh(mergeGeometries(baked),barkMat);baked.forEach(g=>g.dispose());fm.castShadow=!MOBILE;fm.receiveShadow=true;fm.name='forestTrunks';scene.add(fm);env.forestTrunks=fm;}}
  // canopy cards
  {const lt=leafT;/* phones: unlit cards (MeshBasic), their colour = the light they would get, computed once a frame (see foldLights) */const mat=MOBILE?new THREE.MeshBasicMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide}):new THREE.MeshStandardMaterial({map:lt,alphaTest:.5,side:THREE.DoubleSide,roughness:.85});
@@ -130,13 +130,22 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
    imat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,hazeU);sh.vertexShader='varying vec3 vHz;\n'+sh.vertexShader.replace('#include <project_vertex>',`vec3 ctr=instanceMatrix[3].xyz;float isz=length(instanceMatrix[0].xyz);
      vec3 rgt=normalize(vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]));vec4 mvPosition=viewMatrix*vec4(ctr+rgt*transformed.x*isz+vec3(0.,transformed.y*length(instanceMatrix[1].xyz),0.),1.);gl_Position=projectionMatrix*mvPosition;vHz=ctr+vec3(0.,transformed.y*length(instanceMatrix[1].xyz),0.);`);
     sh.fragmentShader='uniform vec3 hz;uniform float hzK;varying vec3 vHz;\n'+sh.fragmentShader.replace('#include <fog_fragment>',`{float d=length(vHz.xz-cameraPosition.xz);float k=hzK*(.75+.5*smoothstep(45.,85.,d));k=max(k,smoothstep(3.5,-.5,vHz.y)*.85);gl_FragColor.rgb=mix(gl_FragColor.rgb,hz,clamp(k,0.,.92));}`);};
-   const mkImp=(list,name)=>{const iq=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),imat,list.length);list.forEach((o,j)=>{m.compose(o.p,q.identity(),V(o.w,o.h,1));iq.setMatrixAt(j,m);iq.setColorAt(j,c.setRGB(o.c[0],o.c[1],o.c[2]));});
+   // an octagon just around the clump's round silhouette instead of the full quad: 17% fewer pixels to shade
+   const oct=new THREE.CircleGeometry(.5/Math.cos(Math.PI/8),8);{const op=oct.attributes.position,ou=oct.attributes.uv;for(let i=0;i<op.count;i++)ou.setXY(i,op.getX(i)+.5,op.getY(i)+.5);}
+   const mkImp=(list,name)=>{const iq=new THREE.InstancedMesh(oct,imat,list.length);list.forEach((o,j)=>{m.compose(o.p,q.identity(),V(o.w,o.h,1));iq.setMatrixAt(j,m);iq.setColorAt(j,c.setRGB(o.c[0],o.c[1],o.c[2]));});
     iq.frustumCulled=false;iq.name=name;scene.add(iq);return iq;};
    const tint=(d,k)=>{const far=smooth(FR0,FR0+22,d);return [(.8-far*.2)*k,(.9-far*.2)*k,(.84-far*.08)*k];};
    // crowns: fuller than the cards were (x1.6 wide), so neighbouring crowns merge into one canopy
-   env.canopy=mkImp(tips.map(t=>({p:t.p,w:9.6*t.s*1.6,h:9.6*t.s*1.45,c:tint(t.d,1)})),'forestCanopyImpostors');scene.remove(im);im.geometry.dispose();im.dispose();
+   // phones (GPU cost): one crown per tree, sized to the spread of its branch tips, instead of one per tip (the tips' crowns
+   // overlapped ~7 deep). Desktop keeps a crown per tip.
+   let crowns=tips.map(t=>({p:t.p,w:9.6*t.s*1.6,h:9.6*t.s*1.45,c:tint(t.d,1)}));
+   if(MOBILE){const by=new Map();for(const t of tips){if(!by.has(t.tr))by.set(t.tr,[]);by.get(t.tr).push(t);}crowns=[];
+    for(const [tr,l] of by){const ctr=V();l.forEach(t=>ctr.add(t.p));ctr.multiplyScalar(1/l.length);let sx=0,sy=0;const rgt=V();
+     for(const t of l){sx=Math.max(sx,Math.hypot(t.p.x-ctr.x,t.p.z-ctr.z));sy=Math.max(sy,Math.abs(t.p.y-ctr.y));}
+     const cs=9.6*tr.s*.75;crowns.push({p:ctr.add(V(0,cs*.1,0)),w:(sx*1.5+cs)*1.05,h:sy*1.5+cs,c:tint(Math.hypot(tr.x,tr.z),1)});}}
+   env.canopy=mkImp(crowns,'forestCanopyImpostors');scene.remove(im);im.geometry.dispose();im.dispose();
    // understory: low bushes on the forest floor, young trees' crowns at 3-8 m, and leaf mass hung between neighbouring crowns
-   const ul=[];const ru=rng(57);const NU=MOBILE?380:560;for(let k=0;k<NU*3&&ul.length<NU;k++){const a=ru()*6.28,r=FR0-3+ru()*24,x=Math.cos(a)*r,z=Math.sin(a)*r;if(z>12)continue;
+   const ul=[];const ru=rng(57);const NU=MOBILE?170:560;for(let k=0;k<NU*3&&ul.length<NU;k++){const a=ru()*6.28,r=FR0-3+ru()*24,x=Math.cos(a)*r,z=Math.sin(a)*r;if(z>12)continue;
     const lvl=ru();const w=lvl<.4?3.8+ru()*3.6:6+ru()*5;const y=groundH(x,z)+(lvl<.4?w*.34:4+ru()*8);ul.push({p:V(x,y,z),w:w*1.15,h:w,c:tint(r,lvl<.4?.72:.86)});}
    env.understory=mkImp(ul,'forestUnderstory');env.canopyTex=rt.texture;}catch(e){console.warn('canopy impostors',e);}}}
 
@@ -221,7 +230,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   fragmentShader:`uniform float t,op,trunkK;uniform vec3 col,cam,pond;uniform vec2 drift;varying vec3 vW;${FOG_NOISE}${SOFT_GLSL}
    void main(){vec2 p=(vW.xz-drift)*.075+vec2(vW.y*1.7,0.);vec2 q=nz2(p+vec2(t*.018,t*.007));
     vec2 r=nz2(p+3.*q+vec2(1.7,9.2)+t*.02);float d=fbm(p+3.4*r);
-    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK,1.,smoothstep(4.,12.,length(vW.xz)))*mix(.1,1.,smoothstep(pond.z+.2,pond.z+2.2,length(vW.xz-pond.xy)));
+    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK,1.,smoothstep(5.,10.,length(vW.xz)))*mix(.1,1.,smoothstep(pond.z+.2,pond.z+2.2,length(vW.xz-pond.xy)));
     float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6)*smoothstep(.35,1.8,cam.y-vW.y);/* a sheet near eye height reads as a hard horizontal line: it fades out as the camera comes down to it */gl_FragColor=vec4(col*(.82+.4*d),a);}`});
  const sheets=[];(MOBILE?[[.3,1.1],[.9,.85]]:[[.25,1],[.7,.8],[1.3,.6]]).forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.CircleGeometry(97,40).rotateX(-Math.PI/2)/* the sheets fade out by r 95: a disc, not a 200 m square */,sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
@@ -242,7 +251,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     vec4 mv=viewMatrix*vec4(cpos,1.);vW=cpos+vec3(0.,iA.w*.3,0.);float sz=iA.w*(1.+.08*sin(t*.11+iB.x));mv.xy+=position.xy*vec2(sz*1.6,sz);vWy=(inverse(viewMatrix)*mv).y;
     vFade=smoothstep(2.,8.,-mv.z);
     // keep the trunk base and roots clear: puffs between the camera side and the trunk fade out (fog stays around and behind them, as in the photo)
-    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*frontK*(1.-bl);vFade*=smoothstep(pond.z+.3,pond.z+2.3,length(cpos.xz-pond.xy)-iA.w*.45);/* the pond stays clear (puff edge 2 m off the water) */vFade=mix(vFade,smoothstep(1.,4.,-mv.z),bl);gl_Position=projectionMatrix*mv;}`,
+    float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*frontK*(1.-bl);vFade*=1.-smoothstep(9.,6.,length(cpos.xz))*frontK*.6*(1.-bl);/* Ground: within ~8 m of the trunk the fog lies low in patches (billows), the roots and moss read */vFade*=smoothstep(pond.z+.3,pond.z+2.3,length(cpos.xz-pond.xy)-iA.w*.45);/* the pond stays clear (puff edge 2 m off the water) */vFade=mix(vFade,smoothstep(1.,4.,-mv.z),bl);gl_Position=projectionMatrix*mv;}`,
   fragmentShader:`uniform float t,op,wlv;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${FOG_NOISE}${SOFT_GLSL}
    void main(){vec2 p=vUv-.5;float r=length(p*vec2(1.,1.25));
     // swirl: rotate the noise domain by an amount that depends on radius and time, so the clump churns
@@ -363,7 +372,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
  // stronger blue rim and a cooler lift in the shadows. Uniform tweaks only: no extra draw calls or passes.
- const PH={foldF:.75,foldR:.5,leafK:1,trunk:.9,front:.3,puff:2.6,sheet:2.2,mist:1.7,fill:1.7,rim:1.6,moonRim:1.8,haze:.6,lift:new THREE.Color(0x10304a)};env.phoneNightK=PH;
+ const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:2.6,sheet:2.2,mist:1.7,fill:1.7,rim:1.6,moonRim:1.8,haze:.6,lift:new THREE.Color(0x10304a)};env.phoneNightK=PH;
  const liftBase=env.gradePass.uniforms.lift.value.clone(),liftTmp=new THREE.Color();
  function phoneNight(eve,rainK){const k=eve;PH.cur=k;const f=x=>1+(x-1)*k;
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
