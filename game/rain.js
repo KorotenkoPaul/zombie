@@ -181,6 +181,8 @@ if(uWet*uGlassK>.003){float wd=wetDrops(vGp)*uWet;gl_FragColor.rgb+=vec3(.55,.62
       PERF.addStep('rainSplash', () => { if (!splash || splash.geometry.instanceCount <= 1) return false; splash.userData.n = splash.geometry.instanceCount; splash.geometry.instanceCount = Math.floor(splash.userData.n / 2); },
         () => { if (splash && splash.userData.n) splash.geometry.instanceCount = splash.userData.n; }, 55);
     },
+    // is a point under a roof (or deck, or anything solid above it)? For the hero's clothes/hair: wind and rain reach him only outside
+    covered(p) { if (!R.ready) return false; const x = p.x ?? p[0], y = p.y ?? p[1], z = p.z ?? p[2]; const h = R.heightAt(x, z); return h != null && h > y + 0.4; },
     heightAt(x, z) { const ix = Math.floor((x - X0) / CS), iz = Math.floor((z - Z0) / CS); return ix < 0 || iz < 0 || ix >= NX || iz >= NZ ? null : hm[iz * NX + ix]; }
   };
   return R;

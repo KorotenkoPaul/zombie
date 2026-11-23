@@ -229,6 +229,8 @@ export function createWind(opt = {}) {
       if (o.crown) for (let i = 0; i < o.crown.count; i += 3) { o.crown.getMatrixAt(i, m4); v.setFromMatrixPosition(m4); if (v.y > 6) spots.push(v.toArray()); }
       if (!spots.length) spots.push([0, 14, -1]);
       const gH = o.groundH || (() => 0), rooms = o.avoid || [];
+      // the top of whatever is under a point (deck, landing, roof, else the ground): o.surfaceH(x,z) -> height or null
+      const floorAt = (x, z, y) => { const g = gH(x, z); const h = o.surfaceH ? o.surfaceH(x, z) : null; return h != null && h > g && h <= y + 0.05 ? h : g; };
       const L = []; for (let i = 0; i < N; i++) L.push({ on: false });
       const q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), zero = new THREE.Matrix4().makeScale(0, 0, 0);
       for (let i = 0; i < N; i++) im.setMatrixAt(i, zero);
@@ -242,17 +244,20 @@ export function createWind(opt = {}) {
           const sp = spots[Math.floor(R() * spots.length)];
           Object.assign(l, { on: true, p: [sp[0] + rr(-0.4, 0.4), sp[1] + rr(-0.4, 0.2), sp[2] + rr(-0.4, 0.4)], v: [0, 0, 0], ph: rr(0, 6.3), fr: rr(1.5, 3), spin: [rr(-3, 3), rr(-2, 2), rr(-4, 4)], r: [rr(0, 6), rr(0, 6), rr(0, 6)], rest: 0, life: rr(8, 16), k: 1 }); }
         for (let i = 0; i < N; i++) { const l = L[i]; if (!l.on) continue; const p = l.p;
-          if (l.rest > 0) {                                          // lying on the ground, then fading
+          if (l.rest > 0) {                                          // lying on a deck or the ground, then fading
             l.rest += dt; if (l.rest > l.life) { l.k -= dt * 0.5; if (l.k <= 0) { l.on = false; im.setMatrixAt(i, zero); continue; } }
+            // a gust picks it up again: it skitters a little way along the boards and settles (the deck "breathes" leaves)
+            const w = W.sample({ x: p[0], z: p[2] });
+            if (w.s > 0.7 && l.k > 0.9 && R() < dt * (w.s - 0.6) * 2.5) { l.rest = 0; l.v = [w.x * 1.6, rr(0.5, 1.1), w.z * 1.6]; l.spin = [rr(-6, 6), rr(-3, 3), rr(-6, 6)]; l.life += rr(4, 8); }
           } else {
             const w = W.sample({ x: p[0], z: p[2] }); l.ph += dt * l.fr;
             // drag towards the wind (leaves are light), a swirl, and a fluttering fall
-            const tx = w.x * 2.2 + Math.cos(l.ph) * 0.35, tz = w.z * 2.2 + Math.sin(l.ph * 0.8) * 0.35, ty = -0.75 + Math.sin(l.ph * 1.7) * 0.35 + w.gust * 0.3;
+            const tx = w.x * 1.4 + Math.cos(l.ph) * 0.35, tz = w.z * 1.4 + Math.sin(l.ph * 0.8) * 0.35, ty = -0.75 + Math.sin(l.ph * 1.7) * 0.35 + w.gust * 0.3;
             const k = Math.min(1, dt * 1.8); l.v[0] += (tx - l.v[0]) * k; l.v[1] += (ty - l.v[1]) * k; l.v[2] += (tz - l.v[2]) * k;
             p[0] += l.v[0] * dt; p[1] += l.v[1] * dt; p[2] += l.v[2] * dt;
             for (let j = 0; j < 3; j++) l.r[j] += l.spin[j] * dt * (0.6 + w.s);
-            const g = gH(p[0], p[2]) + 0.015;
-            if (p[1] <= g) { p[1] = g; l.rest = 0.001; l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
+            const g = floorAt(p[0], p[2], p[1]) + 0.015;
+            if (p[1] <= g) { p[1] = g; l.rest = 0.001; if (g > gH(p[0], p[2]) + 0.5) l.life = Math.max(l.life, rr(25, 45)); l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
             // never through a room: a leaf that drifts into one is gone (the roof hides it)
             if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5])) { l.on = false; im.setMatrixAt(i, zero); continue; }
             if (Math.abs(p[0]) > 60 || Math.abs(p[2]) > 60) { l.on = false; im.setMatrixAt(i, zero); continue; }
