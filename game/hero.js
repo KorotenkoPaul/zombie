@@ -299,11 +299,18 @@ export function createHero(ctx){
   // whatever the result, the final head yaw stays inside the human range
   const fin=ah+ty;if(fin>HEADMAX)ty-=fin-HEADMAX;else if(fin<-HEADMAX)ty+=-HEADMAX-fin;
   const k=1-Math.exp(-dt*4);lookS.yaw=lerp(lookS.yaw,clamp(ty,-1.6,1.6),k);lookS.pitch=lerp(lookS.pitch,clamp(tp,-.7,.7),k);
-  if(Math.abs(lookS.yaw)+Math.abs(lookS.pitch)<1e-3)return;
-  const right=V(1,0,0).applyAxisAngle(YAX,hy);
+  if(Math.abs(lookS.yaw)+Math.abs(lookS.pitch)<1e-3){headRoll();return;}
+  const _hq=new THREE.Quaternion();
   for(const [b,share] of [[Ch,.25],[Nk,.35],[Hd,.4]]){if(!b)continue;const pw=b.parent.getWorldQuaternion(new THREE.Quaternion());
+   // nod about the axis across the face as it is now (after the yaw), so looking down never tips the head sideways
+   Hd.getWorldQuaternion(_hq);const hf=BFWD.Head.clone().applyQuaternion(_hq).setY(0);if(hf.lengthSq()<1e-4)hf.copy(fwd(hy));hf.normalize().applyAxisAngle(YAX,lookS.yaw*share);const right=YAX.clone().cross(hf).normalize();
    const q=new THREE.Quaternion().setFromAxisAngle(YAX,lookS.yaw*share).multiply(new THREE.Quaternion().setFromAxisAngle(right,lookS.pitch*(b===Ch?0:share/.75)));
-   b.quaternion.premultiply(pw.clone().invert().multiply(q).multiply(pw));b.updateMatrixWorld(true);}}
+   b.quaternion.premultiply(pw.clone().invert().multiply(q).multiply(pw));b.updateMatrixWorld(true);}
+  headRoll();}
+ // the head never rolls more than a few degrees sideways (an ear toward the shoulder reads as a broken neck)
+ const ROLLMAX=.09;function headRoll(){const Hd=bones.Head;if(!Hd)return;const q=Hd.getWorldQuaternion(new THREE.Quaternion());const f=BFWD.Head.clone().applyQuaternion(q);const u=V(0,1,0).applyQuaternion(q);
+  const side=f.clone().cross(YAX);if(side.lengthSq()<1e-4)return;side.normalize();const roll=Math.asin(clamp(u.dot(side),-1,1));const ex=roll>ROLLMAX?roll-ROLLMAX:roll<-ROLLMAX?roll+ROLLMAX:0;if(Math.abs(ex)<1e-3)return;
+  rotW(Hd,f.normalize(),-ex);}
 
  // ---------- walking: smooth curves, speed matched to the stride, turning steps ----------
  // is the straight line between two points on one floor free of furniture? (used to cut corners of the node graph)
@@ -492,14 +499,14 @@ export function createHero(ctx){
    if(!hc.drive||!hc.ringAt){/* old house without a hand-driven lid */a.update=dt=>{a.t+=dt;if(a.t>.5){try{want?hc.open():hc.close();}catch(e){}endTask();}};return a;}
    if(want===hc.isOpen()){a.update=()=>endTask();return a;}
    const [x0,x1,,,z0,z1]=hc.box;const r0=hc.ringAt(0,V()),rO=hc.ringAt(hc.OPEN,V());
-   const S=want?V(x1+.04,lv.BD,r0.z+.12):V(x1+.04,lv.BD,rO.z+.12);// beside the opening, on the free side
+   const FOOT=x1+.17;/* both feet stay on boards: the near foot is ~12 cm off his centre */const S=want?V(FOOT,lv.BD,r0.z+.12):V(FOOT,lv.BD,rO.z+.12);// beside the opening, on the free side
    const L=hc.ladder||{top:'bl_t',bottom:'kl_b'};const start=N.bl_m?'bl_m':L.top;
    goTo(start,()=>{a.step='app';const p0=root.position;const u=V(S.x-p0.x,0,S.z-p0.z);const ul=u.length()||1;approachTo(a,S.clone().addScaledVector(u,.5/ul),.5,()=>{const p=root.position;const g=hc.grab;H.face=Math.atan2(g.x-p.x,g.z-p.z);a.step=want?'bend':'reach';a.t=0;
      if(want&&has('hy_picklog'))once('hy_picklog',{fade:.35,speed:.75});else if(want&&has('hy_take'))once('hy_take',{fade:.35,speed:.8});/* GRAB: opening, he squats down to the ring (the pick-up clip), takes it and lifts the lid as he rises */});});
    const ringW=()=>hc.grab.clone();
    a.update=dt=>{if(a.step==='approach'){a.t+=dt;if(a.t>=a.adur)a.next();return;}if(a.step==='go'||a.step==='app')return;a.t+=dt;H.look=ringW();H.lookW=1;
     const p=root.position,g=hc.grab;H.face=Math.atan2(g.x-p.x,0)||-Math.PI/2;root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*6);
-    {/* he shuffles along the edge with the ring, right shoulder level with it */const tz=clamp(g.z+.12,z0+.05,z1+.45);const m=.5*dt;p.z+=clamp(tz-p.z,-m,m);}
+    {/* he shuffles along the edge with the ring, right shoulder level with it */const tz=clamp(g.z+.12,z0+.05,z1+.45);const m=.5*dt;p.z+=clamp(tz-p.z,-m,m);if(p.x<FOOT)p.x+=Math.min(FOOT-p.x,m);}
     if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.5);if(a.t>.55){a.step='push';a.t=0;AU('hatch_open',g);}}
     else if(a.step==='push'){const G=window.__grab,gd=G?G.dist('Right'):0;/* GRAB HOOK: the lid moves only while the palm is on the ring; once it tips past where the hand can follow, he lets go and it drops */const ang=gd!=null&&gd>.035&&a.t<1.5?hc.angle:Math.max(1.12,hc.angle-dt*1.1);if(gd==null||gd<=.035||a.t>=1.5)hc.drive(ang);if(ang<=1.12||(hc.angle<1.4&&gd!=null&&gd>.03)){hc.letGo(false);a.step='after';a.t=0;}}
     else if(a.step==='bend'){// GRAB HOOK: squat, palm onto the ring, and the lid rises only as far as the hand can carry it (never ahead of it)
@@ -620,9 +627,13 @@ export function createHero(ctx){
   const tools=(o.tools||[]).filter(([n])=>hasTool(n));
   const begin=()=>{a.step=tools.length?'take':'work';a.t=0;o.start&&o.start(a);if(!tools.length)work();};
   const work=()=>{a.step='work';a.t=0;if(o.clip&&has(o.clip)){if(o.loop)play(o.clip,{fade:.5,speed:o.speed||1});else once(o.clip,{fade:.45,speed:o.speed||1,then:()=>{if(a.step==='work'&&a.T<dur-1)play(o.idle&&has(o.idle)?o.idle:IDLE(),{fade:.5});}});}else play(IDLE(),{fade:.5});};
-  const go=()=>{const s=sp();if(o.node){goTo(o.node,()=>{if(o.slide===false){H.face=N[o.node].face??H.face;begin();}else approachTo(a,s,o.stand??.45,begin);});}
-   else{const nn=nearNode(s);if(nn)goTo(nn,()=>approachTo(a,s,o.stand??.45,begin));else approachTo(a,s,o.stand??.45,begin);}};
-  go();
+  const seatOf=()=>typeof o.seat==='function'?o.seat():o.seat;
+  if(o.anchor==='sit'&&seatOf()){const st=seatOf();const goSit=()=>{a.step='sit';sitDown(st,()=>{a.seated=st;begin();});};
+   const nn=o.seatNode||st.node||nearNode(st.p.clone().setY(st.floor??st.p.y).add(V(0,.1,0)));if(nn)goTo(nn,goSit);else goSit();}
+  else go0();
+  function go0(){go();}
+  function go(){const s=sp();if(o.node){goTo(o.node,()=>{if(o.slide===false){H.face=N[o.node].face??H.face;begin();}else approachTo(a,s,o.stand??.45,begin);});}
+   else{const nn=nearNode(s);if(nn)goTo(nn,()=>approachTo(a,s,o.stand??.45,begin));else approachTo(a,s,o.stand??.45,begin);}}
   a.update=dt=>{a.t+=dt;const s=sp();
    if(a.step==='approach'){H.look=s;H.lookW=.6;if(a.t>=a.adur){a.next();}return;}
    if(a.step==='take'){// reach each tool's home and close the hand on it
@@ -631,6 +642,8 @@ export function createHero(ctx){
     if(!a.gotIt){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h,a.rw];if((a.rw>=1&&pd<.03)||a.t>1.6){a.gotIt=true;a.tg=a.t;grabTool(n,hand);AU('cloth');}}
     else{a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h,a.rw]:null;if(a.rw<=0){a.held.push(n);a.gotIt=false;a.t=0;a.reach=null;a.rw=0;if(a.held.length>=tools.length)work();}}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
+    if(o.beats){a.bi=a.bi||0;while(a.bi<o.beats.length&&a.T>=o.beats[a.bi].at){try{o.beats[a.bi].do(a);}catch(e){console.error('beat',e);}a.bi++;}}
+    if(o.anchor==='squat'){const d=o.squat??.35;H.squat=d*smooth(0,.8,a.T)*(1-smooth(dur-.9,dur,a.T));}
     // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
     if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
       if(r<.45){a.pause=rnd(2.5,4.5);a.pl=root.position.clone().add(V(rnd(-3,3),rnd(1.2,1.8),rnd(-3,3)));play(IDLE(),{fade:.6});}
@@ -642,12 +655,15 @@ export function createHero(ctx){
     // GRAB HOOK: carried to the hook in the hand, let go only once the palm is there (a short settle, no flying home), then the hand leaves
     const h2=gripHome(n)||h;const pd=palmTo(hand,h2);a.hp=h2;if(!a.rel){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h2,a.rw];if((a.rw>=1&&pd<.03)||a.t>1.6){a.rel=true;a.trel=a.t;relTool(hand,n,.14);}}
     else if(a.t-a.trel>.16){a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h2,a.rw]:null;if(a.rw<=0){a.held.pop();a.rel=false;a.t=0;a.reach=null;a.rw=0;}}}};
-  const finish=()=>{a.ik=null;if(a.leaveCb){const c=a.leaveCb;a.leaveCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
-  a.post=dt=>{if(a.stirHold&&a.step!=='work'){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
+  const finish=()=>{a.ik=null;H.squat=0;if(a.seated&&!a.rising){a.rising=true;standUp(a.seated,()=>{a.seated=null;finish();});return;}if(a.rising&&a.seated)return;
+   if(a.leaveCb){const c=a.leaveCb;a.leaveCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
+  a.post=dt=>{if(a.stirHold&&a.step!=='work'){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}if(a.step==='work'&&o.post)o.post(a,dt);
+   // declared contacts (HERO-RULES 2): a hand on a real point for a window of the work, blended in and out
+   if(a.step==='work'&&o.contacts)for(const c of o.contacts){const t0=c.from??0,t1=c.to??dur,bl=c.blend??.4;const w=(c.w??1)*smooth(t0,t0+bl,a.T)*(1-smooth(t1-bl,t1,a.T));if(w<.01)continue;const at=typeof c.at==='function'?c.at(a):c.at;if(at)reachGrip(c.hand||'Right',at,w);}ikList(a.ik);if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
   // GRAB HOOK: called away in the middle of a job, he first hangs the tools back by hand (no tool flies home by itself)
   a.leave=cb=>{if(a.step==='take'&&a.gotIt){const [n]=tools[a.held.length]||[];if(n)a.held.push(n);a.gotIt=false;}
    if(a.held.length&&!window.__noGripFix&&(a.step==='work'||a.step==='take')){o.end&&o.end(a);a.step='put';a.t=0;a.rw=0;a.rel=false;a.reach=null;a.ik=null;a.leaveCb=cb;play(IDLE(),{fade:.4});return;}
-   for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
+   for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;H.squat=0;if(a.seated){const st=a.seated;a.seated=null;standUp(st,cb);return;}cb();};
   return a;}
  // GRAB HOOK: how far the palm is from a point (m)
  function palmTo(side,t){const G=window.__grab;const p=G&&G.gripPoint?G.gripPoint(side):bones[side+'Hand'].getWorldPosition(V());return p&&t?p.distanceTo(t):9;}
