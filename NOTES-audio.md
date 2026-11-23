@@ -58,3 +58,13 @@
 - Off most of the time: a 60-120 s session may start at dusk (18:20-20:35, 70% once a day) or in a quiet moment (hero in bed / reading / sitting / at the telescope, no actions for 20 s; about once per 90 s of quiet). Then it rests 2.5-5 min.
 - Ducks to 30% for 3 s under every hero sound (priority voices: actions, footsteps).
 - UI: ♫ button (#bM) next to 🔊; dimmed = off, remembered in localStorage (`th_music`). API: `__audio.music(on?)`, `__audio.musicNow()` (debug).
+
+## Round 9: phone perf and clicks
+- Measured (iPhone 13 profile, rain + stove + music + footsteps + indoor camera): audio.js update() = 0.02 ms per frame on the test CPU (~0.1 ms on a phone), 7 live voices, 25 decoded clips (~70 s PCM).
+- Per-frame JS trimmed: creatures decide at 10 Hz (not every frame); the listener is updated only when the camera moved (max 30 Hz; each update queues 9 automation events); music ducking only on change (it used to queue an event every frame).
+- Click-free: every gain change starts from the current value (`holdGain`: cancelAndHoldAtTime or cancel + setValueAtTime) instead of cancelScheduledValues alone; mute stops voices only after the master fade. Test: second-difference spike detector on a recording (tests in /tmp; method: 2 ms windows, >18 dB above the local median) shows no spikes at mute/unmute, music on/off or camera in/out.
+
+## Round 10: the pond
+- Pond geometry: `window.__ground.pond` = {x, z, r} or {center|pos: Vector3, radius|r} (read every 0.1 s; if it appears or moves, the pond creatures re-seat). Until Ground adds it: a spot ~20 m back-left.
+- Layers (all reuse existing clips, no new generation): frogs (around the pond edge, now also at dusk 18:50-20:35), `lap` (slosh clips pitched down, density follows the wind), `fish` (deep plop: drip clip at half speed, rare, mostly by day), `dragonfly` (fly clip sped up, little flights with a moving source, summer/autumn days).
+- Cost: lap/fish/dragonfly are not played at all while the camera is > 45 m from the pond.

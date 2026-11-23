@@ -27,3 +27,8 @@ Code: index.html, block "wood: every board is its own body" (`plankShader`, `bev
 - Floor wear map `WEAR` (DataTexture R8, 7 level tiles × 128×96, covering x −6..6, z −1..7). It is seeded from the hero's walk graph `HH.E` (paths) and `HH.N` (work spots), then stamped every second where he stands. Worn boards are paler and smoother, with less relief. The texture is re-uploaded at most every 5 s.
 - Dirt: floors inside ROOMS darken towards the side and back walls and the corners (uniforms `uRoomA/B`).
 - Repair hook `window.__planks`: `list(kind?)`, `near(x,y,z,r,kind?)`, `setFresh(id,f)` (1 = just repaired: pale clean wood, or a clean slate with no moss, lichen or cracks; 0 = old, the default), `fresh(id)`, `wear(x,y,z,amt)`. Kinds: floor, wall, beam, shingle (about 377/159/326/343). Brain owns fading `fresh` back over time.
+
+## Interior (round 4)
+- Under each roof slab: honey sheathing boards (instances in `boards`, wall texture, nails) running down the slope, with rafters every 0.85 m (instances in `beams`). Kind 'roof' in `__planks`, and the exposure loop skips them. No new draw calls.
+- Undersides of floor boards (the ceiling of the room below) are rough-sawn and dull (×0.68/0.6/0.55, roughness 0.95). Nails now show on the top face only.
+- The door (props.js plankDoor) and the furniture wood (props M.wood/M.woodDark, canvas grain) belong to Props. The coordinator was told they could switch to game/wood-*.jpg.
