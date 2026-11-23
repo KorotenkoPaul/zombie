@@ -555,7 +555,7 @@ export function buildProps(ctx) {
   out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => {
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
-    out.oven.setHeat(Math.max(heat, cooking ? .85 : 0)); tAcc += dt; out.oven.flicker(tAcc);
+    out.oven.setHeat(heat); void cooking; // lights.js owns the oven heat (passed in as heat) tAcc += dt; out.oven.flicker(tAcc);
   };
   shiftRooms();
   // ---------- light sources for lights.js: world positions + the emissive materials to switch ----------
