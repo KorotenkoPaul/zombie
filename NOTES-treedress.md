@@ -75,3 +75,19 @@ Debug: `__treedress.stats()`.
   same mesh are skipped (only green instances react).
 - Frost (barkU.frost, from __weather temp, < ~5 °C on dry nights) also dusts the tops of the moss cushions, grainy, not white.
 - Ivy flutter now uses Wind's windSway (real gusts) instead of the legacy U.wind scalar; falls back if Wind is missing.
+
+## Round 12 (phone overdraw / draw calls)
+- Per-mesh fragment coverage on the iPhone 13 profile (full-screen layers, no depth): litter .011-.023, ivy .017-.032,
+  ferns .007-.025, hanging .001-.005, moss/soil .003-.006 (opaque), fungi .002, board leaves .001-.002, tufts ~.001.
+  All treedress together ~.05 of ~3.6 alpha-tested layers in the scene.
+- Cut: grass tufts on phones (1 draw call, ~0.1% of the screen; Ground's grass is right there). Phones: 7 draw calls.
+- Phone bark fixes found on the way: the lite "big" noise read was planar (x+z, y), constant along flat root tops -> pinkish
+  stripes; now a skewed read that varies on every face. Lite lichen without fract() bands. Lite mutes the model's painted map
+  like desktop (.85).
+
+## Round 13 (closest zoom, 1.43 m)
+- Desktop held up (micro octave + micro normal already). Phones were soft up close and one root showed long streaks: the lite
+  path mixed the trunk and root *coordinates* across the blend band, which makes a huge gradient there. Phones now take the two
+  reads only inside a narrow band (2.8-3.4 m), like desktop.
+- Phones, only while the camera is within 9 m of the trunk (uniform tdNear from the bark's onBeforeRender camera): the fine
+  octave read, and a screen-space micro bump from its height (dFdx/dFdy, no normal-map read). Bench within noise.

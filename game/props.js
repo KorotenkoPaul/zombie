@@ -988,7 +988,11 @@ export function buildProps(ctx) {
   place('fridge', fridge(), -1.43, KT, 1.38);
   place('picture', picture(.34, .26), -1.45, KT + 1.92, 1.06, { solid: false, wall: true });
   { const s = wallShelf(.86); const items = [[-.3, jar(.14, .05, M.glazeCream)], [-.17, jar(.11, .045, M.jarGlass)], [.3, mug(M.glazeCream)]]; /* the middle is the clean-dish spot (out.dishes) */ for (const [x, o] of items) { o.position.set(x, .018, .12); s.add(o); } bake(s); place('kshelf', s, -2.3, KT + 1.97, 1.04, { solid: false, wall: true }); }
-  place('kbarrel', barrel(.78), -4.02, KT, 3.33);
+  // kitchen eating spot (Brain: no carrying the plate up to the bedroom): the corner barrel wears a loose plank top, a stool beside it
+  const kbar = place('kbarrel', barrel(.78), -4.02, KT, 3.33);
+  { const tp = new THREE.Group(); for (let i = -1; i <= 1; i++) W(tp, .2, .03, .6, i * .205, .015, 0, { mat: M.woodLight, r: .008, grain: 2 }); for (const x of [-.14, .14]) W(tp, .5, .025, .05, 0, -.0125, x, { mat: M.woodDark, r: .006, grain: 0 }); tp.rotation.y = .12;
+    tp.position.set(0, .785, 0); kbar.add(tp); bake(tp); }
+  const kst = place('kstool', stool(), -3.53, KT, 3.3, { seat: true }); out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 };
   place('kbucket', bucket(.34), -3.55, KT, 3.28);
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
@@ -1053,19 +1057,19 @@ export function buildProps(ctx) {
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
 
   // ---------- deck and landings ----------
-  place('telescope', telescope(), 3.5, DK, 1.3, { ry: -.6 + Math.PI });
+  place('telescope', telescope(), 3.5, DK, 1.3, { ry: -.6 + Math.PI }).position.y += .018; /* feet on the boards, not in them */
   place('dbasket', basket(), 1.4, DK, .95);
   place('lbarrel', barrel(.75), -2.6, LL, 1.4);
   place('lbucket', bucket(.34), -1.9, LL, 1.8);
 
   // ================= round 6: food, wood, gear and chores =================
   // world points for the hands: out.point(name) -> Vector3 (computed on call, so room shifts are included)
-  const PT = {}; out.point = (name, t = V()) => { const p = PT[name]; if (!p) return null; p[0].updateMatrixWorld(true); return p[0].localToWorld(t.copy(p[1])); }; out.pointNames = () => Object.keys(PT);
+  const PT = {}; PT.eatTable = [kbar, V(.04, .815, -.02)]; PT.eatSeat = [kst, V(0, .48, 0)]; out.point = (name, t = V()) => { const p = PT[name]; if (!p) return null; p[0].updateMatrixWorld(true); return p[0].localToWorld(t.copy(p[1])); }; out.pointNames = () => Object.keys(PT);
   const homeOf = (o, extra = {}) => { o.userData.home = { parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.x, ...extra }; };
   const tool = (name, o, parent, x, y, z, rot = [0, 0, 0]) => { o.position.set(x, y, z); o.rotation.set(...rot); o.userData.live = true; parent.add(o); homeOf(o); out.tools[name] = o; return o; };
   const ghY = (x, z) => { const G = window.__ground; try { return G && G.heightAt ? G.heightAt(x, z) : 0; } catch (e) { return 0; } };
   // --- kitchen: firewood by the stove (its size follows the stock), supply shelf, chopping board, stew pot + ladle, pan with meat, plate of food
-  const wp = place('woodpile', logStack(pyramidSlots([4, 3, 2, 1], .062, .12, .008, [3, 4, 5, 6, 4]), .42), -4.04, KT, 1.33);
+  const wp = place('woodpile', logStack(pyramidSlots([4, 3, 2, 1], .062, .12, .008, [3, 4, 5, 6, 4]), .42), -3.99, KT, 1.33);
   out.woodpile = { obj: wp, max: wp.userData.logs.max, get count() { return wp.userData.logs.count; }, setCount: k => wp.userData.logs.setCount(k) };
   PT.woodpile = [wp, V(0, .5, .05)];
   // hung on the left wall above the firewood (the kitchen ladder stands at x -4, z 2 and must stay clear; under the stovepipe at KT+1.95)
@@ -1173,14 +1177,15 @@ export function buildProps(ctx) {
       update(dt) { if (fs.open !== fs.to) { const d = fs.to - fs.open; fs.open = Math.abs(d) < dt * 1.6 ? fs.to : fs.open + Math.sign(d) * dt * 1.6; apply(); } } };
     out.fridge.setStock(2); PT.fridge = [placed.fridge, F.inside.clone()]; }
   // --- bedroom: crate nightstand with the radio, broom, potted plant + watering can, diary and pencil
-  const crt = place('crate', crate(), -3.96, BD, 1.17); const cY = crt.userData.floorY + .4;
-  const rad = radio(); rad.position.set(-3.96, cY, 1.17); rad.rotation.y = .55; scene.add(rad); rad.userData.live = true;
+  // (the back-left corner is the oak's limb going through the floor: nothing stands there; the nightstand corner is by the bunk's head)
+  const CRX = -.82, CRZ = 1.12; const crt = place('crate', crate(), CRX, BD, CRZ); const cY = crt.userData.floorY + .4;
+  const rad = radio(); rad.position.set(CRX, cY, CRZ); rad.rotation.y = -.3; scene.add(rad); rad.userData.live = true;
   { const R = rad.userData.radio; const rs = { on: 0, tune: .3 }; R.knob.rotation.y = rs.tune * 5;
     out.radio = { obj: rad, get on() { return rs.on; }, setOn(k) { rs.on = clamp01(k); R.dm.emissiveIntensity = rs.on * 1.6; }, setTune(k) { rs.tune = clamp01(k); R.needle.position.x = -.05 + .1 * rs.tune; R.knob.rotation.y = rs.tune * 5; }, knob(t = V()) { return rad.localToWorld(t.copy(R.knobLocal)); }, dialMat: R.dm };
     out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
-  tool('broom', broom(), scene, -4.03, floorAt(-4.03, BD, 1.62), 1.62, [0, 0, .11]);
-  const plantO = place('plant', plant(), -3.47, BD, 1.17); /* against the back wall between the crate and the bunk, off the kitchen hatch */ PT.plant = [plantO, V(0, .3, 0)];
-  tool('wateringCan', wateringCan(), scene, -3.3, floorAt(-3.3, BD, 1.5), 1.5, [0, -.4, 0]);
+  tool('broom', broom(), scene, -1.075, floorAt(-1.075, BD, 1.06), 1.06, [0, Math.PI / 2, .1]);
+  const plantO = place('plant', plant(), -.86, BD, 1.5); /* in front of the crate nightstand, off the kitchen hatch and the oak limb */ PT.plant = [plantO, V(0, .3, 0)];
+  tool('wateringCan', wateringCan(), scene, -.6, floorAt(-.6, BD, 1.56), 1.56, [0, -1.2, 0]);
   tool('diary', diary(), scene, -.37 + TX, tTop, 1.31 + TZ, [0, .22, 0]); tool('pencil', pencil(), scene, -.22 + TX, tTop, 1.3 + TZ, [0, .5, 0]);
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
   // --- workshop: whetstone and a lantern to repair on the bench; jacket on a peg by the open side; bow and quiver on the left wall

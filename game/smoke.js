@@ -36,7 +36,7 @@ export function createSmoke({ THREE, scene, wind, P3, heat = () => 0, MOBILE = f
        float n=sin(d.x*7.+vR*20.)*sin(d.y*6.-vR*13.)*.2;
        float k=1.-smoothstep(0.,.5,r+n*.15);float a=k*k*vA;if(a<.004)discard;gl_FragColor=vec4(uCol*(.9+n),a);}` });
   if (wind && wind.hookRaw) wind.hookRaw(mat);
-  const points = new THREE.Points(g, mat); points.frustumCulled = false; points.renderOrder = 5; points.visible = false; scene.add(points);
+  const points = new THREE.Points(g, mat); points.frustumCulled = false; points.renderOrder = 5; points.visible = false; scene.add(points); points.matrixAutoUpdate = false;
   let amt = 0, forced = null;
   const source = () => (P3 && P3.chimneyTop) || (window.__props && window.__props.chimneyTop) || null;
   return {

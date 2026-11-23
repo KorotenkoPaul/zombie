@@ -331,7 +331,9 @@ export function createHero(ctx){
   const rate=lerp(4.2,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
   // turning has inertia: angular speed ramps up and down, so there is never a snap in heading
   const wav=clamp(da*3,-rate,rate);H.av=(H.av||0)+clamp(wav-(H.av||0),-11*dt,11*dt);root.rotation.y+=H.av*dt;H.face=root.rotation.y;
-  const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
+  const px0=p.x,pz0=p.z;const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
+  // MOTION HOOK: when a push around furniture slides him sideways, the body turns with the way he is really going (no crab-walk): facing stays within 30 deg of travel
+  if(motion&&dt>0){const mx=p.x-px0,mz=p.z-pz0,ms=Math.hypot(mx,mz)/dt;if(ms>.25){const ca=wrapA(Math.atan2(mx,mz)-root.rotation.y),ex=Math.abs(ca)-.52;if(ex>0){const k=1-Math.exp(-dt*10);const r=Math.sign(ca)*Math.min(ex*k,2.6*dt,Math.max(0,4.4-Math.abs(H.av||0))*dt);root.rotation.y+=r;H.face=root.rotation.y;}}}
   const moving=H.v>.06||Math.abs(da)>.25;
   // MOTION HOOK: with motion matching a one-off action clip (stretching, a gesture) keeps playing on the upper body while he walks off
   if(motion&&H.once){}else if(moving){play('30',{fade:.4});actions['30'].timeScale=clamp(Math.max(H.v,Math.abs(da)>.25?.45:0)/walkSpeed,.5,1.75);}else play(H.idleClip||'0',{fade:.5});
@@ -410,9 +412,13 @@ export function createHero(ctx){
   H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));}
  const sidePole=(side,down=1)=>{const f=fwd(root.rotation.y);const right=V(-f.z,0,f.x);return right.multiplyScalar(side==='Right'?1:-1).add(V(0,-down,0)).add(f.clone().multiplyScalar(-.3));};
  // a hand on a real point: the chest leans toward it when the arm alone can't reach (up to ~25 deg), then two-bone IK puts the palm there
+ // bend forward at the hips (the pelvis tips, the feet stay where they stand): for reaching low and far
+ function hipHinge(ang){if(ang<.005)return;const fe={};for(const sd of ['Left','Right'])fe[sd]=bones[sd+'Foot'].getWorldPosition(V());
+  const f=fwd(root.rotation.y);const ax=V(0,1,0).cross(f).normalize();rotW(bones.Hips,ax,ang);
+  const hf=hipsFwd();for(const sd of ['Left','Right']){const U=bones[sd+'UpLeg'],L=bones[sd+'Leg'],Ft=bones[sd+'Foot'];ik2(U,L,Ft,fe[sd],f.clone().add(V(0,.2,0)),1,true);}}
  function reachTo(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
   for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+PALM);if(ex<=.01)break;
-   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(1.25-tot,ex*4)*w;if(ang<=.005)break;tot+=ang;
+   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(.6-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):t;/* the palm, not the wrist, on the point */
   armIK(side,wt,sidePole(side),clamp(w,0,1));}
@@ -627,6 +633,23 @@ export function createHero(ctx){
  // the edge of the platform in front of a node: step forward until the boards end
  function edgeFrom(node){const n=N[node];if(!n)return null;const f=fwd(n.face??0);const p=n.p.clone();let last=null;
   for(let d=.1;d<2.5;d+=.05){const q=p.clone().addScaledVector(f,d);const y=floorAt(q.x,p.y+.2,q.z,.3,.6);if(y==null||Math.abs(y-p.y)>.15){return last?{p:last,f,y:p.y}:null;}last=q;}return null;}
+ // POSE: an open edge to sit on with the legs hanging: walk out from each node in 10-degree steps until the boards end
+ // (small gaps between planks are crossed), then demand: nothing solid (railing, post, beam, roof) in front of the shins
+ // or under the dangling feet, nothing behind the back at hip height, and the same along 30 cm either side (room for the thighs)
+ function openEdge(nodes){const C=window.__collide;if(!C||!C.depthAt)return null;let best=null;
+  const solid=(x,y,z)=>C.depthAt(x,y,z)>.005;
+  for(const k of nodes){const n=N[k];if(!n)continue;for(let a=0;a<36;a++){const yaw=a*Math.PI/18;const f=fwd(yaw);let last=null,miss=0;
+    for(let d=.1;d<3.5;d+=.03){const x=n.p.x+f.x*d,z=n.p.z+f.z*d;const y=floorAt(x,n.p.y+.2,z,.3,.6);if(y==null||Math.abs(y-n.p.y)>.15){if(++miss>=6)break;continue;}miss=0;last=V(x,n.p.y,z);}
+    if(!last)continue;let bad=0;const r=V(-f.z,0,f.x);
+    // not next to a ladder that comes up over this edge
+    for(const kk in LAD){const [lo,hi]=kk.split('>');const top=N[lo]&&N[hi]?(N[lo].p.y>N[hi].p.y?N[lo]:N[hi]):null;if(!top||Math.abs(top.p.y-n.p.y)>.3)continue;const L=LAD[kk];if(Math.hypot(last.x-top.p.x,last.z-L.lz)<1.0)bad++;}
+    for(const sd of [-.3,-.15,0,.15,.3]){const b=last.clone().addScaledVector(r,sd);
+     for(const o of [.06,.2,.35,.5])for(const h of [-.75,-.5,-.3,-.1,.15,.4])if(solid(b.x+f.x*o,n.p.y+h,b.z+f.z*o))bad++;
+     for(const o of [.15,.35])if(floorAt(b.x+f.x*o,n.p.y-.05,b.z+f.z*o,.02,1.1)!=null)bad++;// a roof or landing right under the feet
+     for(const o of [-.35,-.15])for(const h of [.15,.4,.7])if(solid(b.x+f.x*o,n.p.y+h,b.z+f.z*o))bad++;
+     if(sd===0&&floorAt(b.x-f.x*.1,n.p.y+.2,b.z-f.z*.1,.3,.3)==null&&floorAt(b.x-f.x*.2,n.p.y+.2,b.z-f.z*.2,.3,.3)==null)bad++;}
+    if(bad>0)continue;const d0=Math.hypot(last.x-n.p.x,last.z-n.p.z);const sc=d0+(k==='deck'?0:.4);if(!best||sc<best.sc)best={node:k,p:last,f,y:floorAt(last.x,n.p.y+.2,last.z-0,.3,.6)??n.p.y,sc};}}
+  return best;}
  Object.assign(MAKE,{
   // kitchen
   chop:(o)=>job({pt:()=>PT('board'),stand:.42,clip:'hy_chop',loop:true,dur:[22,40],tools:[['knife','Right']],tick:(a,dt)=>{a.ct=(a.ct||0)+dt;if(a.ct>.45){a.ct=0;AU('chop',PT('board'));}}}),
@@ -677,16 +700,20 @@ export function createHero(ctx){
    start:()=>{try{R.setOn(1);}catch(e){}},tick:(a,dt)=>{try{if(a.T<6)R.setTune(.3+.4*smooth(0,6,a.T));}catch(e){}},end:()=>{try{if(!(o&&o.keepOn))R.setOn(0);}catch(e){}}});},
   telescope:(o)=>job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')}),
   look:(o)=>job({node:'deck',slide:false,clip:has('hy_listen')?null:null,dur:[40,80],look:a=>root.position.clone().add(V(Math.sin(a.T*.22)*6,1.2+Math.sin(a.T*.13)*.6,8))}),
-  ledge:(o)=>{// sit on the edge of the deck with the legs over it
-   const node='deck';const a={step:'go',t:0,T:0};const dur=rnd(40,90);
-   goTo(node,()=>{const e=edgeFrom(node);if(!e){a.update=()=>endTask(false);return;}a.e=e;const yaw=Math.atan2(e.f.x,e.f.z);
+  ledge:(o)=>{// sit on an OPEN edge (no railing, a free drop under it) with the legs hanging over it: the round landing by the gate
+   // ladder (the deck has railings all round and its one gap is cramped under the bedroom eave and by the rope ladder)
+   // POSE: Pavel 2026-11-23: he sat inside the railing with his legs splayed through the balusters. The spot is now searched
+   // for: no railing / post / beam in front of the shins or under the dangling feet, and his legs are never planted on the boards.
+   const e0=openEdge(['land','gate']);const node=e0?e0.node:'land';const a={step:'go',t:0,T:0};const dur=rnd(40,90);
+   if(!e0){a.update=()=>endTask(false);return a;}
+   goTo(node,()=>{const e=e0;a.e=e;const yaw=Math.atan2(e.f.x,e.f.z);
     const tgt=e.p.clone().addScaledVector(e.f,-.12);approachTo(a,V(tgt.x,0,tgt.z).addScaledVector(e.f,.5),.5,()=>{a.step='sit';a.t=0;H.face=yaw;a.hy0=bones.Hips.getWorldPosition(V()).y;
-     H.fit={mode:'hold',base:e.y,y:a.hy0};H.ground=false;play('hy_dangle',{fade:1.2});AU('sigh');});});
+     H.fit={mode:'hold',base:e.y,y:a.hy0,dangle:true};H.ground=false;play('hy_dangle',{fade:1.2});AU('sigh');});});
    a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
-    if(a.step==='sit'){const k=smooth(0,1.3,a.t);H.fit.y=lerp(a.hy0,a.e.y+.06,k);if(a.t>1.3){a.step='work';a.t=0;}return;}
+    if(a.step==='sit'){const k=smooth(0,1.3,a.t);H.fit.y=lerp(a.hy0,a.e.y+SEAT_CLEAR,k);if(a.t>1.3){a.step='work';a.t=0;}return;}
     if(a.step==='work'){a.T+=dt;H.look=root.position.clone().add(V(Math.sin(a.T*.2)*5,.4+Math.sin(a.T*.11)*.5,0)).addScaledVector(a.e.f,6);H.lookW=.8;
      if(a.T>dur){a.step='up';a.t=0;play(IDLE(),{fade:1.2});}return;}
-    if(a.step==='up'){const k=smooth(0,1.3,a.t);H.fit.y=lerp(a.e.y+.06,a.hy0,k);if(a.t>1.3){H.fit=null;H.ground=true;H.floorY=a.e.y;endTask();}}};
+    if(a.step==='up'){const k=smooth(0,1.3,a.t);H.fit.y=lerp(a.e.y+SEAT_CLEAR,a.hy0,k);if(a.t>1.3){H.fit=null;H.ground=true;H.floorY=a.e.y;endTask();}}};
    a.leave=cb=>{if(a.step==='sit'||a.step==='work'){a.step='up';a.t=0;play(IDLE(),{fade:1});const f=a.update;a.update=dt=>{f(dt);};const wait=()=>{if(H.fit&&a.step==='up'&&a.t<1.3){setTimeout(wait,100);}else{H.fit=null;H.ground=true;cb();}};wait();}else cb();};
    return a;},
   firewood:(o)=>{const X=window.__ground&&window.__ground.exits&&window.__ground.exits.forest;if(!X||!N.g_wood)return job({pt:()=>PT('woodpile'),stand:.5,clip:'hy_picklog',dur:[2,3]});
@@ -702,6 +729,10 @@ export function createHero(ctx){
   const go=()=>{const w=list.shift();if(!w){play(IDLE(),{fade:.4});endTask({ok:true,close});return;}const n=N[w];const pt=n.p.clone().addScaledVector(fwd(n.face??0),.5).add(V(0,1.3,0));pt.hand=true;
    visit(a,pt,.4,has('hy_window')?'hy_window':'hy_take',[[.45,()=>{try{const S=window.__house&&window.__house.shutters;S&&(close?S.close(w):S.open(w));}catch(e){}AU(close?'shutter_close':'shutter_open',pt);}]],go);};
   go();a.update=dt=>{stepTick(a,dt);};return a;};
+ // put the jacket on (opts.on true) or take it off and hang it on its peg in the workshop
+ MAKE.jacket=(o={})=>{const a={step:'go',t:0};const on=o.on!=null?!!o.on:!GEAR.coat;
+  const done=()=>{play(IDLE(),{fade:.4});endTask({ok:true,on:GEAR.coat});};
+  if(on)gearOn(a,{jacket:true},done);else gearOff(a,done,{});a.update=dt=>{stepTick(a,dt);};return a;};
  // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
  const REPAIR={fix_shingle:{clip:'hy_shingle',tools:[['benchHammer','Right']],stand:.55,def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
   fix_board:{clip:'hy_nailboard',tools:[['benchHammer','Right']],stand:.5,def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
@@ -740,16 +771,51 @@ export function createHero(ctx){
   if(a.step==='clip'){H.look=a.pt;H.lookW=.9;const k=a.t/Math.max(.3,a.clipDur);while(a.hits.length&&k>=a.hits[0][0]){a.hits.shift()[1]();}return true;}return false;}
  // the same one-off clip n times in a row (gathering logs, scooping), each with a small shift of the gaze
  function reps(clip,n,then){if(n<=0||!has(clip)){then();return;}once(clip,{fade:.35,then:()=>{H.face+=rnd(-.25,.25);reps(clip,n-1,then);}});}
+ // filling the bucket at the pond by hand: squat at the waterline, both hands on the rim, dip it under, hold, lift it heavy, stand up
+ // timeline in seconds; H.squat lowers the hips with the feet kept on the ground (knees bend), reachTo puts both palms on the bucket rim
+ // filling the bucket at the pond: the hy_pondfill clip (Fal) squats him at the waterline with both hands on the rim;
+ // code puts him where his hands come over the water, lets the bucket hang from the palms, pushes it a little deeper and makes the splash
+ function fillTick(a,dt){const C='hy_pondfill';const F=a.F;const f=fwd(root.rotation.y);
+  if(!a.started){a.started=true;a.T=0;if(has(C))once(C,{fade:.4});a.dur=has(C)?durOf(C):6;H.face=Math.atan2(F.x-root.position.x,F.z-root.position.z);
+   const bk=PP()&&PP().tools&&PP().tools.waterBucket;if(bk){a.bk=bk;scene.attach(bk);}}
+  a.T+=dt;const k=a.T/a.dur;const p=root.position;
+  {/* step so that the hands (0.33 m ahead in the squat) come over the dip point */const tx=F.x-f.x*.33,tz=F.z-f.z*.33;const m=.5*dt;p.x+=clamp(tx-p.x,-m,m);p.z+=clamp(tz-p.z,-m,m);}
+  root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*5);
+  H.look=F.clone();H.lookW=.8*smooth(.05,.2,k)*(1-smooth(.75,.9,k));
+  a.push=.1*smooth(.2,.3,k)*(1-smooth(.62,.72,k));a.w=smooth(.1,.2,k)*(1-smooth(.85,.95,k));
+  const wl=window.__ground.pond.level;if(a.bk){const by=a.bk.position.y;if(!a.s1&&by<wl-.04){a.s1=1;splash(F,1);AU('bucket_fill',F);}if(a.s1&&!a.s2&&by>wl+.02&&k>.6){a.s2=1;splash(F,.6);AU('slosh',F);}}
+  if(a.s1&&!a.s2&&(a.rp=(a.rp||0)+dt)>.5){a.rp=0;splash(F,.25,true);}
+  if(k>=.98){a.step='hold';a.w=0;H.carry='hy_carrysack';if(a.bk){try{PP().grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}a.bk=null;}a.home();}}
+ // washing the face at the water first (hy_washface, Fal): the bucket stands beside him, two scoops with a splash each
+ function washTick(a,dt){const C='hy_washface';const F=a.F;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+  if(!a.wstarted){a.wstarted=true;a.WT=0;if(has(C))once(C,{fade:.4});a.wdur=has(C)?durOf(C):5;H.face=Math.atan2(F.x-root.position.x,F.z-root.position.z);
+   const bk=PP()&&PP().tools&&PP().tools.waterBucket;if(bk){a.bk=bk;scene.attach(bk);const g=root.position.clone().addScaledVector(r,.34).addScaledVector(f,.05);g.y=groundUnder(g,root.position.y);a.bkSet=g;a.bkFrom=bk.position.clone();}}
+  a.WT+=dt;const k=a.WT/a.wdur;const p=root.position;
+  {const tx=F.x-f.x*.5,tz=F.z-f.z*.5;const m=.5*dt;p.x+=clamp(tx-p.x,-m,m);p.z+=clamp(tz-p.z,-m,m);}root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*5);
+  if(a.bk&&a.bkSet){a.bk.position.lerpVectors(a.bkFrom,a.bkSet,smooth(0,.12,k));a.bk.rotation.set(0,root.rotation.y,0);a.bk.updateMatrixWorld(true);}
+  if(k>.1&&!a.w1){a.w1=1;splash(F,.35);AU('bucket_fill',F);}if(k>.5&&!a.w2){a.w2=1;splash(F,.35);}if(k>.3&&!a.f1){a.f1=1;AU('slosh',root.position);}
+  H.look=k<.15?F.clone():null;H.lookW=k<.15?.8:0;
+  if(k>=.97){a.step='fill';a.started=false;a.bkFrom=null;}}
+ // the ground right under him (terrain outdoors, else the floor found by the ray), for squatting at the bank
+ function groundUnder(p,prev){const G=window.__ground;let y=null;if(G&&G.heightAt&&p.y<lv.LC-1)y=G.heightAt(p.x,p.z);if(y==null){const f=floorAt(p.x,(prev??p.y)+.1,p.z,.4);y=f;}return y??prev??p.y;}
+ // a splash: a ring spreading on the water and a few drops thrown up (temporary, removes itself)
+ const SPL=[];const splMat=new THREE.MeshBasicMaterial({color:0xcfe3ea,transparent:true,opacity:.5,depthWrite:false});const dropMat=new THREE.PointsMaterial({color:0xdbe9ef,size:.025,transparent:true,opacity:.8,depthWrite:false});
+ function splash(p,k=1,ringOnly){try{const pd=window.__ground&&window.__ground.pond;if(pd&&pd.splash)pd.splash(p.x,p.z,k);}catch(e){}const ring=new THREE.Mesh(new THREE.RingGeometry(.85,1,28),splMat.clone());ring.rotation.x=-Math.PI/2;ring.position.copy(p).add(V(0,.006,0));ring.scale.setScalar(.04);scene.add(ring);
+  let pts=null,vel=null;if(!ringOnly){const n=14;const g=new THREE.BufferGeometry();const arr=new Float32Array(n*3);vel=[];for(let i=0;i<n;i++){arr[i*3]=p.x;arr[i*3+1]=p.y+.02;arr[i*3+2]=p.z;const a=Math.random()*6.283,sp=rnd(.2,.6)*k;vel.push([Math.cos(a)*sp,rnd(.6,1.3)*k,Math.sin(a)*sp]);}g.setAttribute('position',new THREE.BufferAttribute(arr,3));pts=new THREE.Points(g,dropMat.clone());scene.add(pts);}
+  SPL.push({ring,pts,vel,t:0,k,y0:p.y});}
+ function splashTick(dt){for(let i=SPL.length-1;i>=0;i--){const s=SPL[i];s.t+=dt;const u=s.t/1.4;s.ring.scale.setScalar(.04+u*.45*(.6+s.k*.4));s.ring.material.opacity=.5*(1-u);
+   if(s.pts){const A=s.pts.geometry.attributes.position;for(let j=0;j<s.vel.length;j++){const v=s.vel[j];if(A.getY(j)<s.y0){continue;}v[1]-=9.8*dt;A.setXYZ(j,A.getX(j)+v[0]*dt,A.getY(j)+v[1]*dt,A.getZ(j)+v[2]*dt);}A.needsUpdate=true;s.pts.material.opacity=.8*(1-u);}
+   if(u>=1){scene.remove(s.ring);s.ring.geometry.dispose();s.ring.material.dispose();if(s.pts){scene.remove(s.pts);s.pts.geometry.dispose();s.pts.material.dispose();}SPL.splice(i,1);}}}
  const peg=n=>{const p=PT(n);if(!p)return null;const q=p.clone();q.hand=true;/* hand height: stand on the floor below it, not on a floor level with it */return q;};
  function gearOn(a,o,then){const seq=[];
   if(o.jacket&&!GEAR.coat&&COAT)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketon',[[.14,()=>{try{PP().setHere&&PP().setHere('jacket',false);}catch(e){}COAT.on=true;GEAR.coat=true;}],[.55,()=>AU('zip')]]/* no rigid jacket in the hand: it leaves the peg at the touch and settles on the body (skinned coat fades in) */,next));
   if(o.bow&&!GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',V(.06,.12,-.16),[0,0,-.5]);GEAR.bow=true;}]],next));
   if(o.lantern&&!GEAR.lantern&&hasTool('lantern'))seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{PP().grab('lantern',bones.RightHand,{offset:V(0,.06,.03)});window.__lights&&window.__lights.attachHand&&window.__lights.attachHand(bones.RightHand);window.__lights.set('hand',true);}catch(e){}GEAR.lantern=true;}]],next));
   const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
- function gearOff(a,then){const seq=[];
+ function gearOff(a,then,keep={}){const seq=[];
   if(GEAR.lantern)seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{window.__lights.set('hand',false);window.__lights.detachHand();PP().release('lantern',{blend:.3});}catch(e){}GEAR.lantern=false;}]],next));
   if(GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowhang',[[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.4});}catch(e){}GEAR.bow=false;}]],next));
-  if(GEAR.coat)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],next));
+  if(GEAR.coat&&!keep.jacket)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],next));
   const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  function dropGearNow(){if(GEAR.coat&&COAT){COAT.on=false;try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}
   for(const n of ['bow','quiver','lantern','meatBag','logArmful','waterBucket','drainBucket','plate'])try{PP().release(n);}catch(e){}
@@ -764,7 +830,7 @@ export function createHero(ctx){
     const unload=next=>{if(!a.haul){next();return;}const P=PP();
      if(a.haul==='meatBag')visit(a,PT('fridge'),.5,'hy_fridgein',[[.15,()=>{try{P.fridge.openTo(1,.5);}catch(e){}}],[.55,()=>{try{P.release('meatBag');window.__audio.carry(false);}catch(e){}H.carry=null;}],[.85,()=>{try{P.fridge.openTo(0,.5);}catch(e){}}]],next);
      else visit(a,PT('woodpile'),.5,'hy_droplogs',[[.6,()=>{try{P.release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],next);};
-    unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);}));};
+    unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);},{jacket:!!o.keepJacket}));};
    gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{a.step='out';goTo('g_out',()=>{a.step='away';a.t=0;root.visible=false;
      if(kind==='hunt'&&Math.random()<.3)res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};});});
    a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='away'){if(a.t>away){H.face=N.g_out.face!=null?N.g_out.face+Math.PI:H.face;root.rotation.y=H.face;home();}}};
@@ -785,12 +851,20 @@ export function createHero(ctx){
   fetchwater:(o={})=>{const a={step:'go',t:0};const P=PP();const pond=window.__ground&&window.__ground.pond&&window.__ground.pond.fill;
    visit(a,PT('waterShelf'),.45,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry='hy_carrysack';}]],()=>{a.step='out';
     const spot=pond?pond.clone?pond.clone():V(pond.x,pond.y,pond.z):(N.g_exit1?N.g_exit1.p.clone().add(V(.6,0,.6)):null);
-    const fill=()=>{a.step='fill';reps('hy_picklog',3,()=>{AU('bucket_fill',root.position);try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.3});H.look=root.position.clone().addScaledVector(fwd(H.face),2.5);H.lookW=.6;/* a breath at the water before carrying it home */
-      H.wait={t:rnd(2.5,4),then:()=>{a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};});};
+    const fill=()=>{a.step=o.washFace?'wash':'fill';a.t=0;a.T=0;a.WT=0;a.spl=0;play(IDLE(),{fade:.4});a.F=(window.__ground.pond.fill||spot).clone();};
+    const home=()=>{H.squat=0;a.w=0;try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.4});H.look=a.F?a.F.clone():null;H.lookW=.6;/* a breath at the water before carrying it home */
+      H.wait={t:o.linger||rnd(1.2,2),then:()=>{a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};};
+    a.home=home;
     if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
-   a.update=dt=>{if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
-   a.leave=cb=>{try{P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+   a.update=dt=>{if(a.step==='wash'){washTick(a,dt);return;}if(a.step==='fill'){fillTick(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
+   a.post=()=>{if(a.step!=='fill'||(!a.w&&!a.bk))return;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+    const R=bones.RightHand.getWorldPosition(V()),Lh=bones.LeftHand.getWorldPosition(V());const d=V(0,-(a.push||0),0);
+    if(a.push>.005){reachTo('Right',R.clone().add(d),a.w*.9);reachTo('Left',Lh.clone().add(d),a.w*.9);}
+    // the bucket hangs from the palms that hold its rim (never floating away from them)
+    if(a.bk){const R2=bones.RightHand.getWorldPosition(V()),L2=bones.LeftHand.getWorldPosition(V());const mid=R2.clone().add(L2).multiplyScalar(.5).addScaledVector(f,.05);const anchor=R2.clone().lerp(mid,smooth(.2,.9,a.w));const want=anchor.add(V(0,-.31,0));
+     if(a.bkSet&&a.w<.5){/* still standing beside him where he put it down for the wash */}else a.bk.position.copy(want);a.bk.rotation.set(0,root.rotation.y,0);a.bk.rotateX(.25*(a.push||0)/.1);a.bk.updateMatrixWorld(true);}};
+   a.leave=cb=>{H.squat=0;try{P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
   setbucket:(o={})=>{const a={step:'go',t:0};const P=PP();visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
@@ -904,7 +978,7 @@ export function createHero(ctx){
   if(FZ.ft>1.5){p.y=fl;H.floorY=fl;FZ.ft=0;}
   if(FZ.t>6||FZ.lt>2.5){FZ.t=0;FZ.lt=0;console.warn('[hero] freeze guard: recover',H.task,nm,p.toArray().map(v=>+v.toFixed(2)));H.trans=false;H.lad=null;H.stk=null;H.once=null;
    play(IDLE(),{fade:.5});const n=H.task;if(n&&act){if(act.leave&&!act.left){act.left=true;try{act.leave(()=>{endTask(false);});}catch(e){endTask(false);}}else endTask(false);}}}
- function update(dt){if(dt<=0)return;freezeGuard(dt);
+ function update(dt){if(dt<=0)return;H._dt=dt;freezeGuard(dt);if(SPL.length)splashTick(dt);
   // ===== BRAIN HOOK: an attached brain (game/brain.js) decides what to do; the body below only carries it out =====
   if(brain){if(H.wait){H.wait.t-=dt;if(H.wait.t<=0){const f=H.wait.then;H.wait=null;f&&f();}}
    const mode=ctx.mode?ctx.mode():null;if(mode&&mode!==H.task&&(mode==='guard'||mode==='repair')&&!H.trans)startTask(mode);
@@ -954,18 +1028,25 @@ export function createHero(ctx){
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
    p.y=lerp(f.base,f.y-hy,w);}
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
-   const f=floorAt(p.x,p.y,p.z,.32);if(f!=null&&f-p.y<.3&&p.y-f<.3){H.floorY=f;const d=f-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
+   const sq=H.squat||0;const f=floorAt(p.x,p.y+sq,p.z,.32);if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
   sleepTick(dt);lidTick(dt);coatTick(dt);
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
+  if(g!=null&&!H.lad&&!(H.fit&&H.fit.dangle)){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
+  // POSE: sitting on an edge with the legs over it: a foot that rests on the boards (one knee up) stands on them, never in them;
+  // a foot hanging over the drop is left alone
+  if(H.fit&&H.fit.dangle&&!H.lad){const gb=H.fit.base;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());
+    const fl=floorAt(a.x,gb+.05,a.z,.1,.15);if(fl==null)continue;const need=fl+(POSE.ankle??.1)-a.y;const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
+    if(need>.002)ik2(U,L,F,a.clone().add(V(0,need,0)),k.clone().sub(hp.clone().add(a).multiplyScalar(.5)),1,true);
+    const T=bones[s+'ToeBase'];if(T){const t=T.getWorldPosition(V());const tf=floorAt(t.x,gb+.05,t.z,.1,.15);if(tf!=null&&t.y<tf+.035)turnBone(F,t,t.clone().add(V(0,tf+.035-t.y,0)),1);}}}
   bedHand();bedLegClear(dt);
   if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);
   if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */
-  if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */}
+  if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */
+  try{window.__grab&&window.__grab.tick&&window.__grab.tick(dt,H);}catch(e){}/* GRAB HOOK: hands close round what they hold */}
 
  // ---------- overlay: an upper-body clip layered over whatever the legs do (stretch while walking off, scratch the head, sip...) ----------
  const UPPER=/^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|LeftArm|LeftForeArm|LeftHand|RightShoulder|RightArm|RightForeArm|RightHand)$/;
@@ -1000,8 +1081,8 @@ export function createHero(ctx){
  // default start: reading at the table (a brain can call spawn() for a random start)
  spawn('read');
 
- return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
-  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],get act(){return act;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
+ return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,openEdge,
+  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],get act(){return act;},get gear(){return GEAR;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }

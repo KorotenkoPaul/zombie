@@ -33,7 +33,7 @@ export function createFogBank({ THREE, scene, wind, MOBILE = false }) {
   for (const [y, k] of (MOBILE ? [[0.6, 1]] : [[0.45, 1], [1.15, 0.7]])) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(140, 140).rotateX(-Math.PI / 2), mat.clone());
     m.material.uniforms = Object.assign({}, mat.uniforms, { uOp: { value: 0.5 * k } }); m.userData.k = k;
-    m.position.y = y; m.renderOrder = 4; m.frustumCulled = false; m.visible = false; scene.add(m); sheets.push(m);
+    m.position.y = y; m.renderOrder = 4; m.frustumCulled = false; m.visible = false; scene.add(m); m.updateMatrix(); m.matrixAutoUpdate = false; sheets.push(m);
   }
   return {
     sheets,

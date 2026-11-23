@@ -334,5 +334,15 @@
   "src": "tightenrope-11",
   "smooth": 2,
   "speed": 1.2
+ },
+ "hy_pondfill": {
+  "src": "pondfill-11",
+  "smooth": 2,
+  "speed": 1.0
+ },
+ "hy_washface": {
+  "src": "washface-23",
+  "smooth": 2,
+  "speed": 1.0
  }
 }

@@ -114,3 +114,12 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
   feet level up to +2.2 m: a roof edge in reach) is flicked off every .35 s; it flies and lands on the ground or pond.
 - API `__wind.litter`: level() 0..1 (n / 60% of pool; Brain weights clear_roof by it), count(), near(x,y,z,r),
   sweep(x,y,z,r,max) -> n, clear(), stats(), mesh. Cost: ~0.016 ms/frame CPU, +1 draw call, ≤ 160 tris (phone).
+
+## Round 20: JS per frame on the phone profile (CPU throttle x2, SwiftShader, 90 s warm-up, 30 s CPU profile)
+- Found: the fog pass rendered the scene with camera.layers = FOG_LAYER, so three's per-scene light list was empty
+  for that render; the light hash flipped twice a frame and EVERY lit material re-ran getProgram/getParameters
+  (~128 calls a frame). Fix (fogpass.js): lights get FOG_LAYER enabled (re-checked every 120 frames for new lights).
+  getProgramCacheKey calls 128 -> 10 per frame; render submission 12.8 -> 9.7 ms; getProgram 2.7 -> 0.4 ms.
+- Any future pass that renders `scene` with a narrowed camera layer mask must enable that layer on the lights too.
+- Wind thread JS share: ~0.11 ms of 19.5 (wind .06, fogpass .05 self, particles .03, fogbank .01, housewind .01).
+  Own static meshes (leaves, litter, rain, particles, smoke, fog sheets) now have matrixAutoUpdate = false.
