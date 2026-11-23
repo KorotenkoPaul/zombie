@@ -350,7 +350,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // stronger blue rim and a cooler lift in the shadows. Uniform tweaks only: no extra draw calls or passes.
  const PH={foldF:.75,foldR:.5,leafK:1,trunk:.9,front:.3,puff:2.6,sheet:2.2,mist:1.7,fill:1.7,rim:1.6,moonRim:1.8,haze:.6,lift:new THREE.Color(0x10304a)};env.phoneNightK=PH;
  const liftBase=env.gradePass.uniforms.lift.value.clone(),liftTmp=new THREE.Color();
- function phoneNight(eve,rainK){const k=eve;const f=x=>1+(x-1)*k;
+ function phoneNight(eve,rainK){const k=eve;PH.cur=k;const f=x=>1+(x-1)*k;
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
   fill.intensity*=f(PH.fill);rim.intensity*=f(PH.rim);env.moonRim.strength.value*=f(PH.moonRim);
   bgU.bgHaze.value=.3+(PH.haze-.3)*k;fogU.trunkK.value=.45+(PH.trunk-.45)*k;puffU.frontK.value=.7+(PH.front-.7)*k;env.gradePass.uniforms.lift.value.copy(liftBase).lerp(liftTmp.copy(PH.lift),k*(1-rainK*.5));}
@@ -377,6 +377,9 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   if(si>0&&ht>0){LH.color.multiplyScalar(hi/ht).add(cA.copy(sky.color).multiplyScalar(si/ht));LH.groundColor.multiplyScalar(hi/ht).add(cA.copy(sky.groundColor).multiplyScalar(si/ht));LH.intensity=ht;}
   const ai=LA.intensity,fi=fill.intensity*PH.foldF,ri=rim.intensity*PH.foldR,at=ai+fi+ri;
   if(at>0){LA.color.multiplyScalar(ai/at).add(cA.copy(fill.color).multiplyScalar(fi/at)).add(cB.copy(rim.color).multiplyScalar(ri/at));}LA.intensity=at;
+  // the folded moon fill is strong on phones (ambient ~2.3) and turned every neutral surface (slate, grey wood, stone) sky-blue:
+  // keep its brightness but take a third of the colour out, and a fifth out of the sky hemisphere (moonlight is pale, not blue)
+  {const nk=PH.cur||0;const ds=(c,k)=>{const l=c.r*.2126+c.g*.7152+c.b*.0722;c.r+=(l-c.r)*k;c.g+=(l-c.g)*k;c.b+=(l-c.b)*k;};ds(LA.color,.35*nk);ds(LH.color,.2*nk);}
   if(env.canopy){const c=env.canopy.material.color;// what a lit card gets on average (Lambert: albedo/pi x irradiance)
    cA.copy(LH.groundColor).lerp(LH.color,.6).multiplyScalar(LH.intensity);cA.add(cB.copy(LA.color).multiplyScalar(LA.intensity));
    if(LS)cA.add(cC.copy(LS.color).multiplyScalar(LS.intensity*.3));c.copy(cA).multiplyScalar(PH.leafK/Math.PI);}}
