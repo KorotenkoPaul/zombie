@@ -13,9 +13,9 @@
 2. Verify the deploy picked up your commit:
    ```
    curl -s https://game-production-8358051a.up.railway.app/version.txt   # prints the deployed master commit SHA
-   git rev-parse origin/master
+   git log -1 --format=%H origin/master -- game deploy   # last master commit that touches the game
    ```
-   They match about 1 minute after the push. If not after 3 minutes, check the Railway deploy list/logs
+   They match about 1-2 minutes after the push (build ~40 s, queued behind earlier pushes). A push that changes only notes/tests is not deployed, so version.txt can be behind `origin/master` itself; that is fine. If not after 3 minutes, check the Railway deploy list/logs
    (Railway MCP: `list-deployments` / `get-logs` with projectId `d0c2df08-06d2-4e99-8890-b84e6d3bf534`,
    serviceId `da8f9e1f-1138-460c-9545-55b54cd97a70`, `types: ["build"]`).
 3. Force a redeploy without a code change: Railway MCP `redeploy` on that service.
