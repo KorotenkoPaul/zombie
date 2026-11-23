@@ -271,7 +271,8 @@ export function createHero(ctx){
   // aim a little past the corner so the path rounds it
   let aim=target.clone();const toT=Math.hypot(target.x-p.x,target.z-p.z);if(!isLast&&toT<.55){const n2=N[nxt.node].p;aim.lerp(n2,clamp((.55-toT)/.55,0,1)*.5);}
   const dx=aim.x-p.x,dz=aim.z-p.z;const want=Math.atan2(dx,dz);const da=wrapA(want-root.rotation.y);
-  const vmax=H.walkV*(isLast?clamp(toT/.42,.35,1):1);const align=clamp(Math.cos(da)*1.25-.25,0,1);
+  // ===== MOTION HOOK: with motion matching the stop is a human one (constant deceleration over the last step), no creeping =====
+  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):1);const align=clamp(Math.cos(da)*1.25-.25,0,1);
   H.v+=clamp(vmax*align*align-H.v,-3.2*dt,2.2*dt);
   // turn rate depends on speed: on the spot it takes small steps
   const rate=lerp(2.6,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
@@ -279,7 +280,8 @@ export function createHero(ctx){
   const wav=clamp(da*3,-rate,rate);H.av=(H.av||0)+clamp(wav-(H.av||0),-7*dt,7*dt);root.rotation.y+=H.av*dt;H.face=root.rotation.y;
   const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=1.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
   const moving=H.v>.06||Math.abs(da)>.25;
-  if(moving){play('30',{fade:.4});actions['30'].timeScale=clamp(Math.max(H.v,Math.abs(da)>.25?.45:0)/walkSpeed,.5,1.75);}else play(H.idleClip||'0',{fade:.5});
+  // MOTION HOOK: with motion matching a one-off action clip (stretching, a gesture) keeps playing on the upper body while he walks off
+  if(motion&&H.once){}else if(moving){play('30',{fade:.4});actions['30'].timeScale=clamp(Math.max(H.v,Math.abs(da)>.25?.45:0)/walkSpeed,.5,1.75);}else play(H.idleClip||'0',{fade:.5});
   H.state='walk';const rem=Math.hypot(target.x-p.x,target.z-p.z);
   if(rem<(isLast?.09:.32)){H.node=step.node;H.path.shift();if(isLast&&H.v<.5){H.v=0;}}}
  // ladders: walk to the foot, climb, pull up over the edge (root motion), or the same backwards
@@ -345,7 +347,7 @@ export function createHero(ctx){
   act=null;H.task=name;actT=0;const A=ACT[name]||{};actDur=A.dur?rnd(A.dur[0],A.dur[1]):8;lastAct.unshift(name);lastAct.length=3;H.look=null;H.lookW=0;
   const mk=MAKE[name];if(!mk)return;act=mk(opts||{});act.name=name;}
  // ===== BRAIN HOOK state: setBrain / gait / onTaskEnd =====
- let brain=null;const gait={speed:1,turn:1};const endCbs=[];
+ let brain=null;let motion=null;/* MOTION HOOK: game/motion.js, see setMotion */const gait={speed:1,turn:1};const endCbs=[];
  function endTask(){const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n);}catch(e){console.error(e);}}}
  // lamps with a wall switch (props.js switchPlate): the hand goes to the plate, not to the lamp
  const SWITCH_AT=(ctx.props&&ctx.props.switches)?Object.fromEntries(Object.entries(ctx.props.switches).map(([k,v])=>[k,v.clone()])):{bedroom:V(.372,lv.BD+1.15,3.5)};// wall switch positions come from props.js
@@ -554,6 +556,7 @@ export function createHero(ctx){
   return post(dt);}
  const fkList=[...new Set(Object.values(bones))].filter(b=>b&&b.isObject3D);let fkSnap=null;
  function post(dt){const p=root.position;
+  if(motion&&motion.pre)motion.pre();// MOTION HOOK: remember the pose that was on screen
   // root motion of once-off clips
   const pre=[];for(const n in rmCurve){const a=actions[n];if(a.isRunning()||a.getEffectiveWeight()>0)pre.push([n,a,a.time]);}
   // three.js only rewrites a bone when the clip value changed, so IK edits from the last frame would leak into this one: put the pure clip pose back first
@@ -570,6 +573,8 @@ export function createHero(ctx){
    p.y=lerp(f.base,f.y-hy,w);}
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
    const f=floorAt(p.x,p.y,p.z,.32);if(f!=null&&f-p.y<.3&&p.y-f<.3){H.floorY=f;const d=f-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
+  // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
+  if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
@@ -612,7 +617,7 @@ export function createHero(ctx){
  spawn('read');
 
  return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
-  setBrain:b=>{brain=b||null;},onTaskEnd:cb=>{endCbs.push(cb);},
+  setBrain:b=>{brain=b||null;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }

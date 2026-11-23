@@ -81,6 +81,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createHero } from './hero.js';
+import { createMotion } from './motion.js';
 import { buildTree, TREE_AXIS } from './tree.js';
 import { buildProps } from './props.js';
 import { createCameraRig, createDOF } from './camera.js';
@@ -643,6 +644,8 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
  ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
  mode:()=>{if(isNight(hour)&&zombies.some(z=>z.alive))return 'guard';if(B.some(b=>b.breakable&&b.loose))return 'repair';return null;},
  guardSpot:()=>guardSpot(),brokenBoard:()=>B.find(b=>b.breakable&&b.loose),repairBoard:b=>repairBoard(b),get WIN_NODE(){return WIN_NODE;}});
+// motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
+try{const mdb=await fetch(ASSET+'motion-db.txt').then(r=>r.ok?r.text():null).catch(()=>null);if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
 // ---- age (round 3): wear paths seeded from his walking graph, then stamped wherever he actually walks; repair API for Brain
 {for(const [a,b,t] of HH.E||[]){if(t||!N[a]||!N[b])continue;const A=N[a].p,Bp=N[b].p;const n=Math.ceil(A.distanceTo(Bp)/.05);for(let k=0;k<=n;k++){const p=A.clone().lerp(Bp,k/n);WEAR.stamp(p.x,p.y,p.z,.03,.3);}}
@@ -733,7 +736,7 @@ if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=M
  while(n<N&&performance.now()-t0<2500){hour+=dt*hps();if(hour>=24)hour-=24;HH.update(dt);n++;}}catch(e){console.error('prewarm',e);}}
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return isNight(hour)?10/70:14/110;}// a day of ~3 minutes
-try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
+try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
 const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.68,.6,.94],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98]];
 function pal(h){let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=smooth(0,1,(h-a[0])/(b[0]-a[0]));const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
@@ -801,6 +804,10 @@ if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+
 let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
 PERF.addStep('sunShadow',()=>{if(sunEvery>=3)return false;sunEvery=3;},()=>{sunEvery=MOBILE?2:1;},30);
 const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
+// [WIND] shared half-resolution fog pass (game/fogpass.js): Environment's fog sheets, puffs and mist bands plus the
+// morning fog bank are drawn into a quarter-pixel target and blended over the frame once. __fogpass.setEnabled(false) = old way.
+const FOGPASS=await (async()=>{try{const {Pass,FullScreenQuad}=await import('three/addons/postprocessing/Pass.js');const fp=(await import(new URL(ASSET+'fogpass.js',document.baseURI).href)).createFogPass({THREE,renderer,scene,camera,composer,FullScreenQuad,Pass,MOBILE});
+ composer.insertPass(fp.pass,1);fp.add([...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),...((typeof FOGBANK!=='undefined'&&FOGBANK.sheets)||[])]);return fp;}catch(e){console.error('fogpass',e);return null;}})();window.__fogpass=FOGPASS;
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
 // [PERF] GPU cost finder (perf.js; 5 quick taps on the clock or ?perfdebug): each test switches ONE thing off.
