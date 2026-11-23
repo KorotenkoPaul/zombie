@@ -25,6 +25,13 @@ Debug: `__treedress.stats()`.
 - Moss patches on roof shingles (index.html passes `roofs:SHING`) and on landing/deck board ends (back side), same moss InstancedMesh.
 - Ferns in high forks (limb tops where wood rises again within 0.45 m on 2+ sides), same fern InstancedMesh. Draw calls unchanged (9).
 
+## Round 4: real bark relief (Pavel: "too smooth, like a sculpture")
+- Fal photo of oak bark (assets/textures-src/oak-bark-fal.jpg, nano-banana-pro) -> pipeline/bark_maps.py -> game/barkN.jpg (normal) + game/barkH.jpg (R height, G cavity, B fine detail), seamless 1024.
+- Triplanar in world space in the bark chain (no stretching on the Meshy model), furrows run up y (y*0.42), macro scale `barkU.scale` 0.55, micro octave x4 fades out past ~16 m.
+  Albedo: dark furrows / light greyish worn crust on ridges; normal: UDN triplanar blend replaces the shading normal; moss settles in furrows first.
+  `__treedress.barkU.relief.value` 0..1 to compare on/off.
+- Also: hanging moss strands (windRope), leaf piles on landings (Ground's leaf/palette, kept off the hero's walk graph).
+
 ## Next ideas
 - Hanging moss / roots dangling from the big limbs? (not in the photo, only if Pavel wants more life)
 - Ivy higher up between the rooms if Pavel wants more green.
