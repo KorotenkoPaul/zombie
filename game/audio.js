@@ -33,9 +33,15 @@ const SEASON_K = (s, k) => (k[s] ?? k.summer ?? 1);
 // clips: names in sounds-mp3.txt. act(h, env) -> 0..1. n: individuals. place: where they live.
 // bout: calls per bout, gap: seconds between calls in a bout, rest: seconds between bouts (divided by activity).
 // p: chance the creature is around on a given night/day. vol: gain. pitch: personal pitch spread.
+// the pond: window.__ground.pond if Ground provides it ({x,z,r} | {center|pos: Vector3, radius|r}), else a spot ~20 m back-left
+function pondGeo() {
+  const g = window.__ground && window.__ground.pond; let P = null;
+  try { if (g) { const c = g.center || g.pos || g; P = { x: +c.x || 0, y: +(c.y ?? g.y ?? 0) || 0, z: +c.z || 0, r: +(g.radius ?? g.r ?? 3) || 3 }; } } catch (e) {}
+  return P || { x: Math.cos(2.4) * 20, y: 0, z: Math.sin(2.4) * 20, r: 4 };
+}
 const PLACE = {
   ground: () => ({ r: rnd(5, 22), y: rnd(0, .6) }),
-  pond: () => ({ r: rnd(16, 26), y: 0, a: 2.4 + rnd(-.35, .35) }),
+  pond: () => { const P = pondGeo(), a = rnd(0, Math.PI * 2), r = P.r * rnd(.7, 1.05); return { abs: { x: P.x + Math.cos(a) * r, y: P.y + .05, z: P.z + Math.sin(a) * r } }; },
   trees: () => ({ r: rnd(9, 28), y: rnd(3, 12) }),
   far: () => ({ r: rnd(28, 50), y: rnd(4, 14) }),
   veryfar: () => ({ r: rnd(70, 110), y: rnd(0, 10) }),
@@ -47,7 +53,8 @@ const L = {
     act: (h, e) => nightW(h, 19.8, 5.2, 1.4) * SEASON_K(e.season, { summer: 1, spring: .55, autumn: .3, winter: 0 }) * (1 - .75 * e.rain),
     texture: [2.5, 6], gap: [.3, 2.5], rest: [.3, 2.5] },
   frog: { clips: ['frog_a', 'frog_b', 'frog_c', 'frog_d', 'toad_a'], n: 3, place: 'pond', vol: .34, pitch: .06, p: .9,
-    act: (h, e) => nightW(h, 20.3, 4.6, 1.2) * SEASON_K(e.season, { summer: 1, spring: 1, autumn: .25, winter: 0 }) * (1 + .7 * e.rain),
+    pondy: 1,
+    act: (h, e) => (nightW(h, 20.3, 4.6, 1.2) + .7 * win(h, 18.8, 20.6, .8)) * SEASON_K(e.season, { summer: 1, spring: 1, autumn: .25, winter: 0 }) * (1 + .7 * e.rain),
     bout: [1, 4], gap: [1, 3.5], rest: [5, 18] },
   owl: { clips: ['owl_a', 'owl_a', 'owl_c', 'owl_b'], n: 2, place: 'far', vol: .5, pitch: .04, p: .85, sticky: true,
     act: (h, e) => nightW(h, 20.6, 5.2, 1) * (1 - .6 * e.rain),
@@ -107,6 +114,16 @@ const L = {
   unease: { clips: ['un_crack', 'un_cry', 'un_metal', 'un_thud', 'un_moan', 'un_rustle'], n: 1, place: 'far', vol: .3, pitch: .07, p: .9, rev: .8, uneasy: true,
     act: (h, e) => nightW(h, 21, 4.6, 1) * (.2 + 1.1 * (e.anx ?? .3)) * (1 - .4 * e.rain),
     bout: [1, 1], rest: [70, 170] },
+  // ---- the pond (all only when the camera is within ~45 m of it) ----
+  lap: { clips: ['slosh_a', 'slosh_b'], n: 3, place: 'pond', vol: .1, pitch: .06, p: 1, pondy: 1, rate: .62, rev: .15,
+    act: (h, e) => SEASON_K(e.season, { winter: .1 }) * (.25 + e.wind),                       // little waves when the wind blows
+    texture: [.6, 1.2], gap: [1.2, 3.5], rest: [1, 3] },
+  fish: { clips: ['drip_bucket_b', 'drip_bucket_a'], n: 1, place: 'pond', vol: .3, pitch: .05, p: .9, pondy: 1, rate: .5, rev: .3,
+    act: (h, e) => (win(h, 5.5, 20.5, 1) + .4 * nightW(h, 20.5, 5.5, 1)) * SEASON_K(e.season, { winter: 0, autumn: .6 }),
+    bout: [1, 1], rest: [25, 70] },
+  dragonfly: { clips: ['fly_a'], n: 2, place: 'pond', vol: .09, pitch: .1, p: .85, pondy: 1, rate: 1.45, flit: 1,
+    act: (h, e) => win(h, 10, 17.5, 1) * SEASON_K(e.season, { summer: 1, spring: .5, autumn: .25, winter: 0 }) * (1 - e.rain),
+    texture: [1, 2.2], gap: [4, 12], rest: [4, 12] },
   // ---- autumn ----
   geese: { clips: ['geese_a', 'geese_b', 'cranes_a'], n: 1, place: 'far', vol: .42, pitch: .04, p: .8, fly: true,
     act: (h, e) => (win(h, 6.5, 11, 1) + .8 * win(h, 15, 19.5, 1)) * SEASON_K(e.season, { autumn: 1, spring: .5, summer: 0, winter: 0 }),
@@ -156,7 +173,7 @@ export function createAudio(ctx) {
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) try { f(e); } catch (er) { console.error('audio', k, er); } };
   const MOB = !!ctx.mobile;
   const MAXV = MOB ? 9 : 14;   // phones: fewer simultaneous voices (each is a panner + filter + gain)
-  let now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
+  let pondSig = null, pondFar = false, layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
   const ind = {};          // individuals per layer
   const mult = {};         // today's / tonight's personality per layer
   const center = { x: 0, z: 0 };
@@ -184,6 +201,52 @@ export function createAudio(ctx) {
     for (let c = 0; c < 2; c++) { const d = rir.getChannelData(c); let lp = 0; for (let i = 0; i < rl; i++) { const t = i / rl; lp += ((Math.random() * 2 - 1) - lp) * .35; d[i] = lp * Math.pow(1 - t, 3.5) * (i < 40 ? i / 40 : 1); } }
     const room = A.createConvolver(); room.buffer = rir; roomIn = A.createGain(); roomIn.gain.value = .5; roomIn.connect(room).connect(inBus);
   }
+  // ---------- weather: drizzle / rain / storm / mist / calm, and thunder ----------
+  // State from window.__weather (Wind): state() or .state = 'clear'|'calm'|'drizzle'|'rain'|'storm'|'mist'; else derived
+  // from rain, wind and the hour. Lightning: __weather.on('lightning', {pos|dist, strength}) -> thunder after dist/343 s.
+  // Without those events a storm still rumbles far away now and then (lightning hidden behind the trees).
+  let wState = 'clear', wHooked = false, thunderNext = 0, noiseBuf = null;
+  function weatherState(h, rain, wind) {
+    const W = window.__weather;
+    if (W) { try { const s = typeof W.state === 'function' ? W.state() : W.state; const v = typeof s === 'string' ? s : s && s.state; if (v) return v; } catch (e) {} }
+    if (rain > .05) return rain > .75 && wind > .65 ? 'storm' : rain < .4 ? 'drizzle' : 'rain';
+    if (h > 4.8 && h < 8.5 && wind < .35) return 'mist';
+    if (h > 17.5 && h < 21.5 && wind < .3) return 'calm';
+    return 'clear';
+  }
+  function hookWeather() {
+    if (wHooked) return; const W = window.__weather; if (!W || typeof W.on !== 'function') return; wHooked = true;
+    W.on('lightning', e => {
+      if (!loaded || muted || !e) return; let d = e.dist;
+      if (d == null && e.pos) { const q = e.pos, x = q.x ?? q[0], y = q.y ?? q[1], z = q.z ?? q[2]; d = Math.hypot(x, (y || 0) * .3, z); }
+      thunder(d ?? rnd(400, 3000), e.strength ?? .7); thunderNext = now + rnd(25, 60);
+    });
+  }
+  // procedural thunder: a crack (only when close) and a long rumble of low-passed noise with a few swells
+  function thunder(dist, strength) {
+    if (!A || muted) return;
+    if (!noiseBuf) { const n = A.sampleRate * 2; noiseBuf = A.createBuffer(1, n, A.sampleRate); const d = noiseBuf.getChannelData(0); let b = 0; for (let i = 0; i < n; i++) { b = b * .6 + (Math.random() * 2 - 1) * .4; d[i] = b; } }
+    const t = A.currentTime + Math.min(12, dist / 343), near = clamp01(1 - dist / 2500), len = 3.5 + 5 * (1 - near) + rnd(0, 2);
+    const src = A.createBufferSource(); src.buffer = noiseBuf; src.loop = true; src.loopStart = 0; src.loopEnd = noiseBuf.duration; src.playbackRate.value = rnd(.5, .8);
+    const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = .4;
+    lp.frequency.setValueAtTime(220 + 900 * near, t); lp.frequency.exponentialRampToValueAtTime(90 + 120 * near, t + len);
+    const g = A.createGain(), peak = (.3 + .3 * near) * (.5 + .5 * strength);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak * (near > .6 ? 1 : .4), t + (near > .6 ? .03 : .6));
+    let tt = t + (near > .6 ? .4 : 1.2);                                    // a few rolling swells
+    for (let i = 0; i < 2 + Math.floor(rnd(0, 3)); i++) { g.gain.linearRampToValueAtTime(peak * rnd(.25, .5), tt); tt += rnd(.5, 1.2); g.gain.linearRampToValueAtTime(peak * rnd(.5, .9), tt); tt += rnd(.4, 1); }
+    g.gain.linearRampToValueAtTime(peak * .2, Math.min(t + len - 1, tt + .5)); g.gain.exponentialRampToValueAtTime(.0005, t + len);
+    const sp = A.createStereoPanner ? A.createStereoPanner() : null; if (sp) sp.pan.value = rnd(-.6, .6);
+    src.connect(lp).connect(g); (sp ? g.connect(sp) : g).connect(outBus); const s2 = A.createGain(); s2.gain.value = .6; g.connect(s2).connect(revIn);
+    src.start(t, rnd(0, 1.5)); src.stop(t + len + .1);
+    if (near > .6) {                                                         // the crack of a close strike
+      const c = A.createBufferSource(); c.buffer = noiseBuf; const hp = A.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 1800; hp.Q.value = .5;
+      const cg = A.createGain(); cg.gain.setValueAtTime(0, t); cg.gain.linearRampToValueAtTime(.35 * near * strength, t + .008); cg.gain.exponentialRampToValueAtTime(.001, t + .35);
+      c.connect(hp).connect(cg).connect(outBus); c.start(t, rnd(0, 1)); c.stop(t + .4);
+    }
+    LOG.push([+now.toFixed(1), 'thunder ' + Math.round(dist) + 'm']); if (LOG.length > 60) LOG.shift();
+  }
+  // mist hushes the forest (softer, darker); a storm makes it rougher. Folded into the acoustics bus targets.
+  let mistK = 0;
   // ---------- rooms: where the camera is decides what we hear ----------
   const LV = ctx.lv || { KT: 5.0, BD: 7.4, WS: 3.6 };
   const ROOMS = ctx.rooms || [
@@ -199,9 +262,11 @@ export function createAudio(ctx) {
   function acoustics(dt) {
     const c = ctx.camera; if (!c || !outLP) return;
     inK += (indoorK(c.position) - inK) * Math.min(1, dt * 2.5);
-    if (Math.abs(inK - inKa) < .01) return; inKa = inK; const t = A.currentTime;
-    outLP.frequency.setTargetAtTime(NYQ * Math.pow(1500 / NYQ, inK), t, .15);   // open -> 1.5 kHz
-    outBus.gain.setTargetAtTime(1 - .55 * inK, t, .15);
+    mistK += ((wState === 'mist' ? 1 : 0) - mistK) * Math.min(1, dt * .3);
+    const key = inK + mistK * 3.7; if (Math.abs(key - inKa) < .01) return; inKa = key; const t = A.currentTime;
+    const cut = Math.min(NYQ * Math.pow(1500 / NYQ, inK), NYQ * Math.pow(4500 / NYQ, mistK));
+    outLP.frequency.setTargetAtTime(cut, t, .15);   // open -> 1.5 kHz in a room, -> 4.5 kHz in the morning mist
+    outBus.gain.setTargetAtTime((1 - .55 * inK) * (1 - .3 * mistK), t, .15);
     roomIn.gain.setTargetAtTime(.35 + .5 * inK, t, .15);                                 // the room rings more when we are in it
   }
 
@@ -240,8 +305,11 @@ export function createAudio(ctx) {
   const L3 = { x: 0, y: 0, z: 0 };
   function listener() { const c = ctx.camera; if (c) { L3.x = c.position.x; L3.y = c.position.y; L3.z = c.position.z; } return L3; }
   function syncListener() {
-    if (!A || !ctx.camera) return; const c = ctx.camera, l = A.listener;
-    const f = { x: 0, y: 0, z: -1 }, u = { x: 0, y: 1, z: 0 }, e = c.matrixWorld.elements;
+    if (!A || !ctx.camera) return; const c = ctx.camera, l = A.listener, e = c.matrixWorld.elements;
+    // only when the camera actually moved (and at most ~30 times a second): each call queues 9 automation events
+    const tn = A.currentTime, sig = e[12] + e[13] * 3.1 + e[14] * 7.3 + e[8] * 11 + e[10] * 13 + e[5] * 17;
+    if (Math.abs(sig - (syncListener.sig ?? 1e9)) < 1e-3 || tn - (syncListener.t ?? -1) < .033) return; syncListener.sig = sig; syncListener.t = tn;
+    const f = { x: 0, y: 0, z: -1 }, u = { x: 0, y: 1, z: 0 };
     f.x = -e[8]; f.y = -e[9]; f.z = -e[10]; u.x = e[4]; u.y = e[5]; u.z = e[6];
     const t = A.currentTime + .05;
     if (l.positionX) { l.positionX.linearRampToValueAtTime(c.position.x, t); l.positionY.linearRampToValueAtTime(c.position.y, t); l.positionZ.linearRampToValueAtTime(c.position.z, t);
@@ -287,7 +355,7 @@ export function createAudio(ctx) {
 
   // ---------- individuals ----------
   function place(kind) {
-    const P = PLACE[kind](); const a = P.a ?? rnd(0, Math.PI * 2);
+    const P = PLACE[kind](); if (P.abs) return P.abs; const a = P.a ?? rnd(0, Math.PI * 2);
     // keep most creatures off the very front of the view so they surround the house
     return { x: center.x + Math.cos(a) * P.r, y: P.y, z: center.z + Math.sin(a) * P.r };
   }
@@ -308,9 +376,10 @@ export function createAudio(ctx) {
     const buf = getBuf(name); if (!buf) return;
     if (S.uneasy) { const q = I.pos; emit('unease', { name, pos: [q.x, q.y, q.z], anx: env.anx ?? 0 }); }
     const rate = I.pitch * (1 + rnd(-.025, .025));
-    const o = { pos: I.pos, rate, gain: S.vol * rnd(.6, 1.05) * (.55 + .45 * Math.min(1, act)), rev: S.rev, far: S.place === 'veryfar', ref: S.place === 'house' ? 4 : 10 };
+    const o = { pos: I.pos, rate: rate * (S.rate ?? 1), gain: S.vol * rnd(.6, 1.05) * (.55 + .45 * Math.min(1, act)), rev: S.rev, far: S.place === 'veryfar', ref: S.place === 'house' ? 4 : 10 };
     if (S.texture) { o.dur = rnd(S.texture[0], S.texture[1]); o.offset = rnd(0, Math.max(0, buf.duration - o.dur)); o.fadeIn = rnd(.4, 1.2); o.fadeOut = rnd(.6, 1.5); }
     else if (S.song && Math.random() < .3) { o.dur = buf.duration * rnd(.45, .8); o.fadeOut = .35; }   // a shorter phrase now and then
+    if (S.flit) { const p0 = I.pos; o.pos = { x: p0.x + rnd(-1, 1), y: rnd(.4, 1.4), z: p0.z + rnd(-1, 1) }; o.move = { x: o.pos.x + rnd(-3, 3), y: rnd(.4, 1.4), z: o.pos.z + rnd(-3, 3) }; o.ref = 3; }
     // a flock passes over: from one side of the sky to the other
     if (S.fly) { const a = rnd(0, Math.PI * 2), r = rnd(35, 60), y = rnd(25, 45); o.pos = { x: Math.cos(a) * r, y, z: Math.sin(a) * r }; o.move = { x: -Math.cos(a) * r, y, z: -Math.sin(a) * r }; o.ref = 30; }
     // birds sing from a slightly different twig each time
@@ -323,10 +392,12 @@ export function createAudio(ctx) {
   // in as soon as the night comes, and nothing waits on a long timer drawn when it was still day.
   function tickLayers(h, env, dt) {
     const morning = clamp01(win(h, 4.5, 9.5, 1)) * kick;
+    { const P = pondGeo(), c = ctx.camera ? ctx.camera.position : P0; pondFar = Math.hypot(P.x - c.x, P.z - c.z) > 45; }
     for (const k in L) {
       const S = L[k], list = ind[k]; if (!list) continue;
       let act = S.act(h, env) * (mult[k] ?? 0);
-      if (S.song) act *= (1 - .8 * env.rain) * (1 + morning * 1.2) * (env.awake || h < 4 || h > 10 ? 1 : .6);
+      if (S.pondy && k !== 'frog' && pondFar) act = 0;               // nothing to hear from the pond from far away: no voices, no cost
+      if (S.song) act *= (env.w === 'mist' ? .55 : 1) * (1 - .8 * env.rain) * (1 + morning * 1.2) * (env.awake || h < 4 || h > 10 ? 1 : .6);
       if (act <= .01) { for (const I of list) I.bout = 0; continue; }
       const meanRest = (S.rest[0] + S.rest[1]) / 2;
       for (const I of list) {
@@ -353,7 +424,7 @@ export function createAudio(ctx) {
     if (b.lvl < .01) return;
     const t = A.currentTime;
     if (!b.cur || b.cur.end - t < 2.2) { b.applied = b.lvl; b.cur = voice(pick(clips), Object.assign({ bed: true, fadeIn: 2, fadeOut: 2.2 }, mk(b.lvl))); }
-    else if (Math.abs(b.lvl - (b.applied ?? 0)) > .08) { b.applied = b.lvl; b.cur.g.gain.cancelScheduledValues(t); b.cur.g.gain.setTargetAtTime(mk(b.lvl).gain, t, .4); b.cur.g.gain.setTargetAtTime(0, Math.max(t + .5, b.cur.end - 2), .5); }
+    else if (Math.abs(b.lvl - (b.applied ?? 0)) > .08) { b.applied = b.lvl; holdGain(b.cur.g.gain, t); b.cur.g.gain.setTargetAtTime(mk(b.lvl).gain, t, .4); b.cur.g.gain.setTargetAtTime(0, Math.max(t + .5, b.cur.end - 2), .5); }
   }
 
   function windLevel(dt) {
@@ -365,7 +436,7 @@ export function createAudio(ctx) {
   let windHooked = false, lastGust = -9, gustNext = 4;
   const gustClips = env => env.season === 'winter' ? ['windw_a', 'windw_b', 'rustle_c'] : env.season === 'autumn' ? ['leaves_a', 'leaves_b', 'rustle_a', 'rustle_c'] : ['rustle_a', 'rustle_b', 'rustle_c'];
   function gustSound(amp, env) {
-    if (now - lastGust < 2.5) return; lastGust = now;
+    if (now - lastGust < 2.5 || (wState === 'calm' && amp < .6)) return; lastGust = now;   // calm evenings stay still
     const a = rnd(0, Math.PI * 2), r = rnd(5, 16);
     voice(pick(gustClips(env)), { pos: { x: Math.cos(a) * r, y: rnd(6, 14), z: Math.sin(a) * r }, gain: Math.min(.55, .1 + .32 * amp) * rnd(.8, 1.1), rate: rnd(.9, 1.08), fadeIn: rnd(.5, 1.2), fadeOut: 1.2, rev: .15, ref: 12 });
   }
@@ -447,7 +518,9 @@ export function createAudio(ctx) {
     const hero = ctx.hero, asleep = !!(hero && hero.inBed);
     let anx = .3; try { const nb = window.__brain && window.__brain.need; if (nb && nb.safety != null) anx = clamp01(nb.safety); } catch (e) {}
     const env = envNow = { season: season(), rain, wind, awake: !asleep, anx };
-    hookWind();
+    hookWind(); hookWeather();
+    wState = weatherState(h, rain, wind); env.w = wState;
+    if (wState === 'storm' && !wHooked && now > thunderNext) { if (thunderNext > 0) thunder(rnd(1200, 4000), rnd(.4, .8)); thunderNext = now + rnd(25, 60); }
     // the hero getting up in the morning wakes the garden
     if (wasAsleep && !asleep && h > 4 && h < 10.5) kick = 1;
     wasAsleep = asleep; kick = Math.max(0, kick - dt / 70);
@@ -458,13 +531,15 @@ export function createAudio(ctx) {
       if (lastH < 4 && h >= 4) populate(DAY, env);
     }
     lastH = h;
-    tickLayers(h, env, dt);
+    { const P = pondGeo(), sig = P.x + P.z * 7 + P.r * 13; if (sig !== pondSig) { if (pondSig !== null) for (const k in L) if (L[k].pondy && ind[k]) for (const I of ind[k]) I.pos = place('pond'); pondSig = sig; } }
+    layerAcc += dt; if (layerAcc >= .1) { tickLayers(h, env, layerAcc); layerAcc = 0; }   // creatures decide 10x a second, not every frame
     gusts(env);
     // rain on leaves and roof
     // rain: leaves all around, and drumming on the roof when the camera (or hero) is near one
     const R = window.__rain, cp = ctx.camera ? ctx.camera.position : null;
     let roof = .35; if (R && typeof R.roofNear === 'function' && cp) { try { roof = clamp01(R.roofNear(cp)); } catch (e) {} }
-    bed('rain', ['rain_a'], rain, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1 }));
+    const rk = wState === 'drizzle' ? .55 : wState === 'storm' ? 1.35 : 1;   // drizzle: a fine whisper; storm: heavy
+    bed('rain', ['rain_a'], rain * rk, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
     // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
     bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
     rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 60);
@@ -550,7 +625,9 @@ export function createAudio(ctx) {
     const sp = a.rate ?? .04;
     return { pos: toPos(pos), gain: (o.gain ?? 1) * a.v * rnd(.82, 1.05), rate: (o.rate ?? 1) * (1 + rnd(-sp, sp)), ref: 3.5, roll: 1, rev: .25, delay: o.delay || 0, fadeIn: .01, fadeOut: .12, prio: true, indoor: !o.outdoor };
   }
-  function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; v.g.gain.cancelScheduledValues(t); v.g.gain.setValueAtTime(v.g.gain.value, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
+  // freeze a gain where it is right now before a new ramp (cancelScheduledValues alone can jump: a click)
+  function holdGain(p, t) { if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else { const v = p.value; p.cancelScheduledValues(t); p.setValueAtTime(v, t); } }
+  function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; holdGain(v.g.gain, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
   function playAct(name, pos, o = {}) {
     if (!A || muted || !loaded) return null;
     if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
@@ -630,10 +707,10 @@ export function createAudio(ctx) {
     return idle && now - lastActT > 20;
   }
   function tickMusic(h, dt) {
-    if (!musicOn) { if (mBus && mSession) { mBus.gain.setTargetAtTime(0, A.currentTime, 1.5); mSession = 0; } return; }
+    if (!musicOn) { if (mBus && mSession) { holdGain(mBus.gain, A.currentTime); mBus.gain.setTargetAtTime(0, A.currentTime, 1.5); mSession = 0; } return; }
     const t = A.currentTime;
     // ducking under the hero's own sounds
-    if (mDuck) mDuck.gain.setTargetAtTime(t < duckUntil ? .3 : 1, t, t < duckUntil ? .15 : 1.2);
+    const dk = t < duckUntil; if (mDuck && dk !== tickMusic.dk) { tickMusic.dk = dk; holdGain(mDuck.gain, t); mDuck.gain.setTargetAtTime(dk ? .3 : 1, t, dk ? .15 : 1.2); }
     if (!mSession) {
       if (now < mRestUntil) return;
       const dusk = h >= 18.3 && h < 20.6, day = Math.floor(gnow / 180);
@@ -642,12 +719,12 @@ export function createAudio(ctx) {
       else if (quietMoment(h) && Math.random() < dt / 90) start = true;                // in a quiet moment: about once in a minute and a half
       if (!start) return;
       musicGraph(); mSession = now + rnd(60, 120); mNext = now + 1.5; mPhrase = null;
-      mBus.gain.cancelScheduledValues(t); mBus.gain.setValueAtTime(mBus.gain.value, t); mBus.gain.linearRampToValueAtTime(.5, t + 6);
+      holdGain(mBus.gain, t); mBus.gain.linearRampToValueAtTime(.5, t + 6);
       padChord(t + .5, pick(CHORDS), rnd(14, 20)); mPad = now + rnd(12, 18);
       return;
     }
     if (now > mSession) {                                          // the session fades away
-      mBus.gain.setTargetAtTime(0, t, 3); mSession = 0; mRestUntil = now + rnd(150, 300); return;
+      holdGain(mBus.gain, t); mBus.gain.setTargetAtTime(0, t, 3); mSession = 0; mRestUntil = now + rnd(150, 300); return;
     }
     if (now > mPad) { padChord(t, pick(CHORDS), rnd(14, 22)); mPad = now + rnd(14, 22); }
     if (now < mNext) return;
@@ -660,12 +737,12 @@ export function createAudio(ctx) {
     if (Math.random() < .18) mNote(midiOf(d) + 24, t + .02 + rnd(.01, .03), .025, rnd(-.5, .5));   // a faint octave sparkle now and then
     mNext = now + l * rnd(.9, 1.15);
   }
-  function setMusic(b) { musicOn = !!b; try { localStorage.setItem('th_music', musicOn ? '1' : '0'); } catch (e) {} if (!musicOn && mBus) mBus.gain.setTargetAtTime(0, A.currentTime, .4); }
+  function setMusic(b) { musicOn = !!b; try { localStorage.setItem('th_music', musicOn ? '1' : '0'); } catch (e) {} if (!musicOn && mBus) { holdGain(mBus.gain, A.currentTime); mBus.gain.setTargetAtTime(0, A.currentTime, .4); } }
 
   function setMute(b) {
     muted = !!b; try { localStorage.setItem('th_mute', muted ? '1' : '0'); } catch (e) {}
-    if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER, A.currentTime, .15);
-    if (muted) for (const v of voices) try { v.src.stop(); } catch (e) {}
+    if (master) { holdGain(master.gain, A.currentTime); master.gain.setTargetAtTime(muted ? 0 : MASTER, A.currentTime, .15); }
+    if (muted) for (const v of voices) try { v.src.stop(A.currentTime + .7); } catch (e) {}   // after the master has faded: no click
   }
   // phones: stop the audio clock in the background
   document.addEventListener('visibilitychange', () => { if (!A) return; if (document.hidden) A.suspend(); else if (started) A.resume(); });
@@ -680,7 +757,7 @@ export function createAudio(ctx) {
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
       const ext = { toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
-    play: playAct,
+    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState,
   };
   window.__audio = api;
   return api;
