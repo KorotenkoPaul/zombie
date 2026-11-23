@@ -56,7 +56,7 @@ const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ASSET=window.__ASSET||'';
 const V=(x,y,z)=>new THREE.Vector3(x,y,z);
-let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
+let loaded=0;const TOTAL=10;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
 
 await RAPIER.init();prog();
 // ================= renderer =================
@@ -75,7 +75,7 @@ const TL=new THREE.TextureLoader();
 const tex=(n,rep=1,srgb=true)=>new Promise(res=>TL.load(ASSET+n,t=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;prog();res(t);}));
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
-const [woodT,barkT,roofT,groundT,leafT,treeG,heroG,zombG]=await Promise.all([tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('tree-glb.txt'),glb('hero-glb.txt'),glb('zombie-glb.txt')]);
+const [oakBarkT,woodT,barkT,roofT,groundT,leafT,treeG,heroG,zombG]=await Promise.all([tex('bark3.jpg'),tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('tree-glb.txt'),glb('hero-glb.txt'),glb('zombie-glb.txt')]);
 const PROPS={};// furniture is modelled in code now: see props.js
 
 // ================= lights & sky =================
@@ -97,9 +97,10 @@ const ENV=(await import(new URL(ASSET+'env.js',document.baseURI).href)).createEn
 const TREE_H=16;
 function placeTree(x,z,h,ry){const t=treeG.scene.clone(true);const b=new THREE.Box3().setFromObject(t);const k=h/(b.max.y-b.min.y);t.scale.setScalar(k);const c=b.getCenter(V());t.position.set(x-c.x*k,-b.min.y*k,z-c.z*k);t.rotation.y=ry;t.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;if(o.material){o.material.metalness=0;o.material.roughness=.9;o.material.color&&o.material.color.multiplyScalar(1.25);}}});scene.add(t);return {t,k,b};}
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
-const TREE_AVOID=[[-4.5,-.8,4.85,7.45,1.0,4.7],[-4.3,.5,7.25,9.75,.93,4.2],[-4.6,.8,9.6,11.1,.55,4.2],[.8,4.7,3.45,5.95,1.18,5.4],[.5,5.0,5.85,7.05,.75,4.4],[.7,4.35,8.75,10.3,.2,3.1]];
-const TREE=buildTree(THREE,{barkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:Math.atan2(1.0-TREE_AXIS[1],1.45-TREE_AXIS[0]),y0:1.62,y1:3.0,w:1.0,depth:.95},
- avoidLeaves:[[-4.8,-.7,4.7,7.7,.3,4.9],[-4.6,.8,7.1,11.2,.3,4.3],[.5,5.0,3.3,7.1,.5,5.2],[.6,4.6,8.7,10.6,0,3.4],[-3.6,3.4,1.2,4.0,0,4.4]]});
+const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
+const TREE_AVOID=[[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
+const TREE=buildTree(THREE,{barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:Math.atan2(1.0-TREE_AXIS[1],1.45-TREE_AXIS[0]),y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
+ avoidLeaves:[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]]});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 const barkTris=TREE.tris;
 // ================= physics world =================
@@ -235,10 +236,11 @@ function barricade(name,center,len){const g={name,boards:[],center};groups[name]
  for(let i=0;i<3;i++){const c=V(center.x,center.y+(i-1)*.27,center.z);g.boards.push(board(c,len,.2,.05,new THREE.Euler(0,0,rnd(-.06,.06)),{breakable:true,group:name,hp:4}));}return g;}
 
 // ---- the layout of the concept picture ----
-const LG=1.6,LL=2.3,LC=3.4,WS=3.6,KT=5.0,BD=7.4,DK=9.0;
+// heights match the photo: the house sits high in the oak, the flared trunk and roots show below it
+const LG=2.3,LL=2.45,LC=3.4+HY,WS=3.6+HY,KT=5.0+HY,BD=7.4+HY,DK=9.0+HY;
 // hollow landing (right, low) with the glowing doorway in the trunk
 floorBoards(-.2,3.2,LG,.6,2.7,{shape:disc(1.5,1.0,1.65,.6),radial:[1.5,1.0,1.65,.6]});
-brace(V(1.4,.2,frontZ(1.4,.6)-.05),V(2.6,LG-.12,1.9),.13);
+brace(V(1.4,.9,frontZ(1.4,1.0)-.05),V(2.6,LG-.12,1.9),.13);
 // left low landing
 floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
 // center landing (half disc around the trunk front) + gate over the ground ladder
@@ -554,8 +556,8 @@ cv.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*(1+e.deltaY*.
 // ================= post & camera =================
 const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;composer.addPass(new OutputPass());composer.addPass(ENV.gradePass);
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
-const look=V(0,6.6,2.4);let camDist=30;let camOv=null;
-function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(7.4/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));}
+const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));}
 addEventListener('resize',resize);
 
 // ================= main loop =================
@@ -644,7 +646,7 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  {// focus: whole house when zoomed out; the hero (day) or the fight (night) when zoomed in
   const k=1-(zoom-.32)/.68;let f=hero.root.position.clone().add(V(0,1,0));const zs=zombies.filter(z=>z.alive&&z.stage!=='walk');
   if(zs.length&&hero.task==='guard'){f=zs.reduce((a,z)=>a.add(z.root.position),V()).multiplyScalar(1/zs.length).add(hero.root.position).multiplyScalar(.5).add(V(0,1,0));}
-  const tgt=V(0,6.6,2.4).lerp(f,k);look.lerp(tgt,Math.min(1,dt*2.5));}
+  const tgt=V(0,7.4,2.4).lerp(f,k);look.lerp(tgt,Math.min(1,dt*2.5));}
  if(camOv){look.set(camOv[0],camOv[1],camOv[3]);}const cd=camOv?camOv[2]:camDist*zoom;
  trauma=Math.max(0,trauma-dt*1.8);const tr=trauma*trauma;const drift=RM?0:Math.sin(T*.07)*.03;const yw=yaw+drift;
  camera.position.set(look.x+Math.sin(yw)*Math.cos(pitch)*cd+(RM?0:Math.sin(T*47)*.12*tr),look.y+Math.sin(pitch)*cd+(RM?0:Math.cos(T*41)*.12*tr),look.z+Math.cos(yw)*Math.cos(pitch)*cd);camera.lookAt(look);

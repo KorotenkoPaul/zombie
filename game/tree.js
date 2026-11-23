@@ -53,7 +53,7 @@ export function buildTree(THREE, o) {
   const R = y => {
     let r = 2.0 + 1.35 * Math.exp(-Math.max(y, 0) / 0.95);
     if (y > 3) r -= 0.03 * (y - 3);
-    if (y > 9.5) r -= 0.12 * (y - 9.5);
+    if (y > 10.5) r -= 0.12 * (y - 10.5);
     return r;
   };
   const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
@@ -75,16 +75,18 @@ export function buildTree(THREE, o) {
     let lob = 0; for (const a of rootAng) lob += Math.pow(Math.max(0, Math.cos(angDiff(ang, a))), 10);
     r *= 1 + A * lob;
     // flowing vertical ridges (like the painted oak), slowly winding up the trunk
+    // big rounded ridges like the painted oak: smooth bulges with narrow grooves between them
     const w = 0.35 * Math.sin(y * 0.45) + y * 0.05;
-    r *= 1 + 0.055 * Math.sin(9 * ang + w * 3) + 0.03 * Math.sin(17 * ang - w * 2 + 1.3) + 0.035 * Math.sin(3 * ang + y * 0.6);
+    const rid = (a, k) => Math.pow(0.5 + 0.5 * Math.sin(a), k);
+    r *= 1 + 0.085 * rid(8 * ang + w * 3, 0.6) + 0.035 * rid(15 * ang - w * 2 + 1.3, 0.8) + 0.04 * Math.sin(3 * ang + y * 0.6) - 0.06;
     // the hollow: pushed in deep behind an arched opening with a thick bark lip
     const m = doorMask(ang, y);
     if (m >= 0.9 && m < 1.4) r += 0.12 * Math.sin((m - 0.9) / 0.5 * Math.PI);
     return r;
   };
-  const trunkPts = []; for (let y = -0.6; y <= 12.6; y += 0.6) trunkPts.push(V(AX + 0.12 * Math.sin(y * 0.33), y, AZ + 0.1 * Math.sin(y * 0.27 + 1)));
+  const trunkPts = []; for (let y = -0.6; y <= 13.6; y += 0.6) trunkPts.push(V(AX + 0.12 * Math.sin(y * 0.33), y, AZ + 0.1 * Math.sin(y * 0.27 + 1)));
   const parts = [];
-  parts.push(tube(trunkPts, MOB(o) ? 110 : 150, MOB(o) ? 72 : 96, trunkR, { tile: 1.9, hole: (c, ang) => doorMask(ang, c.y) < 0.97, glow: (p, t, ang) => { const m = doorMask(ang, p.y); return m < 1.5 ? Math.max(0, 1 - (m - 0.9) / 0.6) * 0.5 : 0; } }));
+  parts.push(tube(trunkPts, MOB(o) ? 110 : 150, MOB(o) ? 72 : 96, trunkR, { tile: 3.2, hole: (c, ang) => doorMask(ang, c.y) < 0.97, glow: (p, t, ang) => { const m = doorMask(ang, p.y); return m < 1.5 ? Math.max(0, 1 - (m - 0.9) / 0.6) * 0.5 : 0; } }));
 
   // ---------- roots: spread over the ground, sinking into it ----------
   const roots = [[0.35, 6.5], [0.95, 5.2], [2.2, 5.6], [2.75, 7.0], [3.6, 5.0], [4.35, 6.0], [5.2, 5.4], [5.85, 6.2]];
@@ -102,19 +104,19 @@ export function buildTree(THREE, o) {
   // ---------- branches: all leave from the back half of the trunk so they pass behind the rooms ----------
   const BR = [
     // side branches (from the photo: one long to the left at kitchen height, two to the right)
-    { p: [[0, 5.4, -1.0], [-2.4, 5.8, -1.7], [-5.0, 6.5, -2.2], [-7.6, 7.7, -2.0], [-9.4, 9.3, -1.5]], r0: 0.62, r1: 0.12, leaf: [1, 2, 3] },
-    { p: [[0.3, 6.2, -1.0], [2.6, 6.5, -1.6], [5.2, 6.8, -1.5], [7.6, 7.6, -0.9], [9.2, 8.8, -0.4]], r0: 0.56, r1: 0.1, leaf: [2, 3] },
-    { p: [[0.4, 8.7, -1.0], [3.0, 8.4, -1.3], [5.6, 9.2, -1.1], [8.4, 10.6, -0.5]], r0: 0.5, r1: 0.1, leaf: [2, 3] },
-    { p: [[-0.3, 10.0, -0.9], [-2.6, 10.9, -1.3], [-5.0, 12.0, -1.1], [-7.2, 13.4, -0.4]], r0: 0.55, r1: 0.12, leaf: [1, 2, 3] },
+    { p: [[0, 6.4, -1.0], [-2.4, 6.8, -1.7], [-5.0, 7.5, -2.2], [-7.6, 8.7, -2.0], [-9.4, 10.3, -1.5]], r0: 0.62, r1: 0.12, leaf: [1, 3, 3] },
+    { p: [[0.3, 7.2, -1.0], [2.6, 7.5, -1.6], [5.2, 7.8, -1.5], [7.6, 8.6, -0.9], [9.2, 9.8, -0.4]], r0: 0.56, r1: 0.1, leaf: [2, 3] },
+    { p: [[0.4, 9.7, -1.0], [3.0, 9.4, -1.3], [5.6, 10.2, -1.1], [8.4, 11.6, -0.5]], r0: 0.5, r1: 0.1, leaf: [2, 3] },
+    { p: [[-0.3, 11, -0.9], [-2.6, 11.9, -1.3], [-5.0, 13, -1.1], [-7.2, 14.4, -0.4]], r0: 0.55, r1: 0.12, leaf: [1, 3, 3] },
     // crown limbs
-    { p: [[0, 9.8, -0.6], [-0.7, 12.4, -0.8], [-1.9, 15.0, -1.1], [-3.2, 17.4, -1.4]], r0: 1.0, r1: 0.25, leaf: [1, 2, 3] },
-    { p: [[0.1, 9.8, -0.6], [1.3, 12.5, -0.4], [2.7, 14.8, -0.8], [3.8, 17.2, -1.2]], r0: 0.95, r1: 0.22, leaf: [1, 2, 3] },
-    { p: [[0, 10.4, -0.9], [0.3, 13.0, -2.3], [0.5, 15.8, -3.0], [0.6, 18.4, -2.6]], r0: 0.8, r1: 0.2, leaf: [2, 3] },
-    { p: [[-0.2, 11.0, -0.5], [-2.2, 13.2, 0.2], [-4.4, 14.6, 0.6], [-6.4, 15.2, 0.4]], r0: 0.55, r1: 0.12, leaf: [2, 3] },
-    { p: [[0.2, 11.2, -0.5], [2.5, 12.6, 0.0], [4.8, 13.6, 0.4], [6.8, 14.0, 0.2]], r0: 0.5, r1: 0.12, leaf: [2, 3] },
+    { p: [[0, 10.8, -0.6], [-0.7, 13.4, -0.8], [-1.9, 16, -1.1], [-3.2, 18.4, -1.4]], r0: 1.0, r1: 0.25, leaf: [1, 3, 3] },
+    { p: [[0.1, 10.8, -0.6], [1.3, 13.5, -0.4], [2.7, 15.8, -0.8], [3.8, 18.2, -1.2]], r0: 0.95, r1: 0.22, leaf: [1, 3, 3] },
+    { p: [[0, 11.4, -0.9], [0.3, 14, -2.3], [0.5, 16.8, -3.0], [0.6, 19.4, -2.6]], r0: 0.8, r1: 0.2, leaf: [2, 3] },
+    { p: [[-0.2, 12, -0.5], [-2.2, 14.2, 0.2], [-4.4, 15.6, 0.6], [-6.4, 16.2, 0.4]], r0: 0.55, r1: 0.12, leaf: [2, 3] },
+    { p: [[0.2, 12.2, -0.5], [2.5, 13.6, 0.0], [4.8, 14.6, 0.4], [6.8, 15, 0.2]], r0: 0.5, r1: 0.12, leaf: [2, 3] },
     // a couple of small branches reaching to the back, so the tree is round from every side
-    { p: [[0, 7.5, -1.4], [-0.6, 8.6, -3.8], [-1.0, 10.2, -6.0]], r0: 0.45, r1: 0.1, leaf: [1, 2] },
-    { p: [[0.3, 5.0, -1.4], [1.6, 5.6, -3.8], [2.6, 7.0, -6.0]], r0: 0.45, r1: 0.1, leaf: [1, 2] }
+    { p: [[0, 8.5, -1.4], [-0.6, 9.6, -3.8], [-1.0, 11.2, -6.0]], r0: 0.45, r1: 0.1, leaf: [1, 2] },
+    { p: [[0.3, 6, -1.4], [1.6, 6.6, -3.8], [2.6, 8, -6.0]], r0: 0.45, r1: 0.1, leaf: [1, 2] }
   ];
   const leafSpots = [];
   for (const b of BR) {
@@ -130,7 +132,7 @@ export function buildTree(THREE, o) {
     if (b.leaf.length >= 3) leafSpots.push({ p: curve.getPointAt(0.78), s: 1.7 });
   }
   // the crown: a few big clumps high up, with gaps between them
-  for (const [x, y, z, s] of [[-3.4, 17.6, -1.6, 2.8], [0.6, 18.8, -2.6, 3.0], [3.6, 17.4, -1.4, 2.7], [-1.2, 19.4, 0.4, 2.4], [5.6, 15.4, -0.6, 2.2], [-6.0, 15.8, -0.6, 2.2], [1.8, 16.6, 1.2, 2.0]])
+  for (const [x, y, z, s] of [[-3.4, 18.6, -1.6, 2.8], [0.6, 19.8, -2.6, 3.0], [3.6, 18.4, -1.4, 2.7], [-1.2, 20.4, 0.4, 2.4], [5.6, 16.4, -0.6, 2.2], [-6.0, 16.8, -0.6, 2.2], [1.8, 17.6, 1.2, 2.0]])
     leafSpots.push({ p: V(AX + x, y, AZ + z), s });
 
   // ---------- merge, keep the wood out of the rooms ----------
@@ -156,18 +158,15 @@ export function buildTree(THREE, o) {
 
   // ---------- bark: the painted texture along the wood, relief from the same texture, cool-warm painted shading ----------
   const barkT = o.barkT; barkT.wrapS = barkT.wrapT = THREE.RepeatWrapping; barkT.repeat.set(1, 1);
-  const mat = new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 2.2, roughness: 0.9, color: 0xE6CCB4 });
+  const mat = new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 1.4, roughness: 0.9, color: 0xFFDCC2 });
   mat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float glow;varying float vGlow;varying float vY;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGlow=glow;vY=(modelMatrix*vec4(transformed,1.)).y;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlow;varying float vY;uniform float doorGlow;')
       .replace('#include <map_fragment>', `#include <map_fragment>
-        float lum=dot(diffuseColor.rgb,vec3(.33));
-        diffuseColor.rgb=mix(vec3(lum),diffuseColor.rgb,.85);
-        diffuseColor.rgb=mix(diffuseColor.rgb*vec3(.8,.86,1.),diffuseColor.rgb*vec3(1.1,.98,.86),smoothstep(.1,.3,lum));
-        diffuseColor.rgb*=mix(.78,1.,smoothstep(-.3,2.2,vY));
+        diffuseColor.rgb*=mix(.8,1.,smoothstep(-.3,2.2,vY));
 `)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6;');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09);');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
   };
   mat.userData.doorGlow = { value: 0 };
