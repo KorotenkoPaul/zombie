@@ -201,7 +201,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function probe(p, part, lying) { const GR = window.__grab;
     const kk = key(Math.floor(p.x / CS), Math.floor(p.y / CS), Math.floor(p.z / CS)); const a = G.get(kk); let best = 0;
     if (a) for (const n of a) {
-      const s = S[n]; if (s.dead) continue; if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;/* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
+      const s = S[n]; if (s.dead) continue; if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;
+      // POSE (poses thread): asleep, hero.js lays the body on the measured mattress itself; the bed's voxels (mattress, quilt mound,
+      // pillow, all one 'bunkbed' grid) pushed the root up ~20-50 cm and made the head twitch on the pillow every ~0.3 s
+      if (s.cls >= 2 && lying && hero.inBed && !hero.bedB) continue;/* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
       let allow = part === 3 ? ALLOW.feet : ALLOW.hard;
       if (s.cls >= 2) allow = (lying && p.y < root.position.y + .6) ? ALLOW.pillow : ALLOW.soft;
       else if (s.cls === 1 && (part === 4 || part === 5)) allow = ALLOW.seat;
