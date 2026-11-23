@@ -21,3 +21,9 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 ## Round 3 (2026-11-23)
 - game/smoke.js: thin stove smoke (GPU points, loop per puff). Source = `__props.chimneyTop` (Vector3, pipe opening, world) — Props adds the pipe; hidden until then. Amount follows `LIGHTS.level('oven')` (ramps ~6 s up, ~12 s down); wind bends the plume. Test: `__smoke.force(1)` / `force(null)`.
 - Sound events: `__wind.on('gust'|'creak'|'mode', fn)`, `__wind.rustle()` 0..1, `__wind.level()`. Creaks: only when wind > .45, every 5-12 s at most, `{strength, pos}`.
+
+## Round 4: rain (2026-11-23)
+- Weather: rare rain spells in wind.js (every ~6-18 min, 2-5 min long, never calm while raining). `__wind.raining()`, `setRain(on)`, `on('rain', e=>e.on)`. index.html: the ☁ button calls setRain; `weather`/rainK follow the event. rainK stays the single 0..1 value others read.
+- game/rain.js (`__rain`): GPU streaks (1600/3200 instanced quads) leaning with the wind, stopped by a height map of everything solid under the sky (rays down over a 0.5 m grid, built over ~16 frames ~90 frames after load, TREE.group skipped). Splashes (220/420) on roofs/decks and ground near the tree; drips (26/52) from roof edges found in the map and refined with a few rays. `roofNear(pos)` 0..1 for the rain-on-roof sound, `heightAt(x,z)`.
+- Gotcha: the streak quad's side vector decides its winding; with the wrong sign every streak was back-face culled (invisible, no error).
+- Environment owns fog, sky and the wet sheen (rainK). Sound owns the rain sound.
