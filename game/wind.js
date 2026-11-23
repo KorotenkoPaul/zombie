@@ -357,7 +357,7 @@ export function createWind(opt = {}) {
         { const g = W.gustAt(0, 0); if (!gIn && g > 0.2) { gIn = true; acc += 2 + Math.min(5, g * 5); } else if (gIn && g < 0.08) gIn = false; }
         while (acc >= 1) { acc -= 1; if (L.reduce((n, l) => n + (l.on ? 1 : 0), 0) >= cap) { acc = 0; break; } const l = L.find(l => !l.on); if (!l) break;
           const sp = spots[Math.floor(R() * spots.length)];
-          Object.assign(l, { on: true, water: null, p: [sp[0] + rr(-0.4, 0.4), sp[1] + rr(-0.4, 0.2), sp[2] + rr(-0.4, 0.4)], v: [0, 0, 0], ph: rr(0, 6.3), fr: rr(1.5, 3), spin: [rr(-3, 3), rr(-2, 2), rr(-4, 4)], r: [rr(0, 6), rr(0, 6), rr(0, 6)], rest: 0, life: rr(8, 16), k: 1 }); }
+          Object.assign(l, { on: true, water: null, built: false, p: [sp[0] + rr(-0.4, 0.4), sp[1] + rr(-0.4, 0.2), sp[2] + rr(-0.4, 0.4)], v: [0, 0, 0], ph: rr(0, 6.3), fr: rr(1.5, 3), spin: [rr(-3, 3), rr(-2, 2), rr(-4, 4)], r: [rr(0, 6), rr(0, 6), rr(0, 6)], rest: 0, life: rr(8, 16), k: 1 }); }
         for (let i = 0; i < N; i++) { const l = L[i]; if (!l.on) continue; const p = l.p;
           if (l.water != null) {                                     // floating on the pond
             l.rest += dt; const w = W.sample({ x: p[0], z: p[2] });
@@ -368,6 +368,8 @@ export function createWind(opt = {}) {
             l.r[0] = -Math.PI / 2 + Math.sin(T * 1.7 + l.ph) * 0.05 * (0.3 + w.s);
             if (l.rest > l.life) { l.k -= dt * 0.08; p[1] -= (1 - l.k) * 0.02; if (l.k <= 0) { l.on = false; l.water = null; im.setMatrixAt(i, zero); continue; } }  // soaks and sinks
           } else if (l.rest > 0) {                                   // lying on a deck or the ground, then fading
+            // on a roof, landing or deck it stays: handed to the litter (no fade), where it builds up until swept or blown off
+            if (l.rest > l.life && l.built && LIT.add(p, l.r[2])) { l.on = false; im.setMatrixAt(i, zero); continue; }
             l.rest += dt; if (l.rest > l.life) { l.k -= dt * 0.5; if (l.k <= 0) { l.on = false; im.setMatrixAt(i, zero); continue; } }
             // a gust picks it up again: it skitters a little way along the boards and settles (the deck "breathes" leaves)
             const w = W.sample({ x: p[0], z: p[2] });
@@ -381,7 +383,7 @@ export function createWind(opt = {}) {
             for (let j = 0; j < 3; j++) l.r[j] += l.spin[j] * dt * (0.6 + w.s);
             const g = floorAt(p[0], p[2], p[1]) + 0.015, wh = waters.length ? waterAt(p[0], p[2]) : null;
             if (wh != null && wh > g - 0.015 && p[1] <= wh + 0.01) { p[1] = wh; l.water = wh; l.rest = 0.001; l.life = rr(50, 90); l.r[0] = -Math.PI / 2; l.r[1] = 0; }
-            else if (p[1] <= g) { p[1] = g; l.rest = 0.001; if (g > gH(p[0], p[2]) + 0.5) l.life = Math.max(l.life, rr(25, 45)); l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
+            else if (p[1] <= g) { p[1] = g; l.rest = 0.001; l.built = g > gH(p[0], p[2]) + 0.5; if (l.built) l.life = Math.max(l.life, rr(12, 30)); l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
             // never through a room: a leaf that drifts into one is gone (the roof hides it)
             if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5])) { l.on = false; im.setMatrixAt(i, zero); continue; }
             if (Math.abs(p[0]) > 60 || Math.abs(p[2]) > 60) { l.on = false; im.setMatrixAt(i, zero); continue; }
@@ -389,10 +391,72 @@ export function createWind(opt = {}) {
           q.setFromEuler(e.set(l.r[0], l.r[1], l.r[2])); m4.compose(v.set(p[0], p[1], p[2]), q, sc.setScalar(l.k)); im.setMatrixAt(i, m4);
         }
         im.instanceMatrix.needsUpdate = true;
+        LIT.update(dt);
       };
+      // a leaf torn off the litter (a gust, the hero's broom) flies again as a falling leaf; false if all are in the air
+      const launch = (p, vel) => { const l = L.find(l => !l.on); if (!l) return false;
+        Object.assign(l, { on: true, water: null, built: false, p: [p[0], p[1] + 0.03, p[2]], v: vel, ph: rr(0, 6.3), fr: rr(1.5, 3), spin: [rr(-6, 6), rr(-3, 3), rr(-6, 6)], r: [-Math.PI / 2, 0, rr(0, 6)], rest: 0, life: rr(8, 16), k: 1 }); return true; };
+      const LIT = makeLitter(o, geo, mat, floorAt, gH, launch);
+      W.litter = LIT.api;
       W.fallingLeaves = im; return im;
     }
   };
+
+  // ---- autumn litter: leaves that came down on a roof, landing or deck stay there ----
+  // One InstancedMesh (MOBILE 80 / desktop 200 leaves, the falling leaf's geometry and material: one draw call). A falling
+  // leaf that rests on a built surface joins it; when full, the oldest is replaced. The world starts with a little litter.
+  // A strong gust lifts a few back into the air. The hero's clear_roof sweeps the ones around him off the edge.
+  // W.litter: level() 0..1 (how leafy the house is; Brain), count(), near(x,y,z,r) -> n, sweep(x,y,z,r,max) -> n swept
+  function makeLitter(o, geo, mat, floorAt, gH, launch) {
+    const THREE = o.THREE, LN = o.MOBILE ? 80 : 200;
+    const im = new THREE.InstancedMesh(geo, mat, LN); im.frustumCulled = false; im.name = 'leafLitter';
+    const P = new Float32Array(LN * 3), on = new Uint8Array(LN); let n = 0, head = 0, dirty = false, seeded = false, seedT = 0, sweepT = 0;
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+    const cols = [0x8A5A26, 0xA0682A, 0x7A4E22, 0xB0823A, 0x6E5A2C, 0x94602C], c = new THREE.Color();
+    for (let i = 0; i < LN; i++) { im.setMatrixAt(i, zero); im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.7, 1.0))); }
+    o.scene.add(im);
+    const put = (i, x, y, z, yaw) => {
+      P[i * 3] = x; P[i * 3 + 1] = y; P[i * 3 + 2] = z; on[i] = 1;
+      // flat on the boards with a little curl (a dry oak leaf never lies dead flat), random turn and size
+      q.setFromEuler(e.set(-Math.PI / 2 + rr(-0.25, 0.25), rr(-0.2, 0.2), yaw)); m4.compose(v.set(x, y + 0.006, z), q, sc.setScalar(rr(1.0, 1.5))); im.setMatrixAt(i, m4); dirty = true; };
+    const kill = i => { if (!on[i]) return; on[i] = 0; n--; im.setMatrixAt(i, zero); dirty = true; };
+    const add = (p, yaw) => { let i = -1; for (let k = 0; k < LN; k++) { const j = (head + k) % LN; if (!on[j]) { i = j; break; } }
+      if (i < 0) { i = head; on[i] = 0; n--; }                         // full: the oldest goes
+      head = (i + 1) % LN; n++; put(i, p[0], p[1], p[2], yaw); return true; };
+    // a little litter to start with, where leaves would really be: under the crown, on top surfaces well above the ground
+    const seed = () => { const want = Math.round(LN * rr(0.3, 0.45)); let tries = 0;
+      while (n < want && tries++ < want * 25) { const x = rr(-6.5, 6.5), z = rr(-2, 7.5); const h = o.surfaceH && o.surfaceH(x, z);
+        if (h == null || h < gH(x, z) + 0.8) continue;
+        // in little drifts (against a post, in a corner), not evenly sprinkled
+        for (let k = 0, m = 2 + Math.floor(R() * 5); k < m && n < want; k++) { const a = rr(0, 6.3), d = rr(0, 0.25), cx = x + Math.cos(a) * d, cz = z + Math.sin(a) * d, ch = o.surfaceH(cx, cz);
+          if (ch != null && Math.abs(ch - h) < 0.08) add([cx, ch, cz], rr(0, 6.3)); } } };
+    const blowOff = (i, w, up) => { const vel = [w.x * 1.2 + rr(-0.3, 0.3), up, w.z * 1.2 + rr(-0.3, 0.3)];
+      if (launch([P[i * 3], P[i * 3 + 1], P[i * 3 + 2]], vel)) { kill(i); return true; } return false; };
+    const api = {
+      mesh: im, max: LN,
+      count: () => n,
+      level: () => Math.min(1, n / (LN * 0.6)),
+      near(x, y, z, r = 1.5) { let k = 0; for (let i = 0; i < LN; i++) if (on[i] && Math.abs(P[i * 3 + 1] - y) < 1.2 && Math.hypot(P[i * 3] - x, P[i * 3 + 2] - z) < r) k++; return k; },
+      // sweep: leaves within r of (x,z), near height y, are flicked away from the point and off the edge (they fly, then
+      // land on the ground or the pond). max per call (default all within r); returns how many went.
+      sweep(x, y, z, r = 1.5, max = 999) { let k = 0;
+        for (let i = 0; i < LN && k < max; i++) { if (!on[i] || P[i * 3 + 1] - y < -0.5 || P[i * 3 + 1] - y > 2.2) continue;   /* his feet's level up to a roof edge in reach */ const dx = P[i * 3] - x, dz = P[i * 3 + 2] - z, d = Math.hypot(dx, dz);
+          if (d > r) continue; const s = 1.3 / (d || 1); launch([P[i * 3], P[i * 3 + 1], P[i * 3 + 2]], [dx * s, rr(0.5, 1.0), dz * s]); kill(i); k++; }   /* no free flyer: it just goes */
+        return k; },
+      clear() { for (let i = 0; i < LN; i++) kill(i); },
+      stats: () => ({ count: n, max: LN, level: +api.level().toFixed(2) })
+    };
+    function update(dt) {
+      if (!seeded && (seedT -= dt) <= 0) { seedT = 0.25; if (o.surfaceH && o.surfaceH(0, 4) !== undefined && window.__rain && window.__rain.ready) { seeded = true; seed(); } }
+      // a strong gust lifts a leaf or two off the litter (only so many can be in the air at once)
+      const s = W.level(); if (n && s > 0.8 && R() < dt * (s - 0.75) * 0.8 * Math.min(1, n / 20)) {   // most stay, wedged against posts and shingles
+        const i = Math.floor(R() * LN); if (on[i]) blowOff(i, W.sample({ x: P[i * 3], z: P[i * 3 + 2] }), rr(0.6, 1.3)); }
+      // the hero at clear_roof: the broom sends the nearest leaves off, one every ~0.35 s, while he stands and sweeps
+      if (n && (sweepT -= dt) <= 0) { sweepT = 0.35; try { const h = o.hero && o.hero(); if (h && h.pos && /clear_roof|clearleaves|sweep/.test(h.task || '') && h.still) api.sweep(h.pos.x, h.pos.y, h.pos.z, 1.8, 1); } catch (err) { /* hero not ready */ } }
+      if (dirty) { im.instanceMatrix.needsUpdate = true; dirty = false; }
+    }
+    return { api, add, update };
+  }
   // ---- window.__weather: one place for Brain (jacket in rain or cold), Sound and the UI to read the weather ----
   // state() -> { state: 'clear'|'calm'|'drizzle'|'rain'|'storm'|'mist', intensity 0..1, wind: 'calm'|'breeze'|'windy', windLevel 0..2, gust bool, rain: 'none'|'drizzle'|'rain'|'storm',
   //   rainAmt 0..1, wet 0..1, mist 0..1 (morning fog bank), storm bool, stillEvening bool, sinceThunder s,
