@@ -95,7 +95,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       return;
     }
     wb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) return;
-    const sz = wb.getSize(V()); if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4 && Math.hypot(sz.x, sz.y, sz.z) < 14) { slabs(o, name); return; }
+    const sz = wb.getSize(V()); if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4 && Math.hypot(sz.x, sz.y, sz.z) < 14) { if (window.__colSlabs) { slabs(o, name); return; } } // OFF for now: on the iPhone this froze the game for ~47 s (being moved into the worker)
     if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4) { skipped['big ' + name] = sz.toArray().map(v => +v.toFixed(1)).join('x') + ' @' + wb.getCenter(V()).toArray().map(v => +v.toFixed(1)).join(','); return; }
     add(o, o.geometry, o.matrixWorld, name);
   });
