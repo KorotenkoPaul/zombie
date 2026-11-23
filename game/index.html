@@ -99,7 +99,7 @@ const TREE_H=16;
 function placeTree(x,z,h,ry){const t=treeG.scene.clone(true);const b=new THREE.Box3().setFromObject(t);const k=h/(b.max.y-b.min.y);t.scale.setScalar(k);const c=b.getCenter(V());t.position.set(x-c.x*k,-b.min.y*k,z-c.z*k);t.rotation.y=ry;t.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;if(o.material){o.material.metalness=0;o.material.roughness=.9;o.material.color&&o.material.color.multiplyScalar(1.25);}}});scene.add(t);return {t,k,b};}
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
-const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
+const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
 const TREE=buildTree(THREE,{model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
  avoidLeaves:[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]]});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
@@ -278,6 +278,11 @@ if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
 // lookout deck (right, top)
 floorBoards(.8,4.25,DK,.3,3.0);rail(.8,3.0,4.25,3.0,DK,[1.05,1.65]);rail(4.25,.6,4.25,3.0,DK);
 brace(V(1.6,DK-2.4,1.0),V(2.6,DK-.13,1.6),.17);brace(V(4.0,WS+3.5,1.6),V(4.0,DK-.13,1.6),.16);
+// the little window in the trunk above the deck (photo): a plank frame on the bark with a dark, warm-lit opening
+{const wx=.8,wy=DK+1.05,wz=frontZ(wx,wy)+.04,g=new THREE.Group();g.position.set(wx,wy,wz);scene.add(g);
+ const hole=new THREE.Mesh(new THREE.PlaneGeometry(.62,.78),new THREE.MeshStandardMaterial({color:0x2A160C,emissive:0xFF9040,emissiveIntensity:.07,roughness:1}));hole.position.z=-.02;g.add(hole);
+ for(const [w,h,x,y] of [[.86,.13,0,.45],[.86,.13,0,-.45],[.13,1.03,-.37,0],[.13,1.03,.37,0],[.62,.05,0,0]]){const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,.1),darkBoard);b.position.set(x,y,.02);b.castShadow=true;g.add(b);}
+ const sill=new THREE.Mesh(new THREE.BoxGeometry(1.0,.07,.22),darkBoard);sill.position.set(0,-.53,.07);g.add(sill);}
 // kitchen ladders: landing↑kitchen (through a hatch), kitchen↑bedroom (through a hatch)
 ladder(-1.22,LC,KT+.05,3.45);ladder(-4.0,KT,BD+.05,2.0);
 // barricades the zombies have to break
@@ -360,6 +365,8 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
  mode:()=>{if(isNight(hour)&&zombies.some(z=>z.alive))return 'guard';if(B.some(b=>b.breakable&&b.loose))return 'repair';return null;},
  guardSpot:()=>guardSpot(),brokenBoard:()=>B.find(b=>b.breakable&&b.loose),repairBoard:b=>repairBoard(b),get WIN_NODE(){return WIN_NODE;}});
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
+// the hero's brain: needs, mood, choices, gait, lamps (game/brain.js); attaches only once hero.js offers HH.setBrain
+let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSET+'brain.js',document.baseURI).href);BRAIN=createBrain({HH,lights:LIGHTS,hour:()=>hour,isNight:h=>isNight(h)});window.__brain=BRAIN;}catch(e){console.error('brain',e);}}
 const bow=makeBow();heroBones.LeftHand.add(bow);bow.position.set(0,.07,.03);bow.rotation.set(0,0,0);bow.scale.setScalar(1/Math.max(.001,heroBones.LeftHand.getWorldScale(V()).x));
 function play(c,name,{loop=true,fade=.25,speed=1}={}){const a=c.actions[name];if(!a||c.cur===a)return a;a.reset();a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);a.clampWhenFinished=!loop;a.timeScale=speed;a.enabled=true;if(c.cur)c.cur.crossFadeTo(a,fade,false);a.play();c.cur=a;return a;}
 
