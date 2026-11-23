@@ -33,3 +33,17 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
   leaves a meal) -> 'eat'. 'trip' {kind:'wood'} -> +3 logs. Trips by day; at night only when starving (with the lantern).
   Results are booked in onTaskEnd(name, res); res === false / {ok:false} = failed trip. Props hooks: __props.fridge.setStock(n),
   __props.woodpile.setCount(n).
+
+## QA run 5 fixes (2026-11-23)
+- Kitchen ping-pong cause: the hero was exhausted (energy ~0, e.g. after a clock jump), so the "pressing" rule dropped every chore on arrival, while decide() never picked the bed in daytime. Now:
+  - hysteresis: a pressing need (hunger / tiredness / bedtime) pulls him away only after a few seconds of real work, and only if decide() offers something that serves it (food tasks for hunger, the bed for tiredness). Otherwise he keeps going and looks again 8 s later (`cur.hold`);
+  - dead tired (energy < .06) means bed at any hour; a daytime nap ends once energy > .6;
+  - a clock jump (debug `__th.setHour`, QA) re-fits the needs to the new hour (stock kept); `prime()` no longer sets bedTime to the start hour before 5:36.
+- Chores (Character's self-ending jobs) give way to bedtime/exhaustion after 10 s. No setting off outdoors within 1.3 h of bedtime.
+- Longer stays: read 32-52 s, craft 22-38, look 22-36, cook 16-24, tea 12-18, wash 10-16 (real seconds).
+- `__brain.trace`: ring buffer of decisions {h, k (reason: done, done:early, urgent:*, dayLamp, darkLamp, wake, clockjump, idle, rain), cur, t, task, plan}.
+- Forced tasks (`__th.task` -> `brain.command`, or a chore started by anything else) become `cur` with cmd:true at once: the brain no longer overrules them; any non-brain chore is adopted and runs until it ends itself.
+- Daylight lamp-off only between activities (no switch trip in the middle of cooking); night sounds resume any chore with its opts.
+- Jacket for trips: `__weather.state()` (rain !== 'none', cold / feels < 6 °C), fallback `__wind.raining()`.
+- QA natural day (seed 1, 25 h) after the fixes: turn-back 1 (the opening switch), short stays: fix_shingle 7.6 s (the body ends it; no brain decision in the trace), wash 8.6 s.
+- fix_shingle targets only slates within 1.5 m (horizontal) of a walkable node and 0–2.2 m above it (HH.N); none in reach → the body's default deck spot. Every chore end is logged in __brain.trace as end:<name> with t (seconds at it) and res. Checked: fix_shingle 35–37 s, real slates.

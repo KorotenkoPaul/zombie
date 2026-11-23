@@ -16,9 +16,9 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
   const hTex = new THREE.DataTexture(hm, NX, NZ, THREE.RedFormat, THREE.FloatType);
   hTex.minFilter = hTex.magFilter = THREE.NearestFilter; hTex.needsUpdate = true;
 
-  const U = { uT: { value: 0 }, uK: { value: 0 }, uCol: { value: new THREE.Color(0.7, 0.75, 0.8) }, uH: { value: hTex },
+  const U = { uT: { value: 0 }, uK: { value: 0 }, uFT: { value: 0 }, uSF: { value: 1 }, uCol: { value: new THREE.Color(0.7, 0.75, 0.8) }, uH: { value: hTex },
     uBox: { value: new THREE.Vector4(X0, Z0, W, D) }, uTop: { value: TOP } };
-  const COMMON = `uniform float uT,uK,uTop;uniform vec4 uBox;uniform sampler2D uH;
+  const COMMON = `uniform float uT,uK,uTop,uFT,uSF;uniform vec4 uBox;uniform sampler2D uH;
     float topAt(vec2 xz){vec2 uv=(xz-uBox.xy)/uBox.zw;if(uv.x<0.||uv.y<0.||uv.x>1.||uv.y>1.)return -99.;return texture2D(uH,uv).r;}
     vec2 windVel(vec3 p){
 #ifdef WIND
@@ -44,13 +44,13 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
   const ND = MOBILE ? 1600 : 3200;
   const dA = new Float32Array(ND * 4); for (let i = 0; i < ND; i++) dA.set([Math.random(), Math.random(), Math.random(), Math.random()], i * 4);
   const drops = new THREE.Mesh(quadGeo(ND, { aD: dA }), mk(`attribute vec4 aD;varying float vA;
-    void main(){float spd=11.+aD.w*3.;float fall=mod(uT*spd+aD.z*uTop*3.,uTop);vec3 p=vec3(uBox.x+aD.x*uBox.z,uTop-fall,uBox.y+aD.y*uBox.w);
-     vec2 wv=windVel(p);p.xz+=wv*(fall/spd-1.);
+    void main(){float spd=11.+aD.w*3.;float fall=mod(uFT*spd+aD.z*uTop*3.,uTop);/* uFT: fall clock, slower in a drizzle (no jumps when it changes) */vec3 p=vec3(uBox.x+aD.x*uBox.z,uTop-fall,uBox.y+aD.y*uBox.w);
+     vec2 wv=windVel(p);p.xz+=wv*(fall/(spd*uSF)-1.);
      float on=step(fract(aD.w*7.31+aD.x*3.1),uK)*step(topAt(p.xz),p.y);
-     vec3 tail=p+vec3(wv.x,spd,wv.y)*.032;
+     vec3 tail=p+vec3(wv.x,spd*uSF,wv.y)*.032;
      vec4 a=viewMatrix*vec4(p,1.),b=viewMatrix*vec4(tail,1.);vec2 d=b.xy-a.xy;float L=length(d);d=L>1e-5?d/L:vec2(0.,1.);
      vec4 v=mix(a,b,position.y);v.xy+=vec2(d.y,-d.x)*position.x*max(.006,-a.z*.0026);/* about 1.5 px on screen at any distance */
-     vA=on*(.14+.16*position.y)*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
+     vA=on*(.14+.16*position.y)*(.55+.45*uSF)*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
     `varying float vA;void main(){gl_FragColor=vec4(uCol,vA);}`));
   drops.frustumCulled = false; drops.renderOrder = 8; drops.visible = false; scene.add(drops);
 
@@ -139,6 +139,9 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
       }
       const on = rainK > 0.01; drops.visible = on; if (splash) splash.visible = on; if (drips) drips.visible = on;
       if (!on) return;
+      // a drizzle falls slower, in short faint streaks; a rain or storm at full speed
+      const sf = wind && wind.rainKind && wind.rainKind() === 'drizzle' ? 0.42 : 1; U.uSF.value += (sf - U.uSF.value) * Math.min(1, dt / 3);
+      U.uFT.value += dt * U.uSF.value;
       U.uT.value = T; U.uK.value = rainK;
       if (fogColor) U.uCol.value.copy(fogColor).multiplyScalar(1.25).addScalar(0.12);
     },
