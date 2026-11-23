@@ -209,6 +209,9 @@ function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const 
     const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.1,.13),ww));SHING.setMatrixAt(SHING.count,m4);
     const k=rnd(.75,1.2)*(rnd(0,1)<.12?.7:1);c.setRGB(.07*k,.075*k,.095*k*rnd(.92,1.1));SHING.setColorAt(SHING.count,c);SHING.count++;}}}
  const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
+ // gable walls (Pavel / critic T4): the triangles under the roof are closed with vertical boards, back and front
+ for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<x1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
+  if(inTrunk(xx,y+hg/2,gz,.05))continue;board(V(xx,y+hg/2+.02,gz),hg+.04,.305,.05,new THREE.Euler(0,0,Math.PI/2),{tint:rnd(1.64,1.72),wall:true});}
  // gable trim boards on the front like the photo's dark fascia
  for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
  SHING.instanceMatrix.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
@@ -294,14 +297,28 @@ if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
 ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
 const KX0=-4.4,KX1=-.9;
-floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9],[-4.3,-3.7,1.0,2.05]]});
+floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]]});
 wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
 wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]]);wallSide(KX1,.8,2.2,KT+.03,BD-.15);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);brace(V(-2.2,KT-2.3,frontZ(-2.2,KT-2.3)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,KT-2.2,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
-floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.7,1.0,2.05]]});
+floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.7,2.02,2.95]]});/* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.32) and steps off behind it (z 1.62) */
+// the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
+// shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
+const HATCH=(()=>{const x0=-4.3,x1=-3.7,z0=2.02,z1=2.95,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+ const lid=new THREE.Group();g.add(lid);const L=z1-z0;
+ for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.145,.05,L-.01),boardMat);m.position.set(x0-(x0+x1)/2+.08+i*.148,0,-L/2);m.castShadow=m.receiveShadow=true;lid.add(m);}
+ for(const zz of [-.18,-L+.18]){const m=new THREE.Mesh(new THREE.BoxGeometry(.58,.04,.09),darkBoard);m.position.set(0,-.04,zz);lid.add(m);}
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(.045,.009,6,14),new THREE.MeshStandardMaterial({color:0x2A2622,metalness:.7,roughness:.45}));ring.position.set(0,.03,-L+.12);ring.rotation.x=Math.PI/2;lid.add(ring);
+ for(const xx of [-.2,.2]){const h=new THREE.Mesh(new THREE.BoxGeometry(.05,.02,.12),ring.material);h.position.set(xx,.03,-.04);lid.add(h);}
+ const OPEN=1.95;let ang=OPEN,target=OPEN;lid.rotation.x=ang;
+ const grab=new THREE.Vector3();
+ return {update(dt){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;lid.rotation.x=ang;ring.getWorldPosition(grab);},
+  open(){target=OPEN;},close(){target=0;},toggle(){target=target===0?OPEN:0;},isOpen(){return target!==0;},
+  get angle(){return ang;},grab,box:[x0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
+window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
 roof(BX0,BX1,BD+2.3,.8,3.8,1.15);post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
@@ -570,7 +587,7 @@ addEventListener('resize',resize);
 // ================= main loop =================
 const clock=new THREE.Clock();let acc=0,fr=0,ft=0,perf=false;
 function frame(){requestAnimationFrame(frame);try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
-function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;
+function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;HATCH.update(dt);
  const wasN=isNight(hour);hour+=dt*hps()*TS;if(hour>=24)hour-=24;const nowN=isNight(hour);
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}
  if(!over&&wasN&&!nowN){dayNo++;toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
