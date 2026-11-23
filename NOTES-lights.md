@@ -6,7 +6,7 @@ Rule (Pavel): warm light only comes from a real source. A source that is off emi
 The old always-on warm ambient fill (ambL +.12 at night) is gone; ambL is daylight only now. Night rooms with lamps off are lit only by the cold moon/sky (Environment).
 
 Sources (`__lights.names`): kitchen (hanging lantern + small counter lantern), workshop (dome lamp: SpotLight with shadow + faint bounce), bedroom (wall lantern),
-candle (bedroom table), landing (ladder lantern), deck (emissive only), oven (fire, owns oven heat: index passes `heat: LIGHTS.level('oven')` to props.update, `cooking:false`), door (trunk door light + tree doorGlow).
+candle (bedroom table), landing (ladder lantern), oven (fire, owns oven heat: index passes `heat: LIGHTS.level('oven')` to props.update, `cooking:false`), door (trunk door light + tree doorGlow).
 Windows: each window has its own glass material tagged with its room; warm while the room is lit, faint cold reflection otherwise.
 
 API `window.__lights`: list(), set(name,on) (manual until auto(name)), toggle, auto(name?), get, pos (where to reach to switch), room(name) 0..1, onChange(cb), level(name).

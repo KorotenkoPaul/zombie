@@ -121,13 +121,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       autoFn: c => c.task === 'read' && c.lamps > .25 });
   }
 
-  // ---------- outside: lantern by the ladder landing, the deck lantern ----------
+  // ---------- outside: lantern by the ladder landing (the deck lantern was removed: it read as a lantern on the bedroom roof) ----------
   {
     const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.PointLight(0xFFB25E, 0, 5, 1.6); l.position.copy(p); scene.add(l);
     housing(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
     add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
-    const d = V(.7, DK + 1.15, 3.0); housing(d); claimHousing(d, .3); const db = bulbMesh(d, .065);
-    add('deck', 'outside', 'oil', d, { emis: [[db, 4.5]], autoFn: c => c.lamps > .7 });
   }
 
   // ---------- oven fire (Props draws the fire; we own whether it burns) ----------
