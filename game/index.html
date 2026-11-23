@@ -240,6 +240,7 @@ vec3 pNail(vec2 mm,vec3 sz,float wall){float pt=mix(1.,.62,wall);float a=mm.x+sz
 float pTop(vec2 mm,vec3 sz,float sd,float wall){float yw=mm.y/max(sz.y*.5,.01);float h=(.0012+.0028*pH(sd+5.5))*yw*yw*step(.06,sz.y)+.0015*pN(vec2(mm.x*1.7,sd));
  if(uNails>.5&&sz.y>.12)h+=.0012*pNail(mm,sz,wall).x;return h;}
 vec3 pTex(vec2 uv,float wall,float bias){return wall>.5?texture2D(tWoodB,uv,bias).rgb:texture2D(tWoodA,uv,bias).rgb;}
+vec3 pTexG(vec2 uv,float wall,vec2 gx,vec2 gy){return wall>.5?textureGrad(tWoodB,uv,gx,gy).rgb:textureGrad(tWoodA,uv,gx,gy).rgb;}
 float pL(vec3 c){return dot(c,vec3(.3,.6,.1));}
 vec3 plank(vec3 lp,vec3 sz,float sd){
  float wall=step(99.5,sd)*step(sd,399.5);vec3 m=lp*sz;vec3 an=abs(vN0);float fr=vFresh,old=1.-fr;
@@ -248,6 +249,9 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  vec2 off=vec2(pH(sd+.7)*7.,pH(sd+1.9)*3.);
  vec2 uv=face==0.?vec2(m.x/2.4,m.y):(face==1.?vec2(m.x/2.4,m.z+.5):vec2(m.y,m.z)*.6);uv+=off;
  vec3 tx=pTex(uv,wall,0.);
+ // LOD (perf round): metres per pixel on this board. Far away (> ~5 mm/px: across a room on a phone) the relief, nail heads
+ // and cupping are below a pixel, so their taps and noise are skipped; they fade in smoothly as the camera comes close.
+ vec2 ux=dFdx(uv),uy=dFdy(uv),mx=dFdx(m.xy),my=dFdy(m.xy);float fp=max(length(mx),length(my));float near=1.-smoothstep(.0035,.0065,fp);
  // a little more contrast than the scan: the grain reads under warm lamp light
  vec3 col=pow(tx,vec3(1.25))*1.3*(wall>.5?uTintB:uTintA);
  float lum=pL(tx);pRgh=.7+.25*(1.-lum);
@@ -257,10 +261,10 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  // a soft stain / water mark now and then
  col*=1.-.18*old*smoothstep(.62,.9,pN(vec2(m.x*1.3+sd*3.,m.y*4.)))*step(.5,pH(sd+8.));
  // relief from a blurred tap of the scan, differenced in texture space (smooth, no 2x2 blocks), in metres
- vec2 ux=dFdx(uv),uy=dFdy(uv);float hb=pL(pTex(uv,wall,2.5));
- vec2 dH=vec2(pL(pTex(uv+ux,wall,2.5))-hb,pL(pTex(uv+uy,wall,2.5))-hb)*uBump;
+ vec2 dH=vec2(0.);
+ if(near>0.){float hb=pL(pTex(uv,wall,2.5));dH=vec2(pL(pTex(uv+ux,wall,2.5))-hb,pL(pTex(uv+uy,wall,2.5))-hb)*uBump;
+  if(face==0.){float h0=pTop(m.xy,sz,sd,wall);dH+=vec2(pTop(m.xy+mx,sz,sd,wall)-h0,pTop(m.xy+my,sz,sd,wall)-h0);}dH*=near;}
  if(face==0.){
-  vec2 mx=dFdx(m.xy),my=dFdy(m.xy);float h0=pTop(m.xy,sz,sd,wall);dH+=vec2(pTop(m.xy+mx,sz,sd,wall)-h0,pTop(m.xy+my,sz,sd,wall)-h0);
   // worn, lighter along the rounded edges
   float ew=sz.y*.5-abs(m.y),el=sz.x*.5-abs(m.x);col*=1.+.1*smoothstep(.012,.0,min(ew,el));
   if(vN0.z<0.&&wall<.5){col*=vec3(.68,.6,.55);pRgh=.95;}
@@ -270,7 +274,7 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
   // and grey with wear; grime gathers at the ends by the rails
   if(sd>399.5){float x=abs(m.x),tp=step(.5,vN0.z),fe=smoothstep(.2,1.,abs(vN0.y));float wr=smoothstep(.21,.05,x)*(.55+.45*pN(m.xy*vec2(9.,40.)+sd))*max(tp,.75*fe);
    col=mix(col,vec3(.4,.29,.19)*(.85+.3*pL(tx)),wr*.7);pRgh=mix(pRgh,.42,wr*tp);col*=1.-.32*smoothstep(.17,.24,x);}
-  if(uNails>.5&&sz.y>.12&&(vN0.z>0.||wall>.5)){vec3 nl=pNail(m.xy,sz,wall);col=mix(col,col*vec3(.55,.42,.33),nl.y*.6);float nh=smoothstep(.0055,.0035,nl.z);
+  if(uNails>.5&&sz.y>.12&&(vN0.z>0.||wall>.5)&&near>0.){vec3 nl=pNail(m.xy,sz,wall);col=mix(col,col*vec3(.55,.42,.33),nl.y*.6*near);float nh=smoothstep(.0055,.0035,nl.z)*near;
    col=mix(col,vec3(.035,.032,.03)+vec3(.05,.03,.02)*pN(m.xy*900.),nh);pRgh=mix(pRgh,.45,nh);}
   // beams, braces and posts: a coach bolt through each end (square-ish iron head on a washer, rust bleeding into the wood)
   if(uNails<.5&&sz.x>.6&&sz.y>.08){float bx=sz.x*.5-min(.09,sz.x*.15);float r=length(vec2(abs(m.x)-bx,m.y));
@@ -396,19 +400,22 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  float t=sH(sd+2.2);col*=mix(vec3(.72,.76,.86),vec3(1.12,1.08,1.02),t);
  if(sH(sd+7.)<.12)col*=vec3(1.18,1.02,.86);
  sRgh=.62+.3*(1.-lum*3.);
- vec2 ux=dFdx(uv),uy=dFdy(uv);float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
- vec2 dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004;
+ vec2 ux=dFdx(uv),uy=dFdy(uv),mx=dFdx(m.xz),my=dFdy(m.xz);vec3 wx=dFdx(vW),wy=dFdy(vW);
+ // LOD (perf round): far slates (> ~7 mm/px) skip the relief taps, crack relief, lichen specks and moss relief
+ float near=1.-smoothstep(.005,.009,max(length(mx),length(my)));vec2 dH=vec2(0.);
+ if(near>0.){float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
+  dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004*near;}
  if(top>.5){
   // the slate above lies on this one: under its butt edge a soft shadow band (the overlap reads as depth, not as a drawn line),
   // and a little grime washed down along it
   {float dB=sz.x*.5-m.x*vDn;float ao=smoothstep(.12,.25,dB)*(.8+.2*sN(m.xz*vec2(3.,20.)+sd));col*=1.-.55*ao;sRgh=mix(sRgh,.95,ao);}
-  vec2 mx=dFdx(m.xz),my=dFdy(m.xz);float c0=sCrack(m.xz,sz,sd);dH+=vec2(sCrack(m.xz+mx,sz,sd)-c0,sCrack(m.xz+my,sz,sd)-c0);col*=1.-.75*old*smoothstep(0.,-.003,c0);dH*=mix(1.,.3,vFresh);
+  float c0=sCrack(m.xz,sz,sd);if(near>0.&&c0<0.)dH+=vec2(sCrack(m.xz+mx,sz,sd)-c0,sCrack(m.xz+my,sz,sd)-c0)*near;col*=1.-.75*old*smoothstep(0.,-.003,c0);dH*=mix(1.,.3,vFresh);
   // pale lichen rosettes
-  float li=smoothstep(.9,.95,sN(m.xz*90.+sd))*smoothstep(.55,.8,sN(m.xz*6.+sd*2.))*step(.6,sH(sd+11.));col=mix(col,vec3(.16,.17,.13),li*.6*old);
+  if(near>0.&&sH(sd+11.)>.6){float li=smoothstep(.9,.95,sN(m.xz*90.+sd))*smoothstep(.55,.8,sN(m.xz*6.+sd*2.));col=mix(col,vec3(.16,.17,.13),li*.6*old*near);}
  }else col*=.8; // split edges: a little darker, rougher
  // moss, raised a few mm over the stone
- float mo=sMoss(vW,sd)*mix(.5,1.,top)*old;
- if(mo>.001){vec3 wx=dFdx(vW),wy=dFdy(vW);dH+=vec2(sMoss(vW+wx,sd)-sMoss(vW,sd),sMoss(vW+wy,sd)-sMoss(vW,sd))*.006*mix(.5,1.,top);
+ float ms=sMoss(vW,sd),mo=ms*mix(.5,1.,top)*old;
+ if(mo>.001){if(near>0.)dH+=vec2(sMoss(vW+wx,sd)-ms,sMoss(vW+wy,sd)-ms)*.006*mix(.5,1.,top)*near;
   vec3 mc=texture2D(tMoss,vW.xz*1.7+vec2(vW.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
