@@ -507,8 +507,13 @@ export function createHero(ctx){
    a.update=dt=>{if(a.step==='approach'){a.t+=dt;if(a.t>=a.adur)a.next();return;}if(a.step==='go'||a.step==='app')return;a.t+=dt;H.look=ringW();H.lookW=1;
     const p=root.position,g=hc.grab;H.face=Math.atan2(g.x-p.x,0)||-Math.PI/2;root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*6);
     {/* he shuffles along the edge with the ring, right shoulder level with it */const tz=clamp(g.z+.12,z0+.05,z1+.45);const m=.5*dt;p.z+=clamp(tz-p.z,-m,m);if(p.x<FOOT)p.x+=Math.min(FOOT-p.x,m);}
-    if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.5);if(a.t>.55){a.step='push';a.t=0;AU('hatch_open',g);}}
-    else if(a.step==='push'){const G=window.__grab,gd=G?G.dist('Right'):0;/* GRAB HOOK: the lid moves only while the palm is on the ring; once it tips past where the hand can follow, he lets go and it drops */const ang=gd!=null&&gd>.035&&a.t<1.5?hc.angle:Math.max(1.12,hc.angle-dt*1.1);if(gd==null||gd<=.035||a.t>=1.5)hc.drive(ang);if(ang<=1.12||(hc.angle<1.4&&gd!=null&&gd>.03)){hc.letGo(false);a.step='after';a.t=0;}}
+    if(a.step==='reach'||a.step==='push'){/* GRAB HOOK (deterministic): if the ring is past arm's reach he steps in toward it first */const sh=bones.RightArm.getWorldPosition(V());const R=armLen*.92+PALM;const ex=sh.distanceTo(g)-R*.95;
+     {const want=ex>0?Math.min(.45,ex*3):0;a.sv=(a.sv||0)+(want-(a.sv||0))*Math.min(1,dt*5);/* eased step, no jerk */if(a.sv>.002){const hz=V(g.x-sh.x,0,g.z-sh.z);const l=hz.length();if(l>.05){const m=a.sv*dt;p.x+=hz.x/l*m;p.z+=hz.z/l*m;}}}}
+    if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.5);const G=window.__grab,pm=G&&G.palm('Right'),gd=pm?pm.distanceTo(g):0;if(a.t>.4&&gd<.04){a.step='push';a.t=0;AU('hatch_open',g);}else if(a.t>4){hc.letGo(hc.angle>1);a.step='after';a.t=0;}}
+    else if(a.step==='push'){const G=window.__grab,pm=G&&G.palm('Right'),gd=pm?pm.distanceTo(g):0;/* GRAB HOOK: the lid moves only while the palm is on the ring; past ~25 degrees beyond upright it falls shut by its own weight */
+     const nx=Math.max(1.12,hc.angle-dt*1.1);const shp=bones.RightArm.getWorldPosition(V());const dN=shp.distanceTo(hc.ringAt(nx,V()));const reachable=dN<=armLen*.92+PALM+.1||dN<=shp.distanceTo(g)+.002;
+     if(gd<=.045&&reachable){hc.drive(nx);a.lost=0;}else a.lost=(a.lost||0)+dt;
+     if(hc.angle<=1.121||(hc.angle<1.5&&(!reachable||gd>.045))){/* past upright: he lets go at the last point his hand can follow and it falls shut */hc.letGo(false);a.step='after';a.t=0;}else if(a.lost>3){hc.letGo(true);a.step='after';a.t=0;}}
     else if(a.step==='bend'){// GRAB HOOK: squat, palm onto the ring, and the lid rises only as far as the hand can carry it (never ahead of it)
      const pk=has('hy_picklog');const d=pk?durOf('hy_picklog')/.75:(has('hy_take')?durOf('hy_take')/.8:1.2);const k=a.t/d;a.w=Math.max(a.w,smooth(.2,.5,k));
      const G=window.__grab,pm=G&&G.palm('Right'),gd=pm?pm.distanceTo(g):0;if(!a.held&&a.w>.9&&(gd<.04||k>1.3)){a.held=true;AU('hatch_open',g);}
@@ -572,16 +577,27 @@ export function createHero(ctx){
    a.leave=cb=>{plank.visible=false;if(!H.hold.Right){cb();return;}a.step='putback';a.t=0;play(IDLE(),{fade:.5});a.update=dt=>{a.t+=dt;const hp=hammerHome();H.look=hp;H.lookW=1;
      a.ik=[['Right',hp.clone().add(V(0,.06,0)),smooth(0,.8,a.t)-smooth(1.0,1.6,a.t)]];if(a.t>.85&&H.hold.Right){releaseTool('Right');}if(a.t>1.6){a.ik=null;cb();}};};return a;},
   cook:()=>{const a={step:'go',t:0};goTo('stove',()=>{a.step='oven';a.t=0;pot.visible=true;pot.position.copy(potSpot());pot.rotation.y=rnd(0,6);
-    once('hy_oven',{fade:.5,then:()=>{a.step='stir';a.t=0;grab(spoon,'Right',[0,.06,.02],[0,0,-Math.PI/2]);play('hy_stir',{fade:.7});}});});
+    once('hy_oven',{fade:.5,then:()=>{/* GRAB: no spoon out of thin air and no clip stirring the air beside the stove: he steps up to the
+     pot, takes the ladle out of it with his hand, then stirs in it (stirPost) */const PO=PP();const pp=PO&&PO.tools&&PO.tools.pot;
+     if(pp&&PO.tools.ladle){pot.visible=false;a.pot2=1;a.step='topot';a.t=0;play(IDLE(),{fade:.5});approachTo(a,pp.getWorldPosition(V()),.45,()=>{a.step='getladle';a.t=0;});}
+     else{a.step='stir';a.t=0;grab(spoon,'Right',[0,.06,.02],[0,0,-Math.PI/2]);play('hy_stir',{fade:.7});}}});});
    const oven=()=>P3&&P3.oven?P3.oven:(ctx.ovenDoor&&ctx.ovenDoor());
-   a.update=dt=>{a.t+=dt;H.face=N.stove.face;const ov=oven();
+   a.update=dt=>{if(a.step==='approach'){if(a.pot2){stepTick(a,dt);return;}}a.t+=dt;if(a.step==='topot'||a.step==='getladle'||a.step==='stir2'||a.step==='putladle'){
+     const PO=PP();const pp=PO&&PO.tools&&PO.tools.pot;if(pp){H.look=pp.getWorldPosition(V()).add(V(0,.08,0));H.lookW=.9;}
+     if(a.step==='getladle'){const g=gripHome('ladle');a.reach=['Right',g,smooth(0,.5,a.t)];const G=window.__grab;const dd=G&&G.gripPoint?G.gripPoint('Right').distanceTo(g):0;if(!H.hold.Right||H.hold.Right.tool!=='ladle'){if(dd<.03||a.t>1.3){grabTool('ladle','Right');a.step='stir2';a.t=0;a.reach=null;}}}
+     return;}
+    H.face=N.stove.face;const ov=oven();
     if(a.step==='oven'){const k=a.t/durOf('hy_oven');const open=smooth(.24,.36,k)-smooth(.6,.72,k);ov&&ov.setOpen&&ov.setOpen(open);
      H.look=root.position.clone().addScaledVector(fwd(H.face),.6).add(V(0,.35,0));H.lookW=.7;
      a.ik=ov&&ov.handle?[['Right',ov.handle(),smooth(.16,.25,k)-smooth(.7,.8,k)]]:null;}
     else if(a.step==='stir'){const pp=pot.position.clone().add(V(0,.1,0));H.look=pp;H.lookW=1;
      a.ik=[['Right',pp.clone().add(V(Math.cos(a.t*3)*.045,.12,Math.sin(a.t*3)*.045)),.75]];}};
-   a.post=()=>ikList(a.ik);
-   a.leave=cb=>{a.ik=null;const ov=oven();ov&&ov.setOpen&&ov.setOpen(0);if(H.hold.Right){release('Right');spoon.visible=false;}pot.visible=false;cb();};return a;},
+   a.post=dt=>{ikList(a.ik);if(a.step==='stir2')stirPost(a,dt);if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
+   a.leave=cb=>{a.ik=null;const ov=oven();ov&&ov.setOpen&&ov.setOpen(0);pot.visible=false;
+    if(H.hold.Right&&H.hold.Right.tool==='ladle'){/* the ladle goes back into the pot from his hand */try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}a.step='putladle';a.t=0;
+     a.update=dt=>{a.t+=dt;const g=gripHome('ladle');a.reach=['Right',g,smooth(0,.45,a.t)*(1-smooth(.75,1.1,a.t))];const G=window.__grab;const dd=G&&G.gripPoint?G.gripPoint('Right').distanceTo(g):0;
+      if(H.hold.Right&&(dd<.03||a.t>.7))relTool('Right','ladle',.14);if(a.t>1.1){a.reach=null;cb();}};return;}
+    if(H.hold.Right){release('Right');spoon.visible=false;}cb();};return a;},
   tea:()=>{const a={step:'go',t:0};const hand=POSE.drinkHand||'Right';goTo('sink',()=>{a.step='take';a.t=0;play(IDLE(),{fade:.4});});
    a.update=dt=>{a.t+=dt;if(a.step==='take'){H.face=N.sink.face;H.look=rest.mug.clone();H.lookW=1;a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)),smooth(.1,.8,a.t)-smooth(.9,1.4,a.t)]];
      if(a.t>.85&&!H.hold[hand]){grab(mug,hand,[0,.07,.035],[0,0,hand==='Right'?-Math.PI/2:Math.PI/2]);}if(a.t>1.4){a.step='drink';a.t=0;a.ik=null;a.turn=rnd(-1.1,-.5);}}
@@ -692,10 +708,9 @@ export function createHero(ctx){
  // sound and the nail sinking all happen on that frame), the other hand steadies the work beside the nail
  const HFACE=[.102,.146,0];
  function hammerPost(a,dt,nail,nrm){a.nail=a.nail||nail;const P=PP();const hm=P&&P.tools&&P.tools.benchHammer;if(!hm||hm.parent!==bones.RightHand||!nail)return;
-  if(bones.RightArm.getWorldPosition(V()).distanceTo(nail)>armLen+.38){a.hmFar=true;return;}a.hmFar=false;/* out of reach from this pose (a kneeling or roof clip): the clip swings, the timer sounds */
+  {const dS=bones.RightArm.getWorldPosition(V()).distanceTo(nail);if(dS>armLen+(a.hmFar===false?.45:.3)){if(a.hmFar===false&&a.hm)a.hm.w=0;a.hmFar=true;return;}a.hmFar=false;}/* hysteresis: no flicker between the clip arm and the swing *//* out of reach from this pose (a kneeling or roof clip): the clip swings, the timer sounds */
   const S=a.hm||(a.hm={ph:Math.random()*.3,w:0,n:0,T:rnd(.72,.9)});S.w=Math.min(1,S.w+dt/.5);S.ph+=dt;if(S.ph>S.T){S.ph-=S.T;S.T=rnd(.72,.9);S.hit=0;S.n++;if(S.n%6===5)S.ph-=rnd(.6,1.1);/* now and then a breath / a look between blows */}
-  H.noPop={side:'Right',age:0};/* a hammer blow is meant to be sharp: keep the anti-pop pass off this arm */
-  const u=S.ph/S.T;const TH=.9;let th=u<0?0:u<.5?TH*smooth(0,.5,u):u<.6?TH:u<.7?TH*(1-Math.pow((u-.6)/.1,2)):0;
+  const u=S.ph/S.T;if(u>.55&&u<.75)H.noPop={side:'Right',age:0};/* only the blow itself is meant to be sharp: the anti-pop pass stays on for everything else (start, stop, lift) */const TH=.9;let th=u<0?0:u<.5?TH*smooth(0,.5,u):u<.6?TH:u<.7?TH*(1-Math.pow((u-.6)/.1,2)):0;
   const sh=bones.RightArm.getWorldPosition(V());const up=nrm?nrm.clone().normalize():V(0,1,0);/* surface normal: up for a bench, board or rail, out of the wall for a wall */
   const d=nail.clone().sub(sh);d.addScaledVector(up,-d.dot(up));if(d.lengthSq()<1e-4)d.set(0,1,0);d.normalize();const k=d.clone().cross(up).normalize();
   const W0=d.clone(),B0=up.clone().negate();const R=new THREE.Quaternion().setFromAxisAngle(k,th);const W=W0.clone().applyQuaternion(R),Bw=B0.clone().applyQuaternion(R);
@@ -704,8 +719,8 @@ export function createHero(ctx){
   const Fw=V(...HFACE).multiplyScalar(sc).applyQuaternion(Qt);const O=nail.clone().sub(Fw);const G0=O.clone().add(V(0,-.085,0).multiplyScalar(sc).applyQuaternion(Qt));
   const piv=G0.clone().addScaledVector(d,-.22).add(V(0,-.04,0));const G=piv.clone().add(G0.clone().sub(piv).applyQuaternion(R));
   // the other hand steadies the work a hand's width left of the nail, on the near side (first: it may lean the body)
-  {const ls=bones.LeftArm.getWorldPosition(V());let lp=nail.clone().addScaledVector(k,-.12).addScaledVector(d,-.08).addScaledVector(up,.01);const r=armLen*.9+PALM;if(ls.distanceTo(lp)>r){/* no leaning over for it: the hand settles on the plank where it reaches */const q=lp.clone().sub(ls);const h=Math.sqrt(Math.max(0,r*r-q.y*q.y));const hz=V(q.x,0,q.z);if(hz.length()>h)hz.setLength(h);lp=ls.clone().add(hz).setY(lp.y);}reachGrip('Left',lp,S.w*.9);}
-  const tip=G.clone().add(W);if(sh.distanceTo(G)>armLen*.95+.12)reachTo('Right',G,S.w);holdToolAt('Right','benchHammer',G,tip,S.w,Bw);
+  {const ls=bones.LeftArm.getWorldPosition(V());let lp=nail.clone().addScaledVector(k,-.12).addScaledVector(d,-.08).addScaledVector(up,.01);const r=armLen*.9+PALM;if(ls.distanceTo(lp)>r){/* no leaning over for it: the hand settles on the plank where it reaches */const q=lp.clone().sub(ls);const h=Math.sqrt(Math.max(0,r*r-q.y*q.y));const hz=V(q.x,0,q.z);if(hz.length()>h)hz.setLength(h);lp=ls.clone().add(hz).setY(lp.y);}gripNoLean('Left',lp,S.w*.9);}
+  const tip=G.clone().add(W);/* W10: no torso lean, the arm alone */holdToolAt('Right','benchHammer',G,tip,S.w,Bw);
   {const G2=window.__grab,w=S.w;if(G2&&G2.late)G2.late(()=>holdToolAt('Right','benchHammer',G,tip,w,Bw));}
   if(u>=.7&&!S.hit&&S.w>.9){S.hit=1;try{window.__audio&&window.__audio.contact?window.__audio.contact({tool:'hammer',kind:'hit',pos:nail.toArray(),strength:rnd(.7,1)}):(sfx&&sfx.hammer&&sfx.hammer());}catch(e){}}
 }
@@ -718,13 +733,36 @@ export function createHero(ctx){
    const g=B.clone().addScaledVector(dir,L);const e=Math.abs(g.distanceTo(sh)-.42)+(sd?.02:0);if(e<bd){bd=e;Gp=g;}}
   a.gs=a.gs?a.gs.lerp(Gp,1-Math.exp(-dt*10)):Gp.clone();Gp=a.gs;
   const G=window.__grab;if(G){G.hold('Right',pot.parent||pot,null);G.hold('Left',pot.parent||pot,null);a.stirHold=1;}/* the stove and pot are what his hands work at: collide.js leaves them there */
-  {const sh2=bones.RightArm.getWorldPosition(V());if(sh2.distanceTo(Gp)>armLen*.95+.1)reachTo('Right',Gp,a.sw);}/* lean in only if the pot is far */holdToolAt('Right','ladle',Gp,B,a.sw);a.dbg=[Gp,B];{const G2=window.__grab,sw=a.sw;if(G2&&G2.late)G2.late(()=>holdToolAt('Right','ladle',Gp,B,sw));}
+  /* W10: no torso lean toward the pot; he stands close instead */holdToolAt('Right','ladle',Gp,B,a.sw);a.dbg=[Gp,B];{const G2=window.__grab,sw=a.sw;if(G2&&G2.late)G2.late(()=>holdToolAt('Right','ladle',Gp,B,sw));}
   // left hand on the pot handle nearer his left
   const hs=[pot.localToWorld(V(-.1,.09,0)),pot.localToWorld(V(.1,.09,0))];const ls=bones.LeftArm.getWorldPosition(V());const lh=hs[0].distanceTo(ls)<hs[1].distanceTo(ls)?hs[0]:hs[1];
-  if(lh.distanceTo(ls)<armLen+PALM+.12)reachGrip('Left',lh,a.sw*.95);
+  if(lh.distanceTo(ls)<armLen*.95+PALM)gripNoLean('Left',lh,a.sw*.95);/* out of reach: the left hand stays relaxed, he never stretches or leans for it */
   // a scrape each half turn (Sound): the bowl along the pot side
   const half=Math.floor(a.sa/Math.PI);if(half!==a.sh){a.sh=half;try{window.__audio&&window.__audio.contact&&window.__audio.contact({tool:'spoon',kind:'scrape',pos:B.toArray(),strength:.45,dur:Math.PI/4.6});}catch(e){}}}
  function relTool(hand,n,bl=.35){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:bl});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
+ // the real telescope: eyepiece, viewing direction, tube grips (tube local: +x toward the objective; eyepiece cup at -0.47)
+ function teleParts(){const P=window.__props||P3;let t=P&&P.placed&&P.placed.telescope;if(!t){t=null;scene.traverse(o=>{if(!t&&o.name==='telescope'&&o.userData&&o.userData.tube)t=o;});if(!t)scene.traverse(o=>{if(!t&&o.userData&&o.userData.tube&&o.userData.tube.parent)t=o;});}const tube=t&&t.userData&&t.userData.tube;if(!tube||!tube.parent)return null;
+  const W=(x,y,z)=>{tube.updateMatrixWorld(true);return tube.localToWorld(V(x,y,z));};
+  return {t,tube,yoke:tube.parent,eye:()=>W(-.5,0,0),dir:()=>W(1,0,0).sub(W(0,0,0)).normalize(),gripR:()=>W(.04,.056,0),gripL:()=>W(-.3,-.045,0),floor:t.position.y};}
+ function teleStand(T){const E=T.eye(),d=T.dir();const dh=V(d.x,0,d.z).normalize();return E.clone().addScaledVector(dh,-.24).setY(T.floor);}
+ // a hand onto a point by the arm alone (no leaning the body toward it): for holds while the body has its own pose to keep
+ function gripNoLean(side,t,w){const G=window.__grab;const p=G&&G.palmTarget?G.palmTarget(side,t):t;const s1=bones[side+'Arm'].getWorldPosition(V());const tw=p.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):p;armIK(side,wt,sidePole(side),clamp(w,0,1));}
+ function telePost(a,dt,T){window.__tele=T;const E=T.eye(),d=T.dir();const dh=V(d.x,0,d.z).normalize();a.tw=Math.min(1,(a.tw||0)+dt/.9);const w=smooth(0,1,a.tw);
+  H.face=Math.atan2(dh.x,dh.z);
+  {/* step in until his eye is at the eyepiece (a small shuffle, not a glide: only while the hands settle) */const hp=bones.Head.getWorldPosition(V()).addScaledVector(dh,.09);const ev=E.clone().addScaledVector(d,-.04).sub(hp);ev.y=0;const el=ev.length();{const want=el>.015&&(a.pt||0)<5?Math.min(.35,el*3):0;a.sv=(a.sv||0)+(want-(a.sv||0))*Math.min(1,dt*5);if(a.sv>.002&&el>1e-4)root.position.addScaledVector(ev,Math.min(el,a.sv*dt)/el);}root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*3);}
+  // stoop: bend the spine about his left-right axis until the eye comes down to the eyepiece
+  const ax=V(0,1,0).cross(dh).normalize().negate();const Hd=bones.Head;
+  for(let it=0;it<3;it++){const hp=Hd.getWorldPosition(V());const eyeP=hp.clone().add(V(0,.06,0)).addScaledVector(dh,.09);const want=E.clone().addScaledVector(d,-.05);const dy=eyeP.y-want.y;if(Math.abs(dy)<.01)break;
+   const hip=bones.Spine.getWorldPosition(V());const r=Math.max(.3,eyeP.distanceTo(hip));const ang=clamp(dy/r,-.15,.4)*w*.8;rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);root.updateMatrixWorld(true);}
+  // the tripod is low: what the stoop does not cover, bent knees do (feet stay planted, H.squat)
+
+  // panning: hands on, the yoke turns a little, then rests
+  a.pt=(a.pt||0)+dt;if(!a.pn||a.pt>a.pn.end+rnd(6,12)){a.pn={from:T.yoke.rotation.y,to:a.pan0+rnd(-.35,.35),st:a.pt+rnd(4,8),end:0};a.pn.end=a.pn.st+1.6;}
+  const G=window.__grab;const gR=T.gripR(),gL=T.gripL();gripNoLean('Left',gL,w*.95);gripNoLean('Right',gR,w);
+  const dR=G&&G.gripPoint?G.gripPoint('Right').distanceTo(gR):0;
+  if(a.pt>a.pn.st&&a.pt<a.pn.end&&dR<.05){const k=smooth(a.pn.st,a.pn.end,a.pt);T.yoke.rotation.y=a.pn.from+(a.pn.to-a.pn.from)*k;T.yoke.updateMatrixWorld(true);}
+  if(G&&w>.5){G.hold('Right',T.tube,()=>T.gripR());G.hold('Left',T.tube,()=>T.gripL());}
+  if(G&&G.late)G.late(()=>{gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);});}
  const telePt=()=>{const P=window.__props||P3;const t=P&&P.placed&&P.placed.telescope;if(t&&t.position)return t.position.clone().add(V(0,1.35,0));return V(3.5,DK+1.35,1.3);};
  // the edge of the platform in front of a node: step forward until the boards end
  function edgeFrom(node){const n=N[node];if(!n)return null;const f=fwd(n.face??0);const p=n.p.clone();let last=null;
@@ -790,11 +828,29 @@ export function createHero(ctx){
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
   water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
   listen:(o)=>{const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<1.5))||pick(WINDOWS);return job({node:wn,slide:false,clip:'hy_listen',dur:[12,22],reps:2,look:a=>root.position.clone().add(V(Math.sin(a.T*.35)*2.5,1.55,0)).addScaledVector(fwd(N[wn].face??0),5)});},
-  bolt:(o)=>{const P=window.__props||P3;const D=P&&P.door;return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.42,clip:'hy_bolt',dur:[3.2,3.6],
-   start:()=>{try{D.openTo&&D.openTo(0,.8);}catch(e){}},tick:a=>{if(a.T>1.6&&!a.done){a.done=1;try{D.boltTo&&D.boltTo(o&&o.lock===false?0:1,.3);}catch(e){}AU('bolt',D.boltKnob(V()));}}});},
+  // GRAB: the bolt moves only under his hand: the palm goes to the knob, closes on it, slides it with the hand following the
+  // knob, lets go; he faces the door and watches the bolt the whole time
+  bolt:(o)=>{const P=window.__props||P3;const D=P&&P.door;const to=o&&o.lock===false?0:1;
+   // an open door is first pushed shut by its handle (the door moves only while the palm is on it), then the bolt knob
+   const tgt=a=>a.ph==='door'?D.handle(V()):D.boltKnob(V());
+   return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.4,clip:null,dur:[4.2,4.8],vary:false,
+   look:a=>D&&D.boltKnob?tgt(a):null,
+   start:()=>{},
+   post:(a,dt)=>{if(!D||!D.boltKnob)return;const G=window.__grab;if(!a.ph){a.ph=D.open>.03?'door':'bolt';a.pt=0;}a.pt+=dt;
+    if(a.ph==='done'){a.rw=Math.max(0,(a.rw||1)-dt/.45);if(a.rw>.01)reachGrip('Right',D.boltKnob(V()),a.rw);return;}
+    let k=tgt(a);if(a.from){const b=smooth(0,.5,a.pt-.25);k=a.from.clone().lerp(k,b);if(b>=1)a.from=null;}const w=a.ph==='bolt'&&a.wasDoor?1:smooth(0,.45,a.pt);reachGrip('Right',k,w);const dd=G&&G.gripPoint?G.gripPoint('Right').distanceTo(k):0;
+    if(!a.bh&&!a.from&&a.pt>.35&&dd<.04){a.bh=1;try{G&&G.hold('Right',a.ph==='door'?D.obj:D.obj,()=>tgt(a));}catch(e){}}
+    if(a.bh&&dd<.06){if(a.ph==='door'){/* push it shut under the hand */D.openTo(D.open);D.setOpen(Math.max(0,D.open-dt*.8));if(D.open<=0){AU('door',k);a.from=D.handle(V());a.ph='bolt';a.pt=.25;a.bh=0;a.wasDoor=1;}}
+     else{a.bk=(a.bk||0)+dt;D.setBolt(to?Math.min(1,D.bolt+dt*2.2):Math.max(0,D.bolt-dt*2.2));if(!a.snd&&(to?D.bolt>.9:D.bolt<.1)){a.snd=1;AU('bolt',k);}if(to?D.bolt>=1:D.bolt<=0){a.hold2=(a.hold2||0)+dt;if(a.hold2>.25){a.ph='done';a.bh=0;try{G&&G.free('Right');}catch(e){}}}}}
+    {const G2=window.__grab;const kk=k.clone();if(G2&&G2.late)G2.late(()=>reachGrip('Right',kk,w));}}});},
   radio:(o)=>{const P=window.__props||P3;const R=P&&P.radio;return job({pt:()=>PT('radio'),stand:.45,clip:'hy_radio',loop:true,dur:[30,60],
    start:()=>{try{R.setOn(1);}catch(e){}},tick:(a,dt)=>{try{if(a.T<6)R.setTune(.3+.4*smooth(0,6,a.T));}catch(e){}},end:()=>{try{if(!(o&&o.keepOn))R.setOn(0);}catch(e){}}});},
-  telescope:(o)=>job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')}),
+  telescope:(o)=>{const T=teleParts();if(!T)return job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')});
+   // GRAB: at the real telescope, not a spyglass mimed in the air: he stands behind the eyepiece, stoops to it, one hand on
+   // the tube, the other on the focus knob; now and then he swings the tube a little to another part of the forest
+   return job({pt:()=>teleStand(T),stand:.05,loop:true,dur:[40,90],vary:false,start:a=>{AU('sigh');a.pan0=T.yoke.rotation.y;},
+    look:a=>{const E=T.eye();const d=T.dir();return E.addScaledVector(d,6);},lookW:1,
+    post:(a,dt)=>telePost(a,dt,T),end:()=>{play(IDLE(),{fade:.6});try{window.__grab.free(T.tube);}catch(e){}}});},
   look:(o)=>job({node:'deck',slide:false,clip:has('hy_listen')?null:null,dur:[40,80],look:a=>root.position.clone().add(V(Math.sin(a.T*.22)*6,1.2+Math.sin(a.T*.13)*.6,8))}),
   ledge:(o)=>{// sit on an OPEN edge (no railing, a free drop under it) with the legs hanging over it: the round landing by the gate
    // ladder (the deck has railings all round and its one gap is cramped under the bedroom eave and by the rope ladder)
@@ -977,12 +1033,20 @@ export function createHero(ctx){
    if(sp){const face=KT_.face??-Math.PI/2;seat={p:sp.clone().setY(lv.KT),face,seat:sp.y,sit:true,floor:floorTop(lv.KT,sp.x,sp.z)};seatNode=nearNode(sp.clone().setY(lv.KT+.1))||'kmid';seat.node=seatNode;tablePt=()=>PT('eatTable');}
    visit(a,toolHome('plate')||PT('pan'),.45,'hy_take',[[.45,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});a.pl=1;}catch(e){}}]],()=>{a.step='serve';if(has('hy_stir'))play('hy_stir',{fade:.5});H.look=PT('pan')||null;H.lookW=.8;/* serves himself from the pan before sitting down */H.wait={t:rnd(3.5,5),then:()=>{a.step='go2';play(IDLE(),{fade:.4});goTo(seatNode,()=>{
      a.step='sit';sitDown(seat,()=>{
-     const tp=tablePt()||root.position.clone().addScaledVector(fwd(root.rotation.y),.4).setY(FIT.tableTop);try{const pl=P.tools.plate;scene.attach(pl);pl.position.copy(tp).add(V(0,.01,0));pl.quaternion.identity();}catch(e){}
-     a.step='eat';a.t=0;play(has('hy_eat')?'hy_eat':SITIDLE,{fade:.8});});});}};});
-   a.update=dt=>{if(stepTick(a,dt))return;if(a.step==='eat'){a.T+=dt;H.look=tablePt();H.lookW=.9;try{P.plate&&P.plate.setFood&&P.plate.setFood(1-a.T/dur);}catch(e){}
+     const tp=tablePt()||root.position.clone().addScaledVector(fwd(root.rotation.y),.4).setY(FIT.tableTop);
+     // GRAB: the left hand carries the plate down onto the table and lets go there (no plate jumping out of the hand)
+     a.step='place';a.t=0;a.tp=tp;});});}};});
+   a.update=dt=>{if(stepTick(a,dt))return;
+    if(a.step==='place'){const pl0=P.tools&&P.tools.plate;if(!a.tp2&&pl0){/* set it down just below where the hand holds it, drawn a little toward the table spot */const pw=pl0.getWorldPosition(V());const dh=V(a.tp.x-pw.x,0,a.tp.z-pw.z);if(dh.length()>.12)dh.setLength(.12);a.tp2=pw.add(dh).setY(a.tp.y);a.tp=a.tp2;}const tp=a.tp;const pl=P.tools&&P.tools.plate;H.look=tp;H.lookW=.9;
+     if(pl&&pl.parent===bones.LeftHand){pl.updateMatrixWorld(true);const pw=pl.getWorldPosition(V());const hw=(window.__grab&&window.__grab.gripPoint)?window.__grab.gripPoint("Left"):bones.LeftHand.getWorldPosition(V());/* put the plate's centre on the spot */a.reach=['Left',hw.clone().add(tp.clone().add(V(0,.01,0)).sub(pw)),smooth(0,.5,a.t)];
+      if(pw.distanceTo(tp)<.035||a.t>1.4){scene.attach(pl);const d=tp.clone().add(V(0,.01,0)).sub(pl.position);if(d.length()<.06)pl.position.add(d);else pl.position.y=tp.y+.01;pl.quaternion.identity();a.rt=a.t;}}
+     else{a.reach=a.reach&&['Left',a.reach[1],Math.max(0,1-(a.t-(a.rt||a.t))/.4)];if(a.t-(a.rt||0)>.4){a.reach=null;a.step='eat';a.t=0;play(has('hy_eat')?'hy_eat':SITIDLE,{fade:.8});}}
+     return;}
+    if(a.step==='eat'){a.T+=dt;H.look=tablePt();H.lookW=.9;try{P.plate&&P.plate.setFood&&P.plate.setFood(1-a.T/dur);}catch(e){}
      if(a.T>dur){a.step='up';standUp(seat,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});}catch(e){}
        visit(a,PT('sink'),.42,'hy_take',[[.45,()=>{try{P.release('plate');a.pl=0;P.dishes&&P.dishes.setDirty(P.dishes.state().dirty+1);}catch(e){}}]],()=>endTask({ok:true}));});}}};
-   a.leave=cb=>{try{P.release('plate');}catch(e){}if(a.step==='eat'){standUp(seat,cb);}else cb();};return a;},
+   a.post=()=>{if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
+   a.leave=cb=>{try{P.release('plate');}catch(e){}if(a.step==='eat'||a.step==='place'){standUp(seat,cb);}else cb();};return a;},
   // water: the tap bucket from the pond, the drain bucket emptied outside
   fetchwater:(o={})=>{const a={step:'go',t:0};const P=PP();const pond=window.__ground&&window.__ground.pond&&window.__ground.pond.fill;
    visit(a,PT('waterShelf'),.45,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry='hy_carrysack';}]],()=>{a.step='out';
