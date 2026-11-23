@@ -28,7 +28,7 @@ async function open({seed=1,vp={width:640,height:640},log=false}={}){
   if(ext==='.html'){let t=body.toString();
    // expose renderer, camera and composer for on-demand rendering
    t=t.replace(/(const renderer=new THREE\.WebGLRenderer\([^;]*\);)/,'$1window.__renderer=renderer;');
-   t=t.replace(/(const composer=new EffectComposer\(renderer\);)/,'$1window.__composer=composer;window.__camera=camera;');body=t;}
+   t=t.replace(/(const composer=new EffectComposer\(renderer\);)/,'$1window.__qaComposer=composer;window.__qaCamera=camera;');body=t;}
   const ct={'.html':'text/html','.js':'application/javascript','.txt':'text/plain','.jpg':'image/jpeg','.png':'image/png','.json':'application/json'}[ext]||'application/octet-stream';
   r.fulfill({body,contentType:ct});});
  await p.route('https://fonts.googleapis.com/**',r=>r.fulfill({body:'',contentType:'text/css'}));

@@ -110,5 +110,167 @@
   "src": "inspect-11",
   "smooth": 2.5,
   "speed": 1.3
+ },
+ "hy_kettle": {
+  "src": "kettle-23",
+  "smooth": 2.5,
+  "speed": 1.25
+ },
+ "hy_chop": {
+  "src": "chop-23",
+  "loop": true,
+  "close": 0.6,
+  "smooth": 1.5,
+  "speed": 1.25
+ },
+ "hy_stoke": {
+  "src": "stoke-11",
+  "smooth": 2,
+  "speed": 1.3
+ },
+ "hy_sharpen": {
+  "src": "sharpen-11",
+  "loop": true,
+  "close": 0.6,
+  "smooth": 2,
+  "speed": 1.2
+ },
+ "hy_lantern": {
+  "src": "lantern-11",
+  "loop": true,
+  "step": 2,
+  "close": 0.8,
+  "smooth": 2.5,
+  "speed": 1.15
+ },
+ "hy_diary": {
+  "src": "diary-23",
+  "loop": true,
+  "step": 2,
+  "close": 1.0,
+  "smooth": 3,
+  "speed": 1.1
+ },
+ "hy_sweep": {
+  "src": "sweep-11",
+  "loop": true,
+  "close": 0.6,
+  "smooth": 2,
+  "speed": 1.2
+ },
+ "hy_water": {
+  "src": "water-23",
+  "smooth": 2.5,
+  "speed": 1.25
+ },
+ "hy_listen": {
+  "src": "listen-11",
+  "step": 2,
+  "smooth": 3,
+  "speed": 1.1
+ },
+ "hy_bolt": {
+  "src": "bolt-11",
+  "smooth": 2,
+  "speed": 1.3
+ },
+ "hy_count": {
+  "src": "count-11",
+  "loop": true,
+  "step": 2,
+  "close": 1.0,
+  "smooth": 2.5,
+  "speed": 1.15
+ },
+ "hy_radio": {
+  "src": "radio-11",
+  "loop": true,
+  "step": 2,
+  "close": 1.0,
+  "smooth": 3,
+  "speed": 1.1
+ },
+ "hy_telescope": {
+  "src": "telescope-23",
+  "loop": true,
+  "step": 2,
+  "close": 1.2,
+  "smooth": 3,
+  "speed": 1.0
+ },
+ "hy_dangle": {
+  "src": "dangle-11",
+  "loop": true,
+  "step": 2,
+  "close": 1.2,
+  "smooth": 3,
+  "speed": 1.0
+ },
+ "hy_carrylogs": {
+  "src": "carrylogs-11",
+  "loop": true,
+  "close": 0.4,
+  "smooth": 2,
+  "speed": 1.0
+ },
+ "hy_carrysack": {
+  "src": "carrysack-23",
+  "loop": true,
+  "close": 0.4,
+  "smooth": 2,
+  "speed": 1.0
+ },
+ "hy_droplogs": {
+  "src": "droplogs-23",
+  "smooth": 2,
+  "speed": 1.3
+ },
+ "hy_picklog": {
+  "src": "picklog-11",
+  "smooth": 2,
+  "speed": 1.3
+ },
+ "hy_fridgein": {
+  "src": "fridgein-11",
+  "smooth": 2,
+  "speed": 1.3
+ },
+ "hy_fridgeout": {
+  "src": "fridgeout-11",
+  "smooth": 2,
+  "speed": 1.3
+ },
+ "hy_eat": {
+  "src": "eat-11",
+  "loop": true,
+  "step": 2,
+  "close": 1.0,
+  "smooth": 3,
+  "speed": 1.1
+ },
+ "hy_jacketon": {
+  "src": "jacketon-11",
+  "smooth": 2,
+  "speed": 1.2
+ },
+ "hy_jacketoff": {
+  "src": "jacketoff-23",
+  "smooth": 2,
+  "speed": 1.2
+ },
+ "hy_bowtake": {
+  "src": "bowtake-11",
+  "smooth": 2,
+  "speed": 1.25
+ },
+ "hy_bowhang": {
+  "src": "bowhang-11",
+  "smooth": 2,
+  "speed": 1.25
+ },
+ "hy_scratch": {
+  "src": "scratch-11",
+  "smooth": 2,
+  "speed": 1.2
  }
 }

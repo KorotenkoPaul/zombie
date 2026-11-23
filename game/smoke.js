@@ -9,7 +9,7 @@
 // While there is no pipe, nothing is drawn: no smoke out of thin air.
 
 export function createSmoke({ THREE, scene, wind, P3, heat = () => 0, MOBILE = false }) {
-  const N = MOBILE ? 24 : 40, LIFE = 7;
+  const N = MOBILE ? 16 : 40, LIFE = 7;
   const g = new THREE.BufferGeometry();
   const seed = new Float32Array(N * 4);
   for (let i = 0; i < N; i++) seed.set([i / N, Math.random(), Math.random(), Math.random()], i * 4);
@@ -25,12 +25,12 @@ export function createSmoke({ THREE, scene, wind, P3, heat = () => 0, MOBILE = f
        vec3 w=vec3(0.);
 #ifdef WIND
        float s=windStrength(uSrc);w=vec3(uWind.x,0.,uWind.y)*s*tt*1.2*(1.-exp(-tt*.8));
-       vec2 sw=windSway(p+w,.4)*.12*tt;w.xz+=sw;p.y-=s*s*tt*.12;
+       vec2 sw=windSwayS(p+w,.4)*.12*tt;w.xz+=sw;p.y-=s*s*tt*.12;
 #endif
        p+=w+vec3(sin(tt*1.3+aS.y*6.28),0.,cos(tt*1.1+aS.z*6.28))*.05*tt;
        vec4 mv=viewMatrix*vec4(p,1.);
        vA=uAmt*smoothstep(0.,.08,age)*(1.-age)*(1.-age)*.32;vR=aS.w;
-       gl_PointSize=clamp((.35+tt*.32)*500./-mv.z,1.,128.)*uPx;gl_Position=projectionMatrix*mv;}`,
+       gl_PointSize=clamp((.35+tt*.32)*500./-mv.z,1.,${MOBILE ? '48.' : '96.'})*uPx;/* capped: a close camera must not fill the screen with smoke quads */gl_Position=projectionMatrix*mv;}`,
     fragmentShader: `uniform vec3 uCol;varying float vA,vR;
       void main(){vec2 d=gl_PointCoord-.5;float r=length(d);
        float n=sin(d.x*7.+vR*20.)*sin(d.y*6.-vR*13.)*.2;

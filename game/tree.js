@@ -156,7 +156,9 @@ export function buildTree(THREE, o) {
     parts.length = 0; P.length = 0; UV.length = 0; G.length = 0; I.length = 0; leafSpots.length = 0;
     for (let i = 0; i < sp.count; i++) {
       const x = (sp.getX(i) - cx) * k * (o.widen || 1.3), z = (sp.getZ(i) - cz) * k * (o.widen || 1.3);
-      P.push(AX + x * cr + z * sr, (sp.getY(i) - y0) * k - (o.sink ?? 0.35), AZ - x * sr + z * cr);
+      // roots like the photo: long, clearly visible forms spreading over the ground (the model's are short and sink in)
+      const yy = (sp.getY(i) - y0) * k - (o.sink ?? 0.15), t = Math.min(1, Math.max(0, (1.9 - yy) / 1.9)), sp2 = 1 + 0.55 * t * t * (3 - 2 * t);
+      P.push(AX + (x * cr + z * sr) * sp2, yy + (t > 0.8 ? -0.12 * (t - 0.8) / 0.2 * 0 : 0), AZ + (-x * sr + z * cr) * sp2);
       UV.push(su ? su.getX(i) : 0, su ? su.getY(i) : 0); G.push(0);
     }
     // trunk radius along the hollow's direction, measured from the mesh (for the hollow, the cave and the door light)
@@ -250,10 +252,40 @@ export function buildTree(THREE, o) {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
   g.setAttribute('glow', new THREE.Float32BufferAttribute(G, 1));
   g.setIndex(I); g.computeVertexNormals();
+  // critic T16: the thin, curling side shoots of the model wrap around the house like snakes. Cut every thin piece
+  // (under ~0.5 m thick) in the house band around the trunk; the main limbs and the crown's twigs stay.
+  if (o.model && o.pruneThin === true) { // off: Pavel wants every branch kept (2026-11-23)
+    const pa = g.attributes.position, na = g.attributes.normal, n = pa.count, CS = 0.35, grid = new Map();
+    const key = (x, y, z) => Math.floor(x / CS) + ',' + Math.floor(y / CS) + ',' + Math.floor(z / CS);
+    for (let i = 0; i < n; i++) { const k = key(pa.getX(i), pa.getY(i), pa.getZ(i)); let c = grid.get(k); if (!c) grid.set(k, c = []); c.push(i); }
+    const TH = o.thinT || 0.3, thin = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
+      if (y < 4 || y > 13.5) continue; const hr = Math.hypot(x - AX, z - AZ); if (hr < R(y) + 0.4 || hr > 9.5) continue;
+      const nx = na.getX(i), ny = na.getY(i), nz = na.getZ(i);
+      const cx = Math.floor(x / CS), cy = Math.floor(y / CS), cz = Math.floor(z / CS); let best = 9;
+      for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) for (let c = -2; c <= 2; c++) { const L = grid.get((cx + a) + ',' + (cy + b) + ',' + (cz + c)); if (!L) continue;
+        for (const j of L) { if (na.getX(j) * nx + na.getY(j) * ny + na.getZ(j) * nz > -0.4) continue;
+          const dx = pa.getX(j) - x, dy = pa.getY(j) - y, dz = pa.getZ(j) - z; if (-(dx * nx + dy * ny + dz * nz) < 0.02) continue;
+          best = Math.min(best, Math.hypot(dx, dy, dz)); } }
+      thin[i] = best < TH ? 1 : 0;
+    }
+    const idx = g.index.array, keep = []; let cut = 0;
+    for (let t = 0; t < idx.length; t += 3) { const a = idx[t], b = idx[t + 1], c = idx[t + 2]; if (thin[a] && thin[b] && thin[c]) { cut++; continue; } keep.push(a, b, c); }
+    // drop the scraps left floating once the shoots are cut (small pieces not connected to the main tree)
+    const par = new Int32Array(n).map((_, i) => i); const f = i => { while (par[i] !== i) i = par[i] = par[par[i]]; return i; };
+    for (let t = 0; t < keep.length; t += 3) { const a = f(keep[t]), b = f(keep[t + 1]), c = f(keep[t + 2]); par[b] = a; par[f(c)] = a; }
+    const cnt = new Map(); for (let t = 0; t < keep.length; t += 3) { const r = f(keep[t]); cnt.set(r, (cnt.get(r) || 0) + 1); }
+    let big = 0; for (const v of cnt.values()) big = Math.max(big, v);
+    // only scraps that touch a cut (pieces of the model that were separate to begin with stay)
+    const touched = new Set(); for (let t = 0; t < idx.length; t += 3) { const a = idx[t], b = idx[t + 1], c = idx[t + 2]; if (thin[a] && thin[b] && thin[c]) for (const v of [a, b, c]) touched.add(f(v)); }
+    const keep2 = []; for (let t = 0; t < keep.length; t += 3) { const r = f(keep[t]); if (cnt.get(r) > Math.min(400, big * 0.02) || !touched.has(r)) keep2.push(keep[t], keep[t + 1], keep[t + 2]); }
+    g.setIndex(keep2); window.__thinCut = { cut, scraps: (keep.length - keep2.length) / 3, tris: keep2.length / 3 };
+  }
 
   // ---------- bark: the painted texture along the wood, relief from the same texture, cool-warm painted shading ----------
   const barkT = o.barkT; barkT.wrapS = barkT.wrapT = THREE.RepeatWrapping; barkT.repeat.set(1, 1);
-  const mat = modelMap ? new THREE.MeshStandardMaterial({ map: modelMap, roughness: 0.92, color: 0xE8D2C0 })
+  const mat = modelMap ? new THREE.MeshStandardMaterial({ map: modelMap, roughness: 0.92, color: 0xE2D6D0 })
     : new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 1.4, roughness: 0.9, color: 0xF0B080 });
   mat.onBeforeCompile = sh => {
     // [WIND] the far limbs and the top of the crown sway slowly with the wind (game/wind.js); trunk and house stay still
@@ -264,8 +296,10 @@ export function buildTree(THREE, o) {
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlow;varying float vY;uniform float doorGlow;')
       .replace('#include <map_fragment>', `#include <map_fragment>
         diffuseColor.rgb*=mix(.8,1.,smoothstep(-.3,2.2,vY));
+        // photo bark: cool grey-brown rather than orange (the Meshy paint is warm), shadows go violet-blue below
+        diffuseColor.rgb=mix(vec3(dot(diffuseColor.rgb,vec3(.3,.59,.11))),diffuseColor.rgb,.62)*vec3(.97,.97,1.04);
 `)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(.42,1.08,pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(vec3(.38,.37,.47),vec3(1.06,1.05,1.02),pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
   };
   mat.userData.doorGlow = { value: 0 };
@@ -296,10 +330,10 @@ export function buildTree(THREE, o) {
     }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\nfloat ff=smoothstep(.18,.6,vFacing)*smoothstep(.8,3.,vDep);diffuseColor.a*=step(length(vMapUv-.5)*2.,ff*1.3);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
-  const total = MOB(o) ? 1700 : 2800;
+  const total = MOB(o) ? 1400 : 2800; // [PERF] phones: fewer, slightly bigger cards (same coverage, less overdraw)
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
-  const qg = new THREE.PlaneGeometry(1, 1, 4, 4);
+  const qg = MOB(o) ? new THREE.PlaneGeometry(1, 1, 2, 2) : new THREE.PlaneGeometry(1, 1, 3, 3); // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
   { const pa = qg.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i); pa.setZ(i, 0.28 * (0.5 - (x * x + y * y))); } qg.computeVertexNormals(); }
   const im = new THREE.InstancedMesh(qg, lmat, total);
   const shade = new Float32Array(total);
@@ -317,7 +351,7 @@ export function buildTree(THREE, o) {
       const fw = rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
       const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
-      sc.setScalar(rnd(1.25, 2.0));
+      sc.setScalar(MOB(o) ? rnd(1.4, 2.15) : rnd(1.25, 2.0));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1));
       // lighter, yellow-green leaves on the clump edges and the odd autumn-yellow card, like the photo

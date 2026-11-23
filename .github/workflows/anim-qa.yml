@@ -1,0 +1,28 @@
+# Frame-by-frame animation test of the hero (tests/anim). Runs on every push that touches the game.
+name: anim-qa
+# Report only: findings go to the run summary and never fail the run (no "run failed" mails).
+# Only master, and a newer push cancels the older run (about 18 threads push in a row).
+on:
+  push:
+    branches: [master]
+    paths: ['game/**', 'tests/anim/**']
+  workflow_dispatch:
+concurrency:
+  group: anim-qa-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  anim-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm i --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+      - name: run whole day
+        run: node tests/anim/run.js --out anim-out --max-p 1 || [ $? -eq 1 ]  # 1 = findings (report only), 2 = crash (fails)
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with: { name: anim-qa, path: anim-out/summary.txt }
+      - if: always()
+        run: cat anim-out/summary.txt >> "$GITHUB_STEP_SUMMARY" || true
