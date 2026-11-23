@@ -25,7 +25,7 @@ const shot=async(p,name,rp,yaw,pitch,dist)=>{await p.evaluate(([rp,y,pi,d])=>{__
   await p.evaluate(()=>{const R=window.__renderer;const real=R.render;window.__noRender=on=>{R.render=on?function(s){s&&s.updateMatrixWorld&&s.updateMatrixWorld();}:real;};__noRender(true);});
   await p.evaluate(r=>{__th.setHour(r==='sleep'?22.5:r==='seated'?11:10);if(r!=='seated')__th.task(r);else __th.task('read');},run);
   // wait until working
-  for(let i=0;i<90;i++){await p.waitForTimeout(1000);const s=await p.evaluate(()=>{const h=__dbg.hero;return {path:h.path.length,state:h.state,rm:!!h.rm,lad:!!h.lad,bed:!!h.inBed,hold:h.bedHold}});if(s.path==0&&!s.rm&&!s.lad&&s.state==='work'&&i>3){await p.waitForTimeout(run==='sleep'?6000:2500);break;}}
+  for(let i=0;i<90;i++){await p.waitForTimeout(1000);const s=await p.evaluate(()=>{const h=__dbg.hero;return {path:h.path.length,state:h.state,rm:!!(h.rm||h.trans),lad:!!h.lad,bed:!!h.inBed,hold:h.bedHold}});if(s.path==0&&!s.rm&&!s.lad&&s.state==='work'&&i>3){await p.waitForTimeout(run==='sleep'?6000:2500);break;}}
   await p.evaluate(()=>{__noRender(true);});
   res[run]=await p.evaluate(MEASURE);console.log(run,JSON.stringify(res[run]));
   const rp=res[run].root;
