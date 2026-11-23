@@ -31,3 +31,9 @@
 - Roofs: thick slab + InstancedMesh `SHING` of slate-blue shingles, big overhang, gable trim.
 - Stilts replaced by knee braces; `BARRICADES=false` removes the plank fences and their posts (combat is off).
 - Next: T1 proportions (trunk bigger, rooms hugging it), cave interior detail, twisted rope ladders.
+
+## Checkpoint 3 (artifact v19)
+- Levels raised by HY=1.0 (index.html) to match the photo's heights; LG 2.3, LL 2.45 decorative. Horizontal layout already matches the photo, so no left/right offsets.
+- Trunk bark: game/bark3.jpg (Fal nano-banana-pro/edit from the photo trunk crop), tint 0xF0B080, view-angle shading for roundness, small moonlight fill.
+- Branches in tree.js BR traced from the photo; trunk to 14.6 m, forks into two limbs.
+- Next: warm window bounce light on the trunk, more contrast; roots visibility depends on Environment's fog.
