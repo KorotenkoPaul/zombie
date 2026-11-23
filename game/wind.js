@@ -76,6 +76,7 @@ export function createWind(opt = {}) {
   let gust = null, gustWait = rr(4, 10), T = 0;
   // the legacy scalar (env.js U.wind) still read by old sway code: keep it alive
   const legacy = opt.legacy || null;
+  let fall = null; // falling leaves (W.addFallingLeaves)
 
   function pickNext() {
     const r = R(); let acc = 0;
@@ -91,6 +92,10 @@ export function createWind(opt = {}) {
     U, glsl: WIND_GLSL,
     hook(sh) { sh.uniforms.uWT = U.uWT; sh.uniforms.uWind = U.uWind; sh.uniforms.uGust = U.uGust;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + WIND_GLSL); return sh; },
+
+    // for a THREE.ShaderMaterial (no #include <common>): adds the uniforms, puts the GLSL in front of the vertex shader
+    // and defines WIND, so the owner can write `#ifdef WIND ... #endif` and still compile without this file
+    hookRaw(mat) { Object.assign(mat.uniforms, { uWT: U.uWT, uWind: U.uWind, uGust: U.uGust }); mat.vertexShader = WIND_GLSL + '\n' + mat.vertexShader; mat.defines = Object.assign(mat.defines || {}, { WIND: '' }); mat.needsUpdate = true; return mat; },
 
     update({ dt = 1 / 60, T: t, rainK = 0 } = {}) {
       dt = Math.min(0.1, Math.max(0, dt)); T = t ?? T + dt;
@@ -110,6 +115,7 @@ export function createWind(opt = {}) {
       setV(U.uWind, dx, dz, base, 0);
       if (gust) setV(U.uGust, gust.front, gust.inv, gust.amp, gust.tail); else setV(U.uGust, -1e4, 0.1, 0, 10);
       if (legacy) legacy.value = 0.25 + W.level() * 1.1;
+      if (fall) fall(dt);
     },
 
     gustAt(x, z) {
@@ -126,7 +132,64 @@ export function createWind(opt = {}) {
     level() { return W.sample({ x: 0, z: 0 }).s; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
-    gust(amp) { startGust(amp); }
+    gust(amp) { startGust(amp); },
+
+    // ---- falling leaves: a few oak leaves torn off the crown, tumbling down and carried by the wind ----
+    // Few (16 on phones, 30 on desktop), so a tiny CPU step per leaf is cheaper than anything clever. Calm: a leaf now
+    // and then; a gust tears off a little flurry. They settle on the ground, lie a while, then fade.
+    // o: {THREE, scene, crown: InstancedMesh of leaf cards, groundH(x,z), avoid: [[x0,x1,y0,y1,z0,z1]...] (rooms), MOBILE}
+    addFallingLeaves(o) {
+      const THREE = o.THREE, N = o.MOBILE ? 16 : 30;
+      // a single oak leaf drawn once into a small canvas: lobed blade, midrib
+      const cv = document.createElement('canvas'); cv.width = cv.height = 64; const x = cv.getContext('2d');
+      x.translate(32, 33); x.fillStyle = '#fff'; x.beginPath();
+      for (let i = 0; i <= 40; i++) { const t = i / 40 * Math.PI * 2, r = 1 + 0.16 * Math.cos(t * 5) ** 2 * Math.sign(Math.cos(t * 5));
+        const px = Math.sin(t) * 13 * r * (0.75 + 0.25 * Math.cos(t)), py = -Math.cos(t) * 26; i ? x.lineTo(px, py) : x.moveTo(px, py); }
+      x.fill(); x.strokeStyle = 'rgba(90,70,40,.55)'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(0, 30); x.lineTo(0, -24); x.stroke();
+      const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+      const geo = new THREE.PlaneGeometry(0.09, 0.11);
+      const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
+      const im = new THREE.InstancedMesh(geo, mat, N); im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const cols = [0x6E8A3A, 0x8C9A3C, 0xB49A3A, 0xA8742E, 0x7A5A2E];
+      const c = new THREE.Color(); for (let i = 0; i < N; i++) im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.8, 1.1)));
+      o.scene.add(im);
+      // spawn points: the leaf cards of the crown (their centres)
+      const spots = []; const m4 = new THREE.Matrix4(), v = new THREE.Vector3();
+      if (o.crown) for (let i = 0; i < o.crown.count; i += 3) { o.crown.getMatrixAt(i, m4); v.setFromMatrixPosition(m4); if (v.y > 6) spots.push(v.toArray()); }
+      if (!spots.length) spots.push([0, 14, -1]);
+      const gH = o.groundH || (() => 0), rooms = o.avoid || [];
+      const L = []; for (let i = 0; i < N; i++) L.push({ on: false });
+      const q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), zero = new THREE.Matrix4().makeScale(0, 0, 0);
+      for (let i = 0; i < N; i++) im.setMatrixAt(i, zero);
+      let acc = 0;
+      fall = dt => {
+        const s0 = W.level();
+        acc += dt * (0.04 + 0.7 * s0 * s0);                     // leaves per second grow with the wind
+        while (acc >= 1) { acc -= 1; const l = L.find(l => !l.on); if (!l) break;
+          const sp = spots[Math.floor(R() * spots.length)];
+          Object.assign(l, { on: true, p: [sp[0] + rr(-0.4, 0.4), sp[1] + rr(-0.4, 0.2), sp[2] + rr(-0.4, 0.4)], v: [0, 0, 0], ph: rr(0, 6.3), fr: rr(1.5, 3), spin: [rr(-3, 3), rr(-2, 2), rr(-4, 4)], r: [rr(0, 6), rr(0, 6), rr(0, 6)], rest: 0, life: rr(8, 16), k: 1 }); }
+        for (let i = 0; i < N; i++) { const l = L[i]; if (!l.on) continue; const p = l.p;
+          if (l.rest > 0) {                                          // lying on the ground, then fading
+            l.rest += dt; if (l.rest > l.life) { l.k -= dt * 0.5; if (l.k <= 0) { l.on = false; im.setMatrixAt(i, zero); continue; } }
+          } else {
+            const w = W.sample({ x: p[0], z: p[2] }); l.ph += dt * l.fr;
+            // drag towards the wind (leaves are light), a swirl, and a fluttering fall
+            const tx = w.x * 2.2 + Math.cos(l.ph) * 0.35, tz = w.z * 2.2 + Math.sin(l.ph * 0.8) * 0.35, ty = -0.75 + Math.sin(l.ph * 1.7) * 0.35 + w.gust * 0.3;
+            const k = Math.min(1, dt * 1.8); l.v[0] += (tx - l.v[0]) * k; l.v[1] += (ty - l.v[1]) * k; l.v[2] += (tz - l.v[2]) * k;
+            p[0] += l.v[0] * dt; p[1] += l.v[1] * dt; p[2] += l.v[2] * dt;
+            for (let j = 0; j < 3; j++) l.r[j] += l.spin[j] * dt * (0.6 + w.s);
+            const g = gH(p[0], p[2]) + 0.015;
+            if (p[1] <= g) { p[1] = g; l.rest = 0.001; l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
+            // never through a room: a leaf that drifts into one is gone (the roof hides it)
+            if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5])) { l.on = false; im.setMatrixAt(i, zero); continue; }
+            if (Math.abs(p[0]) > 60 || Math.abs(p[2]) > 60) { l.on = false; im.setMatrixAt(i, zero); continue; }
+          }
+          q.setFromEuler(e.set(l.r[0], l.r[1], l.r[2])); m4.compose(v.set(p[0], p[1], p[2]), q, sc.setScalar(l.k)); im.setMatrixAt(i, m4);
+        }
+        im.instanceMatrix.needsUpdate = true;
+      };
+      W.fallingLeaves = im; return im;
+    }
   };
   W.update({ dt: 0, T: 0 });
   return W;
