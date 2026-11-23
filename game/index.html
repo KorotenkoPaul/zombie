@@ -264,7 +264,8 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  col*=1.-.18*old*smoothstep(.62,.9,pN(vec2(m.x*1.3+sd*3.,m.y*4.)))*step(.5,pH(sd+8.));
  // relief from a blurred tap of the scan, differenced in texture space (smooth, no 2x2 blocks), in metres
  vec2 dH=vec2(0.);
- if(near>0.){float hb=pL(pTex(uv,wall,2.5));dH=vec2(pL(pTex(uv+ux,wall,2.5))-hb,pL(pTex(uv+uy,wall,2.5))-hb)*uBump;
+ /* [ENV fix] taps inside this branch use explicit gradients: implicit-derivative texture reads inside a per-pixel branch are undefined on Apple GPUs (boards/slates came out washed white on iPhone) */
+ if(near>0.){vec2 g1=ux*5.66,g2=uy*5.66;float hb=pL(pTexG(uv,wall,g1,g2));dH=vec2(pL(pTexG(uv+ux,wall,g1,g2))-hb,pL(pTexG(uv+uy,wall,g1,g2))-hb)*uBump;
   if(face==0.){float h0=pTop(m.xy,sz,sd,wall);dH+=vec2(pTop(m.xy+mx,sz,sd,wall)-h0,pTop(m.xy+my,sz,sd,wall)-h0);}dH*=near;}
  if(face==0.){
   // worn, lighter along the rounded edges
@@ -412,8 +413,8 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  vec2 ux=dFdx(uv),uy=dFdy(uv),mx=dFdx(m.xz),my=dFdy(m.xz);vec3 wx=dFdx(vW),wy=dFdy(vW);
  // LOD (perf round): far slates (> ~7 mm/px) skip the relief taps, crack relief, lichen specks and moss relief
  float near=1.-smoothstep(.005*uLod,.009*uLod,max(length(mx),length(my)));vec2 dH=vec2(0.);
- if(near>0.){float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
-  dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004*near;}
+ if(near>0.){vec2 g1=ux*4.,g2=uy*4.;/* [ENV fix] explicit gradients inside the branch (Apple GPUs) */float hb=dot(textureGrad(tSlate,uv,g1,g2).rgb,vec3(.33));
+  dH=vec2(dot(textureGrad(tSlate,uv+ux,g1,g2).rgb,vec3(.33))-hb,dot(textureGrad(tSlate,uv+uy,g1,g2).rgb,vec3(.33))-hb)*.004*near;}
  if(top>.5){
   // the slate above lies on this one: under its butt edge a soft shadow band (the overlap reads as depth, not as a drawn line),
   // and a little grime washed down along it
@@ -425,7 +426,7 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  // moss, raised a few mm over the stone
  float ms=sMoss(vW,sd),mo=ms*mix(.5,1.,top)*old;
  if(mo>.001){if(near>0.)dH+=vec2(sMoss(vW+wx,sd)-ms,sMoss(vW+wy,sd)-ms)*.006*mix(.5,1.,top)*near;
-  vec3 mc=texture2D(tMoss,vW.xz*1.7+vec2(vW.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
+  vec3 mc=textureGrad(tMoss,vW.xz*1.7+vec2(vW.y*.7),wx.xz*1.7+vec2(wx.y*.7),wy.xz*1.7+vec2(wy.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
 shingleMat.customProgramCacheKey=()=>'slate';
