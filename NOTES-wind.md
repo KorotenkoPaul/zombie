@@ -61,3 +61,12 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - `W.addWater(f)`: f(x,z) -> surface height or null. Falling leaves land on it, float 50-90 s drifting slowly downwind, bob, turn, then soak and sink. `W.waterAt(x,z)`.
 - A gust reaching the crown shakes a handful of leaves loose at once. Horizontal drag is lowered from 1.4 to 1.0 so leaves land nearer the clearing.
 - fogpass.js: Environment's shared soft-edge uniforms get their own depth texture back right after the fog render. Before, a material sharing them sampled the composer depth while that target was drawn, which caused the WebGL "Feedback loop" errors on phones (26 errors in 15 s, now 0).
+
+## Round 11: weather over the day (window.__weather)
+- Three kinds of rain: drizzle (amount .35; slower, shorter, fainter streaks; 3-7 min), rain (.75, livens the wind), and a rare storm (1, windy). index.html eases rainK towards `WIND.rainAmt()`.
+- Storm: a lightning strike every 15-50 s, 1.5-7 km away, as 1-3 flickers. `W.applyFlash({hemi, fog, sky, fogMats})` lights the fog colour, the sky horizon, the hemisphere light and Environment's fog layers (`col`) for a moment. No extra lights or passes. Plain rain sometimes has a far rumble with no flash (a lightning event with `unseen`).
+- Events: 'lightning' {dist m, distKm, strength, dir} fires on the flash frame (Sound plays the thunder dist/343 s later); 'thunder' {dist m, loud} fires when the sound would arrive; 'state' {state, prev}.
+- Calm evenings: from 18:12 to 23:30 without rain, the spell gives way soon after sunset, 75% of the time to calm. A calm evening runs at half strength with half as many gusts.
+- Morning mist (the fog bank) shows on 60% of mornings, and nearly always after a wet night. It still burns off by 9:00.
+- `__weather.state()`: {state 'clear'|'calm'|'drizzle'|'rain'|'storm'|'mist', intensity, wind, windLevel, gust, rain, rainAmt, wet, mist, storm, stillEvening, sinceThunder, temp °C, feels °C, cold}. Temperature is an autumn curve, about 4 °C at dawn and 13 °C mid-afternoon, minus up to 2.5 °C in rain. 'feels' takes off up to 3.5 for wind and 1.5 for wet; cold = feels < 6.
+- fogpass: narrower soft-edge range (.15 + z*.012 m), so puffs sitting close to roots and ground stay visible.
