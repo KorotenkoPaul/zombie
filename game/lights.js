@@ -157,7 +157,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
-  const WARM = new THREE.Color(0xFFA548), COLD = new THREE.Color(0x5E8CC0), tmpC = new THREE.Color();
+  const PANE_DAY = new THREE.Color(0x9CC4E0), PANE_NIGHT = new THREE.Color(0x1C2A3E), SKY_DAY = new THREE.Color(0x5E8CC0), SKY_NIGHT = new THREE.Color(0x24406A);
   for (const w of windows) { w.mat.emissive = w.mat.emissive.clone(); }
 
   // ---------- room glow, driven only by the room's own sources ----------
@@ -312,11 +312,12 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     for (const g of glows) { const v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
     updateBeams(dayK, T);
     for (const w of windows) {
-      const lit = Math.min(1, warm[w.room] || 0);
-      // panes are see-through glass (Pavel): only a faint warm tint while the room is lit, no cold self-glow;
-      // the real window glow is the halo and the spill light outside (room glow above)
-      tmpC.setRGB(0, 0, 0).lerp(WARM, clamp01(lit) * (1 - dayK * .7));
-      w.mat.emissive.copy(tmpC); w.mat.emissiveIntensity = .18;
+      // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
+      // no warm self-glow (critic T14). The warm glow of a lit window lives outside: halo + spill light (room glow).
+      // Tree owns the panes; if they become real transparent glass, lights.js leaves them alone.
+      if (w.mat.transparent || w.mat.userData.ownGlass) continue;
+      w.mat.color.copy(PANE_NIGHT).lerp(PANE_DAY, dayK); w.mat.roughness = .06; w.mat.metalness = .1;
+      w.mat.emissive.copy(SKY_NIGHT).lerp(SKY_DAY, dayK); w.mat.emissiveIntensity = .1 + dayK * .45;
     }
   }
 
