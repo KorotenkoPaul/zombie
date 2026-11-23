@@ -955,6 +955,7 @@ const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPas
 const FOGPASS=await (async()=>{try{const {Pass,FullScreenQuad}=await import('three/addons/postprocessing/Pass.js');const fp=(await import(new URL(ASSET+'fogpass.js',document.baseURI).href)).createFogPass({THREE,renderer,scene,camera,composer,FullScreenQuad,Pass,MOBILE});
  composer.insertPass(fp.pass,1);fp.add([...(MOBILE?rays.children:[]),...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),...((typeof FOGBANK!=='undefined'&&FOGBANK.sheets)||[])]);return fp;}catch(e){console.error('fogpass',e);return null;}})();window.__fogpass=FOGPASS;
 // [ENV] phones: the output pass composites the half-res fog itself (one full-screen pass less) whenever nothing runs between them
+if(FOGPASS&&MOBILE)FOGPASS.scale=.4;/* [ENV] the fog is soft: 0.4 res (16% of the pixels) looks the same as 0.5 on the phone */
 if(FOGPASS&&MOBILE&&ENV.outU)FOGPASS.merge=()=>{if(DOF.active||window.__fogMergeOff)return false;ENV.outU.tFog.value=FOGPASS.fogTexture;ENV.outU.fogOn.value=1;return true;};
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
