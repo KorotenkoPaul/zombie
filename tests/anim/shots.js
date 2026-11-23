@@ -37,7 +37,7 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
     // through the game's own camera rig (it cuts holes in walls between the camera and the target, and its near-fade
     // radius follows the rig distance); depth of field off so the close-up stays sharp
     await p.evaluate(([c,yaw,pitch,dist])=>{const T=__dbg.THREE;const R=window.__camera&&window.__camera.rig;
-     if(R&&R.set){__th.cam();if(__th.rig&&__th.rig.cine)__th.rig.cine(false);R.set({target:new T.Vector3(c[0],c[1],c[2]),yaw,pitch,dist,snap:true});for(let i=0;i<8;i++)R.update(.25,{});if(window.__camera.dof)window.__camera.dof(false);}
+     if(R&&R.set&&window.__qaRig){__th.cam();if(__th.rig&&__th.rig.cine)__th.rig.cine(false);R.set({target:new T.Vector3(c[0],c[1],c[2]),yaw,pitch,dist,snap:true});for(let i=0;i<8;i++)R.update(.25,{});if(window.__camera.dof)window.__camera.dof(false);}
      else{const cam=__qaCamera;cam.position.set(c[0]+Math.sin(yaw)*Math.cos(pitch)*dist,c[1]+Math.sin(pitch)*dist,c[2]+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(c[0],c[1],c[2]);}
      __qaCamera.updateMatrixWorld();__noRender(false);__qaComposer.render();__noRender(true);},[c,yaw,pitch,dist]);
     for(let tr=0;tr<3;tr++){await p.locator('canvas').first().screenshot({path:file});if(fs.statSync(file).size>15000)break;
