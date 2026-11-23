@@ -262,7 +262,9 @@ export function createHero(ctx){
  // a knee may never bend forward (a clip glitch or an IK pole flip): re-solve that leg with the knee pointing where the pelvis faces
  function kneeGuard(){const hf=hipsFwd();for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;
    const hp=U.getWorldPosition(V()),k=L.getWorldPosition(V()),a=F.getWorldPosition(V());const mid=hp.clone().add(a).multiplyScalar(.5);const off=k.clone().sub(mid);
-   const leg=a.clone().sub(hp);if(leg.lengthSq()<1e-4)continue;const ld=leg.clone().normalize();const pf=hf.clone().sub(ld.clone().multiplyScalar(hf.dot(ld)));if(pf.lengthSq()<1e-4)continue;pf.normalize();
+   // the knee's forward is where that leg's toes point (the pelvis can be turned far from the root mid-turn; a flipped pelvis forward bent good knees backwards)
+   const T=bones[s+'ToeBase'];const tf=T?T.getWorldPosition(V()).sub(a):null;if(tf){tf.y=0;}const kf=tf&&tf.lengthSq()>1e-4?tf.normalize():hf;
+   const leg=a.clone().sub(hp);if(leg.lengthSq()<1e-4)continue;const ld=leg.clone().normalize();const pf=kf.clone().sub(ld.clone().multiplyScalar(kf.dot(ld)));if(pf.lengthSq()<1e-4)continue;pf.normalize();
    const o=off.clone().sub(ld.clone().multiplyScalar(off.dot(ld)));if(o.length()<.02||o.dot(pf)>-.3*o.length())continue;
    ik2(U,L,F,a,pf.clone().add(o.normalize().multiplyScalar(.15)),1,true);}}
  function legPlantOff(){for(const k in plantS)plantS[k].on=false;}
