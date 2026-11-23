@@ -522,5 +522,217 @@
 "trunk_door_close": [
 "closing an old heavy wooden door with a soft thud and latch click, close",
 1.5
+],
+"fs_dirt_a": [
+"a single footstep of a boot on packed forest dirt, close, isolated, natural recording",
+0.7
+],
+"fs_wet_a": [
+"a single footstep of a boot on wet muddy ground, soft squelch, close, isolated, natural recording",
+0.7
+],
+"fs_leaves_a": [
+"a single footstep on dry autumn leaves, crisp crunch, close, isolated, natural recording",
+0.7
+],
+"fs_dirt_b": [
+"a single footstep of a boot on packed forest dirt, close, isolated, natural recording",
+0.7
+],
+"fs_wet_b": [
+"a single footstep of a boot on wet muddy ground, soft squelch, close, isolated, natural recording",
+0.7
+],
+"fs_leaves_b": [
+"a single footstep on dry autumn leaves, crisp crunch, close, isolated, natural recording",
+0.7
+],
+"fs_dirt_c": [
+"a single footstep of a boot on packed forest dirt, close, isolated, natural recording",
+0.7
+],
+"fs_wet_c": [
+"a single footstep of a boot on wet muddy ground, soft squelch, close, isolated, natural recording",
+0.7
+],
+"fs_leaves_c": [
+"a single footstep on dry autumn leaves, crisp crunch, close, isolated, natural recording",
+0.7
+],
+"fs_rope_a": [
+"one foot stepping onto a rope ladder rung, rope creaks and wooden rung knocks softly, close, isolated",
+0.9
+],
+"fs_ladder_a": [
+"one boot stepping on a wooden ladder rung, short wooden knock and slight creak, close, isolated",
+0.7
+],
+"fs_rope_b": [
+"one foot stepping onto a rope ladder rung, rope creaks and wooden rung knocks softly, close, isolated",
+0.9
+],
+"fs_ladder_b": [
+"one boot stepping on a wooden ladder rung, short wooden knock and slight creak, close, isolated",
+0.7
+],
+"un_crack": [
+"a heavy tree branch cracking and breaking somewhere far away in a dark night forest, distant, eerie, natural recording",
+3
+],
+"un_cry": [
+"an unclear faint distant cry echoing across a dark foggy forest at night, ambiguous, could be an animal, far away, eerie, quiet",
+4
+],
+"un_metal": [
+"a distant metal sheet creaking and banging once in the wind somewhere far away at night, eerie, faint",
+3
+],
+"un_thud": [
+"a dull heavy thud far away in a night forest, as if something fell, distant, eerie, faint",
+2
+],
+"un_moan": [
+"a long low distant wail carried by the wind across a dark valley at night, ambiguous and faint, eerie",
+5
+],
+"un_rustle": [
+"something moving through bushes in the dark forest not far away, slow rustle then silence, eerie, natural recording",
+3
+],
+"bucket_fill": [
+"dipping a wooden bucket into a pond and filling it with water, gurgle and splash, outdoors, close, natural recording",
+3
+],
+"slosh_a": [
+"water sloshing in a wooden bucket being carried, a single gentle slosh, close, natural recording",
+1.2
+],
+"slosh_b": [
+"water swaying and sloshing in a carried bucket, soft, close, natural recording",
+1.2
+],
+"tap_stream": [
+"a thin stream of water running from an old tap into a metal basin, steady, close, natural recording",
+5
+],
+"drip_bucket_a": [
+"a single water drop falling into a half full metal bucket, plink, close, isolated",
+0.8
+],
+"drip_bucket_b": [
+"one water drip into a bucket of water, small plop, close, isolated",
+0.8
+],
+"bucket_dump": [
+"dumping a bucket of water out onto the ground from a height, splash on grass and earth, outdoors, natural recording",
+2.5
+],
+"hatch_open": [
+"lifting a heavy wooden trapdoor hatch, slow creak of old hinges, close, natural recording",
+2.5
+],
+"hatch_close": [
+"a heavy wooden trapdoor hatch falling shut with a dull wooden thud, close, natural recording",
+1.5
+],
+"nail_a": [
+"hammering a nail into a wooden roof shingle, three quick hits, outdoors, close, natural recording",
+2
+],
+"nail_b": [
+"a few hammer blows driving a nail into wood, slightly muffled, close, natural recording",
+2
+],
+"saw_shingle": [
+"sawing a thin wooden roof shingle with a small hand saw, quick short strokes, close, natural recording",
+3
+],
+"bed_turn_a": [
+"a person turning over in bed in their sleep, quilt rustle and a soft wooden bed creak, close, quiet",
+2.5
+],
+"bed_turn_b": [
+"shifting under a thick blanket in bed, soft fabric rustle, quiet, close",
+2
+],
+"snore_a": [
+"soft gentle snoring of a sleeping young man, quiet and peaceful, slow breaths, close, no other sounds",
+6
+],
+"snore_b": [
+"light quiet snore and slow sleepy breathing, peaceful, close",
+5
+],
+"rain_slate_a": [
+"steady rain pattering on a slate tile roof heard from inside a small wooden attic room, hard tapping drops, muffled, cosy, no thunder",
+12
+],
+"rain_slate_b": [
+"rain drumming on slate roof tiles above a cabin room, dense crisp patter with gutter trickle, heard from inside, no thunder",
+12
+],
+"fridge_hum": [
+"the gentle low hum of an old vintage refrigerator motor in a quiet kitchen, soft and steady, close, no clicks",
+8
+],
+"fridge_click": [
+"an old refrigerator compressor clicking on and starting to hum, close, natural recording",
+2
+],
+"breath_climb_a": [
+"a young man breathing steadily through the nose and mouth while climbing a ladder, two slow effort breaths, soft, close, no words",
+2.5
+],
+"breath_climb_b": [
+"calm exertion breathing of a man climbing, short soft inhale and exhale, close, no voice",
+2
+],
+"breath_heavy_a": [
+"a young man breathing a bit heavier while carrying something heavy, soft exhale, close, no words",
+2.5
+],
+"breath_heavy_b": [
+"quiet effortful breath out while carrying a load, soft, close, no words",
+1.5
+],
+"grunt_a": [
+"a very soft short effort grunt of a young man lifting a log, subtle, close, no words",
+1
+],
+"grunt_b": [
+"a quiet low hmph of effort when picking up a heavy bucket, subtle, close, no words",
+1
+],
+"grunt_c": [
+"a small soft exhale with effort while lifting, subtle, close, no words",
+1
+],
+"cloth_a": [
+"soft rustle of a wool sweater and leather vest as a person moves their arms, short, close, foley",
+1
+],
+"cloth_b": [
+"brief fabric and leather rustle of clothes when turning around, short, close, foley",
+0.8
+],
+"cloth_c": [
+"soft cotton trousers and sweater rustle, a single movement, close, foley",
+0.8
+],
+"zip_up": [
+"zipping up a jacket zipper quickly, close, foley",
+1.2
+],
+"zip_down": [
+"unzipping a jacket zipper, close, foley",
+1.2
+],
+"sigh_a": [
+"a calm, content soft sigh of a young man looking into the distance, quiet, close, no words",
+2
+],
+"sigh_b": [
+"a slow thoughtful sigh, relaxed and quiet, close, no words",
+2.5
 ]
 }

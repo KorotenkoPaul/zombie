@@ -85,7 +85,7 @@ export function createPerf({ renderer, MOBILE }) {
   let hud = null, hudT = 0;
   function makeHud() {
     const d = document.createElement('div');
-    d.style.cssText = 'position:fixed;left:max(10px,env(safe-area-inset-left,0px));top:calc(env(safe-area-inset-top,0px) + 34px);z-index:50;pointer-events:none;' +
+    d.style.cssText = 'position:fixed;left:max(10px,env(safe-area-inset-left,0px));top:calc(env(safe-area-inset-top,0px) + 58px);z-index:50;pointer-events:none;' +
       'font:600 10px/1.35 ui-monospace,Menlo,monospace;color:#E9F3FF;background:rgba(8,12,24,.62);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:5px 7px;white-space:pre;display:none';
     document.body.appendChild(d); return { el: d, on: false };
   }
@@ -136,7 +136,7 @@ export function createPerf({ renderer, MOBILE }) {
     if (dbg) { dbg.style.display = dbg.style.display === 'none' ? 'block' : 'none'; return; }
     if (!hud || !hud.on) P.show(true);
     dbg = document.createElement('div');
-    dbg.style.cssText = 'position:fixed;left:max(10px,env(safe-area-inset-left,0px));right:60px;top:calc(env(safe-area-inset-top,0px) + 132px);z-index:51;' +
+    dbg.style.cssText = 'position:fixed;left:max(10px,env(safe-area-inset-left,0px));right:84px;top:calc(env(safe-area-inset-top,0px) + 156px);z-index:51;' +
       'font:600 10px/1.35 ui-monospace,Menlo,monospace;color:#E9F3FF;background:rgba(8,12,24,.72);border:1px solid rgba(255,255,255,.15);border-radius:8px;padding:6px;max-height:60vh;overflow:auto';
     const bs = 'margin:2px;padding:4px 7px;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font:600 11px system-ui';
     const run = document.createElement('button'); run.textContent = '▶ Тест (≈1 мин)'; run.style.cssText = bs + ';background:#E89A3C;color:#1B1206';
@@ -150,6 +150,7 @@ export function createPerf({ renderer, MOBILE }) {
   };
   P.openDebugWhenReady = () => { if (/[?&#]perfdebug/.test(location.href)) P.debugPanel(); };
 
+  P.renderer = renderer;
   window.__perf = P;
   return P;
 }
