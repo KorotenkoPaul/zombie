@@ -69,3 +69,14 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - 48 h (seeds 1, 2) after calibration: hunger mostly .1-.7, tiredness follows the day, mess and cold low-mid; boredom and wear the highest (.5-1) because the body's jobs are long: cook+eat ≈ 3-4 game h, fetchwater ≈ 2-4 h, a hunt ≈ 6 h.
 - Tasks with stages (eat, dishes, water, store, firewood, jacket, repairs) are never cut for bedtime, and a night noise does not restart them (QA run 12 turn-backs).
 - Day length 24 min (Pavel 2026-11-23 22:26 UTC): hps = 1/60, 1 game hour = 1 real minute. ACTS stays: read 50-85 s, craft 35-60, look 30-50, cook 22-32, tea 16-26, wash 12-20.
+
+## 24-minute day, recalibration check (2026-11-23)
+- 30 h runs, seeds 1/2/3: hunger stays .1–.6 after breakfast, tiredness follows the day, wear gets repaired (down to .01), 20–25 different picks per game day.
+- Sleep no longer wipes boredom/curiosity to 0 (−.015/h asleep instead of −.05); awake drift fun .055, curiosity .045 so they keep pulling him to the deck and the radio.
+- Watchdog: 'hammer' is the open-ended craft clip and never ends by itself (QA: 8 h of hammering). EXTRA.hammer.dur [18,35] s; any EXTRA chore stuck at the spot past 90 s ends with its gives (trace 'watchdog:<name>').
+
+## HERO-RULES alignment (2026-11-23)
+- Brain only calls body tasks (HH.startTask) and books state; the shutters/curtains are no longer closed "by magic" when the body lacks a 'shutters' task (rule 3.3). Lockdown lift plans 'shutters' {close:false}.
+- Rule 3.7 (40-90 s at a place): a visit is "young" for its first 40 real seconds: same area +1.6, elsewhere -1.2. Runs (seeds 1, 3): area stays 66-180 s, only jobs (pond, dump) and in-place chores are shorter.
+- Durations: ACTS dur is the brain's stay; the executor's own dur is used for EXTRA chores, with the brain watchdog (90 s / EXTRA.dur) as a backstop.
+- Lockdown order fixed: shutters below → hatch shut from the top → bedroom shutter. Before, the shutters task took him back down after the hatch, and the ladder reopened it (QA: locked with the hatch open). Removed the last "magic" hatch.open() fallback in planFor; without a hatch task the ladder climb opens it by hand.

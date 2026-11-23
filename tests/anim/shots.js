@@ -29,7 +29,7 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
  const {b,p,errs}=await open({seed:D.meta.seed,query:D.meta.query||'',vp:{width:360,height:360}});
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  let drift=0;const t0=Date.now();
- await simulate(p,{start:D.meta.start??6.5,hours:D.meta.hours,tour:D.meta.tour??true,log:()=>{},capture:{frames:new Set(want.keys()),fn:async fr=>{
+ await simulate(p,{start:D.meta.start??6.5,hours:D.meta.hours,tour:D.meta.tour??true,gate:D.meta.gate||0,log:()=>{},capture:{frames:new Set(want.keys()),fn:async fr=>{
   const rec=byF.get(fr);const now=await p.evaluate(()=>__dbg.hero.root.position.toArray());if(rec){const d=Math.hypot(now[0]-rec.root[0],now[1]-rec.root[1],now[2]-rec.root[2]);if(d>.01&&drift<=.01)console.log('replay drifts from frame',fr,(d*100).toFixed(1),'cm');drift=Math.max(drift,d);}
   for(const j of want.get(fr)){const q=pick[j.n];const f=rec||byF.get(q.f);const c=focus(q,f);
    const views=j.kind==='sheet'?[[-.45,.2,2.2],[.5,.28,2.4]]:[[-.4,.2,2.3]];let vi=0;

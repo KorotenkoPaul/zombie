@@ -177,11 +177,18 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
   const bPos = V(-2.0, BD + 1.95, 2.95);   // over the aisle in front of the bunk (Props moved it), not over the top bunk
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
+    // Pavel: cosy, not bright. A warm, muted lantern whose main light is a shadowed cone falling down and back onto the
+    // bunk, so the upper bunk throws its shadow over the lower one (one 512/1024 spot map, redrawn only while the hero
+    // is in the room); a weak unshadowed fill keeps the corners and the walls above the cone from going black.
+    const l = new THREE.PointLight(0xFFA54E, 0, MOBILE ? 5.5 : 5, MOBILE ? 1.4 : 1.6); l.position.copy(bPos); scene.add(l);
+    const bs = new THREE.SpotLight(0xFFA54E, 0, 6, 1.12, .65, 1.4); bs.position.copy(bPos).add(V(0, -.08, 0));
+    bs.target.position.set(-2.25, BD + .35, 1.75); scene.add(bs, bs.target);
+    bs.castShadow = true; bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
+    bs.shadow.bias = -.0015; bs.shadow.normalBias = .03; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
     const hg = housing(bPos); lastHang = null; hang(bPos); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: MOBILE ? 7 : 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 3.6 : 3.4 }, { l, I: MOBILE ? .8 : .6 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -340,7 +347,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // Light also leaves through the back windows onto the trunk (desktop: a small spill light; phones: halo only).
   const ROOMS = {
     kitchen:  { c: V(-2.65, KT + 1.05, 2.5), bounce: 2.0 },
-    bedroom:  { c: V(-1.9, BD + 1.1, 2.3), bounce: 1.6 },
+    bedroom:  { c: V(-1.9, BD + 1.1, 2.3), bounce: .9 },   // cosy: little bounce, the corners stay dusky
     workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
   };
   const glows = [];
@@ -508,8 +515,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
 {vec3 wg=vec3(0.);vec3 nW=normalize((vec4(normal,0.)*viewMatrix).xyz);for(int i=0;i<${WG_N};i++){vec3 dv=wgP[i].xyz-vWGp;float d=length(dv)/max(wgP[i].w,.001);float k=clamp(1.-d,0.,1.);float wr=clamp(dot(nW,dv/max(length(dv),.001))*.6+.4,0.,1.);wg+=wgC[i]*k*k*wr;}
  totalEmissiveRadiance+=wg*diffuseColor.rgb;}`);
     };
-    const key = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => key() + (wgOn ? '|winglow' : '');
+    // explicit program key: the material's own key if it had one, else the source of the hook we wrapped (three's default
+    // key is onBeforeCompile.toString(), which after wrapping would be OUR wrapper for every material -> shared programs)
+    const own = Object.prototype.hasOwnProperty.call(mat, 'customProgramCacheKey') ? mat.customProgramCacheKey.bind(mat) : null, prevSrc = prev ? prev.toString() : '';
+    mat.customProgramCacheKey = () => (own ? own() : prevSrc) + (wgOn ? '|winglow' : '');
     mat.needsUpdate = true;
   }
   if (TREE && wgSrc.length) { if (TREE.bark) treeGlow(TREE.bark.material); if (TREE.leaves) treeGlow(TREE.leaves.material); }
@@ -622,7 +631,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     t += dt; frame++;
     // cooking, or stoking (the log goes in while the little door is open): the fire is fed
     const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
-    cookT = cooking ? 23 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (8-minute day: a night hour is 18 s)
+    cookT = cooking ? 78 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s)
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {

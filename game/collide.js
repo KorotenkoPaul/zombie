@@ -29,7 +29,7 @@ const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const ALLOW = { hard: .004, feet: .008, seat: .011, soft: .017, pillow: .04 };
 const SOFT = /quilt|mattress|pillow|blanket|bunk|bed|rug/i, SEAT = /chair|stool|bench/i;
 
-export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null, voxCm = 2 }) {
+export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null, voxCm = 2 }) { const __t0 = Performance.prototype.now.call(performance);
   const hero = HH.hero, root = hero.root, bones = HH.bones;
   const mine = o => { while (o) { if (o === root) return true; o = o.parent; } return false; };
   const visible = o => { while (o) { if (!o.visible) return false; o = o.parent; } return true; };
@@ -41,7 +41,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
 
   // ---------- shapes ----------
   // {kind:'box'|'cyl'|'sph'|'vox', c, ax[3] (unit), h[3], r, cls:0 hard 1 seat 2 soft 3 pillow, obj, inst, m (cached matrix)}
-  const S = []; const pending = [];
+  const S = []; const pending = []; const bigQ = [];
   const m4 = new THREE.Matrix4(), mi = new THREE.Matrix4();
   function frameOf(s, mw) { // fill c, ax, h from a geometry box and a world matrix
     const bb = s.bb, e = mw.elements; const ax = [V(e[0], e[1], e[2]), V(e[4], e[5], e[6]), V(e[8], e[9], e[10])]; const sc = ax.map(a => a.length());
@@ -55,18 +55,20 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // 0.4 m slabs across its local z (every x-row keeps all its triangles, so the inside test stays right) and each slab is a shape
   function slabs(o, name) {
     const g = o.geometry, A = g.attributes.position, I = g.index ? g.index.array : null, nt = I ? I.length / 3 : A.count / 3; if (nt < 4) return;
+    let F = A.array; if (A.isInterleavedBufferAttribute || F.length !== A.count * 3) { F = new Float32Array(A.count * 3); for (let q = 0; q < A.count; q++) { F[3 * q] = A.getX(q); F[3 * q + 1] = A.getY(q); F[3 * q + 2] = A.getZ(q); } }
+    const vi = (t, q) => 3 * (I ? I[t * 3 + q] : t * 3 + q);
     const bb = g.boundingBox, Z0 = bb.min.z, n = Math.max(1, Math.ceil((bb.max.z - Z0) / .4)), dz = (bb.max.z - Z0) / n; const lists = Array.from({ length: n }, () => []);
-    for (let t = 0; t < nt; t++) { let lo = 1e9, hi = -1e9; for (let q = 0; q < 3; q++) { const z = A.getZ(I ? I[t * 3 + q] : t * 3 + q); lo = Math.min(lo, z); hi = Math.max(hi, z); }
+    const xl = new Float32Array(nt), xh = new Float32Array(nt);
+    for (let t = 0; t < nt; t++) { const a = vi(t, 0), b = vi(t, 1), c = vi(t, 2); const lo = Math.min(F[a + 2], F[b + 2], F[c + 2]), hi = Math.max(F[a + 2], F[b + 2], F[c + 2]); xl[t] = Math.min(F[a], F[b], F[c]); xh[t] = Math.max(F[a], F[b], F[c]);
       for (let k = Math.max(0, Math.floor((lo - Z0) / dz)); k <= Math.min(n - 1, Math.floor((hi - Z0) / dz)); k++) lists[k].push(t); }
     // inside a slab, pieces with an empty gap between them along x (separate pieces of furniture) become separate shapes:
     // no surface crosses the gap, so the inside test is unaffected, and the grids stay small (phone memory)
-    const parts = []; lists.forEach((L, k) => { const ex = L.map(t => { let lo = 1e9, hi = -1e9; for (let q = 0; q < 3; q++) { const x = A.getX(I ? I[t * 3 + q] : t * 3 + q); lo = Math.min(lo, x); hi = Math.max(hi, x); } return [lo, hi, t]; }).sort((a, b) => a[0] - b[0]);
-      let cur = null, end = -1e9; for (const [lo, hi, t] of ex) { if (!cur || lo > end + .01) { cur = []; parts.push([k, cur]); end = hi; } else end = Math.max(end, hi); cur.push(t); } });
-    parts.forEach(([k, L], pi) => { if (L.length < 4) return; const arr = new Float32Array(L.length * 9); let w = 0; const b = new THREE.Box3();
-      for (const t of L) for (let q = 0; q < 3; q++) { const v = I ? I[t * 3 + q] : t * 3 + q; const x = A.getX(v), y = A.getY(v), z = A.getZ(v); arr[w++] = x; arr[w++] = y; arr[w++] = z; b.expandByPoint(V(x, y, z)); }
-      b.min.z = Math.max(b.min.z, Z0 + k * dz); b.max.z = Math.min(b.max.z, Z0 + (k + 1) * dz); if (b.max.z - b.min.z < .003) return;
-      const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(arr, 3)); sg.boundingBox = b;
-      wb.copy(b).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) return; add(o, sg, o.matrixWorld, name + '/z' + k + '.' + pi); });
+    const parts = []; lists.forEach((L, k) => { L.sort((a, b) => xl[a] - xl[b]); let cur = null, end = -1e9; for (const t of L) { if (!cur || xl[t] > end + .01) { cur = []; parts.push([k, cur]); end = xh[t]; } else end = Math.max(end, xh[t]); cur.push(t); } });
+    parts.forEach(([k, L], pi) => { if (L.length < 4) return; const arr = new Float32Array(L.length * 9); let w = 0; const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+      for (const t of L) for (let q = 0; q < 3; q++) { const v = vi(t, q); for (let d = 0; d < 3; d++) { const x = F[v + d]; arr[w++] = x; if (x < mn[d]) mn[d] = x; if (x > mx[d]) mx[d] = x; } }
+      mn[2] = Math.max(mn[2], Z0 + k * dz); mx[2] = Math.min(mx[2], Z0 + (k + 1) * dz); if (mx[2] - mn[2] < .003) return; const b = new THREE.Box3(V().fromArray(mn), V().fromArray(mx));
+      wb.copy(b).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) return;
+      const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(arr, 3)); sg.boundingBox = b; add(o, sg, o.matrixWorld, name + '/z' + k + '.' + pi); });
   }
   const clsOf = name => SOFT.test(name) ? (/pillow/i.test(name) ? 3 : 2) : SEAT.test(name) ? 1 : 0;
   function add(obj, geo, mw, name, inst = -1) {
@@ -95,7 +97,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       return;
     }
     wb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) return;
-    const sz = wb.getSize(V()); if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4 && Math.hypot(sz.x, sz.y, sz.z) < 14) { slabs(o, name); return; }
+    const sz = wb.getSize(V()); if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4 && Math.hypot(sz.x, sz.y, sz.z) < 14) { bigQ.push([o, name]); return; } // cut up later, one mesh per frame (see slabs)
     if (!/Box|Cylinder|Sphere/.test(t) && Math.hypot(sz.x, sz.y, sz.z) > 3.4) { skipped['big ' + name] = sz.toArray().map(v => +v.toFixed(1)).join('x') + ' @' + wb.getCenter(V()).toArray().map(v => +v.toFixed(1)).join(','); return; }
     add(o, o.geometry, o.matrixWorld, name);
   });
@@ -166,7 +168,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   // a moved shape leaves the cells it no longer covers (without this the hash grew without end: Map size overflow)
   function unhash(s, n) { for (const kk of s.keys) { const a = G.get(kk); if (!a) continue; const q = a.indexOf(n); if (q >= 0) a.splice(q, 1); if (!a.length) G.delete(kk); } s.keys.length = 0; }
+  const __tScan = Performance.prototype.now.call(performance) - __t0;
   S.forEach((s, n) => hashIn(s, n));
+  // big merged meshes: cut up one per frame after load (in tests all at once, deterministic)
+  function cutBig() { const [o, name] = bigQ.shift(); const k0 = S.length; slabs(o, name); for (let q = k0; q < S.length; q++) hashIn(S[q], q); }
+  if (window.__qa) while (bigQ.length) cutBig();
   if (window.__qa && !worker) { const sv = pending.splice(0); sv.forEach(voxelise); } // tests: deterministic, all grids ready from the first frame
   // moving things (hatch lid, oven door, book, tools): every half second re-read their matrices; one that moved is hashed
   // into the cells it now covers (its old cells are cleared first)
@@ -322,7 +328,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // ---------- per frame ----------
   const off = { root: V(), head: V(), limb: [null, null, V(), V(), V(), V()] };
   const anim = [null, null, V(), V(), V(), V()]; // animated end-effector positions (after root + head corrections)
-  let on = true, applied = V(); const st = { ms: 0, msMax: 0, iters: 0, pushes: 0, frames: 0, worst: 0, floorFix: 0, freed: 0, skipped: 0, pts: PTS.length, shapes: S.length, vox: 0, pending: 0 };
+  let on = true, applied = V(); const st = { scanMs: +__tScan.toFixed(0), ms: 0, msMax: 0, iters: 0, pushes: 0, frames: 0, worst: 0, floorFix: 0, freed: 0, skipped: 0, pts: PTS.length, shapes: S.length, vox: 0, pending: 0 };
   const push = [V(), V(), V(), V(), V(), V()], pd = new Float32Array(6), sumN = [V(), V()], sumW = [0, 0];
   // smoothness: a correction may grow only so fast (m/frame) and speed up only so fast (m/frame per frame); it is held
   // while still needed and released slowly afterwards, so push / release never alternate (no jitter, no pops)
@@ -364,7 +370,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++;
-    buildSome(1.5); trackMoving();
+    if (bigQ.length) cutBig(); buildSome(1.5); trackMoving();
     floorGuard(dt);
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 14);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGv[c].copy(gv[c]); gv[c].set(0, 0, 0); }
@@ -424,7 +430,8 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   function finish(t0, it, worst) { const ms = performance.now() - t0; st.frames++; st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
   // wrap the hero's update: corrections go on after hero.js has posed the body, and come off before it runs again
-  const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); };
+  // HERO-RULES.md: the 'collide' slot of the pose pipeline (after contacts, before grab and the guard); the old wrap only without stages
+  if (HH.stage) HH.stage('collide', dt => post(dt)); else { const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); }; }
 
   // ---------- nav: clearance of the walk graph for the body (a 0.2 m wide column from knee to head height) ----------
   function clearance(x, y, z, r = .2) { let worst = 0; const p = V(); for (const hy of [.35, .7, 1.0, 1.3]) for (let a = 0; a < 8; a++) { p.set(x + Math.cos(a * Math.PI / 4) * r, y + hy, z + Math.sin(a * Math.PI / 4) * r); const d = probe(p, 7, false); if (d > worst) worst = d; } return worst; }

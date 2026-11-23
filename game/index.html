@@ -90,6 +90,11 @@ import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.
 
 const $=id=>document.getElementById(id);
 const rnd=(a,b)=>a+Math.random()*(b-a);
+// [PERF][SAFETY] three.js keys a shader hook by its source text (onBeforeCompile.toString()). Wrappers that chain hooks
+// (e.g. rain's wet boards, props' injectors) have the same text for every material they wrap, so two materials whose
+// generated shaders differ could get one compiled program: on iPhone the boards drew with another material's shader
+// (white house, 2026-11-23). Default key now = identity of the hook function; owners' own customProgramCacheKey still wins.
+{const D=THREE.Material.prototype.onBeforeCompile,ids=new WeakMap();let nx=1;THREE.Material.prototype.customProgramCacheKey=function(){const f=this.onBeforeCompile;if(f===D)return f.toString();let i=ids.get(f);if(!i){i=nx++;ids.set(f,i);}return 'obc#'+i;};}
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const lerp=(a,b,k)=>a+(b-a)*k;
 const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
@@ -264,7 +269,8 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  col*=1.-.18*old*smoothstep(.62,.9,pN(vec2(m.x*1.3+sd*3.,m.y*4.)))*step(.5,pH(sd+8.));
  // relief from a blurred tap of the scan, differenced in texture space (smooth, no 2x2 blocks), in metres
  vec2 dH=vec2(0.);
- if(near>0.){float hb=pL(pTex(uv,wall,2.5));dH=vec2(pL(pTex(uv+ux,wall,2.5))-hb,pL(pTex(uv+uy,wall,2.5))-hb)*uBump;
+ /* [ENV fix] taps inside this branch use explicit gradients: implicit-derivative texture reads inside a per-pixel branch are undefined on Apple GPUs (boards/slates came out washed white on iPhone) */
+ if(near>0.){vec2 g1=ux*5.66,g2=uy*5.66;float hb=pL(pTexG(uv,wall,g1,g2));dH=vec2(pL(pTexG(uv+ux,wall,g1,g2))-hb,pL(pTexG(uv+uy,wall,g1,g2))-hb)*uBump;
   if(face==0.){float h0=pTop(m.xy,sz,sd,wall);dH+=vec2(pTop(m.xy+mx,sz,sd,wall)-h0,pTop(m.xy+my,sz,sd,wall)-h0);}dH*=near;}
  if(face==0.){
   // worn, lighter along the rounded edges
@@ -323,7 +329,11 @@ function plankShader(m,o={}){const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv}
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=pRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=pnArb(-vViewPosition,normal,pDH,faceDirection);');};}
 plankShader(boardMat);
-const darkBoard=boardMat.clone();darkBoard.color.set(0xffffff);plankShader(darkBoard,{a:woodDarkT,b:woodDarkT,ta:new THREE.Vector3(.95,.55,.34),tb:new THREE.Vector3(.95,.55,.34),nails:0,bump:.0002});
+// explicit program keys: hooks chained on later (rain wetBoards, ...) build their key from ours; without one three.js falls back to
+// onBeforeCompile.toString(), which is the *wrapper's* source and the same for every wrapped material, so the boards could get
+// another material's program (the plain-white boards/slates on phones, 2026-11-23)
+boardMat.customProgramCacheKey=()=>'plank';
+const darkBoard=boardMat.clone();darkBoard.color.set(0xffffff);plankShader(darkBoard,{a:woodDarkT,b:woodDarkT,ta:new THREE.Vector3(.95,.55,.34),tb:new THREE.Vector3(.95,.55,.34),nails:0,bump:.0002});darkBoard.customProgramCacheKey=()=>'plank';
 // a board solid with rounded edges: 24 vertices / 44 triangles. position = the unit box corner, aBev = the inset
 // direction (the shader scales it by the bevel radius in metres, whatever the board size), normal = face normal,
 // interpolated across the bevel strips and corners so the edges shade round.
@@ -408,8 +418,8 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  vec2 ux=dFdx(uv),uy=dFdy(uv),mx=dFdx(m.xz),my=dFdy(m.xz);vec3 wx=dFdx(vW),wy=dFdy(vW);
  // LOD (perf round): far slates (> ~7 mm/px) skip the relief taps, crack relief, lichen specks and moss relief
  float near=1.-smoothstep(.005*uLod,.009*uLod,max(length(mx),length(my)));vec2 dH=vec2(0.);
- if(near>0.){float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
-  dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004*near;}
+ if(near>0.){vec2 g1=ux*4.,g2=uy*4.;/* [ENV fix] explicit gradients inside the branch (Apple GPUs) */float hb=dot(textureGrad(tSlate,uv,g1,g2).rgb,vec3(.33));
+  dH=vec2(dot(textureGrad(tSlate,uv+ux,g1,g2).rgb,vec3(.33))-hb,dot(textureGrad(tSlate,uv+uy,g1,g2).rgb,vec3(.33))-hb)*.004*near;}
  if(top>.5){
   // the slate above lies on this one: under its butt edge a soft shadow band (the overlap reads as depth, not as a drawn line),
   // and a little grime washed down along it
@@ -421,9 +431,10 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  // moss, raised a few mm over the stone
  float ms=sMoss(vW,sd),mo=ms*mix(.5,1.,top)*old;
  if(mo>.001){if(near>0.)dH+=vec2(sMoss(vW+wx,sd)-ms,sMoss(vW+wy,sd)-ms)*.006*mix(.5,1.,top)*near;
-  vec3 mc=texture2D(tMoss,vW.xz*1.7+vec2(vW.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
+  vec3 mc=textureGrad(tMoss,vW.xz*1.7+vec2(vW.y*.7),wx.xz*1.7+vec2(wx.y*.7),wy.xz*1.7+vec2(wy.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
+shingleMat.customProgramCacheKey=()=>'slate';
 shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT},uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);vDn=1.;\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;vDn=-sign((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).y+1e-6);\n#endif')
@@ -442,7 +453,7 @@ function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matr
   if(!by.has(m.material))by.set(m.material,[]);by.get(m.material).push({geo,m});rm.push(m);});
  for(const [mat,L] of by){if(L.length<2)continue;const mg=mergeGeometries(L.map(x=>x.geo));if(!mg)continue;for(const x of L)x.m.parent.remove(x.m);
   const me=new THREE.Mesh(mg,mat);me.castShadow=L.some(x=>x.m.castShadow);me.receiveShadow=L.some(x=>x.m.receiveShadow);g.add(me);}}
-function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
+function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);g.userData.plStatic=true;scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
@@ -577,9 +588,11 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   rungs.push(placed(new THREE.CylinderGeometry(.03,.035,.16,6),V(x+sx*1.05,top+.06,z-.34)));
   for(const y of rungY){const t=(top-y)/H;ropes.push(placed(knotGeo,V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1)));}}
  // round rungs, a little uneven like hand-lashed sticks
- for(const y of rungY){const t=(top-y)/H;{const r=rnd(.019,.024);rungs.push(placed(new THREE.CylinderGeometry(r,r*rnd(.85,1),.64,9),V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t)),new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}}
- for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;scene.add(me);}}
-function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});for(let y=y0+.3;y<y1;y+=.32)board(V(x,y,z),.5,.06,.05,null,{dark:true,rung:true});}
+ const LR=[];for(const y of rungY){const t=(top-y)/H;const r=rnd(.019,.024);const c=V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t));LR.push({x:c.x,y:c.y,z:c.z,r,half:.32,sw:t});rungs.push(placed(new THREE.CylinderGeometry(r,r*rnd(.85,1),.64,9),c,new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
+ (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:true,rungs:LR,len:H});/* climb.js: hands and feet on these rungs */
+ for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;me.userData.plStatic=true;scene.add(me);}}
+function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});const LR=[];for(let y=y0+.3;y<y1;y+=.32){board(V(x,y,z),.5,.06,.05,null,{dark:true,rung:true});LR.push({x,y,z,r:.03,half:.21,sw:0});}
+ (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:false,rungs:LR});/* climb.js: hands and feet on these rungs */}
 // the photo is an open cutaway: no plank fences across the room fronts while there are no zombies (BARRICADES=false)
 const BARRICADES=false;
 function barricade(name,center,len){const g={name,boards:[],center};groups[name]=g;if(!BARRICADES)return g;
@@ -631,17 +644,17 @@ const BX0=-4.2,BX1=.4;
 floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]]});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
-const HATCH=(()=>{const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+const HATCH=(()=>{/* own plank materials: plain meshes sharing boardMat's instanced program came out flat white (critic T20) */const hB=boardMat.clone();plankShader(hB);const hD=boardMat.clone();plankShader(hD);hD.color.setScalar(.5);const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
  // the opening reads as a real hole (Pavel): a dark trim frame round it on the bedroom floor, and the floor's thickness lined
  // with boards inside it, so from the kitchen below it is a framed square hole with the ladder going up through it
  {const fr=new THREE.Group();scene.add(fr);const W=x1-hx0,D=z1-z0,cx=(hx0+x1)/2,cz=(z0+z1)/2;
   const bx=(sx,sy,sz,px,py,pz,mat)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(px,py,pz);m.castShadow=m.receiveShadow=true;fr.add(m);};
-  for(const sd of [-1,1]){if(sd>0)bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,darkBoard);/* -x: the wall is the edge */bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),darkBoard);
-   bx(.035,.26,D,cx+sd*(W/2-.017),y-.15,cz,boardMat);bx(W-.07,.26,.035,cx,y-.15,cz+sd*(D/2-.017),boardMat);}
+  for(const sd of [-1,1]){if(sd>0)bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,hD);/* -x: the wall is the edge */bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),hD);
+   bx(.035,.26,D,cx+sd*(W/2-.017),y-.15,cz,hB);bx(W-.07,.26,.035,cx,y-.15,cz+sd*(D/2-.017),hB);}
   bakeStatic(fr);}
  const lid=new THREE.Group();g.add(lid);const L=z1-z0;
- const PW=(x1-x0)/4;for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(PW-.004,.05,L-.01),boardMat);m.position.set(x0-(x0+x1)/2+PW/2+i*PW,0,-L/2);m.castShadow=m.receiveShadow=true;lid.add(m);}
- for(const zz of [-.18,-L+.18]){const m=new THREE.Mesh(new THREE.BoxGeometry(.58,.04,.09),darkBoard);m.position.set(0,-.04,zz);lid.add(m);}
+ const PW=(x1-x0)/4;for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(PW-.004,.05,L-.01),hB);m.position.set(x0-(x0+x1)/2+PW/2+i*PW,0,-L/2);m.castShadow=m.receiveShadow=true;lid.add(m);}
+ for(const zz of [-.18,-L+.18]){const m=new THREE.Mesh(new THREE.BoxGeometry(.58,.04,.09),hD);m.position.set(0,-.04,zz);lid.add(m);}
  const ring=new THREE.Mesh(new THREE.TorusGeometry(.045,.009,6,14),new THREE.MeshStandardMaterial({color:0x2A2622,metalness:.7,roughness:.45}));ring.position.set(0,.03,-L+.12);ring.rotation.x=Math.PI/2;lid.add(ring);
  for(const xx of [-.2,.2]){const h=new THREE.Mesh(new THREE.BoxGeometry(.05,.02,.12),ring.material);h.position.set(xx,.03,-.04);lid.add(h);}
  bakeStatic(lid,m=>m===ring);const OPEN=1.95;let ang=OPEN,target=OPEN;lid.rotation.x=ang;
@@ -716,6 +729,7 @@ barricade('Забор кухни',V(-3.0,KT+.55,3.88),2.8);
 barricade('Забор мастерской',V(3.0,WS+.55,4.43),3.15);
 boards.instanceMatrix.needsUpdate=true;beams.instanceMatrix.needsUpdate=true;aRow.needsUpdate=true;aTile.needsUpdate=true;dRow.needsUpdate=true;dTile.needsUpdate=true;
 const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+3.5,1.0,4.2],[WX0+.05,WX1-.05,WS+.05,WS+3.3,1.25,5.3]];
+if(ENV.setInterior)ENV.setInterior(ROOMS);/* [ENV] interior night ambient cut (Lights) */
 // ---- age (round 3): which face of each board is outside. Floors inside a room are sheltered, landings/deck are not;
 // a wall's outer face is the one facing away from its room; beams, posts and frames are out in the weather.
 ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[3],0,0);});
@@ -818,6 +832,7 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
  mode:()=>{if(isNight(hour)&&zombies.some(z=>z.alive))return 'guard';if(B.some(b=>b.breakable&&b.loose))return 'repair';return null;},
  guardSpot:()=>guardSpot(),brokenBoard:()=>B.find(b=>b.breakable&&b.loose),repairBoard:b=>repairBoard(b),get WIN_NODE(){return WIN_NODE;}});
 // motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
+try{const {createClimb}=await import(new URL(ASSET+'climb.js',document.baseURI).href);if(HH.setClimb){window.__climb=createClimb();HH.setClimb(window.__climb);}}catch(e){console.error('climb',e);}
 try{const mdb=await fetch(ASSET+'motion-db.txt').then(r=>r.ok?r.text():null).catch(()=>null);if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
 // ---- age (round 3): wear paths seeded from his walking graph, then stamped wherever he actually walks; repair API for Brain
@@ -832,6 +847,8 @@ const freshAttr=m=>m===boards?aFresh:m===beams?dFresh:sFresh;
 //  fresh(id)          -> current value
 //  near(x,y,z,r,kind?)-> ids within r metres
 //  wear(x,y,z,amt)    -> add foot wear on the floor at that point (0..1)
+// [PERF] static house parts this thread owns: matrices frozen (no updateMatrix per frame). Instances still move via instanceMatrix.
+{const fr=o=>{o.updateMatrix();o.matrixAutoUpdate=false;o.updateMatrixWorld(true);};for(const m of [boards,beams,SHING])fr(m);scene.traverse(o=>{if(o.userData.plStatic)o.traverse(fr);});}
 window.__planks={meshes:{boards,beams,shingles:SHING},list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
  setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,0,1));A.needsUpdate=true;return true;},
  fresh:id=>PL[id]?freshAttr(PL[id].mesh).getX(PL[id].i):null,
@@ -1138,9 +1155,12 @@ window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,trunkSolid,LI
 try{const {createGrab}=await import(new URL(ASSET+'grab.js',document.baseURI).href);window.__grab=createGrab({THREE,bones:heroBones});try{window.__grab.buildFists(hero.root);window.__grab.wrapProps(window.__props||P3);}catch(e){console.error('fist',e);}}catch(e){console.error('grab',e);}
 // [COLLIDE] hard body boundaries: after hero.js poses the body, the skin is pushed out of walls, beams and furniture (game/collide.js)
 try{const {createCollide}=await import(new URL(ASSET+'collide.js',document.baseURI).href);window.__collide=createCollide({scene,HH,P3,trunk:{SL,TAX}});}catch(e){console.error('collide',e);}
+try{window.__grab&&window.__grab.attach(HH);}catch(e){console.error('grab attach',e);}/* [GRAB] after collide: exact hand holds are re-applied once the body has been pushed */
 // [PERF] the loading screen stays up until the heavy first work is done: every texture uploaded to the GPU, shaders linked
 // (parallel compile where the browser has it), collide.js built and two real frames drawn. Otherwise the first seconds after
 // it disappears are a frozen picture that ignores swipes.
+// [PERF] ?perfx: material split, program sort and texture pre-upload (off while the white-boards report on iPhone is checked)
+const PERFX=/[?&]perfx/.test(location.search);
 // [PERF] a transparent double-sided material is drawn twice per frame by three.js (back faces, then front) and rebuilds
 // its shader key each time (~2 draws + CPU per object). For flat things (window glass, rugs) one pass looks the same.
 {const _b=new THREE.Box3(),_v=V();const single=()=>scene.traverse(o=>{if(!o.isMesh)return;for(const m of [].concat(o.material||[])){if(!m.transparent||m.side!==THREE.DoubleSide||m.forceSinglePass)continue;if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();o.geometry.boundingBox.getSize(_v);if(Math.min(_v.x,_v.y,_v.z)<.01)m.forceSinglePass=true;}});single();setTimeout(single,9000);
@@ -1150,13 +1170,13 @@ try{const {createCollide}=await import(new URL(ASSET+'collide.js',document.baseU
  const split=()=>{const use=new Map();scene.traverse(o=>{if(!o.isMesh)return;for(const m of [].concat(o.material||[])){let u=use.get(m);if(!u)use.set(m,u={i:[],p:[]});(o.isInstancedMesh?u.i:u.p).push(o);}});
   const plainHook=THREE.Material.prototype.onBeforeCompile;let n=0;const left=[];
   for(const [m,u] of use){if(!u.i.length||!u.p.length)continue;const c=m.clone();if(m.onBeforeCompile!==plainHook){c.onBeforeCompile=m.onBeforeCompile;c.customProgramCacheKey=m.customProgramCacheKey;left.push(m.name||m.type);}for(const o of u.i)o.material=Array.isArray(o.material)?o.material.map(x=>x===m?c:x):c;n++;}
-  PERF.splitMats=n;PERF.sharedHooked=left;};split();setTimeout(split,9000);}
+  PERF.splitMats=n;PERF.sharedHooked=left;};if(PERFX){split();setTimeout(split,9000);}}
 // [PERF] phones: opaque draws sorted by shader program (then material) instead of front-to-back. Apple GPUs remove hidden
 // opaque pixels in hardware (TBDR), so depth order buys nothing there, while every program switch re-uploads lights and
 // shadow uniforms on the CPU.
-if(MOBILE){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
+if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
  renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
-{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
+{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,4000))]);}catch(e){}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
  PERF.startupMs=Math.round(performance.now()-T0);}

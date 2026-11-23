@@ -35,10 +35,10 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const NEEDS = {
   hunger:    { drift: .05,  w: 2.6, label: 'Голод' },
   energy:    { drift: -.042, w: 3.0, label: 'Силы' },      // goes down while awake
-  fun:       { drift: .045, w: .9, label: 'Скука' },
+  fun:       { drift: .055, w: .9, label: 'Скука' },
   tidy:      { drift: .025,  w: .8, label: 'Беспорядок' },
   comfort:   { drift: .05,  w: 1.3, label: 'Холод, неуют' },        // cold, damp, wants to be cosy (faster at night)
-  curiosity: { drift: .035, w: .8, label: 'Любопытство' },
+  curiosity: { drift: .045, w: .8, label: 'Любопытство' },
   safety:    { drift: .05,  w: 1.6, label: 'Тревога' },
   wear:      { drift: .02, w: 1.3, label: 'Износ дома' },  // the house wears out; faster in rain and wind; repairs fix it     // shelter mood: grows at dusk, at night and in the rain; bolt, listening, radio calm it
 };
@@ -73,7 +73,7 @@ const EXTRA = {
   stoke:     { room: 'kitchen',  give: { comfort: -.3 }, label: 'подкладывает дрова в печь', when: (h, c) => (c.ovenLow ? .6 : -.5) + (isN(h) ? .2 : 0), needLogs: true },
   dishes:    { room: 'kitchen',  give: { tidy: -.4 }, label: 'моет посуду',               when: (h, c) => (c.dirty >= 2 ? .8 : c.dirty === 1 ? (c.justAte ? .3 : -.2) : c.dirty === 0 ? -1.5 : (c.justAte ? .7 : 0)) },
   saw:       { room: 'workshop', give: { fun: -.25 }, label: 'пилит доску',               when: h => (h >= 9 && h < 17 ? .2 : -.6) },
-  hammer:    { room: 'workshop', give: { fun: -.2, tidy: .03 }, label: 'стучит молотком', when: h => (h >= 9 && h < 18 ? .15 : -.8) },
+  hammer:    { room: 'workshop', give: { fun: -.2, tidy: .03 }, label: 'стучит молотком', dur: [18, 35], when: h => (h >= 9 && h < 18 ? .15 : -.8) },
   sharpen:   { room: 'workshop', give: { fun: -.12, safety: -.12 }, label: 'точит нож',   when: h => (h >= 16 && h < 20 ? .2 : 0) },
   fixlamp:   { room: 'workshop', give: { fun: -.12, comfort: -.05 }, label: 'чинит фонарь', when: h => (h >= 15 && h < 19 ? .15 : 0) },
   stretch:   { room: null,       give: { comfort: -.1 }, label: 'потягивается',           when: (h, c) => (c.justWoke ? 1.2 : -.3) },
@@ -142,13 +142,15 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // a visit: when he arrives somewhere he means to do 2-4 things there before moving on (Pavel: never up and straight back down)
   const DECK = ['look', 'telescope', 'ledge', 'fix_railing', 'clear_roof', 'fix_shingle', 'fix_chimney'];
   const area = n => DECK.includes(n) ? 'deck' : (JOBS[n] || ['chop', 'firewood', 'fix_rope'].includes(n)) ? 'ground' : ((ACTS[n] || EXTRA[n] || {}).room || null);
-  const visit = { area: null, left: 0 };
+  const visit = { area: null, left: 0, since: 0 }; let nowT = 0;   // nowT: real seconds the brain has run
+  const MIN_VISIT = 40;   // HERO-RULES 3.7: a believable stay at a place, 40-90 s
   function visitBonus(n) {
     const a = area(n);
-    if (!visit.left || !visit.area) return null;            // no visit going on: the usual room logic
-    if (a === visit.area) return 1.1;                       // more to do here
+    const young = visit.area && nowT - visit.since < MIN_VISIT;   // he only just got here: stay
+    if ((!visit.left && !young) || !visit.area) return null;            // no visit going on: the usual room logic
+    if (a === visit.area) return young ? 1.6 : 1.1;                       // more to do here
     if (a === null) return .3;                              // small things that can be done anywhere
-    return -.5;                                             // elsewhere: later
+    return young ? -1.2 : -.5;                             // elsewhere: later
   }
   let wake = rnd(5.6, 6.6); // he does not wake at the same minute every day
   let bedTime = rnd(20.8, 21.6);
@@ -169,7 +171,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const h = v.hour, asleep = v.task === 'sleep' && (v.inBed || v.step === 'sleep');
     for (const k in NEEDS) {
       let r = NEEDS[k].drift;
-      if (asleep) r = k === 'energy' ? .16 : k === 'hunger' ? .02 : k === 'fun' || k === 'curiosity' ? -.05 : 0;
+      if (asleep) r = k === 'energy' ? .16 : k === 'hunger' ? .02 : k === 'fun' || k === 'curiosity' ? -.015 : 0;
       if (k === 'comfort' && isNight(h)) r *= 1.8;
       if (k === 'wear') r = asleep ? .01 : .02 * (raining() ? 2.5 : 1) * (1 + windy());
       if (k === 'safety') r = asleep ? -.04 : (isNight(h) ? .06 : h >= 17 ? .035 : -.02) * (raining() ? 1.5 : 1);
@@ -362,10 +364,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // a lamp forgotten earlier in a room he walks through: he notices it on the way and puts it out (usually)
     for (const r of roomsOnWay(A.node || AREA_NODE[area(name)] || AREA_NODE[to])) if (r !== from && r !== to && ROOM_LAMP[r] && lampOn(ROOM_LAMP[r]) && Math.random() < .85)
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'по пути: забытая лампа — гасит' });
-    // the floor hatch is closed and the way goes through it: open it first (without a hatch task, it just opens, so he is never trapped)
+    // the floor hatch is closed and the way goes through it: open it first (without a hatch task the ladder climb opens it by hand)
     { const H8 = house(); const up = r => r === 'bedroom';
       if (!locked && H8 && H8.hatch && H8.hatch.isOpen && !H8.hatch.isOpen() && name !== 'sleep' && up(from) !== up(to) && !(A.node && /^(deck|ledge|ll_)/.test(A.node))) {
-        if (HH.hasTask && HH.hasTask('hatch')) plan.push({ task: 'hatch', opts: { open: true }, why: 'открывает люк' }); else H8.hatch.open(); } }
+        if (HH.hasTask && HH.hasTask('hatch')) plan.push({ task: 'hatch', opts: { open: true }, why: 'открывает люк' }); /* else the ladder opens it under his hand */ } }
     if (name === 'sleep' && canJacket() && wearing()) plan.push({ task: 'jacket', opts: { on: false }, why: 'перед сном вешает куртку на крючок' });
     // warm again (midday, dry): the jacket comes off when he passes by; cold or wet: on before going out (or in a cold morning)
     else if (canJacket() && name !== 'sleep' && !JOBS[name]) {
@@ -417,7 +419,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if (ACTS[n] || EXTRA[n] || JOBS[n]) { const a = area(n);
         if (n === 'sleep' || JOBS[n]) { visit.area = null; visit.left = 0; }
         else if (a && a === visit.area) visit.left = Math.max(0, visit.left - 1);
-        else if (a) { visit.area = a; visit.left = 1 + Math.floor(Math.random() * 3); } } }
+        else if (a) { visit.area = a; visit.since = nowT; visit.left = 1 + Math.floor(Math.random() * 3); } } }
     tr('start:' + (st.extra || st.job || st.task) + (st.task === 'switch' && st.opts ? ':' + st.opts.light + (st.opts.on ? '+' : '-') : '')); trace[trace.length - 1].room = roomOfTask(st.extra || st.job || st.task);
     if (st.task === 'tea') day.hadTea = true;
     // reading in the dark: the candle lights itself when he sits down (lights.js); only putting it out is his job
@@ -485,10 +487,14 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if ((bolt || lamps.length) && hatchShut() && sideOf(ROOM_OF(H.node)) === 'up' && canHatch) { plan.push({ task: 'hatch', opts: { open: true }, why: 'запирается: спускается к двери' }); reopened = true; }
     if (bolt) plan.push({ task: 'bolt', opts: { lock: true }, why: 'запирается: засов', extra: 'bolt' });
     for (const r of lamps) plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'запирается: гасит свет внизу' });
+    // shutters (only the body closes them, with its hands): the windows below before he goes up, the hatch shut from above,
+    // then the window(s) upstairs; going down again for a shutter would open the hatch on the way (QA 2026-11-23)
+    const canSh = HH.hasTask && HH.hasTask('shutters'), WIN = { bwin: 'bedroom', kwin: 'kitchen', wwin: 'workshop' };
+    const below = Object.keys(WIN).filter(w => sideOf(WIN[w]) !== 'up'), above = Object.keys(WIN).filter(w => sideOf(WIN[w]) === 'up');
+    if (canSh && below.length) plan.push({ task: 'shutters', opts: { close: true, windows: below }, why: 'запирается: ставни внизу' });
     if ((reopened || (H8 && H8.hatch && H8.hatch.isOpen && H8.hatch.isOpen())) && canHatch) plan.push({ task: 'hatch', opts: { open: false, side: 'top' }, why: 'запирается: люк' });
-    // shutters / curtains (Tree, Lights): the body closes them if it can, otherwise they are closed directly
-    if (HH.hasTask && HH.hasTask('shutters')) plan.push({ task: 'shutters', opts: { close: true }, why: 'запирается: ставни' });
-    else { try { const S = house() && house().shutters; S && S.close && S.close(); } catch (e) {} try { const C = window.__lights && window.__lights.curtains; C && C(true); } catch (e) {} }
+    if (canSh && above.length) plan.push({ task: 'shutters', opts: { close: true, windows: above }, why: 'запирается: ставни' });
+    // no body task for it yet: they stay as they are (HERO-RULES 3.3, nothing moves unless a hand holds it)
   }
   function maybeLockdown(h) {
     if (locked || !isN(h) || h < 19 && h > 6) return;
@@ -556,7 +562,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // one-off setup spread out of the decision frames: the slates in reach are worked out a few seconds after the start
     if (!reachCache && (warmT += dt) > 3) { try { const P = planks(); if (P && P.list) reachable(P.list('shingle')); } catch (e) {} }
     const dh = gameHours();
-    measureClock(dt);
+    measureClock(dt); nowT += dt;
     if (lockAsk) { lockAsk = false; brain.lockdown(true); }
     // the clock was set by hand (debug, tests): needs fit the new hour, as on a fresh start; what he is doing goes on
     if (jumped) { jumped = false; const h = hour(); const keep = { ...stock }, c = cur, e = expected, pl = plan.splice(0); brain.prime(h); Object.assign(stock, keep); cur = c; expected = e; plan.push(...pl); showStock(); tr('clockjump'); }
@@ -633,6 +639,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // a chore (ends by itself): only bedtime or exhaustion cuts it short, and only once he has been at it a while
     // rain caught him at an outdoor chore: he finishes the stroke and goes under the roof
     if (!A && raining() && ['deck', 'ground'].includes(area(cur.name)) && EXTRA[cur.name] && cur.t > 3 && !plan.length) { why = 'дождь — уходит под крышу'; choose(h, 'rain'); return; }
+    // watchdog: a chore the body never ends by itself (hammer is the open-ended craft clip) stops after its stay,
+    // and any chore stuck past ~1.5 game hours at the spot is dropped (QA: 8 h of hammering, 2026-11-23)
+    if (!A && EXTRA[cur.name] && !cur.cmd) { const E = EXTRA[cur.name]; if (cur.cap == null) cur.cap = E.dur ? rnd(E.dur[0], E.dur[1]) : 90;
+      if (cur.t > cur.cap) { tr('watchdog:' + cur.name); if (E.give) for (const k in E.give) need[k] = clamp(need[k] + E.give[k] * (E.give[k] < 0 ? XS : 1)); choose(h, 'done'); return; } }
     if (!A) { if (cur.name !== 'sleep' && cur.t > 10 && (need.energy < .05 || (h >= bedTime + 1 && h < 23.9) || h < 4.5) && HH.hasTask && !['switch', 'micro', 'hatch', 'bolt', 'trip', 'eat', 'dishes', 'fetchwater', 'dumpwater', 'store', 'setbucket', 'firewood', 'jacket'].includes(cur.name) && !PLANK_KIND[cur.name]) { /* jobs with stages are finished first */ const d = decide(h); if (d.name === 'sleep') choose(h, 'urgent:sleep', d); } return; }
     const stay = cur.min + (cur.walk || 0) * .6;   // minimum dwell: base + 60% of the walk it took
     let done = cur.t > Math.max(cur.dur, stay);
@@ -726,7 +736,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // lockdown(false) lifts it; in the morning he reopens the hatch himself.
     lockdown(on = true) {
       locked = !!on; plan.length = 0; pausing = 0;
-      if (!locked) { why = 'отбой тревоги'; tr('lockdown:off'); try { const S = house() && house().shutters; S && S.open && HH.hasTask && !HH.hasTask('shutters') && S.open(); } catch (e) {} return; }
+      if (!locked) { why = 'отбой тревоги'; tr('lockdown:off'); if (HH.hasTask && HH.hasTask('shutters')) plan.push({ task: 'shutters', opts: { close: false }, why: 'открывает ставни' }); return; }
       tr('lockdown:on');
       if (H.task === 'sleep' || H.inBed) { tr('lockdown:asleep'); return; }   // he is in bed: the steps come when he gets up
       lockSteps(); cur = null; why = lockWhy || 'запирается'; lockWhy = ''; startNext();
