@@ -203,6 +203,7 @@ export function createHero(ctx){
  const toeS={Left:0,Right:0};
  function toeGuard(g,dt){const k=1-Math.exp(-(dt||1/60)*10);for(const s of ['Left','Right']){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;const t=T.getWorldPosition(V());const need=Math.max(0,g+.035-t.y);
    toeS[s]+=(need-toeS[s])*k;if(toeS[s]<=.002)continue;turnBone(F,t,t.clone().add(V(0,toeS[s],0)),1);}}
+ const armLen=(()=>{const A=bones.RightArm,F=bones.RightForeArm,Hh=bones.RightHand;if(!A||!F||!Hh)return .58;root.updateMatrixWorld(true);return A.getWorldPosition(V()).distanceTo(F.getWorldPosition(V()))+F.getWorldPosition(V()).distanceTo(Hh.getWorldPosition(V()));})();
  function armIK(side,target,pole,w){ik2(bones[side+'Arm'],bones[side+'ForeArm'],bones[side+'Hand'],target,pole,w,false);}
  // head and neck turn toward a point (smoothed, limited like a real neck)
  const lookS={yaw:0,pitch:0};
@@ -298,6 +299,8 @@ export function createHero(ctx){
  // ===== BRAIN HOOK state: setBrain / gait / onTaskEnd =====
  let brain=null;const gait={speed:1,turn:1};const endCbs=[];
  function endTask(){const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n);}catch(e){console.error(e);}}}
+ // lamps with a wall switch (props.js switchPlate): the hand goes to the plate, not to the lamp
+ const SWITCH_AT={bedroom:V(.37,lv.BD+1.15,2.5)};
  const LAMP=()=>window.__lights||ctx.lights||null;
  function nearNode(p){let best=null,bd=1e9;for(const k in N){const n=N[k];if(!n||!n.p||n.seat!=null||!adj[k])continue;if(Math.abs(n.p.y-p.y)>2.6||n.p.y>p.y+.2)continue;const d=Math.hypot(n.p.x-p.x,n.p.z-p.z)+Math.max(0,p.y-n.p.y-2.4)*3;if(d<bd){bd=d;best=k;}}return best;}
  // ===== END BRAIN HOOK state =====
@@ -310,19 +313,20 @@ export function createHero(ctx){
   _bm.makeBasis(_bx,_by,_bz);_bq.setFromRotationMatrix(_bm);return {pos,quat:_bq.clone()};}
  const MAKE={
   // walk to a lamp or wall switch, reach out and press it; the light changes when the fingers touch
-  switch:(o={})=>{const a={step:'go',t:0};const L=LAMP();const lp=L&&L.pos?L.pos(o.light):null;
+  switch:(o={})=>{const a={step:'go',t:0};const L=LAMP();const lp=SWITCH_AT[o.light]?SWITCH_AT[o.light].clone():(L&&L.pos?L.pos(o.light):null);const plate=!!SWITCH_AT[o.light];
    if(!lp){a.update=()=>endTask();return a;}
    const sp=lp.clone?lp.clone():V(lp.x,lp.y,lp.z);const node=nearNode(sp);
    const approach=()=>{a.step='approach';a.t=0;const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
-    const move=Math.max(0,Math.min(.9,d-.42));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
+    const fl=floorAt(p.x,p.y+.3,p.z,.5)??p.y;a.low=sp.y-fl<.75;a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):sp.clone().add(V(0,-.15,0));
+    const move=Math.max(0,Math.min(.9,d-(a.low?.45:.27)));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
     a.dur=Math.max(.5,move/.45);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:0,k:0,d:a.dur};if(move>.1)play('30',{fade:.3,speed:.5});};
    if(node)goTo(node,approach);else approach();
    a.update=dt=>{a.t+=dt;H.look=sp.clone();H.lookW=1;
-    if(a.step==='approach'&&a.t>=a.dur){a.step='reach';a.t=0;play(IDLE(),{fade:.4});}
-    else if(a.step==='reach'){if(a.t>.55&&!a.done){a.done=true;try{L.set(o.light,o.on!=null?!!o.on:!(L.get&&L.get(o.light)));}catch(e){}sfx&&sfx.click&&sfx.click();}
-     if(a.t>1.3)endTask();}};
-   a.post=()=>{if(a.step!=='reach')return;const w=smooth(0,.5,a.t)*(1-smooth(.85,1.3,a.t));const sh=bones.RightShoulder||bones.RightArm;const from=sh.getWorldPosition(V());
-    const v=sp.clone().sub(from);const reach=.58;if(v.length()>reach)v.setLength(reach);ikList([['Right',from.add(v),w]]);};
+    if(a.step==='approach'&&a.t>=a.dur){a.step='reach';a.t=0;if(a.low&&has('hy_take'))once('hy_take',{fade:.4,then:()=>play(IDLE(),{fade:.5})});else play(IDLE(),{fade:.4});}
+    else if(a.step==='reach'){const tT=a.low&&has('hy_take')?durOf('hy_take')*.45:.55,tE=a.low&&has('hy_take')?durOf('hy_take'):1.3;if(a.t>tT&&!a.done){a.done=true;try{L.set(o.light,o.on!=null?!!o.on:!(L.get&&L.get(o.light)));}catch(e){}sfx&&sfx.click&&sfx.click();}
+     if(a.t>tE)endTask();}};
+   a.post=()=>{if(a.step!=='reach')return;const w=smooth(0,.5,a.t)*(1-smooth(.85,1.3,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
+    const v=a.knob.clone().sub(from);const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);if(!a.low)ikList([['Right',from.add(v),w]]);};
    return a;},
   // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
   micro:(o={})=>{const a={step:'do',t:0};const c=o.clip&&has(o.clip)?o.clip:IDLE();const one=['hy_stretch','hy_inspect','hy_take','hy_drink'].includes(c);
