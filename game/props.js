@@ -992,7 +992,7 @@ export function buildProps(ctx) {
   const kbar = place('kbarrel', barrel(.78), -4.02, KT, 3.33);
   { const tp = new THREE.Group(); for (let i = -1; i <= 1; i++) W(tp, .2, .03, .6, i * .205, .015, 0, { mat: M.woodLight, r: .008, grain: 2 }); for (const x of [-.14, .14]) W(tp, .5, .025, .05, 0, -.0125, x, { mat: M.woodDark, r: .006, grain: 0 }); tp.rotation.y = .12;
     tp.position.set(0, .785, 0); kbar.add(tp); bake(tp); }
-  const kst = place('kstool', stool(), -3.6, KT, 3.3, { seat: true }); out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 };
+  const kst = place('kstool', stool(), -3.53, KT, 3.3, { seat: true }); out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 };
   place('kbucket', bucket(.34), -3.55, KT, 3.28);
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
@@ -1057,7 +1057,7 @@ export function buildProps(ctx) {
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
 
   // ---------- deck and landings ----------
-  place('telescope', telescope(), 3.5, DK, 1.3, { ry: -.6 + Math.PI });
+  place('telescope', telescope(), 3.5, DK, 1.3, { ry: -.6 + Math.PI }).position.y += .018; /* feet on the boards, not in them */
   place('dbasket', basket(), 1.4, DK, .95);
   place('lbarrel', barrel(.75), -2.6, LL, 1.4);
   place('lbucket', bucket(.34), -1.9, LL, 1.8);
