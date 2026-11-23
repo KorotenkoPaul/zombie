@@ -258,7 +258,7 @@ uniform float tdCool;` + NOISE)
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}');
     };
-    const NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL), im = new THREE.InstancedMesh(g, mat, N);
+    const NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL), NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
@@ -326,14 +326,15 @@ uniform float tdCool;` + NOISE)
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*6.);float g=td_n(tdP*40.);diffuseColor.rgb*=.7+.5*f+.3*(g-.5);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.03,.045,.015),smoothstep(.55,.75,f)*.6);}');
     };
-    const NS = Math.round(70 * MUL), soil = new THREE.InstancedMesh(sg, smat, NS); let ns = 0;
+    // the soil humps share the moss cushions' instanced mesh (one draw call less)
+    const soil = D.moss, NS = soil.instanceMatrix.count - soil.count, s0 = soil.count; let ns = 0;
     for (const [x, y, z, rd, a] of spots) {
       if (ns >= NS) break; if (R() < 0.55) continue;
       const w = rr(0.35, 0.75) * (0.6 + rd);
-      M4.compose(V(x, y - 0.06, z), new THREE.Quaternion().setFromAxisAngle(UP, -a + rr(-0.3, 0.3)), S.set(w * 0.6, rr(0.08, 0.16), w)); soil.setMatrixAt(ns, M4);
-      const v = rr(0.8, 1.1); col.setRGB(0.04 * v, 0.03 * v, 0.02 * v); soil.setColorAt(ns, col); ns++;
+      M4.compose(V(x, y - 0.06, z), new THREE.Quaternion().setFromAxisAngle(UP, -a + rr(-0.3, 0.3)), S.set(w * 0.6, rr(0.08, 0.16), w)); soil.setMatrixAt(s0 + ns, M4);
+      const v = rr(0.8, 1.1); col.setRGB(0.045 * v, 0.034 * v, 0.022 * v); soil.setColorAt(s0 + ns, col); ns++;
     }
-    soil.count = ns; soil.receiveShadow = true; D.group.add(soil); D.soil = soil;
+    soil.count = s0 + ns; D.soil = { count: ns };
 
     // fallen leaves: oak-leaf cards lying in the pockets, mostly brown and ochre, a few still green, some leaning on the roots
     const lg = new THREE.PlaneGeometry(1, 1); lg.rotateX(-Math.PI / 2);
@@ -454,7 +455,7 @@ uniform float tdCool;` + NOISE)
     }
     leaves.count = nl; leaves.receiveShadow = true; leaves.castShadow = !MOBILE; D.group.add(leaves); D.ivy = leaves;
     const sgs = stems.map(s => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), Math.max(3, Math.round(s.pts.length * (MOBILE ? 0.7 : 1.5))), s.r, MOBILE ? 3 : 4, false));
-    if (sgs.length) { const sm = new THREE.Mesh(mergeGeometries(sgs), new THREE.MeshStandardMaterial({ color: 0x3a3424, roughness: 0.9 })); sm.receiveShadow = true; D.group.add(sm); D.ivyStems = sm; }
+    if (sgs.length && !MOBILE) { const sm = new THREE.Mesh(mergeGeometries(sgs), new THREE.MeshStandardMaterial({ color: 0x3a3424, roughness: 0.9 })); sm.receiveShadow = true; D.group.add(sm); D.ivyStems = sm; }
   }
 
   // ================= 5. ferns and grass tufts in root crevices and forks =================
@@ -583,7 +584,12 @@ uniform float tdCool;` + NOISE)
         brk.setMatrixAt(nb, M4); const v = rr(0.8, 1.1); brk.setColorAt(nb++, col.setRGB(v, v * rr(0.95, 1.02), v * rr(0.9, 1)));
       }
     }
-    small.count = ns; brk.count = nb; small.receiveShadow = brk.receiveShadow = true; brk.castShadow = !MOBILE; D.group.add(small, brk); D.shrooms = small; D.brackets = brk;
+    small.count = ns; brk.count = nb;
+    // bake both kinds into one plain mesh (they never move): one draw call instead of two
+    const bake = (im, out) => { const m = new THREE.Matrix4(), c = new THREE.Color(); for (let i = 0; i < im.count; i++) { im.getMatrixAt(i, m); im.getColorAt(i, c); const g2 = im.geometry.clone().applyMatrix4(m); const ca = g2.attributes.color; for (let k = 0; k < ca.count; k++) ca.setXYZ(k, ca.getX(k) * c.r, ca.getY(k) * c.g, ca.getZ(k) * c.b); out.push(g2); } };
+    const parts = []; bake(small, parts); bake(brk, parts);
+    const fung = new THREE.Mesh(parts.length ? mergeGeometries(parts) : new THREE.BufferGeometry(), mk()); fung.receiveShadow = !MOBILE; fung.castShadow = !MOBILE;
+    small.dispose(); brk.dispose(); D.group.add(fung); D.shrooms = { count: ns }; D.brackets = { count: nb }; D.fungi = fung;
   }
 
   // ================= 7. hanging moss and lichen strands under the lower limbs (sway like ropes: wind.js windRope) =================
@@ -669,6 +675,8 @@ uniform float tdCool;` + NOISE)
   // keep the bark's wet/rim uniforms in step with the time of day and the rain, without touching the main loop
   { const prev = TREE.bark.onBeforeRender; TREE.bark.onBeforeRender = function (...a) { D.update(); if (!D.boardLeaves && D.placeBoardLeaves) D.placeBoardLeaves(); if (prev) prev.apply(this, a); }; }
 
+  // phones: small dressing neither casts nor receives shadows (cheaper shaders, nothing in the shadow pass)
+  if (MOBILE) D.group.children.forEach(m => { m.castShadow = false; m.receiveShadow = false; });
   D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
   return D;
 }
