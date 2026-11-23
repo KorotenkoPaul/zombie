@@ -35,10 +35,10 @@ export function createCameraRig(o) {
   // no inertia; one finger turns the view within the old limits. Zoom range as originally: 0.32..1 of the home distance.
   // Safety stays (never inside the trunk, walls or limbs, no auto-movement). The free camera is kept behind ?cam=free.
   const CLASSIC = o.classic !== undefined ? !!o.classic : !/[?&]cam=free\b/.test(typeof location !== 'undefined' ? location.search : '');
-  const ZMIN = 0.32;
+  const ZMIN = 0.32, ZMAX = 1.2;     // Pavel 22:16: zoom out a little further than the home view (+20%)
   let zoomK = 1;
   const look = new THREE.Vector3(0, 7.4, 2.4), lookT = new THREE.Vector3();
-  function classicZoom(f) { zoomK = clamp(zoomK * f, ZMIN, 1); atHome = zoomK > 0.999; }
+  function classicZoom(f) { zoomK = clamp(zoomK * f, ZMIN, ZMAX); atHome = Math.abs(zoomK - 1) < 0.001; }
   // zoom-out as it was originally (Pavel 20:52): soft limit 1.25x home with a rubber band up to 1.5x
   const maxD = () => home.dist * 1.25, hardD = () => home.dist * 1.5;
 
@@ -549,7 +549,7 @@ export function createCameraRig(o) {
     for (const U of fadeU) U.u.value = clamp(cur.dist * U.k, U.min, U.max);
     if (CLASSIC) {
       // focus: the whole house when zoomed out, the hero when zoomed in (as the original camera did)
-      const k = 1 - (zoomK - ZMIN) / (1 - ZMIN), f = follow();
+      const k = clamp(1 - (zoomK - ZMIN) / (1 - ZMIN), 0, 1), f = follow();
       lookT.copy(home.target); if (f) lookT.lerp(f, k);
       look.lerp(lookT, Math.min(1, dt * 2.5));
       goal.target.copy(look); goal.dist = home.dist * zoomK;
@@ -653,7 +653,7 @@ export function createCameraRig(o) {
     if (v.yaw !== undefined) goal.yaw = v.yaw;
     if (v.pitch !== undefined) goal.pitch = v.pitch;
     if (v.dist !== undefined) goal.dist = v.dist;
-    if (CLASSIC) { if (v.dist !== undefined) zoomK = clamp(v.dist / home.dist, ZMIN, 1); if (v.target) look.copy(v.target); }
+    if (CLASSIC) { if (v.dist !== undefined) zoomK = clamp(v.dist / home.dist, ZMIN, ZMAX); if (v.target) look.copy(v.target); }
     atHome = !!v.home; stopFollow();
     if (v.snap) snap();
   }

@@ -81,7 +81,9 @@ void main(){fpMain();gl_FragColor.a*=fpOcc();
       if ((lightT -= 1) <= 0) { lightT = 120; scene.traverse(o => { if (o.isLight) o.layers.enable(FOG_LAYER); }); }
       camera.layers.set(FOG_LAYER); scene.background = null; rd.shadowMap.autoUpdate = false;
       rd.setRenderTarget(rt); rd.setClearColor(0x000000, 0); rd.clear(true, false, false); rd.autoClear = false;
-      rd.render(scene, camera);
+      // the main pass has just updated every world matrix: don't walk the whole scene graph again for a few fog meshes
+      const mwa = scene.matrixWorldAutoUpdate; scene.matrixWorldAutoUpdate = false;
+      rd.render(scene, camera); scene.matrixWorldAutoUpdate = mwa;
       // give Environment's soft-edge uniforms back their own depth texture straight away: a material outside the fog layer
       // that shares them must never sample the composer's depth while that target is being drawn (WebGL feedback loop)
       for (const u of envU) { const sv = saved.get(u.tDepth); if (sv) { u.tDepth.value = sv[0]; u.uRes.value.copy(sv[1]); } }

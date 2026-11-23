@@ -412,9 +412,13 @@ export function createHero(ctx){
   H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));}
  const sidePole=(side,down=1)=>{const f=fwd(root.rotation.y);const right=V(-f.z,0,f.x);return right.multiplyScalar(side==='Right'?1:-1).add(V(0,-down,0)).add(f.clone().multiplyScalar(-.3));};
  // a hand on a real point: the chest leans toward it when the arm alone can't reach (up to ~25 deg), then two-bone IK puts the palm there
+ // bend forward at the hips (the pelvis tips, the feet stay where they stand): for reaching low and far
+ function hipHinge(ang){if(ang<.005)return;const fe={};for(const sd of ['Left','Right'])fe[sd]=bones[sd+'Foot'].getWorldPosition(V());
+  const f=fwd(root.rotation.y);const ax=V(0,1,0).cross(f).normalize();rotW(bones.Hips,ax,ang);
+  const hf=hipsFwd();for(const sd of ['Left','Right']){const U=bones[sd+'UpLeg'],L=bones[sd+'Leg'],Ft=bones[sd+'Foot'];ik2(U,L,Ft,fe[sd],f.clone().add(V(0,.2,0)),1,true);}}
  function reachTo(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
   for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+PALM);if(ex<=.01)break;
-   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(1.25-tot,ex*4)*w;if(ang<=.005)break;tot+=ang;
+   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(.6-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):t;/* the palm, not the wrist, on the point */
   armIK(side,wt,sidePole(side),clamp(w,0,1));}
@@ -608,8 +612,10 @@ export function createHero(ctx){
   a.update=dt=>{a.t+=dt;const s=sp();
    if(a.step==='approach'){H.look=s;H.lookW=.6;if(a.t>=a.adur){a.next();}return;}
    if(a.step==='take'){// reach each tool's home and close the hand on it
-    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=toolHome(n)||s;H.look=h;H.lookW=1;a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];
-    if(a.t>.5&&!a.gotIt){a.gotIt=true;grabTool(n,hand);AU('cloth');}if(a.t>.95){a.held.push(n);a.gotIt=false;a.t=0;a.ik=null;if(a.held.length>=tools.length)work();}return;}
+    // GRAB HOOK: the palm goes onto the tool where it hangs; the tool leaves its hook only when the palm is on it, then the hand comes back
+    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=gripHome(n)||s;H.look=h;H.lookW=1;const pd=palmTo(hand,h);
+    if(!a.gotIt){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h,a.rw];if((a.rw>=1&&pd<.03)||a.t>1.6){a.gotIt=true;a.tg=a.t;grabTool(n,hand);AU('cloth');}}
+    else{a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h,a.rw]:null;if(a.rw<=0){a.held.push(n);a.gotIt=false;a.t=0;a.reach=null;a.rw=0;if(a.held.length>=tools.length)work();}}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
     // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
     if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
@@ -619,12 +625,21 @@ export function createHero(ctx){
     if(!o.loop&&o.clip&&o.reps&&!H.once&&!a.pause&&a.T<dur-1)once(o.clip,{fade:.4,speed:o.speed||1});
     if(a.T>=dur){a.step='put';a.t=0;o.end&&o.end(a);play(IDLE(),{fade:.5});}return;}
    if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=toolHome(n)||s;H.look=h;H.lookW=1;
-    a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];if(a.t>.5&&!a.rel){a.rel=true;relTool(hand,n);}if(a.t>.95){a.held.pop();a.rel=false;a.t=0;a.ik=null;}}};
-  const finish=()=>{a.ik=null;endTask(o.result?o.result(a):undefined);};
-  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);};
-  a.leave=cb=>{for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
+    // GRAB HOOK: carried to the hook in the hand, let go only once the palm is there (a short settle, no flying home), then the hand leaves
+    const h2=gripHome(n)||h;const pd=palmTo(hand,h2);a.hp=h2;if(!a.rel){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h2,a.rw];if((a.rw>=1&&pd<.03)||a.t>1.6){a.rel=true;a.trel=a.t;relTool(hand,n,.14);}}
+    else if(a.t-a.trel>.16){a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h2,a.rw]:null;if(a.rw<=0){a.held.pop();a.rel=false;a.t=0;a.reach=null;a.rw=0;}}}};
+  const finish=()=>{a.ik=null;if(a.leaveCb){const c=a.leaveCb;a.leaveCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
+  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
+  // GRAB HOOK: called away in the middle of a job, he first hangs the tools back by hand (no tool flies home by itself)
+  a.leave=cb=>{if(a.step==='take'&&a.gotIt){const [n]=tools[a.held.length]||[];if(n)a.held.push(n);a.gotIt=false;}
+   if(a.held.length&&!window.__noGripFix&&(a.step==='work'||a.step==='take')){o.end&&o.end(a);a.step='put';a.t=0;a.rw=0;a.rel=false;a.reach=null;a.ik=null;a.leaveCb=cb;play(IDLE(),{fade:.4});return;}
+   for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
- function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
+ // GRAB HOOK: how far the palm is from a point (m)
+ function palmTo(side,t){const G=window.__grab;const p=G&&G.gripPoint?G.gripPoint(side):bones[side+'Hand'].getWorldPosition(V());return p&&t?p.distanceTo(t):9;}
+ const gripHome=n=>{const G=window.__grab;return G&&G.toolGripHome?G.toolGripHome(n):toolHome(n);};
+ function reachGrip(side,t,w){const G=window.__grab;reachTo(side,G&&G.palmTarget?G.palmTarget(side,t):t,w);}
+ function relTool(hand,n,bl=.35){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:bl});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
  const telePt=()=>{const P=window.__props||P3;const t=P&&P.placed&&P.placed.telescope;if(t&&t.position)return t.position.clone().add(V(0,1.35,0));return V(3.5,DK+1.35,1.3);};
  // the edge of the platform in front of a node: step forward until the boards end
  function edgeFrom(node){const n=N[node];if(!n)return null;const f=fwd(n.face??0);const p=n.p.clone();let last=null;
@@ -725,6 +740,10 @@ export function createHero(ctx){
   const go=()=>{const w=list.shift();if(!w){play(IDLE(),{fade:.4});endTask({ok:true,close});return;}const n=N[w];const pt=n.p.clone().addScaledVector(fwd(n.face??0),.5).add(V(0,1.3,0));pt.hand=true;
    visit(a,pt,.4,has('hy_window')?'hy_window':'hy_take',[[.45,()=>{try{const S=window.__house&&window.__house.shutters;S&&(close?S.close(w):S.open(w));}catch(e){}AU(close?'shutter_close':'shutter_open',pt);}]],go);};
   go();a.update=dt=>{stepTick(a,dt);};return a;};
+ // put the jacket on (opts.on true) or take it off and hang it on its peg in the workshop
+ MAKE.jacket=(o={})=>{const a={step:'go',t:0};const on=o.on!=null?!!o.on:!GEAR.coat;
+  const done=()=>{play(IDLE(),{fade:.4});endTask({ok:true,on:GEAR.coat});};
+  if(on)gearOn(a,{jacket:true},done);else gearOff(a,done,{});a.update=dt=>{stepTick(a,dt);};return a;};
  // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
  const REPAIR={fix_shingle:{clip:'hy_shingle',tools:[['benchHammer','Right']],stand:.55,def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
   fix_board:{clip:'hy_nailboard',tools:[['benchHammer','Right']],stand:.5,def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
@@ -763,16 +782,51 @@ export function createHero(ctx){
   if(a.step==='clip'){H.look=a.pt;H.lookW=.9;const k=a.t/Math.max(.3,a.clipDur);while(a.hits.length&&k>=a.hits[0][0]){a.hits.shift()[1]();}return true;}return false;}
  // the same one-off clip n times in a row (gathering logs, scooping), each with a small shift of the gaze
  function reps(clip,n,then){if(n<=0||!has(clip)){then();return;}once(clip,{fade:.35,then:()=>{H.face+=rnd(-.25,.25);reps(clip,n-1,then);}});}
+ // filling the bucket at the pond by hand: squat at the waterline, both hands on the rim, dip it under, hold, lift it heavy, stand up
+ // timeline in seconds; H.squat lowers the hips with the feet kept on the ground (knees bend), reachTo puts both palms on the bucket rim
+ // filling the bucket at the pond: the hy_pondfill clip (Fal) squats him at the waterline with both hands on the rim;
+ // code puts him where his hands come over the water, lets the bucket hang from the palms, pushes it a little deeper and makes the splash
+ function fillTick(a,dt){const C='hy_pondfill';const F=a.F;const f=fwd(root.rotation.y);
+  if(!a.started){a.started=true;a.T=0;if(has(C))once(C,{fade:.4});a.dur=has(C)?durOf(C):6;H.face=Math.atan2(F.x-root.position.x,F.z-root.position.z);
+   const bk=PP()&&PP().tools&&PP().tools.waterBucket;if(bk){a.bk=bk;scene.attach(bk);}}
+  a.T+=dt;const k=a.T/a.dur;const p=root.position;
+  {/* step so that the hands (0.33 m ahead in the squat) come over the dip point */const tx=F.x-f.x*.33,tz=F.z-f.z*.33;const m=.5*dt;p.x+=clamp(tx-p.x,-m,m);p.z+=clamp(tz-p.z,-m,m);}
+  root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*5);
+  H.look=F.clone();H.lookW=.8*smooth(.05,.2,k)*(1-smooth(.75,.9,k));
+  a.push=.1*smooth(.2,.3,k)*(1-smooth(.62,.72,k));a.w=smooth(.1,.2,k)*(1-smooth(.85,.95,k));
+  const wl=window.__ground.pond.level;if(a.bk){const by=a.bk.position.y;if(!a.s1&&by<wl-.04){a.s1=1;splash(F,1);AU('bucket_fill',F);}if(a.s1&&!a.s2&&by>wl+.02&&k>.6){a.s2=1;splash(F,.6);AU('slosh',F);}}
+  if(a.s1&&!a.s2&&(a.rp=(a.rp||0)+dt)>.5){a.rp=0;splash(F,.25,true);}
+  if(k>=.98){a.step='hold';a.w=0;H.carry='hy_carrysack';if(a.bk){try{PP().grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}a.bk=null;}a.home();}}
+ // washing the face at the water first (hy_washface, Fal): the bucket stands beside him, two scoops with a splash each
+ function washTick(a,dt){const C='hy_washface';const F=a.F;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+  if(!a.wstarted){a.wstarted=true;a.WT=0;if(has(C))once(C,{fade:.4});a.wdur=has(C)?durOf(C):5;H.face=Math.atan2(F.x-root.position.x,F.z-root.position.z);
+   const bk=PP()&&PP().tools&&PP().tools.waterBucket;if(bk){a.bk=bk;scene.attach(bk);const g=root.position.clone().addScaledVector(r,.34).addScaledVector(f,.05);g.y=groundUnder(g,root.position.y);a.bkSet=g;a.bkFrom=bk.position.clone();}}
+  a.WT+=dt;const k=a.WT/a.wdur;const p=root.position;
+  {const tx=F.x-f.x*.5,tz=F.z-f.z*.5;const m=.5*dt;p.x+=clamp(tx-p.x,-m,m);p.z+=clamp(tz-p.z,-m,m);}root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*5);
+  if(a.bk&&a.bkSet){a.bk.position.lerpVectors(a.bkFrom,a.bkSet,smooth(0,.12,k));a.bk.rotation.set(0,root.rotation.y,0);a.bk.updateMatrixWorld(true);}
+  if(k>.1&&!a.w1){a.w1=1;splash(F,.35);AU('bucket_fill',F);}if(k>.5&&!a.w2){a.w2=1;splash(F,.35);}if(k>.3&&!a.f1){a.f1=1;AU('slosh',root.position);}
+  H.look=k<.15?F.clone():null;H.lookW=k<.15?.8:0;
+  if(k>=.97){a.step='fill';a.started=false;a.bkFrom=null;}}
+ // the ground right under him (terrain outdoors, else the floor found by the ray), for squatting at the bank
+ function groundUnder(p,prev){const G=window.__ground;let y=null;if(G&&G.heightAt&&p.y<lv.LC-1)y=G.heightAt(p.x,p.z);if(y==null){const f=floorAt(p.x,(prev??p.y)+.1,p.z,.4);y=f;}return y??prev??p.y;}
+ // a splash: a ring spreading on the water and a few drops thrown up (temporary, removes itself)
+ const SPL=[];const splMat=new THREE.MeshBasicMaterial({color:0xcfe3ea,transparent:true,opacity:.5,depthWrite:false});const dropMat=new THREE.PointsMaterial({color:0xdbe9ef,size:.025,transparent:true,opacity:.8,depthWrite:false});
+ function splash(p,k=1,ringOnly){try{const pd=window.__ground&&window.__ground.pond;if(pd&&pd.splash)pd.splash(p.x,p.z,k);}catch(e){}const ring=new THREE.Mesh(new THREE.RingGeometry(.85,1,28),splMat.clone());ring.rotation.x=-Math.PI/2;ring.position.copy(p).add(V(0,.006,0));ring.scale.setScalar(.04);scene.add(ring);
+  let pts=null,vel=null;if(!ringOnly){const n=14;const g=new THREE.BufferGeometry();const arr=new Float32Array(n*3);vel=[];for(let i=0;i<n;i++){arr[i*3]=p.x;arr[i*3+1]=p.y+.02;arr[i*3+2]=p.z;const a=Math.random()*6.283,sp=rnd(.2,.6)*k;vel.push([Math.cos(a)*sp,rnd(.6,1.3)*k,Math.sin(a)*sp]);}g.setAttribute('position',new THREE.BufferAttribute(arr,3));pts=new THREE.Points(g,dropMat.clone());scene.add(pts);}
+  SPL.push({ring,pts,vel,t:0,k,y0:p.y});}
+ function splashTick(dt){for(let i=SPL.length-1;i>=0;i--){const s=SPL[i];s.t+=dt;const u=s.t/1.4;s.ring.scale.setScalar(.04+u*.45*(.6+s.k*.4));s.ring.material.opacity=.5*(1-u);
+   if(s.pts){const A=s.pts.geometry.attributes.position;for(let j=0;j<s.vel.length;j++){const v=s.vel[j];if(A.getY(j)<s.y0){continue;}v[1]-=9.8*dt;A.setXYZ(j,A.getX(j)+v[0]*dt,A.getY(j)+v[1]*dt,A.getZ(j)+v[2]*dt);}A.needsUpdate=true;s.pts.material.opacity=.8*(1-u);}
+   if(u>=1){scene.remove(s.ring);s.ring.geometry.dispose();s.ring.material.dispose();if(s.pts){scene.remove(s.pts);s.pts.geometry.dispose();s.pts.material.dispose();}SPL.splice(i,1);}}}
  const peg=n=>{const p=PT(n);if(!p)return null;const q=p.clone();q.hand=true;/* hand height: stand on the floor below it, not on a floor level with it */return q;};
  function gearOn(a,o,then){const seq=[];
   if(o.jacket&&!GEAR.coat&&COAT)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketon',[[.14,()=>{try{PP().setHere&&PP().setHere('jacket',false);}catch(e){}COAT.on=true;GEAR.coat=true;}],[.55,()=>AU('zip')]]/* no rigid jacket in the hand: it leaves the peg at the touch and settles on the body (skinned coat fades in) */,next));
-  if(o.bow&&!GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',V(.06,.12,-.16),[0,0,-.5]);GEAR.bow=true;}]],next));
+  if(o.bow&&!GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',V(.06,.12,-.16),[0,0,-.5]);onBack('bow',V(-.02,.06,-.15),[0,0,.55]);/* GRAB: slung across the back, hands free for the ladder */GEAR.bow=true;}]],next));
   if(o.lantern&&!GEAR.lantern&&hasTool('lantern'))seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{PP().grab('lantern',bones.RightHand,{offset:V(0,.06,.03)});window.__lights&&window.__lights.attachHand&&window.__lights.attachHand(bones.RightHand);window.__lights.set('hand',true);}catch(e){}GEAR.lantern=true;}]],next));
   const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
- function gearOff(a,then){const seq=[];
+ function gearOff(a,then,keep={}){const seq=[];
   if(GEAR.lantern)seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{window.__lights.set('hand',false);window.__lights.detachHand();PP().release('lantern',{blend:.3});}catch(e){}GEAR.lantern=false;}]],next));
-  if(GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowhang',[[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.4});}catch(e){}GEAR.bow=false;}]],next));
-  if(GEAR.coat)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],next));
+  if(GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowhang',[[.2,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.14});}catch(e){}GEAR.bow=false;}]],next));
+  if(GEAR.coat&&!keep.jacket)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],next));
   const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  function dropGearNow(){if(GEAR.coat&&COAT){COAT.on=false;try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}
   for(const n of ['bow','quiver','lantern','meatBag','logArmful','waterBucket','drainBucket','plate'])try{PP().release(n);}catch(e){}
@@ -783,11 +837,11 @@ export function createHero(ctx){
   trip:(o={})=>{const a={step:'go',t:0};const kind=o.kind||'hunt';const away=o.away||rnd(40,90);let res={ok:true};
    if(!N.g_out){a.update=()=>endTask({ok:false});return a;}
    const home=()=>{a.step='home';root.visible=true;H.node='g_out';
-    const haul=kind==='hunt'?(res.ok?'meatBag':null):'logArmful';if(haul){try{PP().grab(haul,haul==='meatBag'?bones.RightHand:bones.LeftHand,{offset:haul==='meatBag'?V(0,.1,.02):V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}H.carry=haul==='meatBag'?'hy_carrysack':'hy_carrylogs';a.haul=haul;}
+    const haul=kind==='hunt'?(res.ok?'meatBag':null):'logArmful';if(haul){if(haul==='meatBag'){onBack('meatBag',V(.1,.18,-.14),[0,0,0]);/* GRAB: the sack over his back, not dangling from a loose hand */}else{try{PP().grab(haul,bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}H.carry='hy_carrylogs';}try{window.__audio.carry(true);}catch(e){}a.haul=haul;}
     const unload=next=>{if(!a.haul){next();return;}const P=PP();
-     if(a.haul==='meatBag')visit(a,PT('fridge'),.5,'hy_fridgein',[[.15,()=>{try{P.fridge.openTo(1,.5);}catch(e){}}],[.55,()=>{try{P.release('meatBag');window.__audio.carry(false);}catch(e){}H.carry=null;}],[.85,()=>{try{P.fridge.openTo(0,.5);}catch(e){}}]],next);
+     if(a.haul==='meatBag')visit(a,PT('fridge'),.5,'hy_fridgein',[[.12,()=>{try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}}],[.15,()=>{try{P.fridge.openTo(1,.5);}catch(e){}}],[.55,()=>{try{P.release('meatBag');window.__audio.carry(false);}catch(e){}H.carry=null;}],[.85,()=>{try{P.fridge.openTo(0,.5);}catch(e){}}]],next);
      else visit(a,PT('woodpile'),.5,'hy_droplogs',[[.6,()=>{try{P.release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],next);};
-    unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);}));};
+    unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);},{jacket:!!o.keepJacket}));};
    gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{a.step='out';goTo('g_out',()=>{a.step='away';a.t=0;root.visible=false;
      if(kind==='hunt'&&Math.random()<.3)res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};});});
    a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='away'){if(a.t>away){H.face=N.g_out.face!=null?N.g_out.face+Math.PI:H.face;root.rotation.y=H.face;home();}}};
@@ -808,12 +862,20 @@ export function createHero(ctx){
   fetchwater:(o={})=>{const a={step:'go',t:0};const P=PP();const pond=window.__ground&&window.__ground.pond&&window.__ground.pond.fill;
    visit(a,PT('waterShelf'),.45,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry='hy_carrysack';}]],()=>{a.step='out';
     const spot=pond?pond.clone?pond.clone():V(pond.x,pond.y,pond.z):(N.g_exit1?N.g_exit1.p.clone().add(V(.6,0,.6)):null);
-    const fill=()=>{a.step='fill';reps('hy_picklog',3,()=>{AU('bucket_fill',root.position);try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.3});H.look=root.position.clone().addScaledVector(fwd(H.face),2.5);H.lookW=.6;/* a breath at the water before carrying it home */
-      H.wait={t:rnd(2.5,4),then:()=>{a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};});};
+    const fill=()=>{a.step=o.washFace?'wash':'fill';a.t=0;a.T=0;a.WT=0;a.spl=0;play(IDLE(),{fade:.4});a.F=(window.__ground.pond.fill||spot).clone();};
+    const home=()=>{H.squat=0;a.w=0;try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.4});H.look=a.F?a.F.clone():null;H.lookW=.6;/* a breath at the water before carrying it home */
+      H.wait={t:o.linger||rnd(1.2,2),then:()=>{a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};};
+    a.home=home;
     if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
-   a.update=dt=>{if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
-   a.leave=cb=>{try{P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+   a.update=dt=>{if(a.step==='wash'){washTick(a,dt);return;}if(a.step==='fill'){fillTick(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
+   a.post=()=>{if(a.step!=='fill'||(!a.w&&!a.bk))return;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+    const R=bones.RightHand.getWorldPosition(V()),Lh=bones.LeftHand.getWorldPosition(V());const d=V(0,-(a.push||0),0);
+    if(a.push>.005){reachTo('Right',R.clone().add(d),a.w*.9);reachTo('Left',Lh.clone().add(d),a.w*.9);}
+    // the bucket hangs from the palms that hold its rim (never floating away from them)
+    if(a.bk){const R2=bones.RightHand.getWorldPosition(V()),L2=bones.LeftHand.getWorldPosition(V());const mid=R2.clone().add(L2).multiplyScalar(.5).addScaledVector(f,.05);const anchor=R2.clone().lerp(mid,smooth(.2,.9,a.w));const want=anchor.add(V(0,-.31,0));
+     if(a.bkSet&&a.w<.5){/* still standing beside him where he put it down for the wash */}else a.bk.position.copy(want);a.bk.rotation.set(0,root.rotation.y,0);a.bk.rotateX(.25*(a.push||0)/.1);a.bk.updateMatrixWorld(true);}};
+   a.leave=cb=>{H.squat=0;try{P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
   setbucket:(o={})=>{const a={step:'go',t:0};const P=PP();visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
@@ -863,7 +925,7 @@ export function createHero(ctx){
  // legs over the bed's front rail (Pavel: they went through the left end of the bed): while getting in or out, any ankle that is over
  // the mattress or the rail is lifted to clear the mattress top, and kept off the foot board
  const legClr={Left:{l:0},Right:{l:0}};
- function bedLegClear(dt){if(window.__noLegClear)return;const b=H.bedB;const B=FIT.bed;if(!B||!(b||H.inBed)){legClr.Left.l=legClr.Right.l=0;return;}const railZ=B.z1+.08,yReq=B.mat+.1,xMin=B.x0+.07;
+ function bedLegClear(dt){if(window.__noLegClear)return;const b=H.bedB;if(H.inBed&&!b&&SP.w>.05&&!window.__oldSleep){legClr.Left.l=legClr.Right.l=0;return;}/* POSE: asleep the whole body is posed on the mattress (sleepPose) */const B=FIT.bed;if(!B||!(b||H.inBed)){legClr.Left.l=legClr.Right.l=0;return;}const railZ=B.z1+.08,yReq=B.mat+.1,xMin=B.x0+.07;
   for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());
    const k=smooth(railZ+.5,railZ+.03,a.z);const S=legClr[s];const want=Math.max(0,yReq-a.y)*k;S.l+=clamp(want-S.l,-1.1*dt,1.4*dt);S.l=Math.max(S.l,want*smooth(railZ+.12,railZ,a.z));
    const lift=S.l;const dx=Math.max(0,xMin-a.x)*k;if(lift<.002&&dx<.002)continue;
@@ -878,7 +940,7 @@ export function createHero(ctx){
  function rotW(b,axis,ang){if(!b||Math.abs(ang)<1e-4)return;b.parent.getWorldQuaternion(_qp);_qa.setFromAxisAngle(axis,ang);const pi=_qp.clone().invert();b.quaternion.premultiply(pi.multiply(_qa).multiply(_qp));b.updateMatrixWorld(true);}
  const wp=(b)=>b.getWorldPosition(V());
  function sleepPick(){const c=SP.name;const opts={back:['sideL','sideR','sideL','sideR'],sideL:['back','bellyL','sideR'],sideR:['back','bellyR','sideL'],bellyL:['sideL'],bellyR:['sideR']}[c];return pick(opts);}
- function sleepTick(dt){const on=H.inBed&&!H.bedB&&!H.trans;SP.w+= ((on?1:0)-SP.w)*Math.min(1,dt*(on?.8:3));if(SP.w<.002){SP.w=0;if(!on){SP.name='back';SP.cur={...SLEEP_POSES.back};SP.to=null;}return;}
+ function sleepTickOld(dt){const on=H.inBed&&!H.bedB&&!H.trans;SP.w+= ((on?1:0)-SP.w)*Math.min(1,dt*(on?.8:3));if(SP.w<.002){SP.w=0;if(!on){SP.name='back';SP.cur={...SLEEP_POSES.back};SP.to=null;}return;}
   if(on){if(SP.to){SP.t+=dt;const k=smooth(0,1,SP.t/SP.dur);for(const key in SP.cur)SP.cur[key]=lerp(SP.from[key],SP.to[key],k);
     const mid=Math.sin(Math.PI*Math.min(1,SP.t/SP.dur));SP.cur.flex+=.35*mid;SP.cur.knee+=.4*mid;SP.cur.lift+=.03*mid;// knees come up while he rolls
     if(SP.t>=SP.dur){SP.to=null;bedPress(true);}}
@@ -896,6 +958,62 @@ export function createHero(ctx){
   // breathing: about 13 breaths a minute, the chest rises a little
   SP.br+=dt*2*Math.PI/4.6;const lat=V().crossVectors(ax,front).normalize();rotW(bones.Spine1,lat,Math.sin(SP.br)*.025*w);rotW(bones.Spine2,lat,Math.sin(SP.br-.4)*.015*w);
   root.position.y+=c.lift*w;root.updateMatrixWorld(true);}
+ // ===== SLEEP POSE (poses thread, 2026-11-23) =====
+ // Pavel: the top leg hung in the air, the body floated over the mattress, the head twitched. The mocap sleep clip with a roll layer
+ // on top could not be kept on the mattress, so asleep the body is now posed outright in the bed's own frame: the pelvis set on the
+ // measured mattress, the spine along the bed, the head lifted onto the pillow, legs and arms placed with IK on the mattress
+ // (back: legs long, knees soft; side: both knees drawn up, the top knee resting on the lower leg; stomach: one knee out, head
+ // turned on the pillow). Turning over blends from one pose to the next. Only breathing moves; the head rests still.
+ const SLP={rest:null};const _sq=new THREE.Quaternion(),_sm=new THREE.Matrix4();
+ function slpInit(){if(SLP.rest)return true;let sk=null;root.traverse(o=>{if(o.isSkinnedMesh&&!sk)sk=o;});if(!sk||!bones.Hips||!bones.Head)return false;const S=sk.skeleton;
+  const sq=S.bones.map(b=>b.quaternion.clone()),spp=S.bones.map(b=>b.position.clone());const rq=root.quaternion.clone();root.quaternion.identity();S.pose();root.updateMatrixWorld(true);
+  SLP.rest=POSEBONES.map(b=>b.quaternion.clone());SLP.hipsW=bones.Hips.getWorldQuaternion(new THREE.Quaternion());
+  const w=n=>bones[n].getWorldPosition(V());SLP.headHips=w('Head').distanceTo(w('Hips'));SLP.l1=w('LeftUpLeg').distanceTo(w('LeftLeg'));SLP.l2=w('LeftLeg').distanceTo(w('LeftFoot'));
+  SLP.toe=w('LeftFoot').distanceTo(w('LeftToeBase'));SLP.hipW=w('LeftUpLeg').distanceTo(w('RightUpLeg'));
+  S.bones.forEach((b,i)=>{b.quaternion.copy(sq[i]);b.position.copy(spp[i]);});root.quaternion.copy(rq);root.updateMatrixWorld(true);return true;}
+ const SLEEP_SHAPE={back:{hip:.085,head:.2},sideL:{hip:.105,head:.215},sideR:{hip:.105,head:.215},bellyL:{hip:.09,head:.185},bellyR:{hip:.09,head:.185}};
+ function sleepPose(name,out){const B=FIT.bed;const hd=B.headDir||1;const mat=B.mat;const bz=B.bz;const sh=SLEEP_SHAPE[name]||SLEEP_SHAPE.back;
+  const Y=V(hd,0,0);const Z=name==='back'?V(0,1,0):name==='sideL'?V(0,0,hd):name==='sideR'?V(0,0,-hd):V(0,-1,0);const X=V().crossVectors(Y,Z);// X = body left
+  for(let i=0;i<POSEBONES.length;i++)POSEBONES[i].quaternion.copy(SLP.rest[i]);
+  _sm.makeBasis(X,Y,Z);_sq.setFromRotationMatrix(_sm).multiply(SLP.hipsW);const Hp=bones.Hips;Hp.parent.updateMatrixWorld(true);Hp.quaternion.copy(Hp.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(_sq));
+  const headX=B.x1-.2*hd;const side=/side/.test(name);const hip=V(headX-hd*SLP.headHips*.96,mat+sh.hip,bz-(side?Z.z*.04:0));
+  Hp.position.copy(Hp.parent.worldToLocal(hip.clone()));root.updateMatrixWorld(true);
+  // the head onto the pillow: the chest and neck bend so the head's centre sits at its height on the pillow
+  const goal=V(headX,mat+sh.head,bz-(side?Z.z*.02:0));
+  for(const [nm,f] of [['Spine1',.25],['Spine2',.35],['Neck',1]]){const b=bones[nm];if(!b)continue;const h=bones.Head.getWorldPosition(V());turnBone(b,h,h.clone().lerp(goal,f),1);}
+  if(/belly/.test(name)&&bones.Head)rotW(bones.Head,Y,(name==='bellyL'?1:-1)*1.15);// face turned to one side on the pillow
+  root.updateMatrixWorld(true);
+  const L=SLP.l1+SLP.l2;const wp_=n=>bones[n].getWorldPosition(V());
+  const down=X.y<-.5?'Left':X.y>.5?'Right':null;// which side is under him
+  for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],Lg=bones[s+'Leg'],Ft=bones[s+'Foot'],To=bones[s+'ToeBase'];if(!Ft)continue;const hp=U.getWorldPosition(V());const out_=X.clone().multiplyScalar(s==='Left'?1:-1);
+   let ank,pole,toe;
+   if(name==='back'){ank=hp.clone().addScaledVector(Y,-L*.95).addScaledVector(out_,.05);ank.y=mat+.07;pole=V(0,1,0).addScaledVector(out_,.35);toe=V(0,.85,0).addScaledVector(Y,-.35).addScaledVector(out_,.3);}
+   else if(side){const top=s!==down;ank=hp.clone().addScaledVector(Y,-L*(top?.52:.62)).addScaledVector(Z,L*(top?.5:.36));ank.y=mat+(top?.115:.07);pole=Z.clone().add(V(0,top?-.25:0,0));toe=Y.clone().multiplyScalar(-.8).addScaledVector(Z,.35).add(V(0,top?-.15:0,0));}
+   else{const bent=(name==='bellyL')===(s==='Left');ank=hp.clone().addScaledVector(Y,-L*(bent?.62:.96)).addScaledVector(out_,bent?.3:.04);ank.y=mat+.075;pole=bent?out_.clone().add(V(0,-.2,0)):V(0,-1,0);toe=V(0,-.55,0).addScaledVector(Y,-.85);}
+   ik2(U,Lg,Ft,ank,pole,1,false);if(To){const a=Ft.getWorldPosition(V());turnBone(Ft,To.getWorldPosition(V()),a.clone().addScaledVector(toe.normalize(),SLP.toe),1);}}
+  for(const s of ['Left','Right']){const A=bones[s+'Arm'],Fa=bones[s+'ForeArm'],Hn=bones[s+'Hand'];if(!Hn)continue;const sd=X.clone().multiplyScalar(s==='Left'?1:-1);const head=wp_('Head'),hips=wp_('Hips'),chest=bones.Spine2?wp_('Spine2'):hips;
+   let t,pole;
+   if(name==='back'){if(s==='Left'){t=hips.clone().addScaledVector(Y,.1).addScaledVector(sd,.21);t.y=mat+.07;pole=sd.clone().add(V(0,-.4,0));}else{t=hips.clone().addScaledVector(Y,.24).addScaledVector(sd,.02);t.y=mat+.21;pole=sd.clone().add(V(0,-.6,0));}}
+   else if(side){const under=s===down;if(under){t=head.clone().addScaledVector(Z,.16).addScaledVector(Y,-.1);t.y=mat+.12;pole=Y.clone().multiplyScalar(-1).add(V(0,-.6,0));}else{t=chest.clone().addScaledVector(Z,.24).addScaledVector(Y,-.12);t.y=mat+.07;pole=V(0,1,0).addScaledVector(Y,-.6);}}
+   else{t=head.clone().addScaledVector(sd,.26).addScaledVector(Y,-.04);t.y=mat+.05;pole=Y.clone().multiplyScalar(-1).add(V(0,.4,0)).addScaledVector(sd,.4);}
+   ik2(A,Fa,Hn,t,pole,1,false);}
+  if(out){for(let i=0;i<POSEBONES.length;i++)(out.q[i]||(out.q[i]=new THREE.Quaternion())).copy(POSEBONES[i].quaternion);out.hp=(out.hp||V()).copy(Hp.position);}}
+ const SPA={q:[],hp:null},SPB={q:[],hp:null},SPC={q:[],hp:null};
+ function sleepTick(dt){if(window.__oldSleep||!FIT.bed||!slpInit())return sleepTickOld(dt);
+  const on=H.inBed&&!H.bedB&&!H.trans;SP.w+=((on?1:0)-SP.w)*Math.min(1,dt*(on?1.2:3));if(SP.w<.002){SP.w=0;if(!on){SP.name='back';SP.to=null;}return;}
+  let k=1;if(on){if(SP.to){SP.t+=dt;k=smooth(0,1,SP.t/SP.dur);if(SP.t>=SP.dur){SP.from=null;SP.to=null;k=1;bedPress(true);}}
+   else if((SP.next-=dt)<=0||(window.__sleepPose&&window.__sleepPose!==SP.name)){const n=window.__sleepPose||sleepPick();SP.from=SP.name;SP.to=n;SP.name=n;SP.t=0;SP.dur=rnd(2.2,3);SP.next=rnd(45,140);k=0;sfx&&sfx.rustle&&sfx.rustle();}}
+  // the clip pose this frame (what is blended from while he settles in / gets up)
+  for(let i=0;i<POSEBONES.length;i++)(SPC.q[i]||(SPC.q[i]=new THREE.Quaternion())).copy(POSEBONES[i].quaternion);SPC.hp=(SPC.hp||V()).copy(bones.Hips.position);
+  sleepPose(SP.name,SPA);let Q=SPA;
+  if(SP.from&&k<1){sleepPose(SP.from,SPB);for(let i=0;i<POSEBONES.length;i++)SPB.q[i].slerp(SPA.q[i],k);SPB.hp.lerp(SPA.hp,k);Q=SPB;}
+  const w=smooth(0,1,SP.w);for(let i=0;i<POSEBONES.length;i++)POSEBONES[i].quaternion.copy(SPC.q[i]).slerp(Q.q[i],w);bones.Hips.position.copy(SPC.hp).lerp(Q.hp,w);
+  root.updateMatrixWorld(true);
+  // turning over: the hips lift a little mid-roll
+  if(SP.from&&k<1){const lift=Math.sin(Math.PI*k)*.05;const hw=bones.Hips.getWorldPosition(V()).add(V(0,lift,0));bones.Hips.position.copy(bones.Hips.parent.worldToLocal(hw));}
+  // breathing: about 13 breaths a minute, the chest rises a little (the head stays where it lies)
+  SP.br+=dt*2*Math.PI/4.6;if(bones.Spine1){const ax=V(1,0,0).applyQuaternion(bones.Hips.getWorldQuaternion(new THREE.Quaternion()));rotW(bones.Spine1,ax,Math.sin(SP.br)*.018*w*(SP.to?0:1));if(bones.Neck)rotW(bones.Neck,ax,-Math.sin(SP.br)*.018*w*(SP.to?0:1));}
+  root.updateMatrixWorld(true);}
  // eyes: shut while he sleeps (and as he lies down / until he sits up), a blink every few seconds when awake
  const BL={t:rnd(2,5),k:0};
  function lidTick(dt){let want=0;const b=H.bedB;if(H.inBed&&!b)want=1;else if(b)want=smooth(.55,.9,b.u)*(b.dir>0?1:smooth(.75,.95,b.u));
@@ -927,7 +1045,7 @@ export function createHero(ctx){
   if(FZ.ft>1.5){p.y=fl;H.floorY=fl;FZ.ft=0;}
   if(FZ.t>6||FZ.lt>2.5){FZ.t=0;FZ.lt=0;console.warn('[hero] freeze guard: recover',H.task,nm,p.toArray().map(v=>+v.toFixed(2)));H.trans=false;H.lad=null;H.stk=null;H.once=null;
    play(IDLE(),{fade:.5});const n=H.task;if(n&&act){if(act.leave&&!act.left){act.left=true;try{act.leave(()=>{endTask(false);});}catch(e){endTask(false);}}else endTask(false);}}}
- function update(dt){if(dt<=0)return;freezeGuard(dt);
+ function update(dt){if(dt<=0)return;H._dt=dt;freezeGuard(dt);if(SPL.length)splashTick(dt);
   // ===== BRAIN HOOK: an attached brain (game/brain.js) decides what to do; the body below only carries it out =====
   if(brain){if(H.wait){H.wait.t-=dt;if(H.wait.t<=0){const f=H.wait.then;H.wait=null;f&&f();}}
    const mode=ctx.mode?ctx.mode():null;if(mode&&mode!==H.task&&(mode==='guard'||mode==='repair')&&!H.trans)startTask(mode);
@@ -977,14 +1095,14 @@ export function createHero(ctx){
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
    p.y=lerp(f.base,f.y-hy,w);}
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
-   const f=floorAt(p.x,p.y,p.z,.32);if(f!=null&&f-p.y<.3&&p.y-f<.3){H.floorY=f;const d=f-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
+   const sq=H.squat||0;const f=floorAt(p.x,p.y+sq,p.z,.32);if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
   sleepTick(dt);lidTick(dt);coatTick(dt);
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  if(g!=null&&!H.lad&&!(H.fit&&H.fit.dangle)){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
+  if(g!=null&&!H.lad&&!(H.fit&&H.fit.dangle)){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   // POSE: sitting on an edge with the legs over it: a foot that rests on the boards (one knee up) stands on them, never in them;
   // a foot hanging over the drop is left alone
   if(H.fit&&H.fit.dangle&&!H.lad){const gb=H.fit.base;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());
@@ -1031,7 +1149,7 @@ export function createHero(ctx){
  spawn('read');
 
  return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,openEdge,
-  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],get act(){return act;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
+  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],get act(){return act;},get gear(){return GEAR;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }

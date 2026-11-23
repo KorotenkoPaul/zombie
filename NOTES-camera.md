@@ -41,3 +41,4 @@ zoom 0.32..1 of the home distance (closest ≈10.7 m on an iPhone portrait scree
 slides from the whole house (0,7.4,2.4) to the hero as you zoom in (lerp dt*2.5, as the original), no pan, no pick,
 no double tap, no inertia, ◎ zooms in on the hero, ⌂ back to the whole house. Safety kept: trunk / wall / limb guards,
 ground lift, no auto-movement except the breathing drift, iOS double pinch fix. BVH library is not loaded in classic.
+- 22:16 Pavel: zoom out up to 1.2x the home distance (ZMAX); start and ⌂ stay at 1x.
