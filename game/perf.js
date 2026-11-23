@@ -52,7 +52,8 @@ export function createPerf({ renderer, MOBILE }) {
   P.begin = () => { t0 = performance.now(); info.reset(); };
   P.end = () => {
     const now = performance.now(); const dtm = now - last; last = now;
-    ft[k] = dtm; js[k] = now - t0; k = (k + 1) % N; n = Math.min(N, n + 1);
+    // a gap over 1 s is the page being hidden (app switch, screenshot) or the loading stall, not a slow frame: kept out of the stats
+    if (dtm < 1000) { ft[k] = dtm; js[k] = now - t0; k = (k + 1) % N; n = Math.min(N, n + 1); }
     lastDraw = { calls: info.render.calls, tris: info.render.triangles };
     const dt = Math.min(dtm / 1000, .25); clock += dt;
     if (document.hidden || dtm > 250) return;                  // tab switches and long stalls say nothing about load

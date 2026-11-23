@@ -253,7 +253,10 @@ export function createHero(ctx){
  // targets and knee direction are low-passed so clip noise and IK flips never reach the feet
  const plantS={};
  // where the pelvis faces (flat): knees point that way, whatever the root yaw or a twisted clip says
- function hipsFwd(){const q=bones.Hips.getWorldQuaternion(new THREE.Quaternion());const f=V(0,0,1).applyQuaternion(q);f.y=0;const r=fwd(root.rotation.y);if(f.lengthSq()<1e-4)return r;f.normalize();if(f.dot(r)<-.2)f.negate();return f;}
+ /* which local axis of a bone points the way he faces: measured on the playing clips, -Z for pelvis and head (dot with the walk direction +1.00);
+    never guess the sign from the root yaw, a pelvis mid-pivot would flip */
+ const BFWD={Hips:V(0,0,-1),Head:V(0,0,-1),Spine2:V(0,0,-1)};
+ function hipsFwd(){const q=bones.Hips.getWorldQuaternion(new THREE.Quaternion());const f=BFWD.Hips.clone().applyQuaternion(q);f.y=0;const r=fwd(root.rotation.y);if(f.lengthSq()<1e-3)return r;return f.normalize();}
  function legPlant(g,dt,pw=1){const M=window.__plantMode??2;if(M===0||pw<.01)return;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V()),k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
    const tgt=V(a.x,g+(POSE.ankle??.1),a.z);let pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole=fwd(root.rotation.y);pole.normalize().multiplyScalar(.35).add(hipsFwd());pole.normalize();
    if(M===1){ik2(U,L,F,tgt,pole,1,true);continue;}
@@ -262,7 +265,9 @@ export function createHero(ctx){
  // a knee may never bend forward (a clip glitch or an IK pole flip): re-solve that leg with the knee pointing where the pelvis faces
  function kneeGuard(){const hf=hipsFwd();for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;
    const hp=U.getWorldPosition(V()),k=L.getWorldPosition(V()),a=F.getWorldPosition(V());const mid=hp.clone().add(a).multiplyScalar(.5);const off=k.clone().sub(mid);
-   const leg=a.clone().sub(hp);if(leg.lengthSq()<1e-4)continue;const ld=leg.clone().normalize();const pf=hf.clone().sub(ld.clone().multiplyScalar(hf.dot(ld)));if(pf.lengthSq()<1e-4)continue;pf.normalize();
+   // the knee's forward is where that leg's toes point (the pelvis can be turned far from the root mid-turn; a flipped pelvis forward bent good knees backwards)
+   const T=bones[s+'ToeBase'];const tf=T?T.getWorldPosition(V()).sub(a):null;if(tf){tf.y=0;}const kf=tf&&tf.lengthSq()>1e-4?tf.normalize():hf;
+   const leg=a.clone().sub(hp);if(leg.lengthSq()<1e-4)continue;const ld=leg.clone().normalize();const pf=kf.clone().sub(ld.clone().multiplyScalar(kf.dot(ld)));if(pf.lengthSq()<1e-4)continue;pf.normalize();
    const o=off.clone().sub(ld.clone().multiplyScalar(off.dot(ld)));if(o.length()<.02||o.dot(pf)>-.3*o.length())continue;
    ik2(U,L,F,a,pf.clone().add(o.normalize().multiplyScalar(.15)),1,true);}}
  function legPlantOff(){for(const k in plantS)plantS[k].on=false;}
@@ -287,7 +292,7 @@ export function createHero(ctx){
  const HEADMAX=1.22,LOOKMAX=1.05;
  function lookAt(dt){const Hd=bones.Head,Nk=bones.Neck,Ch=bones.Spine2;if(!Hd||!Nk)return;if(window.__noLookClamp&&!H.look)return;
   const hf=hipsFwd();const hy=Math.atan2(hf.x,hf.z);
-  const hq=Hd.getWorldQuaternion(new THREE.Quaternion());const fw=V(0,0,1).applyQuaternion(hq);const hl=rotY(fw,-hy);const ah=Math.atan2(hl.x,hl.z),ap=Math.atan2(-hl.y,Math.hypot(hl.x,hl.z));
+  const hq=Hd.getWorldQuaternion(new THREE.Quaternion());const fw=BFWD.Head.clone().applyQuaternion(hq);const hl=rotY(fw,-hy);const ah=Math.atan2(hl.x,hl.z),ap=Math.atan2(-hl.y,Math.hypot(hl.x,hl.z));
   let ty=0,tp=0;const w=H.look?H.lookW:0;
   if(H.look&&w>.01){const hp=Hd.getWorldPosition(V());const d=H.look.clone().sub(hp);const local=rotY(d,-hy);
    const want=clamp(Math.atan2(local.x,local.z),-LOOKMAX,LOOKMAX),wp=clamp(Math.atan2(-d.y,Math.hypot(d.x,d.z)),-.6,.7);ty=(want-ah)*w;tp=(wp-ap)*w;}
@@ -832,7 +837,9 @@ export function createHero(ctx){
  function onBack(n,off,rot){try{PP().grab(n,bones.Spine2,{offset:off,rot:new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot))});}catch(e){}}
  // a short station step: walk up to a world point, play a one-off clip, call cb at fraction `at` of the clip, then go on
  function visit(a,pt,stand,clip,hits,then){if(!pt){then();return;}const nn=nearNode(pt);const run=()=>approachTo(a,pt,stand,()=>{a.step='clip';a.t=0;a.hits=hits.slice();a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
-   if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const h of a.hits)h[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const h of hits)h[1]();then();}});
+   const high=clip==='hy_take'&&pt.y-root.position.y>.72;/* hy_take picks from low (deep squat): for a shelf or a counter he stands and reaches instead */
+   if(high){a.clipDur=1.3;play(IDLE(),{fade:.3});H.reach={pt:pt.clone(),t:0,d:1.3,side:'Right'};H.wait={t:1.3,then:()=>{H.reach=null;a.step='next';for(const h of a.hits)h[1]();a.hits=[];then();}};}
+   else if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const h of a.hits)h[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const h of hits)h[1]();then();}});
   if(nn)goTo(nn,run);else run();}
  // GRAB HOOK: the fridge by hand. He stands on the latch side clear of the door's swing, takes the handle, the door opens only as
  // far as his hand carries it (then a little push), the meat goes in / comes out with the hand inside, he takes the handle again and
@@ -1148,7 +1155,12 @@ export function createHero(ctx){
   if(FZ.ft>1.5){p.y=fl;H.floorY=fl;FZ.ft=0;}
   if(FZ.t>6||FZ.lt>2.5){FZ.t=0;FZ.lt=0;console.warn('[hero] freeze guard: recover',H.task,nm,p.toArray().map(v=>+v.toFixed(2)));H.trans=false;H.lad=null;H.stk=null;H.once=null;
    play(IDLE(),{fade:.5});const n=H.task;if(n&&act){if(act.leave&&!act.left){act.left=true;try{act.leave(()=>{endTask(false);});}catch(e){endTask(false);}}else endTask(false);}}}
- function update(dt){if(dt<=0)return;H._dt=dt;freezeGuard(dt);if(SPL.length)splashTick(dt);
+ // ===== HERO-RULES.md section 1: one pose pipeline. Modules register per slot; slots run in this order every frame =====
+ const SLOTS=['clip','motion','support','look','contacts','collide','grab','guard'];const STAGES={};for(const k of SLOTS)STAGES[k]=[];
+ function stage(slot,fn){if(!STAGES[slot])throw new Error('unknown slot '+slot);STAGES[slot].push(fn);return ()=>{const i=STAGES[slot].indexOf(fn);if(i>=0)STAGES[slot].splice(i,1);};}
+ function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt,H);}catch(e){console.error('stage '+slot,e);L.splice(i--,1);}}}
+ function update(dt){if(dt<=0)return;const r=updateCore(dt);if(!window.__heroFast){runSlot('collide',dt);runSlot('grab',dt);runSlot('guard',dt);}return r;}
+ function updateCore(dt){if(dt<=0)return;H._dt=dt;freezeGuard(dt);if(SPL.length)splashTick(dt);
   // ===== BRAIN HOOK: an attached brain (game/brain.js) decides what to do; the body below only carries it out =====
   if(brain){if(H.wait){H.wait.t-=dt;if(H.wait.t<=0){const f=H.wait.then;H.wait=null;f&&f();}}
    const mode=ctx.mode?ctx.mode():null;if(mode&&mode!==H.task&&(mode==='guard'||mode==='repair')&&!H.trans)startTask(mode);
@@ -1201,6 +1213,7 @@ export function createHero(ctx){
    const sq=H.squat||0;const f=floorAt(p.x,p.y+sq,p.z,.32);if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion&&!window.__heroFast){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
+  runSlot('motion',dt);runSlot('support',dt);
   sleepTick(dt);lidTick(dt);coatTick(dt);
   if(window.__heroFast)return;/* off-screen fast-forward (the random start): no IK polish, nobody sees these frames */
   root.updateMatrixWorld(true);
@@ -1214,8 +1227,10 @@ export function createHero(ctx){
     if(need>.002)ik2(U,L,F,a.clone().add(V(0,need,0)),k.clone().sub(hp.clone().add(a).multiplyScalar(.5)),1,true);
     const T=bones[s+'ToeBase'];if(T){const t=T.getWorldPosition(V());const tf=floorAt(t.x,gb+.05,t.z,.1,.15);if(tf!=null&&t.y<tf+.035)turnBone(F,t,t.clone().add(V(0,tf+.035-t.y,0)),1);}}}
   bedHand();bedLegClear(dt);
-  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);
+  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);
+  if(H.reach){const R=H.reach;R.t+=dt;const k=R.t/R.d;const w=smooth(0,.4,k)*(1-smooth(.62,1,k));if(w>.01)reachTo(R.side,R.pt,w);H.look=R.pt;H.lookW=.9;}
   if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */
+  runSlot('contacts',dt);
   if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */
   if(act&&act.fr)fridgePost(act);/* GRAB HOOK */
   try{window.__grab&&window.__grab.tick&&window.__grab.tick(dt,H);}catch(e){}/* GRAB HOOK: hands close round what they hold */}
@@ -1233,7 +1248,7 @@ export function createHero(ctx){
   if(left<=0){H.ov=null;ov.then&&ov.then();return;}
   const tt=Math.min(ov.t,ov.T.dur);for(const k of ov.T.tracks){const v=k.it.evaluate(tt);_ovq.fromArray(v);k.b.quaternion.slerp(_ovq,ov.w*(k.spine&&H.path.length?.6:1));}}
  // ---------- start anywhere: drop him into the middle of any activity (used for a random start, any time of day) ----------
- function resetBody(){try{undress(false,true);}catch(e){}H.lad=null;H.path=[];H.stk=null;try{dropGearNow();}catch(e){}root.visible=true;for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
+ function resetBody(){H.reach=null;try{undress(false,true);}catch(e){}H.lad=null;H.path=[];H.stk=null;try{dropGearNow();}catch(e){}root.visible=true;for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
   if(bookObj&&bookHome&&bookObj.parent!==bookHome.parent){bookHome.parent.add(bookObj);bookObj.position.copy(bookHome.pos);bookObj.quaternion.copy(bookHome.quat);}
   if(H.inBed)bedPress(false);
   Object.assign(H,{path:[],then:null,wait:null,swing:null,bedB:null,edgeHold:null,lad:null,slide:null,once:null,trans:false,seated:null,inBed:false,fit:null,ground:true,v:0,av:0,look:null,lookW:0,pending:null,linger:0,turnStep:false});
@@ -1254,7 +1269,7 @@ export function createHero(ctx){
  spawn('read');
 
  return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,openEdge,
-  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],get act(){return act;},get gear(){return GEAR;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
+  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,get act(){return act;},get gear(){return GEAR;},BFWD,setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }

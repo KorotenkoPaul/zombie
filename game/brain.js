@@ -35,10 +35,10 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const NEEDS = {
   hunger:    { drift: .05,  w: 2.6, label: 'Голод' },
   energy:    { drift: -.042, w: 3.0, label: 'Силы' },      // goes down while awake
-  fun:       { drift: .045, w: .9, label: 'Скука' },
+  fun:       { drift: .055, w: .9, label: 'Скука' },
   tidy:      { drift: .025,  w: .8, label: 'Беспорядок' },
   comfort:   { drift: .05,  w: 1.3, label: 'Холод, неуют' },        // cold, damp, wants to be cosy (faster at night)
-  curiosity: { drift: .035, w: .8, label: 'Любопытство' },
+  curiosity: { drift: .045, w: .8, label: 'Любопытство' },
   safety:    { drift: .05,  w: 1.6, label: 'Тревога' },
   wear:      { drift: .02, w: 1.3, label: 'Износ дома' },  // the house wears out; faster in rain and wind; repairs fix it     // shelter mood: grows at dusk, at night and in the rain; bolt, listening, radio calm it
 };
@@ -73,7 +73,7 @@ const EXTRA = {
   stoke:     { room: 'kitchen',  give: { comfort: -.3 }, label: 'подкладывает дрова в печь', when: (h, c) => (c.ovenLow ? .6 : -.5) + (isN(h) ? .2 : 0), needLogs: true },
   dishes:    { room: 'kitchen',  give: { tidy: -.4 }, label: 'моет посуду',               when: (h, c) => (c.dirty >= 2 ? .8 : c.dirty === 1 ? (c.justAte ? .3 : -.2) : c.dirty === 0 ? -1.5 : (c.justAte ? .7 : 0)) },
   saw:       { room: 'workshop', give: { fun: -.25 }, label: 'пилит доску',               when: h => (h >= 9 && h < 17 ? .2 : -.6) },
-  hammer:    { room: 'workshop', give: { fun: -.2, tidy: .03 }, label: 'стучит молотком', when: h => (h >= 9 && h < 18 ? .15 : -.8) },
+  hammer:    { room: 'workshop', give: { fun: -.2, tidy: .03 }, label: 'стучит молотком', dur: [18, 35], when: h => (h >= 9 && h < 18 ? .15 : -.8) },
   sharpen:   { room: 'workshop', give: { fun: -.12, safety: -.12 }, label: 'точит нож',   when: h => (h >= 16 && h < 20 ? .2 : 0) },
   fixlamp:   { room: 'workshop', give: { fun: -.12, comfort: -.05 }, label: 'чинит фонарь', when: h => (h >= 15 && h < 19 ? .15 : 0) },
   stretch:   { room: null,       give: { comfort: -.1 }, label: 'потягивается',           when: (h, c) => (c.justWoke ? 1.2 : -.3) },
@@ -169,7 +169,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const h = v.hour, asleep = v.task === 'sleep' && (v.inBed || v.step === 'sleep');
     for (const k in NEEDS) {
       let r = NEEDS[k].drift;
-      if (asleep) r = k === 'energy' ? .16 : k === 'hunger' ? .02 : k === 'fun' || k === 'curiosity' ? -.05 : 0;
+      if (asleep) r = k === 'energy' ? .16 : k === 'hunger' ? .02 : k === 'fun' || k === 'curiosity' ? -.015 : 0;
       if (k === 'comfort' && isNight(h)) r *= 1.8;
       if (k === 'wear') r = asleep ? .01 : .02 * (raining() ? 2.5 : 1) * (1 + windy());
       if (k === 'safety') r = asleep ? -.04 : (isNight(h) ? .06 : h >= 17 ? .035 : -.02) * (raining() ? 1.5 : 1);
@@ -633,6 +633,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // a chore (ends by itself): only bedtime or exhaustion cuts it short, and only once he has been at it a while
     // rain caught him at an outdoor chore: he finishes the stroke and goes under the roof
     if (!A && raining() && ['deck', 'ground'].includes(area(cur.name)) && EXTRA[cur.name] && cur.t > 3 && !plan.length) { why = 'дождь — уходит под крышу'; choose(h, 'rain'); return; }
+    // watchdog: a chore the body never ends by itself (hammer is the open-ended craft clip) stops after its stay,
+    // and any chore stuck past ~1.5 game hours at the spot is dropped (QA: 8 h of hammering, 2026-11-23)
+    if (!A && EXTRA[cur.name] && !cur.cmd) { const E = EXTRA[cur.name]; if (cur.cap == null) cur.cap = E.dur ? rnd(E.dur[0], E.dur[1]) : 90;
+      if (cur.t > cur.cap) { tr('watchdog:' + cur.name); if (E.give) for (const k in E.give) need[k] = clamp(need[k] + E.give[k] * (E.give[k] < 0 ? XS : 1)); choose(h, 'done'); return; } }
     if (!A) { if (cur.name !== 'sleep' && cur.t > 10 && (need.energy < .05 || (h >= bedTime + 1 && h < 23.9) || h < 4.5) && HH.hasTask && !['switch', 'micro', 'hatch', 'bolt', 'trip', 'eat', 'dishes', 'fetchwater', 'dumpwater', 'store', 'setbucket', 'firewood', 'jacket'].includes(cur.name) && !PLANK_KIND[cur.name]) { /* jobs with stages are finished first */ const d = decide(h); if (d.name === 'sleep') choose(h, 'urgent:sleep', d); } return; }
     const stay = cur.min + (cur.walk || 0) * .6;   // minimum dwell: base + 60% of the walk it took
     let done = cur.t > Math.max(cur.dur, stay);
