@@ -403,7 +403,7 @@ export function buildTree(THREE, o) {
   // A few leaf cards are rendered once into a small atlas (two sub-clumps, lit top/front, with the odd autumn-yellow
   // leaf), and each clump gets a handful of camera-facing quads with it: far less overlap than hundreds of cards, the
   // same full silhouette. Quads turn to the camera in the vertex shader, so they never show as flat planes edge-on.
-  if (MOB(o) && o.renderer && o.leafImpostors !== false) {
+  if (MOB(o) && o.renderer && o.leafImpostors === true) { // OFF: on a real iPhone no foliage showed (2026-11-23), cards are back until fixed
     try {
       const R2 = o.renderer, S = 256, rt = new THREE.WebGLRenderTarget(S * 2, S, { depthBuffer: true });
       rt.texture.generateMipmaps = true; rt.texture.minFilter = THREE.LinearMipmapLinearFilter; rt.texture.colorSpace = leafT.colorSpace;

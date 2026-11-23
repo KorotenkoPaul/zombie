@@ -37,7 +37,7 @@ export function createParticles({ THREE, scene, wind, lights, rooms = [], hero =
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ND * 3), 3)); g.setAttribute('aS', new THREE.BufferAttribute(s, 4));
     const U = dustU(); U.uB0.value.set(b[0] + 0.5, b[2] + 0.25, b[4] + 0.5); U.uB1.value.set(b[1] - 0.5, b[3] - 0.35, b[5] - 0.5);
     const m = new THREE.ShaderMaterial({ uniforms: U, vertexShader: dustVS, fragmentShader: dustFS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
-    const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.visible = false; pts.renderOrder = 6; scene.add(pts);
+    const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.visible = false; pts.renderOrder = 6; scene.add(pts); pts.matrixAutoUpdate = false;
     roomsDust.push({ b, U, pts, src: null }); api.dust.push(pts);
   }
   const inBox = (p, b) => p.x > b[0] && p.x < b[1] && p.y > b[2] - 0.3 && p.y < b[3] + 0.3 && p.z > b[4] && p.z < b[5];
@@ -73,7 +73,7 @@ export function createParticles({ THREE, scene, wind, lights, rooms = [], hero =
     vertexShader: `attribute vec2 aA;uniform float uPx;varying float vA;void main(){vA=aA.x;vec4 mv=modelViewMatrix*vec4(position,1.);
       gl_PointSize=clamp(aA.y*420.*uPx/-mv.z,1.,140.*uPx);gl_Position=projectionMatrix*mv;if(vA<.003)gl_Position=vec4(2.,2.,2.,1.);}`,
     fragmentShader: `uniform vec3 uCol;varying float vA;void main(){vec2 d=gl_PointCoord-.5;float r=length(d);float k=1.-smoothstep(.1,.5,r);gl_FragColor=vec4(uCol,k*k*vA);}` });
-  const breath = new THREE.Points(bg, bm); breath.frustumCulled = false; breath.renderOrder = 7; breath.visible = false; scene.add(breath); api.breath = breath;
+  const breath = new THREE.Points(bg, bm); breath.frustumCulled = false; breath.renderOrder = 7; breath.visible = false; scene.add(breath); breath.matrixAutoUpdate = false; api.breath = breath;
   const B = []; for (let i = 0; i < NB; i++) B.push({ on: false, p: [0, 0, 0], v: [0, 0, 0], age: 0, life: 1.6 });
   const hv = new THREE.Vector3(), up = new THREE.Vector3(), fw = new THREE.Vector3(), m3 = new THREE.Matrix4();
   let cyc = Math.random() * 3.6, coldK = 0;
@@ -122,7 +122,7 @@ export function createParticles({ THREE, scene, wind, lights, rooms = [], hero =
       // leaf bit: a little flat flake turning (squashed by the spin phase); dust: a soft speck
       float leaf=step(.5,vK.z);vec2 q=vec2(d.x*(1.+2.*abs(sin(vK.w*6.28))),d.y);float k=leaf>.5?step(length(q),.42):smoothstep(.5,.15,length(d));
       vec3 c=leaf>.5?mix(vec3(.55,.33,.12),vec3(.72,.55,.2),fract(vK.w*7.)):vec3(.62,.56,.48);if(k*vK.x<.02)discard;gl_FragColor=vec4(c,k*vK.x*(leaf>.5?1.:.45));}` });
-  const kick = new THREE.Points(kg, km); kick.frustumCulled = false; kick.renderOrder = 6; kick.visible = false; scene.add(kick); api.kick = kick;
+  const kick = new THREE.Points(kg, km); kick.frustumCulled = false; kick.renderOrder = 6; kick.visible = false; scene.add(kick); kick.matrixAutoUpdate = false; api.kick = kick;
   const K = []; for (let i = 0; i < NK; i++) K.push({ on: false, p: [0, 0, 0], v: [0, 0, 0], age: 0, life: 1, leaf: 0, sp: Math.random() });
   const feet = [{ b: 'LeftFoot', y: 0, vy: 0, cd: 0 }, { b: 'RightFoot', y: 0, vy: 0, cd: 0 }], fp = new THREE.Vector3(), hp = new THREE.Vector3(), lastHip = new THREE.Vector3(); let hipSp = 0, kickOn = true;
   function floorUnder(x, z, y) { const g = groundH(x, z); const h = window.__rain && window.__rain.ready ? window.__rain.heightAt(x, z) : null; return h != null && h > g + 0.3 && h <= y + 0.25 ? [h, 0] : [g, 1]; }
