@@ -1,0 +1,18 @@
+{
+ "read": [8, "A person sits on a chair reading a book held open in both hands at chest height, after a while lifts the right hand to turn a page, then keeps reading calmly."],
+ "oven": [6, "A person stands, bends the knees and leans forward, pulls a low oven door open with the right hand, looks inside, then pushes the door closed and stands up straight."],
+ "stir": [6, "A person stands at a stove, holds a pot with the left hand and stirs it with a spoon in the right hand in small circles."],
+ "taketool": [3.5, "A person reaches forward and up with the right hand, takes a tool off a wall hook, and brings it down in front of the body."],
+ "hammer": [6, "A person stands at a workbench, holds a nail with the left hand and hits it with a hammer in the right hand several times."],
+ "saw": [6, "A person stands at a workbench, holds a plank down with the left hand and saws it with the right hand, moving the arm forward and back."],
+ "wash": [6, "A person stands at a sink, holds a plate with the left hand and scrubs it with the right hand."],
+ "sleep": [8, "A person lies on their back sleeping, breathing slowly, and turns the head slightly."],
+ "liedown": [5, "A person sits on the edge of a bed, then lies down on their back and swings their legs up onto the bed."],
+ "getup": [5, "A person lying on their back wakes up, sits up, swings the legs off the bed and sits on the edge of the bed."],
+ "stretch": [5, "A person stands, stretches both arms above the head, yawns, and relaxes."],
+ "idle": [8, "A person stands relaxed, shifts weight from one leg to the other and calmly looks around."],
+ "sitdown": [3, "A person standing in front of a chair sits down on it."],
+ "standup": [3, "A person sitting on a chair stands up."],
+ "drink": [6, "A person stands and drinks from a mug held in the right hand, sips slowly, then lowers the mug."],
+ "look": [8, "A person stands at a railing with both hands resting on it and looks into the distance, slowly turning the head left and right."]
+}
