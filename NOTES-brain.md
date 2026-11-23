@@ -68,3 +68,4 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - 🧠 panel: every meter with its weight, the top 4 options with score and the meter behind each.
 - 48 h (seeds 1, 2) after calibration: hunger mostly .1-.7, tiredness follows the day, mess and cold low-mid; boredom and wear the highest (.5-1) because the body's jobs are long: cook+eat ≈ 3-4 game h, fetchwater ≈ 2-4 h, a hunt ≈ 6 h.
 - Tasks with stages (eat, dishes, water, store, firewood, jacket, repairs) are never cut for bedtime, and a night noise does not restart them (QA run 12 turn-backs).
+- Day length 24 min (Pavel 2026-11-23 22:26 UTC): hps = 1/60, 1 game hour = 1 real minute. ACTS stays: read 50-85 s, craft 35-60, look 30-50, cook 22-32, tea 16-26, wash 12-20.

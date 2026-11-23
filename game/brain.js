@@ -45,12 +45,12 @@ const NEEDS = {
 
 // what each activity gives per real second of doing it, where it happens, how long he tends to do it
 const ACTS = {
-  cook:   { room: 'kitchen',  node: 'stove',     gives: { hunger: -.045, comfort: -.01 },           dur: [16, 24], label: 'готовит' },
-  tea:    { room: 'kitchen',  node: 'sink',      gives: { hunger: -.015, comfort: -.03, fun: -.008 }, dur: [12, 18], label: 'пьёт чай' },
-  wash:   { room: 'kitchen',  node: 'sink',      gives: { tidy: -.06 },                             dur: [10, 16], label: 'моет посуду' },
-  read:   { room: 'bedroom',  node: 'chair_app', gives: { fun: -.025, comfort: -.02 },              dur: [32, 52], label: 'читает' },
-  craft:  { room: 'workshop', node: 'bench',     gives: { fun: -.04, tidy: .004 },                  dur: [22, 38], label: 'мастерит' },
-  look:   { room: 'outside',  node: 'deck',      gives: { curiosity: -.06, fun: -.01, comfort: .006 }, dur: [22, 36], label: 'смотрит вдаль' },
+  cook:   { room: 'kitchen',  node: 'stove',     gives: { hunger: -.045, comfort: -.01 },           dur: [22, 32], label: 'готовит' },
+  tea:    { room: 'kitchen',  node: 'sink',      gives: { hunger: -.015, comfort: -.03, fun: -.008 }, dur: [16, 26], label: 'пьёт чай' },
+  wash:   { room: 'kitchen',  node: 'sink',      gives: { tidy: -.06 },                             dur: [12, 20], label: 'моет посуду' },
+  read:   { room: 'bedroom',  node: 'chair_app', gives: { fun: -.025, comfort: -.02 },              dur: [50, 85], label: 'читает' },
+  craft:  { room: 'workshop', node: 'bench',     gives: { fun: -.04, tidy: .004 },                  dur: [35, 60], label: 'мастерит' },
+  look:   { room: 'outside',  node: 'deck',      gives: { curiosity: -.06, fun: -.01, comfort: .006 }, dur: [30, 50], label: 'смотрит вдаль' },
   window: { room: null,       node: null,        gives: { curiosity: -.05 },                        dur: [7, 13],  label: 'смотрит в окно' },
   sleep:  { room: 'bedroom',  node: 'bed_app',   gives: {},                                         dur: [1e9, 1e9], label: 'спит' },
 };
@@ -340,7 +340,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // ---------- plan an activity: lights first, a pause maybe, then the thing ----------
   const AREA_NODE = { kitchen: 'kmid', bedroom: 'bed_app', workshop: 'wmid', deck: 'deck', ground: 'g_foot', outside: 'deck' };
   // real seconds per game hour (measured from the clock, so it follows any change of the day length)
-  let sph = 7.9, sphH = null, sphT = 0;
+  let sph = 60, sphH = null, sphT = 0;
   function secPerHour() { return sph; }
   function measureClock(dt) { const h = hour(); if (sphH == null) { sphH = h; sphT = 0; return; } sphT += dt; let d = h - sphH; if (d < 0) d += 24; if (sphT > 4) { if (d > .05 && d < 3) sph = sph * .7 + (sphT / d) * .3; sphH = h; sphT = 0; } }
   // the jacket (Pavel): off and on its hook before bed; in the morning on only if it is cold or raining; off again once it warms up.
