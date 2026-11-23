@@ -73,7 +73,8 @@ vec3 windBranch(vec3 p,vec2 ax){float d=length(p.xz-ax);float a=.09*max(smoothst
  vec2 o=dd*(.4*s*s+sin(ph)*sh*.6)+q*sin(ph*1.37+1.)*sh*.3;return vec3(o.x,0.,o.y)*a;}
 vec3 windLocal(vec3 w){
 #ifdef USE_INSTANCING
- return inverse(mat3(instanceMatrix))*w;
+ // rotation * uniform scale: the inverse is the transpose over scale^2 (much cheaper than inverse() per vertex)
+ mat3 m=mat3(instanceMatrix);return transpose(m)*w/dot(m[0],m[0]);
 #else
  return w;
 #endif
@@ -204,6 +205,24 @@ export function createWind(opt = {}) {
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
     gust(amp) { startGust(amp); },
+
+    // a small tiling noise texture (fbm baked once): one or two texture reads instead of 4-5 octaves of procedural
+    // noise per pixel. Shared by the fog layers (fogbank.js; Environment may use it too): __wind.noiseTexture(THREE)
+    noiseTexture(THREE) {
+      if (W._noise) return W._noise;
+      const S = 128, d = new Uint8Array(S * S * 4);
+      const lat = (n, seed) => { const a = new Float32Array(n * n); let sd = seed; for (let i = 0; i < n * n; i++) { sd = (sd * 16807) % 2147483647; a[i] = sd / 2147483647; } return a; };
+      const oct = [[8, 0.5, 11], [16, 0.28, 23], [32, 0.14, 37], [64, 0.08, 53]].map(([n, a, sd]) => [n, a, lat(n, sd)]);
+      const sm = t => t * t * (3 - 2 * t);
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { let v = 0, v2 = 0;
+        for (const [n, a, L] of oct) { const fx = x / S * n, fy = y / S * n, ix = Math.floor(fx), iy = Math.floor(fy), tx = sm(fx - ix), ty = sm(fy - iy);
+          const g = (i, j) => L[((j % n + n) % n) * n + ((i % n + n) % n)];
+          const val = (g(ix, iy) * (1 - tx) + g(ix + 1, iy) * tx) * (1 - ty) + (g(ix, iy + 1) * (1 - tx) + g(ix + 1, iy + 1) * tx) * ty;
+          v += val * a; v2 += (1 - val) * a * (n > 8 ? 1.2 : 0.6); }
+        const i = (y * S + x) * 4; d[i] = Math.min(255, v / 1.0 * 255); d[i + 1] = Math.min(255, v2 / 1.1 * 255); d[i + 2] = 0; d[i + 3] = 255; }
+      const t = new THREE.DataTexture(d, S, S, THREE.RGBAFormat); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter;
+      t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.needsUpdate = true; W._noise = t; return t;
+    },
 
     // ---- falling leaves: a few oak leaves torn off the crown, tumbling down and carried by the wind ----
     // Few (16 on phones, 30 on desktop), so a tiny CPU step per leaf is cheaper than anything clever. Calm: a leaf now

@@ -28,9 +28,9 @@ export function createCameraRig(o) {
   const goal = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   const cur = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   let followOn = false, atHome = true, flyK = 0, idle = 0;
-  const MIN_D = 0.7, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
+  const MIN_D = 1.0, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
   const AXIS = o.axis || [0, -0.6];
-  const maxD = () => home.dist * 1.25, hardD = () => home.dist * 1.5;
+  const maxD = () => home.dist * 1.0, hardD = () => home.dist * 1.2;   // Pavel: max zoom-out 20 % less far (was 1.25 / 1.5)
 
   // ---------- picking ----------
   const ray = new THREE.Raycaster();
@@ -73,7 +73,12 @@ export function createCameraRig(o) {
     const nd = clamp(goal.dist * Math.pow(f, over), MIN_D, hardD());
     rec(0, 0, 0, 0, Math.log(nd / goal.dist), point);
     const k = 1 - nd / goal.dist;
-    if (point) goal.target.lerp(point, k);
+    if (point) {
+      tmp.copy(goal.target).lerp(point, k);
+      // like pan: the focus may leave the soft bounds a little (rubber band), never far (sky / far ground picks)
+      limitOut(tmp);
+      goal.target.copy(tmp);
+    }
     goal.dist = nd; flyK = 0; atHome = false;
     if (followOn && point && k > 0) { const f = follow(); if (!f || f.distanceTo(point) > 1.5) stopFollow(); }
   }
@@ -102,12 +107,13 @@ export function createCameraRig(o) {
       const x = goal.target.x - AXIS[0], z = goal.target.z - AXIS[1], c = Math.cos(a), sn = Math.sin(a);
       goal.target.x = AXIS[0] + x * c + z * sn; goal.target.z = AXIS[1] - x * sn + z * c;
       goal.yaw = ny;
+      limitOut(goal.target);
     }
     goal.pitch = clamp(goal.pitch + dy * 0.004, PMIN, PMAX);
     flyK = 0; atHome = false;
   }
   function flyTo(point, dist, k = 3.2) {
-    goal.target.copy(point);
+    goal.target.copy(point); limitOut(goal.target);
     goal.dist = clamp(dist, MIN_D, maxD());
     flyK = k; atHome = false;
   }
@@ -241,7 +247,7 @@ export function createCameraRig(o) {
   dom.addEventListener('wheel', e => {
     e.preventDefault(); idle = 0; stopCine();
     let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-    const f = Math.exp(clamp(dy, -200, 200) * (e.ctrlKey ? 0.01 : 0.0016)); // ctrlKey = trackpad pinch
+    const f = Math.exp(clamp(dy * (e.ctrlKey ? 0.01 : 0.0016), -0.35, 0.35)); // ctrlKey = trackpad pinch; one notch at most ±35 %
     zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null);
   }, { passive: false });
 
@@ -350,6 +356,16 @@ export function createCameraRig(o) {
   }
 
   // ---------- per frame ----------
+  let hitWhy = null, collK = 1;
+  const gL = new THREE.Vector3(), cL = new THREE.Vector3();
+  function toLocal(t, yaw, out) {     // inverse of the orbit rotation around AXIS by yaw
+    const x = t.x - AXIS[0], z = t.z - AXIS[1], c = Math.cos(-yaw), sn = Math.sin(-yaw);
+    return out.set(x * c + z * sn, t.y, -x * sn + z * c);
+  }
+  function fromLocal(l, yaw, out) {
+    const c = Math.cos(yaw), sn = Math.sin(yaw);
+    return out.set(AXIS[0] + l.x * c + l.z * sn, l.y, AXIS[1] - l.x * sn + l.z * c);
+  }
   const camPos = new THREE.Vector3(), dir = new THREE.Vector3(), p = new THREE.Vector3();
   function inside(t, out) {      // nearest point inside the bounds
     out.copy(t);
@@ -360,9 +376,21 @@ export function createCameraRig(o) {
   }
   const inB = new THREE.Vector3();
   function outside(t) { return inside(t, inB).distanceTo(t); }
+  function limitOut(t) {             // the focus may leave the soft bounds a little (rubber band), never far
+    const o1 = outside(t);
+    if (o1 > 3.5) { inside(t, inB); t.sub(inB).multiplyScalar(3.5 / o1).add(inB); }
+  }
+  function outOfTrunk(t) {           // a focus inside the trunk (double tap on bark, zoom into it) moves out radially
+    for (let n = 0; n < 60 && solid(t.x, t.y, t.z); n++) {
+      let dx = t.x - AXIS[0], dz = t.z - AXIS[1]; const r = Math.hypot(dx, dz) || 1;
+      if (r < 1e-3) { dx = 0; dz = 1; }
+      t.x += dx / r * 0.08; t.z += dz / r * 0.08;
+    }
+  }
   function keepOut(target, dt, dragging) {
     // never below ground; beyond the soft bounds: spring back once the fingers are off
     target.y = Math.max(target.y, groundY(target.x, target.z) + BOUND.yMin);
+    outOfTrunk(target);
     if (!dragging && outside(target) > 0.001) target.lerp(inB, damp(5, dt));
   }
   function update(dt, extra = {}) {
@@ -376,8 +404,14 @@ export function createCameraRig(o) {
     goal.dist = clamp(goal.dist, MIN_D, hardD());
     if (!dragging && goal.dist > maxD()) goal.dist += (maxD() - goal.dist) * damp(5, dt);
     const k = flyK ? damp(flyK, dt) : damp(14, dt);
-    cur.target.lerp(goal.target, k);
+    // The focus is damped in the frame that turns with the view around the trunk axis: an orbit is then a pure rotation
+    // around the trunk (no chord cutting toward the tree, no distance wobble), and flights between views swing around
+    // the trunk instead of passing through it.
+    toLocal(goal.target, goal.yaw, gL); toLocal(cur.target, cur.yaw, cL);
+    cL.lerp(gL, k);
     cur.yaw += (goal.yaw - cur.yaw) * k;
+    fromLocal(cL, cur.yaw, cur.target);
+    outOfTrunk(cur.target);
     cur.pitch += (goal.pitch - cur.pitch) * k;
     cur.dist = Math.exp(Math.log(cur.dist) + (Math.log(goal.dist) - Math.log(cur.dist)) * k);
     if (flyK && !cine.on && Math.abs(cur.dist - goal.dist) < 0.01 && cur.target.distanceTo(goal.target) < 0.01) flyK = 0;
@@ -387,22 +421,35 @@ export function createCameraRig(o) {
     // march from the focus toward the wanted spot; stop before the trunk or the ground
     // (if the focus itself is inside the trunk, first walk out of it)
     let d = cur.dist;
+    hitWhy = null;
     const step = 0.08;
     let s0 = 0;
     while (s0 < 4 && solid(cur.target.x + dir.x * s0, cur.target.y + dir.y * s0, cur.target.z + dir.z * s0)) s0 += step;
     for (let s = Math.max(0.25, s0 + step); s <= cur.dist; s += step) {
       p.copy(cur.target).addScaledVector(dir, s);
-      if (solid(p.x, p.y, p.z) || p.y < groundY(p.x, p.z) + 0.25) { d = Math.max(0.2, s - step); break; }
+      if (solid(p.x, p.y, p.z)) { d = Math.max(0.2, s - step); hitWhy = 'solid'; break; }
     }
     d = Math.max(d, s0 + 0.2);
+    // smooth the collision: the camera slides in and out instead of snapping, but never stops inside the trunk
+    const want = d / cur.dist;
+    collK = !isFinite(collK) || dt <= 0 ? want : collK + (want - collK) * damp(want < collK ? 10 : 4, dt);
+    collK = Math.min(collK, 1);
+    let ds = cur.dist * collK;
+    if (ds > d + 1e-3) {
+      p.copy(cur.target).addScaledVector(dir, ds);
+      if (solid(p.x, p.y, p.z)) { ds = d; collK = want; }
+    }
+    d = ds;
     camPos.copy(cur.target).addScaledVector(dir, d);
-    camPos.y = Math.max(camPos.y, groundY(camPos.x, camPos.z) + 0.25);
+    // the ground does not push the camera in (that would read as a zoom): over a hill the camera rises instead
+    const gy = groundY(camPos.x, camPos.z) + 0.3;
+    if (camPos.y < gy) { camPos.y = gy; hitWhy = hitWhy || 'ground'; }
+    // last guard: never inside the trunk (e.g. half way through a flight around it)
+    if (solid(camPos.x, camPos.y, camPos.z)) { outOfTrunk(camPos); hitWhy = 'solid'; }
     if (extra.shake) camPos.add(extra.shake);
-    // occlusion check every few frames (only when close: from far away the cutaway house is meant to be seen whole)
-    if (++occN % 6 === 0) holeWant = cur.dist < 12 && occluded() ? 1 : 0;
-    holeU.value += (holeWant - holeU.value) * damp(6, dt);
     focusU.value = camPos.distanceTo(cur.target);
-    resU.value.set(dom.width || 1, dom.height || 1);
+    // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar
+    cutU.value += ((1 - THREE.MathUtils.smoothstep(focusU.value, 9, 15)) - cutU.value) * damp(4, dt);
     camera.position.copy(camPos);
     camera.lookAt(cur.target);
   }
@@ -424,24 +471,13 @@ export function createCameraRig(o) {
     if (v.snap) snap();
   }
 
-  // Dither away foliage (alpha-tested cards) close to the camera, so a free camera never looks
-  // through a wall of leaves. Wraps the material's own onBeforeCompile and keeps its cache key apart.
-  // The radius follows the zoom (r = clamp(dist*k, min, max)) so that what you zoom close to never dissolves,
-  // only things between the camera and it.
+  // Foliage fade (tree leaves only: the house, bark, grass and ferns never fade).
+  // Each leaf card melts by eroding its own alpha mask, staggered per card by a random value, so the crown thins out
+  // smoothly leaf by leaf instead of a pixel noise pattern:
+  //   near:  cards within r of the camera (r = clamp(dist*k, min, max)) fade,
+  //   cut:   when zoomed in, every card in front of the focus fades (zooming through the crown clears the view).
   const fadeU = [];
-  // see-through hole: when something (a wall, a branch) stands between the camera and the focus,
-  // a soft round window around the screen centre dissolves whatever is in front of the focus
-  const holeU = { value: 0 }, focusU = { value: 10 }, resU = { value: new THREE.Vector2(1, 1) };
-  let holeWant = 0, occN = 0;
-  const occRay = new THREE.Raycaster();
-  function occluded() {
-    if (pickAge > 4) { rebuildPickable(); pickAge = 0; }
-    occRay.set(camera.position, tmp.copy(cur.target).sub(camera.position).normalize());
-    occRay.far = Math.max(0, camera.position.distanceTo(cur.target) - 0.35);
-    if (occRay.far < 0.2) return false;
-    const hits = occRay.intersectObjects(pickable, false);
-    return hits.some(h => !(h.object.isSkinnedMesh));
-  }
+  const focusU = { value: 10 }, cutU = { value: 0 };
   function nearFade(root, r = 2.2, test = mt => mt.alphaTest > 0, k = 0.7, rMin = 0.35) {
     let U = fadeU.find(u => u.max === r && u.k === k);
     if (!U) { U = { max: r, k, min: rMin, u: { value: r } }; fadeU.push(U); }
@@ -450,16 +486,19 @@ export function createCameraRig(o) {
     root.traverse(m => {
       if (!m.isMesh) return;
       for (const mt of (Array.isArray(m.material) ? m.material : [m.material])) {
-        if (!mt || seen.has(mt) || !test(mt, m) || mt.userData.nearFade) continue;
+        if (!mt || seen.has(mt) || !test(mt, m) || mt.userData.nearFade || !(mt.alphaTest > 0)) continue;
         seen.add(mt); mt.userData.nearFade = true;
         const prev = mt.onBeforeCompile, key = prev ? prev.toString() : '';
         mt.onBeforeCompile = (sh, rd) => {
           if (prev) prev.call(mt, sh, rd);
-          sh.uniforms[name] = uni; sh.uniforms.uNFHole = holeU; sh.uniforms.uNFFocus = focusU; sh.uniforms.uNFRes = resU;
-          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;')
-            .replace('#include <project_vertex>', '#include <project_vertex>\nvCamDNF=length(mvPosition.xyz);');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;uniform float ' + name + ';uniform float uNFHole,uNFFocus;uniform vec2 uNFRes;')
-            .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{float nf=smoothstep(' + name + '*0.12,' + name + ',vCamDNF);nf=nf*nf*(3.0-2.0*nf);if(uNFHole>0.01&&vCamDNF<uNFFocus-0.35){vec2 q=(gl_FragCoord.xy-0.5*uNFRes)/uNFRes.y;nf=min(nf,1.0-(1.0-smoothstep(0.14,0.36,length(q)))*uNFHole);}float hd=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))));if(hd>nf)discard;}');
+          sh.uniforms[name] = uni; sh.uniforms.uNFFocus = focusU; sh.uniforms.uNFCut = cutU;
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;')
+            .replace('#include <project_vertex>', '#include <project_vertex>\nvCamDNF=length(mvPosition.xyz);\n#ifdef USE_INSTANCING\nvec3 nfp=instanceMatrix[3].xyz;\n#else\nvec3 nfp=floor(position*3.0);\n#endif\nvRndNF=fract(sin(dot(nfp,vec3(12.9898,78.233,37.719)))*43758.5453);');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;uniform float ' + name + ';uniform float uNFFocus,uNFCut;')
+            .replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n{float nf=smoothstep(' + name + '*0.25,' + name + ',vCamDNF);' +
+              'nf=min(nf,mix(1.0,smoothstep(uNFFocus-2.6,uNFFocus-0.9,vCamDNF),uNFCut));' +
+              'float gone=clamp((1.0-nf)*1.7-vRndNF*0.7,0.0,1.0);' +
+              'if(gone>0.0&&diffuseColor.a<mix(alphaTest,1.001,gone))discard;}');
         };
         mt.customProgramCacheKey = () => key + '|' + name;
         mt.needsUpdate = true;
@@ -468,7 +507,7 @@ export function createCameraRig(o) {
   }
 
   const api = {
-    nearFade,
+    nearFade, camera,
     update, setHome, goHome, setFollow, flyTo, zoomAt, pan, orbit, pick, set, snap,
     get following() { return followOn; },
     get cinematic() { return cine.on ? (cine.shot && cine.shot.name) : null; },
@@ -478,6 +517,8 @@ export function createCameraRig(o) {
     get target() { return cur.target; },
     get state() { return { target: cur.target.toArray().map(v => +v.toFixed(2)), yaw: +cur.yaw.toFixed(3), pitch: +cur.pitch.toFixed(3), dist: +cur.dist.toFixed(2), follow: followOn, cam: camera.position.toArray().map(v => +v.toFixed(2)) }; },
     get homeDist() { return home.dist; },
+    // for tests (tests/camera): internal state of the last update
+    get debug() { return { gd: goal.dist, gt: goal.target.toArray(), gy: goal.yaw, gp: goal.pitch, cd: cur.dist, cy: cur.yaw, cp: cur.pitch, ct: cur.target.toArray(), hit: hitWhy, collK, flyK, inert: inert.on, cine: cine.on, follow: followOn, ptrs: ptrs.size, maxD: maxD(), hardD: hardD(), home: { yaw: home.yaw, dist: home.dist }, YAW_LIM, PMIN, PMAX, BOUND }; },
   };
   return api;
 }

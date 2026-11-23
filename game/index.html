@@ -40,6 +40,7 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -77,11 +78,18 @@ const camera=new THREE.PerspectiveCamera(38,1,.2,300);
 
 // ================= assets =================
 const TL=new THREE.TextureLoader();
-const tex=(n,rep=1,srgb=true)=>new Promise(res=>TL.load(ASSET+n,t=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;prog();res(t);}));
+// [PERF] textures with a <name>-ktx2.txt twin (pipeline/ktx2.mjs) load as Basis KTX2 and stay compressed on the GPU
+// (ASTC/ETC2 on iPhone: ~1 byte per pixel instead of 4, mipmaps included); anything that fails falls back to the jpg/png
+const KTX2N=new Set(/[?&]noktx/.test(location.search)?[]:['bark2.jpg','roof2.jpg','ground2.jpg','leaf2.png']);
+const ktx2=new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/').detectSupport(renderer);
+const texSetup=(t,rep,srgb)=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;t.needsUpdate=true;prog();return t;};
+const texImg=n=>new Promise((res,rej)=>TL.load(ASSET+n,res,undefined,rej));
+const texKtx=n=>fetch(ASSET+n.replace(/\.(jpg|png)$/,'-ktx2.txt')).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(b=>{const u=URL.createObjectURL(new Blob([Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0))]));return ktx2.loadAsync(u).finally(()=>URL.revokeObjectURL(u));});
+const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('ktx2 fallback',n,e);return texImg(n);}):texImg(n)).then(t=>texSetup(t,rep,srgb));
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb('oak-glb.txt'),tex('bark3.jpg'),tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -127,47 +135,104 @@ function inTrunk(x,y,z,m=.06){const s=SL[clamp(Math.round(y*10),0,SL.length-1)];
   if((z1>z)!==(z2>z)){const xi=x1+(z-z1)/(z2-z1)*(x2-x1);if(xi>x)cr++;}
   const dx=x2-x1,dz=z2-z1,L=dx*dx+dz*dz;let t=L?((x-x1)*dx+(z-z1)*dz)/L:0;t=clamp(t,0,1);const ex=x1+dx*t-x,ez=z1+dz*t-z;if(ex*ex+ez*ez<m*m)return true;}
  return nearAxis&&(cr&1)===1;}
+// camera collision: the trunk only (branches must not push the camera in; leaves fade instead). Per 10 cm slice, the trunk
+// outline as a radius per angle around the axis, with branch roots trimmed to 1.3x the slice's median radius; up to 13 m.
+const TRK=(()=>{const NB=32,out=[];for(const seg of SL){const r=new Float32Array(NB);for(let i=0;i<seg.length;i+=2){const x=seg[i]-TAX[0],z=seg[i+1]-TAX[1],d=Math.hypot(x,z);if(d>3.4)continue;const b=((Math.round(Math.atan2(z,x)/(2*Math.PI)*NB)%NB)+NB)%NB;if(d>r[b])r[b]=d;}
+ const v=[...r].filter(q=>q>0).sort((a,b)=>a-b),med=v.length?v[v.length>>1]:0;for(let b=0;b<NB;b++)r[b]=Math.min(r[b]||med,med*1.3);out.push(r);}return out;})();
+function trunkSolid(x,y,z,m=0){if(y<0||y>13)return false;const r=TRK[clamp(Math.round(y*10),0,TRK.length-1)],NB=r.length;const dx=x-TAX[0],dz=z-TAX[1];
+ const a=(Math.atan2(dz,dx)/(2*Math.PI)*NB+NB)%NB,b0=Math.floor(a)%NB,t=a-Math.floor(a);return Math.hypot(dx,dz)<r[b0]*(1-t)+r[(b0+1)%NB]*t+m;}
 function runs(ok,a0,a1,step=.04,min=.1){const out=[];let s=null;for(let a=a0;a<=a1+1e-6;a+=step){const g=ok(Math.min(a,a1));if(g&&s===null)s=a;if((!g||a+step>a1+1e-6)&&s!==null){const e=g?a1:a-step;if(e-s>=min)out.push([s,e]);s=null;}}return out;}
 function cullLeaves(){}
 function frontZ(x,y){const rc=new THREE.Raycaster(V(x,y,20),V(0,0,-1));const h=rc.intersectObject(TREE.bark,false)[0];return h?h.point.z:1;}
 
 // ================= wood: every board is its own body =================
 const BOARD_ROWS=8;
-// painted plank wood, made per board in the shader (like the photo): warm honey-to-amber boards, long grain,
-// the odd knot, bevelled light/dark edges, worn rounded ends. aRow = random seed per board.
+// Real boards, not paint (Pavel: "nothing may look drawn"). Each board is its own rounded-edge solid (bevelBoxGeo) in one
+// InstancedMesh, so the lamp catches every edge and the gaps between boards are real gaps with dark depth.
+// The wood itself is a photo scan (Fal: wood-floor/wall/dark.jpg); every board takes its own random patch of it, its own
+// tone and weathering, and the grain, the cupping across the board and the nail heads bend the normal (bump from the
+// texture, so the lamp light rakes over the grain). End faces show end grain rings, the board sides fall into shadow.
+const [woodWallT,woodDarkT]=await Promise.all([tex('wood-wall.jpg'),tex('wood-dark.jpg')]);
 const boardMat=new THREE.MeshStandardMaterial({roughness:.8});
 const PLANK_GLSL=`float pH(float n){return fract(sin(n*127.1)*43758.5453);}
 float pH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i),pH2(i+vec2(1,0)),f.x),mix(pH2(i+vec2(0,1)),pH2(i+vec2(1,1)),f.x),f.y);}
+uniform sampler2D tWoodA,tWoodB;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;
+vec2 pDH=vec2(0.);float pRgh=.8;
+vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);return normalize(abs(det)*sn-g);}
+// nail heads over every joist / batten: two per crossing. returns (dome height 0..1, rust halo 0..1, distance)
+vec3 pNail(vec2 mm,vec3 sz,float wall){float pt=mix(1.,.62,wall);float a=mm.x+sz.x*.5-.06;float k=floor(a/pt+.5);float dx=min(abs(a-k*pt),abs(sz.x*.5-.06-mm.x));
+ float dy=abs(abs(mm.y)-sz.y*.27);float r=length(vec2(dx,dy));return vec3(sqrt(max(0.,1.-r*r/(.0055*.0055))),smoothstep(.014,.004,r),r);}
+// shape of the broad face in metres: the board cups across its width (edges up), undulates along it, nail domes
+float pTop(vec2 mm,vec3 sz,float sd,float wall){float yw=mm.y/max(sz.y*.5,.01);float h=(.0012+.0028*pH(sd+5.5))*yw*yw*step(.06,sz.y)+.0015*pN(vec2(mm.x*1.7,sd));
+ if(uNails>.5&&sz.y>.12)h+=.0012*pNail(mm,sz,wall).x;return h;}
+vec3 pTex(vec2 uv,float wall,float bias){return wall>.5?texture2D(tWoodB,uv,bias).rgb:texture2D(tWoodA,uv,bias).rgb;}
+float pL(vec3 c){return dot(c,vec3(.3,.6,.1));}
 vec3 plank(vec3 lp,vec3 sz,float sd){
- float L=lp.x*sz.x, Wm=lp.y*sz.y;
- vec3 c0=vec3(.58,.33,.17),c1=vec3(.80,.53,.30);
- float wall=step(99.5,sd);
- vec3 col=mix(c0,c1,mix(pH(sd),.8,wall*.75));col*=.95+mix(.10,.04,wall)*pH(sd+4.1);
- float wob=pN(vec2(L*.9,sd))*2.2+pN(vec2(L*3.1,sd+7.))*.5;
- float g=sin(Wm*95.+wob*4.)*.5+.5; g=pow(g,3.);
- float fine=pN(vec2(L*7.,Wm*260.+sd));
- // walls (critic T6): wide even honey boards, the grain only a whisper, so the wall doesn't read as a barcode
- col*=1.-mix(.14,.06,wall)+mix(.10,.05,wall)*fine-mix(.13,.035,wall)*g;
- float streak=pN(vec2(L*.35+sd,Wm*14.));col*=1.-mix(.1,.04,wall)+mix(.2,.08,wall)*streak;
- if(pH(sd+3.3)>.45){vec2 kc=vec2((pH(sd+1.)-.5)*sz.x*.8,(pH(sd+2.)-.5)*sz.y*.5);vec2 d=vec2(L,Wm)-kc;d.y*=2.2;float r=length(d);
-  col*=mix(1.,.55,smoothstep(.045,.0,r))*(1.-.18*smoothstep(.11,.05,r)*(.5+.5*sin(r*160.)));}
- float ew=(.5-abs(lp.y))*sz.y, el=(.5-abs(lp.x))*sz.x;
- float top=step(.499,abs(lp.z));
- col*=mix(mix(.42,.66,wall),1.,smoothstep(.0,mix(.022,.008,wall),ew)*smoothstep(.0,.04,el));
- col*=1.+.16*smoothstep(.045,.02,ew)*step(0.,lp.y)*smoothstep(.0,.012,ew)*top;
- col*=mix(.62,1.,top);
- return pow(col,vec3(2.2));}`;
-function plankShader(m){m.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow;varying float vSeed;varying vec3 vLP;varying vec3 vSz;').replace('#include <begin_vertex>','#include <begin_vertex>\nvSeed=aRow;vLP=position;\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));\n#else\nvSz=vec3(1.);\n#endif');
- sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed;varying vec3 vLP;varying vec3 vSz;\n'+PLANK_GLSL).replace('#include <map_fragment>','diffuseColor.rgb*=plank(vLP,vSz,vSeed);');};}
+ float wall=step(99.5,sd);vec3 m=lp*sz;vec3 an=abs(vN0);
+ // which face: 0 the broad face, 1 the long sides (seen down in the gaps), 2 the sawn ends
+ float face=an.x>an.y&&an.x>an.z?2.:(an.y>an.z?1.:0.);
+ vec2 off=vec2(pH(sd+.7)*7.,pH(sd+1.9)*3.);
+ vec2 uv=face==0.?vec2(m.x/2.4,m.y):(face==1.?vec2(m.x/2.4,m.z+.5):vec2(m.y,m.z)*.6);uv+=off;
+ vec3 tx=pTex(uv,wall,0.);
+ // a little more contrast than the scan: the grain reads under warm lamp light
+ vec3 col=pow(tx,vec3(1.25))*1.3*(wall>.5?uTintB:uTintA);
+ float lum=pL(tx);pRgh=.7+.25*(1.-lum);
+ // per board: its own tone, some a touch redder, a few weathered greyer
+ float vr=pH(sd+2.2);col*=mix(vec3(.72,.68,.64),vec3(1.16,1.06,.95),vr);
+ float gr=pH(sd+4.4);col=mix(col,vec3(dot(col,vec3(.3,.55,.15)))*vec3(1.05,.98,.9),gr*gr*gr*mix(.35,.1,wall));
+ // a soft stain / water mark now and then
+ col*=1.-.18*smoothstep(.62,.9,pN(vec2(m.x*1.3+sd*3.,m.y*4.)))*step(.5,pH(sd+8.));
+ // relief from a blurred tap of the scan, differenced in texture space (smooth, no 2x2 blocks), in metres
+ vec2 ux=dFdx(uv),uy=dFdy(uv);float hb=pL(pTex(uv,wall,2.5));
+ vec2 dH=vec2(pL(pTex(uv+ux,wall,2.5))-hb,pL(pTex(uv+uy,wall,2.5))-hb)*uBump;
+ if(face==0.){
+  vec2 mx=dFdx(m.xy),my=dFdy(m.xy);float h0=pTop(m.xy,sz,sd,wall);dH+=vec2(pTop(m.xy+mx,sz,sd,wall)-h0,pTop(m.xy+my,sz,sd,wall)-h0);
+  // worn, lighter along the rounded edges
+  float ew=sz.y*.5-abs(m.y),el=sz.x*.5-abs(m.x);col*=1.+.1*smoothstep(.012,.0,min(ew,el));
+  if(uNails>.5&&sz.y>.12){vec3 nl=pNail(m.xy,sz,wall);col=mix(col,col*vec3(.55,.42,.33),nl.y*.6);float nh=smoothstep(.0055,.0035,nl.z);
+   col=mix(col,vec3(.035,.032,.03)+vec3(.05,.03,.02)*pN(m.xy*900.),nh);pRgh=mix(pRgh,.45,nh);}
+ }else if(face==1.){
+  // the board's long side: rough sawn and in the shadow of its neighbour
+  col*=.42;
+ }else{
+  // sawn end: end-grain rings around a pith outside the board, darker and rougher
+  vec2 c=vec2((pH(sd+5.)-.5)*.3,-.12-pH(sd+6.)*.3);float r=length(vec2(m.y,m.z)-c);
+  float ring=fract(r*95.+pN(vec2(m.y,m.z)*28.)*.7);col*=.55*(.62+.38*smoothstep(.15,.75,ring));pRgh=.92;
+ }
+ pDH=dH;return col;}`;
+function plankShader(m,o={}){const U={tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
+ m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U);
+ sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow;attribute vec3 aBev;uniform float uBev;varying float vSeed;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;')
+  .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
+  .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.007,.28*min(vSz.x,min(vSz.y,vSz.z)))/vSz;\n#endif\nvSeed=aRow;vLP=transformed;');
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;\n'+PLANK_GLSL)
+  .replace('#include <map_fragment>','diffuseColor.rgb*=plank(vLP,vSz,vSeed);')
+  .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=pRgh;')
+  .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=pnArb(-vViewPosition,normal,pDH,faceDirection);');};}
 plankShader(boardMat);
-const darkBoard=boardMat.clone();darkBoard.color.set(0x9A6A4C);plankShader(darkBoard);
+const darkBoard=boardMat.clone();darkBoard.color.set(0xffffff);plankShader(darkBoard,{a:woodDarkT,b:woodDarkT,ta:new THREE.Vector3(.95,.55,.34),tb:new THREE.Vector3(.95,.55,.34),nails:0,bump:.0002});
+// a board solid with rounded edges: 24 vertices / 44 triangles. position = the unit box corner, aBev = the inset
+// direction (the shader scales it by the bevel radius in metres, whatever the board size), normal = face normal,
+// interpolated across the bevel strips and corners so the edges shade round.
+function bevelBoxGeo(){const pos=[],bev=[],nrm=[],idx=[],key={};
+ for(let a=0;a<3;a++)for(const s of [-1,1]){const u=(a+1)%3,v=(a+2)%3;
+  for(const su of [-1,1])for(const sv of [-1,1]){const p=[0,0,0],b=[0,0,0],n=[0,0,0];p[a]=s*.5;p[u]=su*.5;p[v]=sv*.5;b[u]=-su;b[v]=-sv;n[a]=s;
+   key[a+','+s+','+p.map(Math.sign).join(',')]=pos.length/3;pos.push(...p);bev.push(...b);nrm.push(...n);}}
+ const S=[.7,.5,.3],r=.08,real=i=>[0,1,2].map(k=>pos[i*3+k]*S[k]+bev[i*3+k]*r);
+ const tri=(i,j,k)=>{const A=real(i),B2=real(j),C=real(k);const e1=B2.map((x,q)=>x-A[q]),e2=C.map((x,q)=>x-A[q]);const n=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]];
+  if(n[0]*(A[0]+B2[0]+C[0])+n[1]*(A[1]+B2[1]+C[1])+n[2]*(A[2]+B2[2]+C[2])<0)idx.push(i,k,j);else idx.push(i,j,k);};
+ const quad=(i,j,k,l)=>{tri(i,j,k);tri(i,k,l);};
+ for(let a=0;a<3;a++)for(const s of [-1,1]){const u=(a+1)%3,v=(a+2)%3;const g=(su,sv)=>{const c=[0,0,0];c[a]=s;c[u]=su;c[v]=sv;return key[a+','+s+','+c.join(',')];};quad(g(-1,-1),g(1,-1),g(1,1),g(-1,1));}
+ for(let a=0;a<3;a++)for(let b=a+1;b<3;b++){const c=3-a-b;for(const sa of [-1,1])for(const sb of [-1,1]){const cn=sc=>{const q=[0,0,0];q[a]=sa;q[b]=sb;q[c]=sc;return q.join(',');};
+  quad(key[a+','+sa+','+cn(-1)],key[a+','+sa+','+cn(1)],key[b+','+sb+','+cn(1)],key[b+','+sb+','+cn(-1)]);}}
+ for(const sx of [-1,1])for(const sy of [-1,1])for(const sz of [-1,1]){const c=[sx,sy,sz].join(',');tri(key['0,'+sx+','+c],key['1,'+sy+','+c],key['2,'+sz+','+c]);}
+ const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(nrm,3));g.setAttribute('aBev',new THREE.Float32BufferAttribute(bev,3));g.setIndex(idx);return g;}
 const MAXB=1500;
-const boardGeo=new THREE.BoxGeometry(1,1,1);
-// keep the board-face UVs sane: u along length (x), v across width (y)
+const boardGeo=bevelBoxGeo();
 const boards=new THREE.InstancedMesh(boardGeo,boardMat,MAXB);boards.castShadow=true;boards.receiveShadow=true;boards.count=0;scene.add(boards);
 const aRow=new THREE.InstancedBufferAttribute(new Float32Array(MAXB),1),aTile=new THREE.InstancedBufferAttribute(new Float32Array(MAXB),1);boardGeo.setAttribute('aRow',aRow);boardGeo.setAttribute('aTile',aTile);
-const darkGeo=new THREE.BoxGeometry(1,1,1);const dRow=new THREE.InstancedBufferAttribute(new Float32Array(900),1),dTile=new THREE.InstancedBufferAttribute(new Float32Array(900),1);darkGeo.setAttribute('aRow',dRow);darkGeo.setAttribute('aTile',dTile);
+const darkGeo=bevelBoxGeo();const dRow=new THREE.InstancedBufferAttribute(new Float32Array(900),1),dTile=new THREE.InstancedBufferAttribute(new Float32Array(900),1);darkGeo.setAttribute('aRow',dRow);darkGeo.setAttribute('aTile',dTile);
 const beams=new THREE.InstancedMesh(darkGeo,darkBoard,900);beams.castShadow=true;beams.receiveShadow=true;beams.count=0;scene.add(beams);
 const B=[];// all boards {rb, size, q, inst, breakable, hp, group, loose}
 const tM=new THREE.Matrix4(),tQ=new THREE.Quaternion(),tP=V(),tS=V();
@@ -192,7 +257,7 @@ const roofMat=new THREE.MeshStandardMaterial({map:roofT,roughness:.75});
 const shingleMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.88});
 shingleMat.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vSL;').replace('#include <begin_vertex>','#include <begin_vertex>\nvSL=position;');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vSL;').replace('#include <map_fragment>','float se=min(.5-abs(vSL.x),.5-abs(vSL.z));diffuseColor.rgb*=mix(.55,1.,smoothstep(0.,.08,se))*mix(.7,1.,step(.49,vSL.y));diffuseColor.rgb*=.9+.2*smoothstep(-.5,.5,vSL.z);');};
-const SHING=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),shingleMat,2000);SHING.count=0;SHING.castShadow=true;SHING.receiveShadow=true;scene.add(SHING);
+const SHING=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),shingleMat,2000);SHING.count=0;SHING.castShadow=!MOBILE;/* [PERF] the roof slabs still cast the roof's shadow on phones */SHING.receiveShadow=true;scene.add(SHING);
 function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
@@ -210,6 +275,9 @@ function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const 
     const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.1,.13),ww));SHING.setMatrixAt(SHING.count,m4);
     const k=rnd(.75,1.2)*(rnd(0,1)<.12?.7:1);c.setRGB(.07*k,.075*k,.095*k*rnd(.92,1.1));SHING.setColorAt(SHING.count,c);SHING.count++;}}}
  const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
+ // gable walls (Pavel / critic T4): the triangles under the roof are closed with vertical boards, back and front
+ for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<x1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
+  if(inTrunk(xx,y+hg/2,gz,.05))continue;board(V(xx,y+hg/2+.02,gz),hg+.04,.305,.05,new THREE.Euler(0,0,Math.PI/2),{tint:rnd(1.64,1.72),wall:true});}
  // gable trim boards on the front like the photo's dark fascia
  for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
  SHING.instanceMatrix.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
@@ -218,23 +286,26 @@ function post(x,y0,y1,z){board(V(x,(y0+y1)/2,z),y1-y0,.2,.2,new THREE.Euler(0,0,
 // ---- boards that respect the trunk: every run is cut where wood would go through bark ----
 // floors like the photo: planks run front-to-back with ragged front ends over a thick dark edge beam;
 // round landings get planks radiating around the trunk. Top of every floor stays at y+0.035 (the hero raycasts it).
+// every board lies a little differently: most sit flush, some are proud by a few mm, some are rolled so one edge stands up,
+// widths and thicknesses vary so the gaps between them are uneven. Mean top stays at y+0.035 (the hero raycasts the floor).
+function lay(){const r=Math.random();return {lift:r<.22?rnd(.003,.008):(r<.3?rnd(-.005,-.002):rnd(-.0015,.0015)),roll:Math.random()<.35?rnd(-.03,.03):rnd(-.006,.006),pitch:rnd(-.004,.004),t:rnd(.062,.076)};}
 function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z))&&!(o.holes||[]).some(h=>x>h[0]&&x<h[1]&&z>h[2]&&z<h[3])&&!inTrunk(x,y,z)&&!inTrunk(x,y-.12,z);
- const flat=a=>new THREE.Euler(-Math.PI/2+rnd(-.01,.01),a+rnd(-.006,.006),rnd(-.004,.004),'YXZ');
+ const flat=(a,L)=>new THREE.Euler(-Math.PI/2+L.roll,a+rnd(-.006,.006),L.pitch,'YXZ');
  if(o.radial){const [cx,cz,R,zmin]=o.radial;const n=Math.round(Math.PI*R*.82/.25);
   for(let k=0;k<=2*n;k++){const a=-Math.PI+k*Math.PI/n;const dx=Math.cos(a),dz=Math.sin(a);if(cz+dz*R*.6<zmin-.3)continue;
-   for(const [r0,r1] of runs(r=>ok(cx+dx*r,cz+dz*r),0,R,.04,.25)){const r1b=r1>R-.2?R-.12:r1-rnd(0,.015);const rm=(r0+r1b)/2;board(V(cx+dx*rm,y+rnd(-.006,.006),cz+dz*rm),r1b-r0,.25,.07,flat(-a));}}
+   for(const [r0,r1] of runs(r=>ok(cx+dx*r,cz+dz*r),0,R,.04,.25)){const r1b=r1>R-.2?R-.12:r1-rnd(0,.015);const rm=(r0+r1b)/2;const L=lay();board(V(cx+dx*rm,y+.035-L.t/2+L.lift,cz+dz*rm),r1b-r0,rnd(.225,.245),L.t,flat(-a,L));}}
   // a smooth round rim laid over the board ends (critic T11: no saw teeth), in many short pieces, plus the dark edge band below
   const nr=6*n;for(let k=0;k<nr;k++){const a0=-Math.PI+k*2*Math.PI/nr,am=a0+Math.PI/nr;const rr=R-.1;const px=cx+Math.cos(am)*rr,pz=cz+Math.sin(am)*rr;if(!ok(cx+Math.cos(am)*(R-.15),cz+Math.sin(am)*(R-.15)))continue;
    board(V(px,y+.012,pz),2*rr*Math.sin(Math.PI/nr)+.025,.2,.075,new THREE.Euler(-Math.PI/2,-am-Math.PI/2,0,'YXZ'));
    board(V(cx+Math.cos(am)*(R-.07),y-.1,cz+Math.sin(am)*(R-.07)),2*R*Math.sin(Math.PI/nr)+.02,.26,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
   for(let x=cx-R+.4;x<cx+R;x+=1.1)for(const [a2,b2] of runs(z=>ok(x,z),z0,z1,.05,.3))board(V(x,y-.12,(a2+b2)/2),b2-a2,.18,.13,new THREE.Euler(0,Math.PI/2,0),{dark:true});
   return;}
- for(let x=x0+.125;x<x1;x+=.25)for(const [a,b2] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e=b2>=z1-.05?b2+rnd(-.05,.05):b2;board(V(x,y+rnd(-.006,.006),(a+e)/2),e-a,.24,.07,flat(-Math.PI/2));}
+ for(let x=x0+.125;x<x1;x+=.25)for(const [a,b2] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e=b2>=z1-.05?b2+rnd(-.05,.05):b2;const L=lay();board(V(x+rnd(-.004,.004),y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
  if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
-function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.16;x<x1;x+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.004,.004)),b2-a,.305,.05,new THREE.Euler(rnd(-.006,.006),0,Math.PI/2+rnd(-.004,.004)),{tint:rnd(1.64,1.72),wall:true});}
-function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.16;z<z1;z+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.004,.004),(a+b2)/2,z),b2-a,.305,.05,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.004,.004)),{tint:rnd(1.5,1.57),wall:true});}
+function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.16;x<x1;x+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.005,.005)),b2-a,rnd(.288,.303),rnd(.045,.055),new THREE.Euler(rnd(-.004,.004),rnd(-.03,.03),Math.PI/2+rnd(-.003,.003)),{tint:rnd(.93,1.07),wall:true});}
+function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.16;z<z1;z+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.005,.005),(a+b2)/2,z),b2-a,rnd(.288,.303),rnd(.045,.055),new THREE.Euler(0,Math.PI/2+rnd(-.02,.02),Math.PI/2+rnd(-.004,.004)),{tint:rnd(.88,1.0),wall:true});}
 const disc=(cx,cz,r,zmin)=>(x,z)=>(x-cx)**2+(z-cz)**2<=r*r&&z>=zmin;
 function brace(a,b2,w=.16){const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),{dark:true});}
 function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.42));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;post(x,y,y+.95,z);}
@@ -290,19 +361,33 @@ brace(V(1.4,.9,frontZ(1.4,1.0)-.05),V(2.6,LG-.12,1.9),.13);
 // left low landing
 floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
 // center landing (half disc around the trunk front) + gate over the ground ladder
-floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-.9,1.3,frontZ(-.9,1.3)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(.3,1.3,frontZ(.3,1.3)-.08),V(.6,LC-.13,3.3),.15);
+floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-.9,1.3,frontZ(-.9,1.3)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(-.15,1.3,frontZ(-.15,1.3)-.08),V(-.05,LC-.13,3.45),.15);/* critic T19: kept left of the hollow's mouth */
 if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
 ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
 const KX0=-4.4,KX1=-.9;
-floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9],[-4.3,-3.7,1.0,2.05]]});
+floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]]});
 wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
 wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]]);wallSide(KX1,.8,2.2,KT+.03,BD-.15);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);brace(V(-2.2,KT-2.3,frontZ(-2.2,KT-2.3)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,KT-2.2,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
-floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.7,1.0,2.05]]});
+floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.7,2.02,2.95]]});/* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.32) and steps off behind it (z 1.62) */
+// the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
+// shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
+const HATCH=(()=>{const x0=-4.3,x1=-3.7,z0=2.02,z1=2.95,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+ const lid=new THREE.Group();g.add(lid);const L=z1-z0;
+ for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.145,.05,L-.01),boardMat);m.position.set(x0-(x0+x1)/2+.08+i*.148,0,-L/2);m.castShadow=m.receiveShadow=true;lid.add(m);}
+ for(const zz of [-.18,-L+.18]){const m=new THREE.Mesh(new THREE.BoxGeometry(.58,.04,.09),darkBoard);m.position.set(0,-.04,zz);lid.add(m);}
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(.045,.009,6,14),new THREE.MeshStandardMaterial({color:0x2A2622,metalness:.7,roughness:.45}));ring.position.set(0,.03,-L+.12);ring.rotation.x=Math.PI/2;lid.add(ring);
+ for(const xx of [-.2,.2]){const h=new THREE.Mesh(new THREE.BoxGeometry(.05,.02,.12),ring.material);h.position.set(xx,.03,-.04);lid.add(h);}
+ const OPEN=1.95;let ang=OPEN,target=OPEN;lid.rotation.x=ang;
+ const grab=new THREE.Vector3();
+ return {update(dt){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;lid.rotation.x=ang;ring.getWorldPosition(grab);},
+  open(){target=OPEN;},close(){target=0;},toggle(){target=target===0?OPEN:0;},isOpen(){return target!==0;},
+  get angle(){return ang;},grab,box:[x0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
+window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
 roof(BX0,BX1,BD+2.3,.8,3.8,1.15);post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
@@ -321,7 +406,8 @@ if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
 floorBoards(.8,4.25,DK,.3,3.0);rail(.8,3.0,4.25,3.0,DK,[1.05,1.65]);rail(4.25,.6,4.25,3.0,DK);
 brace(V(1.6,DK-2.4,1.0),V(2.6,DK-.13,1.6),.17);brace(V(4.0,WS+3.5,1.6),V(4.0,DK-.13,1.6),.16);
 // real window glass: thin, see-through from both sides, a faint cool tint, more reflective at grazing angles
-const glass=new THREE.MeshStandardMaterial({color:0xD6E6F0,emissive:0x5E8CC0,emissiveIntensity:.55,roughness:.04,metalness:.1,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false});
+// dark base colour: glass scatters almost no light, a lamp shows in it as a sharp reflection, not a milky warm haze
+const glass=new THREE.MeshStandardMaterial({color:0x26303A,emissive:0x5E8CC0,emissiveIntensity:.55,roughness:.04,metalness:.1,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false});
 const glassFresnel=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <project_vertex>','#include <project_vertex>\nvFr=1.-abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <opaque_fragment>','gl_FragColor=vec4(outgoingLight,mix(diffuseColor.a,.55,pow(vFr,3.)));');};
 glass.onBeforeCompile=glassFresnel;glass.userData.ownGlass=true;
@@ -388,7 +474,7 @@ const rayMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blendin
 const rays=new THREE.Group();scene.add(rays);for(let i=0;i<3;i++){const p=new THREE.Mesh(new THREE.PlaneGeometry(7,30),rayMat);p.position.set(-4+i*3.5,8,4+i*.6);rays.add(p);}
 
 // ================= audio =================
-let AC=null;function ac(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume();}catch(e){}return AC;}
+let AC=null;function ac(){try{if(!AC){const C=window.AudioContext||window.webkitAudioContext;try{AC=new C({sampleRate:32000});}catch(e){AC=new C();}}/* 32 kHz: plenty for forest ambience, a third less memory and mixing work on phones */if(AC.state==='suspended')AC.resume();}catch(e){}return AC;}
 function nb(a,d){const b=a.createBuffer(1,Math.max(1,a.sampleRate*d),a.sampleRate),c=b.getChannelData(0);for(let i=0;i<c.length;i++)c[i]=Math.random()*2-1;return b;}
 function burst(d,type,f0,f1,q,v){const a=ac();if(!a)return;const s=a.createBufferSource();s.buffer=nb(a,d);const f=a.createBiquadFilter();f.type=type;f.frequency.setValueAtTime(f0,a.currentTime);f.frequency.exponentialRampToValueAtTime(Math.max(40,f1),a.currentTime+d);f.Q.value=q;const g=a.createGain();g.gain.setValueAtTime(.0001,a.currentTime);g.gain.exponentialRampToValueAtTime(v,a.currentTime+.004);g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+d);s.connect(f).connect(g).connect(a.destination);s.start();}
 function tone(f,d,v,type='sine',sl=1){const a=ac();if(!a)return;const o=a.createOscillator(),g=a.createGain();o.type=type;o.frequency.value=f;o.frequency.exponentialRampToValueAtTime(Math.max(30,f*sl),a.currentTime+d);g.gain.value=v;g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+d);o.connect(g).connect(a.destination);o.start();o.stop(a.currentTime+d);}
@@ -534,13 +620,13 @@ function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guar
 // camera input lives in camera.js (free orbit / pinch-to-point / pan / double-tap fly-to / hero follow)
 const isHeroObj=o=>{for(;o;o=o.parent)if(o===hero.root)return true;return false;};
 const rig=createCameraRig({camera,dom:cv,scene,
- solid:(x,y,z)=>y>0&&y<16&&inTrunk(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
+ solid:(x,y,z)=>trunkSolid(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
  isHero:isHeroObj,follow:()=>hero.root.position.clone().add(V(0,1,0)),
  onUser:()=>{ac();startAmb();if(over)location.reload();},
  onFollow:on=>{$('bF').classList.toggle('on',on);},
  onTap:(x,y)=>{const z=pickZombie(x,y);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}});
-// whatever sits between the camera and the focus dithers away (leaves up to 2.2 m, bark/walls/props up to 1.2 m, scaled by zoom): the free camera never shows the inside of a board
-{const solidMat=mt=>mt.isMeshStandardMaterial||mt.isMeshLambertMaterial||mt.isMeshPhongMaterial;const nf=()=>{rig.nearFade(scene,2.2,undefined,.7);rig.nearFade(TREE.group,1.2,()=>true,.45);rig.nearFade(scene,1.2,solidMat,.45,.25);};nf();setTimeout(nf,8000);}
+// only the oak's leaf cards fade (near the camera, and in front of the focus when zoomed in); the house, bark, grass and ferns never do
+{const nf=()=>rig.nearFade(TREE.group,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);nf();setTimeout(nf,8000);}
 $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
@@ -557,6 +643,8 @@ PERF.addStep('bloom',()=>{if(!bloom.enabled)return false;bloom.enabled=false;},(
 if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),15);PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),50);}
 if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LIGHTS.winGlow(true),45);
 // fog simplification can't be undone: last resort
+// [PERF] thermal guard: when even px 1.5 can't keep up, hold a steady 30 FPS instead of thrashing (phones heat up fast)
+PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
 if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+i);
 // [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
 let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
@@ -564,6 +652,26 @@ PERF.addStep('sunShadow',()=>{if(sunEvery>=3)return false;sunEvery=3;},()=>{sunE
 const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
+// [PERF] GPU cost finder (perf.js; 5 quick taps on the clock or ?perfdebug): each test switches ONE thing off.
+// Objects are hidden by moving them to an unused layer, so systems that set .visible every frame can't undo it.
+let noPost=false;
+{const hideWhere=f=>{let L=[];return [()=>{L=[];scene.traverse(o=>{if((o.isMesh||o.isPoints||o.isLine||o.isSprite)&&f(o)){L.push([o,o.layers.mask]);o.layers.set(31);}});},()=>{for(const [o,m] of L)o.layers.mask=m;L=[];}];};
+ const mat=o=>(Array.isArray(o.material)?o.material[0]:o.material)||{};
+ const fogSet=new Set([...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),ENV.backdrop].filter(Boolean));
+ const under=(o,root)=>{for(let q=o;q;q=q.parent)if(q===root)return true;return false;};
+ const recompile=()=>scene.traverse(o=>{if(o.material)[].concat(o.material).forEach(m=>m.needsUpdate=true);});
+ PERF.addTest('туман',...hideWhere(o=>fogSet.has(o)));
+ PERF.addTest('прочее прозрачное',...hideWhere(o=>mat(o).transparent&&!fogSet.has(o)));
+ PERF.addTest('листва дуба',...hideWhere(o=>o===TREE.leaves));
+ PERF.addTest('трава, папоротник',...hideWhere(o=>mat(o).alphaTest>0&&o!==TREE.leaves));
+ PERF.addTest('дуб (кора)',...hideWhere(o=>under(o,TREE.group)&&o!==TREE.leaves));
+ PERF.addTest('земля и лес',...hideWhere(o=>!under(o,TREE.group)&&!under(o,hero.root)&&o.isMesh&&(o.position.y<.5&&o.geometry&&o.geometry.boundingSphere?o.geometry.boundingSphere.radius>8:false)));
+ PERF.addTest('герой',()=>{hero.root.traverse(o=>o.layers.set(31));},()=>{hero.root.traverse(o=>o.layers.set(0));});
+ let sm=null;PERF.addTest('все тени',()=>{sm=renderer.shadowMap.enabled;renderer.shadowMap.enabled=false;recompile();},()=>{renderer.shadowMap.enabled=sm;recompile();});
+ let lv=[];PERF.addTest('лампы',()=>{lv=[];scene.traverse(o=>{if((o.isPointLight||o.isSpotLight)&&o.visible){lv.push(o);o.visible=false;}});},()=>{lv.forEach(o=>o.visible=true);lv=[];});
+ let dofW=false;PERF.addTest('DOF',()=>{dofW=DOF.enabled;DOF.enabled=false;},()=>{DOF.enabled=dofW;});
+ PERF.addTest('постобработка',()=>{noPost=true;},()=>{noPost=false;});
+ let prW=1;PERF.addTest('пикселей ×¼',()=>{prW=PR;renderer.setPixelRatio(PR/2);resize();},()=>{renderer.setPixelRatio(prW);resize();});}
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
 function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
@@ -571,8 +679,8 @@ addEventListener('resize',resize);
 
 // ================= main loop =================
 const clock=new THREE.Clock();let acc=0,fr=0,ft=0,perf=false;
-function frame(){requestAnimationFrame(frame);try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
-function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;
+function frame(){requestAnimationFrame(frame);if(PERF.skip())return;try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
+function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;HATCH.update(dt);
  const wasN=isNight(hour);hour+=dt*hps()*TS;if(hour>=24)hour-=24;const nowN=isNight(hour);
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}
  if(!over&&wasN&&!nowN){dayNo++;toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
@@ -642,14 +750,14 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  if(!camOv)DOF.update(dt,rig.focusDist);
  if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
- hud();composer.render();
+ hud();if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
 // [PERF] phones start at pixel ratio 1.5 and climb to 2.2 while frames keep vsync (perf.js)
 if(MOBILE)PERF.preset([PX[1],PX[2],PX[3]]);
-resize();hud();$('load').classList.add('hide');
+resize();hud();$('load').classList.add('hide');PERF.openDebugWhenReady();
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>BRAIN?BRAIN.command(n):startTask(n),
  view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
-window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,E:HH.E};
+window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,trunkSolid,E:HH.E};
 requestAnimationFrame(frame);
 </script>

@@ -32,12 +32,14 @@ function swayMat(mat,U,amp,kExpr){mat.onBeforeCompile=s=>{windHook(s);
   .replace('#include <begin_vertex>',`#include <begin_vertex>\n{float k=${kExpr};const float SW=${amp.toFixed(3)};${SWAY}}`);};return mat;}
 
 // three's icosahedron has split vertices (flat facets); weld them so moss and stones shade smoothly
+// double-sided foliage: keep the sky-bent normal on both faces (three flips it on the back face, which turned blades black)
+const NOFLIP=s=>{s.fragmentShader=s.fragmentShader.replace('#include <normal_fragment_begin>',THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;','normal *= mix(1.,faceDirection,.15);'));};
 const smoothIco=d=>{const g=new THREE.IcosahedronGeometry(1,d);g.deleteAttribute('normal');g.deleteAttribute('uv');return mergeVertices(g);};
 
 export function createGround(C){
  const {scene,MOBILE,leafT,groundT,U,obstacles=[]}=C;WIND=C.wind||null;
  const R=rng(777123);const rr=(a,b)=>a+R()*(b-a);
- let moundAt=()=>0;const groundH=(x,z)=>groundH0(x,z)+moundAt(x,z);
+ let moundAt=()=>0,reliefAt=()=>0;const groundH=(x,z)=>groundH0(x,z)+moundAt(x,z)+reliefAt(x,z);
  const G={};
 
  // ================= roots map =================
@@ -73,17 +75,34 @@ export function createGround(C){
  G.heightAt=groundH;
  // ---- the hero's trodden path: from the foot of the ground rope ladder (x 0, z 4) out into the clearing ----
  const PATH=[[0,4.3],[.5,5.6],[1.4,7.2],[1.2,9],[.2,10.8],[-.6,12.6],[-.4,14.5]];
- const pathD=(x,z)=>{let best=99;for(let i=0;i<PATH.length-1;i++){const [ax,az]=PATH[i],[bx,bz]=PATH[i+1];const dx=bx-ax,dz=bz-az;const t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz)));best=Math.min(best,Math.hypot(x-ax-dx*t,z-az-dz*t));}
+ const pathMain=(x,z)=>{let best=99;for(let i=0;i<PATH.length-1;i++){const [ax,az]=PATH[i],[bx,bz]=PATH[i+1];const dx=bx-ax,dz=bz-az;const t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz)));best=Math.min(best,Math.hypot(x-ax-dx*t,z-az-dz*t));}
   // the path widens where he steps off the ladder and frays out at its far end
   const w=.28+.25*smooth(1.5,0,Math.hypot(x,z-4.3))-.15*smooth(12,15,z)+(vnoise(x*1.7,z*1.7)-.5)*.18;return best-w;};
- G.pathD=pathD;
+ // ---- the way out to the forest: branches off the path below the ladder, crosses the right side of the clearing and slips
+ // through a gap in the undergrowth (the hero goes out for firewood and to hunt, and comes back the same way) ----
+ const EXIT=[[1.4,7.2],[3.4,7.7],[6.1,7.4],[8.9,6.6],[11.6,5.8],[14.2,5.1],[17.4,4.6],[21.5,4.3]];
+ const segD=(L,x,z)=>{let best=99;for(let i=0;i<L.length-1;i++){const [ax,az]=L[i],[bx,bz]=L[i+1];const dx=bx-ax,dz=bz-az;const t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz)));best=Math.min(best,Math.hypot(x-ax-dx*t,z-az-dz*t));}return best;};
+ // the side track is narrower and fainter than the main path (fewer trips), widening a little where it meets it
+ const exitD=(x,z)=>segD(EXIT,x,z)-(.2+.06*smooth(3,0,Math.hypot(x-1.4,z-7.2))+(vnoise(x*1.9+4,z*1.9)-.5)*.16);
+ const pathD=(x,z)=>Math.min(pathMain(x,z),exitD(x,z));
+ // the gap in the bushes: keep a 3 m wide corridor clear from the clearing's edge out into the trees
+ const exitClear=(x,z)=>segD([[11.6,5.8],[14.2,5.1],[17.4,4.6],[21.5,4.3],[30,4]],x,z)>1.6;
+ G.pathD=pathD;G.pathMain=pathMain;
+ // ---- gentle relief: low hummocks and shallow dips in the clearing (a forest floor is never a table). Baked on the 25 cm grid;
+ // zero on the paths and at the ladder foot (walking heights stay as they were) and faded out before the coarse outer ground ----
+ {const RH=new Float32Array(GS*GS);
+  for(let gz=0;gz<GS;gz++)for(let gx=0;gx<GS;gx++){const x=(gx+.5)*CELL-GE,z=(gz+.5)*CELL-GE;
+   const h=(fbm2(x*.32+17,z*.32+4)-.5)*.15+(fbm2(x*1.1+3,z*1.1+31)-.5)*.06+Math.pow(Math.max(0,fbm2(x*.7+9,z*.7)-.55),1.5)*.35;
+   const keep=smooth(.05,.9,pathD(x,z))*smooth(.9,2.2,Math.hypot(x,z-4.3))*smooth(GE-1,GE-3.5,Math.max(Math.abs(x),Math.abs(z)));RH[gz*GS+gx]=h*keep;}
+  reliefAt=(x,z)=>{if(Math.abs(x)>=GE-CELL||Math.abs(z)>=GE-CELL)return 0;const fx=(x+GE)/CELL-.5,fz=(z+GE)/CELL-.5;const ix=Math.max(0,Math.floor(fx)),iz=Math.max(0,Math.floor(fz));const tx=fx-ix,tz=fz-iz;
+   return (RH[iz*GS+ix]*(1-tx)+RH[iz*GS+ix+1]*tx)*(1-tz)+(RH[(iz+1)*GS+ix]*(1-tx)+RH[(iz+1)*GS+ix+1]*tx)*tz;};}
  // ---- dew: grass, moss and stones get a wet moonlit sheen and tiny glints at dusk and night (follows env's evening factor) ----
  const glowU=C.shroomGlow||{value:0};const wetU={value:0};G.wet=wetU;
  // weather/time read from Environment's per-frame update (rain, morning, night) without touching env.js or index.html
  const ST={rainK:0,mornK:0,nightK:0,T:0,puddle:0};G.state=ST;
  {const E=window.__env;if(E&&E.update&&!E.__groundHook){const o=E.update;E.update=s=>{ST.rainK=s.rainK||0;ST.mornK=s.mornK||0;ST.nightK=s.nightK||0;ST.T=s.T||0;return o(s);};E.__groundHook=true;}}
  // the hero's feet: grass leans away from him when he walks through it
- const heroU={value:new THREE.Vector3(0,-99,0)};
+ const heroU={value:new THREE.Vector3(0,-99,0)};const critU={value:new THREE.Vector3(0,-99,0)};
  const wetFrag=(k)=>`{float wet=uWet*${k};roughnessFactor=mix(roughnessFactor,.32,wet);}`;
  const addWet=(s,k)=>{s.uniforms.uWet=wetU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nuniform float uWet;').replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+wetFrag(k));};
  // contact-shadow texture for the ground shader: dark right at the wood, fading over ~1 m
@@ -98,7 +117,7 @@ export function createGround(C){
   const colAt=(x,z)=>{const r=Math.hypot(x,z);const n=fbm2(x*.08+11,z*.08+3),m=fbm2(x*.3,z*.3);
    c.copy(teal).lerp(moss,smooth(.35,.7,n));c.lerp(earth,smooth(5.,2.4,r+(m-.5)*2.5)*.6);c.lerp(deep,smooth(30,70,r)*.6);c.multiplyScalar(.82+m*.3);return c;};
   // the big mesh is coarse (1.7 m), so in the middle it sits 4 cm low and a fine 25 cm patch carries the real shape
-  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);const inner=Math.max(Math.abs(x),Math.abs(z))<15.6;p.setY(i,groundH0(x,z)-(inner?.04:0));colAt(x,z);
+  for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);const inner=Math.max(Math.abs(x),Math.abs(z))<15.6;p.setY(i,groundH0(x,z)-(inner?.1:0));colAt(x,z);
    col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;}
   g.setAttribute('color',new THREE.BufferAttribute(col,3));g.computeVertexNormals();
   const pg=new THREE.PlaneGeometry(32,32,MOBILE?96:128,MOBILE?96:128).rotateX(-Math.PI/2);{const pp=pg.attributes.position;const pc=new Float32Array(pp.count*3);
@@ -114,7 +133,8 @@ export function createGround(C){
      float pathK=0.;vec3 pathC=vec3(0.);
      vec4 g1=texture2D(map,vGW/4.6);vec4 g2=texture2D(map,vGW/12.7+.37);float bn=fbm(vGW*.09);vec3 gc=mix(g1.rgb,g2.rgb,smoothstep(.35,.65,bn));
      // close to the camera a finer third scale adds crisp detail (the far scales blur when you zoom in)
-     vec3 g0=texture2D(map,vGW/1.5+.71).rgb;gc=mix(gc,g0,.4*(1.-smoothstep(3.,11.,length(vViewPosition))));
+     vec3 g0=texture2D(map,vGW/1.5+.71).rgb;float nearK=1.-smoothstep(2.5,11.,length(vViewPosition));gc=mix(gc,g0,.6*nearK);
+     vec3 gm=texture2D(map,vGW/.55+.13).rgb;gc=mix(gc,gc*(.55+3.4*dot(gm,vec3(.3,.55,.15))),.35*nearK);gc*=1.+(fbm(vGW*26.)-.5)*.3*nearK;
      float lum=dot(gc,vec3(.3,.55,.15));gc=mix(vec3(lum),gc,.82);
      // moss fuzz: fine light/dark mottling, brighter mossy cushions in patches
      float mf=fbm(vGW*2.3);float mp=smoothstep(.5,.72,fbm(vGW*.35+4.));gc*=.82+.36*mf;gc=mix(gc,gc*vec3(.95,1.18,.9)+vec3(.0,.025,.0),mp*.6);
@@ -122,7 +142,9 @@ export function createGround(C){
      // roots: soft contact shadow, a ring of damp dark earth hugging the wood
      vec2 auv=(vGW+uGE)/(2.*uGE);if(auv.x>0.&&auv.x<1.&&auv.y>0.&&auv.y<1.){vec4 ao=texture2D(uAO,auv);diffuseColor.rgb*=1.-ao.r*.55;diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.85,.78,.7),ao.g*.35);
       // trodden path: packed brown earth with a few pressed blades left at its frayed edges
-      pathK=ao.b*smoothstep(.35,.75,ao.b+(fbm(vGW*2.3)-.5)*.8)*(.55+.25*fbm(vGW*.8));pathC=vec3(.25,.2,.15)*(.65+.6*fbm(vGW*7.))*(.7+.6*lum)*(1.-ao.r*.4);}`);};
+      pathK=ao.b*smoothstep(.35,.75,ao.b+(fbm(vGW*2.3)-.5)*.8)*(.55+.25*fbm(vGW*.8));pathC=vec3(.17,.135,.1)*(.6+.7*fbm(vGW*7.))*(.65+.7*lum)*(1.-ao.r*.4);
+      // grit and small pebbles pressed into the packed earth
+      {vec2 pq=vGW*9.;vec2 pi=floor(pq),pf=fract(pq)-.5;float ph=fract(sin(dot(pi,vec2(41.3,289.1)))*43758.5);vec2 po=vec2(fract(ph*13.),fract(ph*71.))-.5;vec2 pe=(pf-po*.6)*vec2(1.,1.6+fract(ph*3.));float pb=smoothstep(.09,.05,length(pe)*(.8+.4*fract(ph*11.)))*step(.9,ph);pathC=mix(pathC,vec3(.22,.2,.17)*(.7+.5*fract(ph*7.)),pb*.6);pathC*=.85+.3*fbm(vGW*22.);}}`);};
   {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');};}
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);G.ground=ground;
   const patch=new THREE.Mesh(pg,mat);patch.receiveShadow=true;scene.add(patch);G.groundPatch=patch;
@@ -163,15 +185,17 @@ export function createGround(C){
   g.setAttribute('color',new THREE.Float32BufferAttribute(Cc,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(UV,2));g.setIndex(I);return g;}
  const grassMat=swayMat(new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:.85,metalness:0}),U,.07,'uv.y');
  {// a little translucency: the lit tips glow a touch so tufts read against the dark ground
-  const ob=grassMat.onBeforeCompile;grassMat.onBeforeCompile=s=>{ob(s);addWet(s,'.9');s.uniforms.uHero=heroU;
-   s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nuniform vec3 uHero;').replace('#include <project_vertex>',`{vec3 ipw=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);vec2 dv=ipw.xz-uHero.xz;float dd=length(dv);
+  const ob=grassMat.onBeforeCompile;grassMat.onBeforeCompile=s=>{ob(s);NOFLIP(s);addWet(s,'.9');s.uniforms.uHero=heroU;s.uniforms.uCrit=critU;
+   s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nuniform vec3 uHero;uniform vec3 uCrit;').replace('#include <project_vertex>',`{vec3 ipw=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);vec2 dv=ipw.xz-uHero.xz;float dd=length(dv);
      float f=smoothstep(.55,.1,dd)*step(abs(ipw.y-uHero.y),.6)*uv.y;vec2 pd=dd>.001?dv/dd:vec2(1.,0.);
-     transformed+=windLocal(vec3(pd.x*.22,-.12,pd.y*.22)*f*length(instanceMatrix[1].xyz)*.6);}
+     transformed+=windLocal(vec3(pd.x*.22,-.12,pd.y*.22)*f*length(instanceMatrix[1].xyz)*.6);
+     // a hedgehog or mouse parts the grass too (smaller radius)
+     vec2 cv=ipw.xz-uCrit.xz;float cd=length(cv);float cf=smoothstep(.28,.05,cd)*uv.y;vec2 cdn=cd>.001?cv/cd:vec2(1.,0.);transformed+=windLocal(vec3(cdn.x*.14,-.06,cdn.y*.14)*cf*length(instanceMatrix[1].xyz)*.6);}
     #include <project_vertex>`);
    s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vDew;').replace('#include <begin_vertex>','#include <begin_vertex>\nvDew=vec3(uv,instanceMatrix[3][0]*3.1+instanceMatrix[3][2]*7.7);');
-   s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vDew;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\n{vec2 g=vec2(vDew.x*3.,vDew.y*48.)+vDew.z;vec2 q=floor(g),f=fract(g)-.5;f.y*=.35;float h=fract(sin(dot(q,vec2(12.9898,78.233)))*43758.5453);totalEmissiveRadiance+=vec3(.75,.85,1.)*step(.96,h)*smoothstep(.22,.05,length(f))*step(.15,vDew.y)*smoothstep(.3,.8,uWet)*.9;}');s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vColor.rgb*vColor.rgb*.06;');};}
+   s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vDew;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\n{vec2 g=vec2(vDew.x*3.,vDew.y*48.)+vDew.z;vec2 q=floor(g),f=fract(g)-.5;f.y*=.35;float h=fract(sin(dot(q,vec2(12.9898,78.233)))*43758.5453);totalEmissiveRadiance+=vec3(.75,.85,1.)*step(.985,h)*smoothstep(.16,.03,length(f))*step(.15,vDew.y)*smoothstep(.3,.8,uWet)*.55;}');s.fragmentShader=s.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vColor.rgb*vColor.rgb*.06;');};}
  // variants: tall spiky (the photo's tufts), short dense, and a cheap far version
- const tuftA=tuftGeo(MOBILE?7:13,MOBILE?3:6,11,.2,.46,.1),tuftB=tuftGeo(MOBILE?8:15,MOBILE?2:4,23,.08,.2,.16),tuftF=tuftGeo(7,2,37,.22,.5,.14);
+ const tuftA=tuftGeo(MOBILE?10:13,MOBILE?3:6,11,.2,.46,.1),tuftB=tuftGeo(MOBILE?8:15,MOBILE?2:4,23,.08,.2,.16),tuftF=tuftGeo(7,2,37,.22,.5,.14);
  // Grass is cut into 14 m chunks (24 m far out), one InstancedMesh per chunk and detail level, so the camera's frustum culls what is
  // off screen, and chunks far from the camera swap to a cheaper tuft (fewer blades and segments) or switch off.
  const CH=14,grassChunks=[];
@@ -209,7 +233,7 @@ export function createGround(C){
    s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\n{float f=fbm(vMW.xz*14.+vMW.y*9.);float f2=fbm(vMW.xz*3.1);diffuseColor.rgb*=.6+.6*f;diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.9,1.15,.8),f2*.6);}');};
   const N=MOBILE?28:55;const im=new THREE.InstancedMesh(base,mat,N);let n=0;
   for(let t=0;t<N*30&&n<N;t++){const s=pick(ring(2.2,13),(x,z)=>{const d=rootD(x,z);return d>.04&&d<.45;},6);if(!s)continue;const [x,z]=s;
-   const sz=rr(.07,.18);E.set(0,rr(0,6.28),0);Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.25,z),Q,Sc.set(sz*rr(.8,1.2),sz*rr(.9,1.3),sz*rr(.8,1.1)));im.setMatrixAt(n,M);
+   const sz=rr(.07,.18);E.set(0,rr(0,6.28),0);Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.25,z),Q,Sc.set(sz*rr(.8,1.2),sz*rr(.9,1.3),sz*rr(.8,1.1)));im.setMatrixAt(n,M);G._stones=(G._stones||[]);G._stones.push([x,z,sz*.8]);
    Col.setHSL(rr(.28,.36),rr(.15,.28),rr(.42,.55));im.setColorAt(n,Col);n++;}
   im.count=n;im.receiveShadow=true;scene.add(im);G.moss=im;}
 
@@ -217,14 +241,14 @@ export function createGround(C){
  {const base=smoothIco(MOBILE?3:4);const p=base.attributes.position;
   for(let i=0;i<p.count;i++){const v=V(p.getX(i),p.getY(i),p.getZ(i));const k=1+(vnoise(v.x*1.7+v.z,v.y*1.9+2)-.5)*.45+(vnoise(v.x*5,v.z*5+v.y*3)-.5)*.08;p.setXYZ(i,v.x*k*1.15,(v.y<0?v.y*.5:v.y*.92)*k,v.z*k);}
   base.computeVertexNormals();const nr=base.attributes.normal;const col=new Float32Array(p.count*3);
-  for(let i=0;i<p.count;i++){const up=nr.getY(i);const c=new THREE.Color(0x4A4F50).lerp(new THREE.Color(0x3A5434),smooth(.4,.8,up)*.9).multiplyScalar(.85+vnoise(p.getX(i)*4,p.getZ(i)*4)*.25);col.set([c.r,c.g,c.b],i*3);}
+  for(let i=0;i<p.count;i++){const up=nr.getY(i);const c=new THREE.Color(0x585550).lerp(new THREE.Color(0x46503A),smooth(.4,.8,up)*.6).multiplyScalar(.85+vnoise(p.getX(i)*4,p.getZ(i)*4)*.25);col.set([c.r,c.g,c.b],i*3);}
   base.setAttribute('color',new THREE.BufferAttribute(col,3));
-  const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.92});
-  mat.onBeforeCompile=s=>{addWet(s,'.8');s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;').replace('#include <begin_vertex>','#include <begin_vertex>\nvMW=position;');
-   s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.rgb*=.78+.4*fbm(vMW.xz*6.+vMW.y*4.);');};
+  const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,envMapIntensity:.35});
+  mat.onBeforeCompile=s=>{addWet(s,'.3');s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;varying vec3 vON;').replace('#include <begin_vertex>','#include <begin_vertex>\nvMW=position;vON=normal;');
+   s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;varying vec3 vON;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\n{float b=fbm(vMW.xz*6.+vMW.y*4.);float g=fbm(vMW.xz*23.+vMW.y*19.);diffuseColor.rgb*=.62+.5*b;\n// pitted granite grain, dark cracks, pale lichen rosettes and a moss cap on the top only\ndiffuseColor.rgb*=.8+.35*g;diffuseColor.rgb*=mix(1.,.45,smoothstep(.36,.3,abs(fbm(vMW.xz*4.+vMW.y*7.+3.)-.5)+.28));\nfloat li=smoothstep(.66,.72,fbm(vMW.xz*9.+vMW.y*5.+11.))*step(-.2,vON.y);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.55,.58,.47),li*.55);\nfloat cap=smoothstep(.45,.85,vON.y+(fbm(vMW.xz*5.)-.5)*.6);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.16,.26,.12)*(.7+.6*g),cap*.75);}');};
   const N=MOBILE?40:75;const im=new THREE.InstancedMesh(base,mat,N);let n=0;
-  for(let i=0;i<N*20&&n<N;i++){const near=n<N*.5;const s=pick(near?ring(2.6,9):ring(9,45),(x,z)=>rootD(x,z)>.15,8);if(!s)continue;const [x,z]=s;const r=Math.hypot(x,z);
-   const sz=rr(.06,.22)*(n%9===0?2.2:1)*(r>12?1.8:1);E.set(rr(-.2,.2),rr(0,6.28),rr(-.2,.2));Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.12,z),Q,Sc.set(sz*rr(.9,1.3),sz*rr(.85,1.25),sz*rr(.85,1.2)));im.setMatrixAt(n,M);
+  for(let i=0;i<N*20&&n<N;i++){const near=n<N*.5;const s=pick(near?ring(2.6,9):ring(9,45),(x,z)=>rootD(x,z)>.15&&pathD(x,z)>.15,8);if(!s)continue;const [x,z]=s;const r=Math.hypot(x,z);
+   const sz=rr(.06,.22)*(n%9===0?2.2:1)*(r>12?1.8:1);E.set(rr(-.2,.2),rr(0,6.28),rr(-.2,.2));Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.3,z),Q,Sc.set(sz*rr(.95,1.35),sz*rr(.7,1.05),sz*rr(.85,1.2)));im.setMatrixAt(n,M);
    Col.setScalar(rr(.85,1.1));im.setColorAt(n,Col);n++;
    // grass and moss like to gather at a stone's foot
    G._stones=(G._stones||[]);G._stones.push([x,z,sz]);}
@@ -263,14 +287,63 @@ export function createGround(C){
   im.count=n;im.receiveShadow=true;scene.add(im);G.leaves=im;}
 
  // ================= twigs =================
- {const parts=[];const r=rng(5);
-  const branch=(pts,rad)=>{const cu=new THREE.CatmullRomCurve3(pts);parts.push(new THREE.TubeGeometry(cu,8,rad,5,false));};
-  branch([V(-.5,.02,0),V(-.15,.04,.04),V(.2,.03,-.02),V(.5,.02,.05)],.018);branch([V(-.05,.035,.02),V(.1,.05,.15),V(.22,.04,.26)],.009);branch([V(.25,.03,-.01),V(.36,.04,-.13)],.007);
-  const g=mergeGeometries(parts);const mat=new THREE.MeshStandardMaterial({color:0x4A3A2C,roughness:.95});
-  const N=MOBILE?40:85;const im=new THREE.InstancedMesh(g,mat,N);let n=0;
-  for(let i=0;i<N*20&&n<N;i++){const s=pick(n<N*.6?ring(2.2,8):ring(2.4,16),(x,z)=>rootD(x,z)>.2&&pathD(x,z)>.1,5);if(!s)continue;const [x,z]=s;const sz=rr(.6,1.4);
-   M.compose(V(x,groundH(x,z)-.015,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz,sz));im.setMatrixAt(n,M);Col.setScalar(rr(.7,1.2));im.setColorAt(n,Col);n++;}
-  im.count=n;im.receiveShadow=true;scene.add(im);G.twigs=im;}
+ // thin dead sticks: tapered from butt to tip, with side shoots and a grey-brown bark streaked along the grain; half-pressed into the litter
+ {const r=rng(5);
+  const branch=(parts,pts,rad,tip=.25)=>{const cu=new THREE.CatmullRomCurve3(pts);const TS=MOBILE?6:9,RS=MOBILE?4:5;const g=new THREE.TubeGeometry(cu,TS,rad,RS,false);
+   const p=g.attributes.position;const c=V();for(let i=0;i<=TS;i++){const u=i/TS;cu.getPointAt(u,c);const k=1-(1-tip)*u;for(let j=0;j<=RS;j++){const vi=i*(RS+1)+j;p.setXYZ(vi,c.x+(p.getX(vi)-c.x)*k,c.y+(p.getY(vi)-c.y)*k,c.z+(p.getZ(vi)-c.z)*k);}}
+   g.deleteAttribute('normal');g.computeVertexNormals();const a=new Float32Array(p.count);for(let i=0;i<p.count;i++)a[i]=Math.floor(i/(RS+1))/TS;g.setAttribute('aU',new THREE.BufferAttribute(a,1));parts.push(g);};
+  const shapes=[];
+  {const P=[];branch(P,[V(-.42,.012,0),V(-.12,.02,.03),V(.18,.016,-.02),V(.44,.01,.04)],.011);branch(P,[V(-.02,.018,.015),V(.1,.024,.12),V(.2,.018,.22)],.006);branch(P,[V(.22,.015,-.01),V(.31,.02,-.11)],.0045);shapes.push(mergeGeometries(P));}
+  {const P=[];branch(P,[V(-.3,.01,0),V(-.05,.015,-.03),V(.28,.012,.02)],.008);branch(P,[V(-.1,.014,-.02),V(-.02,.02,-.12),V(.04,.015,-.2)],.0045);shapes.push(mergeGeometries(P));}
+  {const P=[];branch(P,[V(-.18,.008,0),V(0,.012,.02),V(.17,.008,-.01)],.006,.4);shapes.push(mergeGeometries(P));}
+  const mat=new THREE.MeshStandardMaterial({color:0x6A5A4A,roughness:1});
+  mat.onBeforeCompile=s=>{s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nattribute float aU;varying vec3 vTw;').replace('#include <begin_vertex>','#include <begin_vertex>\nvTw=vec3(aU*5.,(position.y+position.z)*260.,instanceMatrix[3][0]*5.+instanceMatrix[3][2]*3.);');
+   s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vTw;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\n{float st=fbm(vec2(vTw.y,vTw.x+vTw.z));diffuseColor.rgb*=.55+.6*st;diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.42,.4,.36),smoothstep(.6,.8,fbm(vec2(vTw.y*.4,vTw.z*2.)))*.5);}');};
+  const N=MOBILE?40:85;const per=[[],[],[]];
+  for(let i=0;i<N*20&&per[0].length+per[1].length+per[2].length<N;i++){const s=pick(i%3?ring(2.2,8):ring(2.4,16),(x,z)=>rootD(x,z)>.2&&pathD(x,z)>.1,5);if(!s)continue;const [x,z]=s;
+   const k=r()<.35?0:(r()<.55?1:2);const sz=rr(.7,1.25);M.compose(V(x,groundH(x,z)-.006,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz,sz*rr(.8,1.2)));per[k].push(M.clone());}
+  G.twigs=per.map((list,k)=>{const im=new THREE.InstancedMesh(shapes[k],mat,list.length);list.forEach((m,i)=>{im.setMatrixAt(i,m);im.setColorAt(i,Col.setScalar(rr(.75,1.2)));});im.receiveShadow=true;scene.add(im);return im;});}
+
+ // ================= stumps, a fallen log and the firewood pile by the way out =================
+ // where he goes out for wood: an old chopping stump with split logs stacked beside it, a big moss-capped stump at the gap,
+ // a fallen trunk half sunk in the litter. Bark from the oak's own texture, cut ends with growth rings and radial cracks.
+ {const barkT=new THREE.TextureLoader().load(new URL('bark2.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;});barkT.wrapS=barkT.wrapT=THREE.RepeatWrapping;
+  const endT=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=256;const x=cv.getContext('2d');const g=x.createRadialGradient(128,128,4,128,128,128);
+   g.addColorStop(0,'#9A7A55');g.addColorStop(.85,'#B08C62');g.addColorStop(.93,'#6A5038');g.addColorStop(1,'#3A2A1E');x.fillStyle=g;x.fillRect(0,0,256,256);
+   x.strokeStyle='rgba(70,48,30,.45)';for(let r=6;r<112;r+=4+Math.random()*5){x.lineWidth=.8+Math.random()*1.4;x.beginPath();for(let a=0;a<=64;a++){const t=a/64*6.283;const rr2=r*(1+.04*Math.sin(t*3+r));x.lineTo(128+Math.cos(t)*rr2,128+Math.sin(t)*rr2);}x.stroke();}
+   x.strokeStyle='rgba(40,26,16,.7)';x.lineWidth=2;for(let k=0;k<5;k++){const a=Math.random()*6.283;x.beginPath();x.moveTo(128+Math.cos(a)*20,128+Math.sin(a)*20);x.lineTo(128+Math.cos(a+.05)*(70+Math.random()*40),128+Math.sin(a+.05)*(70+Math.random()*40));x.stroke();}
+   const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const barkM=new THREE.MeshStandardMaterial({map:barkT,color:0x8A7A6A,roughness:1,vertexColors:true});
+  const endM=new THREE.MeshStandardMaterial({map:endT,roughness:.95});
+  // log/stump: a slightly lumpy cylinder; the top of a lying log greens with moss (vertex colour)
+  const wood=(r0,r1,h,seg,mossUp,seed)=>{const g=new THREE.CylinderGeometry(r0,r1,h,seg,MOBILE?3:5);const p=g.attributes.position,uv=g.attributes.uv,nr=g.attributes.normal;
+   for(let i=0;i<p.count;i++){if(Math.abs(nr.getY(i))<.5){const a=Math.atan2(p.getZ(i),p.getX(i));const k=1+(vnoise(a*2.2+seed,p.getY(i)*3)-.5)*.14;p.setX(i,p.getX(i)*k);p.setZ(i,p.getZ(i)*k);uv.setXY(i,uv.getX(i)*Math.max(1,Math.round(r0*14)),uv.getY(i)*h*1.6);}}
+   g.computeVertexNormals();const c=new Float32Array(p.count*3);g.setAttribute('color',new THREE.BufferAttribute(c,3));c.fill(1);g.userData.mossUp=mossUp;return g;};
+  const tint=(mesh,mossK)=>{const g=mesh.geometry,p=g.attributes.position,c=g.attributes.color;mesh.updateMatrixWorld(true);const n=V(),w=V();const nm=new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+   for(let i=0;i<p.count;i++){n.fromBufferAttribute(g.attributes.normal,i).applyMatrix3(nm).normalize();w.fromBufferAttribute(p,i).applyMatrix4(mesh.matrixWorld);
+    const m=smooth(.2,.8,n.y+(fbm2(w.x*3,w.z*3+w.y*3)-.5)*.8)*mossK;const low=smooth(.35,0,w.y-groundH(w.x,w.z))*.35;c.setXYZ(i,(1-m*.55)*(1-low),(1-m*.25)*(1-low),(1-m*.6)*(1-low));}c.needsUpdate=true;};
+  const grp=new THREE.Group();grp.name='woodpile';const add=(g,x,z,ry,tilt,sink,mossK)=>{const m=new THREE.Mesh(g,[barkM,endM,endM]);m.position.set(x,groundH(x,z)+sink,z);m.rotation.set(tilt[0],ry,tilt[1]);grp.add(m);tint(m,mossK);m.castShadow=!MOBILE;m.receiveShadow=true;return m;};
+  const ok=(x,z)=>rootD(x,z)>.4;
+  // chopping stump with an old axe cut, and the stacked firewood next to it
+  const chop=[12.5,7.4],pile=[13.5,8.1],big=[15.4,6.7],big2=[16.6,2.9],log=[11.0,3.4];
+  if(ok(...chop))add(wood(.26,.31,.5,MOBILE?12:16,0,1),chop[0],chop[1],.4,[0,0],.2,.4);
+  if(ok(...pile)){const S=[],E2=[];const r=rng(77);// three courses of split logs, cut ends out toward the clearing
+   [[5,0],[4,1],[3,2]].forEach(([n,row])=>{for(let i=0;i<n;i++){const rad=.075+r()*.02,len=.55+r()*.12,y=rad+row*.135,z=(i-(n-1)/2)*.16+(row%2)*.0,yaw=.06*(r()-.5);
+     const sd=new THREE.CylinderGeometry(rad,rad,len,7,1,true).rotateZ(Math.PI/2).rotateY(yaw).translate(0,y,z);S.push(sd);
+     for(const e of [-1,1]){const c=new THREE.CircleGeometry(rad,8).rotateY(e*Math.PI/2).translate(e*len/2,0,0).rotateY(yaw).translate(0,y,z);E2.push(c);}}});
+   const sg=mergeGeometries(S);sg.setAttribute('color',new THREE.BufferAttribute(new Float32Array(sg.attributes.position.count*3).fill(1),3));const eg=mergeGeometries(E2);
+   for(const [g,mt] of [[sg,barkM],[eg,endM]]){const m=new THREE.Mesh(g,mt);m.position.set(pile[0],groundH(...pile)+.005,pile[1]);m.rotation.y=-.35;m.castShadow=!MOBILE;m.receiveShadow=true;grp.add(m);}}
+  if(ok(...big))add(wood(.42,.55,.62,MOBILE?14:20,1,2),big[0],big[1],1.1,[.04,-.03],.18,.9);
+  if(ok(...big2))add(wood(.3,.4,.38,MOBILE?12:16,1,3),big2[0],big2[1],.2,[0,.05],.14,1);
+  if(ok(...log))add(wood(.17,.21,2.6,MOBILE?10:14,1,4),log[0],log[1],.5,[0,Math.PI/2],.08,1);
+  scene.add(grp);G.woodpile=grp;G._stones=(G._stones||[]);for(const [x,z,r] of [[...chop,.3],[...pile,.5],[...big,.55],[...big2,.4],[log[0],log[1],.5],[log[0]+.9,log[1]-.45,.3],[log[0]-.9,log[1]+.45,.3]])G._stones.push([x,z,r]);
+  // nav for Character/Brain: the way out from the foot of the ground ladder, the gap where he leaves the clearing, a spot
+  // out in the fog where he is hidden, and the work spots by the stump and the pile
+  const P3=(x,z)=>V(x,groundH(x,z),z);const way=[[0,4.3],[.5,5.6],[1.4,7.2],...EXIT.slice(1,6)].map(([x,z])=>P3(x,z));
+  const edge=P3(14.2,5.1),out=P3(21.5,4.3);
+  G.exits={forest:{ladderFoot:way[0].clone(),path:way,edge,out,outPath:[edge,P3(17.4,4.6),out],faceOut:Math.atan2(out.x-edge.x,out.z-edge.z),faceIn:Math.atan2(edge.x-out.x,edge.z-out.z),
+   chopStump:P3(...chop),chopStand:P3(chop[0]-.55,chop[1]-.35),woodPile:P3(...pile),woodStand:P3(pile[0]-.45,pile[1]-.6),
+   nodes:{g_foot:way[0],g_path1:way[1],g_fork:way[2],g_exit1:way[4],g_exit2:way[6],g_edge:edge,g_out:out}}};}
 
  // ================= puddles =================
  // Rain fills the low, flat spots of the clearing (often on the trodden path) and they dry slowly afterwards.
@@ -360,17 +433,17 @@ export function createGround(C){
      for(let k=6;k>=0;k--){const u=k/6;x.lineTo(cx+sd*L*u,y+3-u*(8+t*10)+((k%2)?2.5:0));}x.closePath();x.fill();}}
    const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
   const mk=(nf,len,seed)=>{const r=rng(seed);const parts=[];for(let k=0;k<nf;k++){const L=len*(.75+r()*.4);const q=new THREE.PlaneGeometry(.34,L,1,6);const p=q.attributes.position;const nr=q.attributes.normal;
-    const rise=.55+r()*.35;for(let i=0;i<p.count;i++){const y=p.getY(i)+L/2;const t=y/L;
+    const rise=1.25+r()*.45;for(let i=0;i<p.count;i++){const y=p.getY(i)+L/2;const t=y/L;
      // arch up and out, the tip droops; leaflets fold a little along the rachis
-     p.setY(i,L*(rise*t-rise*.95*t*t)+.02);p.setZ(i,L*t*.85);p.setX(i,p.getX(i)*(1-t*.2));p.setY(i,p.getY(i)-Math.abs(p.getX(i))*.25);nr.setXYZ(i,0,1,0);
+     p.setY(i,L*(rise*t-rise*.78*t*t)+.02);p.setZ(i,L*t*.72);p.setX(i,p.getX(i)*(1-t*.2));p.setY(i,p.getY(i)-Math.abs(p.getX(i))*.45);nr.setXYZ(i,0,1,-.35);
     }const uv=q.attributes.uv;const a=new Float32Array(p.count);for(let i=0;i<p.count;i++)a[i]=uv.getY(i);q.setAttribute('aK',new THREE.BufferAttribute(a,1));
     q.rotateY(k/nf*Math.PI*2+r()*.5);parts.push(q);}return mergeGeometries(parts);};
   const fm=new THREE.MeshStandardMaterial({map:fernTex,alphaTest:.5,side:THREE.DoubleSide,roughness:.9,emissive:0x0C1E18,emissiveMap:fernTex});
-  fm.onBeforeCompile=s=>{windHook(s);s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nattribute float aK;')
+  fm.onBeforeCompile=s=>{windHook(s);NOFLIP(s);s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nattribute float aK;')
    .replace('#include <begin_vertex>',`#include <begin_vertex>\n{float k=aK;const float SW=.05;${SWAY}}`);};
   const geos=[mk(7,.75,3),mk(9,.6,8)];
   geos.forEach((fg,vi)=>{const NF=MOBILE?24:44;const im=new THREE.InstancedMesh(fg,fm,NF);let n=0;
-   for(let i=0;i<NF*30&&n<NF;i++){const s=pick(R()<.65?ring(3.,10):ring(10,26),(x,z)=>{const d=rootD(x,z);return d>.25&&d<(Math.hypot(x,z)>10?99:2.2);},6);if(!s)continue;const [x,z]=s;
+   for(let i=0;i<NF*30&&n<NF;i++){const s=pick(R()<.65?ring(3.,10):ring(10,26),(x,z)=>{const d=rootD(x,z);return d>.25&&d<(Math.hypot(x,z)>10?99:2.2)&&pathD(x,z)>.2;},6);if(!s)continue;const [x,z]=s;
     const sz=rr(.8,1.4)*(Math.hypot(x,z)>10?1.35:1);M.compose(V(x,groundH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz*rr(.85,1.1),sz));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.38),rr(.3,.45),rr(.6,.75));im.setColorAt(n,Col);n++;}
    im.count=n;im.receiveShadow=true;scene.add(im);});
@@ -414,13 +487,13 @@ export function createGround(C){
     else{const a=rr(0,6.28);r=rr(10,42);x=Math.cos(a)*r;z=Math.sin(a)*r;
     // keep the view to the house open (camera looks from +z), crowd the sides and the back
     if((z>-3&&Math.abs(x)<15))continue;}
-    if(rootD(x,z)<1)continue;
+    if(rootD(x,z)<1||!exitClear(x,z))continue;
     const sz=rr(1.1,2.2)*(r>25?1.4:1);M.compose(V(x,groundH(x,z)-.15,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(.9,1.4),sz*rr(.7,1),sz*rr(.9,1.3)));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.38),rr(.2,.35),rr(.48,.6));im.setColorAt(n,Col);n++;}
    im.count=n;im.receiveShadow=true;scene.add(im);});
   // ---- the far edge of the clearing: a dense wall of undergrowth and young trees in front of the painted forest ----
   // It gives depth: near plants, then this thicket, then the far trees and the fog. Kept out of the camera's view line.
-  const edgeOK=(x,z)=>!(z>1&&Math.abs(x)<13)&&rootD(x,z)>1.5;
+  const edgeOK=(x,z)=>!(z>1&&Math.abs(x)<13)&&rootD(x,z)>1.5&&exitClear(x,z);
   {const bg=mkBush(5,MOBILE?14:20);const NE=MOBILE?50:90;const im=new THREE.InstancedMesh(bg,mat,NE);let n=0;
    for(let t=0;t<NE*40&&n<NE;t++){const a=rr(0,6.28),r=rr(15,24)+(vnoise(a*3,1)-.5)*3;const x=Math.cos(a)*r,z=Math.sin(a)*r*.95;if(!edgeOK(x,z))continue;
     const sz=rr(1.2,2.4);M.compose(V(x,groundH(x,z)-.25,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(1,1.6),sz*rr(.8,1.25),sz*rr(1,1.5)));im.setMatrixAt(n,M);
@@ -456,8 +529,8 @@ export function createGround(C){
   g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('aF',new THREE.BufferAttribute(a,2));g.setDrawRange(0,n);
   const u={t:{value:0},on:{value:0},px:{value:Math.min(2,window.devicePixelRatio||1)}};
   const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:u,
-   vertexShader:`attribute vec2 aF;uniform float t,on,px;varying float vB;void main(){float s=aF.x;vec3 q=position+vec3(sin(t*.4+s)*.12,sin(t*.7+s*1.7)*.05,cos(t*.33+s)*.12);
-    vec4 mv=viewMatrix*vec4(q,1.);float bl=smoothstep(.2,1.,sin(t*aF.y+s*3.)*.5+.5);vB=bl*on;gl_PointSize=clamp(40./-mv.z,1.5,7.)*px;gl_Position=projectionMatrix*mv;}`,
+   vertexShader:`attribute vec2 aF;uniform float t,on,px;varying float vB;void main(){float s=aF.x;vec3 q=position+vec3(sin(t*.22+s)*.1,sin(t*.31+s*1.7)*.035,cos(t*.19+s)*.1);
+    vec4 mv=viewMatrix*vec4(q,1.);float bl=.25+.75*smoothstep(.1,1.,sin(t*aF.y*.6+s*3.)*.5+.5);vB=bl*on;gl_PointSize=clamp(40./-mv.z,1.5,7.)*px;gl_Position=projectionMatrix*mv;}`,
    fragmentShader:`varying float vB;void main(){float r=length(gl_PointCoord-.5);float k=smoothstep(.5,0.,r);gl_FragColor=vec4(vec3(.75,1.,.4)*(k*k+smoothstep(.15,0.,r)),k*vB);}`});
   const pts=new THREE.Points(g,m);pts.frustumCulled=false;pts.renderOrder=6;scene.add(pts);G.glowWorms=pts;
   G._gw=dt=>{u.t.value+=dt;u.on.value=smooth(.4,.9,eve())*(1-ST.rainK);pts.visible=u.on.value>.01;};}
@@ -466,15 +539,15 @@ export function createGround(C){
  {let wins=null;const NM=MOBILE?8:16;const g=new THREE.BufferGeometry();const p=new Float32Array(NM*3);g.setAttribute('position',new THREE.BufferAttribute(p,3));
   const u={on:{value:0},px:{value:Math.min(2,window.devicePixelRatio||1)},t:{value:0}};
   const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:u,
-   vertexShader:`uniform float on,px,t;varying float vF;void main(){vec4 mv=viewMatrix*vec4(position,1.);vF=abs(sin(t*38.+position.x*40.));gl_PointSize=clamp(28./-mv.z,1.5,6.)*px;gl_Position=projectionMatrix*mv;}`,
+   vertexShader:`uniform float on,px,t;varying float vF;void main(){vec4 mv=viewMatrix*vec4(position,1.);vF=.75+.25*sin(t*7.+position.x*40.);gl_PointSize=clamp(28./-mv.z,1.5,6.)*px;gl_Position=projectionMatrix*mv;}`,
    fragmentShader:`uniform float on;varying float vF;void main(){vec2 d=gl_PointCoord-.5;d.x/=(.35+.65*vF);float k=smoothstep(.5,.2,length(d));gl_FragColor=vec4(vec3(.95,.9,.78),k*on*.9);}`});
   const pts=new THREE.Points(g,m);pts.frustumCulled=false;pts.renderOrder=6;scene.add(pts);G.moths=pts;const st=[];
   G._moths=(dt)=>{u.t.value+=dt;const on=smooth(.5,.9,eve())*(1-ST.rainK*.8);u.on.value=on;pts.visible=on>.01;if(!pts.visible)return;
    if(!wins){wins=[];scene.traverse(o=>{if(o.isMesh&&o.material&&o.material.userData&&o.material.userData.ownGlass){const w=new THREE.Vector3();o.getWorldPosition(w);const nrm=new THREE.Vector3(0,0,1).applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()));wins.push({w,nrm});}});
-    if(!wins.length)return;for(let i=0;i<NM;i++){const W=wins[i%wins.length];st.push({W,ph:rr(0,100),r:rr(.18,.45),sp:rr(1.5,3.2)});}}
-   const T=u.t.value;st.forEach((o,i)=>{const a=T*o.sp+o.ph;const c=o.W.w.clone().addScaledVector(o.W.nrm,.25+.12*Math.sin(a*1.7));
+    if(!wins.length)return;for(let i=0;i<NM;i++){const W=wins[i%wins.length];st.push({W,ph:rr(0,100),r:rr(.2,.45),sp:rr(.45,.9)});}}
+   const T=u.t.value;st.forEach((o,i)=>{const a=T*o.sp+o.ph;const c=o.W.w.clone().addScaledVector(o.W.nrm,.28+.1*Math.sin(a*.7));
     // erratic loops in front of the glass, now and then a dart against it
-    p[i*3]=c.x+Math.cos(a)*o.r+Math.sin(a*3.1)*.06;p[i*3+1]=c.y+Math.sin(a*1.3)*o.r*.6+Math.sin(a*5.3)*.04;p[i*3+2]=c.z+Math.sin(a*.9)*o.r*.5;});g.attributes.position.needsUpdate=true;};}
+    p[i*3]=c.x+Math.cos(a)*o.r+Math.sin(a*2.3)*.04;p[i*3+1]=c.y+Math.sin(a*1.3)*o.r*.6+Math.sin(a*2.9)*.025;p[i*3+2]=c.z+Math.sin(a*.9)*o.r*.5;});g.attributes.position.needsUpdate=true;};}
 
  // ---- a hedgehog or a mouse crosses the clearing now and then (code animation) ----
  {const mk=(kind)=>{const grp=new THREE.Group();
@@ -491,22 +564,52 @@ export function createGround(C){
     for(const sx of [-1,1]){const ear=new THREE.Mesh(new THREE.CircleGeometry(.012,8),new THREE.MeshStandardMaterial({color:0xB48C84,side:THREE.DoubleSide}));ear.position.set(sx*.016,.058,.06);grp.add(ear);}
     const tail=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(0,.03,-.055),V(.01,.02,-.1),V(-.02,.012,-.15),V(.01,.01,-.19)]),8,.0035,4),new THREE.MeshStandardMaterial({color:0xA88880}));grp.add(tail);
     grp.userData={speed:1.1,step:22,bob:.004,head,dash:true};}
+   {// four short legs that patter under the body (hidden in the grass most of the time, but nothing should glide)
+    const hog=kind==='hog';const lm=new THREE.MeshStandardMaterial({color:hog?0x4A3A2E:0x8A7C74,roughness:1});const lg=new THREE.CylinderGeometry(hog?.011:.005,hog?.009:.004,hog?.05:.03,5).translate(0,-(hog?.025:.015),0);
+    grp.userData.legs=[];for(const [lx,lz] of [[-1,1],[1,1],[-1,-1],[1,-1]]){const L=new THREE.Mesh(lg,lm);L.position.set(lx*(hog?.06:.018),hog?.05:.03,lz*(hog?.08:.03));grp.add(L);grp.userData.legs.push(L);}}
    grp.traverse(o=>{if(o.isMesh){o.castShadow=!MOBILE;o.receiveShadow=true;}});grp.visible=false;scene.add(grp);return grp;};
   const critters={hog:mk('hog'),mouse:mk('mouse')};G.critters=critters;
   let cur=null,wait=rr(25,50),route=null,ti=0,pause=0,dist=0;
   // a route from the forest edge, around the trunk (never through the roots), into the forest on the other side
-  const plan=()=>{const a0=rr(0,6.28),a1=a0+Math.PI*rr(.6,1.4)*(R()<.5?1:-1);const pts=[];const N=14;
+  const plan=()=>{const a0=rr(0,6.28),a1=a0+Math.PI*rr(.6,1.4)*(R()<.5?1:-1);const pts=[];const N=40;
    for(let i=0;i<=N;i++){const t=i/N;const a=a0+(a1-a0)*t;const r=lerp3(17,rr(6,9),17,t);pts.push(V(Math.cos(a)*r,0,Math.sin(a)*r));}
-   for(const q of pts){let k=0;while(rootD(q.x,q.z)<.4&&k++<20){q.multiplyScalar(1.05);}q.y=groundH(q.x,q.z);}return new THREE.CatmullRomCurve3(pts);};
+   for(const q of pts){let k=0;while(rootD(q.x,q.z)<.4&&k++<20){q.multiplyScalar(1.05);}
+    // step round stones and moss cushions (their radius plus half a hedgehog) and round the puddles
+    for(let it=0;it<3;it++)for(const [sx,sz,sr] of (G._stones||[])){const dx=q.x-sx,dz=q.z-sz,d=Math.hypot(dx,dz),need=sr*1.35+.14;if(d<need){const k2=(need-d)/Math.max(d,1e-3);q.x+=dx*k2;q.z+=dz*k2;}}
+    for(const p of (G.puddleSpots||[])){const px=p.x??p[0],pz=p.z??p[1],pr=(p.r??p[2]??.6)+.15;const dx=q.x-px,dz=q.z-pz,d=Math.hypot(dx,dz);if(d<pr){const k2=(pr-d)/Math.max(d,1e-3);q.x+=dx*k2;q.z+=dz*k2;}}
+    q.y=groundH(q.x,q.z);}return new THREE.CatmullRomCurve3(pts);};
   const lerp3=(a,b,c,t)=>t<.5?a+(b-a)*smooth(0,.5,t):b+(c-b)*smooth(.5,1,t);
-  G._critters=(dt)=>{if(!cur){wait-=dt*(1+eve());if(wait>0)return;cur=critters[R()<.55?'hog':'mouse'];route=plan();dist=0;pause=0;cur.visible=true;return;}
+  G._critters=(dt)=>{if(!cur){wait-=dt*(1+eve());if(wait>0)return;cur=critters[R()<.55?'hog':'mouse'];route=plan();dist=0;pause=0;cur.position.copy(route.getPointAt(0));cur.rotation.y=Math.atan2(...(()=>{const a=route.getPointAt(0),b=route.getPointAt(.01);return [b.x-a.x,b.z-a.z];})());cur.visible=true;return;}
    const u=cur.userData;const L=route.getLength();
    if(pause>0){pause-=dt;u.head.rotation.y=Math.sin(pause*6)*.4;}
-   else{dist+=dt*u.speed*(u.dash?(.6+.8*Math.abs(Math.sin(dist*2.3))):1);if(R()<dt*(u.dash?.5:.25))pause=rr(.6,2.2);u.head.rotation.y*=.9;}
+   else{dist+=dt*u.speed*(u.dash?(.75+.35*Math.sin(dist*1.6)):1);if(R()<dt*(u.dash?.5:.25))pause=rr(.6,2.2);u.head.rotation.y*=.9;}
    const t=Math.min(1,dist/L);const pos=route.getPointAt(t),ahead=route.getPointAt(Math.min(1,t+.01));
-   cur.position.copy(pos);cur.position.y=groundH(pos.x,pos.z)+(pause>0?0:Math.abs(Math.sin(dist*u.step))*u.bob);cur.rotation.y=Math.atan2(ahead.x-pos.x,ahead.z-pos.z);
-   if(t>=1){cur.visible=false;cur=null;wait=rr(70,160);}};
+   cur.position.copy(pos);cur.position.y=groundH(pos.x,pos.z)+(pause>0?0:Math.abs(Math.sin(dist*u.step))*u.bob);
+   // turn smoothly toward the way ahead (no snapping on tight bends)
+   {const want=Math.atan2(ahead.x-pos.x,ahead.z-pos.z);let d=want-cur.rotation.y;d=Math.atan2(Math.sin(d),Math.cos(d));cur.rotation.y+=d*Math.min(1,dt*6);}
+   if(u.legs){const ph=dist*u.step*.5;u.legs.forEach((L,i)=>{L.rotation.x=pause>0?L.rotation.x*.85:Math.sin(ph+((i===0||i===3)?0:Math.PI))*.6;});}
+   critU.value.set(pos.x,cur.position.y,pos.z);
+   if(t>=1){cur.visible=false;cur=null;critU.value.set(0,-99,0);wait=rr(70,160);}};
   G.spawnCritter=k=>{wait=0;if(cur){cur.visible=false;cur=null;}if(k){cur=critters[k];route=plan();dist=0;pause=0;cur.visible=true;}};}
- G.updateLife=(dt)=>{G._gw(dt);G._moths(dt);G._critters(dt);};
+ // ---- night ground mist: a soft, slowly curling wisp of low fog round the hero's feet and the critters' feet ----
+ // three thin horizontal layers (5, 12 and 22 cm up) of procedural fog; a few quads, no extra passes, so it costs nothing on a phone
+ {const u={t:{value:0},on:{value:0},col:{value:new THREE.Color(.5,.6,.68)}};
+  const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,fog:true,uniforms:THREE.UniformsUtils.merge([THREE.UniformsLib.fog,{t:u.t,on:u.on,col:u.col,k:{value:1}}]),
+   vertexShader:`#include <fog_pars_vertex>\nvarying vec2 vUv;varying vec2 vW;void main(){vUv=uv;vec4 w=modelMatrix*vec4(position,1.);vW=w.xz;vec4 mvPosition=viewMatrix*w;gl_Position=projectionMatrix*mvPosition;\n#include <fog_vertex>\n}`,
+   fragmentShader:`#include <fog_pars_fragment>\nuniform float t,on,k;uniform vec3 col;varying vec2 vUv;varying vec2 vW;
+    float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}float n(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+1.),f.x),f.y);}
+    void main(){vec2 c=vUv-.5;float r=length(c)*2.;float a=t*.12*k;mat2 R=mat2(cos(a),-sin(a),sin(a),cos(a));vec2 q=R*c*3.+vW*.6;
+     float f=n(q*2.+t*.05)*.6+n(q*4.3-t*.08)*.4;float al=smoothstep(1.,.05,r)*smoothstep(1.,.5,r+.2)*smoothstep(.3,.85,f)*on;
+     gl_FragColor=vec4(col,al);\n#include <fog_fragment>\n}`});
+  const mkM=(s)=>{const g=new THREE.Group();[[.05,1,.2],[.12,.8,.13],[.22,.55,.08]].forEach(([y,sc,a],i)=>{const mm=m.clone();mm.uniforms.t=u.t;mm.uniforms.on={value:0};mm.uniforms.col=u.col;mm.uniforms.k={value:i%2?-1:1};mm.userData.a=a;
+    const q=new THREE.Mesh(new THREE.PlaneGeometry(s*sc,s*sc).rotateX(-Math.PI/2),mm);q.position.y=y;q.renderOrder=5;q.frustumCulled=false;g.add(q);});g.visible=false;scene.add(g);return g;};
+  const hm=mkM(1.6),cm=mkM(.7);G.footMist={hero:hm,critter:cm,u};
+  const setOn=(g,v)=>{g.visible=v>.01;g.children.forEach(q=>{q.material.uniforms.on.value=v*q.material.userData.a;});};
+  let hv=0,cv=0;
+  G._mist=(dt)=>{u.t.value+=dt;const night=Math.max(ST.nightK,smooth(.4,.9,eve()));
+   const hp=heroU.value;const onGround=hp.y>-50&&hp.y<groundH(hp.x,hp.z)+.35;hv+=((onGround?night:0)-hv)*Math.min(1,dt*.8);
+   hm.position.set(hp.x,groundH(hp.x,hp.z),hp.z);setOn(hm,hv);
+   const cp=critU.value;cv+=((cp.y>-50?night:0)-cv)*Math.min(1,dt*1.5);if(cp.y>-50)cm.position.set(cp.x,cp.y,cp.z);setOn(cm,cv);};}
+ G.updateLife=(dt)=>{G._gw(dt);G._moths(dt);G._critters(dt);G._mist(dt);};
  return G;
 }

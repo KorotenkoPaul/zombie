@@ -73,36 +73,72 @@ export function createTreeDress(C) {
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
     D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 },
-      nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 } };
-    D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.35, rain); };
+      nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
+    D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.08, rain); /* dew is only a faint sheen; really wet only in the rain */ };
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
       sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdRimK = D.barkU.rimK;
-      sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale;
+      sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.,tdFade=0.,tdH=.5;vec3 tdBl=vec3(0.,0.,1.);
+${MOBILE ? '#define TD_LITE' : ''}
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
-// triplanar sample, bark furrows run up the trunk (y is stretched)
-vec4 tdTri(sampler2D t,vec3 p,vec3 bl,float s){return texture2D(t,vec2(p.z,p.y*.42)*s)*bl.x+texture2D(t,p.xz*s)*bl.y+texture2D(t,vec2(p.x,p.y*.42)*s)*bl.z;}
-// triplanar normal (UDN blend): returns the world-space perturbation to add to the surface normal
-vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
- vec3 tx=texture2D(tdNrm,vec2(p.z,p.y*.42)*s).xyz*2.-1.,ty=texture2D(tdNrm,p.xz*s).xyz*2.-1.,tz=texture2D(tdNrm,vec2(p.x,p.y*.42)*s).xyz*2.-1.;
- return (vec3(0.,tx.y,tx.x)*bl.x+vec3(ty.x,0.,ty.y)*bl.y+vec3(tz.x,tz.y,0.)*bl.z)*k;}` + NOISE)
+// triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
+// Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
+float tdLf=0.;vec3 tdA=vec3(0.,1.,0.),tdB=vec3(1.,0.,0.),tdC=vec3(0.,0.,1.);
+vec3 tdW(vec3 n,vec3 A,vec3 B,vec3 C){vec3 b=pow(abs(vec3(dot(n,B),dot(n,C),dot(n,A))),vec3(4.));return b/(b.x+b.y+b.z);}
+vec4 tdS(sampler2D t,vec3 p,vec3 n,vec3 A,vec3 B,vec3 C,float s){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8;
+ return texture2D(t,vec2(dot(p,C),a)*s)*w.x+texture2D(t,vec2(dot(p,B),a)*s)*w.y+texture2D(t,vec2(dot(p,B),dot(p,C))*s)*w.z;}
+vec3 tdSN(vec3 p,vec3 n,vec3 A,vec3 B,vec3 C,float s,float k){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8;
+ vec3 tx=texture2D(tdNrm,vec2(dot(p,C),a)*s).xyz*2.-1.,ty=texture2D(tdNrm,vec2(dot(p,B),a)*s).xyz*2.-1.,tz=texture2D(tdNrm,vec2(dot(p,B),dot(p,C))*s).xyz*2.-1.;
+ return ((C*tx.x+A*tx.y)*w.x+(B*ty.x+A*ty.y)*w.y+(B*tz.x+C*tz.y)*w.z)*k;}
+// both mappings, blended between the trunk and the roots / limbs
+vec4 tdTri(sampler2D t,vec3 p,vec3 n,float s){vec4 a=vec4(0.),b=vec4(0.);
+ if(tdLf<.99)a=tdS(t,p,n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s);if(tdLf>.01)b=tdS(t,p,n,tdA,tdB,tdC,s);return mix(a,b,tdLf);}
+vec3 tdTriN(vec3 p,vec3 n,float s,float k){vec3 a=vec3(0.),b=vec3(0.);
+ if(tdLf<.99)a=tdSN(p,n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s,k);if(tdLf>.01)b=tdSN(p,n,tdA,tdB,tdC,s,k);return mix(a,b,tdLf);}
+uniform float tdCool;` + NOISE)
         .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 wn=normalize(tdN); float y=tdP.y;
+#ifdef USE_MAP
+          // the sculpted model's own painted texture has long vertical streaks: keep only its broad colour (a blurred mip),
+          // the bark detail comes from the relief below
+          { vec4 mb=texture2D(map,vMapUv,5.);
+            #ifdef TD_LITE
+            float mute=.6;
+#else
+            float mute=.85;
+#endif
+            diffuseColor.rgb=diffuseColor.rgb/max(sampledDiffuseColor.rgb,vec3(.004))*mix(sampledDiffuseColor.rgb,mb.rgb,mute); }
+#endif
           // ---- bark relief: light worn crust on the ridges, deep dark furrows, fibrous detail up close ----
-          tdBl=pow(abs(wn),vec3(4.));tdBl/=tdBl.x+tdBl.y+tdBl.z;
+          { vec2 rv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float r=length(rv); vec3 rad=r>1e-3?vec3(rv.x/r,0.,rv.y/r):vec3(1.,0.,0.);
+            // roots and limbs: furrows along them. Near the ground the roots run outwards; higher up the limbs rise a little as they go out.
+            tdA=normalize(rad+vec3(0.,y>3.?.25:0.,0.)); tdC=vec3(-rad.z,0.,rad.x); tdB=normalize(cross(tdC,tdA));
+            tdLf=smoothstep(2.5,3.7,r); }
           tdFade=1.-smoothstep(5.,16.,length(cameraPosition-tdP));
-          vec4 ha=tdTri(tdHao,tdP,tdBl,tdScale), hb=tdTri(tdHao,tdP*1.0+7.3,tdBl,tdScale*4.);
+          // phones: one macro read and no close-up octave (GPU-bound at night); desktop: anti-tiling second read + micro detail up close
+          vec4 hb=vec4(.5,1.,.5,1.);
+#ifdef TD_LITE
+          vec4 ha=tdTri(tdHao,tdP,wn,tdScale);
+#else
+          float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
+          vec4 ha=tdTri(tdHao,tdP,wn,tdScale);
+          if(brk>.01)ha=mix(ha,tdTri(tdHao,tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale),brk);
+          if(tdFade>.01)hb=tdTri(tdHao,tdP+7.3,wn,tdScale*3.3);
+#endif
           tdH=ha.r;float cav=ha.g*mix(1.,.6+.4*hb.g,tdFade);
           float rel=tdRelief;
-          diffuseColor.rgb*=mix(1.,mix(.3,1.3,smoothstep(.05,.95,tdH))*mix(.35,1.,cav),rel);
+          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.6,1.,cav),rel);
           diffuseColor.rgb*=mix(1.,.82+.36*hb.b,tdFade*rel);
-          { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel); }
+          { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
+            // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
+            diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
+            diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.82,.8,1.05),vec3(1.),smoothstep(.15,.6,tdH)),tdCool); }
           vec2 ax=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float rd=length(ax);
           float lum=dot(diffuseColor.rgb,vec3(.3,.59,.11));
           // big soft patches + fine breakup
@@ -139,23 +175,31 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec3 wn=normalize(tdN);
-          vec3 dn=tdTriN(tdP,tdBl,tdScale,4.5)+tdTriN(tdP+7.3,tdBl,tdScale*4.,1.6)*tdFade;
+#ifdef TD_LITE
+          vec3 dn=tdTriN(tdP,wn,tdScale,3.);
+#else
+          float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
+          vec3 dn=tdTriN(tdP,wn,tdScale,3.);
+          if(brk>.01)dn=mix(dn,tdTriN(tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
+          if(tdFade>.01)dn+=tdTriN(tdP+7.3,wn,tdScale*3.3,1.1)*tdFade;
+#endif
+          dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.32,tdWM);')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.32,tdWM); // dry bark is fully matte')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
           vec3 wn=normalize(tdN), wv=normalize(cameraPosition-tdP);
           float fr=pow(1.-max(dot(wn,wv),0.),3.);
-          float rim=fr*max(dot(wn,normalize(tdRimD)),0.)*tdRimS*tdRimK;
+          float rim=fr*max(dot(wn,normalize(tdRimD)),0.)*tdRimS*tdRimK*(1.-.7*smoothstep(.5,.9,wn.y)); // an edge light, not a sheen on the tops
           totalEmissiveRadiance+=tdRimC*rim*(.12+tdL*1.6)*(1.-tdMM*.5)*(1.+tdWM*.8);
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress3';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress5';
     mat.needsUpdate = true;
   }
 
@@ -204,7 +248,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
   };
   // ================= 2. moss cushions on root tops and in limb forks =================
   {
-    const g = (() => { const s = new THREE.IcosahedronGeometry(1, 2); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); const p = m.attributes.position;
+    const g = (() => { const s = new THREE.IcosahedronGeometry(1, MOBILE ? 0 : 1); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); const p = m.attributes.position;
       for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 1 + 0.18 * Math.sin(x * 5.1 + z * 3.7) * Math.cos(z * 4.3 - y * 2); p.setXYZ(i, x * k, Math.max(y, -0.2) * k, z * k); }
       m.computeVertexNormals(); return m; })();
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
@@ -214,7 +258,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}');
     };
-    const NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL), im = new THREE.InstancedMesh(g, mat, N);
+    const NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL), NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
@@ -275,21 +319,22 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
       spots.push([x, y, z, rd, a, d]);
     }
     // soil mounds: low dark humps half buried, so the roots look like they grow out of earth, not out of a flat floor
-    const sg = (() => { const s = new THREE.IcosahedronGeometry(1, 2); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); m.computeVertexNormals(); return m; })();
+    const sg = (() => { const s = new THREE.IcosahedronGeometry(1, MOBILE ? 0 : 1); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); m.computeVertexNormals(); return m; })();
     const smat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
     smat.onBeforeCompile = sh => {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*6.);float g=td_n(tdP*40.);diffuseColor.rgb*=.7+.5*f+.3*(g-.5);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.03,.045,.015),smoothstep(.55,.75,f)*.6);}');
     };
-    const NS = Math.round(70 * MUL), soil = new THREE.InstancedMesh(sg, smat, NS); let ns = 0;
+    // the soil humps share the moss cushions' instanced mesh (one draw call less)
+    const soil = D.moss, NS = soil.instanceMatrix.count - soil.count, s0 = soil.count; let ns = 0;
     for (const [x, y, z, rd, a] of spots) {
       if (ns >= NS) break; if (R() < 0.55) continue;
       const w = rr(0.35, 0.75) * (0.6 + rd);
-      M4.compose(V(x, y - 0.06, z), new THREE.Quaternion().setFromAxisAngle(UP, -a + rr(-0.3, 0.3)), S.set(w * 0.6, rr(0.08, 0.16), w)); soil.setMatrixAt(ns, M4);
-      const v = rr(0.8, 1.1); col.setRGB(0.04 * v, 0.03 * v, 0.02 * v); soil.setColorAt(ns, col); ns++;
+      M4.compose(V(x, y - 0.06, z), new THREE.Quaternion().setFromAxisAngle(UP, -a + rr(-0.3, 0.3)), S.set(w * 0.6, rr(0.08, 0.16), w)); soil.setMatrixAt(s0 + ns, M4);
+      const v = rr(0.8, 1.1); col.setRGB(0.045 * v, 0.034 * v, 0.022 * v); soil.setColorAt(s0 + ns, col); ns++;
     }
-    soil.count = ns; soil.receiveShadow = true; D.group.add(soil); D.soil = soil;
+    soil.count = s0 + ns; D.soil = { count: ns };
 
     // fallen leaves: oak-leaf cards lying in the pockets, mostly brown and ochre, a few still green, some leaning on the roots
     const lg = new THREE.PlaneGeometry(1, 1); lg.rotateX(-Math.PI / 2);
@@ -409,8 +454,8 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
       D.strands = strands;
     }
     leaves.count = nl; leaves.receiveShadow = true; leaves.castShadow = !MOBILE; D.group.add(leaves); D.ivy = leaves;
-    const sgs = stems.map(s => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), Math.max(4, s.pts.length * 2), s.r, 4, false));
-    if (sgs.length) { const sm = new THREE.Mesh(mergeGeometries(sgs), new THREE.MeshStandardMaterial({ color: 0x3a3424, roughness: 0.9 })); sm.receiveShadow = true; D.group.add(sm); D.ivyStems = sm; }
+    const sgs = stems.map(s => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), Math.max(3, Math.round(s.pts.length * (MOBILE ? 0.7 : 1.5))), s.r, MOBILE ? 3 : 4, false));
+    if (sgs.length && !MOBILE) { const sm = new THREE.Mesh(mergeGeometries(sgs), new THREE.MeshStandardMaterial({ color: 0x3a3424, roughness: 0.9 })); sm.receiveShadow = true; D.group.add(sm); D.ivyStems = sm; }
   }
 
   // ================= 5. ferns and grass tufts in root crevices and forks =================
@@ -429,7 +474,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
     const fernG = (() => {
       const parts = [];
       for (let f = 0; f < 7; f++) {
-        const g = new THREE.PlaneGeometry(0.16, 1, 1, 8); const p = g.attributes.position; const a = f / 7 * Math.PI * 2 + (f % 2) * 0.3, L = 0.75 + (f % 3) * 0.12, tilt = 0.55 + (f % 2) * 0.25;
+        const g = new THREE.PlaneGeometry(0.16, 1, 1, MOBILE ? 5 : 8); const p = g.attributes.position; const a = f / 7 * Math.PI * 2 + (f % 2) * 0.3, L = 0.75 + (f % 3) * 0.12, tilt = 0.55 + (f % 2) * 0.25;
         for (let i = 0; i < p.count; i++) {
           const t = p.getY(i) + 0.5, w = p.getX(i);
           const out = Math.sin(tilt) * t * L, up = Math.cos(tilt) * t * L * 1.2 - t * t * 0.45 * L;
@@ -446,8 +491,8 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
     // grass tuft: a fan of narrow curved blades
     const tuftG = (() => {
       const parts = [];
-      for (let b = 0; b < 9; b++) {
-        const g = new THREE.PlaneGeometry(0.035, 1, 1, 4); const p = g.attributes.position; const a = b / 9 * Math.PI * 2 + b * 0.7, L = 0.28 + (b % 4) * 0.07, lean = 0.25 + (b % 3) * 0.15;
+      const NB = MOBILE ? 6 : 9; for (let b = 0; b < NB; b++) {
+        const g = new THREE.PlaneGeometry(MOBILE ? 0.045 : 0.035, 1, 1, MOBILE ? 3 : 4); const p = g.attributes.position; const a = b / 9 * Math.PI * 2 + b * 0.7, L = 0.28 + (b % 4) * 0.07, lean = 0.25 + (b % 3) * 0.15;
         for (let i = 0; i < p.count; i++) { const t = p.getY(i) + 0.5, w = p.getX(i) * (1 - t * 0.85); const out = lean * t * t * L; p.setXYZ(i, Math.cos(a) * out - Math.sin(a) * w, t * L, Math.sin(a) * out + Math.cos(a) * w); }
         g.computeVertexNormals(); parts.push(g);
       }
@@ -457,7 +502,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
       `{vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float k=clamp(position.y/.5,0.,1.);k*=k;transformed.x+=sin(uT*2.+ip.x*1.7+ip.z)*SW*k*uW;transformed.z+=sin(uT*1.5+ip.z*1.9)*SW*.6*k*uW;}`);
     tmat.onBeforeCompile = (prev => (s, r) => { prev(s, r); s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=mix(.35,1.15,tdH);'); s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying float tdH;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntdH=clamp(position.y/.45,0.,1.);'); s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying float tdH;'); })(tmat.onBeforeCompile);
 
-    const NF = Math.round(26 * MUL), NFK = Math.round(14 * MUL), NF2 = NF + NFK, NTF = Math.round(110 * MUL);
+    const NF = Math.round(26 * MUL), NFK = Math.round(14 * MUL), NF2 = NF + NFK, NTF = Math.round((MOBILE ? 60 : 110) * MUL);
     const ferns = new THREE.InstancedMesh(fernG, fmat, NF2), tufts = new THREE.InstancedMesh(tuftG, tmat, NTF);
     let nf = 0, nt = 0;
     // crevices: where two roots meet the trunk foot (ground just next to wood, close to the axis)
@@ -502,9 +547,9 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
     const env = C.env || window.__env || {}; const glowU = env.shroomGlow || { value: 0 };
     const paint = (g, f) => { const p = g.attributes.position; const c = new Float32Array(p.count * 3), a = new Float32Array(p.count); for (let i = 0; i < p.count; i++) { const r = f(p.getX(i), p.getY(i), p.getZ(i)); c.set(r[0], i * 3); a[i] = r[1]; } g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.setAttribute('aCap', new THREE.BufferAttribute(a, 1)); return g.toNonIndexed(); };
     // small cap: stem + domed cap with darker gills, local +y up, about 1 unit tall
-    const cap = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 0.6, 1).translate(0, 0.9, 0);
-    const gill = new THREE.CircleGeometry(0.97, 12).rotateX(Math.PI / 2).translate(0, 0.9, 0);
-    const stem = new THREE.CylinderGeometry(0.2, 0.3, 0.95, 7, 2).translate(0, 0.47, 0);
+    const cap = new THREE.SphereGeometry(1, MOBILE ? 8 : 12, MOBILE ? 3 : 6, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 0.6, 1).translate(0, 0.9, 0);
+    const gill = new THREE.CircleGeometry(0.97, MOBILE ? 8 : 12).rotateX(Math.PI / 2).translate(0, 0.9, 0);
+    const stem = new THREE.CylinderGeometry(0.2, 0.3, 0.95, MOBILE ? 5 : 7, 1).translate(0, 0.47, 0);
     const smallG = mergeGeometries([paint(stem, () => [[0.8, 0.76, 0.66], 0]), paint(gill, () => [[0.5, 0.4, 0.32], 0.1]), paint(cap, (x, y) => { const k = smooth(0.9, 1.45, y); return [[0.55 + k * 0.3, 0.3 + k * 0.12, 0.18 + k * 0.05], smooth(0.95, 1.4, y) * 0.8]; })]);
     // bracket (shelf) fungus: a thick half-disc sticking out of the bark along local +z, pale rim, brown banded top
     const br = new THREE.SphereGeometry(1, 14, 6, -Math.PI / 2, Math.PI, 0, Math.PI * 0.5).scale(1, 0.32, 0.85);
@@ -539,7 +584,12 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
         brk.setMatrixAt(nb, M4); const v = rr(0.8, 1.1); brk.setColorAt(nb++, col.setRGB(v, v * rr(0.95, 1.02), v * rr(0.9, 1)));
       }
     }
-    small.count = ns; brk.count = nb; small.receiveShadow = brk.receiveShadow = true; brk.castShadow = !MOBILE; D.group.add(small, brk); D.shrooms = small; D.brackets = brk;
+    small.count = ns; brk.count = nb;
+    // bake both kinds into one plain mesh (they never move): one draw call instead of two
+    const bake = (im, out) => { const m = new THREE.Matrix4(), c = new THREE.Color(); for (let i = 0; i < im.count; i++) { im.getMatrixAt(i, m); im.getColorAt(i, c); const g2 = im.geometry.clone().applyMatrix4(m); const ca = g2.attributes.color; for (let k = 0; k < ca.count; k++) ca.setXYZ(k, ca.getX(k) * c.r, ca.getY(k) * c.g, ca.getZ(k) * c.b); out.push(g2); } };
+    const parts = []; bake(small, parts); bake(brk, parts);
+    const fung = new THREE.Mesh(parts.length ? mergeGeometries(parts) : new THREE.BufferGeometry(), mk()); fung.receiveShadow = !MOBILE; fung.castShadow = !MOBILE;
+    small.dispose(); brk.dispose(); D.group.add(fung); D.shrooms = { count: ns }; D.brackets = { count: nb }; D.fungi = fung;
   }
 
   // ================= 7. hanging moss and lichen strands under the lower limbs (sway like ropes: wind.js windRope) =================
@@ -547,7 +597,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
     const tex = (() => {
       const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const x = cv.getContext('2d'); const r = rng(99);
       for (let i = 0; i < 46; i++) {
-        const x0 = 8 + r() * 48, len = 80 + r() * 170, w = 0.8 + r() * 1.6; const c = 120 + r() * 60;
+        const x0 = 32 + (r() + r() - 1) * 22, len = 80 + r() * 170, w = 0.8 + r() * 1.6; const c = 120 + r() * 60;
         x.strokeStyle = `rgba(${c * 0.82 | 0},${c | 0},${c * 0.72 | 0},${0.65 + r() * 0.35})`; x.lineWidth = w; x.beginPath(); x.moveTo(x0, 0);
         let px = x0; for (let y = 8; y < len; y += 8) { px += (r() - 0.5) * 3 - (px - 32) * 0.02 * (y / 256); x.lineTo(px, y); } x.stroke();
         // little tufts along the strand
@@ -556,9 +606,12 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
     })();
     // two crossed cards, top at y=0 hanging down to y=-1 (uv.y 1 at the top)
-    const a = new THREE.PlaneGeometry(1, 1).translate(0, -0.5, 0), b = a.clone().rotateY(Math.PI / 2);
+    const a = new THREE.PlaneGeometry(1, 1, 2, 6).translate(0, -0.5, 0);
+    { const q = a.attributes.position; for (let i = 0; i < q.count; i++) { const t = -q.getY(i); q.setX(i, q.getX(i) * (1 - 0.75 * t)); } }
+    const b = a.clone().rotateY(Math.PI / 2);
     const g = mergeGeometries([a, b]);
-    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 1, color: 0xa8b296 });
+    tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter; // averaged mips turned the strands into solid strips far away
+    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, color: 0xa8b296 });
     mat.onBeforeCompile = sh => {
       const W = window.__wind; if (!W) return; W.hook(sh);
       sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -566,7 +619,7 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
        vec3 off=windRope(ip,t,len)*3.5+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));
        transformed+=windLocal(off);}`);
     };
-    const N = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
+    const N = Math.round(45 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
     const under = sampler(q => q.n.y < -0.35 && q.c.y > 3.6 && q.c.y < 10.5 && radial(q.c.x, q.c.z) > 2.2);
     for (let k = 0; k < 600 && n < N; k++) {
       const s0 = under(); if (!s0) break; const p0 = s0.p;
@@ -622,6 +675,8 @@ vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
   // keep the bark's wet/rim uniforms in step with the time of day and the rain, without touching the main loop
   { const prev = TREE.bark.onBeforeRender; TREE.bark.onBeforeRender = function (...a) { D.update(); if (!D.boardLeaves && D.placeBoardLeaves) D.placeBoardLeaves(); if (prev) prev.apply(this, a); }; }
 
+  // phones: small dressing neither casts nor receives shadows (cheaper shaders, nothing in the shadow pass)
+  if (MOBILE) D.group.children.forEach(m => { m.castShadow = false; m.receiveShadow = false; });
   D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
   return D;
 }

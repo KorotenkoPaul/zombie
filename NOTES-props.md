@@ -58,3 +58,18 @@
 - Artifact NOT yet republished from this commit (thread was checkpointed); publish `game/index.html` + `game/props.js` + all game/*.txt/jpg/png
   to https://claude.ai/artifact/Ro32b6Sg7VRcXuuKDEq85d (see HANDOFF.md §3). props.js must be in `files`.
 - Local testing: jsdelivr is blocked in this cloud env; route cdn.jsdelivr.net to `npm i three@0.160.0 @dimforge/rapier3d-compat@0.12.0` via Playwright `page.route`.
+
+## Round 6 API (props.js, window.__props)
+- `point(name)` -> world Vector3 for hands/approach; `pointNames()`. Names: woodpile, pantry, board, sink, pan, pot, oven, fridge, radio, plant, table, chair, whetstone, nails, bench, jacketPeg, bowPeg, quiverPeg, logpile (outside), sawhorse (outside).
+- New tools (grab/release): board, knife, plate, pot, ladle, supplyCan, supplyJar, broom, wateringCan, diary, pencil, lantern, jacket, bow, quiver, plankSaw, meatBag, logArmful. `release(name, {blend:.4})` eases the tool home from the hand; `toolHome(name)` = world home spot. meatBag/logArmful are hidden until grabbed and hide again on release. `setHere(name, bool)` shows/hides gear on its peg.
+- `chairPull(k, sec)`: 0 home (seat pose fitted here), 1 = 20 cm back from the table.
+- `book.openTo(k, sec)`: covers ease open (1) / shut (0).
+- `door`: bedroom door in the right-wall opening, hinge at the front, opens into the room, rests open. `setOpen/openTo(k)` (0 shut), `setBolt/boltTo(k)` (only when shut), `handle()`, `boltKnob()`. When open and unattended it sways in the wind and bangs (`__audio.play('shutter')`) in strong gusts.
+- `fridge`: `setStock(n)` 0..6 meat pieces visible, `setOpen/openTo(k)` lower door, `handle()`, `inside()`, `max`.
+- `woodpile` (kitchen, by the stove): `setCount(n)` 0..10, `count`, `max`.
+- `pan.setMeat(bool)`, `pan.setCook(0..1)`; `plate.setFood(0..1)` (plate is a tool, home on the counter).
+- `radio`: `setOn(k)` (dial glows, emissive `radio.dialMat`), `setTune(k)`, `knob()`.
+- Switch: `switches.bedroom` (position, set by Lights).
+- `dishes`: 4 pieces, sink/rack/shelf. `setDirty(n)`, `wash()`, `putAway()`, `state()`, `setState({dirty, rack})`; points sink, rack, dishShelf.
+- `water`: `setClean(0..1)` tap bucket level (tap only runs > 0), `setDirty(0..1)` drain bucket, `tap(on)`, `pour(name, on)` (stream from the held bucket's lowest rim point, drains it), `update` auto-runs. Tools `waterBucket` (home on the shelf right of the kitchen window, hose to the tap) and `drainBucket` (home in the open bay under the sink). Water surface stays level and sloshes while carried. Points waterShelf, tap, drainBay.
+- Logs: `logGeo(variant)` natural unit logs (7 variants, 3..6 split); outside: logpile, chopblock with `axe` tool.
