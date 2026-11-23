@@ -253,7 +253,7 @@ export function createMotion({ hero, db, opts = {} }) {
     const pathing = H.path && H.path.length > 0 && !(H.path[0] && H.path[0].t === 'ladder' && H.lad && H.lad.phase !== 'mount');
     // hysteresis: small heading corrections at a workbench must not flick the legs between clips and motion matching
     const yawErr = Math.abs(wrapA((H.face ?? yaw) - yaw)); S.offT = S.on ? 0 : (S.offT || 0) + dt;
-    const turning = !H.trans && (S.on ? yawErr > .08 : yawErr > .35);
+    const turning = !H.trans && (S.on ? yawErr > .08 : yawErr > .9); // small pivots at a workbench stay with hero.js clips
     const moving = S.on ? simSpd > .1 : simSpd > .2 && S.offT > .25;
     const wantOn = !isBlocked && !window.__noMotion && (pathing || moving || (turning && (S.on || S.offT > .25)));
     if (wantOn) S.settle = .9; else S.settle = Math.max(0, S.settle - dt);
@@ -270,7 +270,7 @@ export function createMotion({ hero, db, opts = {} }) {
       if (S.searchT <= 0 || S.forceSearch || S.t >= clips[S.ci].n - 2) { S.searchT = .1; S.forceSearch = false; const t0 = T0();
         buildQuery(traj); const cc = curCost(); const [bi, bc] = search(Qv, -1, cc < 1e8 ? cc - Math.max(.2, cc * .15) : 1e9); // switch only for a clearly better match
         const ms = T0() - t0; S.stats.searches++; S.stats.ms += ms; S.stats.maxMs = Math.max(S.stats.maxMs, ms); S.cost = bc;
-        if (bi >= 0) { const ci = where[bi*2], f = where[bi*2+1]; if (!(ci === S.ci && Math.abs(f - S.t) < 4)) { S.ci = ci; S.t = f; S.jumps++; S.jumped = true; S.searchT = .22; S.lockDelay = Math.max(S.lockDelay || 0, .08); } } }
+        if (bi >= 0) { const ci = where[bi*2], f = where[bi*2+1]; if (!(ci === S.ci && f - S.t > -12 && f - S.t < 8)) { S.ci = ci; S.t = f; S.jumps++; S.jumped = true; S.searchT = .22; S.lockDelay = Math.max(S.lockDelay || 0, .08); } } }
       // playback speed: match the simulation's speed a little (stride warping is limited to +-15%)
       const c = clips[S.ci]; const f = clamp(Math.round(S.t), 0, c.n - 1); const ds = c.speed[f];
       let rate = 1; if (ds > .35 && pathing) rate = clamp((H.v || simSpd) / ds, .87, 1.18);
@@ -294,9 +294,16 @@ export function createMotion({ hero, db, opts = {} }) {
       const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : null; S.layer = !!(cn && !LOCO_CLIPS.has(cn) && H.cur.getEffectiveWeight() > .5);
     }
     // ---------- choose the source of every bone, inertialize switches, write the skeleton ----------
+    // layered: the action's spine is re-based on the motion-matched pelvis so the upper body keeps the action's orientation
+    // instead of swinging with every step's pelvis twist (people counter-rotate the chest when they walk)
+    const SPI = iOf.Spine; let spineFix = null;
+    if (S.on && S.layer && HB[HIPS] && HB[SPI]) { const mh = HB[HIPS].quaternion; const inv = [-cur[HIPS*4], -cur[HIPS*4+1], -cur[HIPS*4+2], cur[HIPS*4+3]]; const t = [0, 0, 0, 0];
+      qmul(inv, 0, [mh.x, mh.y, mh.z, mh.w], 0, t, 0); const sp = HB[SPI].quaternion; spineFix = [0, 0, 0, 0]; qmul(t, 0, [sp.x, sp.y, sp.z, sp.w], 0, spineFix, 0); }
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; let kind, sq, si;
       if (S.on && (isLower[b] || !S.layer)) { kind = 1; sq = cur; si = b*4; }
       else { kind = 0; src[b*4] = B.quaternion.x; src[b*4+1] = B.quaternion.y; src[b*4+2] = B.quaternion.z; src[b*4+3] = B.quaternion.w; sq = src; si = b*4; }
+      if (kind === 0 && b === SPI && spineFix) { src.set(spineFix, b*4); }
+      if (b === SPI && !!spineFix !== !!S.spFix) { if (srcKind[b] === kind) inertialize(b, sq, si, HL_SWITCH); S.spFix = !!spineFix; }
       if (kind !== srcKind[b] || (kind === 1 && S.jumped)) { if (srcKind[b] !== -1) inertialize(b, sq, si, kind !== srcKind[b] ? HL_SWITCH : HL_JUMP); srcKind[b] = kind; }
       const o = [0, 0, 0, 0]; qexp(o, 0, offX[b*3], offX[b*3+1], offX[b*3+2]); qmul(o, 0, sq, si, out, b*4); }
     { const hb = HB[HIPS]; const hk = S.on ? 1 : 0; const hs = S.on ? curH : pureH;

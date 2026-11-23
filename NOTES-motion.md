@@ -37,9 +37,16 @@ frames at 30 fps, mirrored at load (19,304). Not used: Mixamo (needs an Adobe lo
 | search cost (headless desktop) | | 0.17 ms per search, 10 searches/s, 88% of the DB pruned |
 Storyboards: /mnt/project-files/motion/*.jpg (tests/mm/strobe.js --strip).
 
+## After merging master (2026-11-23 ~19:40 UTC, new ground nav + planks), same scenario
+frozen-while-walking 316 -> 68 frames, P1/P2 jumps while walking 92 -> 65, in work poses 27 -> 10, planted ankle 0.087 -> 0.079 m/s.
+Turning in place only uses motion matching for turns over ~50° (small pivots at a bench stay hero.js clips); in layered
+mode the action's spine is re-based on the matched pelvis so the chest does not swing with each step.
+
 ## Known / next
 - Remaining P1 jumps on walks are mostly hero.js root moves (pushOut / floor raycast steps, e.g. a 14 cm root jump at the
   kitchen landing) and the ladder exit (pull-up pose -> walk); the root is not motion.js's.
 - hero.js turns on the spot before walking off (align factor); people start walking while turning. Proposal for Character:
   let H.v grow while |da| < ~100°.
+- hero.js bug seen in the full QA day: a task change during a ladder descent left H.lad set (58 s 'on the ladder' while
+  reading, then a root teleport). Reported to Character.
 - Ladder approach (`mount` phase) still lerps exponentially in hero.js; motion matching animates the steps.
