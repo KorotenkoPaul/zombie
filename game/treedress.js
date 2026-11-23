@@ -248,7 +248,7 @@ uniform float tdCool;` + NOISE)
   };
   // ================= 2. moss cushions on root tops and in limb forks =================
   {
-    const g = (() => { const s = new THREE.IcosahedronGeometry(1, 2); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); const p = m.attributes.position;
+    const g = (() => { const s = new THREE.IcosahedronGeometry(1, MOBILE ? 0 : 1); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); const p = m.attributes.position;
       for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 1 + 0.18 * Math.sin(x * 5.1 + z * 3.7) * Math.cos(z * 4.3 - y * 2); p.setXYZ(i, x * k, Math.max(y, -0.2) * k, z * k); }
       m.computeVertexNormals(); return m; })();
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
@@ -319,7 +319,7 @@ uniform float tdCool;` + NOISE)
       spots.push([x, y, z, rd, a, d]);
     }
     // soil mounds: low dark humps half buried, so the roots look like they grow out of earth, not out of a flat floor
-    const sg = (() => { const s = new THREE.IcosahedronGeometry(1, 2); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); m.computeVertexNormals(); return m; })();
+    const sg = (() => { const s = new THREE.IcosahedronGeometry(1, MOBILE ? 0 : 1); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); m.computeVertexNormals(); return m; })();
     const smat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
     smat.onBeforeCompile = sh => {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
@@ -453,7 +453,7 @@ uniform float tdCool;` + NOISE)
       D.strands = strands;
     }
     leaves.count = nl; leaves.receiveShadow = true; leaves.castShadow = !MOBILE; D.group.add(leaves); D.ivy = leaves;
-    const sgs = stems.map(s => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), Math.max(4, s.pts.length * 2), s.r, 4, false));
+    const sgs = stems.map(s => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), Math.max(3, Math.round(s.pts.length * (MOBILE ? 0.7 : 1.5))), s.r, MOBILE ? 3 : 4, false));
     if (sgs.length) { const sm = new THREE.Mesh(mergeGeometries(sgs), new THREE.MeshStandardMaterial({ color: 0x3a3424, roughness: 0.9 })); sm.receiveShadow = true; D.group.add(sm); D.ivyStems = sm; }
   }
 
@@ -473,7 +473,7 @@ uniform float tdCool;` + NOISE)
     const fernG = (() => {
       const parts = [];
       for (let f = 0; f < 7; f++) {
-        const g = new THREE.PlaneGeometry(0.16, 1, 1, 8); const p = g.attributes.position; const a = f / 7 * Math.PI * 2 + (f % 2) * 0.3, L = 0.75 + (f % 3) * 0.12, tilt = 0.55 + (f % 2) * 0.25;
+        const g = new THREE.PlaneGeometry(0.16, 1, 1, MOBILE ? 5 : 8); const p = g.attributes.position; const a = f / 7 * Math.PI * 2 + (f % 2) * 0.3, L = 0.75 + (f % 3) * 0.12, tilt = 0.55 + (f % 2) * 0.25;
         for (let i = 0; i < p.count; i++) {
           const t = p.getY(i) + 0.5, w = p.getX(i);
           const out = Math.sin(tilt) * t * L, up = Math.cos(tilt) * t * L * 1.2 - t * t * 0.45 * L;
@@ -490,8 +490,8 @@ uniform float tdCool;` + NOISE)
     // grass tuft: a fan of narrow curved blades
     const tuftG = (() => {
       const parts = [];
-      for (let b = 0; b < 9; b++) {
-        const g = new THREE.PlaneGeometry(0.035, 1, 1, 4); const p = g.attributes.position; const a = b / 9 * Math.PI * 2 + b * 0.7, L = 0.28 + (b % 4) * 0.07, lean = 0.25 + (b % 3) * 0.15;
+      const NB = MOBILE ? 6 : 9; for (let b = 0; b < NB; b++) {
+        const g = new THREE.PlaneGeometry(MOBILE ? 0.045 : 0.035, 1, 1, MOBILE ? 3 : 4); const p = g.attributes.position; const a = b / 9 * Math.PI * 2 + b * 0.7, L = 0.28 + (b % 4) * 0.07, lean = 0.25 + (b % 3) * 0.15;
         for (let i = 0; i < p.count; i++) { const t = p.getY(i) + 0.5, w = p.getX(i) * (1 - t * 0.85); const out = lean * t * t * L; p.setXYZ(i, Math.cos(a) * out - Math.sin(a) * w, t * L, Math.sin(a) * out + Math.cos(a) * w); }
         g.computeVertexNormals(); parts.push(g);
       }
@@ -501,7 +501,7 @@ uniform float tdCool;` + NOISE)
       `{vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float k=clamp(position.y/.5,0.,1.);k*=k;transformed.x+=sin(uT*2.+ip.x*1.7+ip.z)*SW*k*uW;transformed.z+=sin(uT*1.5+ip.z*1.9)*SW*.6*k*uW;}`);
     tmat.onBeforeCompile = (prev => (s, r) => { prev(s, r); s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=mix(.35,1.15,tdH);'); s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying float tdH;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntdH=clamp(position.y/.45,0.,1.);'); s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying float tdH;'); })(tmat.onBeforeCompile);
 
-    const NF = Math.round(26 * MUL), NFK = Math.round(14 * MUL), NF2 = NF + NFK, NTF = Math.round(110 * MUL);
+    const NF = Math.round(26 * MUL), NFK = Math.round(14 * MUL), NF2 = NF + NFK, NTF = Math.round((MOBILE ? 60 : 110) * MUL);
     const ferns = new THREE.InstancedMesh(fernG, fmat, NF2), tufts = new THREE.InstancedMesh(tuftG, tmat, NTF);
     let nf = 0, nt = 0;
     // crevices: where two roots meet the trunk foot (ground just next to wood, close to the axis)
@@ -546,9 +546,9 @@ uniform float tdCool;` + NOISE)
     const env = C.env || window.__env || {}; const glowU = env.shroomGlow || { value: 0 };
     const paint = (g, f) => { const p = g.attributes.position; const c = new Float32Array(p.count * 3), a = new Float32Array(p.count); for (let i = 0; i < p.count; i++) { const r = f(p.getX(i), p.getY(i), p.getZ(i)); c.set(r[0], i * 3); a[i] = r[1]; } g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.setAttribute('aCap', new THREE.BufferAttribute(a, 1)); return g.toNonIndexed(); };
     // small cap: stem + domed cap with darker gills, local +y up, about 1 unit tall
-    const cap = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 0.6, 1).translate(0, 0.9, 0);
-    const gill = new THREE.CircleGeometry(0.97, 12).rotateX(Math.PI / 2).translate(0, 0.9, 0);
-    const stem = new THREE.CylinderGeometry(0.2, 0.3, 0.95, 7, 2).translate(0, 0.47, 0);
+    const cap = new THREE.SphereGeometry(1, MOBILE ? 8 : 12, MOBILE ? 3 : 6, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 0.6, 1).translate(0, 0.9, 0);
+    const gill = new THREE.CircleGeometry(0.97, MOBILE ? 8 : 12).rotateX(Math.PI / 2).translate(0, 0.9, 0);
+    const stem = new THREE.CylinderGeometry(0.2, 0.3, 0.95, MOBILE ? 5 : 7, 1).translate(0, 0.47, 0);
     const smallG = mergeGeometries([paint(stem, () => [[0.8, 0.76, 0.66], 0]), paint(gill, () => [[0.5, 0.4, 0.32], 0.1]), paint(cap, (x, y) => { const k = smooth(0.9, 1.45, y); return [[0.55 + k * 0.3, 0.3 + k * 0.12, 0.18 + k * 0.05], smooth(0.95, 1.4, y) * 0.8]; })]);
     // bracket (shelf) fungus: a thick half-disc sticking out of the bark along local +z, pale rim, brown banded top
     const br = new THREE.SphereGeometry(1, 14, 6, -Math.PI / 2, Math.PI, 0, Math.PI * 0.5).scale(1, 0.32, 0.85);
