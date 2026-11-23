@@ -1,5 +1,7 @@
 # Hero redesign (2026-11-23)
 
+**Status: Pavel rejected the new hero (too adult) the same evening. The ORIGINAL hero is the default again (game/hero-glb.txt); the redesign loads with `?hero=new` (game/hero-new-glb.txt, assets/models/hero-new.glb). File names below that say hero-old now mean the default hero.**
+
 Pavel: the first hero looked too cartoony for the world. New hero = concept 1 "quiet survivor" (rust knitted sweater, scarf, belt with pouch, fingerless gloves, canvas trousers, boots, no quiver/jacket on the body).
 
 ## Files

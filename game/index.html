@@ -100,8 +100,10 @@ let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(l
 
 await RAPIER.init();prog();
 // ================= renderer =================
-const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
+const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);
+/* [PERF] the scene is drawn into the composer's own (non-MSAA) target, so canvas MSAA only smoothed the final full-screen copy: off on phones, same picture, less memory and bandwidth */
+const renderer=new THREE.WebGLRenderer({antialias:!MOBILE,powerPreference:'high-performance'});
+let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
 renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();const l=$('load');if(l){l.classList.remove('hide');$('loadTx').textContent='Перезапускаем картинку…';}setTimeout(()=>location.reload(),1500);});
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -123,7 +125,7 @@ const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('k
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(new URLSearchParams(location.search).get('hero')==='old'?'hero-old-glb.txt':'hero-glb.txt')/* ?hero=old = the first (cartoony) hero, kept as a fallback */]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(new URLSearchParams(location.search).get('hero')==='new'?'hero-new-glb.txt':'hero-glb.txt')/* ?hero=new = the adult survivor redesign (Pavel kept the original hero) */]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -905,16 +907,22 @@ if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.
 if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LIGHTS.winGlow(true),45);
 // fog simplification can't be undone: last resort
 // [PERF] thermal guard: when even px 1.5 can't keep up, hold a steady 30 FPS instead of thrashing (phones heat up fast)
-PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
+// [PERF] phones: a steady 30 FPS from the start (half the GPU work of 60, the main source of heat), slow climbing (10 s calm,
+// no climb for 60 s after a drop) so quality doesn't pop. ?fps60 turns the phone cap off.
+if(MOBILE&&!/[?&]fps60/.test(location.search)){PERF.minMs=1000/30;PERF.calmWins=5;PERF.downHold=60;}
+if(!PERF.minMs)PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
 if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+i);
 // [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
-let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
-PERF.addStep('sunShadow',()=>{if(sunEvery>=3)return false;sunEvery=3;},()=>{sunEvery=MOBILE?2:1;},30);
+// (at the phones' 30 FPS cap it is redrawn every frame again, so the hero's shadow never steps; every 2nd under load)
+const SUN0=MOBILE&&!PERF.minMs?2:1;let sunEvery=SUN0,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
+PERF.addStep('sunShadow',()=>{if(sunEvery>=SUN0+1)return false;sunEvery=SUN0+1;},()=>{sunEvery=SUN0;},30);
 const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
 // [WIND] shared half-resolution fog pass (game/fogpass.js): Environment's fog sheets, puffs and mist bands plus the
 // morning fog bank are drawn into a quarter-pixel target and blended over the frame once. __fogpass.setEnabled(false) = old way.
 const FOGPASS=await (async()=>{try{const {Pass,FullScreenQuad}=await import('three/addons/postprocessing/Pass.js');const fp=(await import(new URL(ASSET+'fogpass.js',document.baseURI).href)).createFogPass({THREE,renderer,scene,camera,composer,FullScreenQuad,Pass,MOBILE});
  composer.insertPass(fp.pass,1);fp.add([...(MOBILE?rays.children:[]),...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),...((typeof FOGBANK!=='undefined'&&FOGBANK.sheets)||[])]);return fp;}catch(e){console.error('fogpass',e);return null;}})();window.__fogpass=FOGPASS;
+// [ENV] phones: the output pass composites the half-res fog itself (one full-screen pass less) whenever nothing runs between them
+if(FOGPASS&&MOBILE&&ENV.outU)FOGPASS.merge=()=>{if(DOF.active||window.__fogMergeOff)return false;ENV.outU.tFog.value=FOGPASS.fogTexture;ENV.outU.fogOn.value=1;return true;};
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
 // [PERF] GPU cost finder (perf.js; 5 quick taps on the clock or ?perfdebug): each test switches ONE thing off.
@@ -936,6 +944,16 @@ let noPost=false;
  let lv=[];PERF.addTest('лампы',()=>{lv=[];scene.traverse(o=>{if((o.isPointLight||o.isSpotLight)&&o.visible){lv.push(o);o.visible=false;}});},()=>{lv.forEach(o=>o.visible=true);lv=[];});
  let dofW=false;PERF.addTest('DOF',()=>{dofW=DOF.enabled;DOF.enabled=false;},()=>{DOF.enabled=dofW;});
  PERF.addTest('постобработка',()=>{noPost=true;},()=>{noPost=false;});
+ /* [ENV] the environment's layers one by one */
+ {const E=ENV,vis=(list,on)=>list.filter(Boolean).forEach(o=>o.visible=on);let ck=0;
+  PERF.addTest('env: полосы тумана',()=>vis(E.sheets,false),()=>vis(E.sheets,true));
+  PERF.addTest('env: клубы тумана',()=>vis([E.puffs],false),()=>vis([E.puffs],true));
+  PERF.addTest('env: дымка',()=>vis(E.mist||[],false),()=>vis(E.mist||[],true));
+  PERF.addTest('env: дальние кольца',()=>vis(E.farRings||[],false),()=>vis(E.farRings||[],true));
+  PERF.addTest('env: фон-картина',()=>vis([E.backdrop],false),()=>vis([E.backdrop],true));
+  PERF.addTest('env: кроны леса',()=>vis([E.canopy,E.forestTrunks],false),()=>vis([E.canopy,E.forestTrunks],true));
+  PERF.addTest('env: облака неба',()=>{ck=1;},()=>{ck=0;});window.__skyNoCloud=()=>ck;
+  PERF.addTest('env: цветокоррекция',()=>{E.gradePass.uniforms.gOn.value=0;},()=>{E.gradePass.uniforms.gOn.value=1;});}
  let prW=1;PERF.addTest('пикселей ×¼',()=>{prW=PR;renderer.setPixelRatio(PR/2);resize();},()=>{renderer.setPixelRatio(prW);resize();});}
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
@@ -953,7 +971,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  {const ph=((MOON0+dayNo/8)%1)*Math.PI*2;moonU.ph.value=ph;moonIll=.5-.5*Math.cos(ph);}
  const P=pal(hour);rainK=lerp(rainK,weather==='rain'?WIND.rainAmt():0,dt*.6);/* [WIND] drizzle .35, rain .75, storm 1 */const dim=1-rainK*.45;
  const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));
- skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
+ skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
  sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)));sun.shadow.radius=3+nightK*3;/* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI;hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp;
@@ -1016,15 +1034,16 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  if(!camOv)DOF.update(dt,rig.focusDist);
  if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
- hud();if(noPost)renderer.render(scene,camera);else composer.render();
+ hud();if(ENV.outU)ENV.outU.fogOn.value=0;/* the fog pass turns it on when it hands its fog to the output pass */if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
 // [PERF] phones: objects smaller than 20 cm stop casting the sun/moon shadow (~100 of 256 casters, each one a draw call
 // in the shadow pass; their shadow is a few texels of a 1024 map over 24 m). They still receive shadows. Runs again later
 // for things built after loading.
 if(MOBILE){const _b=new THREE.Box3(),_v=V();const tiny=()=>{let n=0;scene.traverse(o=>{if(!o.isMesh||!o.castShadow||o.isInstancedMesh||o.isSkinnedMesh||o.userData.keepShadow)return;_b.setFromObject(o);_b.getSize(_v);if(Math.max(_v.x,_v.y,_v.z)<.2){o.castShadow=false;n++;}});return n;};PERF.tinyCasters=tiny();setTimeout(()=>{PERF.tinyCasters+=tiny();},8000);}
-// [PERF] phones start at pixel ratio 1.5 and climb to 2.2 while frames keep vsync (perf.js)
-if(MOBILE)PERF.preset([PX[1],PX[2],PX[3]]);
+// [PERF] phones start at pixel ratio 1.5 and climb while frames keep their interval (perf.js)
+// at the 30 FPS cap the ceiling is 1.75 (one rung up): above that the extra pixels mostly turn into heat on a 3x screen
+if(MOBILE){PERF.preset([PX[1],PX[2],PX[3]]);if(PERF.minMs){PX[1].up=null;PX[2].up=null;}}
 resize();hud();$('load').classList.add('hide');PERF.openDebugWhenReady();
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>BRAIN?BRAIN.command(n):startTask(n),
  view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
