@@ -84,3 +84,10 @@ Debug: `__treedress.stats()`.
 - Phone bark fixes found on the way: the lite "big" noise read was planar (x+z, y), constant along flat root tops -> pinkish
   stripes; now a skewed read that varies on every face. Lite lichen without fract() bands. Lite mutes the model's painted map
   like desktop (.85).
+
+## Round 13 (closest zoom, 1.43 m)
+- Desktop held up (micro octave + micro normal already). Phones were soft up close and one root showed long streaks: the lite
+  path mixed the trunk and root *coordinates* across the blend band, which makes a huge gradient there. Phones now take the two
+  reads only inside a narrow band (2.8-3.4 m), like desktop.
+- Phones, only while the camera is within 9 m of the trunk (uniform tdNear from the bark's onBeforeRender camera): the fine
+  octave read, and a screen-space micro bump from its height (dFdx/dFdy, no normal-map read). Bench within noise.
