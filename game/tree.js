@@ -308,6 +308,15 @@ export function buildTree(THREE, o) {
 `)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(vec3(.38,.37,.47),vec3(1.06,1.05,1.02),pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
+    // warm bark round the house at night (Environment drives env.barkWarm): diffuse only, the bark stays matte
+    const BW = (o.env || window.__env || {}).barkWarm;
+    if (BW) {
+      sh.uniforms.bwC = BW.color; sh.uniforms.bwS = BW.strength;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vBW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvBW=(modelMatrix*vec4(transformed,1.)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vBW;uniform vec3 bwC;uniform float bwS;')
+        .replace('#include <opaque_fragment>', `outgoingLight+=diffuseColor.rgb*bwC*bwS*smoothstep(1.,3.,vBW.y)*smoothstep(12.,10.,vBW.y)*smoothstep(-1.5,1.,vBW.z-(${AZ.toFixed(3)}));
+#include <opaque_fragment>`);
+    }
     if (ARCH) {
       sh.uniforms.aC = { value: new THREE.Vector2(ARCH.cx, ARCH.cz) }; sh.uniforms.aD = { value: new THREE.Vector2(ARCH.dx, ARCH.dz) };
       sh.uniforms.aY = { value: new THREE.Vector3(door.y0, door.y1, door.w) };
