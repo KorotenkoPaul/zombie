@@ -680,7 +680,7 @@ const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},w
 // [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
 const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
 // [WIND] autumn particles (game/particles.js): dust in the lamplit rooms, the hero's breath on cold mornings
-const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).createParticles({THREE,scene,wind:WIND,lights:LIGHTS,rooms:LEAF_AVOID,hero:{head:()=>heroBones&&heroBones.Head,mouth:()=>window.__hero&&window.__hero.mouth?window.__hero.mouth():null},MOBILE});window.__particles=PARTS;
+const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).createParticles({THREE,scene,wind:WIND,lights:LIGHTS,rooms:LEAF_AVOID,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,hero:{bones:()=>heroBones,head:()=>heroBones&&heroBones.Head,mouth:()=>window.__hero&&window.__hero.mouth?window.__hero.mouth():null},MOBILE});window.__particles=PARTS;
 // [WIND] the house answers the wind (game/housewind.js): the landing lantern swings on its chain, the telescope shivers in gusts
 const HOUSEWIND=(await import(new URL(ASSET+'housewind.js',document.baseURI).href)).createHouseWind({wind:WIND,scene,ladders:[{id:'ladder-ground',x:0,z:4.0,y0:0,y1:LC+.05},{id:'ladder-deck',x:1.35,z:3.15,y0:BD,y1:DK+.05}]});window.__housewind=HOUSEWIND;
 // [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
