@@ -73,3 +73,15 @@
 - `dishes`: 4 pieces, sink/rack/shelf. `setDirty(n)`, `wash()`, `putAway()`, `state()`, `setState({dirty, rack})`; points sink, rack, dishShelf.
 - `water`: `setClean(0..1)` tap bucket level (tap only runs > 0), `setDirty(0..1)` drain bucket, `tap(on)`, `pour(name, on)` (stream from the held bucket's lowest rim point, drains it), `update` auto-runs. Tools `waterBucket` (home on the shelf right of the kitchen window, hose to the tap) and `drainBucket` (home in the open bay under the sink). Water surface stays level and sloshes while carried. Points waterShelf, tap, drainBay.
 - Logs: `logGeo(variant)` natural unit logs (7 variants, 3..6 split); outside: logpile, chopblock with `axe` tool.
+- `bedCover(worldHip | null)`: he lies UNDER the quilt; the quilt rises over a body shape (feet toward -x of the bunk, head at the pillow), normals follow. `bedPress` stays for sitting/lying on top.
+
+## Perf structure (2026-11-23, round 7). Props ~107 calls / ~115k tris on iPhone 13 (perf_calls, 21:30, main + shadow)
+- `plainOf(mat)`: colour-only MeshStandardMaterials draw through 2 shared vertex-coloured materials (metal / not). Roughness rides in the vertex colour alpha (onBeforeCompile). Opt out with `mat.userData.keep = true` (needed for any material whose colour changes at runtime, e.g. the steak).
+- `bake(group, keepCast)`: merges per material. It skips `userData.live` subtrees, hidden meshes, instanced, skinned, morph and multi-material meshes. The late pass runs over every kept or live object. With keepCast, a material with one part is left as it is, and so is any `keep` material.
+- **Rule:** any mesh the code moves, hides or edits must sit under a `userData.live` node, or it gets merged away.
+- Tools at home: all tools (`out.tools`) with static, non-casting parts join the house's static merge, with a per-vertex tool id. `_toolProxyTick` (start of `update`) masks a tool and shows its own meshes whenever any of its parts' world matrices differ from home, or it is hidden. `noProxy` opts a tool out (the book).
+- Log stacks (woodpile, logpile): one mesh per material (bark, end grain, split). setCount works through a slot mask (`maskMat`), and so does the fridge meat (`meatU`).
+- Oven flames: one mesh, with the flicker in the vertex shader (`flameU`).
+- `lodGeo`: Cylinder, Sphere, Torus, Lathe, Circle and Cone parts get sides by real size (about 1 per cm of radius, at least 8). This only applies when the geometry is exactly what its generator made.
+- `rb()` with seg 1 is `chamferBox` (44 tris). Can labels share one atlas.
+- Measure: sed the `slice(0,40)` in tests/perf_calls.js, and tag `__props._roots` members to sum Props only.

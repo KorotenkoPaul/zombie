@@ -38,7 +38,7 @@ export function createFogPass({ THREE, renderer, scene, camera, composer, FullSc
     const head = `uniform sampler2D fpDepth;uniform vec2 fpRes;uniform float fpNear,fpFar,fpOn;
 float fpVZ(float d){return (fpNear*fpFar)/((fpFar-fpNear)*d-fpFar);}
 float fpOcc(){if(fpOn<.5${envSoft ? '||soft>.5' : ''})return 1.;float sd=texture2D(fpDepth,gl_FragCoord.xy/fpRes).x;
- float sz=-fpVZ(sd),fz=-fpVZ(gl_FragCoord.z);return clamp((sz-fz)/(.25+fz*.03),0.,1.);}
+ float sz=-fpVZ(sd),fz=-fpVZ(gl_FragCoord.z);return clamp((sz-fz)/(.15+fz*.012),0.,1.);}
 `;
     // multiply the final alpha: rename the shader's main and call it from a new one
     // (the helpers go right before main, after the shader's own uniforms such as Environment's 'soft')
@@ -78,6 +78,10 @@ void main(){fpMain();gl_FragColor.a*=fpOcc();
       camera.layers.set(FOG_LAYER); scene.background = null; rd.shadowMap.autoUpdate = false;
       rd.setRenderTarget(rt); rd.setClearColor(0x000000, 0); rd.clear(true, false, false); rd.autoClear = false;
       rd.render(scene, camera);
+      // give Environment's soft-edge uniforms back their own depth texture straight away: a material outside the fog layer
+      // that shares them must never sample the composer's depth while that target is being drawn (WebGL feedback loop)
+      for (const u of envU) { const sv = saved.get(u.tDepth); if (sv) { u.tDepth.value = sv[0]; u.uRes.value.copy(sv[1]); } }
+      FP.fpDepth.value = null;
       camera.layers.mask = mask; scene.background = bg; rd.shadowMap.autoUpdate = su; rd.setClearColor(col, cc);
       // lay it over the frame (no clear: keep the frame and its depth for the passes after this one)
       rd.setRenderTarget(this.renderToScreen ? null : read); fsq.render(rd); rd.autoClear = ac;

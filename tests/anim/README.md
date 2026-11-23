@@ -22,3 +22,12 @@ How it works
   penetration, per-frame jumps (second difference), snap turns, joint limits (knee folded or bent the wrong way, foot above the hip,
   foot near the head), foot sliding while planted, jitter (oscillation of 5 Hz or more while still), detours, sharp turns, crab walking, and
   tempo (walking speed, sit/stand duration, ladder speed, clip playback speed).
+
+## Stays and turning back (analyze.js section 9)
+
+- A stay is the time from the end of one walk to the start of the next. `turn-back` = the next walk ends where the
+  previous one started and the stay is < 20 s (P1 under 8 s). `short-stay` = any other stay < 20 s, except chained chores
+  (switch, hatch, bolt, micro, guard). Forced tour switches are not counted.
+- `tempo.stayByTask` gives count / min / median stay per task; `tempo.sleep` lists each time in bed, and `sleep-turnover`
+  flags getting out of bed at night and lying down again within 2 min.
+- The tour also forces hatch, bolt, repair, fetchwater, trip and eat when `HH.hasTask(name)` says the body can do them.

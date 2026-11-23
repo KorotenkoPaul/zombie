@@ -6,7 +6,7 @@
 // A height map of everything solid under the sky (roofs, decks, landings, rails) is built once after load, a few
 // rays per frame, so drops stop on the roofs instead of falling into the rooms, and splashes/drips know where to be.
 
-export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], MOBILE = false }) {
+export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], crown = null, MOBILE = false }) {
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const rnd = (a, b) => a + Math.random() * (b - a);
   // the rain box: around the tree, where the camera looks
@@ -16,9 +16,9 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
   const hTex = new THREE.DataTexture(hm, NX, NZ, THREE.RedFormat, THREE.FloatType);
   hTex.minFilter = hTex.magFilter = THREE.NearestFilter; hTex.needsUpdate = true;
 
-  const U = { uT: { value: 0 }, uK: { value: 0 }, uCol: { value: new THREE.Color(0.7, 0.75, 0.8) }, uH: { value: hTex },
+  const U = { uT: { value: 0 }, uK: { value: 0 }, uDK: { value: 0 }, uFT: { value: 0 }, uSF: { value: 1 }, uCol: { value: new THREE.Color(0.7, 0.75, 0.8) }, uH: { value: hTex },
     uBox: { value: new THREE.Vector4(X0, Z0, W, D) }, uTop: { value: TOP } };
-  const COMMON = `uniform float uT,uK,uTop;uniform vec4 uBox;uniform sampler2D uH;
+  const COMMON = `uniform float uT,uK,uDK,uTop,uFT,uSF;uniform vec4 uBox;uniform sampler2D uH;
     float topAt(vec2 xz){vec2 uv=(xz-uBox.xy)/uBox.zw;if(uv.x<0.||uv.y<0.||uv.x>1.||uv.y>1.)return -99.;return texture2D(uH,uv).r;}
     vec2 windVel(vec3 p){
 #ifdef WIND
@@ -44,13 +44,13 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
   const ND = MOBILE ? 1600 : 3200;
   const dA = new Float32Array(ND * 4); for (let i = 0; i < ND; i++) dA.set([Math.random(), Math.random(), Math.random(), Math.random()], i * 4);
   const drops = new THREE.Mesh(quadGeo(ND, { aD: dA }), mk(`attribute vec4 aD;varying float vA;
-    void main(){float spd=11.+aD.w*3.;float fall=mod(uT*spd+aD.z*uTop*3.,uTop);vec3 p=vec3(uBox.x+aD.x*uBox.z,uTop-fall,uBox.y+aD.y*uBox.w);
-     vec2 wv=windVel(p);p.xz+=wv*(fall/spd-1.);
+    void main(){float spd=11.+aD.w*3.;float fall=mod(uFT*spd+aD.z*uTop*3.,uTop);/* uFT: fall clock, slower in a drizzle (no jumps when it changes) */vec3 p=vec3(uBox.x+aD.x*uBox.z,uTop-fall,uBox.y+aD.y*uBox.w);
+     vec2 wv=windVel(p);p.xz+=wv*(fall/(spd*uSF)-1.);
      float on=step(fract(aD.w*7.31+aD.x*3.1),uK)*step(topAt(p.xz),p.y);
-     vec3 tail=p+vec3(wv.x,spd,wv.y)*.032;
+     vec3 tail=p+vec3(wv.x,spd*uSF,wv.y)*.032;
      vec4 a=viewMatrix*vec4(p,1.),b=viewMatrix*vec4(tail,1.);vec2 d=b.xy-a.xy;float L=length(d);d=L>1e-5?d/L:vec2(0.,1.);
      vec4 v=mix(a,b,position.y);v.xy+=vec2(d.y,-d.x)*position.x*max(.006,-a.z*.0026);/* about 1.5 px on screen at any distance */
-     vA=on*(.14+.16*position.y)*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
+     vA=on*(.14+.16*position.y)*(.55+.45*uSF)*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
     `varying float vA;void main(){gl_FragColor=vec4(uCol,vA);}`));
   drops.frustumCulled = false; drops.renderOrder = 8; drops.visible = false; scene.add(drops);
 
@@ -78,14 +78,22 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
     for (let iz = 1; iz < NZ - 1; iz++) for (let ix = 1; ix < NX - 1; ix++) { const i = iz * NX + ix; if (!kind[i]) continue;
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = i + dx + dz * NX; if (hm[i] - hm[j] > 0.8) edges.push([ix, iz, dx, dz, hm[i], hm[j]]); } }
     for (let i = edges.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [edges[i], edges[j]] = [edges[j], edges[i]]; }
-    const NDr = Math.min(edges.length, MOBILE ? 26 : 52); const rA = new Float32Array(NDr * 4), rB = new Float32Array(NDr * 4);
-    for (let k = 0; k < NDr; k++) { const [ix, iz, dx, dz, h1, h0] = edges[k];
+    const NE = Math.min(edges.length, MOBILE ? 26 : 52);
+    // drops from the leaf tips: big slow drops falling out of the crown for a while after the rain (onto whatever is below)
+    const tips = []; if (crown && crown.isInstancedMesh) { const m4 = new THREE.Matrix4(), v = V(0, 0, 0);
+      for (let i = 0; i < crown.count; i += 5) { crown.getMatrixAt(i, m4); v.setFromMatrixPosition(m4); if (v.y > 4 && v.y < 13 && v.x > X0 && v.x < X0 + W && v.z > Z0 && v.z < Z0 + D) tips.push(v.toArray()); } }
+    for (let i = tips.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [tips[i], tips[j]] = [tips[j], tips[i]]; }
+    const NT = Math.min(tips.length, MOBILE ? 18 : 40), NDr = NE + NT;
+    const rA = new Float32Array(NDr * 4), rB = new Float32Array(NDr * 4);
+    for (let k = 0; k < NE; k++) { const [ix, iz, dx, dz, h1, h0] = edges[k];
       const cx = X0 + (ix + 0.5) * CS, cz = Z0 + (iz + 0.5) * CS; let a = 0, b = CS, top = h1;
       for (let s = 0; s < 6; s++) { const m = (a + b) / 2; const y = castDown(cx + dx * m, cz + dz * m); if (y > h1 - 0.35) { a = m; top = y; } else b = m; }
       const off = rnd(-.2, .2); const ex = cx + dx * a + (dz ? off : 0), ez = cz + dz * a + (dx ? off : 0);
       rA.set([ex + dx * .01, top - .015, ez + dz * .01, Math.random()], k * 4); rB.set([rnd(1.4, 3.2), Math.max(.3, top - h0 - .05), Math.random(), 0], k * 4); }
+    for (let k = 0; k < NT; k++) { rB.set([1, 0, 2, 0], (NE + k) * 4); const [x, y, z] = tips[k]; const land = castDown(x, z); if (land > y - 0.3) continue;
+      rA.set([x + rnd(-.15, .15), y - .12, z + rnd(-.15, .15), Math.random()], (NE + k) * 4); rB.set([rnd(2.5, 6), y - .12 - land, rnd(.15, 1), 0], (NE + k) * 4); }
     drips = new THREE.Mesh(quadGeo(NDr, { aR: rA, aQ: rB }), mk(`attribute vec4 aR,aQ;varying float vA;varying vec2 vUv;
-      void main(){float age=fract(uT/aQ.x+aR.w*5.);const float H=.55;float on=step(aQ.z,uK*1.2);
+      void main(){float age=fract(uT/aQ.x+aR.w*5.);const float H=.55;float on=step(aQ.z,uDK);
        float grow=smoothstep(0.,H,age);float tf=max(0.,age-H)*aQ.x;float y=4.9*tf*tf;on*=step(y,aQ.y);
        vec3 p=aR.xyz-vec3(0.,y+grow*.012,0.);vec4 v=viewMatrix*vec4(p,1.);float st=1.+min(3.,tf*14.);
        v.xy+=vec2(position.x*.0065*(.5+.5*grow),(position.y-.5)*.016*st);vUv=vec2(position.x,position.y*2.-1.);
@@ -97,16 +105,17 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
 
   // ---------------- the height map: rays straight down, a few per frame ----------------
   const ray = new THREE.Raycaster(); ray.far = 60; const down = V(0, -1, 0); const o = V();
-  let targets = null, buckets = null; const BS = 2, BX = Math.ceil(W / BS), BZ = Math.ceil(D / BS);
+  let targets = null, buckets = null; const topMats = new Set(); const BS = 2, BX = Math.ceil(W / BS), BZ = Math.ceil(D / BS);
   function collect() {
     const sk = new Set(); for (const s of skip) s && s.traverse(x => sk.add(x));
     targets = []; scene.updateMatrixWorld(true);
     scene.traverse(m => {
-      if (!m.isMesh || m.isInstancedMesh || sk.has(m) || m === drops || !m.visible) return;
+      if (!m.isMesh || sk.has(m) || m === drops || !m.visible) return;   // instanced boards count too (Planks builds decks that way)
       const mats = Array.isArray(m.material) ? m.material : [m.material];
       if (mats.some(x => !x || x.transparent || x.isShaderMaterial || x.alphaTest > 0 || x.side === THREE.BackSide)) return;
-      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
-      const b = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld);
+      let b;
+      if (m.isInstancedMesh) { if (m.count > 4000) return; m.computeBoundingBox(); b = m.boundingBox.clone().applyMatrix4(m.matrixWorld); }
+      else { if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); b = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld); }
       if (b.max.x - b.min.x > 14 || b.max.z - b.min.z > 14) return;   // ground, sky, backdrops
       if (b.max.y < 0.4) return; targets.push([m, b]);
     });
@@ -120,7 +129,41 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
     const list = bx >= 0 && bz >= 0 && bx < BX && bz < BZ ? buckets[bz * BX + bx] : [];
     if (!list.length) return g;
     ray.set(o.set(x, 40, z), down); const hit = ray.intersectObjects(list, false)[0];
-    return hit && hit.point.y > g ? hit.point.y : g;
+    if (hit && hit.point.y > g) { const m = hit.object.material; if (m && m.isMeshStandardMaterial) topMats.add(m); return hit.point.y; }
+    return g;
+  }
+  // wet boards: every lit (standard) material that the sky rains on gets darker and glossy while wet, only where it is
+  // the top surface (the height map says nothing is above it), and shallow films of water gather on flat boards in a
+  // long rain. Dries as __wind.wet() falls. Planks' own onBeforeCompile is kept (chained).
+  const wetU = { uWetB: wind && wind.U ? wind.U.uWet : { value: 0 }, uHB: U.uH, uBoxB: U.uBox };   // own names: Ground's materials declare uWet
+  function wetBoards(mats) {
+    for (const m of mats) { if (m.userData.wetBoards) continue; m.userData.wetBoards = true; const prev = m.onBeforeCompile, key = m.customProgramCacheKey;
+      m.onBeforeCompile = (sh, r) => { prev && prev.call(m, sh, r); Object.assign(sh.uniforms, wetU);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWW;')
+          .replace('#include <project_vertex>', `#include <project_vertex>
+{vec4 ww=vec4(transformed,1.);
+#ifdef USE_INSTANCING
+ww=instanceMatrix*ww;
+#endif
+vWW=(modelMatrix*ww).xyz;}`);
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+uniform float uWetB;uniform sampler2D uHB;uniform vec4 uBoxB;varying vec3 vWW;
+float wbH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5);}
+float wbN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(wbH(i),wbH(i+vec2(1,0)),f.x),mix(wbH(i+vec2(0,1)),wbH(i+1.),f.x),f.y);}`)
+          .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.||huv.x>1.||huv.y>1.)?-99.:texture2D(uHB,huv).r;
+ float ex=smoothstep(.18,.04,top-vWW.y);
+#ifdef FLAT_SHADED
+ vec3 nv=normalize(cross(dFdx(vViewPosition),dFdy(vViewPosition)));
+#else
+ vec3 nv=normalize(vNormal);
+#endif
+ vec3 wn=normalize((vec4(nv,0.)*viewMatrix).xyz);float up=smoothstep(.55,.9,wn.y);
+ float wet=uWetB*ex*(.3+.7*up);float film=up*ex*smoothstep(.55,.72,wbN(vWW.xz*1.6))*smoothstep(.55,.95,uWetB);
+ diffuseColor.rgb*=1.-.34*wet-.12*film;roughnessFactor=mix(roughnessFactor,.22,wet*.9);roughnessFactor=mix(roughnessFactor,.04,film);}`);   /* after Planks' own roughness (theirs is set right after roughnessmap) */
+      };
+      m.customProgramCacheKey = () => (key ? key.call(m) : '') + '|wetBoards'; m.needsUpdate = true; }
+    R.wetMats = [...mats];
   }
   let scan = 0, wait = 90; const GK = { value: 1 };
   const R = {
@@ -134,11 +177,17 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], M
         const t0 = performance.now(), budget = MOBILE ? 3 : 5;
         for (; scan < NX * NZ && performance.now() - t0 < budget; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
           const y = castDown(x, z); hm[scan] = y; kind[scan] = y > groundH(x, z) + 0.6 ? 1 : 0; }
-        if (scan >= NX * NZ) { R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; }
+        if (scan >= NX * NZ) { R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; wetBoards(topMats); }
         else return;
       }
-      const on = rainK > 0.01; drops.visible = on; if (splash) splash.visible = on; if (drips) drips.visible = on;
+      // drips keep going after the rain, thinning out as things dry (wetness dries over a couple of minutes)
+      const wet = wind && wind.wet ? wind.wet() : 0; const dk = Math.max(rainK * 1.2, Math.pow(wet, 1.4) * 0.85);
+      U.uDK.value = dk; if (drips) drips.visible = dk > 0.01; if (dk > 0.01 || rainK > 0.01) U.uT.value = T;
+      const on = rainK > 0.01; drops.visible = on; if (splash) splash.visible = on;
       if (!on) return;
+      // a drizzle falls slower, in short faint streaks; a rain or storm at full speed
+      const sf = wind && wind.rainKind && wind.rainKind() === 'drizzle' ? 0.42 : 1; U.uSF.value += (sf - U.uSF.value) * Math.min(1, dt / 3);
+      U.uFT.value += dt * U.uSF.value;
       U.uT.value = T; U.uK.value = rainK;
       if (fogColor) U.uCol.value.copy(fogColor).multiplyScalar(1.25).addScalar(0.12);
     },

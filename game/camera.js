@@ -28,9 +28,10 @@ export function createCameraRig(o) {
   const goal = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   const cur = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   let followOn = false, atHome = true, flyK = 0, idle = 0;
-  const MIN_D = 1.0, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
+  const MIN_D = 1.43, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
   const AXIS = o.axis || [0, -0.6];
-  const maxD = () => home.dist * 1.0, hardD = () => home.dist * 1.2;   // Pavel: max zoom-out 20 % less far (was 1.25 / 1.5)
+  // zoom-out as it was originally (Pavel 20:52): soft limit 1.25x home with a rubber band up to 1.5x
+  const maxD = () => home.dist * 1.25, hardD = () => home.dist * 1.5;
 
   // ---------- picking ----------
   const ray = new THREE.Raycaster();
@@ -69,6 +70,7 @@ export function createCameraRig(o) {
   // ---------- helpers ----------
   const tmp = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
   function zoomAt(f, point) {          // f<1 zooms in; the picked point stays under the finger
+    cancelFly();
     const over = goal.dist > maxD() && f > 1 ? 0.35 : 1;           // resistance past the far limit
     const nd = clamp(goal.dist * Math.pow(f, over), MIN_D, hardD());
     rec(0, 0, 0, 0, Math.log(nd / goal.dist), point);
@@ -79,11 +81,26 @@ export function createCameraRig(o) {
       limitOut(tmp);
       goal.target.copy(tmp);
     }
-    goal.dist = nd; flyK = 0; atHome = false;
-    if (followOn && point && k > 0) { const f = follow(); if (!f || f.distanceTo(point) > 1.5) stopFollow(); }
+    goal.dist = nd; endFly(); atHome = false;
   }
   function stopFollow() { fHave = false; if (followOn) { followOn = false; o.onFollow && o.onFollow(false); } }
+  // a flight (double tap, home, follow start) taken over by the fingers stops where it is instead of
+  // finishing the rest of the way at finger speed (that read as a jump)
+  let fly = null;
+  function startFly(dur) {             // eased flight from where the camera is now to goal (goal may keep moving)
+    const L0 = toLocal(cur.target, cur.yaw, new THREE.Vector3());
+    toLocal(goal.target, goal.yaw, gL);
+    const span = L0.distanceTo(gL) / Math.max(1, Math.min(cur.dist, goal.dist)) + Math.abs(Math.log(goal.dist / cur.dist)) + Math.abs(goal.yaw - cur.yaw) + Math.abs(goal.pitch - cur.pitch);
+    fly = { t: 0, dur: dur || (isFinite(span) ? clamp(0.55 + span * 0.35, 0.6, 1.6) : 0.8), L0, y0: cur.yaw, p0: cur.pitch, d0: cur.dist };
+    flyK = 1;
+  }
+  function endFly() { fly = null; flyK = 0; }
+  function cancelFly() {
+    if (!flyK || cine.on) return;
+    goal.target.copy(cur.target); goal.yaw = cur.yaw; goal.pitch = cur.pitch; goal.dist = cur.dist; endFly();
+  }
   function pan(dx, dy) {               // screen pixels
+    cancelFly();
     const h = dom.clientHeight || innerHeight;
     const s = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * goal.dist / h;
     right.setFromMatrixColumn(camera.matrixWorld, 0);
@@ -94,14 +111,19 @@ export function createCameraRig(o) {
     if (o1 > o0 && o1 > 0) tmp.lerp(goal.target, clamp(o1 / 3, 0, 0.85));
     if (outside(tmp) < 3.5) goal.target.copy(tmp);
     rec(0, 0, dx, dy, 0, null);
-    stopFollow(); flyK = 0; atHome = false;
+    stopFollow(); endFly(); atHome = false;
   }
   // Orbit always turns around the oak's trunk (vertical axis through AXIS), within the same limits as the
   // original camera (±0.75 rad from the front view, pitch 0.02..0.6). When zoomed in somewhere, the whole view
   // swings around the trunk with it, so the rotation never pivots on an arbitrary spot.
   function orbit(dx, dy) {
+    cancelFly();
     rec(dx, dy, 0, 0, 0, null);
-    const ny = clamp(goal.yaw - dx * 0.006, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
+    // ease into the rotation limits: the last 0.15 rad get gradually stiffer, so the view slows down instead of stopping dead
+    const ease = (room, toward) => toward ? clamp(room / 0.15, 0.12, 1) : 1;
+    let ddy = -dx * 0.006;
+    ddy *= ease(home.yaw + YAW_LIM - goal.yaw, ddy > 0) * ease(goal.yaw - (home.yaw - YAW_LIM), ddy < 0);
+    const ny = clamp(goal.yaw + ddy, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
     const a = ny - goal.yaw;
     if (a) {
       const x = goal.target.x - AXIS[0], z = goal.target.z - AXIS[1], c = Math.cos(a), sn = Math.sin(a);
@@ -109,27 +131,33 @@ export function createCameraRig(o) {
       goal.yaw = ny;
       limitOut(goal.target);
     }
-    goal.pitch = clamp(goal.pitch + dy * 0.004, PMIN, PMAX);
-    flyK = 0; atHome = false;
+    let ddp = dy * 0.004;
+    ddp *= ease(PMAX - goal.pitch, ddp > 0) * ease(goal.pitch - PMIN, ddp < 0);
+    goal.pitch = clamp(goal.pitch + ddp, PMIN, PMAX);
+    endFly(); atHome = false;
   }
-  function flyTo(point, dist, k = 3.2) {
+  function flyTo(point, dist) {
+    stopInertia();
     goal.target.copy(point); limitOut(goal.target);
     goal.dist = clamp(dist, MIN_D, maxD());
-    flyK = k; atHome = false;
+    startFly(); atHome = false;
   }
   function goHome() {
-    stopFollow(); atHome = true;
+    stopFollow(); stopInertia(); atHome = true;
     goal.target.copy(home.target); goal.dist = home.dist; goal.pitch = home.pitch;
     // shortest way back around
     goal.yaw = home.yaw + Math.round((goal.yaw - home.yaw) / (Math.PI * 2)) * Math.PI * 2;
-    flyK = 2.2;
+    startFly();
   }
   function setFollow(on) {
     followOn = on; atHome = false;
     if (on) {   // look at him from the open (front) side of the house
-      goal.dist = clamp(Math.min(goal.dist, 4.2), MIN_D, maxD()); flyK = 3;
+      stopInertia(); if (cine.on) stopCine();
+      const f = follow(); if (f) { goal.target.copy(f); fHave = false; }   // fly straight to him, then trail softly
+      goal.dist = clamp(Math.min(goal.dist, 4.2), MIN_D, maxD());
       goal.yaw = home.yaw + Math.round((goal.yaw - home.yaw) / (Math.PI * 2)) * Math.PI * 2;
       goal.pitch = clamp(goal.pitch, 0.1, 0.45);
+      startFly();
     }
     o.onFollow && o.onFollow(on);
   }
@@ -176,6 +204,7 @@ export function createCameraRig(o) {
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { dom.setPointerCapture(e.pointerId); } catch (_) {}
     idle = 0; stopCine(); stopInertia(); recording = true;
+    stopFollow();                      // following the hero ends on any touch: the fingers take over from where it is
     if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -197,7 +226,7 @@ export function createCameraRig(o) {
       const d = Math.max(10, Math.hypot(a.x - b.x, a.y - b.y));
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       pinch.mv = (pinch.mv || 0) + Math.hypot(mx - pinch.mx, my - pinch.my);
-      if (!followOn || pinch.mv > 40) pan(mx - pinch.mx, my - pinch.my);
+      pan(mx - pinch.mx, my - pinch.my);
       zoomAt(pinch.d / d, pinch.p);
       pinch.d = d; pinch.mx = mx; pinch.my = my;
       return;
@@ -245,21 +274,22 @@ export function createCameraRig(o) {
   }
 
   dom.addEventListener('wheel', e => {
-    e.preventDefault(); idle = 0; stopCine();
+    e.preventDefault(); idle = 0; stopCine(); stopFollow();
     let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-    const f = Math.exp(clamp(dy * (e.ctrlKey ? 0.01 : 0.0016), -0.35, 0.35)); // ctrlKey = trackpad pinch; one notch at most ±35 %
+    const f = Math.exp(clamp(dy, -200, 200) * (e.ctrlKey ? 0.01 : 0.0016)); // ctrlKey = trackpad pinch
     zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null);
   }, { passive: false });
 
   // Safari desktop trackpad pinch
   let gs = 1;
   dom.addEventListener('gesturestart', e => { e.preventDefault(); gs = 1; });
-  dom.addEventListener('gesturechange', e => { e.preventDefault(); const f = gs / e.scale; gs = e.scale; zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null); });
+  // (on iPhone/iPad a two-finger touch pinch also fires gesture events: the pointer pinch already handles it, so skip)
+  dom.addEventListener('gesturechange', e => { e.preventDefault(); if (ptrs.size >= 2) { gs = e.scale; return; } const f = gs / e.scale; gs = e.scale; zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null); });
   dom.addEventListener('gestureend', e => e.preventDefault());
 
   addEventListener('keydown', e => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
-    idle = 0; stopCine();
+    idle = 0; stopCine(); stopFollow();
     const s = 24;
     if (e.key === 'ArrowLeft') orbit(-s, 0); else if (e.key === 'ArrowRight') orbit(s, 0);
     else if (e.key === 'ArrowUp') orbit(0, -s); else if (e.key === 'ArrowDown') orbit(0, s);
@@ -271,6 +301,8 @@ export function createCameraRig(o) {
   // After CINE_IDLE s without a touch the camera drifts on its own between calm shots (windows, the hero,
   // the roots, the crown), slow push-ins and arcs; any touch hands control straight back from where it is.
   const CINE_IDLE = o.cineIdle || 30;
+  // Pavel: the camera never moves by itself (only the tiny idle breathing). Cinematic idle is opt-in: ?cine=1
+  const CINE_ON = o.cineAuto !== undefined ? !!o.cineAuto : /[?&]cine=1\b/.test(typeof location !== 'undefined' ? location.search : '');
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
   const SHOTS = o.shots || [
     { name: 'bedroom',  t: V3(-2.0, 9.4, 1.6), yaw: 0.25, pitch: 0.10, dist: 5.6, arc: -0.025, push: 0.012 },
@@ -283,9 +315,10 @@ export function createCameraRig(o) {
     { name: 'house',    t: V3(0, 7.4, 2.4), yaw: -0.3, pitch: 0.08, dist: 18, arc: 0.012, push: 0.006 },
   ];
   const cine = { on: false, i: -1, t: 0, hold: 11, shot: null };
+  let cineForce = false;
   function stopCine() {
     if (!cine.on) return;
-    cine.on = false; flyK = 0;
+    cine.on = false; endFly();
     goal.target.copy(cur.target); goal.yaw = cur.yaw; goal.pitch = cur.pitch; goal.dist = cur.dist;  // freeze where it is
     o.onCine && o.onCine(false);
   }
@@ -315,11 +348,11 @@ export function createCameraRig(o) {
     goal.target.copy(tg);
     goal.yaw = cine.shot.yaw + Math.round((cur.yaw - cine.shot.yaw) / (Math.PI * 2)) * Math.PI * 2;
     goal.pitch = cine.shot.pitch; goal.dist = cine.shot.dist;
-    flyK = 0.55;                                    // a slow, floating move between shots
+    startFly(4);                                    // a slow, floating move between shots
   }
   function stepCine(dt) {
     if (!cine.on) {
-      if (idle > CINE_IDLE && !ptrs.size && !inert.on && !followOn) { cine.on = true; stopFollowSilent(); o.onCine && o.onCine(true); nextShot(); }
+      if ((CINE_ON || cineForce) && idle > CINE_IDLE && !ptrs.size && !inert.on && !followOn) { cine.on = true; stopFollowSilent(); o.onCine && o.onCine(true); nextShot(); }
       return;
     }
     cine.t += dt;
@@ -356,8 +389,8 @@ export function createCameraRig(o) {
   }
 
   // ---------- per frame ----------
-  let hitWhy = null, collK = 1;
-  const gL = new THREE.Vector3(), cL = new THREE.Vector3();
+  let hitWhy = null, collK = 1, driftAmt = 0, breathT = 0;
+  const gL = new THREE.Vector3(), cL = new THREE.Vector3(), fL = new THREE.Vector3();
   function toLocal(t, yaw, out) {     // inverse of the orbit rotation around AXIS by yaw
     const x = t.x - AXIS[0], z = t.z - AXIS[1], c = Math.cos(-yaw), sn = Math.sin(-yaw);
     return out.set(x * c + z * sn, t.y, -x * sn + z * c);
@@ -376,6 +409,66 @@ export function createCameraRig(o) {
   }
   const inB = new THREE.Vector3();
   function outside(t) { return inside(t, inB).distanceTo(t); }
+  // rooms of the house: [x0,x1,y0,y1,z0,z1] inner boxes; walls on every face except the open front (z1)
+  const rooms = o.rooms || (() => []);
+  const WALL = 0.2;
+  function inBox(t, b, m) { return t.x > b[0] - m && t.x < b[1] + m && t.y > b[2] - m && t.y < b[3] + m && t.z > b[4] - m && t.z < b[5] + m; }
+  function roomExit(t, dv) {           // distance along dv at which the camera would pass a wall of the room holding t
+    let best = Infinity;
+    for (const b of rooms()) {
+      if (!inBox(t, b, 0)) continue;
+      let tMin = Infinity, face = -1;
+      const c = [t.x, t.y, t.z], v = [dv.x, dv.y, dv.z];
+      for (let a = 0; a < 3; a++) {
+        if (Math.abs(v[a]) < 1e-6) continue;
+        const pl = v[a] > 0 ? b[a * 2 + 1] : b[a * 2], tt = (pl - c[a]) / v[a];
+        if (tt < tMin) { tMin = tt; face = a * 2 + (v[a] > 0 ? 1 : 0); }
+      }
+      if (face !== 5) best = Math.min(best, tMin - WALL);
+    }
+    return best;
+  }
+  function outOfWalls(pt, t) {         // push a camera standing in a wall slab out to the focus's side
+    let moved = false;
+    for (let pass = 0; pass < 3; pass++) if (!outOfWalls1(pt, t)) break; else moved = true;   // stacked floors: repeat
+    return moved;
+  }
+  function outOfWalls1(pt, t) {
+    let moved = false;
+    for (const b of rooms()) {
+      if (!inBox(pt, b, WALL)) continue;
+      const c = [pt.x, pt.y, pt.z], tc = [t.x, t.y, t.z];
+      for (let f = 0; f < 5; f++) {    // every face but the open front
+        const a = f >> 1, pl = b[f];
+        if (Math.abs(c[a] - pl) >= WALL) continue;
+        let inside = true;
+        for (let q = 0; q < 3; q++) if (q !== a && (c[q] < b[q * 2] - WALL || c[q] > b[q * 2 + 1] + WALL)) inside = false;
+        if (!inside) continue;
+        const inner = f & 1 ? -1 : 1;  // direction from the plane into the room
+        // the side the focus is on; a focus inside the board itself (between two floors): the nearer side
+        const focusIn = Math.abs(tc[a] - pl) < WALL ? (c[a] - pl) * inner > 0 : (tc[a] - pl) * inner > 0;
+        c[a] = pl + (focusIn ? inner : -inner) * WALL; moved = true;
+      }
+      pt.set(c[0], c[1], c[2]);
+    }
+    return moved;
+  }
+  // crown limbs (above 11.5 m): a voxel proxy from index.html; like the rooms, only close views stop in front of a limb
+  const limb = o.limb || (() => false);
+  function outOfLimb(t, yaw, pitch) {  // a focus inside a limb steps out toward the camera's side
+    if (!limb(t.x, t.y, t.z)) return;
+    const cx = Math.sin(yaw) * Math.cos(pitch), cy = Math.sin(pitch), cz = Math.cos(yaw) * Math.cos(pitch);
+    for (let n = 0; n < 50 && limb(t.x, t.y, t.z); n++) { t.x += cx * 0.1; t.y += cy * 0.1; t.z += cz * 0.1; }
+  }
+  function limbHit(t, dv, dmax) {
+    if (cur.dist > 8) return Infinity;
+    const top = Math.min(dmax, 8);
+    if (t.y + dv.y * top < 11.3 && t.y < 11.3) return Infinity;
+    let s0 = 0;                        // a focus on (or in) the bark: start where the ray leaves it
+    while (s0 < 1.5 && limb(t.x + dv.x * s0, t.y + dv.y * s0, t.z + dv.z * s0)) s0 += 0.1;
+    for (let s = s0 + 0.3; s <= top; s += 0.1) if (limb(t.x + dv.x * s, t.y + dv.y * s, t.z + dv.z * s)) return Math.max(s0 + 0.2, s - 0.35);
+    return Infinity;
+  }
   function limitOut(t) {             // the focus may leave the soft bounds a little (rubber band), never far
     const o1 = outside(t);
     if (o1 > 3.5) { inside(t, inB); t.sub(inB).multiplyScalar(3.5 / o1).add(inB); }
@@ -387,37 +480,59 @@ export function createCameraRig(o) {
       t.x += dx / r * 0.08; t.z += dz / r * 0.08;
     }
   }
-  function keepOut(target, dt, dragging) {
+  function keepOut(target, dt, dragging, yaw) {
     // never below ground; beyond the soft bounds: spring back once the fingers are off
     target.y = Math.max(target.y, groundY(target.x, target.z) + BOUND.yMin);
+    // never behind the trunk as seen from the camera (a focus there puts the trunk between the camera and it)
+    if (yaw !== undefined) outOfLimb(target, yaw, goal.pitch);
+    if (yaw !== undefined) { toLocal(target, yaw, fL); if (fL.z < 0.7) { fL.z = 0.7; fromLocal(fL, yaw, target); } }
     outOfTrunk(target);
     if (!dragging && outside(target) > 0.001) target.lerp(inB, damp(5, dt));
   }
   function update(dt, extra = {}) {
+    dt = dt > 0 ? Math.min(dt, 0.1) : 0;            // a hitch or a bad first frame must never throw the camera
+    if (!(cur.dist > 0) || !isFinite(cur.target.x + cur.target.y + cur.target.z + cur.yaw + cur.pitch)) snap();
     pickAge += dt; idle += dt;
     if (followOn) followStep(dt);
     stepInertia(dt);
     stepCine(dt);
     for (const U of fadeU) U.u.value = clamp(cur.dist * U.k, U.min, U.max);
     const dragging = ptrs.size > 0 || inert.on;
-    keepOut(goal.target, dt, dragging);
+    keepOut(goal.target, dt, dragging, goal.yaw);
     goal.dist = clamp(goal.dist, MIN_D, hardD());
     if (!dragging && goal.dist > maxD()) goal.dist += (maxD() - goal.dist) * damp(5, dt);
-    const k = flyK ? damp(flyK, dt) : damp(14, dt);
-    // The focus is damped in the frame that turns with the view around the trunk axis: an orbit is then a pure rotation
+    // The focus is moved in the frame that turns with the view around the trunk axis: an orbit is then a pure rotation
     // around the trunk (no chord cutting toward the tree, no distance wobble), and flights between views swing around
     // the trunk instead of passing through it.
-    toLocal(goal.target, goal.yaw, gL); toLocal(cur.target, cur.yaw, cL);
-    cL.lerp(gL, k);
-    cur.yaw += (goal.yaw - cur.yaw) * k;
+    toLocal(goal.target, goal.yaw, gL);
+    if (fly) {
+      // flights (double tap, home, follow, cinematic shots) follow an eased path: gentle start, gentle landing
+      fly.t += dt;
+      const u = Math.min(1, fly.t / fly.dur), e = u * u * u * (u * (u * 6 - 15) + 10);
+      cL.copy(fly.L0).lerp(gL, e);
+      cur.yaw = fly.y0 + (goal.yaw - fly.y0) * e;
+      cur.pitch = fly.p0 + (goal.pitch - fly.p0) * e;
+      cur.dist = Math.exp(Math.log(fly.d0) + (Math.log(goal.dist) - Math.log(fly.d0)) * e);
+      if (u >= 1) endFly();
+    } else {
+      const k = damp(14, dt);
+      toLocal(cur.target, cur.yaw, cL);
+      cL.lerp(gL, k);
+      cur.yaw += (goal.yaw - cur.yaw) * k;
+      cur.pitch += (goal.pitch - cur.pitch) * k;
+      cur.dist = Math.exp(Math.log(cur.dist) + (Math.log(goal.dist) - Math.log(cur.dist)) * k);
+    }
     fromLocal(cL, cur.yaw, cur.target);
     outOfTrunk(cur.target);
-    cur.pitch += (goal.pitch - cur.pitch) * k;
-    cur.dist = Math.exp(Math.log(cur.dist) + (Math.log(goal.dist) - Math.log(cur.dist)) * k);
-    if (flyK && !cine.on && Math.abs(cur.dist - goal.dist) < 0.01 && cur.target.distanceTo(goal.target) < 0.01) flyK = 0;
+    outOfLimb(cur.target, cur.yaw, cur.pitch);
 
-    const yw = cur.yaw + (extra.drift || 0);
-    dir.set(Math.sin(yw) * Math.cos(cur.pitch), Math.sin(cur.pitch), Math.cos(yw) * Math.cos(cur.pitch));
+    // idle breathing: the caller's slow drift fades in a few seconds after the last touch and fades out quickly on touch
+    const still = idle > 3 && !ptrs.size && !inert.on && !fly;
+    driftAmt += ((still ? 1 : 0) - driftAmt) * damp(still ? 0.6 : 4, dt);
+    breathT += dt;
+    const yw = cur.yaw + (extra.drift || 0) * driftAmt;
+    const pt = cur.pitch + Math.sin(breathT * 0.11) * 0.006 * driftAmt;
+    dir.set(Math.sin(yw) * Math.cos(pt), Math.sin(pt), Math.cos(yw) * Math.cos(pt));
     // march from the focus toward the wanted spot; stop before the trunk or the ground
     // (if the focus itself is inside the trunk, first walk out of it)
     let d = cur.dist;
@@ -430,22 +545,32 @@ export function createCameraRig(o) {
       if (solid(p.x, p.y, p.z)) { d = Math.max(0.2, s - step); hitWhy = 'solid'; break; }
     }
     d = Math.max(d, s0 + 0.2);
+    // zoomed into a room: the camera stays inside it unless it leaves through the open (cut-away) front
+    // (only for close views: from afar the whole house is meant to be seen, and a rotation must never pull the camera in)
+    const dLimb = limbHit(cur.target, dir, d), dR = Math.min(roomExit(cur.target, dir), dLimb);
+    if (dR < d) {
+      const w = 1 - THREE.MathUtils.smoothstep(cur.dist, 4, 8), dd = d + (Math.max(0.3, dR) - d) * w;
+      if (dd < d - 1e-4) { d = dd; hitWhy = dLimb < Infinity && dLimb <= dR ? 'limb' : 'room'; }
+    }
     // smooth the collision: the camera slides in and out instead of snapping, but never stops inside the trunk
     const want = d / cur.dist;
-    collK = !isFinite(collK) || dt <= 0 ? want : collK + (want - collK) * damp(want < collK ? 10 : 4, dt);
+    collK = !isFinite(collK) || dt <= 0 ? want : collK + (want - collK) * damp(want < collK ? (hitWhy === 'limb' ? 14 : 6) : 3, dt);
     collK = Math.min(collK, 1);
-    let ds = cur.dist * collK;
-    if (ds > d + 1e-3) {
-      p.copy(cur.target).addScaledVector(dir, ds);
-      if (solid(p.x, p.y, p.z)) { ds = d; collK = want; }
-    }
-    d = ds;
+    d = cur.dist * collK;              // if the slide is still inside the trunk, the guard below pushes it out sideways
     camPos.copy(cur.target).addScaledVector(dir, d);
     // the ground does not push the camera in (that would read as a zoom): over a hill the camera rises instead
     const gy = groundY(camPos.x, camPos.z) + 0.3;
     if (camPos.y < gy) { camPos.y = gy; hitWhy = hitWhy || 'ground'; }
     // last guard: never inside the trunk (e.g. half way through a flight around it)
     if (solid(camPos.x, camPos.y, camPos.z)) { outOfTrunk(camPos); hitWhy = 'solid'; }
+    // ... and never inside a wall, floor or roof of a room: out of the board to the side the focus is on
+    if (outOfWalls(camPos, cur.target)) hitWhy = hitWhy || 'wall';
+    // never inside a limb: slide toward the focus until clear
+    if (limb(camPos.x, camPos.y, camPos.z)) {
+      tmp.copy(cur.target).sub(camPos); const L = tmp.length(); tmp.divideScalar(L || 1);
+      for (let s = 0; s < L && limb(camPos.x, camPos.y, camPos.z); s += 0.1) camPos.addScaledVector(tmp, Math.min(0.1, L - s));
+      hitWhy = 'limb';
+    }
     if (extra.shake) camPos.add(extra.shake);
     focusU.value = camPos.distanceTo(cur.target);
     // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar
@@ -461,7 +586,7 @@ export function createCameraRig(o) {
     if (h.dist !== undefined) home.dist = h.dist;
     if (atHome) { goal.target.copy(home.target); goal.dist = home.dist; goal.yaw = home.yaw; goal.pitch = home.pitch; }
   }
-  function snap() { cur.target.copy(goal.target); cur.yaw = goal.yaw; cur.pitch = goal.pitch; cur.dist = goal.dist; flyK = 0; }
+  function snap() { cur.target.copy(goal.target); cur.yaw = goal.yaw; cur.pitch = goal.pitch; cur.dist = goal.dist; endFly(); }
   function set(v) {          // for tests: {target,yaw,pitch,dist,snap}
     if (v.target) goal.target.copy(v.target);
     if (v.yaw !== undefined) goal.yaw = v.yaw;
@@ -511,14 +636,14 @@ export function createCameraRig(o) {
     update, setHome, goHome, setFollow, flyTo, zoomAt, pan, orbit, pick, set, snap,
     get following() { return followOn; },
     get cinematic() { return cine.on ? (cine.shot && cine.shot.name) : null; },
-    cine: (on) => { if (on) { idle = CINE_IDLE + 1; } else { idle = 0; stopCine(); } },
+    cine: (on) => { cineForce = !!on; if (on) { idle = CINE_IDLE + 1; } else { idle = 0; stopCine(); } },
     get dist() { return cur.dist; },
     get focusDist() { return focusU.value; },
     get target() { return cur.target; },
     get state() { return { target: cur.target.toArray().map(v => +v.toFixed(2)), yaw: +cur.yaw.toFixed(3), pitch: +cur.pitch.toFixed(3), dist: +cur.dist.toFixed(2), follow: followOn, cam: camera.position.toArray().map(v => +v.toFixed(2)) }; },
     get homeDist() { return home.dist; },
     // for tests (tests/camera): internal state of the last update
-    get debug() { return { gd: goal.dist, gt: goal.target.toArray(), gy: goal.yaw, gp: goal.pitch, cd: cur.dist, cy: cur.yaw, cp: cur.pitch, ct: cur.target.toArray(), hit: hitWhy, collK, flyK, inert: inert.on, cine: cine.on, follow: followOn, ptrs: ptrs.size, maxD: maxD(), hardD: hardD(), home: { yaw: home.yaw, dist: home.dist }, YAW_LIM, PMIN, PMAX, BOUND }; },
+    get debug() { return { gd: goal.dist, gt: goal.target.toArray(), gy: goal.yaw, gp: goal.pitch, cd: cur.dist, cy: cur.yaw, cp: cur.pitch, ct: cur.target.toArray(), hit: hitWhy, collK, flyK, fly: fly && { t: fly.t, dur: fly.dur, d0: fly.d0, y0: fly.y0, L0: fly.L0.toArray() }, inert: inert.on, cine: cine.on, follow: followOn, ptrs: ptrs.size, rooms: rooms(), maxD: maxD(), hardD: hardD(), home: { yaw: home.yaw, dist: home.dist }, YAW_LIM, PMIN, PMAX, BOUND }; },
   };
   return api;
 }

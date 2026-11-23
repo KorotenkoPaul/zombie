@@ -21,3 +21,30 @@ Code: index.html, block "wood: every board is its own body" (`plankShader`, `bev
 - Shingles `SHING`: the same `bevelBoxGeo` with an 18 mm rounded edge, and its own shader (`SHING_GLSL`). Each slate has its own patch of the Fal scan `game/slate.jpg` (1024) and its own tone (bluer, greener or rust-stained), flaky relief from the scan, a crack groove on 16% of them, and rare dark lichen specks. Moss comes from world-space patches (`game/moss.jpg`, 512), denser on the back half (z<2.3), raised a few mm in the normal. 3.5% of slates are missing above the bottom row, so the dark slab shows. Treedress still scatters moss cushions on SHING by reading its matrices.
 - [PERF] SHING sits on layer 5: the main camera and the sun shadow camera see it, but lamp (point/spot) shadow cameras don't, since the roof slab already stops lamp light.
 - [PERF] `meshesToBeams(g)`: roof slabs, ridges, gable trims and window frames (5 windows × 6 boxes) are now `beams` instances instead of ~40 separate meshes, so they add no draw calls. Use `beamInst(matrix)` for any new static dark-wood box.
+
+## Age and wear (round 3), shader only, no new draw calls
+- Per-instance `aWx` (vec2: weather exposure of the local +z / -z face) is set once after ROOMS. Floors inside a room get 0, landings and the deck 1. A wall's outer face (the one facing away from its room) gets 1. Beams, posts and frames get 0.8. Exposed faces turn silver-grey in patches along the grain, get rougher, and their grain erodes deeper. Upright exterior boards get dark rain streaks running down from their top end (under eaves and sills) and splash at the foot.
+- Floor wear map `WEAR` (DataTexture R8, 7 level tiles × 128×96, covering x −6..6, z −1..7). It is seeded from the hero's walk graph `HH.E` (paths) and `HH.N` (work spots), then stamped every second where he stands. Worn boards are paler and smoother, with less relief. The texture is re-uploaded at most every 5 s.
+- Dirt: floors inside ROOMS darken towards the side and back walls and the corners (uniforms `uRoomA/B`).
+- Repair hook `window.__planks`: `list(kind?)`, `near(x,y,z,r,kind?)`, `setFresh(id,f)` (1 = just repaired: pale clean wood, or a clean slate with no moss, lichen or cracks; 0 = old, the default), `fresh(id)`, `wear(x,y,z,amt)`. Kinds: floor, wall, beam, shingle (about 377/159/326/343). Brain owns fading `fresh` back over time.
+
+## Interior (round 4)
+- Under each roof slab: honey sheathing boards (instances in `boards`, wall texture, nails) running down the slope, with rafters every 0.85 m (instances in `beams`). Kind 'roof' in `__planks`, and the exposure loop skips them. No new draw calls.
+- Undersides of floor boards (the ceiling of the room below) are rough-sawn and dull (×0.68/0.6/0.55, roughness 0.95). Nails now show on the top face only.
+- The door (props.js plankDoor) and the furniture wood (props M.wood/M.woodDark, canvas grain) belong to Props. The coordinator was told they could switch to game/wood-*.jpg.
+
+## Landings and struts (round 6)
+- Round landings (`floorBoards` with `radial:`) now match the photo: thick parallel planks running front-to-back, each cut to the circle so the chunky ends trace the curve. The sunburst and the rim board over the ends are gone. A dark curved band sits under the edge, with joists across underneath every 0.8 m.
+- `brace()` sinks its trunk end 14 cm into the bark, so it reads as a real joint. Beams, braces and posts longer than 0.6 m get a coach bolt (head, washer, rust halo) in the shader at each end.
+- Struts that passed through walkable boards were moved: the centre-landing brace now starts at y 3.0, and the two kitchen knee braces start above the centre landing. `tests/planks/braces.js` checks that no diagonal beam crosses a floor (it should print []).
+
+## Round 7: trunk door (index.html, after the LG brace)
+- DOORP={x,ang,y0,y1,w,depth} is shared with buildTree (door:DOORP).
+- surf()/at() raycast TREE.bark radially so the frame sits in the bark; piece() makes oriented instances.
+- Jambs, a 7-piece arch, and the keystone are `beams` instances (kind 'door'); the threshold and 5 cave floor planks are `boards` instances (kind 'door'). No new draw calls.
+- The lantern bracket belongs to Lights. Test: tests/planks/door.js.
+
+## Round 8: work tops + room walls/floors (Critic N1/N2)
+- props.js workTops(M.woodLight): a world-space layer on the upward faces of the counter, workbench and side bench tops (WTOPS, set by setTop() after shiftRooms). It adds knife cuts, saw kerfs, dents, scorch rings, oil/tea stains, water-darkened wood by the sink, paint spots, pencil ticks, and a hand-worn front edge. Fine marks bend the normal and fade to a mean darkening at distance. It chains onto varyWood, and the proxMat clone chains onto it.
+- Walls: wallBack/wallSide(..., out) put each plank at its own depth (pushed inward ≤1 cm), sometimes split in two at a random height (cutRun), with a batten over every joint on the outside. Battens carry seed +200/+300 (bat), and the shader darkens their inner face, seen through the slot.
+- Floors: runs are split into 0.8–1.9 m boards with staggered butt joints. Lift is capped at 3.5 mm and roll at ±.02 so rugs don't get poked through.

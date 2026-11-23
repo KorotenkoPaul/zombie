@@ -7,6 +7,7 @@ except Exception:F=FB=ImageFont.load_default()
 OFF=[-30,-12,-4,0,4,12]
 for n,q in enumerate(P):
   W=240;slow=q['type'] in('detour','crab-walk','sharp-turn','foot-slide');offs=[o*2 for o in OFF] if slow else OFF
+  if q['type']=='focus':offs=[round((q['f1']-q['f'])*k/5) for k in range(6)]
   sheet=Image.new('RGB',(W*6,W*2+58),(20,22,28));d=ImageDraw.Draw(sheet)
   title=f"P{q['P']} {q['type']}  t={q['t']}s (frame {q['f']})  {q['act']}  [{q['clip']}]"
   sub=f"{q['bone']}: {q['value']} {q['unit']}"+(f"  into {q['into']}" if q.get('into') else '')+(f"  ({q['what']})" if q.get('what') else '')+f"   limit {q.get('limit')}"
@@ -20,7 +21,7 @@ for n,q in enumerate(P):
     d.text((k*W+6,62),f"{'+' if o>=0 else ''}{o} fr ({o/60:+.2f}s)",font=F,fill=(255,255,255))
   sheet.save(f"{D}/sheets/{n:02d}_P{q['P']}_{q['type']}.jpg",quality=86)
 # walk map (top view)
-R=json.load(open(D+'/issues.json'));walks=R['walks']
+R=json.load(open(D+'/issues.json'));walks=[w for w in R['walks'] if w.get('pts')]
 levels={}
 for w in walks:
   y=round(w['pts'][0][2]);levels.setdefault(y,[]).append(w)

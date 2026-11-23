@@ -19,6 +19,100 @@ function upgrade(t, url) { const img = new Image(); img.onload = () => { t.image
 // swap a material's procedural grain for a photo-scanned wood (the boards' scans, see NOTES-planks): the scans run their grain
 // along u, ours along v, so the image is drawn turned 90° into a canvas (downsized: furniture needs less than floors).
 // boxUV gives 1.11 u and 0.56 v per metre; the scan covers ~1 m across the grain and ~2.4 m along it.
+// (Planks thread) the wood pieces are merged into one mesh per material, so the variety comes from the shader: boxUV gives
+// every piece its own random UV offset, and a slow noise of that UV gives each board/leg/door plank its own tone, a few
+// greyer weathered ones, and long faint streaks along the grain. Same program, same draw calls, roughness untouched.
+function varyWood(mat, k = 1) {
+  mat.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+float vwH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float vwN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(vwH(i),vwH(i+vec2(1,0)),f.x),mix(vwH(i+vec2(0,1)),vwH(i+vec2(1,1)),f.x),f.y);}`)
+   .replace('#include <map_fragment>', `#include <map_fragment>
+#ifdef USE_MAP
+{vec2 q=vMapUv*vec2(.45,.16);float n=vwN(q),n2=vwN(vMapUv*vec2(9.,.35)+5.);
+ diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.8,.76,.72),vec3(1.14,1.05,.94),n)*(.93+.14*n2),${k.toFixed(2)});
+ float g=smoothstep(.72,.9,vwN(q*.8+3.7))*.35*${k.toFixed(2)};diffuseColor.rgb=mix(diffuseColor.rgb,vec3(dot(diffuseColor.rgb,vec3(.3,.55,.15)))*vec3(1.04,.99,.92),g);}
+#endif`); };
+  mat.customProgramCacheKey = () => 'varyWood' + k; mat.needsUpdate = true; return mat; }
+// (Planks thread) working wear on the tops he works on: the kitchen counter, the workbench and the side bench. M.woodLight is
+// merged with every shelf and table, so the marks live in a world-space layer that only switches on for the upward faces of
+// those three tops (WTOPS, filled from the placed groups after shiftRooms). Knife cuts, saw kerfs, hammer dents, pot and
+// lantern scorch rings, oil and tea stains, a hand-worn front edge. Grooves and dents bend the normal (bump), so they catch
+// the lamp; far away the fine marks fade into a matching overall darkening (no shimmer). Same program, same draw calls.
+const WTOPS = { a: [0, 1, 2].map(() => new THREE.Vector4(0, -99, 0, -1)), b: [0, 1, 2].map(() => new THREE.Vector4(.1, .1, 1, 0)) };
+function setTop(i, g, kind, hx, hz, top, ry = 0) { if (!g) return; WTOPS.a[i].set(g.position.x, g.userData.floorY + top, g.position.z, kind); WTOPS.b[i].set(hx, hz, Math.cos(ry), Math.sin(ry)); }
+function workTops(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => { prev && prev(sh, r); sh.uniforms.uTA = { value: WTOPS.a }; sh.uniforms.uTB = { value: WTOPS.b };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWT;').replace('#include <project_vertex>', `#include <project_vertex>
+{vec4 wq=vec4(transformed,1.);
+#ifdef USE_INSTANCING
+wq=instanceMatrix*wq;
+#endif
+vWT=(modelMatrix*wq).xyz;}`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vWT;uniform vec4 uTA[3];uniform vec4 uTB[3];
+float wtOn=0.;vec2 wtDH=vec2(0.);float wtRg=1.;
+float wH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float wN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(wH(i),wH(i+vec2(1,0)),f.x),mix(wH(i+vec2(0,1)),wH(i+vec2(1,1)),f.x),f.y);}
+float wSeg(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/dot(ba,ba),0.,1.);return length(pa-ba*h);}
+// knife / chisel cuts: short straight grooves, mostly along two working directions, on two offset jittered grids (cs = cell size)
+float wCuts(vec2 p,float dens,float cs,float fw){float g=0.;for(int k=0;k<2;k++){vec2 q=p/cs+float(k)*vec2(.37,.71);vec2 i=floor(q);
+ for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++){vec2 c=i+vec2(dx,dy)+float(k)*17.;if(wH(c)>dens)continue;
+  float a=mix(wH(c+7.1)*3.14,(wH(c+2.3)<.5?.35:1.85)+(wH(c+8.8)-.5)*.5,.75);vec2 o=floor(q)+vec2(dx,dy)+vec2(wH(c+3.3),wH(c+5.7));
+  vec2 d=vec2(cos(a),sin(a))*(.2+.45*wH(c+9.1));float dd=wSeg(q,o-d,o+d)*cs;float w=.00035+.0005*wH(c+4.4);
+  g=max(g,(1.-smoothstep(w,w+fw,dd))*(.35+.65*wH(c+11.)));}}return g;}
+float wRing(vec2 p,vec2 c,float r,float w){vec2 v=p-c;float a=atan(v.y,v.x);float rr=r*(1.+.06*(wN(vec2(a*2.,r*40.))-.5));
+ float d=abs(length(v)-rr)/w;return exp(-d*d*1.6)*mix(.45,1.,smoothstep(.15,.5,wN(vec2(a*3.2+r*9.,1.7))))*(.75+.25*wN(v*90.));}
+// height (m, negative = cut into the wood) and, through the out params, colour masks
+float wHeight(vec2 p,float kind,float hx,float hz,float fw,out float cut,out float kerf){
+ float h=0.;cut=0.;kerf=0.;
+ float zone=kind<.5?smoothstep(.06,0.,max(abs(p.x+.3)-.2,abs(p.y)-.24)):(kind<1.5?.3:.15);
+ cut=wCuts(p,.04+.22*zone,.03,fw);h-=cut*.0005;
+ if(kind>.5&&kind<1.5){
+  for(int i=0;i<8;i++){float fi=float(i);float x=mix(.05,.8,wH(vec2(fi,4.2)))*(i<2?-1.:1.);float ln=.025+.07*wH(vec2(fi,6.1));float t=(wH(vec2(fi,8.))-.5)*.25;
+   float d=wSeg(p,vec2(x,hz+.01),vec2(x+t*ln,hz-ln));float k=(1.-smoothstep(.0007,.0007+fw,d))*smoothstep(hz-ln-.004,hz-ln+.01,p.y);kerf=max(kerf,k);}
+  h-=kerf*.0016;
+  vec2 q=p/.055;vec2 i=floor(q);vec2 f=q-i;if(wH(i+3.)<.3){vec2 c=vec2(.2,.2)+.6*vec2(wH(i+1.),wH(i+2.));float r=(.06+.08*wH(i+5.));float d=length(f-c)/r;h-=.001*smoothstep(1.,.2,d);}
+ }
+ return h;}`).replace('#include <roughnessmap_fragment>', `{vec3 fn=cross(dFdx(vWT),dFdy(vWT));float fl=length(fn);
+ for(int t=0;t<3;t++){vec4 A=uTA[t],B=uTB[t];if(A.w<-.5||fl<1e-12||abs(fn.y)/fl<.85||abs(vWT.y-A.y)>.012)continue;
+  vec2 w=vWT.xz-A.xz;vec2 p=vec2(w.x*B.z-w.y*B.w,w.x*B.w+w.y*B.z);if(abs(p.x)>B.x+.01||abs(p.y)>B.y+.01)continue;
+  vec2 ex=dFdx(vWT.xz),ey=dFdy(vWT.xz);ex=vec2(ex.x*B.z-ex.y*B.w,ex.x*B.w+ex.y*B.z);ey=vec2(ey.x*B.z-ey.y*B.w,ey.x*B.w+ey.y*B.z);
+  float fw=max(length(ex),length(ey));float vis=smoothstep(.004,.0012,fw);float kind=A.w;float cut,kerf,c2,k2;
+  float h0=wHeight(p,kind,B.x,B.y,fw,cut,kerf);
+  if(vis>.01){wtDH=vis*vec2(wHeight(p+ex,kind,B.x,B.y,fw,c2,k2)-h0,wHeight(p+ey,kind,B.x,B.y,fw,c2,k2)-h0);wtOn=1.;}
+  vec3 col=diffuseColor.rgb;
+  // cuts: fresh ones show paler wood, old ones dark with grime; far away a mean darkening instead of the lines
+  float n1=wN(p*31.);col*=mix(1.,1.-.03*(kind<.5?1.:.7),1.-vis);col=mix(col,col*mix(vec3(.74,.68,.62),vec3(1.08,1.04,.96),step(.7,n1)),cut*vis*.55);
+  col=mix(col,col*vec3(.42,.36,.32),kerf*vis);
+  // hands: the front edge is darker and a little greasy where he leans and grips, worn paler in the middle of the bench
+  float edge=smoothstep(.16,.01,B.y-p.y)*smoothstep(B.x,B.x-.35,abs(p.x))*(.55+.45*wN(p*14.));
+  col=mix(col,col*vec3(.8,.74,.68),edge*.55);wtRg=1.-.2*edge;
+  float worn=smoothstep(.5,.1,length(p*vec2(1./B.x,1.6/B.y)))*(.5+.5*wN(p*6.));col=mix(col,mix(col,vec3(dot(col,vec3(.33)))*vec3(1.1,1.03,.94),.5),worn*.35);
+  if(kind<.5){
+   // pot ring and an older fainter one, a mug ring, water-darkened wood by the sink, a few dark spills
+   float sc=wRing(p,vec2(-.2,.15),.08,.011)+.45*wRing(p,vec2(-.08,-.17),.05,.008);float fill=smoothstep(.085,.05,length(p-vec2(-.2,.15)))*.12;
+   col=mix(col,col*vec3(.3,.2,.13),clamp(sc*.6+fill,0.,1.));
+   float tea=wRing(p,vec2(-.42,.2),.036,.004);col=mix(col,col*vec3(.55,.45,.37),tea*.7);
+   float wet=smoothstep(.07,0.,abs(p.x-.02))*(.5+.5*wN(p*12.))+smoothstep(.06,0.,abs(p.x-.44))*.6*wN(p*12.+4.);col=mix(col,col*vec3(.62,.6,.6),clamp(wet,0.,1.)*.55);
+   float sp=smoothstep(.62,.8,wN(p*22.+9.))*smoothstep(.55,.7,wN(p*3.+1.));col=mix(col,col*vec3(.6,.52,.46),sp*.6);wtRg*=1.-.25*sp;
+  }else if(kind<1.5){
+   // oil stain, a lantern scorch ring, paint spots, pencil ticks along the front, burn mark of a hot tool
+   float oil=smoothstep(.62,.7,wN(p*9.+2.)*.6+wN(p*31.)*.15+smoothstep(.13,0.,length(p-vec2(.52,-.04)))*.55);col=mix(col,col*vec3(.45,.38,.32),oil*.75);wtRg*=1.-.35*oil;
+   float sc=wRing(p,vec2(-.26,.16),.054,.009);col=mix(col,col*vec3(.3,.2,.13),sc*.6);
+   float bt=smoothstep(.022,.006,wSeg(p,vec2(-.68,-.1),vec2(-.6,-.13)))*(.6+.4*wN(p*80.));col=mix(col,vec3(.08,.05,.035),bt*.8);
+   for(int i=0;i<5;i++){float fi=float(i);vec2 c=vec2(mix(-.75,.8,wH(vec2(fi,1.3))),mix(-.25,.25,wH(vec2(fi,2.7))));float r=.004+.01*wH(vec2(fi,3.9));
+    float m=smoothstep(r,r*.6,length((p-c)*vec2(1.,1.+wH(vec2(fi,5.))))+.004*(wN(p*300.)-.5));
+    vec3 pc=i==0?vec3(.42,.08,.05):i==1?vec3(.2,.32,.16):i==2?vec3(.8,.78,.7):i==3?vec3(.42,.08,.05):vec3(.15,.2,.3);col=mix(col,pc,m*.85);wtRg*=1.-.4*m;}
+   float pt=0.;for(int i=0;i<6;i++){float x=-.42+float(i)*.05;pt=max(pt,1.-smoothstep(.0004,.0004+fw,wSeg(p,vec2(x,B.y-.005),vec2(x,B.y-(i==0||i==5?.04:.022)))));}
+   col=mix(col,vec3(.18,.18,.2),pt*vis*.8);
+  }
+  diffuseColor.rgb=col;}}
+#include <roughnessmap_fragment>
+roughnessFactor*=wtRg;`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+if(wtOn>0.){vec3 sx=dFdx(-vViewPosition),sy=dFdy(-vViewPosition);vec3 R1=cross(sy,normal),R2=cross(normal,sx);float det=dot(sx,R1)*faceDirection;
+ vec3 gr=sign(det)*(wtDH.x*R1+wtDH.y*R2);normal=normalize(abs(det)*normal-gr);}`); };
+  mat.customProgramCacheKey = () => 'varyWood1wt'; mat.needsUpdate = true; return mat; }
 function scanWood(mat, url, { w = 512, h = 1024, color = 0xffffff, bump = 1.2 } = {}) {
   const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.translate(w, 0); g.rotate(Math.PI / 2); g.drawImage(img, 0, 0, h, w);
     for (const [k, srgb] of [['map', true], ['bumpMap', false]]) { const t = mat[k]; if (!t) continue; t.image = c; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.repeat.set(.9, .75); t.dispose(); t.needsUpdate = true; }
@@ -72,7 +166,21 @@ function pictureCanvas() { return canvas(160, 120, (g) => { const s = g.createLi
 function labelCanvas(c1, c2) { return canvas(64, 32, (g) => { g.fillStyle = c1; g.fillRect(0, 0, 64, 32); g.fillStyle = c2; g.fillRect(0, 10, 64, 12); g.fillStyle = 'rgba(255,255,255,.6)'; g.fillRect(8, 14, 30, 3); }); }
 
 // ---------------- geometry helpers ----------------
-const rb = (w, h, d, r = .012, seg = 1) => new RoundedBoxGeometry(w, h, d, seg, Math.max(.0005, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4)));
+// perf: a one-segment rounded box is a chamfered box: 6 faces, 12 bevel strips, 8 corner triangles (44 triangles instead of 108).
+// Normals run from face to face across each bevel, so it shades like RoundedBoxGeometry; UVs are per-face planar like a box.
+function chamferBox(w, h, d, r) { const H = [w / 2, h / 2, d / 2]; const pos = [], nor = [], uvs = [];
+  const pt = (ax, s) => { const p = [0, 0, 0]; for (let k = 0; k < 3; k++) p[k] = s[k] * (k === ax ? H[k] : H[k] - r); return p; }; const nm = (ax, s) => { const n = [0, 0, 0]; n[ax] = s[ax]; return n; };
+  const tri = (A, B, C) => { const e1 = [0, 1, 2].map(k => B[0][k] - A[0][k]), e2 = [0, 1, 2].map(k => C[0][k] - A[0][k]); const cx = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    const nn = [0, 1, 2].map(k => A[1][k] + B[1][k] + C[1][k]); const v = (cx[0] * nn[0] + cx[1] * nn[1] + cx[2] * nn[2]) >= 0 ? [A, B, C] : [A, C, B];
+    for (const [p, n] of v) { pos.push(...p); nor.push(...n); const a = Math.abs(n[0]) >= Math.abs(n[1]) && Math.abs(n[0]) >= Math.abs(n[2]) ? 0 : Math.abs(n[1]) >= Math.abs(n[2]) ? 1 : 2; const o = [0, 1, 2].filter(k => k !== a); uvs.push(p[o[0]] / (2 * H[o[0]]) + .5, p[o[1]] / (2 * H[o[1]]) + .5); } };
+  const quad = (A, B, C, D) => { tri(A, B, C); tri(A, C, D); }; const V3 = (ax, s) => [pt(ax, s), nm(ax, s)];
+  for (let ax = 0; ax < 3; ax++) for (const sa of [-1, 1]) { const o = [0, 1, 2].filter(k => k !== ax); const S = (u, v) => { const s = [0, 0, 0]; s[ax] = sa; s[o[0]] = u; s[o[1]] = v; return s; };
+    quad(V3(ax, S(-1, -1)), V3(ax, S(1, -1)), V3(ax, S(1, 1)), V3(ax, S(-1, 1))); }
+  for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) { const c = 3 - a - b; for (const sa of [-1, 1]) for (const sb of [-1, 1]) { const S = sc => { const s = [0, 0, 0]; s[a] = sa; s[b] = sb; s[c] = sc; return s; };
+    quad(V3(a, S(-1)), V3(a, S(1)), V3(b, S(1)), V3(b, S(-1))); } }
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) { const s = [sx, sy, sz]; tri(V3(0, s), V3(1, s), V3(2, s)); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); return g; }
+const rb = (w, h, d, r = .012, seg = 1) => { const rr2 = Math.max(.0005, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4)); return seg === 1 ? chamferBox(w, h, d, rr2) : new RoundedBoxGeometry(w, h, d, seg, rr2); };
 // box-projected UVs in metres; wood grain follows `grain` axis (0=x,1=y,2=z)
 function boxUV(geo, grain, scale = 1 / .9) {
   const p = geo.attributes.position, n = geo.attributes.normal, uv = geo.attributes.uv; const ox = R() * 5, oy = R() * 5;
@@ -122,7 +230,7 @@ function makeMaterials(renderer) {
     brass: metal(0xD8AE55, .85, .28, 1.2),
     copper: metal(0xC0754A, .9, .32, 1),
     hood: metal(0x7E858D, .85, .34, 1.0),
-    fridge: metal(0xA8ADB2, .55, .3, 1.0),   // silver-grey retro fridge like the photo
+    fridge: metal(0xDAD4C4, .35, .3, 1.0) /* cream-silver like the photo (Critic P8) */,   // silver-grey retro fridge like the photo
     ceramic: metal(0xF2EDE3, 0, .22, .7),
     glazeBlue: metal(0x6F8FA8, 0, .25, .7),
     glazeCream: metal(0xE8D9B8, 0, .3, .7),
@@ -149,16 +257,50 @@ function makeMaterials(renderer) {
     cans: [['#B8442E', '#E9D7A8'], ['#3F6E9A', '#F0E6CC'], ['#6E8F4A', '#F3E2B0'], ['#C99A3A', '#5A3A22']].map(([a, b]) => std({ map: texOf(labelCanvas(a, b)), metalness: .5, roughness: .4, envMap: env, envMapIntensity: .8 })),
   };
   scanWood(M.wood, 'wood-floor.jpg', { color: 0xF2DCC4 }); scanWood(M.woodLight, 'wood-wall.jpg', { color: 0xE6C49C }); scanWood(M.woodDark, 'wood-dark.jpg', { w: 256, h: 512, color: 0xC49470, bump: 1.6 });
+  varyWood(M.wood); workTops(varyWood(M.woodLight)); varyWood(M.woodDark, .7); // (Planks thread) every piece its own tone
   return M;
 }
 
 // ---------------- merge static meshes per material (keeps draw calls low) ----------------
 const STD2 = new Map(); const std2 = (c) => { if (!STD2.has(c)) STD2.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: .85 })); return STD2.get(c); }; // shared per colour: fewer materials, fewer merged meshes
-function bake(group) {
+// perf: every colour-only standard material is drawn through one shared vertex-coloured material per (roughness band, metal or
+// not, env-lit or not, side). bake() and the global static merge both use it, so most objects end up one or two draw calls.
+const PLAINV = new Map();
+// roughness rides in the vertex colour's alpha (opaque materials ignore alpha), so one material covers every roughness
+function plainOf(m) {
+  if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.polygonOffset || m.alphaTest || m.map || m.bumpMap || m.normalMap || m.transparent || m.vertexColors || m.userData.keep || m.emissive.getHex() !== 0) return null;
+  const env = m.envMap ? 1 : 0; const side = m.side === THREE.BackSide ? THREE.BackSide : THREE.DoubleSide; const key = `vc|${env}|${side}`;
+  if (!PLAINV.has(key)) { const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMap: env ? m.envMap : null, envMapIntensity: .9, side }); /* metalness and env reflections kept per band (Critic P8: enamel and the fridge went dark without them) */ pm.userData.plainV = true;
+    pm.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float vmet; varying float vMet;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMet = vmet;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;'); };
+    pm.customProgramCacheKey = () => 'plainV'; PLAINV.set(key, pm); }
+  return PLAINV.get(key); }
+// perf: round parts get as many sides as their real size needs (about one side per 6-7 mm of radius, at least 8), so a 4 cm jar
+// is not built like a barrel. Rebuilt from the generator's own parameters; anything else passes through unchanged.
+const _lodWS = new THREE.Vector3();
+const _lodOK = new WeakMap();
+function lodGeo(o) { const g = o.geometry, P = g.parameters; if (!P || !g.attributes.position) return g; o.getWorldScale(_lodWS); const sa = [Math.abs(_lodWS.x), Math.abs(_lodWS.y), Math.abs(_lodWS.z)].sort((a, b) => a - b), sc = sa[1] || 1; const segs = (r, n, mn = 8) => Math.max(Math.min(mn, n), Math.min(n, Math.ceil(r * sc * 100)));
+  const T = THREE; let mk = null, n0 = 0, n1 = 0;
+  switch (g.type) {
+    case 'CylinderGeometry': n0 = P.radialSegments; n1 = segs(Math.max(P.radiusTop, P.radiusBottom), n0); mk = n => new T.CylinderGeometry(P.radiusTop, P.radiusBottom, P.height, n, P.heightSegments, P.openEnded, P.thetaStart, P.thetaLength); break;
+    case 'ConeGeometry': n0 = P.radialSegments; n1 = segs(P.radius, n0); mk = n => new T.ConeGeometry(P.radius, P.height, n, P.heightSegments, P.openEnded, P.thetaStart, P.thetaLength); break;
+    case 'SphereGeometry': n0 = P.widthSegments; n1 = segs(P.radius, n0); mk = n => new T.SphereGeometry(P.radius, n, n === n0 ? P.heightSegments : Math.max(Math.min(6, P.heightSegments), Math.min(P.heightSegments, Math.ceil(n * .66))), P.phiStart, P.phiLength, P.thetaStart, P.thetaLength); break;
+    case 'TorusGeometry': n0 = P.tubularSegments; n1 = segs(P.radius, n0); mk = n => new T.TorusGeometry(P.radius, P.tube, n === n0 ? P.radialSegments : segs(P.tube, P.radialSegments, 4), n, P.arc); break;
+    case 'CircleGeometry': n0 = P.segments; n1 = segs(P.radius, n0); mk = n => new T.CircleGeometry(P.radius, n, P.thetaStart, P.thetaLength); break;
+    case 'LatheGeometry': { let r = 0; for (const p of P.points) r = Math.max(r, Math.abs(p.x)); n0 = P.segments; n1 = segs(r, n0); mk = n => new T.LatheGeometry(P.points, n, P.phiStart, P.phiLength); break; }
+    default: return g; }
+  if (n1 >= n0) return g;
+  // only when the geometry is exactly what its generator made (not translated, scaled or bent afterwards)
+  let ok = _lodOK.get(g); if (ok === undefined) { const ref = mk(n0), a = ref.attributes.position.array, b = g.attributes.position.array; ok = a.length === b.length; for (let k = 0; ok && k < a.length; k += 7) if (Math.abs(a[k] - b[k]) > 1e-6) ok = false; ref.dispose(); _lodOK.set(g, ok); }
+  return ok ? mk(n1) : g; }
+function colorize(g, c, a, met) { if (met !== undefined) g.setAttribute('vmet', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(met), 1)); const n = g.attributes.position.count, k = a === undefined ? 3 : 4, ca = new Float32Array(n * k); for (let i = 0; i < n; i++) { ca[i * k] = c.r; ca[i * k + 1] = c.g; ca[i * k + 2] = c.b; if (k === 4) ca[i * k + 3] = a; } g.setAttribute('color', new THREE.Float32BufferAttribute(ca, k)); }
+// bake(group, keepCast): merge the group's static meshes (not inside a userData.live node, not hidden) into one mesh per material.
+// keepCast: also split by each part's own castShadow flag (the late pass, after small parts were set not to cast).
+function bake(group, keepCast = false) {
   group.updateMatrixWorld(true); const inv = group.matrixWorld.clone().invert(); const by = new Map(); const kill = [];
-  group.traverse(o => { if (!o.isMesh || o.userData.live) return; let p = o.parent; while (p && p !== group) { if (p.userData.live) return; p = p.parent; } let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); if (!by.has(o.material)) by.set(o.material, []); by.get(o.material).push(g); kill.push(o); });
-  for (const o of kill) o.removeFromParent();
-  for (const [mat, gs] of by) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = m.receiveShadow = true; group.add(m); gs.forEach(g => g.dispose()); }
+  group.traverse(o => { if (!o.isMesh || o === group || Array.isArray(o.material) || o.userData.live || (keepCast && o.material.userData.keep) || o.isInstancedMesh || o.isSkinnedMesh || !o.visible || o.userData.keepMesh) return; if (o.morphTargetInfluences) return; let p = o.parent; while (p && p !== group) { if (p.userData.live || !p.visible) return; p = p.parent; } let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); let mat = o.material; const pm = plainOf(mat); if (pm) { if (mat.flatShading) g.computeVertexNormals(); colorize(g, mat.color, mat.roughness, mat.metalness); mat = pm; } else if (mat.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1)); const key = keepCast ? mat.uuid + (o.castShadow ? 's' : 'n') + (o.receiveShadow ? 'r' : '') : mat.uuid; if (!by.has(key)) by.set(key, { mat, cast: o.castShadow, rec: o.receiveShadow, gs: [], os: [] }); by.get(key).gs.push(g); by.get(key).os.push(o); });
+  for (const e of by.values()) { if (keepCast && e.gs.length < 2) { e.gs[0].dispose(); e.skip = true; continue; } e.os.forEach(o => o.removeFromParent()); }
+  for (const { mat, cast, rec, gs, skip } of by.values()) { if (skip) continue; const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = keepCast ? cast : true; m.receiveShadow = keepCast ? rec : true; group.add(m); gs.forEach(g => g.dispose()); }
   return group;
 }
 
@@ -290,7 +432,13 @@ function stove() {
   const fire = new THREE.Group(); fire.userData.live = true; fire.position.set(0, oy0 + .03, -D / 2 + .13); g.add(fire);
   const flameGeo = lathe([[0, 0], [.022, .01], [.028, .035], [.02, .07], [.008, .1], [0, .115]], 10);
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xFFA040, transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false });
-  const flames = []; for (let i = 0; i < 6; i++) { const f = new THREE.Mesh(flameGeo, flameMat); f.position.set(-.13 + i * .052 + rr(-.01, .01), 0, rr(-.03, .03)); f.userData.k = rr(.7, 1.3); f.userData.ph = R() * 6.28; f.userData.live = true; fire.add(f); flames.push(f); }
+  // perf: the six flames are one mesh; each vertex carries its flame's spot, speed and phase and the flicker runs in the vertex shader
+  const flameU = { uT: { value: 0 }, uHeat: { value: 0 } }; const flames = [];
+  { const fg = flameGeo.index ? flameGeo.toNonIndexed() : flameGeo; const gs = []; for (let i = 0; i < 6; i++) { const q = fg.clone(); const n = q.attributes.position.count; const fl = new Float32Array(n * 4); const fx = -.13 + i * .052 + rr(-.01, .01), fz = rr(-.03, .03), k = rr(.7, 1.3), ph = R() * 6.28;
+      for (let v = 0; v < n; v++) fl.set([fx, fz, k, ph], v * 4); q.setAttribute('fl', new THREE.Float32BufferAttribute(fl, 4)); gs.push(q); }
+    flameMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, flameU); sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 fl; uniform float uT, uHeat;').replace('#include <begin_vertex>',
+      'float fn = sin(uT * 9. * fl.z + fl.w) * .5 + sin(uT * 23. * fl.z + fl.w * 2.) * .3; vec3 transformed = position * vec3(1. + fn * .12, (.6 + uHeat * .7) * (1. + fn * .35), 1. + fn * .12); float fa = sin(uT * 5. + fl.w) * .12; transformed.xy = mat2(cos(fa), sin(fa), -sin(fa), cos(fa)) * transformed.xy; transformed.x += fl.x; transformed.z += fl.y;'); };
+    flameMat.customProgramCacheKey = () => 'ovenFlames'; const fm = new THREE.Mesh(mergeGeometries(gs, false), flameMat); fm.frustumCulled = false; fm.userData.live = true; fire.add(fm); }
   // baking tray with buns on the rack
   { const tr = new THREE.Group(); tr.position.set(0, oy0 + .206, .02); g.add(tr); add(tr, rb(ow * .78, .012, D * .55, .004), M.iron, 0, .006, 0); for (let i = 0; i < 4; i++) { const b = add(tr, new THREE.SphereGeometry(.035, 14, 8, 0, 6.283, 0, Math.PI / 2), M.bread, -.13 + i * .087, .012, rr(-.03, .03)); b.scale.y = .7; } }
   for (let i = 0; i < 7; i++) add(g, new THREE.CylinderGeometry(.004, .004, D - .1, 6), M.steel, -ow / 2 + .04 + i * (ow - .08) / 6, oy0 + .2, .02, Math.PI / 2);
@@ -322,7 +470,7 @@ function stove() {
     door, handle: () => door.localToWorld(V(0, dh - .05, .075)), flameMat, fireGroup: fire,
     setOpen(k) { openK = clamp01(k); door.rotation.x = openK * 1.45; }, get open() { return openK; },
     setHeat(k) { M.fire.emissiveIntensity = .25 + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 + .6 * k; heatK = k; },
-    flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; for (const f of flames) { const u = f.userData, n = Math.sin(t * 9 * u.k + u.ph) * .5 + Math.sin(t * 23 * u.k + u.ph * 2) * .3; f.scale.set(1 + n * .12, (.6 + heatK * .7) * (1 + n * .35), 1 + n * .12); f.rotation.z = Math.sin(t * 5 + u.ph) * .12; } flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
+    flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; flameU.uT.value = t; flameU.uHeat.value = heatK; flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
   };
   return g;
 }
@@ -407,7 +555,12 @@ function jar(h, r, mat) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r 
   if (mat === M.jarGlass) { add(g, new THREE.CylinderGeometry(r * .92, r * .92, h * .66, 16), std2(JAR_FILL[jarN++ % JAR_FILL.length]), 0, h * .38, 0); }
   add(g, new THREE.CylinderGeometry(r * .82, r * .82, h * .1, 22), M.steel, 0, h * .97, 0); add(g, new THREE.TorusGeometry(r * .82, h * .012, 4, 22), M.steel, 0, h * .93, 0, Math.PI / 2);
   add(g, new THREE.CylinderGeometry(r * 1.045, r * 1.045, h * .32, 22, 1, true), M.linen, 0, h * .44, 0); return g; }
-function can(h, r, mat) { const g = new THREE.Group(); add(g, new THREE.CylinderGeometry(r, r, h, 20), mat, 0, h / 2, 0); for (const y of [.003, h - .003]) add(g, new THREE.TorusGeometry(r, .003, 4, 20), M.steel, 0, y, 0, Math.PI / 2); return g; }
+// perf: the four tin labels share one atlas texture (one material), each can's UVs pick its quarter
+let _canAtlas = null;
+function canAtlas() { if (_canAtlas) return _canAtlas; const c = document.createElement('canvas'); c.width = 256; c.height = 32; const x = c.getContext('2d'); M.cans.forEach((m, i) => x.drawImage(m.map.image, i * 64, 0, 64, 32));
+  const t = texOf(c); t.wrapS = THREE.ClampToEdgeWrapping; const m0 = M.cans[0]; _canAtlas = new THREE.MeshStandardMaterial({ map: t, metalness: m0.metalness, roughness: m0.roughness, envMap: m0.envMap, envMapIntensity: m0.envMapIntensity }); return _canAtlas; }
+function can(h, r, mat) { const g = new THREE.Group(); const ci = M.cans.indexOf(mat); const cg = new THREE.CylinderGeometry(r, r, h, Math.max(8, Math.min(20, Math.ceil(r * 200))));
+  if (ci >= 0) { const uv = cg.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, (ci + Math.min(.995, Math.max(.005, uv.getX(i)))) / 4); mat = canAtlas(); } add(g, cg, mat, 0, h / 2, 0); for (const y of [.003, h - .003]) add(g, new THREE.TorusGeometry(r, .003, 4, 20), M.steel, 0, y, 0, Math.PI / 2); return g; }
 function picture(w, h) { const g = new THREE.Group(); for (const [ww, hh, x, y] of [[w, .035, 0, h / 2], [w, .035, 0, -h / 2], [.035, h, w / 2, 0], [.035, h, -w / 2, 0]]) W(g, ww, hh, .03, x, y, .015, { mat: M.woodDark, r: .008 }); add(g, new THREE.PlaneGeometry(w - .03, h - .03), M.picture, 0, 0, .012); return bake(g); }
 function lanternHousing(rod) { const g = new THREE.Group(); const s = .17, h = .2; add(g, new THREE.CylinderGeometry(.02, s * .78, .08, 4), M.iron, 0, h / 2 + .04, 0, 0, Math.PI / 4); add(g, new THREE.CylinderGeometry(s * .5, s * .5, .02, 4), M.iron, 0, -h / 2 - .01, 0, 0, Math.PI / 4);
   for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) add(g, new THREE.BoxGeometry(.012, h, .012), M.iron, x * s * .35, 0, z * s * .35);
@@ -469,7 +622,7 @@ function stool(S = .48) { const g = new THREE.Group(); add(g, lathe([[0, 0], [.1
   for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; const l = add(g, new THREE.CylinderGeometry(.022, .018, S - .03, 10), M.woodDark, Math.cos(a) * .12, (S - .03) / 2, Math.sin(a) * .12); l.rotation.set(Math.sin(a) * .13, 0, -Math.cos(a) * .13); }
   const ring = add(g, new THREE.TorusGeometry(.14, .011, 6, 28), M.woodDark, 0, .17, 0, Math.PI / 2); void ring; bake(g); g.userData.info = { seat: S }; return g; }
 // ---- tools: built with their handle along +y and the grip point at the origin region ----
-const EX = (sh, depth, bev = .003) => { const e = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelSize: bev, bevelThickness: bev, bevelSegments: 1, curveSegments: 8 }); e.translate(0, 0, -depth / 2); return e; };
+const EX = (sh, depth, bev = .003) => { const e = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelSize: bev, bevelThickness: bev, bevelSegments: 1, curveSegments: 6 }); e.translate(0, 0, -depth / 2); return e; };
 function roundRect(w, h, r) { const s = new THREE.Shape(); s.moveTo(-w / 2 + r, -h / 2); s.lineTo(w / 2 - r, -h / 2); s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r); s.lineTo(w / 2, h / 2 - r); s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2); s.lineTo(-w / 2 + r, h / 2); s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r); s.lineTo(-w / 2, -h / 2 + r); s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2); return s; }
 function wrench(len = .26) {
   const g = new THREE.Group(); const R0 = len * .12, t = len * .05, hw = len * .095;
@@ -581,20 +734,20 @@ function rod(parent, a, b, r0, r1, mat, seg = 10) { const dir = b.clone().sub(a)
 // split halves/quarters for firewood, and a curling strip of loose bark on some.
 const LOG_VARIANTS = [{ split: 0, stubs: 1 }, { split: 0, stubs: 2, strip: 1, bend: .07 }, { split: 0, stubs: 0, bend: .1, chop: 1 }, { split: 1, stubs: 1 }, { split: 2, stubs: 0, chop: 1 }, { split: 2, stubs: 1, strip: 1 }, { split: 1, stubs: 0, chop: 1, bend: .05 }];
 const _logGeos = [];
-function logGeo(vi) {
-  if (_logGeos[vi]) return _logGeos[vi];
+function logGeo(vi, lo = false) {
+  const ck = vi + (lo ? 'lo' : ''); if (_logGeos[ck]) return _logGeos[ck]; const NB = lo ? 11 : 18, NH = lo ? 7 : 11, NL = lo ? 3 : 6;
   const o = LOG_VARIANTS[vi]; let sd = (vi + 1) * 7919; const rn = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; }; const ri = (a, b) => a + rn() * (b - a);
   // cross-section outline in the plane: runs of bark (b) and split (s) points
   const pts = [];
-  if (o.split === 0) { for (let j = 0; j <= 18; j++) pts.push([j / 18 * Math.PI * 2, 1, 'b']); }
-  else { const a1 = o.split === 1 ? Math.PI : Math.PI / 2; for (let j = 0; j <= 11; j++) pts.push([j / 11 * a1, 1, 'b']);
+  if (o.split === 0) { for (let j = 0; j <= NB; j++) pts.push([j / NB * Math.PI * 2, 1, 'b']); }
+  else { const a1 = o.split === 1 ? Math.PI : Math.PI / 2; for (let j = 0; j <= NH; j++) pts.push([j / NH * a1, 1, 'b']);
     const line = (x0, y0, x1, y1, n) => { for (let k = 1; k <= n; k++) { const t = k / n; pts.push([null, [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t], 's']); } };
-    if (o.split === 1) line(-1, 0, 1, 0, 6); else { line(0, 1, 0, 0, 3); line(0, 0, 1, 0, 3); } }
+    if (o.split === 1) line(-1, 0, 1, 0, NL); else { line(0, 1, 0, 0, lo ? 2 : 3); line(0, 0, 1, 0, lo ? 2 : 3); } }
   const P2 = pts.map(([a, r, t], i) => { const q = a === null ? r : [Math.cos(a), Math.sin(a)]; return { x: q[0], y: q[1], t, a: a === null ? Math.atan2(q[1], q[0]) : a, i }; });
   let cx = 0, cy = 0; for (const p of P2) { cx += p.x; cy += p.y; } cx /= P2.length; cy /= P2.length; if (o.split === 0) cx = cy = 0;
   const ph = [ri(0, 6), ri(0, 6), ri(0, 6), ri(0, 6)], bend = [ri(-1, 1) * (o.bend || .03), ri(-1, 1) * (o.bend || .03)];
   const tilt = [[ri(-.06, .06), ri(-.06, .06)], [ri(-.06, .06), ri(-.06, .06)]]; if (o.chop) tilt[1] = [ri(-.18, .18), ri(-.15, .15)];
-  const K = 10; const ring = []; // ring[k][j] = [x,y,z] (centred on the piece, pith at (-cx,-cy))
+  const K = lo ? 6 : 10; const ring = []; // ring[k][j] = [x,y,z] (centred on the piece, pith at (-cx,-cy))
   for (let k = 0; k < K; k++) { const z0 = k / (K - 1) - .5; const row = [];
     for (const p of P2) { const bulge = 1 + .055 * Math.sin(z0 * 4.1 + ph[0]) + .03 * Math.sin(z0 * 9.3 + ph[1]) + .045 * Math.sin(p.a * 3 + ph[2] + z0 * 2.2) + .025 * Math.sin(p.a * 7 + ph[3]);
       const s = p.t === 'b' ? bulge : 1 + (bulge - 1) * .3; let x = p.x * s, y = p.y * s; if (p.t === 's') { x += .025 * Math.sin(z0 * 13 + p.i); y += .025 * Math.cos(z0 * 11 + p.i * 2); }
@@ -627,18 +780,30 @@ function logGeo(vi) {
     for (let i = 0; i < p.count; i++) { const y = p.getY(i); const t = Math.max(0, (y + .05) / .26); const x = p.getX(i), z = p.getZ(i); const s = 1 + .14 * t * t; p.setXYZ(i, x * s, y, z * s); }
     sp.rotateX(Math.PI / 2); sp.translate(-cx, -cy, .1); sp.computeVertexNormals(); parts.push(sp); mats.push(0); }
   for (const g of parts) { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.normal) g.computeVertexNormals(); }
-  const geo = mergeGeometries(parts, true); geo.groups.forEach((gr, i) => { gr.materialIndex = mats[i]; }); geo.computeBoundingSphere(); _logGeos[vi] = geo; return geo;
+  const geo = mergeGeometries(parts, true); geo.groups.forEach((gr, i) => { gr.materialIndex = mats[i]; }); geo.computeBoundingSphere(); _logGeos[ck] = geo; return geo;
 }
 function logMats() { const X = mx(); return [X.bark, X.endgrain, X.splitwood]; }
-// a stack of logs: one InstancedMesh per log variant; slots go bottom-up so setCount(n) takes logs off the top
-function logStack(slots, len) {
-  const g = new THREE.Group(); g.userData.live = true; const n = slots.length; const byV = new Map();
-  slots.forEach((s, i) => { if (!byV.has(s.v)) byV.set(s.v, []); byV.get(s.v).push(i); });
-  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(); const meshes = [];
-  for (const [v, ids] of byV) { const im = new THREE.InstancedMesh(logGeo(v), logMats(), ids.length);
-    ids.forEach((i, k) => { const s = slots[i]; q.setFromEuler(e.set(s.rx || 0, s.ry || 0, s.rz)); m.compose(V(s.x, s.y, s.z || 0), q, V(s.r, s.r, len * (s.l || 1))); im.setMatrixAt(k, m); });
-    im.castShadow = im.receiveShadow = true; im.computeBoundingSphere(); g.add(im); meshes.push([im, ids]); }
-  g.userData.logs = { max: n, count: n, slots, setCount(k) { k = Math.max(0, Math.min(n, Math.round(k))); for (const [im, ids] of meshes) im.count = ids.filter(i => i < k).length; this.count = k; } };
+// vertex mask: parts whose float attribute `attr` is >= uniform `u` collapse out of view (main pass and shadow passes alike)
+function maskMat(m, attr, u, cmp = '>') { const pm = m.clone(); const ob = m.onBeforeCompile, ck = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
+  const inj = (sh, r, base) => { if (base && base !== THREE.Material.prototype.onBeforeCompile) base.call(m, sh, r); sh.uniforms['u_' + attr] = u;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>\nattribute float ${attr}; uniform float u_${attr};`).replace('#include <project_vertex>', `#include <project_vertex>\nif (${attr} ${cmp} u_${attr} - .5) gl_Position = vec4(2., 2., 2., 1.);`); };
+  pm.onBeforeCompile = (sh, r) => inj(sh, r, ob); pm.customProgramCacheKey = () => ck + '|mask_' + attr;
+  const dm = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); dm.onBeforeCompile = (sh, r) => inj(sh, r, null); dm.customProgramCacheKey = () => 'maskD_' + attr;
+  const di = new THREE.MeshDistanceMaterial(); di.onBeforeCompile = (sh, r) => inj(sh, r, null); di.customProgramCacheKey = () => 'maskP_' + attr; return { mat: pm, depth: dm, dist: di }; }
+// a stack of logs, merged into one mesh per material (bark, end grain, split face); slots go bottom-up and each vertex knows its
+// slot, so setCount(n) takes logs off the top by masking (perf: 3 draw calls for any number of logs and variants)
+const _logParts = [];
+function logParts(v, lo = false) { const ck = v + (lo ? 'lo' : ''); if (_logParts[ck]) return _logParts[ck]; const b = logGeo(v, lo).toNonIndexed(); const out = [[], [], []];
+  for (const gr of b.groups) { const g = new THREE.BufferGeometry(); for (const k of ['position', 'normal', 'uv']) { const a = b.attributes[k]; g.setAttribute(k, new THREE.Float32BufferAttribute(a.array.slice(gr.start * a.itemSize, (gr.start + gr.count) * a.itemSize), a.itemSize)); } out[gr.materialIndex].push(g); }
+  return (_logParts[ck] = out.map(l => l.length ? mergeGeometries(l, false) : null)); }
+function logStack(slots, len, lo = false) {
+  const g = new THREE.Group(); g.userData.live = true; const n = slots.length; const uC = { value: n }; const per = [[], [], []];
+  const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  slots.forEach((s, i) => { q.setFromEuler(e.set(s.rx || 0, s.ry || 0, s.rz)); m.compose(V(s.x, s.y, s.z || 0), q, V(s.r, s.r, len * (s.l || 1)));
+    logParts(s.v, lo).forEach((pg, k) => { if (!pg) return; const c = pg.clone(); c.applyMatrix4(m); c.setAttribute('slot', new THREE.Float32BufferAttribute(new Float32Array(c.attributes.position.count).fill(i), 1)); per[k].push(c); }); });
+  logMats().forEach((mat, k) => { if (!per[k].length) return; const mm = maskMat(mat, 'slot', uC); const mesh = new THREE.Mesh(mergeGeometries(per[k], false), mm.mat); mesh.customDepthMaterial = mm.depth; mesh.customDistanceMaterial = mm.dist;
+    mesh.castShadow = mesh.receiveShadow = true; mesh.userData.live = true; g.add(mesh); per[k].forEach(x => x.dispose()); });
+  g.userData.logs = { max: n, count: n, slots, setCount(k) { k = Math.max(0, Math.min(n, Math.round(k))); uC.value = k; this.count = k; } };
   return g;
 }
 function pyramidSlots(rows, r, gap, rnd = .006, vars = [0, 1, 2]) { const out = []; let y = r; rows.forEach((cnt, j) => { for (let i = 0; i < cnt; i++) out.push({ x: (i - (cnt - 1) / 2) * gap + rr(-rnd, rnd) * 2, y: y + rr(-rnd, rnd), z: rr(-.03, .03), r: r * rr(.82, 1.12), rz: rr(0, 6), ry: rr(-.06, .06), rx: rr(-.04, .04), l: rr(.88, 1.06), v: vars[Math.floor(R() * vars.length)] }); y += gap * .84; }); return out; }
@@ -673,22 +838,27 @@ function fridge() {
   bake(piv);
   // meat: up to 6 pieces, half of them wrapped in butcher paper; setStock(n) shows the first n
   const meat = []; const spots = [[-.13, shelfY[0]], [.08, shelfY[0]], [-.12, shelfY[1]], [.1, lb], [-.1, lb], [.12, shelfY[1] + .0]];
-  spots.forEach(([x, y], i) => { const p = new THREE.Group(); p.position.set(x, y + .006, z0 + t + .17 + (i % 2) * .05); p.rotation.y = rr(-.4, .4); p.userData.live = true; g.add(p);
+  spots.forEach(([x, y], i) => { const p = new THREE.Group(); p.position.set(x, y + .006, z0 + t + .17 + (i % 2) * .05); p.rotation.y = rr(-.4, .4);
     if (i % 2) { add(p, rb(.15, .045, .11, .02), X.paper, 0, .0225, 0); add(p, new THREE.TorusGeometry(.06, .002, 4, 16), X.rope, 0, .0225, 0, 0, Math.PI / 2, 0).scale.set(1, .45, 1); }
     else { add(p, rb(.14, .035, .1, .018), X.meat, 0, .0175, 0); add(p, rb(.14, .037, .02, .008), X.fat, 0, .0185, -.045); }
-    bake(p); meat.push(p); });
-  g.userData.fridge = { piv, meat, inside: V(0, (lb + split) / 2, z0 + bd / 2), handle: V(-dw + .065, split - .18, .11) };
+    meat.push(p); });
+  // perf: all pieces in one mesh; each vertex knows its piece, setStock(n) masks the rest
+  const meatU = { value: 6 }; { const by = new Map(); meat.forEach((p, i) => { p.updateMatrixWorld(true); p.traverse(o => { if (!o.isMesh) return; const m0 = o.material, pm = plainOf(m0) || m0; let q = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      for (const k of Object.keys(q.attributes)) if (!['position', 'normal', 'uv'].includes(k)) q.deleteAttribute(k); if (!q.attributes.uv) q.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(q.attributes.position.count * 2), 2)); q.applyMatrix4(o.matrixWorld); if (pm !== m0) colorize(q, m0.color, m0.roughness, m0.metalness); q.setAttribute('slot', new THREE.Float32BufferAttribute(new Float32Array(q.attributes.position.count).fill(i), 1));
+      if (!by.has(pm)) by.set(pm, []); by.get(pm).push(q); }); });
+    for (const [pm, qs] of by) { const mm = maskMat(pm, 'slot', meatU); const me = new THREE.Mesh(mergeGeometries(qs, false), mm.mat); me.customDepthMaterial = mm.depth; me.customDistanceMaterial = mm.dist; me.userData.live = true; me.castShadow = false; me.receiveShadow = true; g.add(me); } }
+  g.userData.fridge = { piv, meat, meatU, inside: V(0, (lb + split) / 2, z0 + bd / 2), handle: V(-dw + .065, split - .18, .11) };
   return bake(g);
 }
 
 function fryPan() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.1, 0], [.112, .035], [.106, .037], [.094, .006], [0, .006]], 28), M.iron); rod(g, V(.105, .03, 0), V(.27, .05, 0), .011, .009, M.iron, 8); add(g, rb(.09, .022, .026, .008), M.woodDark, .24, .05, 0, 0, 0, -.1); return g; }
 function steak() { const X = mx(), g = new THREE.Group(); const sh = new THREE.Shape(); sh.moveTo(-.06, -.03); sh.quadraticCurveTo(-.075, .035, -.02, .042); sh.quadraticCurveTo(.05, .05, .068, .01); sh.quadraticCurveTo(.07, -.04, .0, -.045); sh.quadraticCurveTo(-.05, -.05, -.06, -.03);
-  const m = new THREE.MeshStandardMaterial({ color: X.meat.color.clone(), roughness: .45 }); add(g, EX(sh, .016, .004), m, 0, .012, 0, -Math.PI / 2); add(g, new THREE.TorusGeometry(.045, .006, 5, 18, 2.2), X.fat, -.004, .012, .0, Math.PI / 2, 0, 2.6); g.userData.mat = m; return g; }
+  const m = new THREE.MeshStandardMaterial({ color: X.meat.color.clone(), roughness: .45 }); add(g, EX(sh, .016, .004), m, 0, .012, 0, -Math.PI / 2); add(g, new THREE.TorusGeometry(.045, .006, 5, 18, 2.2), X.fat, -.004, .012, .0, Math.PI / 2, 0, 2.6); m.userData.keep = true; g.userData.mat = m; return g; }
 function plateOfFood() { const X = mx(), g = new THREE.Group(); add(g, lathe([[0, 0], [.07, 0], [.095, .013], [.1, .018], [.06, .007], [0, .007]], 28), M.ceramic);
   const food = []; const st = steak(); st.scale.setScalar(.85); st.position.set(-.02, .0, .01); g.add(st); food.push(st);
   for (let i = 0; i < 4; i++) { const p = add(g, new THREE.SphereGeometry(.018, 8, 6), X.potato, .045 + rr(-.012, .012), .017, -.04 + i * .022); p.scale.set(1.2, .8, 1); food.push(p); }
   for (let i = 0; i < 3; i++) { const c = add(g, new THREE.CylinderGeometry(.012, .012, .006, 10), X.carrot, -.04 + i * .018, .012, -.05); food.push(c); }
-  g.userData.food = food; return g; }
+  food.forEach(f => f.userData.live = true); g.userData.food = food; return g; }
 function choppingBoard() { const X = mx(), g = new THREE.Group(); W(g, .28, .022, .2, 0, .011, 0, { mat: M.woodLight, r: .008 }); add(g, new THREE.CylinderGeometry(.012, .012, .024, 12), M.darkInside, .12, .011, 0);
   { const c = lathe([[0, 0], [.016, .01], [.017, .05], [.011, .11], [0, .13]], 12); add(g, c, X.carrot, .04, .039, .045, 0, 0, Math.PI / 2); add(g, new THREE.ConeGeometry(.01, .045, 6), X.leaf, .062, .039, .045, 0, 0, -Math.PI / 2); }
   for (const [x, z] of [[.08, -.04], [.1, -.02], [.06, -.06]]) add(g, new THREE.CylinderGeometry(.015, .015, .007, 12), X.carrot, x, .0255, z, 0, 0, rr(-.1, .1));
@@ -818,19 +988,21 @@ export function buildProps(ctx) {
   place('fridge', fridge(), -1.43, KT, 1.38);
   place('picture', picture(.34, .26), -1.45, KT + 1.92, 1.06, { solid: false, wall: true });
   { const s = wallShelf(.86); const items = [[-.3, jar(.14, .05, M.glazeCream)], [-.17, jar(.11, .045, M.jarGlass)], [.3, mug(M.glazeCream)]]; /* the middle is the clean-dish spot (out.dishes) */ for (const [x, o] of items) { o.position.set(x, .018, .12); s.add(o); } bake(s); place('kshelf', s, -2.3, KT + 1.97, 1.04, { solid: false, wall: true }); }
-  place('kbarrel', barrel(.78), -4.0, KT, 3.0);
+  place('kbarrel', barrel(.78), -4.02, KT, 3.33);
   place('kbucket', bucket(.34), -3.55, KT, 3.28);
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
 
   // ---------- bedroom ----------
-  const bunk = place('bunkbed', bunkBed(), -2.4, BD, 1.71, { seat: true });
-  place('slippers', slippers(), -2.95, BD, 2.32, { solid: false, ry: .2 });
-  place('basket', basket(), -1.05, BD, 1.18); // by the bed head against the back wall, clear of the ladder exit and walkways
-  const chairO = place('chair', chair(), -.58, BD, 2.3, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
-  const tbl = place('table', table(), -.35, BD, 1.45); const tTop = tbl.userData.floorY + .74;
-  const bk = book({ cover: M.covers[0] }); bk.position.set(-.33, tTop, 1.6); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
-  { const m = bake(mug(M.glazeBlue)); m.position.set(-.06, tTop, 1.35); scene.add(m); const c = bake(candle()); c.position.set(-.62, tTop, 1.32); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62, tTop, 1.6); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
+  // layout: bunk, reading table and chair sit 25 cm toward +x so the walk from the bedroom ladder top passes the bunk's end post
+  // with room to spare; the basket went under the right end of the table
+  const TX = .25, TZ = -.08; const bunk = place('bunkbed', bunkBed(), -2.4 + TX, BD, 1.71, { seat: true });
+  place('slippers', slippers(), -2.95 + TX, BD, 2.32, { solid: false, ry: .2 });
+  place('basket', basket(), -.28 + TX, BD, 1.33, { solid: false }); // under the right end of the reading table, between its legs
+  const chairO = place('chair', chair(), -.58 + TX, BD, 2.3, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
+  const tbl = place('table', table(), -.35 + TX, BD, 1.37); const tTop = tbl.userData.floorY + .74;
+  const bk = book({ cover: M.covers[0] }); bk.position.set(-.33 + TX, tTop, 1.6 + TZ); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; bk.userData.noProxy = true; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
+  { const m = bake(mug(M.glazeBlue)); m.position.set(-.06 + TX, tTop, 1.35 + TZ); scene.add(m); const c = bake(candle()); c.position.set(-.62 + TX, tTop, 1.32 + TZ); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62 + TX, tTop, 1.6 + TZ); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
   // door in Tree's opening of the right wall (z 2.3..3.25, up to BD+2.0); hinge at the front (z≈3.2), opens into the room.
   // It rests open (~95°) along z≈3.2 so the way in stays clear; __props.door.setOpen(k) swings it (0 shut), setBolt(k) slides the bolt (1 locked).
   { const dg = place('door', plankDoor(1.9, .77), .4, BD, 2.775, { ry: -Math.PI / 2, solid: false }); const D = dg.userData.door;
@@ -943,7 +1115,7 @@ export function buildProps(ctx) {
     const wm = new THREE.MeshStandardMaterial({ color: 0x3A5A68, roughness: .08, metalness: .1, envMap: M.env, envMapIntensity: 1.2, transparent: true, opacity: .82 });
     const dm = new THREE.MeshStandardMaterial({ color: 0x5A5440, roughness: .15, metalness: .05, envMap: M.env, envMapIntensity: .8, transparent: true, opacity: .9 });
     const H0 = .3, r0 = H0 * .5, r1 = H0 * .62;
-    const mkB = (metal, mat) => { const g = new THREE.Group(); const b = bucket(H0, metal); g.add(b); const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 28), mat); disc.rotation.x = -Math.PI / 2; disc.renderOrder = 2; g.add(disc); g.userData.water = { disc, level: 0 }; g.userData.grip = V(0, H0 + .05, 0); return g; };
+    const mkB = (metal, mat) => { const g = new THREE.Group(); const b = bucket(H0, metal); g.add(b); const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 28), mat); disc.rotation.x = -Math.PI / 2; disc.renderOrder = 2; disc.userData.live = true; g.add(disc); g.userData.water = { disc, level: 0 }; g.userData.grip = V(0, H0 + .05, 0); return g; };
     // shelf + supply bucket with a spigot and a hose down to the tap
     const shX = -1.9, shY = KT + 1.28, shZ = 1.03, shD = .42;
     { const sh = new THREE.Group(); W(sh, .3, .035, shD, 0, 0, shD / 2, { mat: M.woodLight }); for (const s of [-1, 1]) { const b = new THREE.Shape(); b.moveTo(0, 0); b.lineTo(.3, 0); b.quadraticCurveTo(.1, -.06, 0, -.26); b.lineTo(0, 0); add(sh, EX(b, .03, .004), M.woodDark, s * .11, -.018, .0, 0, -Math.PI / 2, 0); } bake(sh); sh.position.set(shX, shY, shZ); scene.add(sh); }
@@ -955,9 +1127,9 @@ export function buildProps(ctx) {
     const db = mkB(false, dm); tool('drainBucket', db, cn, .23, .08, .04);
     // tap stream and drips
     const sm = new THREE.MeshStandardMaterial({ color: 0xBFD8E4, roughness: .05, envMap: M.env, transparent: true, opacity: .55, depthWrite: false });
-    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; scene.add(stream);
-    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; scene.add(pourS);
-    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; cn.add(drip);
+    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; stream.userData.live = true; scene.add(stream);
+    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; pourS.userData.live = true; scene.add(pourS);
+    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; drip.userData.live = true; cn.add(drip);
     const ws = { clean: .7, dirty: .15, tap: false, drainT: 0, dripT: 0, pour: null };
     const setLvl = (b, k) => { const W2 = b.userData.water; W2.level = clamp01(k); const r = r0 + (r1 - r0) * W2.level - .012; W2.disc.visible = W2.level > .02; W2.disc.scale.set(r, r, 1); W2.disc.position.y = .015 + (H0 - .03) * W2.level; };
     // slosh: the water surface stays level in world space and rocks against the bucket's acceleration while carried
@@ -986,7 +1158,7 @@ export function buildProps(ctx) {
     if (potO) { potO.removeFromParent(); }
     const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); }
     tool('pot', bake(pg), st, .19, .93, .13); tool('ladle', bake(ladle(.3)), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
-    const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; fp.add(stk);
+    const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; stk.userData.live = true; fp.add(stk);
     const raw = new THREE.Color(0xA2343A), done = new THREE.Color(0x6A3A22);
     // the pan: setMeat(true/false) puts a steak in it, setCook(0..1) browns it
     out.pan = { obj: fp, setMeat(on) { stk.visible = !!on; }, setCook(k) { stk.userData.mat.color.copy(raw).lerp(done, clamp01(k)); } };
@@ -995,7 +1167,7 @@ export function buildProps(ctx) {
     const F = placed.fridge.userData.fridge; const fs = { open: 0, to: 0, n: 0 };
     const apply = () => { F.piv.rotation.y = fs.open * 1.75; };
     out.fridge = { obj: placed.fridge, max: F.meat.length, get stock() { return fs.n; }, get open() { return fs.open; },
-      setStock(n) { fs.n = Math.max(0, Math.min(F.meat.length, Math.round(n))); F.meat.forEach((m, i) => { m.visible = i < fs.n; }); },
+      setStock(n) { fs.n = Math.max(0, Math.min(F.meat.length, Math.round(n))); F.meatU.value = fs.n; },
       setOpen(k) { fs.open = fs.to = clamp01(k); apply(); }, openTo(k) { fs.to = clamp01(k); },
       handle(t = V()) { F.piv.updateMatrixWorld(true); return F.piv.localToWorld(t.copy(F.handle)); }, inside(t = V()) { return placed.fridge.localToWorld(t.copy(F.inside)); },
       update(dt) { if (fs.open !== fs.to) { const d = fs.to - fs.open; fs.open = Math.abs(d) < dt * 1.6 ? fs.to : fs.open + Math.sign(d) * dt * 1.6; apply(); } } };
@@ -1007,9 +1179,9 @@ export function buildProps(ctx) {
     out.radio = { obj: rad, get on() { return rs.on; }, setOn(k) { rs.on = clamp01(k); R.dm.emissiveIntensity = rs.on * 1.6; }, setTune(k) { rs.tune = clamp01(k); R.needle.position.x = -.05 + .1 * rs.tune; R.knob.rotation.y = rs.tune * 5; }, knob(t = V()) { return rad.localToWorld(t.copy(R.knobLocal)); }, dialMat: R.dm };
     out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
   tool('broom', broom(), scene, -4.03, floorAt(-4.03, BD, 1.62), 1.62, [0, 0, .11]);
-  const plantO = place('plant', plant(), -3.97, BD, 2.62); PT.plant = [plantO, V(0, .3, 0)];
-  tool('wateringCan', wateringCan(), scene, -3.94, floorAt(-3.94, BD, 3.08), 3.08, [0, -.9, 0]);
-  tool('diary', diary(), scene, -.37, tTop, 1.31, [0, .22, 0]); tool('pencil', pencil(), scene, -.22, tTop, 1.3, [0, .5, 0]);
+  const plantO = place('plant', plant(), -3.47, BD, 1.17); /* against the back wall between the crate and the bunk, off the kitchen hatch */ PT.plant = [plantO, V(0, .3, 0)];
+  tool('wateringCan', wateringCan(), scene, -3.3, floorAt(-3.3, BD, 1.5), 1.5, [0, -.4, 0]);
+  tool('diary', diary(), scene, -.37 + TX, tTop, 1.31 + TZ, [0, .22, 0]); tool('pencil', pencil(), scene, -.22 + TX, tTop, 1.3 + TZ, [0, .5, 0]);
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
   // --- workshop: whetstone and a lantern to repair on the bench; jacket on a peg by the open side; bow and quiver on the left wall
   { const bt = wb.userData.floorY + .9; const ws = whetstone(); ws.position.set(2.63, bt, 1.62); ws.rotation.y = .08; scene.add(ws); PT.whetstone = [ws, V(0, .08, 0)];
@@ -1023,7 +1195,7 @@ export function buildProps(ctx) {
   // --- things he carries in from outside: hidden until grabbed, hidden again on release
   for (const [k, f] of [['meatBag', meatBag], ['logArmful', logArmful]]) { const o = f(); o.visible = false; tool(k, o, scene, 0, -50, 0); o.userData.home.hide = true; }
   // --- outside at the foot of the oak: a big log pile and a sawhorse with a half-sawn plank and the saw in the cut
-  { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72); lp.position.set(x, ghY(x, z) - .01, z); lp.rotation.y = .5; scene.add(lp); lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
+  { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01, z); lp.rotation.y = .5; scene.add(lp); lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(lp); lp.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'logpile' }); PT.logpile = [lp, V(0, .9, .2)]; }
   { // chopping block (a sawn round standing on end) with the axe bitten into its top, beside the log pile
     const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
@@ -1075,17 +1247,30 @@ export function buildProps(ctx) {
   }
   // ---- the quilt sinks where someone lies on it: Character calls __props.bedPress(worldHipPos) / bedPress(null) ----
   const quiltMesh = (() => { let q = null; bunk.traverse(o => { if (o.isMesh && o.material === M.quilt) q = o; }); return q; })();
-  const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null; const press = { at: null, k: 0, shown: -1 };
-  out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; };
+  const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null, nBase = quiltMesh ? quiltMesh.geometry.attributes.normal.array.slice() : null;
+  const press = { at: null, k: 0, shown: -1, cover: false };
+  // bedPress(worldHip): a hollow where he sits or lies ON the quilt. bedCover(worldHip): he lies UNDER it: the quilt rises over a
+  // body (head toward the pillow, +x in the bed), so his legs never show through. null releases either; both ease in and out.
+  out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = false; };
+  out.bedCover = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = true; };
+  const sm = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  function bodyLift(x, z, c) { // height of the cover over a lying body, hips at c (bed local), feet toward -x
+    const u = x - c.x; if (u < -1.15 || u > .7) return 0;
+    const h = u < 0 ? .09 + .05 * sm(-.95, 0, u) : .14 + .03 * sm(0, .35, u); // feet .09, hips .14, chest .17
+    const w = u < 0 ? .13 + .07 * sm(-.95, 0, u) : .2 + .03 * sm(0, .3, u); const dz = (z - c.z) / w;
+    return h * Math.exp(-dz * dz * 1.3) * sm(-1.15, -.95, u) * (1 - sm(.45, .7, u)); }
   function pressQuilt(dt) {
     if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5); if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
-    const P = quiltMesh.geometry.attributes.position, a = P.array, c = press.at;
-    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (Math.abs(y - c.y) > .3) continue;
+    const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, c = press.at, e = .01;
+    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (Math.abs(y - c.y) > .3) continue;
+      if (press.cover) { const L0 = bodyLift(x, z, c); if (L0 <= 0) continue; a[i + 1] = y + L0 * press.k;
+        if (nBase[i + 1] > .4) { const gx = (bodyLift(x + e, z, c) - bodyLift(x - e, z, c)) / (2 * e) * press.k, gz = (bodyLift(x, z + e, c) - bodyLift(x, z - e, c)) / (2 * e) * press.k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; }
+        continue; }
       // an elongated hollow along the bed (body length on x), deepest under the hips, with a slight rim of bunched cloth
       const dx = (x - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d > 1.35) continue;
       const sink = d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008; a[i + 1] = y - sink * press.k; }
-    P.needsUpdate = true; } // normals kept: the merged mesh is non-indexed, recomputing would facet it
-  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => {
+    P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
+  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
@@ -1108,6 +1293,7 @@ export function buildProps(ctx) {
     add(g, new THREE.CylinderGeometry(.01, .16, .1, 16), M.iron, xo, top + .12, z); for (const s of [-1, 1]) add(g, rb(.012, .08, .012, .003), M.iron, xo + s * .045, top + .04, z);
     bake(g); g.traverse(o => { if (o.isMesh) o.castShadow = false; }); scene.add(g); out.chimneyTop = V(xo, top, z); }
   shiftRooms();
+  setTop(0, placed.counter, 0, .5, .315, .9); setTop(1, placed.workbench, 1, .85, .33, .9); setTop(2, placed.sidebench, 2, .5, .21, .78, -Math.PI / 2); // (Planks thread) worn work tops
   // ---------- light sources (computed before the static merge below, from the real positions) for lights.js: world positions + the emissive materials to switch ----------
   // each: { pos: Vector3 (world), obj, mats: [materials whose emissive/opacity show the source is on] }
   { const wp = (o, x = 0, y = 0, z = 0) => { o.updateMatrixWorld(true); return o.localToWorld(V(x, y, z)); };
@@ -1125,22 +1311,58 @@ export function buildProps(ctx) {
   // finds by position, tools, the open book, the candle flame). The emptied groups stay in place with their boxes.
   // perf: phones get a stricter shadow budget (only furniture-sized parts cast)
   const MOB = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); const CAST_R = MOB ? .35 : .2; out.mobile = MOB;
-  { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp']); /* stove merged too: its door, fire and pots are live */
+  const NOMERGE = /[?&]nomerge/.test(location.search); /* debug: keep every prop as built (support checks) */
+  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp']); /* stove merged too: its door, fire and pots are live */
     const roots = []; for (let i = nScene0; i < scene.children.length; i++) { const o = scene.children[i]; if (KEEP.has(o.name) || o.userData.live || o.userData.book || Object.values(out.tools).includes(o)) continue; roots.push(o); }
-    const by = new Map(); const kill = []; const PLAIN = new Map(); out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
+    const by = new Map(); const kill = []; const MST = out._mergeStats = {}; out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
-      let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
-      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0;
-      // plain colour-only materials share one vertex-coloured material per (roughness, metalness, env, side): far fewer draw calls
-      if (m0.isMeshStandardMaterial && !m0.map && !m0.bumpMap && !m0.normalMap && !m0.transparent && !m0.vertexColors && m0.emissive.getHex() === 0 && !out._liveMats.has(m0)) {
-        key = `plain|${m0.roughness.toFixed(1)}|${m0.metalness.toFixed(1)}|${m0.envMap ? (m0.envMapIntensity || 1).toFixed(1) : 0}|${m0.side}|${cast ? 's' : 'n'}`;
-        if (!PLAIN.has(key)) PLAIN.set(key, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: +m0.roughness.toFixed(1), metalness: +m0.metalness.toFixed(1), envMap: m0.envMap || null, envMapIntensity: m0.envMapIntensity || 1, side: m0.side })); mat = PLAIN.get(key);
-        const n = g.attributes.position.count, ca = new Float32Array(n * 3); for (let i = 0; i < n; i++) { ca[i * 3] = m0.color.r; ca[i * 3 + 1] = m0.color.g; ca[i * 3 + 2] = m0.color.b; } g.setAttribute('color', new THREE.Float32BufferAttribute(ca, 3)); }
-      if (!by.has(key)) by.set(key, { mat, cast, gs: [] }); by.get(key).gs.push(g); kill.push(o); }); }
+      let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
+      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0; const pm = out._liveMats.has(m0) ? null : plainOf(m0); if (pm) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness, m0.metalness); mat = pm; key = pm.uuid + (cast ? 's' : 'n'); } else if (m0.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1));
+      if (!by.has(key)) by.set(key, { mat, cast, gs: [] }); by.get(key).gs.push(g); kill.push(o); const rn = r.name || ('@' + r.position.toArray().map(v => v.toFixed(1))); MST[rn] = (MST[rn] || 0) + g.attributes.position.count / 3 * (cast ? 2 : 1); }); }
     for (const o of kill) o.removeFromParent();
+    // a material whose casting parts add up to a few hundred triangles is not worth its own shadow draw: fold it into the non-casting mesh
+    for (const [k, e] of [...by]) { if (!e.cast) continue; let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; const kn = k.slice(0, -1) + 'n'; if (n > 400) continue;
+      if (by.has(kn)) { by.get(kn).gs.push(...e.gs); by.delete(k); } else e.cast = false; }
+    // and a small non-casting remainder of a material that also casts joins the casting mesh (one draw instead of two; a few extra shadow triangles)
+    for (const [k, e] of [...by]) { if (e.cast) continue; const ks = k.slice(0, -1) + 's'; if (!by.has(ks)) continue; let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; if (n > 1500) continue; by.get(ks).gs.push(...e.gs); by.delete(k); }
     const sg = new THREE.Group(); sg.name = 'propsStatic'; for (const { mat, cast, gs } of by.values()) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = cast; m.receiveShadow = true; sg.add(m); gs.forEach(x => x.dispose()); } scene.add(sg); out.staticGroup = sg; }
   { const ws = V(); for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup) continue; r.updateMatrixWorld(true);
       r.traverse(o => { if (!o.isMesh || !o.castShadow || o.isInstancedMesh) return; if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); o.getWorldScale(ws); if (o.geometry.boundingSphere.radius * Math.max(ws.x, ws.y, ws.z) < CAST_R) o.castShadow = false; }); } }
+  // perf: the same merge inside every object that stays separate (kept furniture, live objects, tools): static parts by material
+  // (plain colours share one vertex-coloured material), keeping each part's shadow flags; anything the code moves or edits is a
+  // userData.live node and stays as it is, and a material that has a single part is left alone too.
+  if (!NOMERGE) { for (const m of Object.values(out.materials || {})) if (m) m.userData.keep = true; if (quiltMesh) quiltMesh.userData.live = true;
+    const deep = o => { bake(o, true); for (const c of o.children.slice()) walk(c); }, walk = c => { if (c.userData.live) deep(c); else for (const k of c.children.slice()) walk(k); };
+    for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup || r.userData.book || r.isLight) continue; deep(r); } }
+  // perf: every tool sitting at home (hooks, shelves, stove, bench) is drawn from one shared proxy mesh per material. Each tool
+  // has an id in a vertex attribute; when it leaves home (grabbed, easing back, its parent moved, hidden) its id is masked out of
+  // the proxy (vertices collapse) and its own meshes show again. Shadow-casting and live sub-parts always stay on the tool itself.
+  if (!NOMERGE) { const names = Object.keys(out.tools).slice(0, 63), uHide = { value: new Array(64).fill(0) }, by = new Map(), TP = []; const prox = new Map();
+    const proxMat = m => { if (prox.has(m)) return prox.get(m); const pm = m.clone(); const ob = m.onBeforeCompile, ck = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
+      pm.onBeforeCompile = (sh, r) => { if (ob && ob !== THREE.Material.prototype.onBeforeCompile) ob.call(m, sh, r); sh.uniforms.uHide = uHide;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
+      pm.customProgramCacheKey = () => ck + '|toolProxy'; prox.set(m, pm); return pm; };
+    names.forEach((name, i) => { const o = out.tools[name], h = o.userData.home; if (!h || !o.visible || o.userData.noProxy) return; o.updateMatrixWorld(true); const ms = [];
+      o.traverse(c => { if (!c.isMesh || c.castShadow || Array.isArray(c.material) || c.isInstancedMesh || c.isSkinnedMesh || !c.visible) return; const m = c.material; if (m.transparent || m.userData.keep || !m.isMeshStandardMaterial) return;
+        if (c !== o && c.userData.live) return; for (let q = c.parent; q && q !== o; q = q.parent) if (q.userData.live || !q.visible) return;
+        let g0 = lodGeo(c), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== c.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !m.vertexColors) g.deleteAttribute('color'); if (m.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1), m.userData.plainV ? 1 : undefined, m.userData.plainV ? 0 : undefined);
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(c.matrixWorld); g.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1));
+        const key = m.uuid + (g.attributes.color ? g.attributes.color.itemSize : 0); if (!by.has(key)) by.set(key, { m, gs: [] }); by.get(key).gs.push(g); ms.push(c); });
+      if (ms.length) { ms.forEach(c => c.visible = false); o.parent.updateMatrixWorld(true); TP.push({ i, o, h, ms, at: true, mw: ms.map(c => c.matrixWorld.clone()) }); } });
+    // where the house's static merge already has a mesh of the same material, the tools join it (static parts get tool id 63, never masked)
+    const injD = sh => { sh.uniforms.uHide = uHide; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
+    const dMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); dMat.onBeforeCompile = injD; dMat.customProgramCacheKey = () => 'toolProxyD'; const pMat = new THREE.MeshDistanceMaterial(); pMat.onBeforeCompile = injD; pMat.customProgramCacheKey = () => 'toolProxyP';
+    const pg = new THREE.Group(); pg.name = 'toolProxy'; for (const { m, gs } of by.values()) {
+      const cands = out.staticGroup ? out.staticGroup.children.filter(t => t.material === m && !t.customDepthMaterial) : []; const tg = cands.find(t => !t.castShadow) || cands[0];
+      const need = Object.keys(gs[0].attributes).filter(k => k !== 'tid').sort().join(); if (tg && Object.keys(tg.geometry.attributes).sort().join() === need && (!tg.geometry.attributes.color || tg.geometry.attributes.color.itemSize === gs[0].attributes.color.itemSize)) {
+        const sgG = tg.geometry; sgG.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(sgG.attributes.position.count).fill(63), 1)); const mg = mergeGeometries([sgG, ...gs], false);
+        if (mg) { tg.geometry = mg; sgG.dispose(); tg.material = proxMat(m); if (tg.castShadow) { tg.customDepthMaterial = dMat; tg.customDistanceMaterial = pMat; } gs.forEach(g => g.dispose()); continue; } sgG.deleteAttribute('tid'); }
+      const mesh = new THREE.Mesh(mergeGeometries(gs, false), proxMat(m)); mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false; pg.add(mesh); gs.forEach(g => g.dispose()); }
+    scene.add(pg); out.toolProxy = pg;
+    const vis = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
+    out._toolProxyInfo = () => TP.map(t => t.o === undefined ? '' : (t.at ? 1 : 0)).join(''); out._toolProxyTick = () => { for (const t of TP) { const { o, h } = t; const at = o.parent === h.parent && !homing.has(o) && o.position.distanceToSquared(h.pos) < 1e-8 && Math.abs(o.quaternion.dot(h.quat)) > .999999 && Math.abs(o.scale.x - (h.scale || 1)) < 1e-5 && vis(o) && t.ms.every((c, k) => c.matrixWorld.equals(t.mw[k])); /* any part moved (parent, covers, lids) -> the tool draws itself */
+        if (at !== t.at) { t.at = at; uHide.value[t.i] = at ? 0 : 1; for (const c of t.ms) c.visible = !at; } } }; }
+  out._roots = new Set(scene.children.slice(nScene0)); /* perf attribution (tests) */
   out.surfaces.bed = bunk.userData.info.levels.map(l => ({ top: bunk.userData.floorY + l.top, x0: bunk.position.x + l.x0, x1: bunk.position.x + l.x1, z0: bunk.position.z + l.z0, z1: bunk.position.z + l.z1, headDir: '+x' }));
   return out;
 }
