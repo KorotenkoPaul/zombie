@@ -667,7 +667,7 @@ export function createHero(ctx){
  // sound and the nail sinking all happen on that frame), the other hand steadies the work beside the nail
  const HFACE=[.102,.146,0];
  function hammerPost(a,dt,nail,nrm){a.nail=a.nail||nail;const P=PP();const hm=P&&P.tools&&P.tools.benchHammer;if(!hm||hm.parent!==bones.RightHand||!nail)return;
-  if(bones.RightArm.getWorldPosition(V()).distanceTo(nail)>armLen+.2){a.hmFar=true;return;}a.hmFar=false;/* out of reach from this pose (a kneeling or roof clip): the clip swings, the timer sounds */
+  if(bones.RightArm.getWorldPosition(V()).distanceTo(nail)>armLen+.38){a.hmFar=true;return;}a.hmFar=false;/* out of reach from this pose (a kneeling or roof clip): the clip swings, the timer sounds */
   const S=a.hm||(a.hm={ph:Math.random()*.3,w:0,n:0,T:rnd(.72,.9)});S.w=Math.min(1,S.w+dt/.5);S.ph+=dt;if(S.ph>S.T){S.ph-=S.T;S.T=rnd(.72,.9);S.hit=0;S.n++;if(S.n%6===5)S.ph-=rnd(.6,1.1);/* now and then a breath / a look between blows */}
   H.noPop={side:'Right',age:0};/* a hammer blow is meant to be sharp: keep the anti-pop pass off this arm */
   const u=S.ph/S.T;const TH=.9;let th=u<0?0:u<.5?TH*smooth(0,.5,u):u<.6?TH:u<.7?TH*(1-Math.pow((u-.6)/.1,2)):0;
@@ -805,8 +805,8 @@ export function createHero(ctx){
   const done=()=>{play(IDLE(),{fade:.4});endTask({ok:true,on:GEAR.coat});};
   if(on)gearOn(a,{jacket:true},done);else gearOff(a,done,{});a.update=dt=>{stepTick(a,dt);};return a;};
  // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
- const REPAIR={fix_shingle:{clip:'hy_shingle',tools:[['benchHammer','Right']],stand:.55,def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
-  fix_board:{clip:'hy_nailboard',tools:[['benchHammer','Right']],stand:.5,def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
+ const REPAIR={fix_shingle:{clip:'hy_shingle',tools:[['benchHammer','Right']],stand:.55,floorNail:true,def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
+  fix_board:{clip:'hy_nailboard',tools:[['benchHammer','Right']],stand:.5,floorNail:true,def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
   fix_wall:{clip:'hy_patchwall',tools:[['benchHammer','Right']],stand:.45,wall:true,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
   fix_rope:{clip:'hy_ropeknot',node:'gate',stand:.45,def:()=>N.gate&&N.gate.p.clone().add(V(0,.3,.6))},
   fix_hinge:{clip:'hy_oilhinge',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
@@ -816,7 +816,7 @@ export function createHero(ctx){
   fix_chimney:{clip:'hy_chimney',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.chimneyTop?P.chimneyTop.clone().setY(Math.min(P.chimneyTop.y,root.position.y+1.6)):null;}}};
  for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{const pos=o.pos?V(...o.pos):(R.def?R.def():null);
   const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));
-  return job({pt:()=>pos,node:pos?null:R.node,stand:R.stand,clip:R.clip,loop:true,dur:[18,35],tools:R.tools||[],post:hamr?(a,dt)=>hammerPost(a,dt,pos,R.wall?V(root.position.x-pos.x,0,root.position.z-pos.z).normalize():null):undefined,vary:hamr?false:undefined,
+  return job({pt:()=>pos,node:pos?null:R.node,stand:R.stand,clip:R.clip,loop:true,dur:[18,35],tools:R.tools||[],post:hamr?(a,dt)=>hammerPost(a,dt,R.floorNail?(a.fn||(a.fn=(()=>{/* kneeling over the boards: the nail is on the floor just in front of his right knee */const ls=bones.LeftArm.getWorldPosition(V()),rs=bones.RightArm.getWorldPosition(V());const f=ls.clone().sub(rs).cross(V(0,1,0)).setY(0).normalize();/* the way his chest faces in the clip */const m=ls.add(rs).multiplyScalar(.5).setY(root.position.y+.02);return m.addScaledVector(f,.32).add(V(-f.z*.1,0,f.x*.1));})())):pos,R.wall?V(root.position.x-pos.x,0,root.position.z-pos.z).normalize():null):undefined,vary:hamr?false:undefined,
    tick:(a,dt)=>{if(hamr&&!a.hmFar)return;/* GRAB: hammer hits come from the swing itself */if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});};
  // ===================== gear: a skinned coat that really follows the body, bow and quiver from the workshop wall =====================
  // the coat is cut from the body mesh itself (torso + arms, pushed out 1.5 cm along the normals) and shares the skeleton
