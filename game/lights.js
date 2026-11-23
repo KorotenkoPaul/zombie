@@ -182,7 +182,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- oven fire (Props draws the fire; we own whether it burns) ----------
   if (PL.oven || (P3 && P3.oven)) {
     const p = PL.oven ? PL.oven.pos.clone() : V(-3.25, KT + .3, 1.45);
-    const l = new THREE.PointLight(0xFF7A2A, 0, 4.2, 1.8); l.position.copy(p).add(V(.05, .1, .55)); scene.add(l);
+    // a half-space cone out of the firebox, tilted down: it lights the kitchen and the cook in front of the stove, but
+    // not up through the ceiling boards into the bedroom (no shadow map on this one)
+    const l = new THREE.SpotLight(0xFF7A2A, 0, 4.2, Math.PI / 2 * .97, .35, 1.8); l.position.copy(p).add(V(.05, .1, .55));
+    l.target.position.copy(l.position).add(V(0, -.55, 1)); scene.add(l, l.target);
     add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: k => {
       // index.html passes this level to props.update(), which calls oven.setHeat once per frame
       // Props keeps a faint ember glow at heat 0; a cold oven shows nothing
@@ -211,7 +214,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (!hand.attached) { if (hs && hs.manual) hs.manual = null; return; }     // nothing to light while nobody carries it
     hand.bulbPos.getWorldPosition(hs.pos);
     // outdoors (below the house floors or out on the open ground) the lantern is the only light around: full strength
-    const outdoors = hs.pos.y < (LV.LC || 4.4) - .3 || hs.pos.z > 4.7;
+    const outdoors = hs.pos.y < (LV.LC || 4.4) - .3 || hs.pos.z > 4.7; hand.outdoors = outdoors;
     hand.L.I += ((outdoors ? 4.2 : 1.6) - hand.L.I) * Math.min(1, dt * 2);
     if (hand.fixed) { hand.g.quaternion.identity(); return; }
     // hangs from the fingers, stays upright and swings a little with the walk
@@ -340,6 +343,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     lockK += ((locked ? 1 : 0) - lockK) * Math.min(1, dt * .6);
     for (const c of curtains) {
       const want = locked ? 1 : dayK > .55 ? 0 : .42;
+      if (c.want !== undefined && want !== c.want && window.__audio && window.__audio.play) {   // Sound's cloth + rings, at this window
+        const pos = new THREE.Vector3(); c.w.g.getWorldPosition(pos);
+        window.__audio.play(want === 1 ? 'curtain_close' : want === 0 ? 'curtain_open' : 'curtain', pos, { delay: Math.random() * .8 });
+      }
+      c.want = want;
       c.closed += (want - c.closed) * Math.min(1, dt * .5);
       const half = c.W / 2 + .05, wd = .1 + (half - .1) * c.closed;     // each panel: bunched 10 cm .. meets in the middle
       for (const { m, side } of c.panels) m.scale.x = -side * wd;
@@ -480,8 +488,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const k = s.seed * 17;
     switch (KINDS[s.kind].flick) {
       // oil lantern: steady, a slow breath and a rare small dip when the wick gutters
-      case 'flame': return .93 + noise(T * 1.3 + k) * .035 + noise(T * 7 + k) * .02 - Math.max(0, noise(T * .45 + k) - .55) * .25;
-      case 'candle': return .84 + noise(T * 2.2 + k) * .07 + noise(T * 9 + k) * .05 + noise(T * 23 + k) * .02;
+      case 'flame': return .93 + noise(T * 1.3 + k) * .035 + noise(T * 7 + k) * .02 + noise(T * 17 + k) * .008 - Math.max(0, noise(T * .45 + k) - .55) * .25;
+      case 'candle': return .84 + noise(T * 2.2 + k) * .07 + noise(T * 9 + k) * .04 + noise(T * 23 + k) * .02;
       case 'fire': return .8 + noise(T * 1.6 + k) * .1 + noise(T * 6 + k) * .07 + noise(T * 15 + k) * .03;
       default: return 1 + noise(T * 40) * .004;
     }
@@ -512,6 +520,12 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       let f = k > 0 ? flick(s, T) : 0;
       // he is at the stove feeding it: the fire is livelier, its glow dances on him and the kitchen
       if (s.name === 'oven' && cooking) f = .82 + (f - .8) * 2.2;
+      // outdoor flames feel the wind (game/wind.js): a gust makes the flame duck and stutter, then it steadies again.
+      // Indoor flames stay calm. The glass of a lantern shelters it, so the dip is small.
+      if (f > 0 && (s.name === 'landing' || (s.name === 'hand' && hand.outdoors)) && window.__wind && window.__wind.sample) {
+        const w = window.__wind.sample(s.pos), g = Math.min(1.5, (w.gust || 0) + Math.max(0, (w.s || 0) - .5) * .4);
+        if (g > .02) f *= 1 - Math.min(.32, g * .2) * (.55 + .45 * noise(T * 11 + s.seed * 7));
+      }
       const open = s.extra && s.lights[0] && s.lights[0].l.userData.open || 0;
       for (const L of s.lights) {
         L.l.intensity = L.I * k * f * (1 + open * 1.2);
@@ -573,17 +587,34 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // the halos and fog glow), and POOL_N real lights take the place of the ones that matter most this frame: lit, and
   // near the hero or the camera. A slot fades out before it moves to another source, so nothing pops. Sources without a
   // slot still glow (bulb emissive, halo, warm windows and bark glow). The light count never changes: no recompiles.
-  const POOL_N = 3;
+  const POOL_N = 4;
   let pool = null;
   if (MOBILE) {
-    // one real light per room lantern, the oven fire and the hand lantern: with three slots that covers nearly every
-    // night without a single swap. The trunk hollow keeps its glow through the bark shader (doorGlow) and the spill spot.
+    // the pool lights are wide cones (a half-space): a hanging lamp shines down into its own room and not up through
+    // the ceiling boards into the room above (phones have no point shadows, so a plain point light bled through floors).
+    // Every unshadowed source joins: room lanterns, oven, hand lantern, the landing cone and the door spill. The
+    // workshop dome keeps its own shadowed spot. Four slots cover a normal night without swaps.
+    const SC = THREE.ShaderChunk, LINE = 'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spotLight.decay );';
+    if (SC.lights_pars_begin.includes(LINE)) SC.lights_pars_begin = SC.lights_pars_begin.replace(LINE,
+      'float spDec = spotLight.decay;\n' +
+      'if ( spDec > 9.5 ) { float k = floor( ( spDec - 10.0 ) / 4.0 ); if ( dot( lVector, spotLight.direction ) > spDec - 10.0 - 4.0 * k ) light.color = vec3( 0.0 ); spDec = k / 4.0; }\n' +
+      'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spDec );');
+    else console.warn('lights: spot floor clip not installed (three changed)');
     const virt = [];
-    for (const s of src.values()) for (const L of s.lights) if (L.l.isPointLight && L.l !== doorCave) virt.push(L.l);
+    for (const s of src.values()) for (const L of s.lights) if ((L.l.isPointLight || (L.l.isSpotLight && !L.l.castShadow)) && L.l !== doorCave) virt.push(L.l);
     for (const l of virt) { l.visible = false; l.castShadow = false; }
     if (doorCave) doorCave.visible = false;
-    const slots = Array.from({ length: POOL_N }, () => { const l = new THREE.PointLight(0xFFB25E, 0, 5, 1.5); scene.add(l); return { l, v: null, w: 0, sc: 0 }; });
-    pool = { virt, slots, wp: V(), hero: V(), stats: { swaps: 0, frames: 0, missFrames: 0, maxMiss: 0 } };
+    const slots = Array.from({ length: POOL_N }, () => { const l = new THREE.SpotLight(0xFFB25E, 0, 5, Math.PI / 2 * .97, .3, 1.5); scene.add(l, l.target); return { l, v: null, w: 0, sc: 0 }; });
+    // A slot has no shadow map, so a room lamp would light the room below through its floor (bedroom lamp -> kitchen
+    // ceiling, fridge top, hood). The slot's spot shader gets a floor plane instead: nothing deeper than the lamp's own
+    // floor (along the slot's straight-down axis) is lit. Encoded in the decay uniform (>= 10: 10 + 4*round(decay*4) + h),
+    // so no new uniforms: every material keeps the stock program, only getSpotLightInfo learns to read it.
+    const FLOOR = { kitchen: KT, bedroom: BD, workshop: WS }, clip = new Map();
+    for (const s of src.values()) for (const L of s.lights) if (L.l.isPointLight) {
+      if (s.name === 'hand') clip.set(L.l, () => { const r = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; return hand.outdoors || !r ? null : r.position.y; });
+      else if (FLOOR[s.room] != null) clip.set(L.l, () => FLOOR[s.room]);
+    }
+    pool = { virt, slots, clip, wp: V(), hero: V(), tp: V(), stats: { swaps: 0, frames: 0, missFrames: 0, maxMiss: 0 } };
   }
   function updatePool(dt) {
     const { virt, slots, wp, stats } = pool; stats.frames++;
@@ -615,6 +646,12 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       const v = sl.v;
       if (!v) { l.intensity = 0; continue; }
       v.getWorldPosition(l.position); l.color.copy(v.color); l.distance = v.distance; l.decay = v.decay;
+      if (v.isSpotLight) { v.target.getWorldPosition(l.target.position); l.angle = v.angle; l.penumbra = v.penumbra; }
+      else {
+        l.target.position.copy(l.position).y -= 1; l.angle = Math.PI / 2 * .97; l.penumbra = .3;
+        const fy = pool.clip.has(v) ? pool.clip.get(v)() : null;
+        if (fy != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, l.position.y - fy + .06));
+      }
       l.intensity = v.intensity * sl.w;
     }
   }
