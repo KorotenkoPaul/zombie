@@ -31,7 +31,7 @@ def blur(x, r):
     return x
 
 # height: large-scale ridges (low-pass of luminance) + some mid detail, normalised
-low = blur(lum, S / 128)
+low = blur(lum, S / 300)
 big = blur(lum, S / 16)
 hgt = (low - big)
 hgt = (hgt - np.percentile(hgt, 2)) / (np.percentile(hgt, 98) - np.percentile(hgt, 2))

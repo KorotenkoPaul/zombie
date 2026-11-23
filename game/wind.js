@@ -12,6 +12,8 @@
 //   uWind vec4   (dirX, dirZ, base strength 0..~1, 0)   dir = where the wind blows TO, in world xz
 //   uGust vec4   (front, 1/width, amplitude, tail)       front = position of the gust front along dir (metres)
 //   uWet  float  0..1 how wet things are (rain soaks fast, dries over ~2 min): ropes sway less, glass runs with drops
+//   uFogBank vec2 (front, k): morning fog bank rolling in from the forest along dir. Mist factor at wp:
+//                k*clamp((front-dot(wp.xz,uWind.xy))/10.,0.,1.)  (thick where the bank has arrived)
 //   uDrift vec2  how far the air has carried things so far (metres, world xz) - scroll fog noise by it
 //
 // GLSL (W.glsl, paste after #include <common>):
@@ -20,6 +22,8 @@
 //                                        Multiply by your own amplitude in metres; freq ~1.2 heavy, ~1.7 grass, ~2.5 leaves
 //   vec3  windRope(vec3 wp, float t, float len)  offset for a hanging rope: t 0 at the knot .. 1 at the free end
 //   vec3  windBranch(vec3 wp, vec2 trunkAxisXZ)  smooth sway of the oak's big limbs (bark and leaves both add it)
+//   vec2  windSwayS(vec3 wp, float freq)  same, but smooth in space: use it for anything that MOVES (particles),
+//                                        or pass the point's rest position. windSway's per-position phase jumps otherwise.
 //   vec3  windLocal(vec3 w)              turns a world offset into the instance's local space (InstancedMesh);
 //                                        without instancing it returns w unchanged
 //
@@ -45,18 +49,22 @@ const PREVAIL = Math.atan2(0.66, 0.75); // blows from the far left-back corner t
 const SPAN = 60; // gusts start this far upwind of the tree and run this far past it
 
 export const WIND_GLSL = `
-uniform float uWT,uWet;uniform vec4 uWind;uniform vec4 uGust;uniform vec2 uDrift;
+uniform float uWT,uWet;uniform vec2 uFogBank;uniform vec4 uWind;uniform vec4 uGust;uniform vec2 uDrift;
 float windGust(vec3 p){float x=uGust.x-dot(p.xz,uWind.xy);
  return uGust.z*(x<0.?exp(-x*x*uGust.y*uGust.y*6.):exp(-x/uGust.w));}
 float windStrength(vec3 p){float n=sin(dot(p.xz,vec2(.11,.17))+uWT*.37)*.5+.5;return uWind.z*(.8+.4*n)+windGust(p);}
-vec2 windSway(vec3 p,float freq){float s=windStrength(p);vec2 d=uWind.xy,q=vec2(-d.y,d.x);
- float ph=uWT*freq-dot(p.xz,d)*.45+fract(sin(dot(p.xz,vec2(12.9898,78.233)))*43758.5453)*.8;
+vec2 windSwayH(vec3 p,float freq,float hp){float s=windStrength(p);vec2 d=uWind.xy,q=vec2(-d.y,d.x);
+ float ph=uWT*freq-dot(p.xz,d)*.45+hp;
  float o1=sin(ph)*.6+sin(ph*2.17+1.3)*.4,o2=sin(ph*1.31+2.1);
  float shake=.1+.9*s,lean=.35*s*s;
  return d*(lean+o1*shake*.55)+q*o2*shake*.3;}
+// for things that stay put (a plant, a leaf card): each gets its own random phase from its position
+vec2 windSway(vec3 p,float freq){return windSwayH(p,freq,fract(sin(dot(p.xz,vec2(12.9898,78.233)))*43758.5453)*.8);}
+// for things that move (fireflies, motes, smoke, rope vertices): smooth in space, no jumps as the point moves
+vec2 windSwayS(vec3 p,float freq){return windSwayH(p,freq,0.);}
 // a hanging rope or rope ladder: t = 0 at the knot it hangs from .. 1 at its free end, len = its length in metres.
 // Slow pendulum sway, mostly downwind, the free end moves most. Returns a world offset.
-vec3 windRope(vec3 p,float t,float len){vec2 w=windSway(p,1.1)*.05*len*t*t*(1.-.45*uWet);/* wet rope: heavier, sways less */return vec3(w.x,0.,w.y);}
+vec3 windRope(vec3 p,float t,float len){vec2 w=windSwayS(p,1.1)*.05*len*t*t*(1.-.45*uWet);/* wet rope: heavier, sways less */return vec3(w.x,0.,w.y);}
 // the big limbs of the oak: a slow, smooth sway (no per-vertex randomness, so a branch moves as one piece).
 // ax = the trunk axis (x,z). Still near the trunk and the house; the far limbs and the top of the crown move a few cm,
 // ~15 cm in a strong gust. Leaf cards add the same offset at their centre, so they stay on their branch.
@@ -65,7 +73,8 @@ vec3 windBranch(vec3 p,vec2 ax){float d=length(p.xz-ax);float a=.09*max(smoothst
  vec2 o=dd*(.4*s*s+sin(ph)*sh*.6)+q*sin(ph*1.37+1.)*sh*.3;return vec3(o.x,0.,o.y)*a;}
 vec3 windLocal(vec3 w){
 #ifdef USE_INSTANCING
- return inverse(mat3(instanceMatrix))*w;
+ // rotation * uniform scale: the inverse is the transpose over scale^2 (much cheaper than inverse() per vertex)
+ mat3 m=mat3(instanceMatrix);return transpose(m)*w/dot(m[0],m[0]);
 #else
  return w;
 #endif
@@ -76,10 +85,10 @@ export function createWind(opt = {}) {
   const R = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const rr = (a, b) => a + R() * (b - a);
 
-  const U = { uWT: { value: 0 }, uWind: { value: [0, 0, 0, 0] }, uGust: { value: [-1e4, 0.1, 0, 10] }, uDrift: { value: [0, 0] }, uWet: { value: 0 } };
+  const U = { uWT: { value: 0 }, uWind: { value: [0, 0, 0, 0] }, uGust: { value: [-1e4, 0.1, 0, 10] }, uDrift: { value: [0, 0] }, uWet: { value: 0 }, uFogBank: { value: [-1e4, 0] } };
   // three.js wants Vector4 for vec4 uniforms; take the class from the caller so this file has no imports
   const V4 = opt.THREE ? opt.THREE.Vector4 : null;
-  if (opt.THREE) U.uDrift.value = new opt.THREE.Vector2(0, 0);
+  if (opt.THREE) { U.uDrift.value = new opt.THREE.Vector2(0, 0); U.uFogBank.value = new opt.THREE.Vector2(-1e4, 0); }
   if (V4) { U.uWind.value = new V4(0, 0, 0, 0); U.uGust.value = new V4(-1e4, 0.1, 0, 10); }
   const setV = (u, a, b, c, d) => { const v = u.value; if (v.set) v.set(a, b, c, d); else { v[0] = a; v[1] = b; v[2] = c; v[3] = d; } };
 
@@ -94,6 +103,9 @@ export function createWind(opt = {}) {
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) { try { f(e); } catch (er) { console.error('wind', k, er); } } };
   let gustIn = false, creakWait = 3, lastMode = 'breeze';
   // rain spells: rare (one every ~6-18 min), 2-5 min long, they bring a livelier wind with them
+  // morning fog bank: on most mornings a light breeze carries a bank of mist in from the forest, it rolls through the
+  // clearing along the wind and lifts as the sun comes up. fogBank = {front (m along dir), k 0..1}
+  const fb = { front: -1e4, k: 0, on: false, tried: false };
   let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(360, 1080);
   function setRain(on, quiet) {
     if (on === rainOn) return; rainOn = on;
@@ -114,15 +126,25 @@ export function createWind(opt = {}) {
 
   const W = {
     U, glsl: WIND_GLSL,
-    hook(sh) { sh.uniforms.uWT = U.uWT; sh.uniforms.uWind = U.uWind; sh.uniforms.uGust = U.uGust; sh.uniforms.uDrift = U.uDrift; sh.uniforms.uWet = U.uWet;
+    hook(sh) { sh.uniforms.uWT = U.uWT; sh.uniforms.uWind = U.uWind; sh.uniforms.uGust = U.uGust; sh.uniforms.uDrift = U.uDrift; sh.uniforms.uWet = U.uWet; sh.uniforms.uFogBank = U.uFogBank;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + WIND_GLSL); return sh; },
 
     // for a THREE.ShaderMaterial (no #include <common>): adds the uniforms, puts the GLSL in front of the vertex shader
     // and defines WIND, so the owner can write `#ifdef WIND ... #endif` and still compile without this file
-    hookRaw(mat) { Object.assign(mat.uniforms, { uWT: U.uWT, uWind: U.uWind, uGust: U.uGust, uDrift: U.uDrift, uWet: U.uWet }); mat.vertexShader = WIND_GLSL + '\n' + mat.vertexShader; mat.defines = Object.assign(mat.defines || {}, { WIND: '' }); mat.needsUpdate = true; return mat; },
+    hookRaw(mat) { Object.assign(mat.uniforms, { uWT: U.uWT, uWind: U.uWind, uGust: U.uGust, uDrift: U.uDrift, uWet: U.uWet, uFogBank: U.uFogBank }); mat.vertexShader = WIND_GLSL + '\n' + mat.vertexShader; mat.defines = Object.assign(mat.defines || {}, { WIND: '' }); mat.needsUpdate = true; return mat; },
 
-    update({ dt = 1 / 60, T: t, rainK = 0 } = {}) {
+    update({ dt = 1 / 60, T: t, rainK = 0, hour = null } = {}) {
       dt = Math.min(0.1, Math.max(0, dt)); T = t ?? T + dt;
+      // morning fog bank (needs the hour from index.html)
+      if (hour != null) {
+        const dawn = hour >= 4.6 && hour < 9;
+        if (!dawn) fb.tried = false;
+        if (dawn && !fb.on && !fb.tried && hour < 6.4) { fb.tried = true;
+          if (R() < 0.7) { fb.on = true; fb.front = -SPAN; if (mode === 'calm' && !forced) { mode = 'breeze'; target = rr(0.25, 0.4); spellLeft = rr(90, 160); } emit('fogbank', { on: true }); } }
+        if (fb.on) { fb.front += dt * (0.35 + base * 0.6); fb.k += ((hour < 7.6 ? 1 : 0) - fb.k) * Math.min(1, dt / (hour < 7.6 ? 20 : 40));
+          if (hour >= 9 || (hour > 7.6 && fb.k < 0.02)) { fb.on = false; fb.k = 0; fb.front = -1e4; emit('fogbank', { on: false }); } }
+        U.uFogBank.value.set ? U.uFogBank.value.set(fb.front, fb.k) : (U.uFogBank.value[0] = fb.front, U.uFogBank.value[1] = fb.k);
+      }
       // rain spells
       if (rainOn) { rainLeft -= dt; if (rainLeft <= 0) setRain(false); } else { rainWait -= dt; if (rainWait <= 0) setRain(true); }
       // weather spells
@@ -174,12 +196,33 @@ export function createWind(opt = {}) {
     // rain: raining() 1/0 (index.html eases rainK towards it), setRain(true|false) e.g. from the ☁ button.
     // on('rain', e => e.on) fires when it starts or stops.
     raining() { return rainOn ? 1 : 0; },
-    wet() { return U.uWet.value; },   // 0..1: how wet things are (soaks fast, dries slowly)
+    wet() { return U.uWet.value; },
+    // morning fog bank: {front, k}; mist is thick upwind of the front (already reached), thin ahead of it
+    fogBank() { return { front: fb.front, k: fb.k, on: fb.on }; },
+    fogBankAt(x, z) { if (!fb.on) return 0; const d = x * Math.cos(ang) + z * Math.sin(ang); return fb.k * Math.min(1, Math.max(0, (fb.front - d) / 10)); },   // 0..1: how wet things are (soaks fast, dries slowly)
     setRain(on) { setRain(!!on); },
     on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
     gust(amp) { startGust(amp); },
+
+    // a small tiling noise texture (fbm baked once): one or two texture reads instead of 4-5 octaves of procedural
+    // noise per pixel. Shared by the fog layers (fogbank.js; Environment may use it too): __wind.noiseTexture(THREE)
+    noiseTexture(THREE) {
+      if (W._noise) return W._noise;
+      const S = 128, d = new Uint8Array(S * S * 4);
+      const lat = (n, seed) => { const a = new Float32Array(n * n); let sd = seed; for (let i = 0; i < n * n; i++) { sd = (sd * 16807) % 2147483647; a[i] = sd / 2147483647; } return a; };
+      const oct = [[8, 0.5, 11], [16, 0.28, 23], [32, 0.14, 37], [64, 0.08, 53]].map(([n, a, sd]) => [n, a, lat(n, sd)]);
+      const sm = t => t * t * (3 - 2 * t);
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { let v = 0, v2 = 0;
+        for (const [n, a, L] of oct) { const fx = x / S * n, fy = y / S * n, ix = Math.floor(fx), iy = Math.floor(fy), tx = sm(fx - ix), ty = sm(fy - iy);
+          const g = (i, j) => L[((j % n + n) % n) * n + ((i % n + n) % n)];
+          const val = (g(ix, iy) * (1 - tx) + g(ix + 1, iy) * tx) * (1 - ty) + (g(ix, iy + 1) * (1 - tx) + g(ix + 1, iy + 1) * tx) * ty;
+          v += val * a; v2 += (1 - val) * a * (n > 8 ? 1.2 : 0.6); }
+        const i = (y * S + x) * 4; d[i] = Math.min(255, v / 1.0 * 255); d[i + 1] = Math.min(255, v2 / 1.1 * 255); d[i + 2] = 0; d[i + 3] = 255; }
+      const t = new THREE.DataTexture(d, S, S, THREE.RGBAFormat); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.LinearFilter;
+      t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.needsUpdate = true; W._noise = t; return t;
+    },
 
     // ---- falling leaves: a few oak leaves torn off the crown, tumbling down and carried by the wind ----
     // Few (16 on phones, 30 on desktop), so a tiny CPU step per leaf is cheaper than anything clever. Calm: a leaf now
@@ -205,28 +248,35 @@ export function createWind(opt = {}) {
       if (o.crown) for (let i = 0; i < o.crown.count; i += 3) { o.crown.getMatrixAt(i, m4); v.setFromMatrixPosition(m4); if (v.y > 6) spots.push(v.toArray()); }
       if (!spots.length) spots.push([0, 14, -1]);
       const gH = o.groundH || (() => 0), rooms = o.avoid || [];
+      // the top of whatever is under a point (deck, landing, roof, else the ground): o.surfaceH(x,z) -> height or null
+      const floorAt = (x, z, y) => { const g = gH(x, z); const h = o.surfaceH ? o.surfaceH(x, z) : null; return h != null && h > g && h <= y + 0.05 ? h : g; };
       const L = []; for (let i = 0; i < N; i++) L.push({ on: false });
       const q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), zero = new THREE.Matrix4().makeScale(0, 0, 0);
       for (let i = 0; i < N; i++) im.setMatrixAt(i, zero);
       let acc = 0;
+      W.addPerfSteps = PERF => PERF.addStep('leafFall', () => { if (cap <= N / 2) return false; cap = N / 2; }, () => { cap = N; }, 55);
+      let cap = N;
       fall = dt => {
         const s0 = W.level();
         acc += dt * (0.04 + 0.7 * s0 * s0);                     // leaves per second grow with the wind
-        while (acc >= 1) { acc -= 1; const l = L.find(l => !l.on); if (!l) break;
+        while (acc >= 1) { acc -= 1; if (L.reduce((n, l) => n + (l.on ? 1 : 0), 0) >= cap) { acc = 0; break; } const l = L.find(l => !l.on); if (!l) break;
           const sp = spots[Math.floor(R() * spots.length)];
           Object.assign(l, { on: true, p: [sp[0] + rr(-0.4, 0.4), sp[1] + rr(-0.4, 0.2), sp[2] + rr(-0.4, 0.4)], v: [0, 0, 0], ph: rr(0, 6.3), fr: rr(1.5, 3), spin: [rr(-3, 3), rr(-2, 2), rr(-4, 4)], r: [rr(0, 6), rr(0, 6), rr(0, 6)], rest: 0, life: rr(8, 16), k: 1 }); }
         for (let i = 0; i < N; i++) { const l = L[i]; if (!l.on) continue; const p = l.p;
-          if (l.rest > 0) {                                          // lying on the ground, then fading
+          if (l.rest > 0) {                                          // lying on a deck or the ground, then fading
             l.rest += dt; if (l.rest > l.life) { l.k -= dt * 0.5; if (l.k <= 0) { l.on = false; im.setMatrixAt(i, zero); continue; } }
+            // a gust picks it up again: it skitters a little way along the boards and settles (the deck "breathes" leaves)
+            const w = W.sample({ x: p[0], z: p[2] });
+            if (w.s > 0.7 && l.k > 0.9 && R() < dt * (w.s - 0.6) * 2.5) { l.rest = 0; l.v = [w.x * 1.6, rr(0.5, 1.1), w.z * 1.6]; l.spin = [rr(-6, 6), rr(-3, 3), rr(-6, 6)]; l.life += rr(4, 8); }
           } else {
             const w = W.sample({ x: p[0], z: p[2] }); l.ph += dt * l.fr;
             // drag towards the wind (leaves are light), a swirl, and a fluttering fall
-            const tx = w.x * 2.2 + Math.cos(l.ph) * 0.35, tz = w.z * 2.2 + Math.sin(l.ph * 0.8) * 0.35, ty = -0.75 + Math.sin(l.ph * 1.7) * 0.35 + w.gust * 0.3;
+            const tx = w.x * 1.4 + Math.cos(l.ph) * 0.35, tz = w.z * 1.4 + Math.sin(l.ph * 0.8) * 0.35, ty = -0.75 + Math.sin(l.ph * 1.7) * 0.35 + w.gust * 0.3;
             const k = Math.min(1, dt * 1.8); l.v[0] += (tx - l.v[0]) * k; l.v[1] += (ty - l.v[1]) * k; l.v[2] += (tz - l.v[2]) * k;
             p[0] += l.v[0] * dt; p[1] += l.v[1] * dt; p[2] += l.v[2] * dt;
             for (let j = 0; j < 3; j++) l.r[j] += l.spin[j] * dt * (0.6 + w.s);
-            const g = gH(p[0], p[2]) + 0.015;
-            if (p[1] <= g) { p[1] = g; l.rest = 0.001; l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
+            const g = floorAt(p[0], p[2], p[1]) + 0.015;
+            if (p[1] <= g) { p[1] = g; l.rest = 0.001; if (g > gH(p[0], p[2]) + 0.5) l.life = Math.max(l.life, rr(25, 45)); l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
             // never through a room: a leaf that drifts into one is gone (the roof hides it)
             if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5])) { l.on = false; im.setMatrixAt(i, zero); continue; }
             if (Math.abs(p[0]) > 60 || Math.abs(p[2]) > 60) { l.on = false; im.setMatrixAt(i, zero); continue; }

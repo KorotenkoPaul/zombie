@@ -11,7 +11,8 @@ const DIR=path.resolve(arg('in','/tmp/anim-qa'));const TOP=+arg('top',14),CLIPS=
 const R=JSON.parse(fs.readFileSync(DIR+'/issues.json'));const D=JSON.parse(zlib.gunzipSync(fs.readFileSync(DIR+'/frames.json.gz')));
 const byF=new Map(D.frames.map(f=>[f.f,f]));
 // pick distinct issues: worst first, at most 3 of the same type, skip ones within 1 s of an already chosen one
-const pick=[];for(const q of R.issues){if(pick.length>=TOP)break;if(pick.filter(x=>x.type===q.type).length>=3)continue;if(pick.some(x=>Math.abs(x.f-q.f)<60))continue;pick.push(q);}
+// worst first, at most 3 per type and 1 per type+body part+object, nothing within 1 s of an already chosen one
+const pick=[];const kk=q=>q.type+'|'+q.bone+'|'+(q.into||'').replace(/#\d+.*/,'');for(const q of R.issues){if(pick.length>=TOP)break;if(q.type==='slow'&&!/m\/s|to sit/.test(q.unit))continue;if(pick.filter(x=>x.type===q.type).length>=3)continue;if(pick.some(x=>kk(x)===kk(q)))continue;if(pick.some(x=>Math.abs(x.f-q.f)<60))continue;pick.push(q);}
 const OFF=[-30,-12,-4,0,4,12];
 const BI={Hips:0,Head:3,HeadTop_End:4,LeftFoot:7,RightFoot:12,LeftHand:17,RightHand:20,LeftLeg:6,RightLeg:11};
 function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head',handL:'LeftHand',handR:'RightHand',feet:'LeftFoot',shins:'LeftLeg',hips:'Hips',arms:'Hips',torso:'Hips'}[q.bone]||q.bone;const i=(BI[k]??BI[k.replace(/ .*/,'')]??0)*3;const h=[f.b[0],f.b[1],f.b[2]];
@@ -30,8 +31,8 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
   for(const j of want.get(fr)){const q=pick[j.n];const f=rec||byF.get(q.f);const c=focus(q,f);
    const views=j.kind==='sheet'?[[-.55,.22,1.7],[.6,.3,1.9]]:[[-.45,.22,1.8]];let vi=0;
    for(const [yaw,pitch,dist] of views){const file=`${DIR}/raw/${j.kind}_${String(j.n).padStart(2,'0')}_${j.kind==='sheet'?j.k+'_'+vi:String(j.k+100).padStart(3,'0')}.png`;
-    await p.evaluate(([c,yaw,pitch,dist])=>{const cam=__camera;cam.position.set(c[0]+Math.sin(yaw)*Math.cos(pitch)*dist,c[1]+Math.sin(pitch)*dist,c[2]+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(c[0],c[1],c[2]);cam.updateMatrixWorld();
-     __noRender(false);__composer.render();__noRender(true);},[c,yaw,pitch,dist]);
+    await p.evaluate(([c,yaw,pitch,dist])=>{const cam=__qaCamera;cam.position.set(c[0]+Math.sin(yaw)*Math.cos(pitch)*dist,c[1]+Math.sin(pitch)*dist,c[2]+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(c[0],c[1],c[2]);cam.updateMatrixWorld();
+     __noRender(false);__qaComposer.render();__noRender(true);},[c,yaw,pitch,dist]);
     await p.locator('canvas').first().screenshot({path:file});vi++;}}}}});
  await b.close();console.log('rendered',[...want.values()].flat().length,'jobs in',((Date.now()-t0)/1000).toFixed(0),'s; replay drift',(drift*100).toFixed(2),'cm');
  fs.writeFileSync(DIR+'/picked.json',JSON.stringify({pick,drift}));
