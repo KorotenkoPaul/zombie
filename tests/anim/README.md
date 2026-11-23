@@ -31,3 +31,17 @@ How it works
 - `tempo.stayByTask` gives count / min / median stay per task; `tempo.sleep` lists each time in bed, and `sleep-turnover`
   flags getting out of bed at night and lying down again within 2 min.
 - The tour also forces hatch, bolt, repair, fetchwater, trip and eat when `HH.hasTask(name)` says the body can do them.
+
+## Deploy gate (HERO-RULES.md sections 3–4)
+
+`node tests/anim/gate.js` (about 5–8 min) runs both heroes (default, and `?hero=new`) in parallel. Each one does every task
+`hasTask` knows for about 15 s (sleep 50 s): the walk there, the start of the task, the ladders and transitions on the way.
+Every frame gets the full checks (support, penetration, joints, head, feet, grip, no-touch, snaps). It exits 1 when:
+- a P1 problem appears that `tests/anim/gate-baseline.json` does not have (a new kind / body part / object / task), or one gets more
+  than 25 % worse; or
+- a HARD limit is broken on the paths Pavel watches (bed, eating, fridge, stirring, ladders): knee the wrong way ≥ 30°,
+  a lying/sitting part ≥ 10 cm in the air, ≥ 8 cm into furniture, a root snap ≥ 20 cm/frame², head ≥ 120°.
+
+Run it before every push that touches the hero (hero.js, motion.js, brain.js, collide.js, props.js, hero moves, index.html
+hero code). After a real fix run `node tests/anim/gate.js --update-baseline` so the better state is locked in.
+`--from DIR` re-checks recorded frames with the current analyze.js (seconds, no browser).
