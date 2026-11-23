@@ -80,7 +80,7 @@ const tex=(n,rep=1,srgb=true)=>new Promise(res=>TL.load(ASSET+n,t=>{t.colorSpace
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb('oak-glb.txt'),tex('bark3.jpg'),tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -191,7 +191,7 @@ const roofMat=new THREE.MeshStandardMaterial({map:roofT,roughness:.75});
 const shingleMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.88});
 shingleMat.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vSL;').replace('#include <begin_vertex>','#include <begin_vertex>\nvSL=position;');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vSL;').replace('#include <map_fragment>','float se=min(.5-abs(vSL.x),.5-abs(vSL.z));diffuseColor.rgb*=mix(.55,1.,smoothstep(0.,.08,se))*mix(.7,1.,step(.49,vSL.y));diffuseColor.rgb*=.9+.2*smoothstep(-.5,.5,vSL.z);');};
-const SHING=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),shingleMat,2000);SHING.count=0;SHING.castShadow=true;SHING.receiveShadow=true;scene.add(SHING);
+const SHING=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),shingleMat,2000);SHING.count=0;SHING.castShadow=!MOBILE;/* [PERF] the roof slabs still cast the roof's shadow on phones */SHING.receiveShadow=true;scene.add(SHING);
 function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
