@@ -163,6 +163,7 @@ export function createHero(ctx){
   if(N.g_out)N.g_out.face=X.faceOut;
   const near=p=>chain.reduce((b,k)=>{const d=Math.hypot(N[k].p.x-p.x,N[k].p.z-p.z);return d<b[1]?[k,d]:b;},[null,1e9])[0];
   if(X.chopStand){N.g_chop={p:X.chopStand.clone(),face:Math.atan2(X.chopStump.x-X.chopStand.x,X.chopStump.z-X.chopStand.z)};E.push(['g_chop',near(X.chopStand)]);}
+  {const PD=window.__ground.pond;if(PD&&PD.path&&PD.path.length>3&&N.g_fork){let prev='g_fork';for(let i=3;i<PD.path.length;i++){const k=i===PD.path.length-1?'g_pond':'g_p'+i;N[k]={p:PD.path[i].clone(),tight:true};E.push([prev,k]);prev=k;}N.g_pond.face=PD.face;}}
   if(X.woodStand){N.g_wood={p:X.woodStand.clone(),face:Math.atan2(X.woodPile.x-X.woodStand.x,X.woodPile.z-X.woodStand.z)};E.push(['g_wood',near(X.woodStand)]);}}}
 
  // ---------- fit to the real furniture ----------
@@ -706,6 +707,7 @@ export function createHero(ctx){
     const spot=pond?pond.clone?pond.clone():V(pond.x,pond.y,pond.z):(N.g_exit1?N.g_exit1.p.clone().add(V(.6,0,.6)):null);
     const fill=()=>{a.step='fill';once('hy_picklog',{fade:.4,then:()=>{AU('bucket_fill',root.position);try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.3});
       a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}});};
+    if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
    a.update=dt=>{if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
    a.leave=cb=>{try{P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
