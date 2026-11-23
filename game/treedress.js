@@ -37,6 +37,7 @@ const FLUTTER = `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanc
  transformed.x+=sin(uT*1.7+ip.z*2.9+ip.y*1.3)*k*.5;}`;
 function swayMat(mat, U, amp, chunk) {
   mat.onBeforeCompile = s => {
+    if (mat.userData.AX !== undefined) branchHook(s, mat.userData.AX, mat.userData.AZ);
     s.uniforms.uT = U.t; s.uniforms.uW = U.wind;
     s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n{const float SW=${amp.toFixed(3)};${chunk}}`);
@@ -44,12 +45,22 @@ function swayMat(mat, U, amp, chunk) {
   return mat;
 }
 
+// things sitting on the oak follow the slow limb sway of the bark (wind.js windBranch), so nothing floats off a far branch
+function branchHook(sh, AX, AZ) {
+  const W = window.__wind; if (!W) return;
+  if (!sh.vertexShader.includes('windBranch')) W.hook(sh);
+  sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+#ifdef USE_INSTANCING
+  {vec3 bip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);transformed+=windLocal(windBranch(bip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)})));}
+#endif`);
+}
 export function createTreeDress(C) {
   const { scene, TREE, MOBILE, leafT, U, rootD = () => 99, avoid = [], blockers = [] } = C;
   const R = rng(424242); const rr = (a, b) => a + R() * (b - a);
   const [AX, AZ] = TREE.axis; const doorAng = TREE.doorAngle ?? 1.15;
   const D = { group: new THREE.Group() }; D.group.name = 'treedress'; scene.add(D.group);
   const MUL = MOBILE ? 0.55 : 1;
+  const onTree = m => { m.userData.AX = AX; m.userData.AZ = AZ; return m; };
 
   // ================= 1. bark: damp dark foot, moss, lichen =================
   // chained after tree.js's own shader so both keep working; everything is in world space, so it follows any oak model
@@ -57,18 +68,41 @@ export function createTreeDress(C) {
     const mat = TREE.bark.material, prev = mat.onBeforeCompile;
     const ENVR = (C.env || window.__env || {}).moonRim || { color: { value: new THREE.Color(0x86C2F0) }, strength: { value: 0 }, dir: { value: V(-1, .7, .2).normalize() } };
     // wetness: a little dew at night, soaked in the rain. Rain is read back from the wind uniform (env: wind = 1 + rain*1.5).
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 } };
+    // real oak bark relief: tileable maps baked from a Fal photo of oak bark (pipeline/bark_maps.py), mapped triplanar in
+    // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
+    const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
+    const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
+    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 },
+      nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 } };
     D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.35, rain); };
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
       sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.;' + NOISE)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.,tdFade=0.,tdH=.5;vec3 tdBl=vec3(0.,0.,1.);
+uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
+// triplanar sample, bark furrows run up the trunk (y is stretched)
+vec4 tdTri(sampler2D t,vec3 p,vec3 bl,float s){return texture2D(t,vec2(p.z,p.y*.42)*s)*bl.x+texture2D(t,p.xz*s)*bl.y+texture2D(t,vec2(p.x,p.y*.42)*s)*bl.z;}
+// triplanar normal (UDN blend): returns the world-space perturbation to add to the surface normal
+vec3 tdTriN(vec3 p,vec3 bl,float s,float k){
+ vec3 tx=texture2D(tdNrm,vec2(p.z,p.y*.42)*s).xyz*2.-1.,ty=texture2D(tdNrm,p.xz*s).xyz*2.-1.,tz=texture2D(tdNrm,vec2(p.x,p.y*.42)*s).xyz*2.-1.;
+ return (vec3(0.,tx.y,tx.x)*bl.x+vec3(ty.x,0.,ty.y)*bl.y+vec3(tz.x,tz.y,0.)*bl.z)*k;}` + NOISE)
         .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 wn=normalize(tdN); float y=tdP.y;
+          // ---- bark relief: light worn crust on the ridges, deep dark furrows, fibrous detail up close ----
+          tdBl=pow(abs(wn),vec3(4.));tdBl/=tdBl.x+tdBl.y+tdBl.z;
+          tdFade=1.-smoothstep(5.,16.,length(cameraPosition-tdP));
+          vec4 ha=tdTri(tdHao,tdP,tdBl,tdScale), hb=tdTri(tdHao,tdP*1.0+7.3,tdBl,tdScale*4.);
+          tdH=ha.r;float cav=ha.g*mix(1.,.6+.4*hb.g,tdFade);
+          float rel=tdRelief;
+          diffuseColor.rgb*=mix(1.,mix(.3,1.3,smoothstep(.05,.95,tdH))*mix(.35,1.,cav),rel);
+          diffuseColor.rgb*=mix(1.,.82+.36*hb.b,tdFade*rel);
+          { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel); }
           vec2 ax=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float rd=length(ax);
           float lum=dot(diffuseColor.rgb,vec3(.3,.59,.11));
           // big soft patches + fine breakup
@@ -76,7 +110,8 @@ export function createTreeDress(C) {
           float fine=td_f(tdP*3.1+vec3(0.,big*2.,0.));
           // damp foot: the bark gets darker, cooler and a little greener towards the ground (photo: the base sinks into the fog)
           float foot=1.-smoothstep(-.3,4.8,y+(big-.5)*1.2);
-          diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.34,.38,.42),foot*.9*tdFoot);
+          float rootTop=smoothstep(.25,.75,wn.y)*smoothstep(1.9,3.2,rd);
+          diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.34,.38,.42),foot*.9*tdFoot*(1.-rootTop*.65));
           // contact AO where the roots meet the ground, and under overhangs
           diffuseColor.rgb*=mix(1.,.55,(1.-smoothstep(-.35,.45,y))*tdFoot);
           diffuseColor.rgb*=mix(.72,1.,smoothstep(-.7,.15,wn.y));
@@ -85,6 +120,8 @@ export function createTreeDress(C) {
           float zone=max(1.-smoothstep(.4,3.8,y),smoothstep(3.,5.,y)*.95)*(rd>1.8||y<2.?1.:.6);
           float mm=smoothstep(.18,.6,face+(big-.5)*.9+(fine-.5)*.35)*zone;
           mm*=smoothstep(.32,.55,big+zone*.25);
+          mm*=1.-rootTop*.45;
+          mm+=(1.-tdH)*.18*smoothstep(.05,.3,mm); // moss settles into the furrows first
           mm=clamp(mm*tdMoss,0.,1.)*(1.-clamp(vGlow*2.5,0.,1.));
           // linear colours: deep olive in the shade, a little brighter yellow-green where it catches light
           vec3 moss=mix(vec3(.030,.048,.014),vec3(.085,.125,.028),smoothstep(.3,.8,fine));
@@ -99,6 +136,14 @@ export function createTreeDress(C) {
           diffuseColor.rgb*=1.-tdWM*.3;
           tdMM=mm;tdL=lum;
         }`)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          vec3 wn=normalize(tdN);
+          vec3 dn=tdTriN(tdP,tdBl,tdScale,4.5)+tdTriN(tdP+7.3,tdBl,tdScale*4.,1.6)*tdFade;
+          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
+          vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
+          normal=normalize(mix(normal,nv,.92));
+        }`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.32,tdWM);')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
@@ -110,7 +155,7 @@ export function createTreeDress(C) {
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress2';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress3';
     mat.needsUpdate = true;
   }
 
@@ -146,6 +191,17 @@ export function createTreeDress(C) {
   const Q = new THREE.Quaternion(), M4 = new THREE.Matrix4(), S = V(), UP = V(0, 1, 0), col = new THREE.Color();
   const orient = (n, spin) => { Q.setFromUnitVectors(UP, n); return Q.multiply(new THREE.Quaternion().setFromAxisAngle(UP, spin)); };
 
+  // a random point on the top of a floor board, pushed towards one of its ends (world-space box of the instance)
+  const _bb = new THREE.Box3();
+  const boardPoint = (im, endMin, endMax, side) => {
+    if (!im.geometry.boundingBox) im.geometry.computeBoundingBox();
+    const i = Math.floor(R() * im.count); im.getMatrixAt(i, M4); _bb.copy(im.geometry.boundingBox).applyMatrix4(M4);
+    const dx = _bb.max.x - _bb.min.x, dz = _bb.max.z - _bb.min.z, dy = _bb.max.y - _bb.min.y;
+    if (dy > 0.2 || Math.max(dx, dz) < 0.3) return null;
+    const e = (R() < 0.5 ? -1 : 1) * rr(endMin, endMax), w = rr(-side, side);
+    const along = dx > dz; const cx = (_bb.min.x + _bb.max.x) / 2, cz = (_bb.min.z + _bb.max.z) / 2;
+    return along ? V(cx + e * dx, _bb.max.y, cz + w * dz) : V(cx + w * dx, _bb.max.y, cz + e * dz);
+  };
   // ================= 2. moss cushions on root tops and in limb forks =================
   {
     const g = (() => { const s = new THREE.IcosahedronGeometry(1, 2); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); const p = m.attributes.position;
@@ -153,11 +209,12 @@ export function createTreeDress(C) {
       m.computeVertexNormals(); return m; })();
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
     mat.onBeforeCompile = sh => {
+      branchHook(sh, AX, AZ);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}');
     };
-    const NUP = Math.round(150 * MUL), N = NUP + Math.round(170 * MUL), im = new THREE.InstancedMesh(g, mat, N);
+    const NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL), im = new THREE.InstancedMesh(g, mat, N);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
@@ -190,18 +247,14 @@ export function createTreeDress(C) {
     // plank landings and the deck: moss along the back (north) edges and the board ends, where water stays longest
     const boardsIM = (C.blockers || [])[0];
     if (boardsIM && boardsIM.isInstancedMesh) {
-      if (!boardsIM.geometry.boundingBox) boardsIM.geometry.computeBoundingBox(); const gb = boardsIM.geometry.boundingBox;
       for (let k = 0; k < 4000 && n < N; k++) {
-        const i = Math.floor(R() * boardsIM.count); boardsIM.getMatrixAt(i, M4); M4.decompose(pi, qi, si);
-        nrm.set(0, 1, 0).applyQuaternion(qi); if (nrm.y < 0.9) continue;
-        // a point on the top face, pushed to one of the board's ends
-        const lx = (R() < 0.5 ? -1 : 1) * rr(0.3, 0.48), lz = rr(-0.45, 0.45);
-        const p = V(gb.min.x + (lx + 0.5) * (gb.max.x - gb.min.x), gb.max.y, gb.min.z + (lz + 0.5) * (gb.max.z - gb.min.z)).applyMatrix4(M4);
-        if (inBox(avoid, p.x, p.y, p.z, 0.25)) continue; // not inside the rooms
+        const p = boardPoint(boardsIM, 0.3, 0.48, 0.45); if (!p) continue;
+        if (inBox(avoid, p.x, p.y, p.z, 0.25) || inBox(avoid, p.x, p.y + 1.5, p.z, 0.25)) continue; // not inside the rooms
         if (p.z > AZ + 2.2 && R() < 0.8) continue; // mostly the back / trunk side
         if (Math.sin(p.x * 3.1 + p.z * 2.3) + Math.sin(p.z * 1.7 - p.x * 2.2) < 0.2) continue;
-        const sz = rr(0.05, 0.11);
-        M4.compose(p, orient(UP, rr(0, 6.28)), S.set(sz * rr(1.2, 2.2), sz * 0.25, sz * rr(0.8, 1.2))); im.setMatrixAt(n, M4);
+        if (R() < 0.55) continue; // only a thin creep of moss at the board ends
+        const sz = rr(0.035, 0.07);
+        M4.compose(p, orient(UP, rr(0, 6.28)), S.set(sz * rr(1.2, 2.0), sz * 0.22, sz * rr(0.8, 1.2))); im.setMatrixAt(n, M4);
         const v = rr(0.8, 1.2); col.setRGB(0.05 * v, 0.075 * v, 0.024 * v); im.setColorAt(n++, col);
       }
     }
@@ -281,7 +334,7 @@ export function createTreeDress(C) {
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
     })();
     const leafG = new THREE.PlaneGeometry(1, 1); leafG.translate(0, 0.5, 0);
-    const imat = swayMat(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex }), U, 0.05, FLUTTER);
+    const imat = swayMat(onTree(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex })), U, 0.05, FLUTTER);
     const NLV = Math.round(900 * MUL), leaves = new THREE.InstancedMesh(leafG, imat, NLV); let nl = 0;
     const stems = [];
     // a few vines: mostly on the sides and the back, one wandering across the front-left under the kitchen landing
@@ -387,7 +440,7 @@ export function createTreeDress(C) {
       }
       return mergeGeometries(parts);
     })();
-    const fmat = swayMat(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex }), U, 0.06,
+    const fmat = swayMat(onTree(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex })), U, 0.06,
       `{vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float k=clamp(uv.y,0.,1.);k*=k;float gust=.6+.4*sin(uT*.35+ip.x*.05);
        transformed.x+=sin(uT*1.6+ip.x*.7+ip.z*.4)*SW*k*uW*gust;transformed.z+=sin(uT*1.2+ip.z*.9)*SW*.7*k*uW*gust;}`);
     // grass tuft: a fan of narrow curved blades
@@ -489,9 +542,86 @@ export function createTreeDress(C) {
     small.count = ns; brk.count = nb; small.receiveShadow = brk.receiveShadow = true; brk.castShadow = !MOBILE; D.group.add(small, brk); D.shrooms = small; D.brackets = brk;
   }
 
-  // keep the bark's wet/rim uniforms in step with the time of day and the rain, without touching the main loop
-  { const prev = TREE.bark.onBeforeRender; TREE.bark.onBeforeRender = function (...a) { D.update(); if (prev) prev.apply(this, a); }; }
+  // ================= 7. hanging moss and lichen strands under the lower limbs (sway like ropes: wind.js windRope) =================
+  {
+    const tex = (() => {
+      const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const x = cv.getContext('2d'); const r = rng(99);
+      for (let i = 0; i < 46; i++) {
+        const x0 = 8 + r() * 48, len = 80 + r() * 170, w = 0.8 + r() * 1.6; const c = 120 + r() * 60;
+        x.strokeStyle = `rgba(${c * 0.82 | 0},${c | 0},${c * 0.72 | 0},${0.65 + r() * 0.35})`; x.lineWidth = w; x.beginPath(); x.moveTo(x0, 0);
+        let px = x0; for (let y = 8; y < len; y += 8) { px += (r() - 0.5) * 3 - (px - 32) * 0.02 * (y / 256); x.lineTo(px, y); } x.stroke();
+        // little tufts along the strand
+        for (let y = 20; y < len; y += 14 + r() * 20) { x.fillStyle = x.strokeStyle; x.beginPath(); x.ellipse(x0 + (r() - 0.5) * 6, y, 1.5 + r() * 2, 3 + r() * 3, 0, 0, 6.28); x.fill(); }
+      }
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+    })();
+    // two crossed cards, top at y=0 hanging down to y=-1 (uv.y 1 at the top)
+    const a = new THREE.PlaneGeometry(1, 1).translate(0, -0.5, 0), b = a.clone().rotateY(Math.PI / 2);
+    const g = mergeGeometries([a, b]);
+    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 1, color: 0xa8b296 });
+    mat.onBeforeCompile = sh => {
+      const W = window.__wind; if (!W) return; W.hook(sh);
+      sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      {vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);float len=length(instanceMatrix[1].xyz);float t=clamp(-position.y,0.,1.);
+       vec3 off=windRope(ip,t,len)*3.5+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));
+       transformed+=windLocal(off);}`);
+    };
+    const N = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
+    const under = sampler(q => q.n.y < -0.35 && q.c.y > 3.6 && q.c.y < 10.5 && radial(q.c.x, q.c.z) > 2.2);
+    for (let k = 0; k < 600 && n < N; k++) {
+      const s0 = under(); if (!s0) break; const p0 = s0.p;
+      if (blocked(p0.x, p0.y - 0.3, p0.z, 0.2)) continue;
+      const cnt = 2 + Math.floor(R() * 4);
+      for (let j = 0; j < cnt && n < N; j++) {
+        const p = p0.clone().add(V(rr(-0.25, 0.25), 0.03, rr(-0.25, 0.25))); const len = rr(0.25, 0.9) * (j === 0 ? 1.2 : 1), w = rr(0.12, 0.22);
+        if (blocked(p.x, p.y - len, p.z, 0.1)) continue;
+        M4.compose(p, new THREE.Quaternion().setFromAxisAngle(UP, rr(0, 3.14)), S.set(w, len, w)); im.setMatrixAt(n, M4);
+        const v = rr(0.8, 1.15); im.setColorAt(n++, col.setRGB(v, v * rr(0.98, 1.05), v * rr(0.9, 1)));
+      }
+    }
+    im.count = n; im.receiveShadow = true; D.group.add(im); D.hanging = im;
+  }
 
-  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
+  // ================= 8. little piles of fallen oak leaves on the landings and the deck =================
+  // Same leaf and palette as Ground's fallen leaves (ground.js), so the boards and the forest floor match.
+  // Only in corners and along the trunk / board ends, never on the hero's walking lines (read from the hero's walk graph
+  // once it exists, so this is placed lazily on the first frames).
+  {
+    const GL = window.__ground && window.__ground.leaves;
+    const boardsIM = (C.blockers || [])[0];
+    D.boardLeaves = null;
+    D.placeBoardLeaves = () => {
+      const dbg = window.__dbg; if (D.boardLeaves || !GL || !boardsIM || !dbg || !dbg.N || !dbg.E) return false;
+      const N = dbg.N, E = dbg.E;
+      const segs = E.map(e => [N[e[0]] && N[e[0]].p, N[e[1]] && N[e[1]].p]).filter(q => q[0] && q[1]);
+      const pathD = p => { let best = 99; for (const [a, b] of segs) { if (Math.min(Math.abs(p.y - a.y), Math.abs(p.y - b.y)) > 0.7) continue; const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz; let t = L ? ((p.x - a.x) * dx + (p.z - a.z) * dz) / L : 0; t = Math.max(0, Math.min(1, t)); best = Math.min(best, Math.hypot(a.x + dx * t - p.x, a.z + dz * t - p.z)); } return best; };
+      const NL = Math.round(150 * MUL), im = new THREE.InstancedMesh(GL.geometry, GL.material, NL); let n = 0, piles = 0;
+      const pal = [[.07, .7, .36], [.04, .65, .3], [.1, .65, .4], [.16, .45, .32], [.02, .55, .26], [.12, .4, .26]];
+      const qi = new THREE.Quaternion(), pi = V(), si = V(), nrm = V(), centres = [];
+      for (let k = 0; k < 3000 && n < NL && piles < (MOBILE ? 7 : 12); k++) {
+        const rej = D.rej = D.rej || { up: 0, room: 0, path: 0, near: 0 };
+        const p = boardPoint(boardsIM, 0.32, 0.45, 0.3); if (!p) { rej.up++; continue; }
+        if (inBox(avoid, p.x, p.y, p.z, 0.2) || inBox(avoid, p.x, p.y + 1.5, p.z, 0.25)) { rej.room++; continue; } // the room volumes start above their floors
+        if (pathD(p) < 0.6) { rej.path++; continue; }
+        if (centres.some(c => c.distanceTo(p) < 0.9)) { rej.near++; continue; }
+        // wind leaves them against something: the trunk, or a board end at the landing's rim
+        const nearTrunk = radial(p.x, p.z) < 2.8; if (!nearTrunk && R() < 0.4) continue;
+        centres.push(p); piles++;
+        const cnt = 7 + Math.floor(R() * 9), rad = rr(0.12, 0.22);
+        for (let j = 0; j < cnt && n < NL; j++) {
+          const a = rr(0, 6.28), d = Math.sqrt(R()) * rad, h = (1 - d / rad) * 0.035 + rr(0, 0.008);
+          const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-0.35, 0.35), rr(0, 6.28), rr(-0.35, 0.35)));
+          const sz = rr(0.08, 0.13); M4.compose(V(p.x + Math.cos(a) * d, p.y + 0.004 + h, p.z + Math.sin(a) * d), q, S.set(sz, sz, sz * 1.15)); im.setMatrixAt(n, M4);
+          const c = pal[Math.floor(R() * pal.length)]; col.setHSL(c[0] + rr(-0.02, 0.02), c[1], c[2] + rr(-0.05, 0.05)); im.setColorAt(n++, col);
+        }
+      }
+      im.count = n; im.receiveShadow = true; D.group.add(im); D.boardLeaves = im; D.boardPiles = piles; D.pileAt = centres.map(c => c.toArray().map(v => +v.toFixed(2))); return true;
+    };
+  }
+
+  // keep the bark's wet/rim uniforms in step with the time of day and the rain, without touching the main loop
+  { const prev = TREE.bark.onBeforeRender; TREE.bark.onBeforeRender = function (...a) { D.update(); if (!D.boardLeaves && D.placeBoardLeaves) D.placeBoardLeaves(); if (prev) prev.apply(this, a); }; }
+
+  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
   return D;
 }

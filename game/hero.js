@@ -78,7 +78,7 @@ export function createHero(ctx){
  function hold(name,f,fade=.5){const a=play(name,{loop:false,fade,at:durOf(name)*f});if(a){a.paused=false;a.timeScale=0;}return a;}
 
  // ---------- measure the walk: how far one second of the clip carries the body (no foot sliding) ----------
- let walkSpeed=1.0;
+ let walkSpeed=1.0;const WALK_V=1.05;// m/s: natural walking pace for a ~1.5 m tall person
  {const a=actions['30'];if(a){a.reset().play();const d=a.getClip().duration;const T=bones.LeftToeBase,Q=V();let prev=null,acc=0,cnt=0;
    for(let i=0;i<=120;i++){a.time=d*i/120;mixer.update(0);root.updateMatrixWorld(true);T.getWorldPosition(Q);
     if(prev&&Q.y<.07&&prev.y<.07){acc+=Math.abs(Q.z-prev.z)/(d/120);cnt++;}prev=Q.clone();}
@@ -126,7 +126,7 @@ export function createHero(ctx){
   wmid:{p:V(2.4,WS,3.45)},bench:{p:V(2.55,WS,2.62),face:Math.PI},wwin:{p:V(3.0,WS,3.95),face:0},
   kh_t:{p:V(-1.22,KT,2.75)},kmid:{p:V(-2.5,KT,3.3)},kl_m:{p:V(-3.75,KT,2.3)},stove:{p:V(-3.25,KT,2.42),face:Math.PI},sink:{p:V(-2.3,KT,2.15),face:Math.PI},kwin:{p:V(-3.0,KT,3.45),face:0},kl_b:{p:V(-4.0,KT,1.68)},
   bl_t:{p:V(-4.0,BD,2.35)},bl_m:{p:V(-3.25,BD,2.45)},bmid:{p:V(-2.3,BD,3.05)},bwin:{p:V(-3.6,BD,3.6),face:0},bdoor:{p:V(-.1,BD,2.78)},
-  ledge:{p:V(1.25,BD,3.5),face:0},ll_b:{p:V(1.35,BD,3.47)},ll_t:{p:V(1.35,DK,2.7)},deckm:{p:V(1.9,DK,2.5)},deck:{p:V(3.13,DK,2.82),face:0},
+  ledge:{p:V(1.25,BD,3.5),face:0},ll_b:{p:V(1.35,BD,3.47)},ll_t:{p:V(1.35,DK,2.7)},deckm:{p:V(1.9,DK,2.5)},deck:{p:V(3.13,DK,2.62),face:0},
  };
  const E=[['kh_b','land'],['land','gate'],['land','wstep'],['wstep','wmid'],['wmid','bench'],['wmid','wwin'],['kh_b','kh_t','ladder'],['kh_t','kmid'],['kmid','stove'],['kmid','sink'],['kmid','kwin'],['kmid','kl_m'],['kl_m','kl_b'],
   ['kl_b','bl_t','ladder'],['bl_t','bl_m'],['bl_m','bmid'],['bmid','bwin'],['bmid','bdoor'],['bdoor','ledge'],['ledge','ll_b'],['ll_b','ll_t','ladder'],['ll_t','deckm'],['deckm','deck']];
@@ -261,15 +261,15 @@ export function createHero(ctx){
   // aim a little past the corner so the path rounds it
   let aim=target.clone();const toT=Math.hypot(target.x-p.x,target.z-p.z);if(!isLast&&toT<.55){const n2=N[nxt.node].p;aim.lerp(n2,clamp((.55-toT)/.55,0,1)*.5);}
   const dx=aim.x-p.x,dz=aim.z-p.z;const want=Math.atan2(dx,dz);const da=wrapA(want-root.rotation.y);
-  const vmax=H.walkV*(isLast?clamp(toT/.9,.25,1):1);const align=Math.max(0,Math.cos(da));
-  H.v+=clamp(vmax*align*align-H.v,-2.4*dt,1.4*dt);
+  const vmax=H.walkV*(isLast?clamp(toT/.9,.25,1):1);const align=clamp(Math.cos(da)*1.25-.25,0,1);
+  H.v+=clamp(vmax*align*align-H.v,-3.2*dt,2.2*dt);
   // turn rate depends on speed: on the spot it takes small steps
   const rate=lerp(2.6,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
   // turning has inertia: angular speed ramps up and down, so there is never a snap in heading
   const wav=clamp(da*3,-rate,rate);H.av=(H.av||0)+clamp(wav-(H.av||0),-7*dt,7*dt);root.rotation.y+=H.av*dt;H.face=root.rotation.y;
   const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=1.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
   const moving=H.v>.06||Math.abs(da)>.25;
-  if(moving){play('30',{fade:.4});actions['30'].timeScale=clamp(Math.max(H.v,Math.abs(da)>.25?.35:0)/walkSpeed,.35,1.4);}else play(H.idleClip||'0',{fade:.5});
+  if(moving){play('30',{fade:.4});actions['30'].timeScale=clamp(Math.max(H.v,Math.abs(da)>.25?.45:0)/walkSpeed,.5,1.75);}else play(H.idleClip||'0',{fade:.5});
   H.state='walk';const rem=Math.hypot(target.x-p.x,target.z-p.z);
   if(rem<(isLast?.06:.32)){H.node=step.node;H.path.shift();if(isLast&&H.v<.35){H.v=0;}}}
  // ladders: walk to the foot, climb, pull up over the edge (root motion), or the same backwards
@@ -313,7 +313,7 @@ export function createHero(ctx){
   for(const k in sc){if(lastAct[0]===k)sc[k]-=1;if(lastAct[1]===k)sc[k]-=.35;sc[k]+=rnd(0,.35);}
   return Object.keys(sc).sort((a,b)=>sc[b]-sc[a])[0];}
  const WINDOWS=['bwin','kwin','wwin'];
- function goTo(node,then){if(node===H.node&&!H.path.length){then&&then();return;}H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=walkSpeed*(gait.speed||1)*(brain?1:rnd(.85,1.05));}
+ function goTo(node,then){if(node===H.node&&!H.path.length){then&&then();return;}H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));}
  const sidePole=(side,down=1)=>{const f=fwd(root.rotation.y);const right=V(-f.z,0,f.x);return right.multiplyScalar(side==='Right'?1:-1).add(V(0,-down,0)).add(f.clone().multiplyScalar(-.3));};
  function ikList(list){if(!list)return;for(const [s,t,w] of list)if(t&&w>.001)armIK(s,t,sidePole(s),clamp(w,0,1));}
 
@@ -325,7 +325,7 @@ export function createHero(ctx){
 
  // the activity currently running: a small state machine with its own update
  let act=null;
- function startTask(name,opts){if(H.trans){H.pending=name;H.pendingOpts=opts;return;}
+ function startTask(name,opts){if(name===H.task&&act&&!act.left&&(!opts||!Object.keys(opts).length)&&name!=='micro'&&name!=='switch')return;if(H.trans){H.pending=name;H.pendingOpts=opts;return;}
   if(act&&act.leave&&!act.left){const nm=name;act.left=true;H.trans=true;act.leave(()=>{H.trans=false;act=null;startTask(nm,opts);});return;}
   act=null;H.task=name;actT=0;const A=ACT[name]||{};actDur=A.dur?rnd(A.dur[0],A.dur[1]):8;lastAct.unshift(name);lastAct.length=3;H.look=null;H.lookW=0;
   const mk=MAKE[name];if(!mk)return;act=mk(opts||{});act.name=name;}
@@ -333,7 +333,7 @@ export function createHero(ctx){
  let brain=null;const gait={speed:1,turn:1};const endCbs=[];
  function endTask(){const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n);}catch(e){console.error(e);}}}
  // lamps with a wall switch (props.js switchPlate): the hand goes to the plate, not to the lamp
- const SWITCH_AT={bedroom:V(.37,lv.BD+1.15,2.5)};
+ const SWITCH_AT=(ctx.props&&ctx.props.switches)?Object.fromEntries(Object.entries(ctx.props.switches).map(([k,v])=>[k,v.clone()])):{bedroom:V(.372,lv.BD+1.15,3.5)};// wall switch positions come from props.js
  const LAMP=()=>window.__lights||ctx.lights||null;
  function nearNode(p){let best=null,bd=1e9;for(const k in N){const n=N[k];if(!n||!n.p||n.seat!=null||!adj[k])continue;if(Math.abs(n.p.y-p.y)>2.6||n.p.y>p.y+.2)continue;const d=Math.hypot(n.p.x-p.x,n.p.z-p.z)+Math.max(0,p.y-n.p.y-2.4)*3;if(d<bd){bd=d;best=k;}}return best;}
  // ===== END BRAIN HOOK state =====
@@ -352,13 +352,13 @@ export function createHero(ctx){
    const approach=()=>{a.step='approach';a.t=0;const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
     const fl=floorAt(p.x,p.y+.3,p.z,.5)??p.y;a.low=sp.y-fl<.75;a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):sp.clone().add(V(0,-.15,0));
     const move=Math.max(0,Math.min(.9,d-(a.low?.45:.27)));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
-    a.dur=Math.max(.5,move/.45);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:0,k:0,d:a.dur};if(move>.1)play('30',{fade:.3,speed:.5});};
+    a.dur=Math.max(.35,move/.8);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:0,k:0,d:a.dur};if(move>.1)play('30',{fade:.3,speed:1.1});};
    if(node)goTo(node,approach);else approach();
    a.update=dt=>{a.t+=dt;H.look=sp.clone();H.lookW=1;
     if(a.step==='approach'&&a.t>=a.dur){a.step='reach';a.t=0;if(a.low&&has('hy_take'))once('hy_take',{fade:.4,then:()=>play(IDLE(),{fade:.5})});else play(IDLE(),{fade:.4});}
-    else if(a.step==='reach'){const tT=a.low&&has('hy_take')?durOf('hy_take')*.45:.55,tE=a.low&&has('hy_take')?durOf('hy_take'):1.3;if(a.t>tT&&!a.done){a.done=true;try{L.set(o.light,o.on!=null?!!o.on:!(L.get&&L.get(o.light)));}catch(e){}sfx&&sfx.click&&sfx.click();}
+    else if(a.step==='reach'){const tT=a.low&&has('hy_take')?durOf('hy_take')*.45:.42,tE=a.low&&has('hy_take')?durOf('hy_take'):.95;if(a.t>tT&&!a.done){a.done=true;try{L.set(o.light,o.on!=null?!!o.on:!(L.get&&L.get(o.light)));}catch(e){}sfx&&sfx.click&&sfx.click();}
      if(a.t>tE)endTask();}};
-   a.post=()=>{if(a.step!=='reach')return;const w=smooth(0,.5,a.t)*(1-smooth(.85,1.3,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
+   a.post=()=>{if(a.step!=='reach')return;const w=smooth(0,.4,a.t)*(1-smooth(.6,.95,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
     const v=a.knob.clone().sub(from);const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);if(!a.low)ikList([['Right',from.add(v),w]]);};
    return a;},
   // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
@@ -438,7 +438,7 @@ export function createHero(ctx){
     const sweep=Math.sin(a.t*.25)*6;H.look=root.position.clone().add(V(sweep,1.2+Math.sin(a.t*.13)*.6,8));H.lookW=.8;};a.leave=cb=>cb();return a;},
   window:()=>{const a={step:'go'};const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<.8))||'bwin';goTo(wn,()=>{a.step='look';a.t=0;play(IDLE(),{fade:.6});});
    a.update=dt=>{if(a.step!=='look')return;a.t+=dt;H.face=N[wn].face??0;H.look=root.position.clone().add(V(Math.sin(a.t*.3)*3,1.6,6));H.lookW=.9;};a.leave=cb=>cb();return a;},
-  sleep:()=>{const a={step:'go'};goTo('bed_app',()=>{a.step='in';lieDown(()=>{a.step='sleep';});});
+  sleep:(o={})=>{const a={step:'go'};if(o.inBed){a.step='sleep';a.update=dt=>{};a.leave=cb=>getUp(cb);return a;}goTo('bed_app',()=>{a.step='in';lieDown(()=>{a.step='sleep';});});
    a.update=dt=>{};a.leave=cb=>{if(a.step==='go'){cb();return;}getUp(cb);};return a;},
   guard:()=>{const a={};const sp=ctx.guardSpot?ctx.guardSpot():'ledge';H.guardAt=sp;goTo(sp,()=>{H.state='work';play('231');H.face=N[sp]?.face??0;});a.leave=cb=>cb();return a;},
   repair:()=>{const a={};const b=ctx.brokenBoard&&ctx.brokenBoard();if(!b){H.task=null;return a;}goTo(ctx.WIN_NODE[b.group],()=>{a.go=1;a.t=0;grabTool('benchHammer','Right');});
@@ -461,7 +461,7 @@ export function createHero(ctx){
  function bedBlend(dir,then){const ed=N.bededge,li=N.bedlie;if(dir>0)H.edgeRoot=root.position.clone();
   const er=H.edgeRoot||V(ed.p.x,root.position.y,ed.p.z);if(SEATQ&&actions[SLEEPB])play(SLEEPB,{fade:0});
   H.fit=H.fit||{mode:'hold',base:floorTop(BD),y:ed.seat+SEAT_CLEAR};H.fit.mode='hold';root.rotation.y=0;H.face=0;
-  H.bedB={dir,t:0,dur:dir>0?3.6:3.2,from:{x:er.x,z:er.z,y:ed.seat+SEAT_CLEAR},to:{x:li.p.x,z:li.p.z,y:li.seat+LIE_CLEAR},then};}
+  H.bedB={dir,t:0,dur:dir>0?2.7:2.4,from:{x:er.x,z:er.z,y:ed.seat+SEAT_CLEAR},to:{x:li.p.x,z:li.p.z,y:li.seat+LIE_CLEAR},then};}
  function edgeTick(dt){const e=H.edgeHold;if(!e||H.bedB||!SEATQ)return;e.w=clamp(e.w+(e.to>e.w?1:-1)*dt/e.d,0,1);const w=smooth(0,1,e.w);
   if(w>0){for(let i=0;i<POSEBONES.length;i++){const bn=POSEBONES[i];bn.quaternion.slerp(SEATQ.q[i],w);}bones.Hips.position.y=lerp(bones.Hips.position.y,SEATQ.hy,w);}
   if(e.to===0&&e.w<=0)H.edgeHold=null;}
@@ -479,11 +479,11 @@ export function createHero(ctx){
  // the quilt and mattress sink under him (props.js bedPress)
  function bedPress(on){const P=window.__props||P3;if(!P||!P.bedPress)return;try{P.bedPress(on?bones.Hips.getWorldPosition(V()):null);}catch(e){}}
  function lieDown(then){const ed=N.bededge;H.face=0;
-  sitDown(ed,()=>{H.trans=true;hold(STAND,0,.7);H.edgeHold={w:0,to:1,d:1.1};
-   H.wait={t:rnd(1.2,2.2),then:()=>{H.edgeHold=null;bedBlend(1,()=>{H.trans=false;H.inBed=true;bedPress(true);H.seated=null;then&&then();});}};});}
+  sitDown(ed,()=>{H.trans=true;hold(STAND,0,.7);H.edgeHold={w:0,to:1,d:.8};
+   H.wait={t:rnd(.6,1.2),then:()=>{H.edgeHold=null;bedBlend(1,()=>{H.trans=false;H.inBed=true;bedPress(true);H.seated=null;then&&then();});}};});}
  function getUp(then){H.trans=true;const ed=N.bededge;
-  H.wait={t:rnd(1,2),then:()=>{H.inBed=false;bedPress(false);bedBlend(-1,()=>{hold(STAND,0,0);H.seated=ed;H.edgeHold={w:1,to:1,d:.8};
-   H.wait={t:rnd(1,2.5),then:()=>{if(H.edgeHold){H.edgeHold.to=0;H.edgeHold.d=.7;}standUp(ed,()=>{if(has('hy_stretch')&&Math.random()<.8){H.trans=true;once('hy_stretch',{fade:.6,then:()=>{H.trans=false;play(IDLE(),{fade:.7});then&&then();}});}else then&&then();});}};});}};}
+  H.wait={t:rnd(.4,.9),then:()=>{H.inBed=false;bedPress(false);bedBlend(-1,()=>{hold(STAND,0,0);H.seated=ed;H.edgeHold={w:1,to:1,d:.8};
+   H.wait={t:rnd(.5,1.2),then:()=>{if(H.edgeHold){H.edgeHold.to=0;H.edgeHold.d=.5;}standUp(ed,()=>{if(has('hy_stretch')&&Math.random()<.8){H.trans=true;once('hy_stretch',{fade:.6,then:()=>{H.trans=false;play(IDLE(),{fade:.7});then&&then();}});}else then&&then();});}};});}};}
  function swingTick(dt){const s=H.swing;if(!s)return;if(s.k===0){if(s.hold)hold(s.hold[0],s.hold[1],s.fade);else play(s.clip,{fade:s.fade});H.fit=H.fit||{mode:'hold',base:floorTop(BD),y:s.from.y};H.fit.mode='hold';}
   s.k=Math.min(1,s.k+dt/s.dur);const k=smooth(0,1,s.k);
   root.position.x=lerp(s.from.p.x,s.to.p.x,k);root.position.z=lerp(s.from.p.z,s.to.p.z,k);root.rotation.y=s.from.yaw+wrapA(s.to.yaw-s.from.yaw)*smooth(.1,.9,s.k);H.face=root.rotation.y;H.fit.y=lerp(s.from.y,s.to.y,k);
@@ -517,7 +517,7 @@ export function createHero(ctx){
   if(H.path.length){const step=H.path[0];if(step.t==='ladder')ladderStep(dt);else walkStep(dt);if(!H.path.length&&H.then){const f=H.then;H.then=null;H.state='work';f();}}
   else if(H.state==='walk'){H.state='work';H.v=0;}
   if(!H.path.length){if(!H.swing&&!H.trans&&!H.seated&&!H.inBed){const da=wrapA(H.face-root.rotation.y);const wav=clamp(da*3.5,-2.6,2.6);H.av=(H.av||0)+clamp(wav-(H.av||0),-6*dt,6*dt);if(Math.abs(da)<.002&&Math.abs(H.av)<.02)H.av=0;root.rotation.y+=H.av*dt;
-     if(Math.abs(da)>.35&&H.cur&&['0','11','12','336','30','hy_idle'].includes(H.cur.getClip().name)){play('30',{fade:.3,speed:.45});H.turnStep=true;}else if(H.turnStep&&Math.abs(da)<.12){H.turnStep=false;if(H.cur===actions['30'])play(IDLE(),{fade:.4});}}}
+     if(Math.abs(da)>.35&&H.cur&&['0','11','12','336','30','hy_idle'].includes(H.cur.getClip().name)){play('30',{fade:.3,speed:.7});H.turnStep=true;}else if(H.turnStep&&Math.abs(da)<.12){H.turnStep=false;if(H.cur===actions['30'])play(IDLE(),{fade:.4});}}}
   if(act&&act.update)act.update(dt);
   swingTick(dt);
   return post(dt);}
@@ -546,11 +546,29 @@ export function createHero(ctx){
   if(act&&act.post)act.post(dt);
   lookAt(dt);duck(dt);}
 
- // ---------- start: reading at the table, already seated with the book in the hands ----------
- {const s=N.chair;root.position.set(s.p.x,s.floor,s.p.z);root.rotation.y=s.face;H.face=s.face;H.seated=s;H.node='chair_app';H.task='read';H.ground=false;
-  H.fit={mode:'hold',base:s.floor,y:s.seat+SEAT_CLEAR};play(READ,{fade:0});act=MAKE.read({seated:true});act.name='read';lastAct=['read'];actDur=rnd(25,40);}
+ // ---------- start anywhere: drop him into the middle of any activity (used for a random start, any time of day) ----------
+ function resetBody(){for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
+  if(bookObj&&bookHome&&bookObj.parent!==bookHome.parent){bookHome.parent.add(bookObj);bookObj.position.copy(bookHome.pos);bookObj.quaternion.copy(bookHome.quat);}
+  if(H.inBed)bedPress(false);
+  Object.assign(H,{path:[],then:null,wait:null,swing:null,bedB:null,edgeHold:null,lad:null,slide:null,once:null,trans:false,seated:null,inBed:false,fit:null,ground:true,v:0,av:0,look:null,lookW:0,pending:null,linger:0,turnStep:false});
+  act=null;H.task=null;legPlantOff();}
+ function spawn(task,o={}){resetBody();task=task||'read';
+  if(task==='read'&&!o.walking){const s=N.chair;root.position.set(s.p.x,s.floor,s.p.z);root.rotation.y=s.face;H.face=s.face;H.seated=s;H.node='chair_app';H.task='read';H.ground=false;
+   H.fit={mode:'hold',base:s.floor,y:s.seat+SEAT_CLEAR};play(READ,{fade:0});act=MAKE.read({seated:true});act.name='read';lastAct=['read'];actDur=rnd(25,40);return;}
+  if(task==='sleep'&&!o.walking&&N.bedlie){const li=N.bedlie,ed=N.bededge;root.position.set(li.p.x,floorTop(BD),li.p.z);root.rotation.y=0;H.face=0;H.node='bed_app';H.ground=false;H.inBed=true;
+   H.edgeRoot=V(ed.p.x,root.position.y,ed.p.z);H.fit={mode:'hold',base:floorTop(BD),y:li.seat+LIE_CLEAR};play(SLEEPB,{fade:0});H.task='sleep';act=MAKE.sleep({inBed:true});act.name='sleep';
+   H.wait={t:.05,then:()=>bedPress(true)};return;}
+  const A=ACT[task]||{};let at=typeof A.at==='string'?A.at:null;if(task==='window')at=pick(WINDOWS);
+  let from=at&&N[at]&&!N[at].seat&&!o.walking?at:null;
+  if(!from){const keys=Object.keys(N).filter(k=>N[k]&&N[k].p&&N[k].seat==null&&!N[k].tight&&adj[k]&&k!==at);from=pick(keys);}
+  if(at&&N[at]&&N[at].seat!=null&&!o.walking)from=at==='chair'?'chair_app':at==='bedlie'?'bed_app':from;
+  const P=N[from].p;root.position.set(P.x,P.y,P.z);const f=floorAt(P.x,P.y,P.z,.4);if(f!=null)root.position.y=f;H.floorY=root.position.y;
+  root.rotation.y=N[from].face??rnd(-Math.PI,Math.PI);H.face=root.rotation.y;H.node=from;play(IDLE(),{fade:0});startTask(task,o.opts);}
+ // default start: reading at the table (a brain can call spawn() for a random start)
+ spawn('read');
 
- return {H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
+ return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
   setBrain:b=>{brain=b||null;},onTaskEnd:cb=>{endCbs.push(cb);},
+  ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }

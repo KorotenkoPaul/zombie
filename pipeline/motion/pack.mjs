@@ -1,5 +1,5 @@
 // Pack retargeted clips into game/hero-moves.txt (JSON). usage: node pack.mjs moves.json clipsDir out.txt
-// moves.json: { name: { src, loop?, rm?, trim?:[t0,t1] seconds, step?: keep every Nth frame, close?: seconds of loop blending } }
+// moves.json: { name: { src, loop?, rm?, speed?: playback multiplier (text-to-motion clips run slow), trim?:[t0,t1] seconds, step?: keep every Nth frame, close?: seconds of loop blending } }
 import fs from 'fs';
 import * as T from 'three';
 const [,, selPath, dir, outPath] = process.argv;
@@ -29,7 +29,7 @@ for (const [name, o] of Object.entries(sel)) {
         Q[bn][i].set(x / s, y / s, z / s, w / s).normalize(); } }
     const hs = Hp.map(v => v.clone()); for (let i = 0; i < n; i++) { const a = new T.Vector3(); let s = 0; for (let k = -R; k <= R; k++) { a.addScaledVector(hs[at(i + k)], wts[k + R]); s += wts[k + R]; } Hp[i].copy(a.multiplyScalar(1 / s)); }
     for (const bn of bones) { const arr = Q[bn]; for (let i = 1; i < n; i++) if (arr[i].dot(arr[i - 1]) < 0) arr[i].set(-arr[i].x, -arr[i].y, -arr[i].z, -arr[i].w); } }
-  out[name] = { fps: fps / step, n, loop: !!o.loop, rm: !!o.rm, q: Object.fromEntries(bones.map(bn => [bn, Q[bn].flatMap(q => [r3(q.x), r3(q.y), r3(q.z), r3(q.w)])])), hips: Hp.flatMap(v => [r3(v.x), r3(v.y), r3(v.z)]) };
+  out[name] = { fps: fps / step * (o.speed || 1), n, loop: !!o.loop, rm: !!o.rm, q: Object.fromEntries(bones.map(bn => [bn, Q[bn].flatMap(q => [r3(q.x), r3(q.y), r3(q.z), r3(q.w)])])), hips: Hp.flatMap(v => [r3(v.x), r3(v.y), r3(v.z)]) };
 }
 fs.writeFileSync(outPath, JSON.stringify(out));
 console.log(outPath, Object.keys(out).join(','), (fs.statSync(outPath).size / 1e3).toFixed(0) + ' KB');

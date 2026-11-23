@@ -1,0 +1,23 @@
+# Sound / ambience (game/audio.js)
+
+- The old ambience was two looping white-noise generators in index.html ("wind" bandpass 380 Hz and "rain" highpass): that was the constant hiss. Removed. Also removed the synthetic dawn chime (sfx.dawn).
+- Now every ambient sound is a short recorded-style clip (ElevenLabs SFX via Fal), packed as base64 mp3 in `game/sounds-mp3.txt` (~2.1 MB, loaded only after the first tap). Sources: `assets/sounds/*.mp3`, prompts `assets/sounds/prompts.json`, regeneration `genall.py` + processing `proc.sh` (trim, highpass, light denoise, peak -1 dB, mono 32 kHz 56 kbps).
+- Layers (table `L` in audio.js): crickets, frogs/toad, owl, wolf (very far, some nights only; more likely in winter), fox, nightjar (dusk/dawn), twig snaps; robin, blackbird, thrush, wren, chaffinch, tits, warbler, distant dawn chorus; cuckoo, dove, woodpecker, crows/raven/jay, bee, insects; winter birds (bullfinch, tits) and cold wind in winter.
+- Each layer = a few "individuals" at fixed places (trees, pond, far forest), each with its own pitch. Calls come in bouts; a resting creature starts a bout as a Poisson process whose rate follows its activity curve (hour, season, rain), so nothing is a loop. Every night (18:00) and every morning (04:00) the creatures get a new personality (some absent, some lazy) and new places, so no two nights sound the same.
+- Morning: songbirds ramp up from ~4:30; they are at 60% while the hero sleeps and get a burst (kick) when the hero gets out of bed.
+- Wind: listens to `__wind.on('gust')` (crown rustle, strength = amp) and `__wind.on('creak')` (branch creaks at e.pos). No continuous leaf bed on purpose (it read as noise).
+- Rain: `rain_a` (leaves) + `rain_b` (roof) beds by rainK; roof level uses `__rain.roofNear(cameraPos)` if it exists; drips after the rain.
+- Interior: oven fire crackle at `__lights.pos('oven')` by `__lights.level('oven')`; plank creaks when the hero walks in the house.
+- Season: `__audio.setSeason('winter')`, or `window.__season` (string or function). Default **autumn** (the reference photo is autumn): fewer insects, dry-leaf rustle on gusts, geese/cranes flying over (moving source), rare deer/elk at night, damp drips.
+- 3D: PannerNode (equalpower) per voice at its world position, listener = camera; distance lowpass + shared soft reverb. Max 14 voices. AudioContext suspends when the tab is hidden.
+- UI: 🔊/🔇 button (#bS) in the tools column; mute is remembered in localStorage.
+- Debug: `__audio.state()`, `__audio.log()` (recent clip starts), `__audio.play('owl')`.
+- Test: record the mix in headless Chromium (`--autoplay-policy=no-user-gesture-required`, MediaRecorder on `__audio.node()`); silence between calls must be true digital silence (no hiss).
+
+## Hero actions (foley), round 2
+- Packs: `sounds-mp3.txt` (forest, loaded first) and `sounds-act-mp3.txt` (hero foley, loaded second; `__audio.actionsReady()`).
+- `__audio.play(name, pos?, {gain, rate, delay})` -> {stop(fade)}: one sound at pos (Vector3, [x,y,z] or {x,y,z}; default = hero chest). Random variant, pitch and level every call.
+- `__audio.loop(name, pos?)` -> {stop(fade), move(pos), set(gain)}: long actions crossfaded from random parts (radio_music, sizzle, sweep, wash...).
+- Names (`__audio.actions()`): kettle, tea_pour, cup, sip, chop_veg, stir, firewood_oven, oven_open, oven_close, wash, saw, hammer, sharpen, lantern_fix, match, lamp_light, stretch, yawn, write, sweep, water, bucket, window, shutter, bolt, bolt_lock, bolt_open, supplies, drawer, chest, radio_on, radio_off, radio_tune, radio_music, telescope, edge_sit, firewood_carry, firewood_drop, logs_stack, axe, step, ladder, rope_ladder, sit, stand, bed, blanket, page, book_close, tool, plank, sizzle, creak, footsteps. Aliases for the 20 approved actions: tea, chopping, stir_pot, stove_wood, dishes, sawing, nail, sharpening, fix_lantern, diary, sweeping, water_plant, door_bolt, count_supplies, radio, ledge_sit, carry_firewood, listen.
+- Sync: call play() on the animation's contact frame (hammer hit, axe hit, foot down); for continuous work use loop() and stop() when the action ends.
+- index.html routes `sfx.hammer` (hero.js) to the real hammer sound.

@@ -4,87 +4,111 @@
   "loop": true,
   "step": 2,
   "close": 1.0,
-  "smooth": 3
+  "smooth": 3,
+  "speed": 1.1
  },
  "hy_read": {
   "src": "readturn-11",
   "loop": true,
   "close": 0.8,
-  "smooth": 4
+  "smooth": 4,
+  "speed": 1.05
  },
  "hy_read2": {
   "src": "read-23",
   "loop": true,
   "step": 2,
   "close": 1.0,
-  "smooth": 4
+  "smooth": 4,
+  "speed": 1.1
  },
  "hy_sitidle": {
   "src": "sitidle-23",
   "loop": true,
   "step": 2,
   "close": 1.0,
-  "smooth": 4
+  "smooth": 4,
+  "speed": 1.05
  },
  "hy_sitdown": {
   "src": "sitdown-11",
   "rm": true,
-  "smooth": 2
+  "smooth": 2,
+  "speed": 1.75,
+  "trim": [
+   0,
+   2.65
+  ]
  },
  "hy_standup": {
   "src": "standup-11",
   "rm": true,
-  "smooth": 2
+  "smooth": 2,
+  "speed": 1.75,
+  "trim": [
+   0.25,
+   3
+  ]
  },
  "hy_oven": {
   "src": "oven-11",
-  "smooth": 2
+  "smooth": 2,
+  "speed": 1.35
  },
  "hy_stir": {
   "src": "stir-11",
   "loop": true,
   "close": 0.8,
-  "smooth": 2.5
+  "smooth": 2.5,
+  "speed": 1.35
  },
  "hy_take": {
   "src": "taketool-23",
-  "smooth": 2
+  "smooth": 2,
+  "speed": 1.4
  },
  "hy_hammer": {
   "src": "hammer-11",
   "loop": true,
   "close": 0.6,
-  "smooth": 1.5
+  "smooth": 1.5,
+  "speed": 1.2
  },
  "hy_saw": {
   "src": "saw-11",
   "loop": true,
   "close": 0.6,
-  "smooth": 2
+  "smooth": 2,
+  "speed": 1.3
  },
  "hy_wash": {
   "src": "wash-23",
   "loop": true,
   "close": 0.8,
-  "smooth": 2.5
+  "smooth": 2.5,
+  "speed": 1.35
  },
  "hy_drink": {
   "src": "drink-11",
-  "smooth": 2.5
+  "smooth": 2.5,
+  "speed": 1.3
  },
  "hy_sleep": {
   "src": "sleep-11",
   "loop": true,
   "step": 2,
   "close": 1.5,
-  "smooth": 4
+  "smooth": 4,
+  "speed": 1.0
  },
  "hy_stretch": {
   "src": "stretch-11",
-  "smooth": 2
+  "smooth": 2,
+  "speed": 1.3
  },
  "hy_inspect": {
   "src": "inspect-11",
-  "smooth": 2.5
+  "smooth": 2.5,
+  "speed": 1.3
  }
 }
