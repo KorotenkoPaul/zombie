@@ -14,6 +14,8 @@ Severity: **P1** visible at normal play; **P2** noticeable when watching; **P3**
 |---|---|---|---|---|---|---|
 | W1 | P1 | pot | Stirring stirs the air: the ladle hangs from the fist in front of the oven door, its bowl below the stove top, not in the pot. Right hand at 0.94 m above the floor at the stove front edge | f2430, f2700 (hy_stir) | pot_ladle_outside_pot_f2430_f2700.jpg | Character / hand contact (grip target = pot centre, ladle bowl inside the pot) |
 | W2 | P2 | pot | During the whole stir loop the left hand is held up by his face/ear instead of resting on the pot handle or the stove edge | f1860–f2110, f2390 | pot_stir_left_hand_at_head_f1860-2390.jpg | Character (hy_stir clip / left-hand IK) |
+| W4 | P1 | ladder down (kitchen → workshop, clips 435/437) | Hands never grip the ladder: flat open palms hover in the air beside the rails, arms flap up above the head while he steps down | f4260–f4370 (hammer errand) | ladder_down_hands_not_gripping_f4260-4370.jpg | Character (ladder hand IK on rails/rungs) |
+| W5 | P1 | hammer | Crooked grip: the fist sits right under the hammer head, the head points up at his chin/chest, the striking face never reaches the nail; he taps at chest height above the bench | f5090, f5190, f5390 (hy_hammer) | hammer_grip_f5090_5190_5390.jpg, hammer_body_f5040-5590.jpg | Character / hand contact (grip near the handle end, head down onto the nail) |
 | W3 | P3 | pot | Mid-stir pause (hy_idle) turns him away from the stove with the ladle dangling from the fist for 2.5 s | f2160–f2310 | same sheet | Brain / Character |
 
 ## Fixed and re-verified

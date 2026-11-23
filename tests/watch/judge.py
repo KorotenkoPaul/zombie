@@ -9,6 +9,7 @@ PROMPT = """You are a demanding senior game animator reviewing a 3D game charact
 The image is a contact sheet: {n} consecutive frames left-to-right, top-to-bottom, each labelled with its frame number (60 frames = 1 s)
 and the game state (task / animation clip). The camera follows him; it may change angle between frames.
 Activity being performed: "{task}". What should happen: {expect}
+The clip covers the whole errand: first he walks there (through doors, up/down ladders), then works, then may leave. Judge each phase for what it is (walking, climbing, working); do NOT report that the activity or tool is missing while he is still on the way. Clip names: "30" = walk, "435"/"437" = ladder, hy_* = activity clips.
 
 Find EVERY animation defect you can actually see. Check specifically:
 - body parts passing through objects (walls, doors, beds, ladder rungs, furniture, floor), or floating above the floor

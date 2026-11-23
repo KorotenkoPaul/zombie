@@ -38,7 +38,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
     // chest point: hips bone if available
     let c=new T.Vector3(P.x,P.y+.75,P.z);try{const hb=__dbg.heroBones||__dbg.HH.bones;const hip=hb&&(hb.Hips||hb.mixamorigHips);if(hip){hip.getWorldPosition(c);c.y+=.1;}}catch(e){}
     if(view==='hands'){try{const hb=__dbg.HH.bones;const a=new T.Vector3(),b=new T.Vector3();hb.RightHand.getWorldPosition(a);hb.LeftHand.getWorldPosition(b);c=a.distanceTo(b)<.45?a.add(b).multiplyScalar(.5):a;}catch(e){}}
-    const fwd=H.root.getWorldDirection(new T.Vector3());let fy=Math.atan2(fwd.x,fwd.z);if(window.__watchFlip)fy+=Math.PI;const want=view==='hands'?1.0:2.5,pitch=view==='hands'?.35:.22;
+    const fwd=H.root.getWorldDirection(new T.Vector3());let fy=Math.atan2(fwd.x,fwd.z);if(window.__watchFlip)fy+=Math.PI;const want=view==='hands'?1.1:2.5,pitch=view==='hands'?.6:.22;
     const score=yaw=>{const d=new T.Vector3(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch));
      // clearance along the ray and from the head and feet too (full body visible)
      const a=clear(c,d,want),b=clear(c.clone().add(new T.Vector3(0,view==='hands'?.15:.55,0)),d,want),f=clear(c.clone().add(new T.Vector3(0,view==='hands'?-.15:-.6,0)),d,want);return Math.min(a,b,f);};
@@ -47,7 +47,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
       // prefer seeing his front/side: face direction (yaw of facing = fy) => camera yaw near fy+-0.7
       const front=Math.cos(yaw-fy-.6);const v=Math.min(s,want)+.35*front;if(v>best){best=v;by=yaw;}}
      W.yaw=by;W.best=score(by);W.blocked=0;}
-    const dist=Math.max(view==='hands'?.45:.7,Math.min(want,score(W.yaw)-.12));
+    const dist=Math.max(view==='hands'?.65:.7,Math.min(want,score(W.yaw)-.12));
     const R=window.__camera&&window.__camera.rig;
     if(R&&R.set){if(__th.rig&&__th.rig.cine)__th.rig.cine(false);R.set({target:c.clone(),yaw:W.yaw,pitch,dist:Math.max(dist,1.5),snap:true});for(let i=0;i<4;i++)R.update(.25,{});if(window.__camera.dof)window.__camera.dof(false);}
     const cam=__qaCamera;cam.position.set(c.x+Math.sin(W.yaw)*Math.cos(pitch)*dist,c.y+Math.sin(pitch)*dist,c.z+Math.cos(W.yaw)*Math.cos(pitch)*dist);cam.lookAt(c);
