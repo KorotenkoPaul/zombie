@@ -49,7 +49,7 @@ const PREVAIL = Math.atan2(0.66, 0.75); // blows from the far left-back corner t
 const SPAN = 60; // gusts start this far upwind of the tree and run this far past it
 
 export const WIND_GLSL = `
-uniform float uWT,uWet;uniform vec2 uFogBank;uniform vec4 uWind;uniform vec4 uGust;uniform vec2 uDrift;
+uniform float uWT,uWet,uRain;uniform vec2 uFogBank;uniform vec4 uWind;uniform vec4 uGust;uniform vec2 uDrift;
 float windGust(vec3 p){float x=uGust.x-dot(p.xz,uWind.xy);
  return uGust.z*(x<0.?exp(-x*x*uGust.y*uGust.y*6.):exp(-x/uGust.w));}
 float windStrength(vec3 p){float n=sin(dot(p.xz,vec2(.11,.17))+uWT*.37)*.5+.5;return uWind.z*(.8+.4*n)+windGust(p);}
@@ -80,12 +80,26 @@ vec3 windLocal(vec3 w){
 #endif
 }`;
 
+// Water (pond, puddles): W.hookWater(shader) adds this to the FRAGMENT shader (and the wind uniforms + noise texture).
+//   vec2 waterSlope(vec3 wp)   surface slope: wind ripples running downwind (calm = nearly a mirror, gusts roughen
+//                              it in patches that travel with the gust) + rain-drop rings while it rains
+//   vec3 waterNormal(vec3 wp)  the same as a world-space normal (y up), to use for reflections/fresnel/highlights
+export const WATER_GLSL = `
+uniform sampler2D uWNoise;
+vec2 waterRings(vec2 xz){vec2 c=floor(xz/.32);vec2 f=xz/.32-c-.5;float h=fract(sin(dot(c,vec2(127.1,311.7)))*43758.5);
+ vec2 o=vec2(fract(h*13.7),fract(h*29.3))-.5;f-=o*.4;float age=fract(uWT*(.9+h*.6)+h*7.);float r=length(f);
+ float rr=age*.45;float ring=smoothstep(.07,0.,abs(r-rr))*(1.-age)*step(h,uRain*.9);return r>1e-3?f/r*ring*.5:vec2(0.);}
+vec2 waterSlope(vec3 p){float s=windStrength(p);vec2 d=uWind.xy;
+ vec2 a=texture2D(uWNoise,p.xz*.35-uDrift*.18+d*uWT*.05).rg-.5,b=texture2D(uWNoise,p.xz*.9+vec2(-d.y,d.x)*uWT*.03-uDrift*.4).gr-.5;
+ vec2 w=(a*.6+b*.4)*(.04+.5*s);return w+waterRings(p.xz);}
+vec3 waterNormal(vec3 p){vec2 sl=waterSlope(p);return normalize(vec3(-sl.x,1.,-sl.y));}`;
+
 export function createWind(opt = {}) {
   let seed = opt.seed || 9071;
   const R = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const rr = (a, b) => a + R() * (b - a);
 
-  const U = { uWT: { value: 0 }, uWind: { value: [0, 0, 0, 0] }, uGust: { value: [-1e4, 0.1, 0, 10] }, uDrift: { value: [0, 0] }, uWet: { value: 0 }, uFogBank: { value: [-1e4, 0] } };
+  const U = { uWT: { value: 0 }, uWind: { value: [0, 0, 0, 0] }, uGust: { value: [-1e4, 0.1, 0, 10] }, uDrift: { value: [0, 0] }, uWet: { value: 0 }, uRain: { value: 0 }, uFogBank: { value: [-1e4, 0] } };
   // three.js wants Vector4 for vec4 uniforms; take the class from the caller so this file has no imports
   const V4 = opt.THREE ? opt.THREE.Vector4 : null;
   if (opt.THREE) { U.uDrift.value = new opt.THREE.Vector2(0, 0); U.uFogBank.value = new opt.THREE.Vector2(-1e4, 0); }
@@ -99,6 +113,7 @@ export function createWind(opt = {}) {
   // the legacy scalar (env.js U.wind) still read by old sway code: keep it alive
   const legacy = opt.legacy || null;
   let fall = null; // falling leaves (W.addFallingLeaves)
+  const waters = []; // water surfaces (W.addWater): f(x, z) -> surface height or null
   // events for sound and anything else that wants to react (W.on)
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) { try { f(e); } catch (er) { console.error('wind', k, er); } } };
   let gustIn = false, creakWait = 3, lastMode = 'breeze';
@@ -126,12 +141,28 @@ export function createWind(opt = {}) {
 
   const W = {
     U, glsl: WIND_GLSL,
-    hook(sh) { sh.uniforms.uWT = U.uWT; sh.uniforms.uWind = U.uWind; sh.uniforms.uGust = U.uGust; sh.uniforms.uDrift = U.uDrift; sh.uniforms.uWet = U.uWet; sh.uniforms.uFogBank = U.uFogBank;
+    hook(sh) { sh.uniforms.uWT = U.uWT; sh.uniforms.uWind = U.uWind; sh.uniforms.uGust = U.uGust; sh.uniforms.uDrift = U.uDrift; sh.uniforms.uWet = U.uWet; sh.uniforms.uRain = U.uRain; sh.uniforms.uFogBank = U.uFogBank;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + WIND_GLSL); return sh; },
 
+    // water: wind uniforms + noise texture + WATER_GLSL in the fragment shader (after #include <common>, or at the top)
+    hookWater(sh, THREE) {
+      Object.assign(sh.uniforms, { uWT: U.uWT, uWind: U.uWind, uGust: U.uGust, uDrift: U.uDrift, uWet: U.uWet, uRain: U.uRain, uFogBank: U.uFogBank, uWNoise: { value: W.noiseTexture(THREE || opt.THREE) } });
+      const add = WIND_GLSL.replace(/vec3 windLocal[\s\S]*$/, '') + WATER_GLSL;  // windLocal needs instancing: vertex only
+      sh.fragmentShader = sh.fragmentShader.includes('#include <common>') ? sh.fragmentShader.replace('#include <common>', '#include <common>\n' + add) : add + '\n' + sh.fragmentShader;
+      return sh;
+    },
+    // ready-made: a MeshStandardMaterial / MeshPhysicalMaterial (flat, not instanced) whose surface normal follows the
+    // wind ripple and rain rings, so the lamps, the moon and the env map glint on it like on water.
+    rippleStandard(mat, THREE) {
+      const prev = mat.onBeforeCompile;
+      mat.onBeforeCompile = (sh, r) => { if (prev) prev(sh, r); W.hookWater(sh, THREE);
+        sh.vertexShader = 'varying vec3 vWWater;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWWater=(modelMatrix*vec4(transformed,1.)).xyz;');
+        sh.fragmentShader = 'varying vec3 vWWater;\n' + sh.fragmentShader.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal=normalize((viewMatrix*vec4(waterNormal(vWWater),0.)).xyz);'); };
+      mat.customProgramCacheKey = () => 'windWater'; mat.needsUpdate = true; return mat;
+    },
     // for a THREE.ShaderMaterial (no #include <common>): adds the uniforms, puts the GLSL in front of the vertex shader
     // and defines WIND, so the owner can write `#ifdef WIND ... #endif` and still compile without this file
-    hookRaw(mat) { Object.assign(mat.uniforms, { uWT: U.uWT, uWind: U.uWind, uGust: U.uGust, uDrift: U.uDrift, uWet: U.uWet, uFogBank: U.uFogBank }); mat.vertexShader = WIND_GLSL + '\n' + mat.vertexShader; mat.defines = Object.assign(mat.defines || {}, { WIND: '' }); mat.needsUpdate = true; return mat; },
+    hookRaw(mat) { Object.assign(mat.uniforms, { uWT: U.uWT, uWind: U.uWind, uGust: U.uGust, uDrift: U.uDrift, uWet: U.uWet, uRain: U.uRain, uFogBank: U.uFogBank }); mat.vertexShader = WIND_GLSL + '\n' + mat.vertexShader; mat.defines = Object.assign(mat.defines || {}, { WIND: '' }); mat.needsUpdate = true; return mat; },
 
     update({ dt = 1 / 60, T: t, rainK = 0, hour = null } = {}) {
       dt = Math.min(0.1, Math.max(0, dt)); T = t ?? T + dt;
@@ -160,6 +191,7 @@ export function createWind(opt = {}) {
       else { gustWait -= dt * (1 + rainK); if (gustWait <= 0) { startGust(); gustWait = rr(0.4, 1.6) * MODES[mode].gustEvery; } }
       const dx = Math.cos(ang), dz = Math.sin(ang);
       U.uWT.value = T;
+      U.uRain.value = rainK;
       // wetness: soaks in within ~10 s of rain, dries over a couple of minutes
       U.uWet.value += (Math.min(1, rainK * 1.3) - U.uWet.value) * Math.min(1, dt / (rainK > U.uWet.value ? 8 : 120));
       { const s0 = base + W.gustAt(0, 0), d = U.uDrift.value; const ax = dx * s0 * 1.6 * dt, az = dz * s0 * 1.6 * dt; if (d.set) d.set(d.x + ax, d.y + az); else { d[0] += ax; d[1] += az; } }
@@ -228,6 +260,11 @@ export function createWind(opt = {}) {
     // Few (16 on phones, 30 on desktop), so a tiny CPU step per leaf is cheaper than anything clever. Calm: a leaf now
     // and then; a gust tears off a little flurry. They settle on the ground, lie a while, then fade.
     // o: {THREE, scene, crown: InstancedMesh of leaf cards, groundH(x,z), avoid: [[x0,x1,y0,y1,z0,z1]...] (rooms), MOBILE}
+    // register a water surface (Ground's pond): f(x, z) -> world height of the surface there, or null if not water.
+    // Falling leaves land on it and float. Returns a remove function.
+    addWater(f) { waters.push(f); return () => { const i = waters.indexOf(f); if (i >= 0) waters.splice(i, 1); }; },
+    waterAt(x, z) { for (const f of waters) { const h = f(x, z); if (h != null) return h; } return null; },
+
     addFallingLeaves(o) {
       const THREE = o.THREE, N = o.MOBILE ? 16 : 30;
       // a single oak leaf drawn once into a small canvas: lobed blade, midrib
@@ -250,6 +287,9 @@ export function createWind(opt = {}) {
       const gH = o.groundH || (() => 0), rooms = o.avoid || [];
       // the top of whatever is under a point (deck, landing, roof, else the ground): o.surfaceH(x,z) -> height or null
       const floorAt = (x, z, y) => { const g = gH(x, z); const h = o.surfaceH ? o.surfaceH(x, z) : null; return h != null && h > g && h <= y + 0.05 ? h : g; };
+      // water (W.addWater): a leaf that lands on it floats, drifts downwind, bobs on the ripple and slowly sinks
+      const waterAt = (x, z) => { for (const f of waters) { const h = f(x, z); if (h != null) return h; } return null; };
+      let gIn = false;
       const L = []; for (let i = 0; i < N; i++) L.push({ on: false });
       const q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), zero = new THREE.Matrix4().makeScale(0, 0, 0);
       for (let i = 0; i < N; i++) im.setMatrixAt(i, zero);
@@ -259,11 +299,21 @@ export function createWind(opt = {}) {
       fall = dt => {
         const s0 = W.level();
         acc += dt * (0.04 + 0.7 * s0 * s0);                     // leaves per second grow with the wind
+        // a gust reaching the crown shakes a handful loose at once
+        { const g = W.gustAt(0, 0); if (!gIn && g > 0.2) { gIn = true; acc += 2 + Math.min(5, g * 5); } else if (gIn && g < 0.08) gIn = false; }
         while (acc >= 1) { acc -= 1; if (L.reduce((n, l) => n + (l.on ? 1 : 0), 0) >= cap) { acc = 0; break; } const l = L.find(l => !l.on); if (!l) break;
           const sp = spots[Math.floor(R() * spots.length)];
-          Object.assign(l, { on: true, p: [sp[0] + rr(-0.4, 0.4), sp[1] + rr(-0.4, 0.2), sp[2] + rr(-0.4, 0.4)], v: [0, 0, 0], ph: rr(0, 6.3), fr: rr(1.5, 3), spin: [rr(-3, 3), rr(-2, 2), rr(-4, 4)], r: [rr(0, 6), rr(0, 6), rr(0, 6)], rest: 0, life: rr(8, 16), k: 1 }); }
+          Object.assign(l, { on: true, water: null, p: [sp[0] + rr(-0.4, 0.4), sp[1] + rr(-0.4, 0.2), sp[2] + rr(-0.4, 0.4)], v: [0, 0, 0], ph: rr(0, 6.3), fr: rr(1.5, 3), spin: [rr(-3, 3), rr(-2, 2), rr(-4, 4)], r: [rr(0, 6), rr(0, 6), rr(0, 6)], rest: 0, life: rr(8, 16), k: 1 }); }
         for (let i = 0; i < N; i++) { const l = L[i]; if (!l.on) continue; const p = l.p;
-          if (l.rest > 0) {                                          // lying on a deck or the ground, then fading
+          if (l.water != null) {                                     // floating on the pond
+            l.rest += dt; const w = W.sample({ x: p[0], z: p[2] });
+            // the surface carries it slowly downwind (a few cm/s, faster in a gust); it stops at the bank
+            const nx = p[0] + w.x * 0.06 * dt, nz = p[2] + w.z * 0.06 * dt; if (waterAt(nx, nz) != null) { p[0] = nx; p[2] = nz; }
+            l.r[2] += dt * (0.05 + w.s * 0.12) * (l.spin[2] > 0 ? 1 : -1);  // turns slowly as it drifts
+            p[1] = l.water + 0.004 + Math.sin(T * 2.1 + l.ph) * 0.004 * (0.3 + w.s);
+            l.r[0] = -Math.PI / 2 + Math.sin(T * 1.7 + l.ph) * 0.05 * (0.3 + w.s);
+            if (l.rest > l.life) { l.k -= dt * 0.08; p[1] -= (1 - l.k) * 0.02; if (l.k <= 0) { l.on = false; l.water = null; im.setMatrixAt(i, zero); continue; } }  // soaks and sinks
+          } else if (l.rest > 0) {                                   // lying on a deck or the ground, then fading
             l.rest += dt; if (l.rest > l.life) { l.k -= dt * 0.5; if (l.k <= 0) { l.on = false; im.setMatrixAt(i, zero); continue; } }
             // a gust picks it up again: it skitters a little way along the boards and settles (the deck "breathes" leaves)
             const w = W.sample({ x: p[0], z: p[2] });
@@ -271,12 +321,13 @@ export function createWind(opt = {}) {
           } else {
             const w = W.sample({ x: p[0], z: p[2] }); l.ph += dt * l.fr;
             // drag towards the wind (leaves are light), a swirl, and a fluttering fall
-            const tx = w.x * 1.4 + Math.cos(l.ph) * 0.35, tz = w.z * 1.4 + Math.sin(l.ph * 0.8) * 0.35, ty = -0.75 + Math.sin(l.ph * 1.7) * 0.35 + w.gust * 0.3;
+            const tx = w.x * 1.0 + Math.cos(l.ph) * 0.35, tz = w.z * 1.0 + Math.sin(l.ph * 0.8) * 0.35, ty = -0.9 + Math.sin(l.ph * 1.7) * 0.35 + w.gust * 0.3;
             const k = Math.min(1, dt * 1.8); l.v[0] += (tx - l.v[0]) * k; l.v[1] += (ty - l.v[1]) * k; l.v[2] += (tz - l.v[2]) * k;
             p[0] += l.v[0] * dt; p[1] += l.v[1] * dt; p[2] += l.v[2] * dt;
             for (let j = 0; j < 3; j++) l.r[j] += l.spin[j] * dt * (0.6 + w.s);
-            const g = floorAt(p[0], p[2], p[1]) + 0.015;
-            if (p[1] <= g) { p[1] = g; l.rest = 0.001; if (g > gH(p[0], p[2]) + 0.5) l.life = Math.max(l.life, rr(25, 45)); l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
+            const g = floorAt(p[0], p[2], p[1]) + 0.015, wh = waters.length ? waterAt(p[0], p[2]) : null;
+            if (wh != null && wh > g - 0.015 && p[1] <= wh + 0.01) { p[1] = wh; l.water = wh; l.rest = 0.001; l.life = rr(50, 90); l.r[0] = -Math.PI / 2; l.r[1] = 0; }
+            else if (p[1] <= g) { p[1] = g; l.rest = 0.001; if (g > gH(p[0], p[2]) + 0.5) l.life = Math.max(l.life, rr(25, 45)); l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
             // never through a room: a leaf that drifts into one is gone (the roof hides it)
             if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5])) { l.on = false; im.setMatrixAt(i, zero); continue; }
             if (Math.abs(p[0]) > 60 || Math.abs(p[2]) > 60) { l.on = false; im.setMatrixAt(i, zero); continue; }

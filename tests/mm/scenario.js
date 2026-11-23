@@ -24,7 +24,10 @@ const ROUTE=(arg('route','cook,wash,craft,look,window,read')).split(',');
  acc.sort((a,b)=>a-b);
  // foot slide: horizontal ankle speed when the ankle is within 3 cm of its local minimum height and slow
  let slideSum=0,slideN=0,slideMax=0;for(const s of ['LeftFoot','RightFoot']){for(let i=1;i<F.length;i++){const a=pos(F[i-1],s),c=pos(F[i],s);const g=F[i].gnd&&F[i].gnd[s==='LeftFoot'?0:2];if(g==null)continue;if(c[1]-g>.11)continue;const v=Math.hypot(c[0]-a[0],c[2]-a[2])*60;if(v>.5)continue;slideSum+=v;slideN++;}}
+ // the same robot-tempo analysis on what you see: the hips' ground track instead of the navigation root
+ const Dv={...D,frames:F.map(f=>({...f,root:[f.b[0],f.root[1],f.b[2]]}))};const Rv=analyze(Dv);
+ const robot=R0=>R0.issues.filter(q=>q.type==='robot').map(q=>({P:q.P,t:q.t,v:q.value,unit:q.unit,what:q.what}));
  const cnt={};for(const q of R.issues){const k='P'+q.P+' '+q.type;cnt[k]=(cnt[k]||0)+1;}
- const rep={off:OFF,frames:F.length,secs:+(F.length/60).toFixed(1),issues:cnt,tempo:R.tempo.walks,walkFrames:walkF,frozenWhileWalking:frozen,maxAccWalk:+maxAcc.toFixed(2),acc99:+(acc[Math.floor(acc.length*.99)]||0).toFixed(2),plantedAnkleSpeedAvg:+(slideSum/Math.max(1,slideN)).toFixed(3),
+ const rep={off:OFF,robotRoot:robot(R),robotVisible:robot(Rv),frames:F.length,secs:+(F.length/60).toFixed(1),issues:cnt,tempo:R.tempo.walks,walkFrames:walkF,frozenWhileWalking:frozen,maxAccWalk:+maxAcc.toFixed(2),acc99:+(acc[Math.floor(acc.length*.99)]||0).toFixed(2),plantedAnkleSpeedAvg:+(slideSum/Math.max(1,slideN)).toFixed(3),
   mm:st&&{searches:st.searches,jumps:F.length?F[F.length-1].mm&&F[F.length-1].mm[2]:0},list:R.issues.filter(q=>/slide|jump|turn|crab|slow|snap/.test(q.type)).slice(0,40).map(q=>`P${q.P} ${q.type} t=${q.t} ${q.act} [${q.clip}] ${q.bone} ${q.value} ${q.unit}`),errs,wall:((Date.now()-t0)/1000).toFixed(0)};
  fs.writeFileSync(OUT+'/report.json',JSON.stringify(rep,null,1));console.log(JSON.stringify(rep,null,1));})().catch(e=>{console.error(e);process.exit(2);});

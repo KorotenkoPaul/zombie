@@ -15,7 +15,25 @@ Priorities: **P1**: visible at normal play (through objects ≥ 2–4 cm, broken
 | 1 | d5e8ad1 | 24,660 | seated jitter fixed; legs folded next to the head after the kitchen ladder; head in the upper bunk |
 | 2 | 46310d0 (v81) | 25,620 | legs at head **fixed**, head in upper bunk **fixed**, walking through the bunk end **fixed**; slow motion measured |
 | 3 | c7cd2d0 (v91) | 16,980 | tempo mostly fixed (walk 1.0 m/s, sit/stand 1.5 s); robot braking/starting and ladder speed jumps open; ladder clipping open |
+| 5 | 610ced0 | 19,020 | P1 jumps 223 → 106, robot P1 6 → 0, crab walk and detours P1 gone; NEW checks: stays and turning back (see below) |
 | 4 | 77c392b | 16,320 | creeping to a stop fixed (1 case left); NEW: 15 cm root teleport at the top of the kitchen ladder, walking backwards after the ladder top, 25 cm root jump into bed |
+
+## New in run 5 (master 610ced0): stays, turning back, sleep
+
+Game day = 180 s (110 s day, 70 s night), so a 20 s stay is about 2.5 game hours of daytime.
+
+| P | what | frames | measured |
+|---|---|---|---|
+| P1 | Kitchen ping-pong: walks stove ↔ sink (cook/wash/tea) and turns back on arrival, 11 times in a row, never starts the chore | f4025–f5329 (h15.0–17.8) | 0–0.1 s at each end, every 2.2 s |
+| P1 | Arrives at the bed (sleep) and walks straight off | f7086 (h21.7) | 0 s |
+| P2 | Reading cut short: sits down, stands up again after ~1.7 s, leaves | f2531–2711, f1905 | read 2.9 and 5.7 s (ACT read is 45–80 s) |
+| P2 | Short stays at look / craft / cook | f400, f873, f3008, f5757, f6611, f11646 | 5.5–15 s |
+| P2 | Ladder root jumps (clip 437) | f11959, f7556, f2218 | 15.6, 11.2, 10.9 cm/frame² |
+| P1 | Root jump when lying down (still) | f10603, f8087 | 22.3, 13.6 cm/frame² |
+| P1 | Deck ladder top: head/arms into the 95x20x20 beam (still) | f609, f2086, f6820, f7424 | head 8.5, arms 9.9 cm |
+
+Sleep: one night in bed, h0.4–5.9 (38.8 s), no getting up in the night. Hatch, bolt, water trips, trip/eat are in the
+tour but hero.js on 610ced0 has no `HH.hasTask`, so they are skipped; repair was commanded but never started.
 
 ## New in run 4 (master 77c392b)
 
@@ -26,7 +44,7 @@ Priorities: **P1**: visible at normal play (through objects ≥ 2–4 cm, broken
 | P1 | Root jumps up when lying down (hy_sleep_bed) | f11156 | +24.8 cm in one frame |
 | P2 | Slow start of walks (still) | f11368, f14017, f8466 | up to 1.47 s |
 | P1 | hy_standup at 0.5x (still) | f8301 | 4.8 s total |
-| note | The house is now instanced/merged geometry, so feet-into-floorboard values of 2–3.6 cm may be ~1 cm too high (being verified) | | |
+| P2 | Feet 2–3.6 cm into floor boards in many places (boards are exact boxes, so the values are exact) | f144, f2577, f7478 | 2–3.6 cm |
 
 ## Open issues (run 3, master c7cd2d0)
 

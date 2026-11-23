@@ -1,0 +1,12 @@
+{
+ "shingle":[5,"A person kneels on one knee on a sloped wooden roof, pulls out a broken shingle with the left hand, slides a new one into place and hammers two nails into it with the right hand."],
+ "nailboard":[4.5,"A person kneels on the floor, presses a loose floor board down with the left hand and hammers nails into it with a hammer in the right hand, then checks it with the palm."],
+ "patchwall":[5,"A person stands at a wall, holds a short plank flat against the wall with the left hand at chest height and hammers nails into its corners with the right hand."],
+ "ropeknot":[5,"A person crouches at the edge of a platform and tightens the knots of a rope ladder, pulling the rope hard with both hands, then tugs it to test it."],
+ "oilhinge":[4,"A person bends slightly at a door, holds an oil can in the right hand and squirts oil onto the hinges, then swings the door back and forth with the left hand to test it."],
+ "window":[5,"A person stands at a window and presses putty along the edges of the glass with the right thumb, smoothing it carefully, then wipes the glass with a cloth."],
+ "railing":[4.5,"A person stands at a wooden railing, shakes it with both hands to test it, then hammers a nail into the post with the right hand and shakes it again."],
+ "clearleaves":[5,"A person crouches on a flat roof and sweeps fallen leaves off it with both hands in wide brushing motions, then throws a handful over the edge."],
+ "chimney":[5,"A person stands at a stove pipe, reaches up and pushes a long brush up and down inside it with both hands, then taps the pipe and wipes the hands."],
+ "tightenrope":[3.5,"A person stands at a rope ladder hanging from a platform, grabs the rope and pulls it hard twice to test it, nods."]
+}

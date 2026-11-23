@@ -156,7 +156,7 @@ export function createAudio(ctx) {
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) try { f(e); } catch (er) { console.error('audio', k, er); } };
   const MOB = !!ctx.mobile;
   const MAXV = MOB ? 9 : 14;   // phones: fewer simultaneous voices (each is a panner + filter + gain)
-  let now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
+  let layerAcc = 0, now = 0, lastH = null, kick = 0, wasAsleep = null, wind = .3, windT = 0, rainMem = 0;
   const ind = {};          // individuals per layer
   const mult = {};         // today's / tonight's personality per layer
   const center = { x: 0, z: 0 };
@@ -240,8 +240,11 @@ export function createAudio(ctx) {
   const L3 = { x: 0, y: 0, z: 0 };
   function listener() { const c = ctx.camera; if (c) { L3.x = c.position.x; L3.y = c.position.y; L3.z = c.position.z; } return L3; }
   function syncListener() {
-    if (!A || !ctx.camera) return; const c = ctx.camera, l = A.listener;
-    const f = { x: 0, y: 0, z: -1 }, u = { x: 0, y: 1, z: 0 }, e = c.matrixWorld.elements;
+    if (!A || !ctx.camera) return; const c = ctx.camera, l = A.listener, e = c.matrixWorld.elements;
+    // only when the camera actually moved (and at most ~30 times a second): each call queues 9 automation events
+    const tn = A.currentTime, sig = e[12] + e[13] * 3.1 + e[14] * 7.3 + e[8] * 11 + e[10] * 13 + e[5] * 17;
+    if (Math.abs(sig - (syncListener.sig ?? 1e9)) < 1e-3 || tn - (syncListener.t ?? -1) < .033) return; syncListener.sig = sig; syncListener.t = tn;
+    const f = { x: 0, y: 0, z: -1 }, u = { x: 0, y: 1, z: 0 };
     f.x = -e[8]; f.y = -e[9]; f.z = -e[10]; u.x = e[4]; u.y = e[5]; u.z = e[6];
     const t = A.currentTime + .05;
     if (l.positionX) { l.positionX.linearRampToValueAtTime(c.position.x, t); l.positionY.linearRampToValueAtTime(c.position.y, t); l.positionZ.linearRampToValueAtTime(c.position.z, t);
@@ -254,6 +257,7 @@ export function createAudio(ctx) {
   function voice(name, o) {
     if (!A || (!o.bed && voices.size >= (o.prio ? MAXV + 6 : MAXV))) return null;   // the hero's own sounds get extra room
     const buf = getBuf(name); if (!buf) return null;
+    if (o.prio) { duckUntil = A.currentTime + 3; lastActT = now; }   // the music steps back for the hero's sounds
     const t = A.currentTime + (o.delay || 0);
     const src = A.createBufferSource(); src.buffer = buf; src.playbackRate.value = o.rate || 1;
     const off = Math.min(o.offset || 0, Math.max(0, buf.duration - .3));
@@ -352,7 +356,7 @@ export function createAudio(ctx) {
     if (b.lvl < .01) return;
     const t = A.currentTime;
     if (!b.cur || b.cur.end - t < 2.2) { b.applied = b.lvl; b.cur = voice(pick(clips), Object.assign({ bed: true, fadeIn: 2, fadeOut: 2.2 }, mk(b.lvl))); }
-    else if (Math.abs(b.lvl - (b.applied ?? 0)) > .08) { b.applied = b.lvl; b.cur.g.gain.cancelScheduledValues(t); b.cur.g.gain.setTargetAtTime(mk(b.lvl).gain, t, .4); b.cur.g.gain.setTargetAtTime(0, Math.max(t + .5, b.cur.end - 2), .5); }
+    else if (Math.abs(b.lvl - (b.applied ?? 0)) > .08) { b.applied = b.lvl; holdGain(b.cur.g.gain, t); b.cur.g.gain.setTargetAtTime(mk(b.lvl).gain, t, .4); b.cur.g.gain.setTargetAtTime(0, Math.max(t + .5, b.cur.end - 2), .5); }
   }
 
   function windLevel(dt) {
@@ -439,6 +443,7 @@ export function createAudio(ctx) {
     const t = A.currentTime; dt = clamp01(t - (update.t ?? t)); update.t = t; now += dt;
     acoustics(dt);
     if (loops.size) tickLoops();
+    tickMusic(ctx.hour ? ctx.hour() : 12, dt);
     const h = ctx.hour ? ctx.hour() : 12;
     const rain = clamp01(ctx.rain ? ctx.rain() : 0);
     wind = windLevel(dt);
@@ -456,7 +461,7 @@ export function createAudio(ctx) {
       if (lastH < 4 && h >= 4) populate(DAY, env);
     }
     lastH = h;
-    tickLayers(h, env, dt);
+    layerAcc += dt; if (layerAcc >= .1) { tickLayers(h, env, layerAcc); layerAcc = 0; }   // creatures decide 10x a second, not every frame
     gusts(env);
     // rain on leaves and roof
     // rain: leaves all around, and drumming on the roof when the camera (or hero) is near one
@@ -548,7 +553,9 @@ export function createAudio(ctx) {
     const sp = a.rate ?? .04;
     return { pos: toPos(pos), gain: (o.gain ?? 1) * a.v * rnd(.82, 1.05), rate: (o.rate ?? 1) * (1 + rnd(-sp, sp)), ref: 3.5, roll: 1, rev: .25, delay: o.delay || 0, fadeIn: .01, fadeOut: .12, prio: true, indoor: !o.outdoor };
   }
-  function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; v.g.gain.cancelScheduledValues(t); v.g.gain.setValueAtTime(v.g.gain.value, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
+  // freeze a gain where it is right now before a new ramp (cancelScheduledValues alone can jump: a click)
+  function holdGain(p, t) { if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else { const v = p.value; p.cancelScheduledValues(t); p.setValueAtTime(v, t); } }
+  function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; holdGain(v.g.gain, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
   function playAct(name, pos, o = {}) {
     if (!A || muted || !loaded) return null;
     if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
@@ -582,16 +589,95 @@ export function createAudio(ctx) {
     }
   }
 
+  // ---------- the score: a sparse procedural music box (no samples, no Fal) ----------
+  // Little Nightmares mood, but cosy: a slow music-box lullaby in A minor over a barely-there pad, through a long
+  // soft reverb. Off most of the time. A "session" (60-120 s) may start at dusk or in a quiet moment (hero idle,
+  // reading, asleep; no actions for 20 s), then rests 2.5-5 min. Every hero action ducks it for a few seconds.
+  // __audio.music(on?) -> on/off (remembered); __audio.music() returns the state. __audio.musicNow() forces a session.
+  let musicOn = true; try { musicOn = localStorage.getItem('th_music') !== '0'; } catch (e) {}
+  let mBus = null, mDuck = null, mRev = null, mSession = 0, mRestUntil = 30, mNext = 0, mPhrase = null, mPad = null, duckUntil = 0, lastActT = -99, mDuskDay = -1;
+  const SCALE = [0, 2, 3, 5, 7, 8, 10];                          // natural minor
+  const ROOT = 57;                                                // A3
+  // hand-written motifs in scale degrees (0 = A), with relative durations: melancholic, lullaby-like, unresolved
+  const MOTIFS = [
+    [[4, 1], [3, 1], [2, 1], [0, 2.5]], [[0, 1], [2, 1], [4, 1.5], [3, 2.5]], [[7, 1.5], [6, 1], [4, 1], [5, 3]],
+    [[4, 1], [4, .5], [2, 1], [3, 1.5], [1, 3]], [[2, 1], [4, 1], [7, 2], [6, 1], [4, 3]], [[0, 1.5], [-1, 1], [-3, 1], [-2, 3.5]],
+    [[9, 1], [7, 1], [6, 1], [4, 1], [2, 3]], [[4, 2], [3, 1], [4, 1], [2, 3]],
+  ];
+  const CHORDS = [[0, 4], [-2, 2], [-4, 0], [3, 7], [-1, 4]];   // pad: two notes (scale degrees) under the melody: Am, F, Dm-ish, Dm/F, Em
+  const midiOf = d => { const o = Math.floor(d / 7), i = ((d % 7) + 7) % 7; return ROOT + 12 * o + SCALE[i]; };
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  function musicGraph() {
+    if (mBus) return;
+    mDuck = A.createGain(); mDuck.gain.value = 1; mDuck.connect(master);
+    mBus = A.createGain(); mBus.gain.value = 0; mBus.connect(mDuck);
+    const len = Math.floor(A.sampleRate * (MOB ? 2.6 : 3.8)), ir = A.createBuffer(2, len, A.sampleRate);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); let lp = 0; for (let i = 0; i < len; i++) { const t = i / len; lp += ((Math.random() * 2 - 1) - lp) * (.25 - .2 * t); d[i] = lp * Math.pow(1 - t, 1.8) * (i < 600 ? i / 600 : 1); } }
+    mRev = A.createConvolver(); mRev.buffer = ir; const wet = A.createGain(); wet.gain.value = .9; mRev.connect(wet).connect(mBus);
+  }
+  // one music-box note: a sine with two faint inharmonic partials, a tiny click of attack, a long bell decay
+  function mNote(m, t, vel, pan) {
+    const f = hz(m), dur = 2.2 + Math.random() * 1.8, g = A.createGain(), out = A.createGain(), sp = A.createStereoPanner ? A.createStereoPanner() : null;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + .006); g.gain.exponentialRampToValueAtTime(vel * .25, t + .35); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.min(NYQ, 2600 + f); lp.Q.value = .3;
+    for (const [k, a] of [[1, 1], [2.01, .22], [3.98, .07]]) { const o = A.createOscillator(); o.type = 'sine'; o.frequency.value = f * k; o.detune.value = (Math.random() - .5) * 6; const ga = A.createGain(); ga.gain.value = a; o.connect(ga).connect(g); o.start(t); o.stop(t + dur + .05); }
+    g.connect(lp).connect(out); out.gain.value = 1; if (sp) { sp.pan.value = pan; out.connect(sp); sp.connect(mBus); sp.connect(mRev); } else { out.connect(mBus); out.connect(mRev); }
+  }
+  // the pad: two soft detuned triangles through a dark filter, swelling in and out over many seconds
+  function padChord(t, ch, len) {
+    const g = A.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.05, t + len * .4); g.gain.linearRampToValueAtTime(0, t + len);
+    const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520; lp.Q.value = .2; g.connect(lp); lp.connect(mBus); lp.connect(mRev);
+    for (const d of ch) for (const det of [-5, 5]) { const o = A.createOscillator(); o.type = 'triangle'; o.frequency.value = hz(midiOf(d) - 12); o.detune.value = det; o.connect(g); o.start(t); o.stop(t + len + .1); }
+  }
+  function quietMoment(h) {
+    const H = ctx.hero; if (!H) return false;
+    const idle = H.inBed || /read|sleep|sit|telescope|listen|diary|tea/.test(String(H.task || '')) || H.state === 'idle';
+    return idle && now - lastActT > 20;
+  }
+  function tickMusic(h, dt) {
+    if (!musicOn) { if (mBus && mSession) { holdGain(mBus.gain, A.currentTime); mBus.gain.setTargetAtTime(0, A.currentTime, 1.5); mSession = 0; } return; }
+    const t = A.currentTime;
+    // ducking under the hero's own sounds
+    const dk = t < duckUntil; if (mDuck && dk !== tickMusic.dk) { tickMusic.dk = dk; holdGain(mDuck.gain, t); mDuck.gain.setTargetAtTime(dk ? .3 : 1, t, dk ? .15 : 1.2); }
+    if (!mSession) {
+      if (now < mRestUntil) return;
+      const dusk = h >= 18.3 && h < 20.6, day = Math.floor(gnow / 180);
+      let start = !!tickMusic.force; tickMusic.force = false;
+      if (dusk && mDuskDay !== day && Math.random() < .7) { start = true; mDuskDay = day; }
+      else if (quietMoment(h) && Math.random() < dt / 90) start = true;                // in a quiet moment: about once in a minute and a half
+      if (!start) return;
+      musicGraph(); mSession = now + rnd(60, 120); mNext = now + 1.5; mPhrase = null;
+      holdGain(mBus.gain, t); mBus.gain.linearRampToValueAtTime(.5, t + 6);
+      padChord(t + .5, pick(CHORDS), rnd(14, 20)); mPad = now + rnd(12, 18);
+      return;
+    }
+    if (now > mSession) {                                          // the session fades away
+      holdGain(mBus.gain, t); mBus.gain.setTargetAtTime(0, t, 3); mSession = 0; mRestUntil = now + rnd(150, 300); return;
+    }
+    if (now > mPad) { padChord(t, pick(CHORDS), rnd(14, 22)); mPad = now + rnd(14, 22); }
+    if (now < mNext) return;
+    if (!mPhrase || !mPhrase.length) {                             // a new phrase after a breath of silence
+      const M = pick(MOTIFS), oct = Math.random() < .3 ? 7 : 0, tempo = rnd(.55, .8);
+      mPhrase = M.map(([d, l]) => [d + oct, l * tempo]); mNext = now + rnd(2.5, 7); if (Math.random() < .25) mNext += rnd(5, 10); return;
+    }
+    const [d, l] = mPhrase.shift();
+    mNote(midiOf(d) + 12, t + .02, rnd(.07, .1), rnd(-.35, .35));
+    if (Math.random() < .18) mNote(midiOf(d) + 24, t + .02 + rnd(.01, .03), .025, rnd(-.5, .5));   // a faint octave sparkle now and then
+    mNext = now + l * rnd(.9, 1.15);
+  }
+  function setMusic(b) { musicOn = !!b; try { localStorage.setItem('th_music', musicOn ? '1' : '0'); } catch (e) {} if (!musicOn && mBus) { holdGain(mBus.gain, A.currentTime); mBus.gain.setTargetAtTime(0, A.currentTime, .4); } }
+
   function setMute(b) {
     muted = !!b; try { localStorage.setItem('th_mute', muted ? '1' : '0'); } catch (e) {}
-    if (master) master.gain.setTargetAtTime(muted ? 0 : MASTER, A.currentTime, .15);
-    if (muted) for (const v of voices) try { v.src.stop(); } catch (e) {}
+    if (master) { holdGain(master.gain, A.currentTime); master.gain.setTargetAtTime(muted ? 0 : MASTER, A.currentTime, .15); }
+    if (muted) for (const v of voices) try { v.src.stop(A.currentTime + .7); } catch (e) {}   // after the master has faded: no click
   }
   // phones: stop the audio clock in the background
   document.addEventListener('visibilitychange', () => { if (!A) return; if (document.hidden) A.suspend(); else if (started) A.resume(); });
 
   const api = {
     start, update, mute: setMute, muted: () => muted, started: () => started, loaded: () => loaded, actionsReady: () => actLoaded, actions: () => Object.keys(ACT).concat(Object.keys(ALIAS)),
+    music: b => { if (b !== undefined) setMusic(b); return musicOn; }, musicNow: () => { mRestUntil = 0; mSession = 0; tickMusic.force = true; },
     loop: loopAct, carry: b => { carrying = !!b; if (b) playAct('grunt'); }, autoSleep: b => { autoSleep = !!b; },
     footstep: (side, pos, o = {}) => { autoFeet = false; const q = toPos(pos); step(side, q, o.surface || surfaceAt(q, envNow), o.gain ?? 1); },
     on: (k, f) => { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },

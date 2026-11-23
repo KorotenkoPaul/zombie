@@ -52,3 +52,14 @@
 - Automatic: breath while climbing up (every 2.2-3.4 s), cloth rustle when he sets off and every 4-9 s while walking.
 - `__audio.carry(true|false)`: Character calls it when he picks up / puts down logs or a bucket; it grunts on pick-up and breathes heavier while walking with the load.
 - Sigh at the telescope / ledge: Character calls `__audio.play('sigh')` when he settles.
+
+## Round 8: the score (procedural, no samples)
+- A sparse music box in A natural minor (8 hand-written lullaby motifs, rubato, octave sparkles) over a dark two-note triangle pad, through its own long reverb (3.8 s, 2.6 s on phones). All Web Audio oscillators, created per note and stopped after their decay.
+- Off most of the time: a 60-120 s session may start at dusk (18:20-20:35, 70% once a day) or in a quiet moment (hero in bed / reading / sitting / at the telescope, no actions for 20 s; about once per 90 s of quiet). Then it rests 2.5-5 min.
+- Ducks to 30% for 3 s under every hero sound (priority voices: actions, footsteps).
+- UI: ♫ button (#bM) next to 🔊; dimmed = off, remembered in localStorage (`th_music`). API: `__audio.music(on?)`, `__audio.musicNow()` (debug).
+
+## Round 9: phone perf and clicks
+- Measured (iPhone 13 profile, rain + stove + music + footsteps + indoor camera): audio.js update() = 0.02 ms per frame on the test CPU (~0.1 ms on a phone), 7 live voices, 25 decoded clips (~70 s PCM).
+- Per-frame JS trimmed: creatures decide at 10 Hz (not every frame); the listener is updated only when the camera moved (max 30 Hz; each update queues 9 automation events); music ducking only on change (it used to queue an event every frame).
+- Click-free: every gain change starts from the current value (`holdGain`: cancelAndHoldAtTime or cancel + setValueAtTime) instead of cancelScheduledValues alone; mute stops voices only after the master fade. Test: second-difference spike detector on a recording (tests in /tmp; method: 2 ms windows, >18 dB above the local median) shows no spikes at mute/unmute, music on/off or camera in/out.
