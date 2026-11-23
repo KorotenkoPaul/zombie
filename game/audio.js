@@ -464,6 +464,34 @@ export function createAudio(ctx) {
 
   const FRIDGE = ctx.fridge || { x: -1.43, y: (ctx.lv ? ctx.lv.KT : 5.0) + .8, z: 1.38 };
   let fridgeOn = false, fridgeT = 0;
+  // ---------- house sway (Wind): ropes strain, lantern hooks squeak, hinges creak, a loose shutter knocks ----------
+  // __wind.on('sway', {part, id, pos:[x,y,z], amp 0..1, hit?}) at each swing reversal. Rate-limited per object and
+  // overall; routed to the forest bus, so indoors it is quieter and muffled like the rest of the outside.
+  // Parts (Wind, fc33e5b): 'landing lantern', telescope (gusts only), 'ladder-ground' / 'ladder-deck'. The door is Props' own.
+  const SWAY = {
+    ladder: { c: ['fs_rope_a', 'fs_rope_b'], g: [.05, .2], rate: [.7, .9], dur: [.5, .9], ref: 3 },
+    rope: { c: ['fs_rope_a', 'fs_rope_b'], g: [.04, .16], rate: [.75, .95], dur: [.4, .8], ref: 3 },
+    lantern: { c: ['creak_a'], g: [.03, .11], rate: [1.5, 1.9], dur: [.22, .38], ref: 2 },
+    telescope: { c: ['creak_a'], g: [.03, .1], rate: [1.2, 1.4], dur: [.25, .4], ref: 2 },
+    door: { c: ['creak_a'], g: [.05, .18], rate: [.85, 1.05], dur: [.6, 1.2], ref: 3 },
+    shutter: { c: ['creak_a'], g: [.04, .15], rate: [1, 1.2], dur: [.4, .8], ref: 3 },
+    hit: { c: ['shutter', 'trunk_door_close'], g: [.06, .22], rate: [.9, 1.1], dur: [.25, .4], ref: 3 },
+  };
+  const swayLast = {}; let swayHooked = false, swayLastT = -9;
+  function swaySound(e) {
+    if (!loaded || muted || !e) return;
+    const amp = clamp01(e.amp ?? .5) * (.35 + .65 * clamp01(wind / .6)), key = e.hit ? 'hit' : e.part, S = SWAY[key] || SWAY.rope, id = (e.id || e.part || '?') + (e.hit ? '!' : '');
+    if (now - (swayLast[id] ?? -9) < (e.hit ? .8 : rnd(1.3, 2.4)) || now - swayLastT < .3) return;
+    if (amp < .12 || Math.random() > .25 + .7 * amp) return;                                   // small swings mostly pass in silence
+    swayLast[id] = now; swayLastT = now;
+    const q = e.pos || [rnd(-6, 6), rnd(9, 16), rnd(-3, 1)], dur = rnd(S.dur[0], S.dur[1]);
+    voice(pick(S.c), { pos: { x: q[0] ?? q.x, y: q[1] ?? q.y, z: q[2] ?? q.z }, gain: S.g[0] + (S.g[1] - S.g[0]) * amp, rate: rnd(S.rate[0], S.rate[1]),
+      offset: e.hit ? 0 : rnd(0, 1.2), dur, fadeIn: e.hit ? .005 : .06, fadeOut: Math.min(.25, dur * .4), ref: S.ref, roll: 1.2, rev: .18 });
+  }
+  function hookSway() {
+    if (swayHooked) return; const W = window.__wind; if (!W || typeof W.on !== 'function') return; swayHooked = true;
+    W.on('sway', swaySound);
+  }
   let dripNext = 0, creakNext = 6, autoSleep = true, snoreNext = 0, turnNext = 0;
   // ---------- footsteps: surface under the foot, at the moment the foot lands ----------
   // Character can drive them exactly with __audio.footstep(side, pos?, {surface}); until it does, audio.js watches
@@ -525,7 +553,7 @@ export function createAudio(ctx) {
     const hero = ctx.hero, asleep = !!(hero && hero.inBed);
     let anx = .3; try { const nb = window.__brain && window.__brain.need; if (nb && nb.safety != null) anx = clamp01(nb.safety); } catch (e) {}
     const env = envNow = { season: season(), rain, wind, awake: !asleep, anx };
-    hookWind(); hookWeather();
+    hookWind(); hookWeather(); hookSway();
     wState = weatherState(h, rain, wind); env.w = wState;
     if (wState === 'storm' && !wHooked && now > thunderNext) { if (thunderNext > 0) thunder(rnd(1200, 4000), rnd(.4, .8)); thunderNext = now + rnd(25, 60); }
     // the hero getting up in the morning wakes the garden
@@ -765,7 +793,7 @@ export function createAudio(ctx) {
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
       const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
-    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState,
+    play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound,
   };
   window.__audio = api;
   return api;
