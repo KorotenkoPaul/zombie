@@ -37,6 +37,11 @@
 - Room offsets: buildProps reads optional `L.dxL` (kitchen+bedroom) and `L.dxR` (workshop) and shifts props, OBST, tool homes and surfaces. Default 0.
 - `__th.nav()` reports 3 crossings (kmid-kl_b:stove, bl_t-bmid:basket, bmid-bread_app:table); same on master before this round, hero nav owner should check.
 
+## Light sources for lights.js (`__props.lights`, `__props.materials`)
+- `__props.lights.{oven,kitchenLamp,workshopLamp,candle}` = `{ pos (world Vector3), obj, mats: [...] }`; oven also has `setHeat(0..1)` (drives fire, glass and flames; `update()` also calls it every frame from `cooking`/`heat`, so lights.js should take over that call if it owns the oven state).
+- `__props.materials`: `fire` (ember bed, emissive), `ovenGlass` (emissive), `flame` (additive flame cones, opacity), `lampGlass` (lantern panes, shared by all lantern housings), `domeInner` (workshop dome lining, emissive 0 = off), `candleFlame` (opacity 0 = unlit).
+- The bulbs and PointLights of the hanging/standing lanterns (bedroom, kitchen, landing, deck) are made by `lantern()` in index.html, not here.
+
 ## Known issues / next steps
 - Oven: fire is a flat plane; rack rods look slanted; add a baking tray and flame flicker.
 - Tool wall: hammer/saw partly hidden behind the workshop dome lamp in the default view; consider moving the lamp forward.
