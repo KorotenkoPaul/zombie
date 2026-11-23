@@ -55,13 +55,17 @@ export function createTreeDress(C) {
   // chained after tree.js's own shader so both keep working; everything is in world space, so it follows any oak model
   {
     const mat = TREE.bark.material, prev = mat.onBeforeCompile;
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 } };
+    const ENVR = (C.env || window.__env || {}).moonRim || { color: { value: new THREE.Color(0x86C2F0) }, strength: { value: 0 }, dir: { value: V(-1, .7, .2).normalize() } };
+    // wetness: a little dew at night, soaked in the rain. Rain is read back from the wind uniform (env: wind = 1 + rain*1.5).
+    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, rimK: { value: 1 } };
+    D.update = () => { const rain = Math.max(0, Math.min(1, ((U.wind ? U.wind.value : 1) - 1) / 1.5)); const night = Math.min(1, ENVR.strength.value / 0.8 || 0); D.barkU.wet.value = Math.max(night * 0.35, rain); };
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark;
+      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot;' + NOISE)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.;' + NOISE)
         .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 wn=normalize(tdN); float y=tdP.y;
@@ -89,10 +93,24 @@ export function createTreeDress(C) {
           // grey-green lichen spots on the drier upper bark
           float li=smoothstep(.74,.82,td_n(tdP*vec3(7.,4.,7.)+big*3.))*smoothstep(.55,.7,td_n(tdP*.9+5.))*smoothstep(1.,3.,y)*(1.-mm);
           diffuseColor.rgb=mix(diffuseColor.rgb,vec3(lum*.9,lum*1.05,lum*.85)+vec3(.01,.015,.008),li*.35);
+          // wet bark: darker, and glossy in the grooves' ridges (moss stays matte); streaks run down from the limbs
+          float streak=td_n(vec3(tdP.x*2.2,tdP.y*.25,tdP.z*2.2));
+          tdWM=tdWet*(1.-mm*.8)*(.55+.45*smoothstep(.3,.7,streak));
+          diffuseColor.rgb*=1.-tdWM*.3;
+          tdMM=mm;tdL=lum;
+        }`)
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.32,tdWM);')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        {
+          // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
+          vec3 wn=normalize(tdN), wv=normalize(cameraPosition-tdP);
+          float fr=pow(1.-max(dot(wn,wv),0.),3.);
+          float rim=fr*max(dot(wn,normalize(tdRimD)),0.)*tdRimS*tdRimK;
+          totalEmissiveRadiance+=tdRimC*rim*(.12+tdL*1.6)*(1.-tdMM*.5)*(1.+tdWM*.8);
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress1';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress2';
     mat.needsUpdate = true;
   }
 
@@ -229,7 +247,7 @@ export function createTreeDress(C) {
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
     })();
     const leafG = new THREE.PlaneGeometry(1, 1); leafG.translate(0, 0.5, 0);
-    const imat = swayMat(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.55, emissive: 0x0b1a10, emissiveMap: ivyTex }), U, 0.05, FLUTTER);
+    const imat = swayMat(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex }), U, 0.05, FLUTTER);
     const NLV = Math.round(520 * MUL), leaves = new THREE.InstancedMesh(leafG, imat, NLV); let nl = 0;
     const stems = [];
     // a few vines: mostly on the sides and the back, one wandering across the front-left under the kitchen landing
@@ -337,6 +355,54 @@ export function createTreeDress(C) {
     ferns.count = nf; tufts.count = nt; ferns.receiveShadow = tufts.receiveShadow = true; D.group.add(ferns, tufts); D.ferns = ferns; D.tufts = tufts;
   }
 
-  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, vines: D.vineLen, ferns: D.ferns.count, tufts: D.tufts.count, pockets: D.pockets });
+  // ================= 6. mushrooms on the wood: bracket fungi on the trunk foot, little caps on the roots =================
+  {
+    const env = C.env || window.__env || {}; const glowU = env.shroomGlow || { value: 0 };
+    const paint = (g, f) => { const p = g.attributes.position; const c = new Float32Array(p.count * 3), a = new Float32Array(p.count); for (let i = 0; i < p.count; i++) { const r = f(p.getX(i), p.getY(i), p.getZ(i)); c.set(r[0], i * 3); a[i] = r[1]; } g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.setAttribute('aCap', new THREE.BufferAttribute(a, 1)); return g.toNonIndexed(); };
+    // small cap: stem + domed cap with darker gills, local +y up, about 1 unit tall
+    const cap = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.5).scale(1, 0.6, 1).translate(0, 0.9, 0);
+    const gill = new THREE.CircleGeometry(0.97, 12).rotateX(Math.PI / 2).translate(0, 0.9, 0);
+    const stem = new THREE.CylinderGeometry(0.2, 0.3, 0.95, 7, 2).translate(0, 0.47, 0);
+    const smallG = mergeGeometries([paint(stem, () => [[0.8, 0.76, 0.66], 0]), paint(gill, () => [[0.5, 0.4, 0.32], 0.1]), paint(cap, (x, y) => { const k = smooth(0.9, 1.45, y); return [[0.55 + k * 0.3, 0.3 + k * 0.12, 0.18 + k * 0.05], smooth(0.95, 1.4, y) * 0.8]; })]);
+    // bracket (shelf) fungus: a thick half-disc sticking out of the bark along local +z, pale rim, brown banded top
+    const br = new THREE.SphereGeometry(1, 14, 6, -Math.PI / 2, Math.PI, 0, Math.PI * 0.5).scale(1, 0.32, 0.85);
+    const brU = new THREE.CircleGeometry(1, 14, -Math.PI / 2, Math.PI).rotateX(Math.PI / 2).scale(1, 1, 0.85);
+    const bracketG = mergeGeometries([paint(br, (x, y, z) => { const r = Math.hypot(x, z / 0.85); const band = 0.5 + 0.5 * Math.sin(r * 22); const k = smooth(0.7, 1, r); return [[0.36 + band * 0.08 + k * 0.4, 0.25 + band * 0.05 + k * 0.32, 0.16 + band * 0.03 + k * 0.22], 0]; }), paint(brU, () => [[0.72, 0.64, 0.5], 0])]);
+    const mk = () => { const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }); m.onBeforeCompile = sh => { sh.uniforms.uGlow = glowU; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCap;varying float vCap;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCap=aCap;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uGlow;varying float vCap;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.2)*vCap*uGlow;'); }; return m; };
+    const NSM = Math.round(48 * MUL), NBR = Math.round(16 * MUL);
+    const small = new THREE.InstancedMesh(smallG, mk(), NSM), brk = new THREE.InstancedMesh(bracketG, mk(), NBR);
+    // small caps: clusters on the tops and flanks of the roots
+    const onRoots = sampler(q => q.n.y > 0.35 && q.c.y > 0.05 && q.c.y < 1.1 && radial(q.c.x, q.c.z) > 2.4);
+    let ns = 0;
+    for (let k = 0; k < 200 && ns < NSM; k++) {
+      const s0 = onRoots(); if (!s0) break; const p0 = s0.p; if (p0.z < AZ - 0.5 && R() < 0.75) continue; if (blocked(p0.x, p0.y + 0.2, p0.z, 0.1) || nearDoor(p0.x, p0.y, p0.z)) continue;
+      const cnt = 2 + Math.floor(R() * 4);
+      for (let j = 0; j < cnt && ns < NSM; j++) {
+        const p = p0.clone().add(V(rr(-0.12, 0.12), 0, rr(-0.12, 0.12))); p.addScaledVector(s0.n, -0.01);
+        const up = s0.n.clone().lerp(UP, 0.65).normalize(); const sz = rr(0.025, 0.06) * (j === 0 ? 1.35 : 1);
+        M4.compose(p, orient(up, rr(0, 6.28)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-0.25, 0.25), 0, rr(-0.25, 0.25)))), S.set(sz, sz * rr(0.9, 1.5), sz));
+        small.setMatrixAt(ns, M4); col.setHSL(rr(0.03, 0.08), rr(0.45, 0.75), rr(0.55, 0.75)); small.setColorAt(ns++, col);
+      }
+    }
+    // bracket fungi: stacked shelves on steep bark low on the trunk, mostly on the shady sides
+    const onTrunk = sampler(q => Math.abs(q.n.y) < 0.3 && q.c.y > 0.5 && q.c.y < 3.4 && radial(q.c.x, q.c.z) < 3.6);
+    let nb = 0;
+    for (let k = 0; k < 300 && nb < NBR; k++) {
+      const s0 = onTrunk(); if (!s0) break; const p0 = s0.p; if (s0.n.z < -0.3 && R() < 0.7) continue; // mostly on the sides and front-sides, where they are seen
+      if (blocked(p0.x, p0.y, p0.z, 0.25) || nearDoor(p0.x, p0.y, p0.z)) continue;
+      const out = V(s0.n.x, 0, s0.n.z).normalize(); const yaw = Math.atan2(out.x, out.z); const cnt = 1 + Math.floor(R() * 3);
+      for (let j = 0; j < cnt && nb < NBR; j++) {
+        const sz = rr(0.09, 0.17) * (1 - j * 0.2); const p = p0.clone().add(V(0, j * rr(0.09, 0.14), 0)).addScaledVector(out, -sz * 0.15);
+        M4.compose(p, new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-0.1, 0.05), yaw + rr(-0.3, 0.3), rr(-0.15, 0.15), 'YXZ')), S.setScalar(sz));
+        brk.setMatrixAt(nb, M4); const v = rr(0.8, 1.1); brk.setColorAt(nb++, col.setRGB(v, v * rr(0.95, 1.02), v * rr(0.9, 1)));
+      }
+    }
+    small.count = ns; brk.count = nb; small.receiveShadow = brk.receiveShadow = true; brk.castShadow = !MOBILE; D.group.add(small, brk); D.shrooms = small; D.brackets = brk;
+  }
+
+  // keep the bark's wet/rim uniforms in step with the time of day and the rain, without touching the main loop
+  { const prev = TREE.bark.onBeforeRender; TREE.bark.onBeforeRender = function (...a) { D.update(); if (prev) prev.apply(this, a); }; }
+
+  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, vines: D.vineLen, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
   return D;
 }

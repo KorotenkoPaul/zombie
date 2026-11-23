@@ -7,6 +7,7 @@
 //   single tap ..................... handed back to the game (onTap) for shooting etc.
 // Everything is damped; the camera never goes inside the trunk or under the ground.
 import * as THREE from 'three';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
@@ -27,7 +28,8 @@ export function createCameraRig(o) {
   const goal = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   const cur = { target: home.target.clone(), yaw: home.yaw, pitch: home.pitch, dist: home.dist };
   let followOn = false, atHome = true, flyK = 0, idle = 0;
-  const MIN_D = 0.7, PMIN = -0.25, PMAX = 1.45;
+  const MIN_D = 0.7, PMIN = 0.02, PMAX = 0.6, YAW_LIM = 0.75;
+  const AXIS = o.axis || [0, -0.6];
   const maxD = () => home.dist * 1.25, hardD = () => home.dist * 1.5;
 
   // ---------- picking ----------
@@ -89,10 +91,19 @@ export function createCameraRig(o) {
     rec(0, 0, dx, dy, 0, null);
     stopFollow(); flyK = 0; atHome = false;
   }
+  // Orbit always turns around the oak's trunk (vertical axis through AXIS), within the same limits as the
+  // original camera (±0.75 rad from the front view, pitch 0.02..0.6). When zoomed in somewhere, the whole view
+  // swings around the trunk with it, so the rotation never pivots on an arbitrary spot.
   function orbit(dx, dy) {
     rec(dx, dy, 0, 0, 0, null);
-    goal.yaw -= dx * 0.0065;
-    goal.pitch = clamp(goal.pitch + dy * 0.0045, PMIN, PMAX);
+    const ny = clamp(goal.yaw - dx * 0.006, home.yaw - YAW_LIM, home.yaw + YAW_LIM);
+    const a = ny - goal.yaw;
+    if (a) {
+      const x = goal.target.x - AXIS[0], z = goal.target.z - AXIS[1], c = Math.cos(a), sn = Math.sin(a);
+      goal.target.x = AXIS[0] + x * c + z * sn; goal.target.z = AXIS[1] - x * sn + z * c;
+      goal.yaw = ny;
+    }
+    goal.pitch = clamp(goal.pitch + dy * 0.004, PMIN, PMAX);
     flyK = 0; atHome = false;
   }
   function flyTo(point, dist, k = 3.2) {
@@ -158,7 +169,7 @@ export function createCameraRig(o) {
     onUser(e);
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try { dom.setPointerCapture(e.pointerId); } catch (_) {}
-    idle = 0; stopInertia(); recording = true;
+    idle = 0; stopCine(); stopInertia(); recording = true;
     if (ptrs.size === 2) {
       const [a, b] = [...ptrs.values()];
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
@@ -228,7 +239,7 @@ export function createCameraRig(o) {
   }
 
   dom.addEventListener('wheel', e => {
-    e.preventDefault(); idle = 0;
+    e.preventDefault(); idle = 0; stopCine();
     let dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
     const f = Math.exp(clamp(dy, -200, 200) * (e.ctrlKey ? 0.01 : 0.0016)); // ctrlKey = trackpad pinch
     zoomAt(f, f < 1 ? pick(e.clientX, e.clientY).point : null);
@@ -242,12 +253,77 @@ export function createCameraRig(o) {
 
   addEventListener('keydown', e => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    idle = 0; stopCine();
     const s = 24;
     if (e.key === 'ArrowLeft') orbit(-s, 0); else if (e.key === 'ArrowRight') orbit(s, 0);
     else if (e.key === 'ArrowUp') orbit(0, -s); else if (e.key === 'ArrowDown') orbit(0, s);
     else if (e.key === '+' || e.key === '=') zoomAt(0.8, null); else if (e.key === '-') zoomAt(1.25, null);
     else if (e.key === 'Home' || e.key === 'h') goHome();
   });
+
+  // ---------- cinematic idle mode ----------
+  // After CINE_IDLE s without a touch the camera drifts on its own between calm shots (windows, the hero,
+  // the roots, the crown), slow push-ins and arcs; any touch hands control straight back from where it is.
+  const CINE_IDLE = o.cineIdle || 30;
+  const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+  const SHOTS = o.shots || [
+    { name: 'bedroom',  t: V3(-2.0, 9.4, 1.6), yaw: 0.25, pitch: 0.10, dist: 5.6, arc: -0.025, push: 0.012 },
+    { name: 'hero',     hero: true, yaw: 0.15, pitch: 0.16, dist: 3.4, arc: 0.03, push: 0.01 },
+    { name: 'roots',    t: V3(0.9, 0.6, 2.2), yaw: 0.5, pitch: 0.32, dist: 8, arc: 0.03, push: 0.015 },
+    { name: 'kitchen',  t: V3(-2.1, 6.9, 1.3), yaw: -0.2, pitch: 0.08, dist: 3.8, arc: 0.025, push: 0.012 },
+    { name: 'crown',    t: V3(0, 14.5, 0), yaw: 0.35, pitch: 0.06, dist: 16, arc: -0.02, push: 0.008 },
+    { name: 'workshop', t: V3(2.4, 6.2, 1.6), yaw: 0.35, pitch: 0.12, dist: 4, arc: -0.03, push: 0.012 },
+    { name: 'telescope',t: V3(2.9, 10.8, 2.4), yaw: -0.4, pitch: 0.18, dist: 4, arc: 0.03, push: 0.01 },
+    { name: 'house',    t: V3(0, 7.4, 2.4), yaw: -0.3, pitch: 0.08, dist: 18, arc: 0.012, push: 0.006 },
+  ];
+  const cine = { on: false, i: -1, t: 0, hold: 11, shot: null };
+  function stopCine() {
+    if (!cine.on) return;
+    cine.on = false; flyK = 0;
+    goal.target.copy(cur.target); goal.yaw = cur.yaw; goal.pitch = cur.pitch; goal.dist = cur.dist;  // freeze where it is
+    o.onCine && o.onCine(false);
+  }
+  // every other shot shows what the hero is doing, framed by the room he is in
+  // (cooking -> kitchen, reading or sleeping -> bedroom, crafting -> workshop, telescope -> deck)
+  const SCENIC = SHOTS.filter(s => !s.hero), ROOMS = SCENIC.filter(s => s.dist < 7 && s.t.y > 3);
+  let scenicI = -1, heroTurn = false;
+  function heroShot() {
+    const f = follow(); if (!f) return null;
+    let best = null, bd = 1e9;
+    for (const r of ROOMS) { const d = r.t.distanceTo(f); if (d < bd) { bd = d; best = r; } }
+    if (best && bd < 3.2)    // in a room: room framing, focus between the room and the hero
+      return { name: 'hero@' + best.name, hero: true, mix: 0.55, room: best.t, yaw: best.yaw, pitch: best.pitch, dist: Math.max(3.2, best.dist * 0.85), arc: best.arc, push: best.push };
+    return SHOTS.find(s => s.hero) || null;
+  }
+  function shotTarget(sh) {
+    if (!sh.hero) return sh.t;
+    const f = follow(); if (!f) return sh.room || home.target;
+    return sh.room ? tmp.copy(sh.room).lerp(f, sh.mix) : f;
+  }
+  function nextShot() {
+    heroTurn = !heroTurn;
+    let sh = heroTurn ? heroShot() : null;
+    if (!sh) { scenicI = (scenicI + 1) % SCENIC.length; sh = SCENIC[scenicI]; }
+    cine.shot = sh; cine.t = 0; cine.i++;
+    const tg = shotTarget(sh);
+    goal.target.copy(tg);
+    goal.yaw = cine.shot.yaw + Math.round((cur.yaw - cine.shot.yaw) / (Math.PI * 2)) * Math.PI * 2;
+    goal.pitch = cine.shot.pitch; goal.dist = cine.shot.dist;
+    flyK = 0.55;                                    // a slow, floating move between shots
+  }
+  function stepCine(dt) {
+    if (!cine.on) {
+      if (idle > CINE_IDLE && !ptrs.size && !inert.on && !followOn) { cine.on = true; stopFollowSilent(); o.onCine && o.onCine(true); nextShot(); }
+      return;
+    }
+    cine.t += dt;
+    const sh = cine.shot;
+    if (sh.hero) goal.target.lerp(shotTarget(sh), damp(1.5, dt));
+    goal.yaw = clamp(goal.yaw + sh.arc * dt, home.yaw - YAW_LIM, home.yaw + YAW_LIM);   // slow arc, same limits as the hand
+    goal.dist *= 1 - sh.push * dt;                  // slow push-in
+    if (cine.t > cine.hold) nextShot();
+  }
+  function stopFollowSilent() { if (followOn) stopFollow(); }
 
   // ---------- per frame ----------
   const camPos = new THREE.Vector3(), dir = new THREE.Vector3(), p = new THREE.Vector3();
@@ -269,6 +345,7 @@ export function createCameraRig(o) {
     pickAge += dt; idle += dt;
     if (followOn) { const f = follow(); if (f) goal.target.lerp(f, damp(6, dt)); }
     stepInertia(dt);
+    stepCine(dt);
     for (const U of fadeU) U.u.value = clamp(cur.dist * U.k, U.min, U.max);
     const dragging = ptrs.size > 0 || inert.on;
     keepOut(goal.target, dt, dragging);
@@ -279,7 +356,7 @@ export function createCameraRig(o) {
     cur.yaw += (goal.yaw - cur.yaw) * k;
     cur.pitch += (goal.pitch - cur.pitch) * k;
     cur.dist = Math.exp(Math.log(cur.dist) + (Math.log(goal.dist) - Math.log(cur.dist)) * k);
-    if (flyK && Math.abs(cur.dist - goal.dist) < 0.01 && cur.target.distanceTo(goal.target) < 0.01) flyK = 0;
+    if (flyK && !cine.on && Math.abs(cur.dist - goal.dist) < 0.01 && cur.target.distanceTo(goal.target) < 0.01) flyK = 0;
 
     const yw = cur.yaw + (extra.drift || 0);
     dir.set(Math.sin(yw) * Math.cos(cur.pitch), Math.sin(cur.pitch), Math.cos(yw) * Math.cos(cur.pitch));
@@ -370,10 +447,71 @@ export function createCameraRig(o) {
     nearFade,
     update, setHome, goHome, setFollow, flyTo, zoomAt, pan, orbit, pick, set, snap,
     get following() { return followOn; },
+    get cinematic() { return cine.on ? (cine.shot && cine.shot.name) : null; },
+    cine: (on) => { if (on) { idle = CINE_IDLE + 1; } else { idle = 0; stopCine(); } },
     get dist() { return cur.dist; },
+    get focusDist() { return focusU.value; },
     get target() { return cur.target; },
     get state() { return { target: cur.target.toArray().map(v => +v.toFixed(2)), yaw: +cur.yaw.toFixed(3), pitch: +cur.pitch.toFixed(3), dist: +cur.dist.toFixed(2), follow: followOn, cam: camera.position.toArray().map(v => +v.toFixed(2)) }; },
     get homeDist() { return home.dist; },
+  };
+  return api;
+}
+
+
+// ---------- depth of field (close-ups only) ----------
+// One full-screen pass right after the scene render: 12-tap golden-spiral blur whose radius grows with the distance
+// from the focus plane. Works at half the blur cost on phones (fewer taps). It is a quality level: off by default
+// on phones, turned off automatically when the frame rate has no headroom, and switchable via window.__camera.dof(on).
+export function createDOF(o) {
+  const { renderer, composer, camera } = o;
+  const taps = o.mobile ? 8 : 12;
+  for (const rt of [composer.renderTarget1, composer.renderTarget2]) {
+    if (!rt.depthTexture) { rt.depthTexture = new THREE.DepthTexture(rt.width, rt.height); rt.depthTexture.type = THREE.UnsignedIntType; }
+  }
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { tDiffuse: { value: null }, tDepth: { value: null }, near: { value: 0.1 }, far: { value: 300 }, focus: { value: 3 }, amount: { value: 0 }, res: { value: new THREE.Vector2(1, 1) } },
+    vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+    fragmentShader: `#include <packing>
+uniform sampler2D tDiffuse,tDepth;uniform float near,far,focus,amount;uniform vec2 res;varying vec2 vUv;
+float vz(vec2 uv){return -perspectiveDepthToViewZ(texture2D(tDepth,uv).x,near,far);}
+float coc(float z){return clamp(abs(z-focus)/max(z,0.05)*1.6,0.0,1.0);}
+void main(){vec4 c0=texture2D(tDiffuse,vUv);float z0=vz(vUv);float r=coc(z0)*amount*7.0;
+ if(r<0.4){gl_FragColor=c0;return;}
+ vec3 acc=c0.rgb;float w=1.0;
+ for(int i=1;i<=${taps};i++){float fi=float(i);float a=fi*2.39996;float rr=sqrt(fi/${taps}.0)*r;vec2 uv=vUv+vec2(cos(a),sin(a))*rr/res;
+  float zi=vz(uv);float wi=zi<z0-0.05?coc(zi):1.0; /* sharp foreground must not bleed */
+  acc+=texture2D(tDiffuse,uv).rgb*wi;w+=wi;}
+ gl_FragColor=vec4(acc/w,c0.a);}`,
+  });
+  class DOFPass extends Pass {
+    constructor() { super(); this.fsq = new FullScreenQuad(mat); }
+    render(rd, write, read) {
+      mat.uniforms.tDiffuse.value = read.texture; mat.uniforms.tDepth.value = read.depthTexture;
+      mat.uniforms.near.value = camera.near; mat.uniforms.far.value = camera.far;
+      mat.uniforms.res.value.set(read.width, read.height);
+      rd.setRenderTarget(this.renderToScreen ? null : write); this.fsq.render(rd);
+    }
+    setSize() {}
+  }
+  const pass = new DOFPass();
+  pass.enabled = false;
+  let want = o.enabled !== undefined ? o.enabled : !o.mobile, amount = 0, fpsAvg = 60, coolT = 0;
+  const api = {
+    pass,
+    // call each frame: focus distance and camera distance (m)
+    update(dt, focusDist) {
+      fpsAvg += ((1 / Math.max(dt, 1e-3)) - fpsAvg) * Math.min(1, dt * 2);
+      coolT = Math.max(0, coolT - dt);
+      if (pass.enabled && fpsAvg < 50 && !api.force) coolT = 15;          // no headroom: back off for a while
+      const close = 1 - THREE.MathUtils.smoothstep(focusDist, 3, 5);
+      const target = want && (coolT === 0 || api.force) ? close : 0;
+      amount += (target - amount) * Math.min(1, dt * 3);
+      mat.uniforms.amount.value = amount; mat.uniforms.focus.value = focusDist;
+      pass.enabled = amount > 0.02;
+    },
+    set enabled(v) { want = !!v; }, get enabled() { return want; },
+    get active() { return pass.enabled; }, get fps() { return Math.round(fpsAvg); },
   };
   return api;
 }

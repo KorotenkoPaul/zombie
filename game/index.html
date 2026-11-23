@@ -33,7 +33,7 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 <div id="stage"></div>
 <div class="hud"><div class="grp"><span class="chip"><span id="ic">☀︎</span><span id="tod">День 1 · 08:00</span></span></div><div class="grp"><span class="chip" id="zc" hidden style="display:none">🧟 <span id="zn">0</span></span><span class="chip hearts" id="hearts" style="display:none">♥♥♥</span></div></div>
 <div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button></div>
-<div class="hint" id="hint"><b>Веди пальцем</b> — повернуть, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
+<div class="hint" id="hint"><b>Веди пальцем</b> — повернуть вокруг дерева, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
 <div class="toast" id="toast"></div>
 <div class="load" id="load"><span id="loadTx">Загружаем лес…</span><i><b id="loadBar"></b></i></div>
 <script type="module">
@@ -48,7 +48,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createHero } from './hero.js';
 import { buildTree, TREE_AXIS } from './tree.js';
 import { buildProps } from './props.js';
-import { createCameraRig } from './camera.js';
+import { createCameraRig, createDOF } from './camera.js';
+import { createPerf } from './perf.js';
 import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
 
 const $=id=>document.getElementById(id);
@@ -59,7 +60,7 @@ const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ASSET=window.__ASSET||'';
 const V=(x,y,z)=>new THREE.Vector3(x,y,z);
-let loaded=0;const TOTAL=11;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
+let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
 
 await RAPIER.init();prog();
 // ================= renderer =================
@@ -78,7 +79,9 @@ const TL=new THREE.TextureLoader();
 const tex=(n,rep=1,srgb=true)=>new Promise(res=>TL.load(ASSET+n,t=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;prog();res(t);}));
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,treeG,heroG,zombG]=await Promise.all([glb('oak-glb.txt'),tex('bark3.jpg'),tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('tree-glb.txt'),glb('hero-glb.txt'),glb('zombie-glb.txt')]);
+// [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb('oak-glb.txt'),tex('bark3.jpg'),tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
+let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
 // ================= lights & sky =================
@@ -100,7 +103,6 @@ const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).create
 
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
-function placeTree(x,z,h,ry){const t=treeG.scene.clone(true);const b=new THREE.Box3().setFromObject(t);const k=h/(b.max.y-b.min.y);t.scale.setScalar(k);const c=b.getCenter(V());t.position.set(x-c.x*k,-b.min.y*k,z-c.z*k);t.rotation.y=ry;t.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;if(o.material){o.material.metalness=0;o.material.roughness=.9;o.material.color&&o.material.color.multiplyScalar(1.25);}}});scene.add(t);return {t,k,b};}
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
@@ -356,6 +358,8 @@ let TDRESS=null;try{TDRESS=(await import(new URL(ASSET+'treedress.js',document.b
 // every warm light in the house comes from a real source (lanterns, dome lamp, candle, oven fire, trunk door): game/lights.js
 const {createLights}=await import(new URL(ASSET+'lights.js',document.baseURI).href);
 const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},windows:WINS});window.__lights=LIGHTS;
+// [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
+const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
 
 // ================= splinters, dust, fog, rain, fireflies =================
 const SPL=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),boardMat,260);SPL.count=0;SPL.castShadow=true;SPL.frustumCulled=false;{const r=new THREE.InstancedBufferAttribute(new Float32Array(260),1),t=new THREE.InstancedBufferAttribute(new Float32Array(260).fill(.2),1);SPL.geometry.setAttribute('aRow',r);SPL.geometry.setAttribute('aTile',t);}scene.add(SPL);
@@ -402,7 +406,6 @@ function prepChar(g,h){g.scene.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.cast
    for(const tr of c.tracks){if(/Hips\.position$/.test(tr.name)){const v=tr.values;const n=v.length;if(h)HIPS[name]={s:V(v[0],v[1],v[2]),e:V(v[n-3],v[n-2],v[n-1])};if(RMC.has(name))continue;const x0=v[0],z0=v[2];const climb=['444','438','437'].includes(name);const y0=v[1];for(let i=0;i<v.length;i+=3){v[i]=x0;v[i+2]=z0;if(climb)v[i+1]=y0;}}}
    clips[name]=c;}
  return clips;}
-const zClips=prepChar(zombG,false);
 // bow and quiver for the hero
 function makeBow(){const g=new THREE.Group();const curve=new THREE.CatmullRomCurve3([V(0,-.55,0),V(.09,-.28,0),V(.12,0,0),V(.09,.28,0),V(0,.55,0)]);const limb=new THREE.Mesh(new THREE.TubeGeometry(curve,24,.018,6),new THREE.MeshStandardMaterial({color:0x6B4528,roughness:.6}));limb.castShadow=true;g.add(limb);
  const str=new THREE.Mesh(new THREE.CylinderGeometry(.003,.003,1.1,4),new THREE.MeshBasicMaterial({color:0xE8E2D0}));g.add(str);const grip=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.12,8),new THREE.MeshStandardMaterial({color:0x3A2414,roughness:.9}));g.add(grip);return g;}
@@ -431,7 +434,7 @@ const ROUTES={
  'Забор кухни':{start:()=>V(-16,0,rnd(4,9)),walk:[V(-4.2,0,5.3)],climb:{from:V(-4.2,0,4.78),to:V(-4.2,KT+.02,4.78),anim:'444',speed:.55},stand:V(-3.9,KT+.02,4.28),face:Math.PI,climbFace:Math.PI,hit:'198'},
  'Забор мастерской':{start:()=>V(16,0,rnd(4,9)),walk:[V(4.4,0,6.0)],climb:{from:V(4.4,0,5.48),to:V(4.4,WS+.02,5.48),anim:'444',speed:.55},stand:V(4.1,WS+.02,4.9),face:Math.PI,climbFace:Math.PI,hit:'198'},
 };
-function spawnZombie(name){if(name&&!ROUTES[name])name={'Люк':'Калитка','Окно кухни':'Забор кухни','Окно мастерской':'Забор мастерской'}[name];const R=ROUTES[name||Object.keys(ROUTES)[Math.floor(rnd(0,3))]];const root=skClone(zombG.scene);root.traverse(o=>{if(o.isSkinnedMesh||o.isMesh){o.castShadow=true;o.frustumCulled=false;}});scene.add(root);
+function spawnZombie(name){if(!zombG){loadZombie();return null;}if(name&&!ROUTES[name])name={'Люк':'Калитка','Окно кухни':'Забор кухни','Окно мастерской':'Забор мастерской'}[name];const R=ROUTES[name||Object.keys(ROUTES)[Math.floor(rnd(0,3))]];const root=skClone(zombG.scene);root.traverse(o=>{if(o.isSkinnedMesh||o.isMesh){o.castShadow=true;o.frustumCulled=false;}});scene.add(root);
  const z={root,mixer:new THREE.AnimationMixer(root),actions:{},cur:null,alive:true,R,group:name||Object.keys(ROUTES).find(k=>ROUTES[k]===R),stage:'walk',wi:0,speed:rnd(.7,1),hitT:rnd(.5,1)};
  for(const k in zClips)z.actions[k]=z.mixer.clipAction(zClips[k]);
  // eyes glow
@@ -529,6 +532,17 @@ $('bH').onclick=()=>{ac();rig.goHome();};
 
 // ================= post & camera =================
 const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;composer.addPass(new OutputPass());composer.addPass(ENV.gradePass);
+// [PERF] shared quality governor + FPS readout (game/perf.js). Steps run cheapest-looking first and undo when the phone keeps up again.
+const PERF=createPerf({renderer,MOBILE});const PR0=PR;
+PERF.addStep('bloom',()=>{if(!bloom.enabled)return false;bloom.enabled=false;},()=>{bloom.enabled=true;},10);
+const prStep=(lo)=>[()=>{if(PR<=lo+.01)return false;PR=Math.max(lo,PR-.2);renderer.setPixelRatio(PR);resize();},()=>{PR=Math.min(PR0,PR+.2);renderer.setPixelRatio(PR);resize();}];
+PERF.addStep('px',...prStep(1.3),20);
+if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),15);PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),50);}
+if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,40+i);
+PERF.addStep('px',...prStep(1.1),60);PERF.addStep('px',...prStep(1),70);
+const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
+window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
+PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
 function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
@@ -537,7 +551,7 @@ addEventListener('resize',resize);
 // ================= main loop =================
 const clock=new THREE.Clock();let acc=0,fr=0,ft=0,perf=false;
 function frame(){requestAnimationFrame(frame);try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
-function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;
+function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;
  const wasN=isNight(hour);hour+=dt*hps()*TS;if(hour>=24)hour-=24;const nowN=isNight(hour);
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}
  if(!over&&wasN&&!nowN){dayNo++;sfx.dawn();toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
@@ -558,11 +572,11 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
- WIND.update({dt,T,rainK});
+ WIND.update({dt,T,rainK});SMOKE.update(dt,T,scene.fog.color);
  rain.m.opacity=rainK*.5;if(rainK>.02){const a=rain.pos;for(let i=0;i<rain.n;i++){const j=i*6;a[j+1]-=dt*14;a[j+4]-=dt*14;a[j]+=dt*.7;a[j+3]+=dt*.7;if(a[j+4]<0){const x=rnd(-16,16),y=rnd(20,24),z=rnd(-6,10);a.set([x,y,z,x+.04,y-.5,z],j);}}rain.l.geometry.attributes.position.needsUpdate=true;}
  if(amb){const wl=WIND.level();amb.wind.gain.value=(.006+nightK*.006)+.014*Math.min(1.6,wl);amb.rain.gain.value=rainK*.05;}
  // --- spawn ---
- if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}
+ if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){if(!zombG)loadZombie();else{spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}}
  // --- hero: body, routine, walking (hero.js) ---
  if(!over)HH.update(dt*TS);
  bow.visible=hero.task==='guard';
@@ -605,8 +619,9 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  if(camOv){look.set(camOv[0],camOv[1],camOv[3]);camera.position.set(look.x+Math.sin(.05)*camOv[2],look.y+Math.sin(.13)*camOv[2],look.z+Math.cos(.05)*camOv[2]);camera.lookAt(look);}
  else rig.update(dt,{drift:RM?0:Math.sin(T*.07)*.03,shake:(RM||tr<1e-4)?null:V(Math.sin(T*47)*.12*tr,Math.cos(T*41)*.12*tr,0)});
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
+ if(!camOv)DOF.update(dt,rig.focusDist);
  hud();composer.render();
- fr++;ft+=dt;if(fr>=90){const fps=fr/ft;fr=0;ft=0;if(fps<40){if(bloom.enabled&&MOBILE)bloom.enabled=false;else if(PR>1.01){PR=Math.max(1,PR-.2);renderer.setPixelRatio(PR);resize();}else if(ENV.degrade)ENV.degrade();}}
+ PERF.end();
  }
 resize();hud();$('load').classList.add('hide');
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>startTask(n),
