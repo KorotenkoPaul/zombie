@@ -346,14 +346,16 @@ export function createHero(ctx){
   else{H.v=0;if(da>.15){play('30',{fade:.25});actions['30'].timeScale=.7;}}
   if(d<.04&&da<.15){p.x=goal.x;p.z=goal.z;return true;}return false;}
  function ladderStep(dt){const step=H.path[0];const key=step.from+'>'+step.node,rkey=step.node+'>'+step.from;const c=LAD[key]||LAD[rkey];const target=N[step.node].p;const p=root.position;
-  if(!H.lad&&edgeShut(step.from,step.node)){try{window.__house.hatch.open();window.__audio&&window.__audio.play('hatch_open');}catch(e){}}// a closed hatch on the way: he pushes it open as he gets there
-  if(!H.lad){const a=N[step.from].p;const up=target.y>a.y+.01;H.lad={up,phase:up?'mount':'over',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};}
+  // a closed hatch on the way: going up, he pushes the lid open with his hand as he climbs (GRAB HOOK, hatchBelow); going down it still just opens
+  const shut=!H.lad&&edgeShut(step.from,step.node);
+  if(!H.lad){const a=N[step.from].p;const up=target.y>a.y+.01;H.lad={up,phase:up?'mount':'over',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};
+   if(shut){const hc=window.__house.hatch;if(up&&hc.lid&&hc.drive)H.lad.hb={st:'wait',w:0,ang:0};else{try{hc.open();window.__audio&&window.__audio.play('hatch_open');}catch(e){}}}}
   const L=H.lad;const cz=c.lz+(.32+(c.rope?.05:0))*c.side;const F=c.side>0?Math.PI:0;H.state='walk';H.ground=false;
   const done=()=>{H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.v=L.up?.45:0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
   // watchdog (QA P0: froze on the rope ladder for minutes): a ladder never takes longer than a slow climb; past that, land on the target
   L.age=(L.age||0)+dt;if(L.age>14+(L.yTop-L.yBot)/.3){p.copy(target);const f0=floorAt(p.x,p.y+.3,p.z,.4);if(f0!=null)p.y=f0;play(IDLE()||'0',{fade:.3});done();return;}
   if(L.phase==='mount'){H.ground=true;if(ladApproach(V(L.x,p.y,cz),F,dt)){L.phase='climb';}}
-  else if(L.phase==='climb'){turnTo(F,dt);p.x=L.x;p.z=cz;play('437',{speed:1.3,fade:.3});const v=.31*1.3*dt;const pull=rmCurve['435']?rmAt('435',99).y:1.4;
+  else if(L.phase==='climb'){turnTo(F,dt);p.x=L.x;p.z=cz;play('437',{speed:1.3,fade:.3});if(L.hb)hatchBelow(L.hb,dt);const v=.31*1.3*dt;const pull=rmCurve['435']?rmAt('435',99).y:1.4;
    if(L.up){p.y+=v;if(p.y>=L.yTop-pull){p.y=L.yTop-pull;L.phase='finish';once('435',{fade:.3,until:.86,then:()=>{L.phase='stand';}});/* the last ~0.45 s of the pull-up is standing still: step off instead */}}
    else{p.y-=v;if(p.y<=L.yBot){p.y=L.yBot;play('0',{fade:.35});done();}}}
   else if(L.phase==='stand'){H.ground=true;play('0',{fade:.4});done();}
@@ -363,6 +365,22 @@ export function createHero(ctx){
     if(ladApproach(V(goal.x,p.y,goal.z),F,dt)){L.start=1;if(Math.abs(p.y-L.yTop)<.3)L.yTop=p.y;p.set(goal.x,L.yTop,goal.z);a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=-1;a.time=d;a.enabled=true;if(H.cur)H.cur.crossFadeTo(a,.3,false);a.play();H.cur=a;}}
    else{root.rotation.y=F;H.face=F;H.av=0;H.slide=null;/* yaw locked while stepping back over the edge (collide: swung 82 deg through the roof) */L.ot=(L.ot||0)+dt;if(H.cur!==a&&a.time>1e-3){a.time=Math.max(0,a.time-dt);}if(a.time<=1e-3||L.ot>d+.6){L.phase='climb';L.start=0;L.ot=0;}}}}
 
+ // GRAB HOOK: the shut floor hatch pushed open from the ladder below: the right palm goes up onto the lid's underside (between the
+ // battens, near the free edge), and as he climbs on the lid turns up with the hand (palm stays on it, the lid never moves by itself);
+ // once it stands steep he gives it a last shove and it swings over onto its rest. The left hand keeps climbing.
+ const HB_PT=V(0,-.03,-.6),HB_REACH=.43;
+ function hbPoint(hc,ang,out){const lid=hc.lid;const k=lid.rotation.x;lid.rotation.x=ang;lid.updateMatrixWorld(true);lid.localToWorld(out.copy(HB_PT));lid.rotation.x=k;lid.updateMatrixWorld(true);return out;}
+ function hatchBelow(B,dt){const hc=window.__house&&window.__house.hatch;if(!hc||!hc.lid){B.st='done';return;}B.t=(B.t||0)+dt;
+  const sh=bones.RightArm.getWorldPosition(V());const c0=hbPoint(hc,hc.angle,V());const d0=sh.distanceTo(c0);
+  if(B.st==='wait'){if(d0<HB_REACH+.3){B.st='reach';B.t=0;}return;}
+  if(B.st==='reach'){B.w=Math.min(1,B.w+dt/.3);if(d0<=HB_REACH&&B.w>.9){B.st='push';B.t=0;try{window.__audio.play('hatch_open',c0);}catch(e){}}return;}
+  if(B.st==='push'){// the steepest lid angle the palm can still reach from where the shoulder is now
+   let lo=hc.angle,hi=1.45;if(sh.distanceTo(hbPoint(hc,hi,V()))<=HB_REACH)lo=hi;else for(let i=0;i<12;i++){const m=(lo+hi)/2;if(sh.distanceTo(hbPoint(hc,m,V()))<=HB_REACH)lo=m;else hi=m;}
+   const ang=Math.min(lo,hc.angle+2.2*dt);hc.drive(ang);B.ang=ang;if(ang>=1.32){hc.letGo(true);B.st='done';B.t=0;}return;}
+  if(B.st==='done'){B.w=Math.max(0,B.w-dt/.3);}}
+ function hatchBelowPost(){const B=H.lad&&H.lad.hb;const G=window.__grab;const hc=window.__house&&window.__house.hatch;if(!B||!hc){return;}
+  if(B.w>.01){const t=hbPoint(hc,hc.angle,V());reachTo('Right',t,B.w);}
+  if(G){if(B.st==='push')G.hold('Right',hc.lid,()=>hbPoint(hc,hc.angle,V()));else G.free(hc.lid);}}
  // ---------- daily life ----------
  // needs drift over the day; each activity answers one, so the day is varied and never a fixed loop
  const need={energy:.8,hunger:.3,fun:.5,tidy:.3};
@@ -456,17 +474,24 @@ export function createHero(ctx){
    const S=want?V(x1+.04,lv.BD,r0.z+.12):V(x1+.04,lv.BD,rO.z+.12);// beside the opening, on the free side
    const L=hc.ladder||{top:'bl_t',bottom:'kl_b'};const start=N.bl_m?'bl_m':L.top;
    goTo(start,()=>{a.step='app';const p0=root.position;const u=V(S.x-p0.x,0,S.z-p0.z);const ul=u.length()||1;approachTo(a,S.clone().addScaledVector(u,.5/ul),.5,()=>{const p=root.position;const g=hc.grab;H.face=Math.atan2(g.x-p.x,g.z-p.z);a.step=want?'bend':'reach';a.t=0;
-     if(want&&has('hy_take'))once('hy_take',{fade:.35,speed:.8});});});
+     if(want&&has('hy_picklog'))once('hy_picklog',{fade:.35,speed:.75});else if(want&&has('hy_take'))once('hy_take',{fade:.35,speed:.8});/* GRAB: opening, he squats down to the ring (the pick-up clip), takes it and lifts the lid as he rises */});});
    const ringW=()=>hc.grab.clone();
    a.update=dt=>{if(a.step==='approach'){a.t+=dt;if(a.t>=a.adur)a.next();return;}if(a.step==='go'||a.step==='app')return;a.t+=dt;H.look=ringW();H.lookW=1;
     const p=root.position,g=hc.grab;H.face=Math.atan2(g.x-p.x,0)||-Math.PI/2;root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*6);
     {/* he shuffles along the edge with the ring, right shoulder level with it */const tz=clamp(g.z+.12,z0+.05,z1+.45);const m=.5*dt;p.z+=clamp(tz-p.z,-m,m);}
     if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.5);if(a.t>.55){a.step='push';a.t=0;AU('hatch_open',g);}}
     else if(a.step==='push'){const G=window.__grab,gd=G?G.dist('Right'):0;/* GRAB HOOK: the lid moves only while the palm is on the ring; once it tips past where the hand can follow, he lets go and it drops */const ang=gd!=null&&gd>.035&&a.t<1.5?hc.angle:Math.max(1.12,hc.angle-dt*1.1);if(gd==null||gd<=.035||a.t>=1.5)hc.drive(ang);if(ang<=1.12||(hc.angle<1.4&&gd!=null&&gd>.03)){hc.letGo(false);a.step='after';a.t=0;}}
-    else if(a.step==='bend'){const d=has('hy_take')?durOf('hy_take')/.8:1.2;const k=a.t/d;a.w=smooth(.25,.42,k);
-     if(k>.42){if(!a.held){a.held=true;AU('hatch_open',g);}hc.drive(1.3*smooth(.45,.95,k));}if(k>=.97){hc.letGo(true);a.step='after';a.t=0;play(IDLE(),{fade:.4});}}
+    else if(a.step==='bend'){// GRAB HOOK: squat, palm onto the ring, and the lid rises only as far as the hand can carry it (never ahead of it)
+     const pk=has('hy_picklog');const d=pk?durOf('hy_picklog')/.75:(has('hy_take')?durOf('hy_take')/.8:1.2);const k=a.t/d;a.w=Math.max(a.w,smooth(.2,.5,k));
+     const G=window.__grab,pm=G&&G.palm('Right'),gd=pm?pm.distanceTo(g):0;if(!a.held&&a.w>.9&&(gd<.04||k>1.3)){a.held=true;AU('hatch_open',g);}
+     if(a.held){const sh=bones.RightArm.getWorldPosition(V()),R=armLen*.92+PALM,tmp=V();let lo=hc.angle,hi=Math.min(1.8,hc.angle+2.6*dt);
+      if(sh.distanceTo(hc.ringAt(hi,tmp))<=R)lo=hi;else for(let i=0;i<10;i++){const m=(lo+hi)/2;if(sh.distanceTo(hc.ringAt(m,tmp))<=R)lo=m;else hi=m;}
+      if(lo>hc.angle+1e-4)a.st=0;else a.st=(a.st||0)+dt;hc.drive(lo);
+      // up past steep, or he has stood up and the lid stops rising: a last shove and it swings over onto its rest
+      if(lo>=1.62||(k>=.95&&a.st>.12)){hc.letGo(true);a.step='after';a.t=0;play(IDLE(),{fade:.4});}}
+     else if(k>2){hc.letGo(true);a.step='after';a.t=0;play(IDLE(),{fade:.4});}}
     else if(a.step==='after'){a.w=Math.max(0,a.w-dt/.35);if(a.t>.9){play(IDLE(),{fade:.4});endTask({ok:true,open:want});}}};
-   a.post=()=>{if(a.w>.01)reachTo('Right',ringW(),a.w);const G=window.__grab;if(G){if(a.w>.3&&(a.step==='push'||a.step==='bend'||a.step==='reach'))G.hold('Right',hc.lid,ringW);else G.free(hc.lid);}};// GRAB HOOK: the hand on the ring is a grip (collide.js leaves it there)
+   a.post=()=>{if(a.w>.01)reachTo('Right',ringW(),a.w);const G=window.__grab;if(G){if(a.w>.3&&(a.step==='push'||(a.step==='bend'&&(a.held||a.w>.5))||a.step==='reach'))G.hold('Right',hc.lid,ringW);else G.free(hc.lid);}};// GRAB HOOK: the hand on the ring is a grip (collide.js leaves it there)
    a.leave=cb=>{try{window.__grab&&window.__grab.free(hc.lid);}catch(e){}try{if(hc.drive&&a.step!=='after'&&a.step!=='go'&&a.step!=='app')hc.letGo(hc.angle>1);}catch(e){}cb();};
    return a;},
   // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
@@ -939,7 +964,8 @@ export function createHero(ctx){
   if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   bedHand();bedLegClear(dt);
   if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);
-  if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */}
+  if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */
+  if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */}
 
  // ---------- overlay: an upper-body clip layered over whatever the legs do (stretch while walking off, scratch the head, sip...) ----------
  const UPPER=/^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|LeftArm|LeftForeArm|LeftHand|RightShoulder|RightArm|RightForeArm|RightHand)$/;
