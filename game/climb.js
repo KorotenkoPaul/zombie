@@ -73,6 +73,9 @@ export function createClimb() {
     }
     A.hl = C.H.lad; // this climb belongs to this ladder run only (a reset body / new route drops it)
     S.act = A; S.wTarget = 1; S.resid = null;
+    // the limbs start exactly where they are and travel to the rungs (grab blend), so the IK is on at once: no frames where the
+    // climb clip's raised arms swing through the beams around a hatch (QA: hand 9 cm into the kitchen floor joist)
+    if (!o.fromTop) S.W = 1;
     return true;
   }
 
@@ -101,7 +104,7 @@ export function createClimb() {
     const FF = { [h]: ff(h).setZ(A.edge - zD * .24), [l]: ff(l).setZ(A.P.z - zD * .02) };
     if (feetTop) { FF.LF = feetTop.LF.clone(); FF.RF = feetTop.RF.clone(); }
     const P = rootTop ? rootTop.clone() : A.P.clone();
-    A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: 1.55, h, l, FF, P, ys: top(A, L[l].r), hold: dir < 0 ? .3 : 0, idle: false };
+    A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: 1.55, h, l, FF, P, ys: top(A, L[l].r), hold: 0, idle: false };
   }
   function overTick(A, dt, p) {
     const c = A.C; if (c.hold > 0) c.hold -= dt; else c.s = Math.min(1, Math.max(0, c.s + c.dir * dt / c.T));
@@ -230,7 +233,7 @@ export function createClimb() {
       // upper body close to the ladder (the climb clip leans back ~16 cm: hands could not reach the rungs): pitch the spine
       // so the neck is ~24 cm from the rungs, split between the lower and the middle spine
       // with the palms on the floor above he leans over the edge (neck over the top of the ladder)
-      { const flat = A.limb.LH.r >= A.R.length || A.limb.RH.r >= A.R.length; const want = flat ? .02 : .24; A.nd = A.nd == null ? want : A.nd + Math.sign(want - A.nd) * Math.min(Math.abs(want - A.nd), dt * .5); }
+      { const flat = A.limb.LH.r >= A.R.length || A.limb.RH.r >= A.R.length; const want = flat ? .08 : .24; A.nd = A.nd == null ? want : A.nd + Math.sign(want - A.nd) * Math.min(Math.abs(want - A.nd), dt * .5); }
       if (A.mode !== 'over' || A.C.s < .85) { const kk = S.W * ease(A.grab) * (A.mode === 'over' ? 1 - sstep(.45, .85, A.C.s) : 1);
         for (const [bn, part] of [['Spine', .5], ['Spine1', 1]]) { const nk = wp(B.Neck); const dz = (nk.z - planeZ) * A.zDir - A.nd; if (Math.abs(dz) < .005) break;
           const goal = nk.clone(); goal.z -= A.zDir * dz * part; C.turnBone(B[bn], nk, goal, kk); } }
@@ -245,7 +248,7 @@ export function createClimb() {
       // look at the hand that moves next (or between the hands); over the edge: ahead
       const nh = A.step && A.step.move.find(m => m.k[1] === 'H');
       { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
-        let L = A.mode === 'over' ? V(A.P.x, hd.y + .05, A.P.z - A.zDir * 1.4) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
+        let L = A.mode === 'over' ? V(A.P.x, hd.y + .3, A.P.z - A.zDir * 1.6) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
         if (A.mode !== 'over') { L.y = Math.min(L.y, hd.y + .2); L.z = planeZ; }
         C.H.look = L; C.H.lookW = .35; A.lookPt = L; }
     } else { tg = S.last && S.last.tg; hw = S.last && S.last.hw; }
