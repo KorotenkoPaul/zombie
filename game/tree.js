@@ -362,7 +362,7 @@ export function buildTree(THREE, o) {
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
   const qg = MOB(o) ? new THREE.PlaneGeometry(1, 1, 2, 2) : new THREE.PlaneGeometry(1, 1, 3, 3); // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
   { const pa = qg.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i); pa.setZ(i, 0.28 * (0.5 - (x * x + y * y))); } qg.computeVertexNormals(); }
-  const im = new THREE.InstancedMesh(qg, lmat, total);
+  let im = new THREE.InstancedMesh(qg, lmat, total);
   const shade = new Float32Array(total);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = V(1, 1, 1), col = new THREE.Color();
   let n = 0;
@@ -398,6 +398,72 @@ export function buildTree(THREE, o) {
   im.count = n;
   qg.setAttribute('shade', new THREE.InstancedBufferAttribute(shade, 1));
   im.castShadow = !MOB(o); im.receiveShadow = true; group.add(im);
+
+  // ---------- phones: clump impostors (Optimization: the leaf cards were the biggest per-pixel cost) ----------
+  // A few leaf cards are rendered once into a small atlas (two sub-clumps, lit top/front, with the odd autumn-yellow
+  // leaf), and each clump gets a handful of camera-facing quads with it: far less overlap than hundreds of cards, the
+  // same full silhouette. Quads turn to the camera in the vertex shader, so they never show as flat planes edge-on.
+  if (MOB(o) && o.renderer && o.leafImpostors !== false) {
+    try {
+      const R2 = o.renderer, S = 256, rt = new THREE.WebGLRenderTarget(S * 2, S, { depthBuffer: true });
+      rt.texture.generateMipmaps = true; rt.texture.minFilter = THREE.LinearMipmapLinearFilter; rt.texture.colorSpace = leafT.colorSpace;
+      const bs = new THREE.Scene(), bm = new THREE.MeshBasicMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide }), NB = 90;
+      const bq = new THREE.PlaneGeometry(1, 1), cam = new THREE.OrthographicCamera(-1.25, 1.25, 1.25, -1.25, 0.1, 20); cam.position.set(0, 0, 8); cam.lookAt(0, 0, 0);
+      const prev = R2.getRenderTarget(), cc = R2.getClearColor(new THREE.Color()), ca = R2.getClearAlpha(), vp = new THREE.Vector4(); R2.getViewport(vp);
+      R2.setRenderTarget(rt); R2.setClearColor(0x000000, 0); R2.clear();
+      for (let v = 0; v < 2; v++) {
+        const bim = new THREE.InstancedMesh(bq, bm, NB); bs.clear(); bs.add(bim);
+        for (let k = 0; k < NB; k++) {
+          let x, y, z; do { x = rnd(-1, 1); y = rnd(-1, 1); z = rnd(-1, 1); } while (x * x + y * y + z * z > 1);
+          const r = Math.hypot(x, y, z), d = V(x, y * 0.9, z).multiplyScalar(0.92);
+          q.setFromEuler(new THREE.Euler(rnd(-0.7, 0.7), rnd(-0.7, 0.7), rnd(0, 6.28))); sc.setScalar(rnd(0.55, 0.85));
+          m4.compose(d, q, sc); bim.setMatrixAt(k, m4);
+          let sh = (0.62 + 0.42 * (y + 1) / 2) * (z > 0 ? 1.06 : 0.86) * (0.75 + 0.25 * Math.min(1, r + 0.2));
+          col.setRGB(sh, sh * rnd(0.97, 1.04), sh * rnd(0.88, 1));
+          if (r > 0.75 && y > -0.2) col.multiply(new THREE.Color(1.15, 1.12, 0.82));
+          if (rnd(0, 1) < 0.08) col.setRGB(1.45 * sh, 1.2 * sh, 0.45 * sh);
+          bim.setColorAt(k, col);
+        }
+        R2.setViewport(v * S, 0, S, S); R2.render(bs, cam); bim.dispose();
+      }
+      R2.setRenderTarget(prev); R2.setViewport(vp); R2.setClearColor(cc, ca); bm.dispose(); bq.dispose();
+      const imat = new THREE.MeshLambertMaterial({ map: rt.texture, alphaTest: 0.5, side: THREE.DoubleSide });
+      imat.onBeforeCompile = sh => {
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aVar;varying float vDep;')
+          .replace('#include <uv_vertex>', '#include <uv_vertex>\n#ifdef USE_MAP\nvMapUv=vec2((vMapUv.x+aVar)*.5,vMapUv.y);\n#endif')
+          .replace('#include <beginnormal_vertex>', `vec3 ipI=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
+vec3 objectNormal=normalize(vec3(ipI.x-(${AX.toFixed(3)}),0.,ipI.z-(${AZ.toFixed(3)}))*.8+vec3(0.,.75,0.)+vec3(viewMatrix[0][2],viewMatrix[1][2],viewMatrix[2][2])*.5);
+#ifdef USE_TANGENT
+vec3 objectTangent=vec3(tangent.xyz);
+#endif`)
+          .replace('#include <begin_vertex>', `float hh=fract(sin(dot(ipI,vec3(12.99,78.23,37.71)))*4375.5)*6.283;vec2 pr=mat2(cos(hh),sin(hh),-sin(hh),cos(hh))*position.xy;
+ vec3 rgt=vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]),upv=vec3(viewMatrix[0][1],viewMatrix[1][1],viewMatrix[2][1]);
+ vec3 transformed=rgt*pr.x+upv*pr.y;`);
+        const W = o.wind || window.__wind;
+        if (W) { W.hook(sh); sh.vertexShader = sh.vertexShader.replace('vec3 transformed=rgt*pr.x+upv*pr.y;', `vec3 transformed=rgt*pr.x+upv*pr.y;
+ float isz=max(length(instanceMatrix[0].xyz),.001);vec2 wv=windSway(ipI,2.3)*.15;float s=windStrength(ipI);
+ transformed+=(windLocal(vec3(wv.x,wv.x*.15,wv.y)+windBranch(ipI,vec2(${AX.toFixed(3)},${AZ.toFixed(3)})))+vec3(sin(uWT*2.1+hh)*.02,0.,cos(uWT*1.7+hh)*.02)*(1.+3.*s))/isz;`); }
+        sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\nvDep=-mvPosition.z;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vDep;')
+          .replace('#include <alphatest_fragment>', 'diffuseColor.a*=smoothstep(.9,3.2,vDep);\n#include <alphatest_fragment>')
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08);');
+      };
+      imat.customProgramCacheKey = () => 'oakImp';
+      const KQ = o.impK ?? 2, QS = o.impQ ?? 1.6, imps = [];
+      for (const s2 of leafSpots) for (let i = 0; i < KQ; i++) {
+        let dx, dy, dz; do { dx = rnd(-1, 1); dy = rnd(-0.5, 1); dz = rnd(-1, 1); } while (dx * dx + dy * dy + dz * dz > 1);
+        const rr = rnd(0.15, 0.4), Q = s2.s * QS * rnd(0.85, 1.1);
+        const p = s2.p.clone().add(V(dx * s2.s * rr, dy * s2.s * 0.6 * rr, dz * s2.s * rr));
+        if (inB(p.x, p.y, p.z, Q * 0.42)) continue;
+        imps.push([p, Q]);
+      }
+      const ig = new THREE.CircleGeometry(0.5, 8) /* octagon: the round clump without the empty quad corners */, imp = new THREE.InstancedMesh(ig, imat, imps.length), av = new Float32Array(imps.length);
+      imps.forEach(([p, Q], i) => { m4.compose(p, q.identity(), V(Q, Q, Q)); imp.setMatrixAt(i, m4); const r = rnd(0.86, 1.08); imp.setColorAt(i, col.setRGB(r, r * rnd(0.97, 1.03), r * rnd(0.9, 1))); av[i] = i % 2; });
+      ig.setAttribute('aVar', new THREE.InstancedBufferAttribute(av, 1));
+      imp.frustumCulled = false; imp.castShadow = false; imp.receiveShadow = true; imp.name = 'oakLeafImpostors';
+      group.remove(im); im.geometry.dispose(); group.add(imp); im = imp;
+    } catch (e) { console.warn('oak leaf impostors', e); }
+  }
 
   // ---------- the hollow: a real cavity in the wood behind the arched opening (critic N4) ----------
   // A closed ellipsoid seen from inside, big enough that no line of sight through the opening reaches the trunk's
