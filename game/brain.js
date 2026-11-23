@@ -366,11 +366,22 @@ export function createBrain({ HH, lights, hour, isNight }) {
   function repairTarget(name) {
     const P = planks(), kind = PLANK_KIND[name];
     if (!P || !kind || !P.list) return {};
-    const all = P.list(kind); if (!all.length) return {};
+    let all = P.list(kind); if (!all.length) return {};
+    // slates: only those he can reach from where he can stand (within ~1.5 m of a walkable spot, at most ~2.2 m up);
+    // the far roofs need a roof-access point first. None in reach: the body's own default spot on the deck.
+    if (kind === 'shingle') { all = reachable(all); if (!all.length) return {}; }
     // the oldest of a few random candidates, a little biased toward the room he is in
     let best = null, bs = 1e9; const hp = H.root ? H.root.position : null;
     for (let i = 0; i < 12; i++) { const c = all[Math.floor(Math.random() * all.length)]; const d = hp ? Math.hypot(c.pos[0] - hp.x, c.pos[1] - hp.y, c.pos[2] - hp.z) : 0; const sc = c.fresh * 3 + d * .08 + Math.random() * .3; if (sc < bs) { bs = sc; best = c; } }
     return best ? { target: best.id, pos: best.pos, kind } : {};
+  }
+  let reachCache = null;
+  function reachable(list) {
+    if (reachCache && reachCache.n === list.length) return reachCache.r;
+    const N = HH.N || {}, spots = [];
+    for (const k in N) { const n = N[k]; if (n && n.p && n.seat == null) spots.push(n.p); }
+    const r = list.filter(c => spots.some(p => Math.hypot(c.pos[0] - p.x, c.pos[2] - p.z) < 1.5 && c.pos[1] - p.y > -.3 && c.pos[1] - p.y < 2.2));
+    reachCache = { n: list.length, r }; return r;
   }
   function markRepaired(opts) {
     const P = planks(); if (!P || !opts || opts.target == null) return;
@@ -581,6 +592,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
   ui();
   // a job ended: book what it brought (hero.js may pass a result; a missing result counts as success)
   if (HH.onTaskEnd) HH.onTaskEnd((name, res) => {
+    // log every chore end with how long he was at it (QA: early ends are the body's, not a brain decision)
+    if (name !== 'switch' && name !== 'micro') { tr('end:' + name); const l = trace[trace.length - 1]; l.res = res === undefined ? 'none' : JSON.stringify(res); l.step = HH.H && HH.H.task; }
     if (extra && EXTRA[extra] && res !== false) { const E = EXTRA[extra]; if (PLANK_KIND[extra]) markRepaired(lastOpts); for (const k in E.give) need[k] = clamp(need[k] + E.give[k]);
       if (extra === 'bolt') day.bolted = true; if (extra === 'stretch') day.justWoke = false; if (extra === 'dishes') day.justAte = false;
       if (extra === 'stoke' && ECON) { stock.logs = Math.max(0, stock.logs - 1); showStock(); }
