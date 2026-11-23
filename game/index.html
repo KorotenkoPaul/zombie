@@ -365,6 +365,8 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
  mode:()=>{if(isNight(hour)&&zombies.some(z=>z.alive))return 'guard';if(B.some(b=>b.breakable&&b.loose))return 'repair';return null;},
  guardSpot:()=>guardSpot(),brokenBoard:()=>B.find(b=>b.breakable&&b.loose),repairBoard:b=>repairBoard(b),get WIN_NODE(){return WIN_NODE;}});
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
+// the hero's brain: needs, mood, choices, gait, lamps (game/brain.js); attaches only once hero.js offers HH.setBrain
+let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSET+'brain.js',document.baseURI).href);BRAIN=createBrain({HH,lights:LIGHTS,hour:()=>hour,isNight:h=>isNight(h)});window.__brain=BRAIN;}catch(e){console.error('brain',e);}}
 const bow=makeBow();heroBones.LeftHand.add(bow);bow.position.set(0,.07,.03);bow.rotation.set(0,0,0);bow.scale.setScalar(1/Math.max(.001,heroBones.LeftHand.getWorldScale(V()).x));
 function play(c,name,{loop=true,fade=.25,speed=1}={}){const a=c.actions[name];if(!a||c.cur===a)return a;a.reset();a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);a.clampWhenFinished=!loop;a.timeScale=speed;a.enabled=true;if(c.cur)c.cur.crossFadeTo(a,fade,false);a.play();c.cur=a;return a;}
 
