@@ -28,8 +28,12 @@ export function createPerf({ renderer, MOBILE }) {
 
   // frame cap: 1 = every screen refresh, 2 = every 2nd (30 FPS on a 60 Hz screen). A steady 30 runs much cooler
   // than a phone thrashing between 10 and 40; the governor uses it as one of its steps (index.html).
-  P.cap = 1; let lastR = 0;
-  P.skip = () => { if (P.cap <= 1) return false; const t = performance.now(); if (t - lastR < vs * P.cap - 4) return true; lastR = t; return false; };
+  // P.minMs: a fixed frame interval (phones: 1000/30) - a steady 30 FPS from the start, also on 120 Hz screens.
+  P.cap = 1; P.minMs = 0; let lastR = 0; const iv = () => Math.max(vs * P.cap, P.minMs);
+  P.skip = () => { if (P.cap <= 1 && !P.minMs) return false; const t = performance.now(); if (t - lastR < iv() - 4) return true; lastR = t; return false; };
+  // P.calmWins: calm 2 s windows needed before a step comes back; P.downHold: seconds with no climbing after any step down.
+  // Phones use slow climbing so quality does not visibly pop up and down while the phone warms up.
+  P.calmWins = 2; P.downHold = 0;
   P.addStep = (name, down, up = null, order = 50) => { const s = { name, down, up, order }; P.steps.push(s); P.steps.sort((a, b) => a.order - b.order); return s; };
   // start below the top (e.g. phones begin at a modest pixel ratio and climb if there is room): steps are applied in the given order
   P.preset = list => { for (const s of list) { if (!s || P.applied.includes(s)) continue; let ok = true; try { ok = s.down() !== false; } catch (e) { ok = false; } if (ok) { P.applied.push(s); P.level++; } } };
@@ -55,13 +59,13 @@ export function createPerf({ renderer, MOBILE }) {
     if (warm > 0) { warm -= dt; return; }                     // let loading hitches settle
     // refresh interval: the shortest frames of the last ~4 s, never above 16.7 ms (a slow phone must not look "on time")
     vmin = Math.min(vmin, dtm); vT += dt; if (vT > 4) { vs = Math.min(16.7, Math.max(6, vmin)); vmin = 1e9; vT = 0; }
-    winT += dt; winF++; if (dtm > vs * P.cap * 1.3 && dtm < 150) winMiss++;
+    winT += dt; winF++; if (dtm > iv() * 1.3 && dtm < 150) winMiss++;
     if (P.frozen) { winT = 0; winF = 0; winMiss = 0; }
     if (winT >= WIN) {
       miss = winMiss / Math.max(1, winF); P.fps = winF / winT; winT = 0; winF = 0; winMiss = 0;
       if (cool > 0) { cool--; calm = 0; }
-      else if (miss > DOWN) { calm = 0; if (miss > .6 && clock - lastUpAt > 10) stepDown(); if (stepDown()) { cool = 1; if (clock - lastUpAt < 10) { blockUntil = clock + backoff; backoff = Math.min(240, backoff * 2); } } }
-      else if (miss < UP) { calm++; if (calm >= 2 && clock >= blockUntil && P.applied.some(s => s.up)) { if (stepUp()) { lastUpAt = clock; cool = 1; } calm = 0; } }
+      else if (miss > DOWN) { calm = 0; if (miss > .6 && clock - lastUpAt > 10) stepDown(); if (stepDown()) { cool = 1; if (P.downHold) blockUntil = Math.max(blockUntil, clock + P.downHold); if (clock - lastUpAt < 10) { blockUntil = clock + backoff; backoff = Math.min(240, backoff * 2); } } }
+      else if (miss < UP) { calm++; if (calm >= P.calmWins && clock >= blockUntil && P.applied.some(s => s.up)) { if (stepUp()) { lastUpAt = clock; cool = 1; } calm = 0; } }
       else calm = 0;
     }
     if (hud && hud.on) drawHud(); else if ((++bF & 127) === 0) checkBudget();
@@ -95,7 +99,7 @@ export function createPerf({ renderer, MOBILE }) {
     const ob = checkBudget(), red = t => `<span style="color:#FF7B6B">${t}</span>`;
     hud.el.innerHTML = `<span style="color:${col};font-size:13px">${s.fps.toFixed(0)} FPS</span>  ${s.ms} ms\n` +
       `худший ${s.worst} · 95% ${s.p95} ms\nJS ${s.js} ms · ${s.calls > P.budget.calls ? red('вызовов ' + s.calls) : 'вызовов ' + s.calls}\n${s.tris > P.budget.tris ? red('треуг. ' + (s.tris / 1000).toFixed(0) + 'k') : 'треуг. ' + (s.tris / 1000).toFixed(0) + 'k'} · px ${s.pr}\n` +
-      `пропуски ${s.miss}% · кадр ${s.vsync} ms${s.cap > 1 ? ' · предел ' + Math.round(1000 / (s.vsync * s.cap)) + ' FPS' : ''}\nкачество −${s.level}${s.applied.length ? ' (' + [...new Set(s.applied)].join(', ') + ')' : ''}`;
+      `пропуски ${s.miss}% · кадр ${s.vsync} ms${s.cap > 1 || P.minMs ? ' · предел ' + Math.round(1000 / Math.max(s.vsync * s.cap, P.minMs)) + ' FPS' : ''}\nкачество −${s.level}${s.applied.length ? ' (' + [...new Set(s.applied)].join(', ') + ')' : ''}`;
   }
   P.show = on => { if (!hud) hud = makeHud(); hud.on = on; hud.el.style.display = on ? 'block' : 'none'; try { localStorage.setItem('perfHud', on ? '1' : '0'); } catch (e) {} };
   let want = /[?&#]fps/.test(location.href); try { want = want || localStorage.getItem('perfHud') === '1'; } catch (e) {}

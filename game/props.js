@@ -33,6 +33,86 @@ float vwN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(vwH(
  float g=smoothstep(.72,.9,vwN(q*.8+3.7))*.35*${k.toFixed(2)};diffuseColor.rgb=mix(diffuseColor.rgb,vec3(dot(diffuseColor.rgb,vec3(.3,.55,.15)))*vec3(1.04,.99,.92),g);}
 #endif`); };
   mat.customProgramCacheKey = () => 'varyWood' + k; mat.needsUpdate = true; return mat; }
+// (Planks thread) working wear on the tops he works on: the kitchen counter, the workbench and the side bench. M.woodLight is
+// merged with every shelf and table, so the marks live in a world-space layer that only switches on for the upward faces of
+// those three tops (WTOPS, filled from the placed groups after shiftRooms). Knife cuts, saw kerfs, hammer dents, pot and
+// lantern scorch rings, oil and tea stains, a hand-worn front edge. Grooves and dents bend the normal (bump), so they catch
+// the lamp; far away the fine marks fade into a matching overall darkening (no shimmer). Same program, same draw calls.
+const WTOPS = { a: [0, 1, 2].map(() => new THREE.Vector4(0, -99, 0, -1)), b: [0, 1, 2].map(() => new THREE.Vector4(.1, .1, 1, 0)) };
+function setTop(i, g, kind, hx, hz, top, ry = 0) { if (!g) return; WTOPS.a[i].set(g.position.x, g.userData.floorY + top, g.position.z, kind); WTOPS.b[i].set(hx, hz, Math.cos(ry), Math.sin(ry)); }
+function workTops(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => { prev && prev(sh, r); sh.uniforms.uTA = { value: WTOPS.a }; sh.uniforms.uTB = { value: WTOPS.b };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWT;').replace('#include <project_vertex>', `#include <project_vertex>
+{vec4 wq=vec4(transformed,1.);
+#ifdef USE_INSTANCING
+wq=instanceMatrix*wq;
+#endif
+vWT=(modelMatrix*wq).xyz;}`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+varying vec3 vWT;uniform vec4 uTA[3];uniform vec4 uTB[3];
+float wtOn=0.;vec2 wtDH=vec2(0.);float wtRg=1.;
+float wH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float wN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(wH(i),wH(i+vec2(1,0)),f.x),mix(wH(i+vec2(0,1)),wH(i+vec2(1,1)),f.x),f.y);}
+float wSeg(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/dot(ba,ba),0.,1.);return length(pa-ba*h);}
+// knife / chisel cuts: short straight grooves, mostly along two working directions, on two offset jittered grids (cs = cell size)
+float wCuts(vec2 p,float dens,float cs,float fw){float g=0.;for(int k=0;k<2;k++){vec2 q=p/cs+float(k)*vec2(.37,.71);vec2 i=floor(q);
+ for(int dx=-1;dx<=1;dx++)for(int dy=-1;dy<=1;dy++){vec2 c=i+vec2(dx,dy)+float(k)*17.;if(wH(c)>dens)continue;
+  float a=mix(wH(c+7.1)*3.14,(wH(c+2.3)<.5?.35:1.85)+(wH(c+8.8)-.5)*.5,.75);vec2 o=floor(q)+vec2(dx,dy)+vec2(wH(c+3.3),wH(c+5.7));
+  vec2 d=vec2(cos(a),sin(a))*(.2+.45*wH(c+9.1));float dd=wSeg(q,o-d,o+d)*cs;float w=.00035+.0005*wH(c+4.4);
+  g=max(g,(1.-smoothstep(w,w+fw,dd))*(.35+.65*wH(c+11.)));}}return g;}
+float wRing(vec2 p,vec2 c,float r,float w){vec2 v=p-c;float a=atan(v.y,v.x);float rr=r*(1.+.06*(wN(vec2(a*2.,r*40.))-.5));
+ float d=abs(length(v)-rr)/w;return exp(-d*d*1.6)*mix(.45,1.,smoothstep(.15,.5,wN(vec2(a*3.2+r*9.,1.7))))*(.75+.25*wN(v*90.));}
+// height (m, negative = cut into the wood) and, through the out params, colour masks
+float wHeight(vec2 p,float kind,float hx,float hz,float fw,out float cut,out float kerf){
+ float h=0.;cut=0.;kerf=0.;
+ float zone=kind<.5?smoothstep(.06,0.,max(abs(p.x+.3)-.2,abs(p.y)-.24)):(kind<1.5?.3:.15);
+ cut=wCuts(p,.04+.22*zone,.03,fw);h-=cut*.0005;
+ if(kind>.5&&kind<1.5){
+  for(int i=0;i<8;i++){float fi=float(i);float x=mix(.05,.8,wH(vec2(fi,4.2)))*(i<2?-1.:1.);float ln=.025+.07*wH(vec2(fi,6.1));float t=(wH(vec2(fi,8.))-.5)*.25;
+   float d=wSeg(p,vec2(x,hz+.01),vec2(x+t*ln,hz-ln));float k=(1.-smoothstep(.0007,.0007+fw,d))*smoothstep(hz-ln-.004,hz-ln+.01,p.y);kerf=max(kerf,k);}
+  h-=kerf*.0016;
+  vec2 q=p/.055;vec2 i=floor(q);vec2 f=q-i;if(wH(i+3.)<.3){vec2 c=vec2(.2,.2)+.6*vec2(wH(i+1.),wH(i+2.));float r=(.06+.08*wH(i+5.));float d=length(f-c)/r;h-=.001*smoothstep(1.,.2,d);}
+ }
+ return h;}`).replace('#include <roughnessmap_fragment>', `{vec3 fn=cross(dFdx(vWT),dFdy(vWT));float fl=length(fn);
+ for(int t=0;t<3;t++){vec4 A=uTA[t],B=uTB[t];if(A.w<-.5||fl<1e-12||abs(fn.y)/fl<.85||abs(vWT.y-A.y)>.012)continue;
+  vec2 w=vWT.xz-A.xz;vec2 p=vec2(w.x*B.z-w.y*B.w,w.x*B.w+w.y*B.z);if(abs(p.x)>B.x+.01||abs(p.y)>B.y+.01)continue;
+  vec2 ex=dFdx(vWT.xz),ey=dFdy(vWT.xz);ex=vec2(ex.x*B.z-ex.y*B.w,ex.x*B.w+ex.y*B.z);ey=vec2(ey.x*B.z-ey.y*B.w,ey.x*B.w+ey.y*B.z);
+  float fw=max(length(ex),length(ey));float vis=smoothstep(.004,.0012,fw);float kind=A.w;float cut,kerf,c2,k2;
+  float h0=wHeight(p,kind,B.x,B.y,fw,cut,kerf);
+  if(vis>.01){wtDH=vis*vec2(wHeight(p+ex,kind,B.x,B.y,fw,c2,k2)-h0,wHeight(p+ey,kind,B.x,B.y,fw,c2,k2)-h0);wtOn=1.;}
+  vec3 col=diffuseColor.rgb;
+  // cuts: fresh ones show paler wood, old ones dark with grime; far away a mean darkening instead of the lines
+  float n1=wN(p*31.);col*=mix(1.,1.-.03*(kind<.5?1.:.7),1.-vis);col=mix(col,col*mix(vec3(.74,.68,.62),vec3(1.08,1.04,.96),step(.7,n1)),cut*vis*.55);
+  col=mix(col,col*vec3(.42,.36,.32),kerf*vis);
+  // hands: the front edge is darker and a little greasy where he leans and grips, worn paler in the middle of the bench
+  float edge=smoothstep(.16,.01,B.y-p.y)*smoothstep(B.x,B.x-.35,abs(p.x))*(.55+.45*wN(p*14.));
+  col=mix(col,col*vec3(.8,.74,.68),edge*.55);wtRg=1.-.2*edge;
+  float worn=smoothstep(.5,.1,length(p*vec2(1./B.x,1.6/B.y)))*(.5+.5*wN(p*6.));col=mix(col,mix(col,vec3(dot(col,vec3(.33)))*vec3(1.1,1.03,.94),.5),worn*.35);
+  if(kind<.5){
+   // pot ring and an older fainter one, a mug ring, water-darkened wood by the sink, a few dark spills
+   float sc=wRing(p,vec2(-.2,.15),.08,.011)+.45*wRing(p,vec2(-.08,-.17),.05,.008);float fill=smoothstep(.085,.05,length(p-vec2(-.2,.15)))*.12;
+   col=mix(col,col*vec3(.3,.2,.13),clamp(sc*.6+fill,0.,1.));
+   float tea=wRing(p,vec2(-.42,.2),.036,.004);col=mix(col,col*vec3(.55,.45,.37),tea*.7);
+   float wet=smoothstep(.07,0.,abs(p.x-.02))*(.5+.5*wN(p*12.))+smoothstep(.06,0.,abs(p.x-.44))*.6*wN(p*12.+4.);col=mix(col,col*vec3(.62,.6,.6),clamp(wet,0.,1.)*.55);
+   float sp=smoothstep(.62,.8,wN(p*22.+9.))*smoothstep(.55,.7,wN(p*3.+1.));col=mix(col,col*vec3(.6,.52,.46),sp*.6);wtRg*=1.-.25*sp;
+  }else if(kind<1.5){
+   // oil stain, a lantern scorch ring, paint spots, pencil ticks along the front, burn mark of a hot tool
+   float oil=smoothstep(.62,.7,wN(p*9.+2.)*.6+wN(p*31.)*.15+smoothstep(.13,0.,length(p-vec2(.52,-.04)))*.55);col=mix(col,col*vec3(.45,.38,.32),oil*.75);wtRg*=1.-.35*oil;
+   float sc=wRing(p,vec2(-.26,.16),.054,.009);col=mix(col,col*vec3(.3,.2,.13),sc*.6);
+   float bt=smoothstep(.022,.006,wSeg(p,vec2(-.68,-.1),vec2(-.6,-.13)))*(.6+.4*wN(p*80.));col=mix(col,vec3(.08,.05,.035),bt*.8);
+   for(int i=0;i<5;i++){float fi=float(i);vec2 c=vec2(mix(-.75,.8,wH(vec2(fi,1.3))),mix(-.25,.25,wH(vec2(fi,2.7))));float r=.004+.01*wH(vec2(fi,3.9));
+    float m=smoothstep(r,r*.6,length((p-c)*vec2(1.,1.+wH(vec2(fi,5.))))+.004*(wN(p*300.)-.5));
+    vec3 pc=i==0?vec3(.42,.08,.05):i==1?vec3(.2,.32,.16):i==2?vec3(.8,.78,.7):i==3?vec3(.42,.08,.05):vec3(.15,.2,.3);col=mix(col,pc,m*.85);wtRg*=1.-.4*m;}
+   float pt=0.;for(int i=0;i<6;i++){float x=-.42+float(i)*.05;pt=max(pt,1.-smoothstep(.0004,.0004+fw,wSeg(p,vec2(x,B.y-.005),vec2(x,B.y-(i==0||i==5?.04:.022)))));}
+   col=mix(col,vec3(.18,.18,.2),pt*vis*.8);
+  }
+  diffuseColor.rgb=col;}}
+#include <roughnessmap_fragment>
+roughnessFactor*=wtRg;`).replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+if(wtOn>0.){vec3 sx=dFdx(-vViewPosition),sy=dFdy(-vViewPosition);vec3 R1=cross(sy,normal),R2=cross(normal,sx);float det=dot(sx,R1)*faceDirection;
+ vec3 gr=sign(det)*(wtDH.x*R1+wtDH.y*R2);normal=normalize(abs(det)*normal-gr);}`); };
+  mat.customProgramCacheKey = () => 'varyWood1wt'; mat.needsUpdate = true; return mat; }
 function scanWood(mat, url, { w = 512, h = 1024, color = 0xffffff, bump = 1.2 } = {}) {
   const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.translate(w, 0); g.rotate(Math.PI / 2); g.drawImage(img, 0, 0, h, w);
     for (const [k, srgb] of [['map', true], ['bumpMap', false]]) { const t = mat[k]; if (!t) continue; t.image = c; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.repeat.set(.9, .75); t.dispose(); t.needsUpdate = true; }
@@ -177,7 +257,7 @@ function makeMaterials(renderer) {
     cans: [['#B8442E', '#E9D7A8'], ['#3F6E9A', '#F0E6CC'], ['#6E8F4A', '#F3E2B0'], ['#C99A3A', '#5A3A22']].map(([a, b]) => std({ map: texOf(labelCanvas(a, b)), metalness: .5, roughness: .4, envMap: env, envMapIntensity: .8 })),
   };
   scanWood(M.wood, 'wood-floor.jpg', { color: 0xF2DCC4 }); scanWood(M.woodLight, 'wood-wall.jpg', { color: 0xE6C49C }); scanWood(M.woodDark, 'wood-dark.jpg', { w: 256, h: 512, color: 0xC49470, bump: 1.6 });
-  varyWood(M.wood); varyWood(M.woodLight); varyWood(M.woodDark, .7); // (Planks thread) every piece its own tone
+  varyWood(M.wood); workTops(varyWood(M.woodLight)); varyWood(M.woodDark, .7); // (Planks thread) every piece its own tone
   return M;
 }
 
@@ -1172,15 +1252,36 @@ export function buildProps(ctx) {
   // bedPress(worldHip): a hollow where he sits or lies ON the quilt. bedCover(worldHip): he lies UNDER it: the quilt rises over a
   // body (head toward the pillow, +x in the bed), so his legs never show through. null releases either; both ease in and out.
   out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = false; };
-  out.bedCover = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = true; };
+  out.bedCover = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) { press.cover = true; coverBones = null; } };
   const sm = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
   function bodyLift(x, z, c) { // height of the cover over a lying body, hips at c (bed local), feet toward -x
     const u = x - c.x; if (u < -1.15 || u > .7) return 0;
     const h = u < 0 ? .09 + .05 * sm(-.95, 0, u) : .14 + .03 * sm(0, .35, u); // feet .09, hips .14, chest .17
     const w = u < 0 ? .13 + .07 * sm(-.95, 0, u) : .2 + .03 * sm(0, .3, u); const dz = (z - c.z) / w;
     return h * Math.exp(-dz * dz * 1.3) * sm(-1.15, -.95, u) * (1 - sm(.45, .7, u)); }
+  // H3b: under the quilt the cover follows his real body: every torso/limb bone of the sleeping hero lifts the cloth to its own
+  // height plus the body's thickness there (soft union of blobs), so on his back, side or stomach the quilt drapes over him.
+  // The head and hands stay out. Refreshed 5 times a second while he is in bed (breathing, turning over).
+  const COVER_B = [[/Hips$/, .15, .2], [/Spine$/, .15, .2], [/Spine1$/, .15, .2], [/Spine2$/, .15, .2], [/Neck$/, .06, .1], [/(Left|Right)Shoulder$/, .08, .12], [/(Left|Right)Arm$/, .07, .11], [/(Left|Right)ForeArm$/, .06, .1],
+    [/(Left|Right)UpLeg$/, .09, .14], [/(Left|Right)Leg$/, .07, .12], [/(Left|Right)Foot$/, .06, .11], [/(Left|Right)ToeBase$/, .05, .09]];
+  let coverBones = null, coverT = 0; const cb = [];
+  function findCoverBones() { if (coverBones) return coverBones; if (!press.at) return null; const at = bunk.localToWorld(press.at.clone()); let sk = null, best = 1e9;
+    const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
+    bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
+    const list = []; for (const bn of sk.bones) { const nm = bn.name.replace(/^.*[:_]/, ''); const d = COVER_B.find(([re]) => re.test(nm)); if (d) list.push({ b: bn, r: d[1], s: d[2] }); } return (coverBones = list.length >= 6 ? list : null); }
+  const _cv = V();
+  function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const dx = x - q.x, dz = z - q.z, d2 = (dx * dx + dz * dz) / (q.s * q.s); if (d2 > 4) continue; const h = q.y + q.r - y0; if (h <= 0) continue; acc += Math.pow(h * Math.exp(-d2), 4); } return Math.pow(acc, .25); }
   function pressQuilt(dt) {
-    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5); if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
+    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5);
+    if (press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones())) { coverT -= dt; if (coverT <= 0 || Math.abs(press.k - press.shown) >= .01) { coverT = .2; press.shown = press.k; bunk.updateMatrixWorld(true);
+        if (press.on && findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.b.getWorldPosition(_cv); bunk.worldToLocal(_cv); cb.push({ x: _cv.x, y: _cv.y, z: _cv.z, r: q.r, s: q.s }); } }
+        const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, e = .02, k = press.k;
+        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2];
+          const L0 = liftAt(x, z, y); if (L0 <= .002) continue; a[i + 1] = y + L0 * k;
+          if (nBase[i + 1] > .4) { const gx = (liftAt(x + e, z, y) - liftAt(x - e, z, y)) / (2 * e) * k, gz = (liftAt(x, z + e, y) - liftAt(x, z - e, y)) / (2 * e) * k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; } }
+        P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
+      return; }
+    if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
     const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, c = press.at, e = .01;
     for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (Math.abs(y - c.y) > .3) continue;
       if (press.cover) { const L0 = bodyLift(x, z, c); if (L0 <= 0) continue; a[i + 1] = y + L0 * press.k;
@@ -1213,6 +1314,7 @@ export function buildProps(ctx) {
     add(g, new THREE.CylinderGeometry(.01, .16, .1, 16), M.iron, xo, top + .12, z); for (const s of [-1, 1]) add(g, rb(.012, .08, .012, .003), M.iron, xo + s * .045, top + .04, z);
     bake(g); g.traverse(o => { if (o.isMesh) o.castShadow = false; }); scene.add(g); out.chimneyTop = V(xo, top, z); }
   shiftRooms();
+  setTop(0, placed.counter, 0, .5, .315, .9); setTop(1, placed.workbench, 1, .85, .33, .9); setTop(2, placed.sidebench, 2, .5, .21, .78, -Math.PI / 2); // (Planks thread) worn work tops
   // ---------- light sources (computed before the static merge below, from the real positions) for lights.js: world positions + the emissive materials to switch ----------
   // each: { pos: Vector3 (world), obj, mats: [materials whose emissive/opacity show the source is on] }
   { const wp = (o, x = 0, y = 0, z = 0) => { o.updateMatrixWorld(true); return o.localToWorld(V(x, y, z)); };

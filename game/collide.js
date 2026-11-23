@@ -123,10 +123,23 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // ---------- spatial hash ----------
   const CS = .4; const G = new Map(); const key = (i, j, k) => ((i + 2048) * 4096 + (j + 2048)) * 4096 + (k + 2048);
   const corners = (s, pad) => { const mn = V(1e9, 1e9, 1e9), mx = V(-1e9, -1e9, -1e9); for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) { const p = s.c.clone().addScaledVector(s.ax[0], sx * s.h[0]).addScaledVector(s.ax[1], sy * s.h[1]).addScaledVector(s.ax[2], sz * s.h[2]); mn.min(p); mx.max(p); } mn.subScalar(pad); mx.addScalar(pad); return [mn, mx]; };
-  S.forEach((s, n) => {
+  function hashIn(s, n) {
     const [mn, mx] = corners(s, s.inst >= 0 ? .02 : .25);
-    for (let i = Math.floor(mn.x / CS); i <= Math.floor(mx.x / CS); i++) for (let j = Math.floor(mn.y / CS); j <= Math.floor(mx.y / CS); j++) for (let k = Math.floor(mn.z / CS); k <= Math.floor(mx.z / CS); k++) { const kk = key(i, j, k); let a = G.get(kk); if (!a) G.set(kk, a = []); a.push(n); }
-  });
+    // guard: nothing in the house spans more than ~12 m; a sky dome, a NaN or a degenerate matrix would flood the hash
+    if (!s.keys) s.keys = [];
+    if (![mn.x, mn.y, mn.z, mx.x, mx.y, mx.z].every(Number.isFinite) || mx.x - mn.x > 12 || mx.y - mn.y > 12 || mx.z - mn.z > 12) { s.off = true; s.dead = true; skipped['huge ' + s.name] = 1; return; }
+    for (let i = Math.floor(mn.x / CS); i <= Math.floor(mx.x / CS); i++) for (let j = Math.floor(mn.y / CS); j <= Math.floor(mx.y / CS); j++) for (let k = Math.floor(mn.z / CS); k <= Math.floor(mx.z / CS); k++) { const kk = key(i, j, k); let a = G.get(kk); if (!a) G.set(kk, a = []); if (!a.includes(n)) { a.push(n); s.keys.push(kk); } }
+  }
+  // a moved shape leaves the cells it no longer covers (without this the hash grew without end: Map size overflow)
+  function unhash(s, n) { for (const kk of s.keys) { const a = G.get(kk); if (!a) continue; const q = a.indexOf(n); if (q >= 0) a.splice(q, 1); if (!a.length) G.delete(kk); } s.keys.length = 0; }
+  S.forEach(hashIn);
+  // moving things (hatch lid, oven door, book, tools): every half second re-read their matrices; one that moved is hashed
+  // into the cells it now covers (its old cells are cleared first)
+  const MOV = S.map((s, n) => n).filter(n => S[n].inst < 0); let movK = 0;
+  function trackMoving() {
+    if (++movK % 30) return;
+    for (const n of MOV) { const s = S[n], e = s.obj.matrixWorld.elements; let same = true; for (let i = 0; i < 16; i++) if (Math.abs(e[i] - s.m[i]) > 1e-6) { same = false; break; } if (same) continue; s.m.set(e); frameOf(s, s.obj.matrixWorld); unhash(s, n); hashIn(s, n); }
+  }
   // background voxelisation: nearest to the hero first, a few ms per frame
   function buildSome(budgetMs) {
     if (!pending.length) return; const t0 = performance.now(); const hp = root.position;
@@ -185,10 +198,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   // deepest shape at p: returns depth beyond the allowance for this body part, OUT.n = way out
   const nB = V();
-  function probe(p, part, lying) {
+  function probe(p, part, lying) { const GR = window.__grab;
     const kk = key(Math.floor(p.x / CS), Math.floor(p.y / CS), Math.floor(p.z / CS)); const a = G.get(kk); let best = 0;
     if (a) for (const n of a) {
-      const s = S[n]; if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
+      const s = S[n]; if (s.dead) continue; if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;/* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
       let allow = part === 3 ? ALLOW.feet : ALLOW.hard;
       if (s.cls >= 2) allow = (lying && p.y < root.position.y + .6) ? ALLOW.pillow : ALLOW.soft;
       else if (s.cls === 1 && (part === 4 || part === 5)) allow = ALLOW.seat;
@@ -256,10 +269,12 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const push = [V(), V(), V(), V(), V(), V()], pd = new Float32Array(6), sumN = [V(), V()], sumW = [0, 0];
   // smoothness: a correction may grow only so fast (m/frame) and speed up only so fast (m/frame per frame); it is held
   // while still needed and released slowly afterwards, so push / release never alternate (no jitter, no pops)
-  const MAXS = [.005, .02, .025, .025, .03, .03], ACC = [.0012, .01, .014, .014, .03, .03];
-  const grow = new Float32Array(6), lastGrow = new Float32Array(6), hold = new Float32Array(6);
-  const budget = c => Math.max(0, Math.min(MAXS[c], lastGrow[c] + ACC[c]) - grow[c]);
-  const take = (c, v) => { const L = v.length(), b = budget(c); if (L > b) v.multiplyScalar(b / Math.max(L, 1e-9)); grow[c] += Math.min(L, b); return v; };
+  // the limits are on the correction's velocity VECTOR (m/frame): its change from one frame to the next (acceleration) and its size,
+  // so a push can't flip direction from one frame to the next (that was visible as head / hand jitter)
+  const MAXS = [.005, .008, .012, .012, .03, .03], ACC = [.0012, .0025, .004, .004, .03, .03];
+  const gv = [V(), V(), V(), V(), V(), V()], lastGv = [V(), V(), V(), V(), V(), V()], hold = new Float32Array(6), _tg = V();
+  const take = (c, v) => { _tg.copy(gv[c]).add(v).sub(lastGv[c]); if (_tg.length() > ACC[c]) _tg.setLength(ACC[c]); _tg.add(lastGv[c]); if (_tg.length() > MAXS[c]) _tg.setLength(MAXS[c]);
+    v.copy(_tg).sub(gv[c]); gv[c].copy(_tg); return v; };
   // the floor: the top of the house boards under a point (instanced boards and beams only, lying flat)
   const fq = V();
   function boardTop(x, y, z, up = .45, down = .05) {
@@ -279,10 +294,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++;
-    buildSome(1.5);
+    buildSome(1.5); trackMoving();
     floorGuard(dt);
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 14);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
-    for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGrow[c] = grow[c]; grow[c] = 0; }
+    for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGv[c].copy(gv[c]); gv[c].set(0, 0, 0); }
+    { const GR = window.__grab; if (GR) for (const c of [2, 3]) if (GR.grip[c === 2 ? 'Left' : 'Right']) { off.limb[c].set(0, 0, 0); hold[c] = 0; } }// a gripping hand stays on its handle (game/grab.js)
     if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) off.limb[c].multiplyScalar(c >= 4 ? relFoot : rel);
     const fit = !!hero.fit, lying = !!(hero.inBed || hero.swing);
     root.position.add(off.root); applied.copy(off.root); root.updateMatrixWorld(true);
@@ -300,7 +316,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         if (tc <= 1) { sumN[tc].addScaledVector(OUT.n, ex); sumW[tc] += ex; if (ex > pd[tc]) pd[tc] = ex; }
         // legs: only lift a foot / shin out of what is under it; a sideways nudge of a planted foot is a visible slide
         if (P.chain >= 4 && OUT.n.y < .5) continue;
-        if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
+        if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4 && OUT.n.y >= .5) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
       // on a ladder only hands and feet are corrected (moving the body or bending the head pops on the pull-up)
       if (hero.lad) { pd[0] = 0; pd[1] = 0; anyP = pd.some(v => v > 0); }
@@ -319,11 +335,12 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         else if (pd[1] < pd[0]) { pd[1] = pd[0]; push[1].copy(push[0]); }
       }
       if (pd[1] > 0) {
-        const d = take(1, push[1].clone()); const carry = [2, 3].map(c => LIMB[c].C ? LIMB[c].C.getWorldPosition(V()) : null);
-        bendHead(d); off.head.add(d); if (off.head.length() > .12) off.head.setLength(.12);
+        // the head bends at most 12 cm in total; at that limit it stays put (bending first and capping after snapped back every frame)
+        const want = off.head.clone().add(push[1]); if (want.length() > .12) want.setLength(.12); const d = take(1, want.sub(off.head)); const carry = [2, 3].map(c => LIMB[c].C ? LIMB[c].C.getWorldPosition(V()) : null);
+        bendHead(d); off.head.add(d);
         [2, 3].forEach((c, i) => { if (carry[i]) anim[c].add(LIMB[c].C.getWorldPosition(V()).sub(carry[i])); });
       }
-      for (let c = 2; c < 6; c++) { if (pd[c] <= 0) continue; const L = LIMB[c]; if (!L.C) continue; const d = take(c, push[c].clone()); if (d.lengthSq() < 1e-10) continue; off.limb[c].add(d); ik2(L.A, L.B, L.C, anim[c].clone().add(off.limb[c])); }
+      for (let c = 2; c < 6; c++) { if (pd[c] <= 0) continue; const L = LIMB[c]; if (!L.C) continue; const want = off.limb[c].clone().add(push[c]); const cap = c < 4 ? .07 : .1; if (want.length() > cap) want.setLength(cap); const d = take(c, want.sub(off.limb[c])); if (d.lengthSq() < 1e-10) continue; off.limb[c].add(d); ik2(L.A, L.B, L.C, anim[c].clone().add(off.limb[c])); }
     }
     const ms = performance.now() - t0; st.frames++; st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = S.filter(s => s.kind === 'vox' && s.ready).length; st.pending = pending.length;
   }
@@ -356,7 +373,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     for (let r = .04; r <= .3; r += .04) for (let a = 0; a < 12; a++) { const x = p.x + Math.cos(a * Math.PI / 6) * r, z = p.z + Math.sin(a * Math.PI / 6) * r; if (room(x, p.y, z) <= .004) { freeC.ox = x - p.x; freeC.oz = z - p.z; p.x = x; p.z = z; st.freed++; return p; } }
     return p;
   }
-  const api = { stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
+  const api = { cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
     depthAt: (x, y, z) => probe(V(x, y, z), 7, false), navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
   return api;
 }

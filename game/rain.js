@@ -43,16 +43,16 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
   // ---------------- drops: thin streaks, fall ~11-14 m/s, pushed by the wind ----------------
   const ND = MOBILE ? 1600 : 3200;
   const dA = new Float32Array(ND * 4); for (let i = 0; i < ND; i++) dA.set([Math.random(), Math.random(), Math.random(), Math.random()], i * 4);
-  const drops = new THREE.Mesh(quadGeo(ND, { aD: dA }), mk(`attribute vec4 aD;varying float vA;
+  const drops = new THREE.Mesh(quadGeo(ND, { aD: dA }), mk(`attribute vec4 aD;uniform float uKeep;varying float vA;
     void main(){float spd=11.+aD.w*3.;float fall=mod(uFT*spd+aD.z*uTop*3.,uTop);/* uFT: fall clock, slower in a drizzle (no jumps when it changes) */vec3 p=vec3(uBox.x+aD.x*uBox.z,uTop-fall,uBox.y+aD.y*uBox.w);
      vec2 wv=windVel(p);p.xz+=wv*(fall/(spd*uSF)-1.);
-     float on=step(fract(aD.w*7.31+aD.x*3.1),uK)*step(topAt(p.xz),p.y);
+     float on=step(fract(aD.w*7.31+aD.x*3.1),uK)*step(topAt(p.xz),p.y)*step(float(gl_InstanceID)+.5,uKeep*${ND}.);/* quality step: thinned from the end, one drop at a time */
      vec3 tail=p+vec3(wv.x,spd*uSF,wv.y)*.032;
      vec4 a=viewMatrix*vec4(p,1.),b=viewMatrix*vec4(tail,1.);vec2 d=b.xy-a.xy;float L=length(d);d=L>1e-5?d/L:vec2(0.,1.);
      vec4 v=mix(a,b,position.y);v.xy+=vec2(d.y,-d.x)*position.x*max(.006,-a.z*.0026);/* about 1.5 px on screen at any distance */
      vA=on*(.14+.16*position.y)*(.55+.45*uSF)*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
     `varying float vA;void main(){gl_FragColor=vec4(uCol,vA);}`));
-  drops.frustumCulled = false; drops.renderOrder = 8; drops.visible = false; scene.add(drops);
+  drops.material.uniforms.uKeep = { value: 1 }; drops.frustumCulled = false; drops.renderOrder = 8; drops.visible = false; scene.add(drops);
 
   // ---------------- splashes and drips (filled in once the height map is done) ----------------
   let splash = null, drips = null;
@@ -64,14 +64,14 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
     for (let i = 0; i < NS; i++) { // roofs and decks get more than their share: that's where you look
       let c = cells[Math.floor(Math.random() * cells.length)]; if (!c[3] && Math.random() < 0.5) c = cells[Math.floor(Math.random() * cells.length)];
       sA.set([c[0] + rnd(-.24, .24), c[1] + 0.01, c[2] + rnd(-.24, .24), Math.random()], i * 4); sB.set([rnd(.35, .9), Math.random(), c[3], 0], i * 4); }
-    splash = new THREE.Mesh(quadGeo(NS, { aS: sA, aP: sB }), mk(`attribute vec4 aS,aP;varying float vA;varying vec2 vUv;
-      void main(){float age=fract(uT/aP.x+aS.w*7.);float k=age/.28;float on=step(aP.y,uK)*step(k,1.);
+    splash = new THREE.Mesh(quadGeo(NS, { aS: sA, aP: sB }), mk(`attribute vec4 aS,aP;uniform float uKeep;varying float vA;varying vec2 vUv;
+      void main(){float age=fract(uT/aP.x+aS.w*7.);float k=age/.28;float on=step(aP.y,uK)*step(k,1.)*step(float(gl_InstanceID)+.5,uKeep*${NS}.);
        vec4 v=viewMatrix*vec4(aS.xyz,1.);float s=(.03+.09*k)*(.8+.4*aP.y);v.xy+=vec2(position.x*s,position.y*s*.7);
        vUv=vec2(position.x,position.y);vA=on*(1.-k)*.55*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
       `varying float vA;varying vec2 vUv;void main(){float r=length(vUv*vec2(1.,1.3));
        float crown=smoothstep(.55,.8,r)*smoothstep(1.,.85,r)*(.6+.4*sin(atan(vUv.y,vUv.x)*9.));
        float a=(crown+smoothstep(.25,0.,length(vUv-vec2(0.,.35)))*.6)*vA;if(a<.01)discard;gl_FragColor=vec4(uCol*1.15,a);}`));
-    splash.frustumCulled = false; splash.renderOrder = 8; splash.visible = drops.visible; scene.add(splash);
+    splash.material.uniforms.uKeep = { value: 1 }; splash.frustumCulled = false; splash.renderOrder = 8; splash.visible = drops.visible; scene.add(splash);
 
     // drips: where a roof/deck cell drops off to something much lower next to it. Find the edge more exactly with a few rays.
     const edges = [];
@@ -165,10 +165,20 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
       m.customProgramCacheKey = () => (key ? key.call(m) : '') + '|wetBoards'; m.needsUpdate = true; }
     R.wetMats = [...mats];
   }
+  // quality steps fade instead of popping: a mesh is thinned out one instance at a time over ~2 s (uKeep), and only then
+  // is its instanceCount cut (the GPU saving); going back up, the count comes back first and the instances fade in.
+  const thins = [];
+  function thinner(mesh, N) { mesh.material.uniforms.uKeep = mesh.material.uniforms.uKeep || { value: 1 }; const t = { mesh, N, keep: 1, want: 1 }; thins.push(t); return t; }
+  function tickThin(dt) { for (const t of thins) { if (t.keep === t.want) continue; const d = t.want - t.keep, st = dt * 0.45;
+      t.keep = Math.abs(d) <= st ? t.want : t.keep + Math.sign(d) * st; t.mesh.material.uniforms.uKeep.value = t.keep;
+      t.mesh.geometry.instanceCount = Math.ceil(t.N * Math.max(t.keep, t.want)); } }
+  function setThin(t, want) { if (!t) return; t.want = want; t.mesh.geometry.instanceCount = Math.ceil(t.N * Math.max(t.keep, want)); }
+  let thD = null, thS = null, glassK = 1, glassWant = 1;
   let scan = 0, wait = 90; const GK = { value: 1 };
   const R = {
     ready: false, mesh: { drops, splash: null, drips: null },
     update(dt, T, rainK, fogColor) {
+      tickThin(dt); if (glassK !== glassWant) { glassK += Math.sign(glassWant - glassK) * Math.min(Math.abs(glassWant - glassK), dt * 0.4); GK.value = glassK; }
       // build the map in the background, starting a little after load
       if (!R.ready) {
         if (wait-- > 0) return;
@@ -225,10 +235,11 @@ if(uWet*uGlassK>.003){float wd=wetDrops(vGp)*uWet;gl_FragColor.rgb+=vec3(.55,.62
     },
     // quality steps for the perf governor (perf.js): cheapest visual loss first
     addPerfSteps(PERF) {
-      PERF.addStep('wetGlass', () => { if (!GK.value) return false; GK.value = 0; }, () => { GK.value = 1; }, 25);
-      PERF.addStep('rainDrops', () => { const g = drops.geometry; if (g.instanceCount <= ND / 2) return false; g.instanceCount = ND / 2; }, () => { drops.geometry.instanceCount = ND; }, 35);
-      PERF.addStep('rainSplash', () => { if (!splash || splash.geometry.instanceCount <= 1) return false; splash.userData.n = splash.geometry.instanceCount; splash.geometry.instanceCount = Math.floor(splash.userData.n / 2); },
-        () => { if (splash && splash.userData.n) splash.geometry.instanceCount = splash.userData.n; }, 55);
+      // all three fade over ~2.5 s instead of switching in one frame
+      PERF.addStep('wetGlass', () => { if (!glassWant) return false; glassWant = 0; }, () => { glassWant = 1; }, 25);
+      PERF.addStep('rainDrops', () => { thD = thD || thinner(drops, ND); if (thD.want <= 0.5) return false; setThin(thD, 0.5); }, () => { if (thD) setThin(thD, 1); }, 35);
+      PERF.addStep('rainSplash', () => { if (!splash) return false; thS = thS || thinner(splash, splash.geometry.instanceCount); if (thS.want <= 0.5) return false; setThin(thS, 0.5); },
+        () => { if (thS) setThin(thS, 1); }, 55);
     },
     // is a point under a roof (or deck, or anything solid above it)? For the hero's clothes/hair: wind and rain reach him only outside
     covered(p) { if (!R.ready) return false; const x = p.x ?? p[0], y = p.y ?? p[1], z = p.z ?? p[2]; const h = R.heightAt(x, z); return h != null && h > y + 0.4; },

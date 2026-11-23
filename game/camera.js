@@ -37,16 +37,41 @@ export function createCameraRig(o) {
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   const pickable = [];
+  // [PERF] the far forest and the leaf litter are never zoom targets (the ground or sky behind them anchors the zoom),
+  // and big static meshes get a bounding volume tree: a pick costs well under a millisecond instead of ~15 ms
+  // (a dropped frame or three at the start of every pinch on the phone). The library loads in the background; until it
+  // is there (or if the CDN fails) picking works exactly as before.
+  const NOPICK = /^(forest|litter)/;
+  let BVH = null, bvhWarm = false;
+  import('https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.8/build/index.module.js').then(m => { BVH = m; bvhWarm = true; }).catch(() => {});
+  const bvhQueue = [];
+  function wantBVH(m) {
+    const g = m.geometry;
+    if (!BVH || m.isSkinnedMesh || m.isInstancedMesh || !g || !g.attributes.position) return;
+    const n = (g.index ? g.index.count : g.attributes.position.count) / 3;
+    if (n < 1500) return;
+    if (g.boundsTree && g.userData.bvhVer === g.attributes.position.version) { m.raycast = BVH.acceleratedRaycast; return; }
+    if (!bvhQueue.includes(m)) bvhQueue.push(m);
+  }
+  function buildSomeBVH() {           // one mesh per call, from update(): spreads the one-off build over idle frames
+    const m = bvhQueue.shift(); if (!m) return;
+    const g = m.geometry, ver = g.attributes.position.version;
+    try { g.boundsTree = new BVH.MeshBVH(g); g.userData.bvhVer = ver; m.raycast = BVH.acceleratedRaycast; } catch (e) { /* keep the plain raycast */ }
+  }
   function rebuildPickable() {
     pickable.length = 0;
     scene.traverse(m => {
       if (!(m.isMesh || m.isSkinnedMesh) || m.isPoints || m.isSprite || m.isLine) return;
       if (!m.visible || m.userData.noPick) return;
+      for (let n = m; n && n !== scene; n = n.parent) if (NOPICK.test(n.name || '')) return;
       const mt = Array.isArray(m.material) ? m.material[0] : m.material;
       if (!mt || mt.depthWrite === false || mt.side === THREE.BackSide) return;   // sky, fog puffs, light rays
       if (mt.transparent && mt.opacity < 0.5) return;
       const g = m.geometry; if (g && !g.boundingSphere) g.computeBoundingSphere();
       if (g && g.boundingSphere && g.boundingSphere.radius * m.matrixWorld.getMaxScaleOnAxis() > 120) return;
+      // a geometry edited since its tree was built (repairs, rebuilt boards) falls back to the plain raycast until rebuilt
+      if (g && g.boundsTree && g.userData.bvhVer !== g.attributes.position.version) { delete m.raycast; g.boundsTree = null; }
+      wantBVH(m);
       pickable.push(m);
     });
   }
@@ -389,6 +414,7 @@ export function createCameraRig(o) {
   }
 
   // ---------- per frame ----------
+  const limbOff = new THREE.Vector3(), limbWant = new THREE.Vector3();
   let hitWhy = null, collK = 1, driftAmt = 0, breathT = 0;
   const gL = new THREE.Vector3(), cL = new THREE.Vector3(), fL = new THREE.Vector3();
   function toLocal(t, yaw, out) {     // inverse of the orbit rotation around AXIS by yaw
@@ -453,6 +479,22 @@ export function createCameraRig(o) {
     }
     return moved;
   }
+  // crown limbs (above 11.5 m): a voxel proxy from index.html; like the rooms, only close views stop in front of a limb
+  const limb = o.limb || (() => false);
+  function outOfLimb(t, yaw, pitch) {  // a focus inside a limb steps out toward the camera's side
+    if (!limb(t.x, t.y, t.z)) return;
+    const cx = Math.sin(yaw) * Math.cos(pitch), cy = Math.sin(pitch), cz = Math.cos(yaw) * Math.cos(pitch);
+    for (let n = 0; n < 50 && limb(t.x, t.y, t.z); n++) { t.x += cx * 0.1; t.y += cy * 0.1; t.z += cz * 0.1; }
+  }
+  function limbHit(t, dv, dmax) {
+    if (cur.dist > 8) return Infinity;
+    const top = Math.min(dmax, 8);
+    if (t.y + dv.y * top < 11.3 && t.y < 11.3) return Infinity;
+    let s0 = 0;                        // a focus on (or in) the bark: start where the ray leaves it
+    while (s0 < 1.5 && limb(t.x + dv.x * s0, t.y + dv.y * s0, t.z + dv.z * s0)) s0 += 0.1;
+    for (let s = s0 + 0.3; s <= top; s += 0.1) if (limb(t.x + dv.x * s, t.y + dv.y * s, t.z + dv.z * s)) return Math.max(s0 + 0.2, s - 0.35);
+    return Infinity;
+  }
   function limitOut(t) {             // the focus may leave the soft bounds a little (rubber band), never far
     const o1 = outside(t);
     if (o1 > 3.5) { inside(t, inB); t.sub(inB).multiplyScalar(3.5 / o1).add(inB); }
@@ -468,6 +510,7 @@ export function createCameraRig(o) {
     // never below ground; beyond the soft bounds: spring back once the fingers are off
     target.y = Math.max(target.y, groundY(target.x, target.z) + BOUND.yMin);
     // never behind the trunk as seen from the camera (a focus there puts the trunk between the camera and it)
+    if (yaw !== undefined) outOfLimb(target, yaw, goal.pitch);
     if (yaw !== undefined) { toLocal(target, yaw, fL); if (fL.z < 0.7) { fL.z = 0.7; fromLocal(fL, yaw, target); } }
     outOfTrunk(target);
     if (!dragging && outside(target) > 0.001) target.lerp(inB, damp(5, dt));
@@ -476,6 +519,7 @@ export function createCameraRig(o) {
     dt = dt > 0 ? Math.min(dt, 0.1) : 0;            // a hitch or a bad first frame must never throw the camera
     if (!(cur.dist > 0) || !isFinite(cur.target.x + cur.target.y + cur.target.z + cur.yaw + cur.pitch)) snap();
     pickAge += dt; idle += dt;
+    if (bvhQueue.length) buildSomeBVH(); else if (bvhWarm && !ptrs.size) { bvhWarm = false; rebuildPickable(); pickAge = 0; }   // once, to queue the trees
     if (followOn) followStep(dt);
     stepInertia(dt);
     stepCine(dt);
@@ -506,7 +550,7 @@ export function createCameraRig(o) {
       cur.dist = Math.exp(Math.log(cur.dist) + (Math.log(goal.dist) - Math.log(cur.dist)) * k);
     }
     fromLocal(cL, cur.yaw, cur.target);
-    outOfTrunk(cur.target);
+    outOfTrunk(cur.target);           // (a focus pushed out of a limb moves the goal only: the view follows it softly)
 
     // idle breathing: the caller's slow drift fades in a few seconds after the last touch and fades out quickly on touch
     const still = idle > 3 && !ptrs.size && !inert.on && !fly;
@@ -529,14 +573,14 @@ export function createCameraRig(o) {
     d = Math.max(d, s0 + 0.2);
     // zoomed into a room: the camera stays inside it unless it leaves through the open (cut-away) front
     // (only for close views: from afar the whole house is meant to be seen, and a rotation must never pull the camera in)
-    const dR = roomExit(cur.target, dir);
+    const dLimb = limbHit(cur.target, dir, d), dR = Math.min(roomExit(cur.target, dir), dLimb);
     if (dR < d) {
       const w = 1 - THREE.MathUtils.smoothstep(cur.dist, 4, 8), dd = d + (Math.max(0.3, dR) - d) * w;
-      if (dd < d - 1e-4) { d = dd; hitWhy = 'room'; }
+      if (dd < d - 1e-4) { d = dd; hitWhy = dLimb < Infinity && dLimb <= dR ? 'limb' : 'room'; }
     }
     // smooth the collision: the camera slides in and out instead of snapping, but never stops inside the trunk
     const want = d / cur.dist;
-    collK = !isFinite(collK) || dt <= 0 ? want : collK + (want - collK) * damp(want < collK ? 6 : 3, dt);
+    collK = !isFinite(collK) || dt <= 0 ? want : collK + (want - collK) * damp(want < collK ? (hitWhy === 'limb' ? 14 : 6) : 3, dt);
     collK = Math.min(collK, 1);
     d = cur.dist * collK;              // if the slide is still inside the trunk, the guard below pushes it out sideways
     camPos.copy(cur.target).addScaledVector(dir, d);
@@ -547,6 +591,17 @@ export function createCameraRig(o) {
     if (solid(camPos.x, camPos.y, camPos.z)) { outOfTrunk(camPos); hitWhy = 'solid'; }
     // ... and never inside a wall, floor or roof of a room: out of the board to the side the focus is on
     if (outOfWalls(camPos, cur.target)) hitWhy = hitWhy || 'wall';
+    // never inside a limb: slide toward the focus until clear. The slide is eased in over a few frames (a sudden
+    // push reads as a jump); it lets go just as softly.
+    limbWant.set(0, 0, 0);
+    if (limb(camPos.x, camPos.y, camPos.z)) {
+      p.copy(camPos);
+      tmp.copy(cur.target).sub(camPos); const L = tmp.length(); tmp.divideScalar(L || 1);
+      for (let s = 0; s < L && limb(p.x, p.y, p.z); s += 0.1) p.addScaledVector(tmp, Math.min(0.1, L - s));
+      limbWant.subVectors(p, camPos); hitWhy = 'limb';
+    }
+    limbOff.lerp(limbWant, damp(28, dt));
+    camPos.add(limbOff);
     if (extra.shake) camPos.add(extra.shake);
     focusU.value = camPos.distanceTo(cur.target);
     // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar
@@ -632,6 +687,8 @@ export function createCameraRig(o) {
 export function createDOF(o) {
   const { renderer, composer, camera } = o;
   const taps = o.mobile ? 8 : 12;
+  // the pass reads scene depth, so the composer targets carry depth textures. Keep them even with DOF off:
+  // the shared fog pass (fogpass.js, on by default on phones) reads the same depth texture for its soft edges.
   for (const rt of [composer.renderTarget1, composer.renderTarget2]) {
     if (!rt.depthTexture) { rt.depthTexture = new THREE.DepthTexture(rt.width, rt.height); rt.depthTexture.type = THREE.UnsignedIntType; }
   }
