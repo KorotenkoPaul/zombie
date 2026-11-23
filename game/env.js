@@ -52,7 +52,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  float dy=yp-yc;float ec=exp(-max(yc,0.)/HH),ep=exp(-max(yp,-1.)/HH);
  float od=abs(dy)>.01?HH*(ec-ep)/dy:ep;
  float n=hfN(vFogW.xz*.11)*.65+hfN(vFogW.xz*.31+7.)*.35;
- float clear=mix(.2,1.,smoothstep(4.5,11.,length(vFogW.xz)));float tau=(.03+.12*hk)*(.45+1.1*n)*od*min(d,60.)*clear;
+ float clear=mix(.2,1.,smoothstep(4.5,11.,length(vFogW.xz)));float tau=(.012+.14*hk)*(.45+1.1*n)*od*min(d,60.)*clear;
  float hf=1.-exp(-tau);
  fogFactor=max(fogFactor,0.)+hf*(1.-fogFactor);
  vec3 haze=mix(fogColor,vec3(dot(fogColor,vec3(.33)))*1.5+vec3(.05,.09,.11),.45);gl_FragColor.rgb=mix(gl_FragColor.rgb,mix(fogColor,haze,hf),fogFactor);}
@@ -228,7 +228,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const tmp=new THREE.Color(),dark=new THREE.Color(0x0E1C28);
  env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera}=s;U.t.value=T;U.wind.value=1+rainK*1.5;
   const fc=tmp.copy(P.fog);
-  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),.3+nightK*.3);const eve=Math.max(nightK,lampOn||0);const dens=.35+eve*.65+mornK*.5+rainK*.2;fogU.cam.value.copy(camera.position);
+  fogU.col.value.copy(fc).lerp(new THREE.Color(0x8EC2DA),.3+nightK*.3);const eve=Math.max(nightK,lampOn||0);const dens=.15+eve*.85+mornK*.5+rainK*.25;fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.3*dens*m.userData.k;m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
   puffU.op.value=.42*dens;
   bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
