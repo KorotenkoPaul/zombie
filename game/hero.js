@@ -228,7 +228,7 @@ export function createHero(ctx){
  const GRIP_R=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,-Math.PI/2)),GRIP_L=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,Math.PI/2));
  function grab(item,hand,pos,rot){const b=bones[hand+'Hand'];if(!b)return;b.add(item);item.position.set(...pos).multiplyScalar(hs(hand+'Hand'));item.rotation.set(...rot);item.scale.setScalar(hs(hand+'Hand'));item.visible=true;H.hold[hand]=item;}
  function release(hand){const it=H.hold[hand];if(!it)return;H.hold[hand]=null;it.parent&&it.parent.remove(it);}
- function grabTool(name,hand){if(!P3||!P3.grab)return false;const o=P3.grab(name,bones[hand+'Hand'],{offset:V(0,.075,.025),rot:hand==='Right'?GRIP_R:GRIP_L});if(o){H.hold[hand]={tool:name};return true;}return false;}
+ function grabTool(name,hand){if(!P3||!P3.grab)return false;{const h=H.hold[hand];if(h&&!(h.tool===name)){if(h.tool)releaseTool(hand);else release(hand);}}/* GRAB: one thing per hand (a spoon left from cooking never stays in the fist with the ladle) */const o=P3.grab(name,bones[hand+'Hand'],{offset:V(0,.075,.025),rot:hand==='Right'?GRIP_R:GRIP_L});if(o){H.hold[hand]={tool:name};return true;}return false;}
  function releaseTool(hand){const h=H.hold[hand];if(h&&h.tool&&P3)P3.release(h.tool);H.hold[hand]=null;}
  // where loose things rest
  const kTop=(()=>{const f=floorTop(KT,-2.3,2.2);return f+.9;})();
@@ -630,7 +630,7 @@ export function createHero(ctx){
     const h2=gripHome(n)||h;const pd=palmTo(hand,h2);a.hp=h2;if(!a.rel){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h2,a.rw];if((a.rw>=1&&pd<.03)||a.t>1.6){a.rel=true;a.trel=a.t;relTool(hand,n,.14);}}
     else if(a.t-a.trel>.16){a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h2,a.rw]:null;if(a.rw<=0){a.held.pop();a.rel=false;a.t=0;a.reach=null;a.rw=0;}}}};
   const finish=()=>{a.ik=null;if(a.leaveCb){const c=a.leaveCb;a.leaveCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
-  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
+  a.post=dt=>{if(a.stirHold&&a.step!=='work'){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
   // GRAB HOOK: called away in the middle of a job, he first hangs the tools back by hand (no tool flies home by itself)
   a.leave=cb=>{if(a.step==='take'&&a.gotIt){const [n]=tools[a.held.length]||[];if(n)a.held.push(n);a.gotIt=false;}
    if(a.held.length&&!window.__noGripFix&&(a.step==='work'||a.step==='take')){o.end&&o.end(a);a.step='put';a.t=0;a.rw=0;a.rel=false;a.reach=null;a.ik=null;a.leaveCb=cb;play(IDLE(),{fade:.4});return;}
@@ -641,6 +641,38 @@ export function createHero(ctx){
  const gripHome=n=>{const G=window.__grab;return G&&G.toolGripHome?G.toolGripHome(n):toolHome(n);};
  function reachGrip(side,t,w){const G=window.__grab;if(!G||!G.gripPoint){reachTo(side,t,w);return;}reachTo(side,G.palmTarget(side,t),w);
   /* the fist's grip point, not the wrist, onto the point: a few corrections of the wrist target */if(w>.98)for(let i=0;i<3;i++){const e=t.clone().sub(G.gripPoint(side));if(e.length()<.004)break;armIK(side,bones[side+'Hand'].getWorldPosition(V()).add(e),sidePole(side),1);}}
+ // GRAB HOOK: aim a held tool: turn the hand round the fist so the tool's working end points at tip (the grip stays put)
+ function aimTool(side,name,tip,w){const G=window.__grab;const P=PP();const o=P&&P.tools&&P.tools[name];const sp=G&&G.GRIP&&G.GRIP[name];if(!o||!sp||o.parent!==bones[side+'Hand'])return;
+  for(let i=0;i<2;i++){const gw=o.localToWorld(V(...sp.g));const ew=o.localToWorld(V(...sp.g).add(V(...sp.a)));const cur=ew.sub(gw).normalize(),want=tip.clone().sub(gw).normalize();
+   const q=new THREE.Quaternion().setFromUnitVectors(cur,want);if(w<1)q.slerp(new THREE.Quaternion(),1-w);const hb=bones[side+'Hand'];const hq=hb.getWorldQuaternion(new THREE.Quaternion());const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());
+   hb.quaternion.copy(pq.invert().multiply(q.multiply(hq)));hb.updateMatrixWorld(true);
+   for(let k=0;k<3;k++){const e=gw.clone().sub(G.gripPoint(side));if(e.length()<.003)break;armIK(side,hb.getWorldPosition(V()).add(e),sidePole(side),1);}}}/* the fist back on its spot: wrist moves only, no new lean */
+ // GRAB HOOK: put a held tool exactly: its grip point at gp, its working end toward tip. The hand's world rotation is solved first
+ // (tool axis on the line gp->tip, knuckles along the forearm), then the wrist goes where that puts the fist on gp, then the arm IK.
+ function holdToolAt(side,name,gp,tip,w){const P=PP();const o=P&&P.tools&&P.tools[name];const G=window.__grab;const sp=G&&G.GRIP&&G.GRIP[name];const hb=bones[side+'Hand'];if(!o||!sp||o.parent!==hb)return false;
+  const ua=V(...sp.a).applyQuaternion(o.quaternion).normalize();const gl=V(...sp.g).multiplyScalar(o.scale.x).applyQuaternion(o.quaternion).add(o.position);// tool axis + grip point in hand space
+  const W=tip.clone().sub(gp).normalize();const sh=bones[side+'Arm'].getWorldPosition(V());let Fw=gp.clone().sub(sh).normalize();
+  const bas=(x,y)=>{const X=x.clone().normalize();const Y=y.clone().sub(X.clone().multiplyScalar(y.dot(X)));if(Y.lengthSq()<1e-6)Y.set(0,1,0).sub(X.clone().multiplyScalar(X.y));Y.normalize();return new THREE.Matrix4().makeBasis(X,Y,X.clone().cross(Y));};
+  for(let it=0;it<2;it++){const Ml=bas(ua,V(0,1,0)),Mw=bas(W,Fw);const Qh=new THREE.Quaternion().setFromRotationMatrix(Mw.multiply(Ml.transpose()));
+   const sc=hb.getWorldScale(V()).x;const wrist=gp.clone().sub(gl.clone().multiplyScalar(sc).applyQuaternion(Qh));
+   armIK(side,wrist,sidePole(side),w);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cur=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(cur.slerp(Qh,w)));hb.updateMatrixWorld(true);
+   Fw=hb.getWorldPosition(V()).sub(bones[side+'ForeArm'].getWorldPosition(V())).normalize();}
+  return true;}
+ // stirring: the ladle's bowl goes round in the soup, the fist above the rim, the other hand steadies the pot by its handle
+ function stirPost(a,dt){const P=PP();const pot=P&&P.tools&&P.tools.pot,la=P&&P.tools&&P.tools.ladle;if(!pot||!la||la.parent!==bones.RightHand)return;
+  a.sw=Math.min(1,(a.sw||0)+dt/.6);a.sa=(a.sa||0)+dt*4.6;pot.updateMatrixWorld(true);const c=pot.localToWorld(V(0,.07,0));const sh=bones.RightArm.getWorldPosition(V());
+  const toMe=V(sh.x-c.x,0,sh.z-c.z).normalize();const B=c.clone().add(V(Math.cos(a.sa)*.045,0,Math.sin(a.sa)*.045));// the bowl in the soup
+  // the handle leans toward him; pick the lean (and a little to his right) that keeps the fist a comfortable ~0.42 m from the shoulder
+  const L=.29;const rt=V(-toMe.z,0,toMe.x);let Gp=null,bd=9;for(const el of [1.35,1.2,1.05,.9,.75])for(const sd of [0,.35,-.2]){const dir=toMe.clone().multiplyScalar(Math.cos(el)).addScaledVector(rt,sd*Math.cos(el)).add(V(0,Math.sin(el),0)).normalize();
+   const g=B.clone().addScaledVector(dir,L);const e=Math.abs(g.distanceTo(sh)-.42)+(sd?.02:0);if(e<bd){bd=e;Gp=g;}}
+  a.gs=a.gs?a.gs.lerp(Gp,1-Math.exp(-dt*10)):Gp.clone();Gp=a.gs;
+  const G=window.__grab;if(G){G.hold('Right',pot.parent||pot,null);G.hold('Left',pot.parent||pot,null);a.stirHold=1;}/* the stove and pot are what his hands work at: collide.js leaves them there */
+  {const sh2=bones.RightArm.getWorldPosition(V());if(sh2.distanceTo(Gp)>armLen*.95+.1)reachTo('Right',Gp,a.sw);}/* lean in only if the pot is far */holdToolAt('Right','ladle',Gp,B,a.sw);a.dbg=[Gp,B];{const G2=window.__grab,sw=a.sw;if(G2&&G2.late)G2.late(()=>holdToolAt('Right','ladle',Gp,B,sw));}
+  // left hand on the pot handle nearer his left
+  const hs=[pot.localToWorld(V(-.1,.09,0)),pot.localToWorld(V(.1,.09,0))];const ls=bones.LeftArm.getWorldPosition(V());const lh=hs[0].distanceTo(ls)<hs[1].distanceTo(ls)?hs[0]:hs[1];
+  if(lh.distanceTo(ls)<armLen+PALM+.12)reachGrip('Left',lh,a.sw*.95);
+  // a scrape each half turn (Sound): the bowl along the pot side
+  const half=Math.floor(a.sa/Math.PI);if(half!==a.sh){a.sh=half;try{window.__audio&&window.__audio.contact&&window.__audio.contact({tool:'spoon',kind:'scrape',pos:B.toArray(),strength:.45,dur:Math.PI/4.6});}catch(e){}}}
  function relTool(hand,n,bl=.35){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:bl});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
  const telePt=()=>{const P=window.__props||P3;const t=P&&P.placed&&P.placed.telescope;if(t&&t.position)return t.position.clone().add(V(0,1.35,0));return V(3.5,DK+1.35,1.3);};
  // the edge of the platform in front of a node: step forward until the boards end
@@ -666,7 +698,7 @@ export function createHero(ctx){
  Object.assign(MAKE,{
   // kitchen
   chop:(o)=>job({pt:()=>PT('board'),stand:.42,clip:'hy_chop',loop:true,dur:[22,40],tools:[['knife','Right']],tick:(a,dt)=>{a.ct=(a.ct||0)+dt;if(a.ct>.45){a.ct=0;AU('chop',PT('board'));}}}),
-  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.45,clip:'hy_stir',loop:true,dur:[25,45],tools:[['ladle','Right']]}),
+  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.45,/* GRAB: the stirring arm is all hand IK (stirPost), the body stands calm instead of the clip's big sway */loop:true,dur:[25,45],tools:[['ladle','Right']],vary:false,post:(a,dt)=>stirPost(a,dt)}),
   stoke:(o)=>{// a log from the woodpile into the oven: crouch, pick it up, carry it over, open the little door, in, shut
    const a={step:'go',t:0};const wp=PT('woodpile'),ovp=PT('oven');if(!wp||!ovp){a.update=()=>endTask(false);return a;}
    const P=window.__props||P3;const toOven=()=>{const nn=nearNode(ovp)||'stove';goTo(nn,()=>approachTo(a,ovp,.68,()=>{a.step='stoke';a.t=0;once('hy_stoke',{fade:.4,then:()=>{play(IDLE(),{fade:.5});endTask();}});}));};
