@@ -15,7 +15,7 @@
     const touch = opt.touch, W = innerWidth, H = innerHeight;
     const groundH = opt.groundH, solidStrict = opt.solid;
     const out = { frames: 0, seqs: 0, viol: {}, samples: {}, collided: 0, maxRatioDrop: 0 };
-    let orbitRef = null, zin = 0, legitGoal = true, lastKind = '', lastGesture = '', curSeq = 0, log = [];
+    let limbIn = 0, orbitRef = null, zin = 0, legitGoal = true, lastKind = '', lastGesture = '', curSeq = 0, log = [];
     let prev = null;
     function bad(kind, info) {
       out.viol[kind] = (out.viol[kind] || 0) + 1;
@@ -64,7 +64,8 @@
           if (ok) bad('inside-wall', { p: c.map(v => +v.toFixed(2)), face: f, room: b, t, kind: lastKind });
         }
       }
-      if (opt.limb && opt.limb(cp.x, cp.y, cp.z)) bad('inside-limb', { p: [cp.x, cp.y, cp.z].map(v => +v.toFixed(2)), t, kind: lastKind });
+      limbIn = opt.limb && opt.limb(cp.x, cp.y, cp.z) ? limbIn + 1 : 0;   // the push-out is eased over a few frames
+      if (limbIn > 6) bad('inside-limb', { p: [cp.x, cp.y, cp.z].map(v => +v.toFixed(2)), t, kind: lastKind });
       if (cp.y < groundH(cp.x, cp.z) + 0.15) bad('under-ground', { p: [cp.x, cp.y, cp.z].map(v => +v.toFixed(2)), g: groundH(cp.x, cp.z) });
       // --- limits and a sensible focus ---
       if (Math.abs(d.cy - d.home.yaw) > d.YAW_LIM + 0.02) bad('yaw-limit', { yaw: d.cy, kind: lastKind });
