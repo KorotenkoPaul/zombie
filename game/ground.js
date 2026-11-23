@@ -124,11 +124,11 @@ export function createGround(C){
     // density: dense along root edges, sparse on bare trodden earth near the trunk, patchy elsewhere
     const dens=Math.max(smooth(1.4,.15,d)*.9,smooth(.38,.62,fbm2(x*.18+2,z*.18+9))*(.25+.75*smooth(3,6,r)));if(R()>dens)continue;
     const sz=rr(size[0],size[1])*(1+smooth(10,40,r)*.5);M.compose(V(x,groundH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz*rr(.85,1.2),sz*rr(.8,1.25),sz*rr(.85,1.2)));im.setMatrixAt(n,M);
-    const dry=smooth(.6,.85,fbm2(x*.4,z*.4+20));Col.setHSL(rr(.26,.37)-dry*.12,rr(.2,.38)-dry*.04,rr(.4,.55)+dry*.05);im.setColorAt(n,Col);n++;}}
+    const dry=smooth(.6,.85,fbm2(x*.4,z*.4+20));Col.setHSL(rr(.27,.38)-dry*.12,rr(.22,.38)-dry*.04,rr(.33,.47)+dry*.06);im.setColorAt(n,Col);n++;}}
   im.count=n;im.receiveShadow=true;im.castShadow=false;im.name=name;scene.add(im);return im;}
- G.grass=[scatterGrass(tuftA,MOBILE?520:1100,ring(2.4,18),[.6,1.1],'grassTall'),
+ G.grass=[scatterGrass(tuftA,MOBILE?440:900,ring(2.4,18),[.7,1.25],'grassTall'),
   scatterGrass(tuftB,MOBILE?380:800,ring(2.2,14),[.8,1.3],'grassShort'),
-  scatterGrass(tuftF,MOBILE?380:700,ring(16,48,.85),[1,1.6],'grassFar')];
+  scatterGrass(tuftF,MOBILE?260:450,ring(16,48,.85),[1.3,2.1],'grassFar')];
 
  // ================= moss cushions =================
  // soft lumpy pillows of moss where the roots meet the ground and on the sides of stones (the cosy, overgrown look)
@@ -139,9 +139,9 @@ export function createGround(C){
   const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1});
   mat.onBeforeCompile=s=>{s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;').replace('#include <begin_vertex>','#include <begin_vertex>\nvMW=(modelMatrix*instanceMatrix*vec4(position,1.)).xyz;');
    s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\n{float f=fbm(vMW.xz*14.+vMW.y*9.);float f2=fbm(vMW.xz*3.1);diffuseColor.rgb*=.6+.6*f;diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.9,1.15,.8),f2*.6);}');};
-  const N=MOBILE?45:90;const im=new THREE.InstancedMesh(base,mat,N);let n=0;
+  const N=MOBILE?28:55;const im=new THREE.InstancedMesh(base,mat,N);let n=0;
   for(let t=0;t<N*30&&n<N;t++){const s=pick(ring(2.2,13),(x,z)=>{const d=rootD(x,z);return d>.04&&d<.45;},6);if(!s)continue;const [x,z]=s;
-   const sz=rr(.1,.26);E.set(0,rr(0,6.28),0);Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.25,z),Q,Sc.set(sz*rr(.8,1.2),sz*rr(.9,1.3),sz*rr(.8,1.1)));im.setMatrixAt(n,M);
+   const sz=rr(.07,.18);E.set(0,rr(0,6.28),0);Q.setFromEuler(E);M.compose(V(x,groundH(x,z)-sz*.25,z),Q,Sc.set(sz*rr(.8,1.2),sz*rr(.9,1.3),sz*rr(.8,1.1)));im.setMatrixAt(n,M);
    Col.setHSL(rr(.28,.36),rr(.15,.28),rr(.42,.55));im.setColorAt(n,Col);n++;}
   im.count=n;im.receiveShadow=true;scene.add(im);G.moss=im;}
 
