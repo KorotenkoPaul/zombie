@@ -35,3 +35,5 @@
 - Lantern fix (Lights): __lights.attachHand(heroBones.RightHand); __lights.set('hand',true) ... when done __lights.set('hand',false); __lights.detachHand().
 - Hatch (Tree): __house.hatch {ladder:{top,bottom},grab,isOpen(),open(),close()}; route() blocks the ladder edge while closed. MAKE.hatch({open}).
 - Dishes (Props): __props.dishes {setDirty(n), wash()→-1 when none, putAway(), state()→{dirty,rack,shelf}, setState}. Points 'sink','rack','dishShelf'. After eating: setDirty(state().dirty+1). Serving plate (tool 'plate', plate.setFood) waits on the stove.
+- Water (Props, NOTES-props.md): tools 'waterBucket' (point 'waterShelf', feeds tap) and 'drainBucket' (point 'drainBay' under sink); grip = handle userData.grip. __props.water.tap(on) (point 'tap'), water.pour(name,on) while tilting a held bucket. Washing up: tap(true), loop dishes.wash(), tap(false). Brain tasks wanted: fetchwater (pond at __ground.pond.fill), setbucket, dumpwater.
+- Bed legs: bedLegClear() lifts ankles over the front rail with IK while getting in/out (test /tmp/claude-0/s41.js, window.__noLegClear to compare).
