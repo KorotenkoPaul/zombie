@@ -364,10 +364,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // a lamp forgotten earlier in a room he walks through: he notices it on the way and puts it out (usually)
     for (const r of roomsOnWay(A.node || AREA_NODE[area(name)] || AREA_NODE[to])) if (r !== from && r !== to && ROOM_LAMP[r] && lampOn(ROOM_LAMP[r]) && Math.random() < .85)
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'по пути: забытая лампа — гасит' });
-    // the floor hatch is closed and the way goes through it: open it first (without a hatch task, it just opens, so he is never trapped)
+    // the floor hatch is closed and the way goes through it: open it first (without a hatch task the ladder climb opens it by hand)
     { const H8 = house(); const up = r => r === 'bedroom';
       if (!locked && H8 && H8.hatch && H8.hatch.isOpen && !H8.hatch.isOpen() && name !== 'sleep' && up(from) !== up(to) && !(A.node && /^(deck|ledge|ll_)/.test(A.node))) {
-        if (HH.hasTask && HH.hasTask('hatch')) plan.push({ task: 'hatch', opts: { open: true }, why: 'открывает люк' }); else H8.hatch.open(); } }
+        if (HH.hasTask && HH.hasTask('hatch')) plan.push({ task: 'hatch', opts: { open: true }, why: 'открывает люк' }); /* else the ladder opens it under his hand */ } }
     if (name === 'sleep' && canJacket() && wearing()) plan.push({ task: 'jacket', opts: { on: false }, why: 'перед сном вешает куртку на крючок' });
     // warm again (midday, dry): the jacket comes off when he passes by; cold or wet: on before going out (or in a cold morning)
     else if (canJacket() && name !== 'sleep' && !JOBS[name]) {
@@ -487,9 +487,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if ((bolt || lamps.length) && hatchShut() && sideOf(ROOM_OF(H.node)) === 'up' && canHatch) { plan.push({ task: 'hatch', opts: { open: true }, why: 'запирается: спускается к двери' }); reopened = true; }
     if (bolt) plan.push({ task: 'bolt', opts: { lock: true }, why: 'запирается: засов', extra: 'bolt' });
     for (const r of lamps) plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'запирается: гасит свет внизу' });
+    // shutters (only the body closes them, with its hands): the windows below before he goes up, the hatch shut from above,
+    // then the window(s) upstairs; going down again for a shutter would open the hatch on the way (QA 2026-11-23)
+    const canSh = HH.hasTask && HH.hasTask('shutters'), WIN = { bwin: 'bedroom', kwin: 'kitchen', wwin: 'workshop' };
+    const below = Object.keys(WIN).filter(w => sideOf(WIN[w]) !== 'up'), above = Object.keys(WIN).filter(w => sideOf(WIN[w]) === 'up');
+    if (canSh && below.length) plan.push({ task: 'shutters', opts: { close: true, windows: below }, why: 'запирается: ставни внизу' });
     if ((reopened || (H8 && H8.hatch && H8.hatch.isOpen && H8.hatch.isOpen())) && canHatch) plan.push({ task: 'hatch', opts: { open: false, side: 'top' }, why: 'запирается: люк' });
-    // shutters / curtains (Tree, Lights): only the body closes them, with its hands
-    if (HH.hasTask && HH.hasTask('shutters')) plan.push({ task: 'shutters', opts: { close: true }, why: 'запирается: ставни' });
+    if (canSh && above.length) plan.push({ task: 'shutters', opts: { close: true, windows: above }, why: 'запирается: ставни' });
     // no body task for it yet: they stay as they are (HERO-RULES 3.3, nothing moves unless a hand holds it)
   }
   function maybeLockdown(h) {

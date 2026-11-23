@@ -79,3 +79,4 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - Brain only calls body tasks (HH.startTask) and books state; the shutters/curtains are no longer closed "by magic" when the body lacks a 'shutters' task (rule 3.3). Lockdown lift plans 'shutters' {close:false}.
 - Rule 3.7 (40-90 s at a place): a visit is "young" for its first 40 real seconds: same area +1.6, elsewhere -1.2. Runs (seeds 1, 3): area stays 66-180 s, only jobs (pond, dump) and in-place chores are shorter.
 - Durations: ACTS dur is the brain's stay; the executor's own dur is used for EXTRA chores, with the brain watchdog (90 s / EXTRA.dur) as a backstop.
+- Lockdown order fixed: shutters below → hatch shut from the top → bedroom shutter. Before, the shutters task took him back down after the hatch, and the ladder reopened it (QA: locked with the hatch open). Removed the last "magic" hatch.open() fallback in planFor; without a hatch task the ladder climb opens it by hand.
