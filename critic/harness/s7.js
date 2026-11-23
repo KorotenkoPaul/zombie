@@ -17,6 +17,7 @@ const S=[
  ['ext_back',[0,7.4,1],3.1,.15,22],['ext_side_left',[0,7.4,1],1.6,.15,22],
 ];
 (async()=>{const {b,p,errs}=await open({});await p.evaluate(h=>{window.__H0=h;__th.setHour(h);__th.cam();},HOUR);await p.waitForTimeout(3000);
-for(const [n,t,y,pi,d] of S){await p.evaluate(([t,y,pi,d])=>{const V=__dbg.THREE.Vector3;__th.rig.set({target:new V(...t),yaw:y,pitch:pi,dist:d,snap:true,home:false});__th.setHour(window.__H0);},[t,y,pi,d]);
+const ONLY=process.env.SHOTS?process.env.SHOTS.split(','):null;
+for(const [n,t,y,pi,d] of S.filter(s=>!ONLY||ONLY.includes(s[0]))){await p.evaluate(([t,y,pi,d])=>{const V=__dbg.THREE.Vector3;__th.rig.set({target:new V(...t),yaw:y,pitch:pi,dist:d,snap:true,home:false});__th.setHour(window.__H0);},[t,y,pi,d]);
  await p.waitForTimeout(2500);await p.screenshot({path:O+'/'+n+'.png'});const st=await p.evaluate(()=>__th.rig.state);console.log(n,JSON.stringify(st));}
 console.log(errs.filter(e=>!/Sprite/.test(e)).join('\n'));await b.close();})();

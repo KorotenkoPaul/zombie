@@ -80,7 +80,7 @@ export function createTreeDress(C) {
       const W = window.__wind, on = W && W.raining ? W.raining() : 0;
       D._rk = (D._rk || 0) + (on - (D._rk || 0)) * Math.min(1, dt / 6); const rain = D._rk;
       const night = Math.min(1, ENVR.strength.value / 0.8 || 0);
-      D.barkU.wet.value = Math.max(night * 0.08, rain); /* dew is only a faint sheen; glossy only while it rains */
+      D.barkU.wet.value = rain; /* sheen only while it rains (no dew gloss): dry bark stays fully matte */ void night;
       /* soaked bark: soaks up in ~25 s of rain, then dries over ~4 min, last in the furrows, the runs down the bark and the foot */
       const d = D.barkU.damp; d.value = rain > 0.05 ? Math.min(1, d.value + dt * rain / 25) : Math.max(0, d.value - dt / 240);
       /* hoar frost on the root tops on cold clear nights (Wind's __weather temp: ~4 °C before dawn): forms over ~90 s, melts in ~60 s */
@@ -129,28 +129,27 @@ export function createTreeDress(C) {
           for (const sgn of [-1, 1]) { const ep = c.clone().addScaledVector(ax, sgn * L * 0.5); const w = nearest(ep.x, ep.y, ep.z, 0.35); if (w < 0) continue;
             const pt = V(wpos[w * 3], wpos[w * 3 + 1], wpos[w * 3 + 2]); if (D.bites.some(b => b.distanceTo(pt) < 0.12)) continue; pt.w = wid * 0.5 + 0.05; D.bites.push(pt); } } }
       D.biteAll = D.bites.length; const NB = 72; D.bites.sort((a, b) => a.y - b.y); D.bites = D.bites.slice(0, NB);
-      const J = new Float32Array(n * 3);
+      const J = new Float32Array(n * 3), BI = new Float32Array(n * 8);
       for (let i = 0; i < n; i++) { const w = wk[i]; const x = wpos[w * 3], y = wpos[w * 3 + 1], z = wpos[w * 3 + 2];
-        let bite = 0; for (const b of D.bites) { const d = Math.hypot(b.x - x, b.y - y, b.z - z); bite = Math.max(bite, 1 - sm(b.w + 0.2, b.w + 0.75, d)); }
+        let bite = 0, i1 = -1, i2 = -1, d1 = 9, d2 = 9; D.bites.forEach((b, bi) => { const d = Math.hypot(b.x - x, b.y - y, b.z - z); bite = Math.max(bite, 1 - sm(b.w + 0.2, b.w + 0.75, d)); const e = d - b.w; if (e > 0.85) return; if (e < d1) { i2 = i1; d2 = d1; i1 = bi; d1 = e; } else if (e < d2) { i2 = bi; d2 = e; } }); for (const [o, bi] of [[0, i1], [4, i2]]) { const b = D.bites[bi]; if (b) BI.set([b.x, b.y, b.z, b.w], i * 8 + o); else BI.set([0, -99, 0, -1], i * 8 + o); }
         J[i * 3] = cr[w]; J[i * 3 + 1] = sp2[w] * (1 - cr[w]) * (1 - sm(0, c0, cv[w])); J[i * 3 + 2] = bite; }
-      g.setAttribute('tdJ', new THREE.BufferAttribute(J, 3));
+      g.setAttribute('tdJ', new THREE.BufferAttribute(J, 3)); { const ib = new THREE.InterleavedBuffer(BI, 8); g.setAttribute('tdB1', new THREE.InterleavedBufferAttribute(ib, 4, 0)); g.setAttribute('tdB2', new THREE.InterleavedBufferAttribute(ib, 4, 4)); } // the two nearest beam bites, passed flat per triangle (no uniform-array indexing)
       D.junction = { creases: cr.filter(x => x > 0.5).length, bites: D.bites.length, verts: nw };
       D.creaseAt = () => { const m = new Map(); for (let w = 0; w < nw; w++) if (cr[w] > 0.6) { const k = [0, 1, 2].map(j => Math.round(wpos[w * 3 + j] / 1.5)).join(','); const e = m.get(k) || [0, 0, 0, 0]; e[0] += wpos[w * 3]; e[1] += wpos[w * 3 + 1]; e[2] += wpos[w * 3 + 2]; e[3]++; m.set(k, e); } return [...m.values()].filter(e => e[3] > 4).map(e => [+(e[0] / e[3]).toFixed(1), +(e[1] / e[3]).toFixed(1), +(e[2] / e[3]).toFixed(1), e[3]]); };
-      D.biteU = { value: Array.from({ length: NB }, (_, i) => D.bites[i] ? new THREE.Vector4(D.bites[i].x, D.bites[i].y, D.bites[i].z, D.bites[i].w) : new THREE.Vector4(0, -99, 0, 0)) };
     }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
       sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
-      sh.uniforms.tdBite = D.biteU; sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);vTdJ=tdJ;');
+      sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);vTdJ=tdJ;vB1=tdB1;vB2=tdB2;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
 ${MOBILE ? '#define TD_LITE' : ''}
 #define TDRS .68
-#define TDNB 72
+#define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
-varying vec3 vTdJ;uniform vec4 tdBite[TDNB];float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
+varying vec3 vTdJ;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
 varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
@@ -167,7 +166,11 @@ vec3 tdW(vec3 n,vec3 A,vec3 B,vec3 C){vec3 b=pow(abs(vec3(dot(n,B),dot(n,C),dot(
 // wood grain across the roots. TDR makes one turn a whole number of tiles at every octave; the gradients are explicit
 // (from the continuous tdUd), so the angle's wrap leaves no mip seam.
 float tdU=0.;vec2 tdUd=vec2(0.);vec3 tdDx=vec3(0.),tdDy=vec3(0.);
+#ifdef TD_LITE
+vec4 tdTex(sampler2D t,vec2 uv,vec2 gx,vec2 gy){return texture2D(t,uv);} // phones: plain reads, tdU is picked seam-free below
+#else
 vec4 tdTex(sampler2D t,vec2 uv,vec2 gx,vec2 gy){return textureGrad(t,uv,gx,gy);}
+#endif
 vec4 tdS(sampler2D t,vec3 p,float m,float cc,vec2 cd,vec3 n,vec3 A,vec3 B,vec3 C,float s){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8,b=dot(p,B);
  vec3 dx=tdDx*m*s,dy=tdDy*m*s;vec2 ax=vec2(dot(dx,A)*.8,dot(dy,A)*.8),bx=vec2(dot(dx,B),dot(dy,B)),cx=cd*m*s;
  vec4 r=vec4(0.);if(w.x>0.)r+=tdTex(t,vec2(cc,a)*s,vec2(cx.x,ax.x),vec2(cx.y,ax.y))*w.x;if(w.y>0.)r+=tdTex(t,vec2(b,a)*s,vec2(bx.x,ax.x),vec2(bx.y,ax.y))*w.y;
@@ -212,8 +215,20 @@ uniform float tdCool;` + NOISE)
           { vec2 rv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float r=length(rv); vec3 rad=r>1e-3?vec3(rv.x/r,0.,rv.y/r):vec3(1.,0.,0.);
             // roots and limbs: furrows along them. Near the ground the roots run outwards; higher up the limbs rise a little as they go out.
             tdA=normalize(rad+vec3(0.,.25*smoothstep(2.5,4.,y),0.)); tdC=vec3(-rad.z,0.,rad.x); tdB=normalize(cross(tdC,tdA));
+            #ifdef TD_LITE
+            tdLf=smoothstep(2.95,3.25,r); // phones blend the coordinates (one read), which stretches the plates: keep that band narrow
+#else
             tdLf=smoothstep(2.5,3.7,r);
-            tdDx=dFdx(tdP);tdDy=dFdy(tdP); tdU=atan(rv.y,rv.x)*TDR; tdUd=vec2(rv.x*tdDx.z-rv.y*tdDx.x,rv.x*tdDy.z-rv.y*tdDy.x)/max(r*r,1e-4)*TDR; }
+#endif
+            tdU=atan(rv.y,rv.x)*TDR;
+#ifdef TD_LITE
+            // the same angle with its wrap moved to the other side (a whole number of tiles apart, so the same texels): use whichever
+            // is smooth across this pixel quad, so the implicit mip choice never sees the jump (Tarini's seam trick)
+            { float u2=tdU+(tdU<0.?6.2831853*TDR:0.); if(fwidth(u2)<fwidth(tdU))tdU=u2; }
+#else
+            tdDx=dFdx(tdP);tdDy=dFdy(tdP); tdUd=vec2(rv.x*tdDx.z-rv.y*tdDx.x,rv.x*tdDy.z-rv.y*tdDy.x)/max(r*r,1e-4)*TDR;
+#endif
+            }
           tdFade=1.-smoothstep(5.,16.,length(cameraPosition-tdP));
           // phones: one macro read and no close-up octave (GPU-bound at night); desktop: anti-tiling second read + micro detail up close
           vec4 hb=vec4(.5,1.,.5,1.);
@@ -239,8 +254,9 @@ uniform float tdCool;` + NOISE)
           diffuseColor.rgb*=mix(1.,.5,tdCr*tdCr)*mix(1.,.7+.3*cav,tdCr);
           // collar: the swollen ring round the limb base, its ridges squeezed tight and a little paler with weathering
           diffuseColor.rgb*=mix(1.,mix(.78,1.18,smoothstep(.3,.8,tdH)),tdCo*.75);
-          if(vTdJ.z>.01){ float pk=0.;
-            for(int i=0;i<TDNB;i++){ vec4 b=tdBite[i]; vec3 dv=tdP-b.xyz; float d=length(dv); if(d>b.w+.8)continue;
+          if(vB1.w>0.){ float pk=0.;
+            // only the two bites nearest this triangle (from the mesh, flat), not a loop over all of them
+            for(int k=0;k<TDBK;k++){ vec4 b=k==0?vB1:vB2; if(b.w<0.)continue; vec3 dv=tdP-b.xyz; float d=length(dv); if(d>b.w+.8)continue;
               float ci=1.-smoothstep(b.w*.8,b.w*1.02,d);                                    // crushed under the beam's end
               float rl=smoothstep(b.w*.85,b.w+.05,d)*(1.-smoothstep(b.w+.05,b.w+.2,d));      // callus roll the bark grew round it
               float wr=1.-smoothstep(b.w,b.w+.5,d);                                          // rubbed by the wood moving in the wind
@@ -297,9 +313,9 @@ uniform float tdCool;` + NOISE)
             diffuseColor.rgb=mix(diffuseColor.rgb,lc*(.55+lum*2.5),li*(kind<.85?.55:.45)); }
           // wet bark: darker, and glossy in the grooves' ridges (moss stays matte); streaks run down from the limbs
 #ifdef TD_LITE
-          float streak=big;
+          float streak=big*.6+tdH*.4;
 #else
-          float streak=td_n(vec3(tdP.x*2.2,tdP.y*.25,tdP.z*2.2));
+          float streak=big*.6+tdH*.4; // patchy, on the ridges first: no stretched noise, so no glossy stripes
 #endif
           tdWM=tdWet*(1.-mm*.8)*(.55+.45*smoothstep(.3,.7,streak));
           diffuseColor.rgb*=1.-tdWM*.3;
@@ -333,7 +349,7 @@ uniform float tdCool;` + NOISE)
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.32,tdWM*(1.-tdFM)); // dry bark is fully matte')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.45,tdWM*(1.-tdFM)); // a soft wet sheen, not varnish // dry bark is fully matte')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon

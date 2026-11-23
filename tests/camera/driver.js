@@ -71,7 +71,7 @@
       const B = d.BOUND, r = Math.hypot(t[0] - B.cx, t[2] - B.cz);
       if (r > B.r + 3.8 || t[1] > B.yMax + 3.6 || t[1] < groundH(t[0], t[2]) - 0.01) bad('focus-out', { t, r: +r.toFixed(2) });
       if (!isFinite(E) || !isFinite(cp.x)) bad('nan', {});
-      if (d.cd < 0.99 || d.cd > d.hardD + 0.05) bad('dist-range', { cd: d.cd });
+      if (d.cd < 1.42 || d.cd > d.hardD + 0.05) bad('dist-range', { cd: d.cd });
       if (orbitRef && (d.hit === 'room' || d.hit === 'wall' || (prev && prev.coll < 0.999 && orbitRef.E === prev.E))) orbitRef.room = true;   // a room hold releasing
       if (orbitRef) {
         if (zin > 0 || d.flyK > 0 || d.cine || d.follow || Math.abs(Math.log(d.cd / orbitRef.cd)) > 0.003) orbitRef = null;
@@ -140,7 +140,7 @@
       wheel() {
         lastKind = 'wheel'; log.push('wheel');
         const [x, y] = P();
-        for (let i = 0; i < ri(1, 10); i++) { cv.dispatchEvent(new WheelEvent('wheel', { deltaY: rnd(-300, 300), clientX: x, clientY: y, ctrlKey: R() < 0.3, bubbles: true, cancelable: true })); zin = 3; run(ri(1, 4)); }
+        for (let i = 0; i < ri(1, 10); i++) { const pin = R() < 0.3; cv.dispatchEvent(new WheelEvent('wheel', { deltaY: pin ? rnd(-25, 25) : rnd(-300, 300), clientX: x, clientY: y, ctrlKey: pin, bubbles: true, cancelable: true })); /* trackpad pinch (ctrlKey) sends small deltas */ zin = 3; run(ri(1, 4)); }
       },
       tap(dbl) {
         lastKind = dbl ? 'dbl' : 'tap'; log.push(lastKind);
