@@ -162,7 +162,7 @@ export function createHero(ctx){
   FIT.bed={bx,bz,mat,x0,x1,z1,headDir,box:bb};
   // lying: pelvis ~0.85 m from the head end, body centred across the mattress; yaw so the head points at the pillow
   const lieYaw=(headDir>0?Math.PI/2:-Math.PI/2)-(POSE.sleepHeadYaw??0);
-  N.bedlie={p:V(headDir>0?x1-1.0:x0+1.0,mat,bz),face:0,seat:mat};SLEEPB=makeBedClip(lieYaw)||SLEEPB;
+  N.bedlie={p:V(headDir>0?x1-.95:x0+.95,mat,bz),face:0,seat:mat};SLEEPB=makeBedClip(lieYaw)||SLEEPB;
   // sitting on the very front edge of the mattress facing the room
   N.bededge={p:V(bx-headDir*.15,mat,z1+.14),face:0,seat:mat,floor:floorTop(BD,bx,z1+.45)};
   N.bed_app={p:V(N.bededge.p.x-sdEnd.x,BD,N.bededge.p.z-sdEnd.z),face:0,tight:true};
@@ -490,6 +490,14 @@ export function createHero(ctx){
  function bedHand(){const b=H.bedB;if(!b||!FIT.bed)return;const u=b.u;const w=smooth(.03,.2,u)*(1-smooth(.5,.72,u));if(w<.01)return;
   const hp=bones.Hips.getWorldPosition(V());const t=V(hp.x+.3*(FIT.bed.headDir||1),FIT.bed.mat+.04,Math.min(hp.z,FIT.bed.z1)-.12);
   armIK('Left',t,V(0,.3,1),w);}
+ // legs over the bed's front rail (Pavel: they went through the left end of the bed): while getting in or out, any ankle that is over
+ // the mattress or the rail is lifted to clear the mattress top, and kept off the foot board
+ const legClr={Left:{l:0},Right:{l:0}};
+ function bedLegClear(dt){if(window.__noLegClear)return;const b=H.bedB;const B=FIT.bed;if(!B||!(b||H.inBed)){legClr.Left.l=legClr.Right.l=0;return;}const railZ=B.z1+.08,yReq=B.mat+.1,xMin=B.x0+.07;
+  for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());
+   const k=smooth(railZ+.5,railZ+.03,a.z);const S=legClr[s];const want=Math.max(0,yReq-a.y)*k;S.l+=clamp(want-S.l,-1.1*dt,1.4*dt);S.l=Math.max(S.l,want*smooth(railZ+.12,railZ,a.z));
+   const lift=S.l;const dx=Math.max(0,xMin-a.x)*k;if(lift<.002&&dx<.002)continue;
+   const kn=L.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=kn.clone().sub(hp.clone().add(a).multiplyScalar(.5));ik2(U,L,F,a.clone().add(V(dx,lift,0)),pole,1,true);}}
  // the quilt and mattress sink under him (props.js bedPress)
  function bedPress(on){const P=window.__props||P3;if(!P||!P.bedPress)return;try{P.bedPress(on?bones.Hips.getWorldPosition(V()):null);}catch(e){}}
  function lieDown(then){const ed=N.bededge;H.face=0;
@@ -557,7 +565,7 @@ export function createHero(ctx){
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
   if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}}
-  bedHand();
+  bedHand();bedLegClear(dt);
   if(act&&act.post)act.post(dt);
   lookAt(dt);duck(dt);}
 
