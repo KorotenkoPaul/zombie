@@ -91,3 +91,7 @@ Debug: `__treedress.stats()`.
   reads only inside a narrow band (2.8-3.4 m), like desktop.
 - Phones, only while the camera is within 9 m of the trunk (uniform tdNear from the bark's onBeforeRender camera): the fine
   octave read, and a screen-space micro bump from its height (dFdx/dFdy, no normal-map read). Bench within noise.
+
+## Round 14 (on the new trunk forms, d015ff1)
+- Pavel wants the bark smooth like the photo, character from the forms: bark relief default 1 -> 0.45 (plates, cavities, micro
+  octave and normals all scale with it). Moss, ivy, creases and bites rebuilt fine on the new geometry (712 creases, 72 bites).
