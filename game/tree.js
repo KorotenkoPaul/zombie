@@ -330,10 +330,10 @@ export function buildTree(THREE, o) {
     }
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\nfloat ff=smoothstep(.18,.6,vFacing)*smoothstep(.8,3.,vDep);diffuseColor.a*=step(length(vMapUv-.5)*2.,ff*1.3);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
-  const total = MOB(o) ? 1700 : 2800;
+  const total = MOB(o) ? 1400 : 2800; // [PERF] phones: fewer, slightly bigger cards (same coverage, less overdraw)
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
-  const qg = new THREE.PlaneGeometry(1, 1, 4, 4);
+  const qg = MOB(o) ? new THREE.PlaneGeometry(1, 1, 2, 2) : new THREE.PlaneGeometry(1, 1, 3, 3); // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
   { const pa = qg.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i); pa.setZ(i, 0.28 * (0.5 - (x * x + y * y))); } qg.computeVertexNormals(); }
   const im = new THREE.InstancedMesh(qg, lmat, total);
   const shade = new Float32Array(total);
@@ -351,7 +351,7 @@ export function buildTree(THREE, o) {
       const fw = rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
       const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
-      sc.setScalar(rnd(1.25, 2.0));
+      sc.setScalar(MOB(o) ? rnd(1.4, 2.15) : rnd(1.25, 2.0));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1));
       // lighter, yellow-green leaves on the clump edges and the odd autumn-yellow card, like the photo
