@@ -153,12 +153,17 @@ function bake(group) {
 }
 
 // ---------------- small shared parts ----------------
-function W(parent, w, h, d, x, y, z, { mat = M.wood, r = .012, grain, rx = 0, ry = 0, rz = 0 } = {}) {
+function W(parent, w, h, d, x, y, z, { mat = M.wood, r = .016, grain, rx = 0, ry = 0, rz = 0 } = {}) {
   if (grain === undefined) grain = w >= h && w >= d ? 0 : (h >= d ? 1 : 2);
   return add(parent, boxUV(rb(w, h, d, r), grain), mat, x, y, z, rx, ry, rz);
 }
 function knob(parent, x, y, z, mat = M.brass, r = .018) { add(parent, new THREE.SphereGeometry(r, 14, 10), mat, x, y, z + r * .6); add(parent, new THREE.CylinderGeometry(r * .45, r * .55, r * .9, 10), mat, x, y, z + r * .1, Math.PI / 2); }
-function panelDoor(parent, w, h, x, y, z, mat = M.wood) { W(parent, w, h, .022, x, y, z + .011, { mat, r: .008, grain: 1 }); W(parent, w - .09, h - .09, .016, x, y, z + .024, { mat, r: .01, grain: 1 }); }
+// frame-and-panel cabinet door: proud stiles and rails, a recessed panel and a raised field with a real chamfer (Critic N5)
+function panelDoor(parent, w, h, x, y, z, mat = M.wood) { const f = Math.min(.055, w * .16), d = .024;
+  W(parent, w - .004, h - .004, .012, x, y, z + .006, { mat, r: .004, grain: 1 }); // back sheet / recessed panel
+  for (const s of [-1, 1]) { W(parent, f, h, d, x + s * (w - f) / 2, y, z + d / 2, { mat, r: .007, grain: 1 }); W(parent, w - 2 * f + .004, f, d, x, y + s * (h - f) / 2, z + d / 2, { mat, r: .007, grain: 0 }); }
+  const fw = w - 2 * f - .03, fh = h - 2 * f - .03; if (fw > .04 && fh > .04) { const sh = new THREE.Shape(); sh.moveTo(-fw / 2 + .02, -fh / 2 + .02); sh.lineTo(fw / 2 - .02, -fh / 2 + .02); sh.lineTo(fw / 2 - .02, fh / 2 - .02); sh.lineTo(-fw / 2 + .02, fh / 2 - .02); sh.lineTo(-fw / 2 + .02, -fh / 2 + .02);
+    const e = new THREE.ExtrudeGeometry(sh, { depth: .004, bevelEnabled: true, bevelSize: .02, bevelThickness: .008, bevelSegments: 1 }); boxUV(e, 1); add(parent, e, mat, x, y, z + .014); } }
 function screw(parent, x, y, z) { add(parent, new THREE.CylinderGeometry(.006, .006, .004, 8), M.iron, x, y, z, Math.PI / 2); }
 
 // draped cloth: a plane laid over a w×d top that falls `drop` over the long sides
@@ -220,7 +225,7 @@ function chair() {
   for (const x of [-.08, 0, .08]) W(g, .035, .17, .02, x, .8, -d / 2 + .02 - .015, { r: .008, grain: 1 });
   bake(g); g.userData.info = { seat: S }; return g;
 }
-function table() { const g = new THREE.Group(); W(g, .82, .04, .56, 0, .72, 0, { mat: M.woodLight, r: .012 }); for (const [x, z] of [[-.35, -.22], [.35, -.22], [-.35, .22], [.35, .22]]) W(g, .05, .7, .05, x, .35, z, { mat: M.woodDark, grain: 1 }); for (const sz of [-1, 1]) W(g, .66, .08, .025, 0, .66, sz * .22, { mat: M.woodDark }); for (const sx of [-1, 1]) W(g, .025, .08, .4, sx * .35, .66, 0, { mat: M.woodDark }); return bake(g); }
+function table() { const g = new THREE.Group(); W(g, .82, .04, .56, 0, .72, 0, { mat: M.woodLight, r: .019 }); for (const [x, z] of [[-.35, -.22], [.35, -.22], [-.35, .22], [.35, .22]]) W(g, .05, .7, .05, x, .35, z, { mat: M.woodDark, grain: 1 }); for (const sz of [-1, 1]) W(g, .66, .08, .025, 0, .66, sz * .22, { mat: M.woodDark }); for (const sx of [-1, 1]) W(g, .025, .08, .4, sx * .35, .66, 0, { mat: M.woodDark }); return bake(g); }
 function mug(mat = M.glazeBlue) { const g = new THREE.Group(); add(g, lathe([[0, .002], [.035, 0], [.04, .01], [.042, .09], [.038, .09], [.036, .012], [0, .012]], 20), mat); add(g, new THREE.TorusGeometry(.024, .007, 8, 16, Math.PI), mat, .042, .05, 0, 0, 0, -Math.PI / 2); return g; }
 function candle() { const g = new THREE.Group(); const fm = new THREE.MeshBasicMaterial({ color: 0xFFB050, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); const fl = new THREE.Mesh(lathe([[0, 0], [.007, .006], [.008, .016], [.004, .03], [0, .038]], 10), fm); fl.position.y = .107; fl.userData.live = true; g.add(fl); g.userData.flame = fm; add(g, lathe([[0, 0], [.05, 0], [.055, .012], [.03, .016], [0, .016]]), M.brass); add(g, new THREE.CylinderGeometry(.018, .018, .09, 14), M.linen, 0, .06, 0); return g; }
 
@@ -368,7 +373,12 @@ function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrad
   if (fringe) { const fm = new THREE.MeshStandardMaterial({ map: texOf(fringeCanvas(fringe)), transparent: true, alphaTest: .4, roughness: 1, side: THREE.DoubleSide }); fm.map.repeat.set(w * 6, 1); for (const s of [-1, 1]) add(g, new THREE.PlaneGeometry(w * .96, .06), fm, 0, .004, s * (d / 2 + .03), -Math.PI / 2, 0, s > 0 ? 0 : Math.PI).castShadow = false; }
   g.traverse(o => { if (o.isMesh) o.receiveShadow = true; }); return g; }
 function wallShelf(w, { brackets = true, mat = M.woodLight } = {}) { const g = new THREE.Group(); W(g, w, .035, .24, 0, 0, .12, { mat }); if (brackets) for (const s of [-1, 1]) { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.18, 0); sh.quadraticCurveTo(.06, -.04, 0, -.17); sh.lineTo(0, 0); const e = new THREE.ExtrudeGeometry(sh, { depth: .03, bevelEnabled: true, bevelSize: .004, bevelThickness: .004, bevelSegments: 2 }); add(g, e, M.woodDark, s * (w / 2 - .08) - .015, -.018, .01, 0, -Math.PI / 2, 0); } return g; }
-function jar(h, r, mat) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r, 0], [r * 1.05, h * .1], [r * 1.05, h * .8], [r * .8, h * .9], [r * .8, h], [0, h]], 18), mat); add(g, new THREE.CylinderGeometry(r * .85, r * .85, h * .12, 18), M.woodDark, 0, h + h * .04, 0); return g; }
+// a jar that reads as a jar up close: shoulder and neck, a ridged screw lid, contents behind glass, a paper label
+const JAR_FILL = [0x8E2A2A, 0xB8862E, 0x6E7A2E, 0xC8642A]; let jarN = 0;
+function jar(h, r, mat) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r * .9, 0], [r, r * .12], [r * 1.04, h * .12], [r * 1.04, h * .74], [r * .96, h * .82], [r * .78, h * .87], [r * .76, h * .9], [r * .76, h * .93], [0, h * .93]], 22), mat);
+  if (mat === M.jarGlass) { add(g, new THREE.CylinderGeometry(r * .92, r * .92, h * .66, 16), std2(JAR_FILL[jarN++ % JAR_FILL.length]), 0, h * .38, 0); }
+  add(g, new THREE.CylinderGeometry(r * .82, r * .82, h * .1, 22), M.steel, 0, h * .97, 0); add(g, new THREE.TorusGeometry(r * .82, h * .012, 4, 22), M.steel, 0, h * .93, 0, Math.PI / 2);
+  add(g, new THREE.CylinderGeometry(r * 1.045, r * 1.045, h * .32, 22, 1, true), M.linen, 0, h * .44, 0); return g; }
 function can(h, r, mat) { const g = new THREE.Group(); add(g, new THREE.CylinderGeometry(r, r, h, 20), mat, 0, h / 2, 0); for (const y of [.003, h - .003]) add(g, new THREE.TorusGeometry(r, .003, 4, 20), M.steel, 0, y, 0, Math.PI / 2); return g; }
 function picture(w, h) { const g = new THREE.Group(); for (const [ww, hh, x, y] of [[w, .035, 0, h / 2], [w, .035, 0, -h / 2], [.035, h, w / 2, 0], [.035, h, -w / 2, 0]]) W(g, ww, hh, .03, x, y, .015, { mat: M.woodDark, r: .008 }); add(g, new THREE.PlaneGeometry(w - .03, h - .03), M.picture, 0, 0, .012); return bake(g); }
 function lanternHousing(rod) { const g = new THREE.Group(); const s = .17, h = .2; add(g, new THREE.CylinderGeometry(.02, s * .78, .08, 4), M.iron, 0, h / 2 + .04, 0, 0, Math.PI / 4); add(g, new THREE.CylinderGeometry(s * .5, s * .5, .02, 4), M.iron, 0, -h / 2 - .01, 0, 0, Math.PI / 4);
@@ -404,7 +414,7 @@ function switchPlate() { const g = new THREE.Group(); add(g, rb(.08, .12, .012, 
 // ------------- workshop -------------
 function workbench() {
   const g = new THREE.Group(); const L = 1.7, D = .66, H = .9; const info = {};
-  for (let i = 0; i < 3; i++) W(g, L, .065, D / 3 - .006, 0, H - .0325, -D / 2 + (i + .5) * D / 3, { mat: M.woodLight, r: .01 });
+  for (let i = 0; i < 3; i++) W(g, L, .065, D / 3 - .006, 0, H - .0325, -D / 2 + (i + .5) * D / 3, { mat: M.woodLight, r: .02 });
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) W(g, .085, H - .065, .085, sx * (L / 2 - .1), (H - .065) / 2, sz * (D / 2 - .08), { mat: M.wood, grain: 1 });
   for (const sz of [-1, 1]) { W(g, L - .2, .11, .04, 0, H - .12, sz * (D / 2 - .06), { mat: M.wood }); W(g, L - .2, .07, .05, 0, .17, sz * (D / 2 - .08), { mat: M.wood }); }
   for (let i = 0; i < 4; i++) W(g, L - .24, .025, (D - .2) / 4 - .01, 0, .215, -D / 2 + .1 + (i + .5) * (D - .2) / 4, { mat: M.woodDark, r: .006 });
