@@ -18,7 +18,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
   const srv = spawn('python3', ['-m', 'http.server', String(PORT)], { cwd: path.join(__dirname, '../../game'), stdio: 'ignore' });
   await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--enable-precise-memory-info'] });
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1,
+  const ctx = await b.newContext({ viewport: { width: +(process.env.W || 390), height: +(process.env.H || 844) }, isMobile: true, hasTouch: true, deviceScaleFactor: 1,
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' });
   const p = await ctx.newPage();
   p.on('pageerror', e => console.log('[pageerror]', e.message));
@@ -118,8 +118,9 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
       times.push(fr.ms); hist.push(fr.ms); if (hist.length > 121) hist.shift();
       const med = [...hist].sort((a, b) => a - b)[hist.length >> 1];
       if (fr.ms - med < SPIKE && fr.ms < SPIKE) continue;
-      spikes.push({ frame: fr.f, gameSec: +(fr.f / FPS).toFixed(1), phase: fr.f < 360 ? 'first swipe' : 'idle play', ms: +fr.ms.toFixed(1), median: +med.toFixed(1), hour: r.st.hour, task: r.st.task,
-        top: Object.entries(fr.acc).sort((a, b) => b[1] - a[1]).filter(([k, v]) => v > 1 || k.startsWith('GC')).slice(0, 6).map(([k, v]) => [k, +v.toFixed(1)]) });
+      const rec = { frame: fr.f, gameSec: +(fr.f / FPS).toFixed(1), phase: fr.f < 360 ? 'first swipe' : 'idle play', ms: +fr.ms.toFixed(1), median: +med.toFixed(1), hour: r.st.hour, task: r.st.task,
+        top: Object.entries(fr.acc).sort((a, b) => b[1] - a[1]).filter(([k, v]) => v > 1 || k.startsWith('GC')).slice(0, 6).map(([k, v]) => [k, +v.toFixed(1)]) };
+      spikes.push(rec); console.log('  [spike]', JSON.stringify(rec));     // printed as found: a cut-off run still has them
     }
     console.log(`  ${f0 + r.out.length}/${total} frames (${((f0 + r.out.length) / FPS / 60).toFixed(1)} game min), ${((Date.now() - t0) / 1000).toFixed(0)} s, spikes ${spikes.length}, hour ${r.st.hour} task ${r.st.task}`);
   }
