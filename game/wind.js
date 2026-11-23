@@ -30,7 +30,8 @@
 //   gust(amp)    send one gust through the scene now
 //   level()      overall strength at the tree, 0..~2 (for sound, fog drift, ...)
 //   rustle()     0..1 how loud the leaves should rustle now
-//   on('gust'|'creak'|'mode', fn) -> off()   events for sound: gust start/end at the tree, branch creaks (strength, pos), weather spell changes
+//   raining() / setRain(on)  rare rain spells, 2-5 min (on('rain', e) with e.on)
+//   on('gust'|'creak'|'mode'|'rain', fn) -> off()   events for sound: gust start/end at the tree, branch creaks (strength, pos), weather spell changes
 
 const MODES = {
   calm:   { base: [0.03, 0.1],  dur: [50, 140], gustEvery: 70, gustAmp: [0.15, 0.3] },
@@ -91,6 +92,14 @@ export function createWind(opt = {}) {
   // events for sound and anything else that wants to react (W.on)
   const LS = {}; const emit = (k, e) => { for (const f of LS[k] || []) { try { f(e); } catch (er) { console.error('wind', k, er); } } };
   let gustIn = false, creakWait = 3, lastMode = 'breeze';
+  // rain spells: rare (one every ~6-18 min), 2-5 min long, they bring a livelier wind with them
+  let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(360, 1080);
+  function setRain(on, quiet) {
+    if (on === rainOn) return; rainOn = on;
+    if (on) { rainLeft = rr(120, 300); if (mode === 'calm' && !forced) { mode = 'breeze'; target = rr(...MODES.breeze.base); spellLeft = rainLeft * 0.6; } }
+    else rainWait = rr(360, 1080);
+    if (!quiet) emit('rain', { on });
+  }
 
   function pickNext() {
     const r = R(); let acc = 0;
@@ -113,9 +122,11 @@ export function createWind(opt = {}) {
 
     update({ dt = 1 / 60, T: t, rainK = 0 } = {}) {
       dt = Math.min(0.1, Math.max(0, dt)); T = t ?? T + dt;
+      // rain spells
+      if (rainOn) { rainLeft -= dt; if (rainLeft <= 0) setRain(false); } else { rainWait -= dt; if (rainWait <= 0) setRain(true); }
       // weather spells
       spellLeft -= dt;
-      if (spellLeft <= 0 && !forced) { mode = pickNext(); spellLeft = rr(...MODES[mode].dur); target = rr(...MODES[mode].base); }
+      if (spellLeft <= 0 && !forced) { mode = pickNext(); if (rainOn && mode === 'calm') mode = 'breeze'; spellLeft = rr(...MODES[mode].dur); target = rr(...MODES[mode].base); }
       const want = Math.min(1.1, target + rainK * 0.35);
       base += (want - base) * Math.min(1, dt / 12);          // spells fade in and out over ~10-20 s
       // the direction wanders slowly around the prevailing one
@@ -157,6 +168,10 @@ export function createWind(opt = {}) {
     rustle() { const s0 = base + W.gustAt(0, 0); return Math.min(1, 0.05 + s0 * 0.55); },
     // W.on('gust' | 'creak' | 'mode', fn) -> off(). gust: {phase:'start', amp} / {phase:'end'}; creak: {strength 0..1, pos [x,y,z]};
     // mode: {mode, prev} when the weather spell changes ('calm' | 'breeze' | 'windy')
+    // rain: raining() 1/0 (index.html eases rainK towards it), setRain(true|false) e.g. from the ☁ button.
+    // on('rain', e => e.on) fires when it starts or stops.
+    raining() { return rainOn ? 1 : 0; },
+    setRain(on) { setRain(!!on); },
     on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },

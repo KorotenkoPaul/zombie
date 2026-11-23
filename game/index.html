@@ -324,13 +324,6 @@ const glass=new THREE.MeshStandardMaterial({color:0xD6E6F0,emissive:0x5E8CC0,emi
 const glassFresnel=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <project_vertex>','#include <project_vertex>\nvFr=1.-abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <opaque_fragment>','gl_FragColor=vec4(outgoingLight,mix(diffuseColor.a,.55,pow(vFr,3.)));');};
 glass.onBeforeCompile=glassFresnel;glass.userData.ownGlass=true;
-// the little window in the trunk above the deck (photo): a plank frame on the bark with a dark, warm-lit opening
-{const wx=.8,wy=DK+1.05,wz=frontZ(wx,wy)+.04,g=new THREE.Group();g.position.set(wx,wy,wz);scene.add(g);
- // behind the glass: a small dark nook in the trunk; the pane itself is clear glass
- const hole=new THREE.Mesh(new THREE.BoxGeometry(.62,.78,.35),new THREE.MeshStandardMaterial({color:0x3A2414,roughness:1,side:THREE.BackSide}));hole.position.z=-.17;g.add(hole);
- const tg=glass.clone();tg.onBeforeCompile=glassFresnel;tg.userData.ownGlass=true;tg.emissiveIntensity=.12;const pane=new THREE.Mesh(new THREE.PlaneGeometry(.62,.78),tg);pane.position.z=.0;pane.renderOrder=2;g.add(pane);
- for(const [w,h,x,y] of [[.86,.13,0,.45],[.86,.13,0,-.45],[.13,1.03,-.37,0],[.13,1.03,.37,0],[.62,.05,0,0]]){const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,.1),darkBoard);b.position.set(x,y,.02);b.castShadow=true;g.add(b);}
- const sill=new THREE.Mesh(new THREE.BoxGeometry(1.0,.07,.22),darkBoard);sill.position.set(0,-.53,.07);g.add(sill);}
 // kitchen ladders: landing↑kitchen (through a hatch), kitchen↑bedroom (through a hatch)
 ladder(-1.22,LC,KT+.05,3.45);ladder(-4.0,KT,BD+.05,2.0);
 // barricades the zombies have to break
@@ -365,13 +358,15 @@ const {createLights}=await import(new URL(ASSET+'lights.js',document.baseURI).hr
 const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},windows:WINS});window.__lights=LIGHTS;
 // [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
 const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
+// [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
+const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;
 
 // ================= splinters, dust, fog, rain, fireflies =================
 const SPL=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),boardMat,260);SPL.count=0;SPL.castShadow=true;SPL.frustumCulled=false;{const r=new THREE.InstancedBufferAttribute(new Float32Array(260),1),t=new THREE.InstancedBufferAttribute(new Float32Array(260).fill(.2),1);SPL.geometry.setAttribute('aRow',r);SPL.geometry.setAttribute('aTile',t);}scene.add(SPL);
 const spl=[];function splinters(p,n){for(let i=0;i<n&&spl.length<260;i++){const s=V(rnd(.06,.2),rnd(.015,.03),rnd(.012,.02));const rb=world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(p.x+rnd(-.2,.2),p.y+rnd(-.1,.1),p.z+rnd(-.1,.2)).setLinvel(rnd(-2.5,2.5),rnd(.5,3.5),rnd(-.5,2)).setAngvel({x:rnd(-20,20),y:rnd(-20,20),z:rnd(-20,20)}));world.createCollider(RAPIER.ColliderDesc.cuboid(s.x/2,s.y/2,s.z/2).setDensity(500).setFriction(.8).setRestitution(.2),rb);spl.push({rb,s,age:0,life:rnd(5,8)});}}
 const SOFT=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');const g=x.createRadialGradient(32,32,1,32,32,31);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.5,'rgba(255,255,255,.4)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);})();
 const puffs=[];function puff(p,n,col=0xCFC8BB,size=1){for(let i=0;i<n;i++){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:SOFT,color:col,transparent:true,opacity:0,depthWrite:false}));s.position.set(p.x+rnd(-.2,.2),p.y+rnd(-.1,.2),p.z+rnd(-.2,.2));scene.add(s);puffs.push({s,age:0,life:rnd(.7,1.3),v:V(rnd(-.6,.6),rnd(.2,.8),rnd(-.6,.6)),s0:.2*size,s1:rnd(.7,1.2)*size});}}
-const rain=(()=>{const n=2200,pos=new Float32Array(n*6);for(let i=0;i<n;i++){const x=rnd(-16,16),y=rnd(0,24),z=rnd(-6,10);pos.set([x,y,z,x+.04,y-.5,z],i*6);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));const m=new THREE.LineBasicMaterial({color:0xC2D2E8,transparent:true,opacity:0,depthWrite:false});const l=new THREE.LineSegments(g,m);l.frustumCulled=false;scene.add(l);return {pos,n,m,l};})();
+// rain: game/rain.js (wind thread), created above right after the lights
 const motesMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{t:{value:0},night:{value:0},day:{value:1},px:{value:PR}},
  vertexShader:`attribute float ph;uniform float t,night,day,px;varying float a;varying vec3 col;void main(){vec3 p=position;p.x+=sin(t*.3+ph)*.8;p.y+=sin(t*.23+ph*2.)*.5;p.z+=cos(t*.27+ph)*.6;
 #ifdef WIND
@@ -499,7 +494,9 @@ function hud(){$('ic').textContent=isNight(hour)?'☾':(hour<8||hour>18?'◐':'�
  $('hearts').textContent='♥'.repeat(Math.max(0,hero.hp))+'♡'.repeat(Math.max(0,3-hero.hp));$('zn').textContent=zombies.filter(z=>z.alive).length;$('bN').disabled=isNight(hour)||hour>19||over;}
 function toast(t,sub){const e=$('toast');e.innerHTML=t+(sub?`<small>${sub}</small>`:'');e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2400);}
 function hint(h){const e=$('hint');e.innerHTML=h;e.classList.remove('off');hintT=5;}
-$('bW').onclick=()=>{ac();startAmb();weather=weather==='clear'?'rain':'clear';$('bW').textContent=weather==='rain'?'☂︎':'☁︎';};
+$('bW').onclick=()=>{ac();startAmb();WIND.setRain(weather==='clear');};
+// [WIND] rain comes and goes with the weather (game/wind.js); the button just starts or stops a rain spell
+WIND.on('rain',e=>{weather=e.on?'rain':'clear';$('bW').textContent=e.on?'☂︎':'☁︎';});
 $('bN').onclick=()=>{ac();startAmb();if(!isNight(hour)&&hour<19.2)hour=19.2;};
 
 // ================= aiming (drag back, release) =================
@@ -581,7 +578,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
  WIND.update({dt,T,rainK});SMOKE.update(dt,T,scene.fog.color);
- rain.m.opacity=rainK*.5;if(rainK>.02){const a=rain.pos;for(let i=0;i<rain.n;i++){const j=i*6;a[j+1]-=dt*14;a[j+4]-=dt*14;a[j]+=dt*.7;a[j+3]+=dt*.7;if(a[j+4]<0){const x=rnd(-16,16),y=rnd(20,24),z=rnd(-6,10);a.set([x,y,z,x+.04,y-.5,z],j);}}rain.l.geometry.attributes.position.needsUpdate=true;}
+ RAIN.update(dt,T,rainK,scene.fog.color);
  if(amb){const wl=WIND.level();amb.wind.gain.value=(.006+nightK*.006)+.014*Math.min(1.6,wl);amb.rain.gain.value=rainK*.05;}
  // --- spawn ---
  if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){if(!zombG)loadZombie();else{spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}}
