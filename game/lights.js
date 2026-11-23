@@ -61,7 +61,46 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   // a standing/wall lantern body (Props' lantern housing) at a point, for the lanterns Props doesn't place itself
-  function housing(pos) { if (!P3 || !P3.lanternHousing) return; const g = new THREE.Group(); g.position.copy(pos); scene.add(g); P3.lanternHousing(g, .2); g.updateMatrixWorld(true); }
+  function housing(pos, rod = .02) { if (!P3 || !P3.lanternHousing) return null; const g = new THREE.Group(); g.position.copy(pos); scene.add(g); P3.lanternHousing(g, rod); g.updateMatrixWorld(true); return g; }
+
+  // nothing floats: a lantern hangs on a chain from whatever is above it (ceiling, roof, floor of the room above);
+  // if nothing is above, an iron bracket comes out of the nearest wall, post or trunk and the chain hangs from its tip
+  const ironM = new THREE.MeshStandardMaterial({ color: 0x2C2F35, metalness: .7, roughness: .45 });
+  const linkGeo = new THREE.TorusGeometry(.016, .0045, 5, 10);
+  const rc = new THREE.Raycaster();
+  function solids() { const out = []; scene.traverse(o => { const m = o.material; if ((o.isMesh || o.isInstancedMesh) && o.visible && !o.isSprite && m && !Array.isArray(m) && !m.transparent && !(m.alphaTest > 0) && !m.isShaderMaterial && !o.userData.noHang) out.push(o); }); return out; }
+  const postM = new THREE.MeshStandardMaterial({ color: 0x5E3B24, roughness: .85 });
+  function chain(a, b) {      // links from a (bottom) to b (top)
+    const L = a.distanceTo(b), n = Math.max(1, Math.round(L / .042));
+    const im = new THREE.InstancedMesh(linkGeo, ironM, n); im.userData.noHang = true; im.castShadow = false;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = b.clone().sub(a).normalize(), base = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), up);
+    for (let i = 0; i < n; i++) { q.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (i % 2) * Math.PI / 2, Math.PI / 2))); m.compose(a.clone().lerp(b, (i + .5) / n), q, V(1, 1.25, 1)); im.setMatrixAt(i, m); }
+    scene.add(im); return im;
+  }
+  function hang(pos, topOff = .23) {
+    const top = pos.clone().add(V(0, topOff, 0)), list = solids();
+    rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = rc.intersectObjects(list, false)[0];
+    if (up) { chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 6, 12), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); hook.userData.noHang = true; scene.add(hook); return 'chain'; }
+    // bracket: find the nearest vertical surface around the lantern's top
+    let best = null;
+    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, d = V(Math.cos(a), 0, Math.sin(a)); const o = top.clone().add(V(0, .25, 0)); rc.set(o, d); rc.far = 1.3; const h = rc.intersectObjects(list, false)[0]; if (h && (!best || h.distance < best.h.distance)) best = { h, d }; }
+    let tip = top.clone().add(V(0, .25, 0)), wall;
+    if (best) wall = best.h.point;
+    else {
+      // nothing around: a little wooden lamp post on the floor below, with the iron arm reaching over
+      rc.set(pos, V(0, -1, 0)); rc.far = 4; const fl = rc.intersectObjects(list, false)[0]; if (!fl) return 'none';
+      const toAxis = V((LV.TAX ? LV.TAX[0] : 0) - pos.x, 0, (LV.TAX ? LV.TAX[1] : 0) - pos.z).normalize();
+      const base = V(pos.x + toAxis.x * .35, fl.point.y, pos.z + toAxis.z * .35), h = tip.y + .06 - base.y;
+      const post = new THREE.Mesh(new THREE.BoxGeometry(.09, h, .09), postM); post.position.set(base.x, base.y + h / 2, base.z); post.castShadow = post.receiveShadow = true; post.userData.noHang = true; scene.add(post);
+      wall = V(base.x, tip.y, base.z);
+    }
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, wall.distanceTo(tip), 6), ironM);
+    arm.position.copy(wall).lerp(tip, .5); arm.quaternion.setFromUnitVectors(V(0, 1, 0), tip.clone().sub(wall).normalize()); arm.userData.noHang = true; scene.add(arm);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(.03, .16, .08), ironM); plate.position.copy(wall); plate.lookAt(tip); plate.rotateY(Math.PI / 2); plate.userData.noHang = true; scene.add(plate);
+    const brace = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, 1, 5), ironM); const b0 = wall.clone().add(V(0, -.16, 0)), b1 = wall.clone().lerp(tip, .6);
+    brace.scale.y = b0.distanceTo(b1); brace.position.copy(b0).lerp(b1, .5); brace.quaternion.setFromUnitVectors(V(0, 1, 0), b1.clone().sub(b0).normalize()); brace.userData.noHang = true; scene.add(brace);
+    chain(top, tip); return 'bracket';
+  }
 
   function bulbMesh(pos, r, col = 0xFFE0A0) {
     const m = new THREE.MeshStandardMaterial({ color: col, emissive: 0xFF9A30, emissiveIntensity: 0, roughness: .4 });
@@ -77,18 +116,17 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       if (!haloObj.parent) { haloObj.position.copy(pos); scene.add(haloObj); }
       ENV.addHalo(haloObj, haloSize);
     }
-    const s = { name, room, kind, pos: pos.clone(), lights, emis, opac, haloObj, extra, autoFn, on: false, level: 0, manual: null, seed: Math.random() * 9, flare: 0 };
+    const s = { idx: src.size, name, room, kind, pos: pos.clone(), lights, emis, opac, haloObj, extra, autoFn, on: false, level: 0, manual: null, seed: Math.random() * 9, flare: 0 };
     src.set(name, s); return s;
   }
 
-  // ---------- kitchen: hanging lantern over the counter + a small one on the front counter ----------
+  // ---------- kitchen: hanging lantern over the counter (the old front lantern hung in mid-air and was removed) ----------
   const kPos = PL.kitchenLamp ? PL.kitchenLamp.pos.clone() : V(-2.3, KT + 1.78, 1.75);
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
+    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     const panes = claimHousing(kPos);
     const b = bulbMesh(kPos, .07);
-    const front = V(-2.4, KT + 1.5, 3.5); housing(front); claimHousing(front, .3); const fb = bulbMesh(front, .06);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: 6 }], emis: [[b, 5], [fb, 4], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 6.5 : 6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -98,36 +136,36 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     sp.target.position.copy(wPos).add(V(-.35, -2, -.25)); scene.add(sp, sp.target);
     sp.castShadow = true; sp.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); sp.shadow.camera.near = .08; sp.shadow.camera.far = 6;
     sp.shadow.bias = -.002; sp.shadow.normalBias = .03; sp.shadow.radius = 3; sp.shadow.autoUpdate = false;
-    const bounce = new THREE.PointLight(0xFFB070, 0, 3.6, 2); bounce.position.copy(wPos).add(V(-.4, -1.05, -.3)); scene.add(bounce);
     claimHousing(wPos, .3);
     const b = bulbMesh(wPos.clone().add(V(0, .05, 0)), .055, 0xFFF0C8);
     const emis = [[b, 6]]; if (pm.domeInner) { pm.domeInner.emissive = new THREE.Color(0xFFD9A0); emis.push([pm.domeInner, .9]); }
-    add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 14 }, { l: bounce, I: 1.4 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
+    add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 14 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
   const bPos = V(-2.0, BD + 1.95, 2.5);
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, 5.5, 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
-    housing(bPos); const panes = claimHousing(bPos);
+    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(bPos); scene.add(l); pointShadow(l, 5.5);
+    housing(bPos); hang(bPos); const panes = claimHousing(bPos);
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l, I: MOBILE ? 7 : 6.5 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
     const cPos = PL.candle.pos.clone();
-    const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l);
-    add('candle', 'bedroom', 'candle', cPos, { lights: [{ l, I: 1.6, sway: .012 }], opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
-      autoFn: c => c.task === 'read' && c.lamps > .25 });
+    let lights = [];
+    if (!MOBILE) { const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l); lights = [{ l, I: 1.6, sway: .012 }]; }
+    add('candle', 'bedroom', 'candle', cPos, { lights, opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
+      // lit for reading; after reading it keeps burning a while so the hero can blow it out himself
+      // (Brain/Character: lights.set('candle', false) at lights.pos('candle')); nobody comes -> it goes out on its own
+      autoFn: c => (c.task === 'read' || c.candleT > 0) && c.lamps > .25 });
   }
 
-  // ---------- outside: lantern by the ladder landing, the deck lantern ----------
+  // ---------- outside: lantern by the ladder landing (the deck lantern was removed: it read as a lantern on the bedroom roof) ----------
   {
     const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.PointLight(0xFFB25E, 0, 5, 1.6); l.position.copy(p); scene.add(l);
-    housing(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
+    housing(p); hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
     add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
-    const d = V(.7, DK + 1.15, 3.0); housing(d); claimHousing(d, .3); const db = bulbMesh(d, .065);
-    add('deck', 'outside', 'oil', d, { emis: [[db, 4.5]], autoFn: c => c.lamps > .7 });
   }
 
   // ---------- oven fire (Props draws the fire; we own whether it burns) ----------
@@ -143,23 +181,49 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     }, autoFn: c => c.cookT > 0 });
   }
 
+  // ---------- the hero's hand lantern (Character attaches it to a hand bone when he goes out at night) ----------
+  const hand = { g: new THREE.Group(), attached: null, swing: 0, prev: V() };
+  {
+    const g = hand.g; g.visible = false; scene.add(g);
+    if (P3 && P3.lanternHousing) { const hh = new THREE.Group(); hh.scale.setScalar(.62); hh.position.y = -.17; P3.lanternHousing(hh, .02); g.add(hh); hh.traverse(o => { if (o.isMesh) o.castShadow = false; }); }
+    const bm = new THREE.MeshStandardMaterial({ color: 0xFFE0A0, emissive: 0xFF9A30, emissiveIntensity: 0, roughness: .4 });
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 8), bm); bulb.position.y = -.17; g.add(bulb);
+    const l = new THREE.PointLight(0xFFB25E, 0, 4.5, 1.6); l.position.y = -.17; g.add(l);
+    hand.bulbPos = bulb;
+    add('hand', 'outside', 'oil', V(), { lights: [{ l, I: 2.6 }], emis: [[bm, 5]], haloSize: .9, autoFn: () => false });
+  }
+  function updateHand(dt) {
+    const g = hand.g, hs = src.get('hand');
+    if (!hand.attached) { if (hs && hs.manual) hs.manual = null; return; }     // nothing to light while nobody carries it
+    hand.bulbPos.getWorldPosition(hs.pos);
+    // hangs from the fingers, stays upright and swings a little with the walk
+    const pq = hand.attached.getWorldQuaternion(new THREE.Quaternion()).invert();
+    const wp = hand.attached.getWorldPosition(V()); const v = wp.clone().sub(hand.prev).divideScalar(Math.max(dt, 1e-3)); hand.prev.copy(wp);
+    hand.swing += (Math.max(-.35, Math.min(.35, v.x * .12)) - hand.swing) * Math.min(1, dt * 4);
+    g.quaternion.copy(pq).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.max(-.35, Math.min(.35, -v.z * .12)), 0, -hand.swing)));
+  }
+
   // ---------- the glowing door in the trunk ----------
   let doorLight = null;
   if (TREE && TREE.doorAngle !== undefined && TREE.R) {
     const dd = V(Math.cos(TREE.doorAngle), 0, Math.sin(TREE.doorAngle));
     const ax = LV.TAX; const r = TREE.R(LG + .7) - .3;
-    doorLight = new THREE.PointLight(0xFF9A40, 0, 4, 1.6); doorLight.position.set(ax[0] + dd.x * r, LG + .75, ax[1] + dd.z * r); scene.add(doorLight);
+    doorLight = new THREE.Object3D(); doorLight.position.set(ax[0] + dd.x * r, LG + .75, ax[1] + dd.z * r);
     // the lantern-lit cave inside the hollow: a warm light deep in it lights the carved walls, the one at the mouth spills onto the platform
     const rIn = TREE.R(LG + .7) - 1.0;
-    const cave = new THREE.PointLight(0xFFA850, 0, 2.4, 1.4); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave);
+    const cave = new THREE.PointLight(0xFFA850, 0, 3.6, 1.3); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave);
     doorLight.position.set(ax[0] + dd.x * (r + .25), LG + .8, ax[1] + dd.z * (r + .25));
     const glow = TREE.bark && TREE.bark.material.userData.doorGlow;
-    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: doorLight, I: 4 }, { l: cave, I: 5, sway: .02 }], haloSize: 2.4,
+    // the warm wedge that falls out of the doorway onto the landing, the roots and the path below it
+    const spill = new THREE.SpotLight(0xFFA650, 0, 9, .75, 1, 1.4);
+    spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
+    spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
+    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 6.5, sway: .02 }, { l: spill, I: 9 }], haloSize: 2.4,
       extra: (k, f) => { if (glow) glow.value = 1.6 * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
-  const WARM = new THREE.Color(0xFFA548), COLD = new THREE.Color(0x5E8CC0), tmpC = new THREE.Color();
+  const PANE_DAY = new THREE.Color(0x9CC4E0), PANE_NIGHT = new THREE.Color(0x1C2A3E), SKY_DAY = new THREE.Color(0x5E8CC0), SKY_NIGHT = new THREE.Color(0x24406A);
   for (const w of windows) { w.mat.emissive = w.mat.emissive.clone(); }
 
   // ---------- room glow, driven only by the room's own sources ----------
@@ -169,10 +233,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const ROOMS = {
     kitchen:  { c: V(-2.65, KT + 1.05, 2.5), bounce: 2.0 },
     bedroom:  { c: V(-1.9, BD + 1.1, 2.3), bounce: 1.6 },
-    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.2 },
+    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
   };
   const glows = [];
   for (const [room, R] of Object.entries(ROOMS)) {
+    if (MOBILE && room !== 'workshop') continue;      // phones: the lantern itself has a softer, longer falloff instead (fewer lights)
     const b = new THREE.PointLight(0xFFBE80, 0, 3.8, 1.3); b.position.copy(R.c); scene.add(b);
     glows.push({ room, l: b, I: R.bounce });
   }
@@ -182,16 +247,102 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const n = V(0, 0, 1).applyQuaternion(w.g.quaternion); n.y = 0; n.normalize();
     const out = p.clone().sub(ROOMS[w.room].c); out.y = 0; if (out.dot(n) < 0) n.negate();
     const hp = p.clone().addScaledVector(n, .12);
+    w.n = n; w.room0 = ROOMS[w.room].c;
     if (ENV && ENV.addHalo) { const h = Object.assign(new THREE.Object3D(), { intensity: 0 }); h.position.copy(hp); scene.add(h); ENV.addHalo(h, 1.25); glows.push({ room: w.room, halo: h, I: 2.6 }); }
     const back = Math.abs(n.z) > .7;
-    if (back && !MOBILE) { const l = new THREE.PointLight(0xFFA850, 0, 3.4, 1.6); l.position.copy(p).addScaledVector(n, .45); scene.add(l); glows.push({ room: w.room, l, I: 2.4 }); }
+    if (back && !MOBILE) { const l = new THREE.PointLight(0xFFA850, 0, 3.4, 1.6); l.position.copy(p).addScaledVector(n, .45); scene.add(l); glows.push({ room: w.room, l, I: 2.4, spill: true }); }
   }
   const warm = {};
 
+  // ---------- daytime: sunbeams through the windows, with warm dust drifting in them ----------
+  // A soft additive prism from each window pane, along the real sun direction (the scene's shadow-casting
+  // directional light), only for windows that face the sun, strongest when the sun is low (morning/evening).
+  // Positions are built on the GPU from the window corners and the sun vector, so nothing is re-meshed per frame.
+  let sunL = null; scene.traverse(o => { if (o.isDirectionalLight && o.castShadow && !sunL) sunL = o; });
+  const beamU = { uT: { value: 0 } };
+  // beam prism: position = (u, v, t) on the window (u, v) pushed t along the light; aS = across coordinate for soft edges
+  const beamVS = `
+    attribute float aS; uniform vec3 c0, eu, ev, dir; varying float vS, vT;
+    void main(){ vS = aS; vT = position.z; vec3 p = c0 + eu*position.x + ev*position.y + dir*position.z;
+      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.); }`;
+  const beamFS = `
+    uniform float k; varying float vS, vT;
+    void main(){ float a = k * pow(sin(3.14159*vS), 1.6) * pow(1.-vT, 1.4) * smoothstep(0., .06, vT);
+      gl_FragColor = vec4(vec3(1., .86, .62) * a, 1.); }`;
+  const dustVS = `
+    attribute vec4 aD; uniform vec3 c0, eu, ev, dir; uniform float uT, px; varying float vA;
+    void main(){ float t = fract(aD.z + uT*.012*(.5+aD.w));
+      float u = clamp(aD.x + sin(uT*.31 + aD.w*40.)*.05, 0., 1.), v = clamp(aD.y + sin(uT*.23 + aD.w*70.)*.06, 0., 1.);
+      vec3 p = c0 + eu*u + ev*v + dir*t; vec4 mv = viewMatrix * vec4(p, 1.);
+      vA = sin(3.14159*u) * sin(3.14159*v) * (1.-t) * smoothstep(0., .08, t) * (.55 + .45*sin(uT*2.1 + aD.w*90.));
+      gl_PointSize = px * (1.2 + aD.w*1.6) * 3. / max(.5, -mv.z); gl_Position = projectionMatrix * mv; }`;
+  const dustFS = `
+    uniform float k; varying float vA;
+    void main(){ vec2 q = gl_PointCoord - .5; float d = 1. - smoothstep(.15, .5, length(q)); gl_FragColor = vec4(vec3(1., .85, .6) * d * vA * k, 1.); }`;
+  const prism = (() => {
+    const pos = [], across = [];
+    for (const [a, b] of [[[0, 0], [1, 0]], [[1, 0], [1, 1]], [[1, 1], [0, 1]], [[0, 1], [0, 0]]]) {
+      for (const [e, t] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) { const c = e ? b : a; pos.push(c[0], c[1], t); across.push(e); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('aS', new THREE.Float32BufferAttribute(across, 1)); return g;
+  })();
+  const beams = [];
+  const nDust = MOBILE ? 22 : 40;
+  for (const w of windows) {
+    const pane = w.g && w.g.children[0];
+    if (!pane || !pane.geometry || !pane.geometry.parameters || !w.n) continue;
+    const { width: pw, height: ph } = pane.geometry.parameters;
+    pane.updateMatrixWorld(true);
+    const corner = (x, y) => pane.localToWorld(V(x * pw * .46, y * ph * .46, 0));
+    const c0 = corner(-1, -1);
+    const U = { c0: { value: c0 }, eu: { value: corner(1, -1).sub(c0) }, ev: { value: corner(-1, 1).sub(c0) }, dir: { value: V() }, uT: beamU.uT };
+    const bm = new THREE.ShaderMaterial({ uniforms: { ...U, k: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, vertexShader: beamVS, fragmentShader: beamFS });
+    const m = new THREE.Mesh(prism, bm); m.frustumCulled = false; m.renderOrder = 3; m.visible = false; scene.add(m);
+    const dg = new THREE.BufferGeometry(); const d = new Float32Array(nDust * 4);
+    for (let i = 0; i < nDust * 4; i++) d[i] = Math.random();
+    dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nDust * 3), 3)); dg.setAttribute('aD', new THREE.BufferAttribute(d, 4));
+    const dm = new THREE.ShaderMaterial({ uniforms: { ...U, k: { value: 0 }, px: { value: MOBILE ? 1.5 : 2 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, vertexShader: dustVS, fragmentShader: dustFS });
+    const pts = new THREE.Points(dg, dm); pts.frustumCulled = false; pts.renderOrder = 3; pts.visible = false; scene.add(pts);
+    beams.push({ w, U, m, pts });
+  }
+  const sunV = V();
+  function updateBeams(dayK, T) {
+    beamU.uT.value = T;
+    let on = 0;
+    // the scene's directional light swaps from moon to sun at dayK .5: beams only appear well after that, so they never jump
+    const dk = Math.max(0, Math.min(1, (dayK - .6) / .3)), dkS = dk * dk * (3 - 2 * dk);
+    if (sunL && dkS > 0) { sunV.copy(sunL.position).sub(sunL.target.position).normalize(); on = dkS * Math.min(1, sunL.intensity / 2.2); }
+    const low = 1 - Math.min(1, Math.max(0, sunV.y - .15) / .7);      // low sun: long golden beams
+    for (const b of beams) {
+      const face = on > 0 ? sunV.x * b.w.n.x + sunV.z * b.w.n.z : 0;     // sun on the outer side of this window?
+      const k = on * Math.max(0, Math.min(1, (face - .05) * 3)) * (.35 + .65 * low);
+      b.m.visible = b.pts.visible = k > .01;
+      if (!b.m.visible) continue;
+      b.U.dir.value.copy(sunV).multiplyScalar(-(2.2 + low * 1.3));
+      b.m.material.uniforms.k.value = k * .16; b.pts.material.uniforms.k.value = k;
+    }
+  }
+
   // ---------- the switching logic ----------
   function fire(name, on) { for (const cb of listeners) { try { cb(name, on); } catch (e) { console.error(e); } } }
-  function setOn(s, on) { if (s.on === on) return; s.on = on; if (on) s.flare = 1; fire(s.name, on); }
-  let cookT = 0, t = 0;
+  function setOn(s, on) { if (s.on === on) return; s.on = on; if (on) s.flare = 1; else if ((s.kind === 'candle' || s.kind === 'oil') && s.level > .3) wisp(s); fire(s.name, on); }
+  // a thin curl of smoke where a flame was just put out
+  const smokeTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'); const g = x.createRadialGradient(32, 32, 1, 32, 32, 31);
+    g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(.6, 'rgba(255,255,255,.25)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  const wisps = [];
+  function wisp(s) {
+    const top = s.pos.clone().add(V(0, s.kind === 'candle' ? .02 : .08, 0));
+    for (let i = 0; i < 5; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xB8B4AE, transparent: true, opacity: 0, depthWrite: false }));
+      sp.position.copy(top); sp.scale.setScalar(.03); scene.add(sp); wisps.push({ sp, age: -i * .25, life: 2.6, x0: top.x, z0: top.z, y0: top.y, ph: Math.random() * 6 }); }
+  }
+  function updateWisps(dt) {
+    for (let i = wisps.length - 1; i >= 0; i--) { const w = wisps[i]; w.age += dt; const a = Math.max(0, w.age) / w.life;
+      if (a >= 1) { scene.remove(w.sp); w.sp.material.dispose(); wisps.splice(i, 1); continue; }
+      w.sp.position.set(w.x0 + Math.sin(w.age * 2.2 + w.ph) * .03 * a, w.y0 + a * .38, w.z0 + Math.cos(w.age * 1.7 + w.ph) * .02 * a);
+      w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); }
+  }
+  let cookT = 0, candleT = 0, t = 0, frame = 0;
+  let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
 
   // smooth 1D value noise in [-1, 1]: flames breathe instead of pulsing like a sine
   const hash = n => { const x = Math.sin(n * 127.1) * 43758.5453; return (x - Math.floor(x)) * 2 - 1; };
@@ -208,12 +359,17 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
-    t += dt;
+    t += dt; frame++;
     const cooking = task === 'cook' && state === 'work';
     cookT = cooking ? 40 : Math.max(0, cookT - dt);     // the fire is fed while cooking and burns a while after
-    const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
+    candleT = task === 'read' ? 90 : Math.max(0, candleT - dt);
+    const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT, candleT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
+      // once it is properly light, a lamp left burning goes out on its own after a while (the oil runs low,
+      // nobody needs it): it hands itself back to the day/night logic, which says off in daylight
+      if (s.manual === true && s.kind !== 'fire' && dayK > .7) { s.dayOn = (s.dayOn || 0) + dt; if (s.dayOn > 45) { s.manual = null; s.dayOn = 0; } }
+      else s.dayOn = 0;
       const want = s.manual !== null ? s.manual : !!s.autoFn(ctx);
       setOn(s, want);
       const K = KINDS[s.kind];
@@ -229,7 +385,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       for (const L of s.lights) {
         L.l.intensity = L.I * k * f * (1 + open * 1.2);
         if (L.sway) { if (!L.home) L.home = L.l.position.clone(); const a = T * 1.7 + s.seed * 5; L.l.position.set(L.home.x + noise(a) * L.sway, L.home.y + noise(a + 40) * L.sway * .6, L.home.z + noise(a + 80) * L.sway); }
-        if (L.l.castShadow) L.l.shadow.autoUpdate = k > .01;      // no shadow passes for a lamp that is off
+        if (L.l.castShadow) { const lit = k > .01; if (lit && (!L.wasLit || (frame + s.idx) % shadowEvery === 0)) L.l.shadow.needsUpdate = true; L.wasLit = lit; }
       }
       for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
@@ -238,13 +394,15 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       const share = s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
-    for (const g of glows) { const v = (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
+    for (const g of glows) { const v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
+    updateBeams(dayK, T); updateWisps(dt); updateHand(dt);
     for (const w of windows) {
-      const lit = Math.min(1, warm[w.room] || 0);
-      // panes are see-through glass (Pavel): only a faint warm tint while the room is lit, no cold self-glow;
-      // the real window glow is the halo and the spill light outside (room glow above)
-      tmpC.setRGB(0, 0, 0).lerp(WARM, clamp01(lit) * (1 - dayK * .7));
-      w.mat.emissive.copy(tmpC); w.mat.emissiveIntensity = .18;
+      // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
+      // no warm self-glow (critic T14). The warm glow of a lit window lives outside: halo + spill light (room glow).
+      // Tree owns the panes; if they become real transparent glass, lights.js leaves them alone.
+      if (w.mat.transparent || w.mat.userData.ownGlass) continue;
+      w.mat.color.copy(PANE_NIGHT).lerp(PANE_DAY, dayK); w.mat.roughness = .06; w.mat.metalness = .1;
+      w.mat.emissive.copy(SKY_NIGHT).lerp(SKY_DAY, dayK); w.mat.emissiveIntensity = .1 + dayK * .45;
     }
   }
 
@@ -254,11 +412,18 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     return v;
   }
 
-  // performance step-down: drop point-light shadows first (Environment's FPS watch calls degrade on its own)
-  function degrade() {
-    for (const s of src.values()) for (const L of s.lights) if (L.l.isPointLight && L.l.castShadow) { L.l.castShadow = false; return true; }
-    return false;
+  // quality for a frame-rate governor: 2 full, 1 no lantern (point) shadows + slower shadow redraws + no window spill
+  // lights, 0 no shadows at all. The look of the rooms stays (same lights, bounce, halos); only shadows thin out.
+  const shadowed = []; for (const s of src.values()) for (const L of s.lights) if (L.l.castShadow) shadowed.push(L.l);
+  function setQuality(q) {
+    q = Math.max(0, Math.min(2, q | 0)); if (q === quality) return quality; quality = q;
+    for (const l of shadowed) { l.castShadow = l.isSpotLight ? q >= 1 : q >= 2; l.shadow.needsUpdate = true; }
+    shadowEvery = q >= 2 ? (MOBILE ? 3 : 2) : 4;
+    for (const g of glows) if (g.spill) g.off = q < 2;
+    return quality;
   }
+  const degrade = () => quality > 0 && setQuality(quality - 1) !== null;
+  const upgrade = () => quality < 2 && setQuality(quality + 1) !== null;
 
   const view = s => ({ name: s.name, room: s.room, kind: s.kind, on: s.on, level: +s.level.toFixed(2), auto: s.manual === null, pos: s.pos.clone() });
   const api = {
@@ -272,7 +437,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     room: roomLevel,
     onChange: cb => listeners.push(cb),
     level: n => src.has(n) ? src.get(n).level : 0,
-    update, degrade,
+    // hand lantern: attachHand(bone, offset?) shows it in the hero's hand (then set('hand', true) lights it);
+    // detachHand() hides it again (and puts it out)
+    attachHand: (bone, off = V(0, -.04, .02)) => { if (!bone) return false; const ws = bone.getWorldScale(V()).x || 1; bone.add(hand.g); hand.g.scale.setScalar(1 / ws); hand.g.position.copy(off).multiplyScalar(1 / ws); hand.g.visible = true; hand.attached = bone; bone.getWorldPosition(hand.prev); return true; },
+    detachHand: () => { const s = src.get('hand'); if (s) { s.manual = null; setOn(s, false); } scene.add(hand.g); hand.g.visible = false; hand.attached = null; },
+    update, degrade, upgrade, quality: q => q === undefined ? quality : setQuality(q),
   };
   return api;
 }

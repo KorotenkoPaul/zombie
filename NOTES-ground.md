@@ -1,4 +1,4 @@
-# Ground & vegetation: notes (checkpoint 2026-11-23, artifact v31)
+# Ground & vegetation: notes (checkpoint 2026-11-23, artifact v42)
 
 Owner: ground & vegetation thread. Code: `game/ground.js` (`createGround()` called once in index.html right after the oak is built).
 Took over from env.js: ground mesh, grass, rocks, ferns, mushrooms, edge bushes. `groundH()` stays exported from env.js (forest/fog use it).
@@ -11,6 +11,21 @@ Took over from env.js: ground mesh, grass, rocks, ferns, mushrooms, edge bushes.
 - Grass: real curved tapered blades (3 tuft variants, far one cheaper), sky-bent normals, dark root → moonlit tip, wind sway. Dense along root edges, patchy elsewhere.
 - Moss cushions at root feet, stones (smooth, moss on top), oak leaves (canvas lobed leaf), twigs, ferns (arched fronds), mushrooms (glow at night), rounded leaf bushes at the forest edge (spherical normals).
 - Counts are halved roughly on MOBILE. ~12 draw calls total.
+
+## Checkpoint 2 (v38, v42)
+- Moss and stones welded (mergeVertices) so they shade smoothly; grass greener, 6-segment blades on desktop; richer leaf colours; a third close-up ground texture scale.
+- Open clearing: fewer, bigger, darker tufts that poke through the fog like the photo; fewer, smaller moss cushions.
+- Sway now comes from the Wind thread's game/wind.js (marked [WIND] in ground.js); new plants: W.hook(shader) + windSway/windLocal.
+- Publishing rule: push to master first, then publish ONLY changed files (ground.js); use the live page as file_path if index.html is unchanged.
+
+## Checkpoint 3 (v56, v66)
+- Trodden path PATH (ladder foot x0 z4 → clearing), pathD(x,z) exposed; packed earth via AO texture blue channel, applied after color_fragment.
+- Wet/dew: wetU follows env eve, morning (mornK) and rain. ground.js wraps window.__env.update to read rainK/mornK/nightK/T (no env.js/index.html edit). State: __ground.state.
+- Acorns, more twigs under the oak.
+- Grass in 14 m chunks (24 m far), hi/lo LOD by camera distance, ~32 chunk meshes, frustum culled. G.updateGrass(cam) in ground.onBeforeRender.
+- Grass bends away from the hero (reads window.__dbg.hero.root).
+- Puddles: 5-7 spots (3 on the path). Desktop: three Reflector 384px, rendered only while wet; phones: glossy dark water. Fill in rain, dry over ~90 s. Ripples while raining. Debug: __ground.state.puddle=1.
+- Far edge: thicket bushes r15-24 and 26 young trees r16-26, outside the camera's view line.
 
 ## Next
 - Compare with the photo at 19:20: grass colour vs fog, bush size at the sides, moss amount.

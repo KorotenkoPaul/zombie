@@ -17,6 +17,7 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 .ib{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .ib:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .ib:disabled{opacity:.35}
+.ib.on{background:rgba(255,190,110,.45);border-color:rgba(255,210,150,.8)}
 .hint{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);transform:translateX(-50%);max-width:68%;background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:5px 10px;font-size:11px;line-height:1.35;text-align:center;transition:opacity .6s;pointer-events:none}
 .hint b{color:var(--amber)}
 .hint.off{opacity:0}
@@ -31,8 +32,8 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <div id="stage"></div>
 <div class="hud"><div class="grp"><span class="chip"><span id="ic">☀︎</span><span id="tod">День 1 · 08:00</span></span></div><div class="grp"><span class="chip" id="zc" hidden style="display:none">🧟 <span id="zn">0</span></span><span class="chip hearts" id="hearts" style="display:none">♥♥♥</span></div></div>
-<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button></div>
-<div class="hint" id="hint"><b>Веди пальцем</b> — повернуть домик, <b>щипок</b> — приблизить.</div>
+<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button></div>
+<div class="hint" id="hint"><b>Веди пальцем</b> — повернуть вокруг дерева, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
 <div class="toast" id="toast"></div>
 <div class="load" id="load"><span id="loadTx">Загружаем лес…</span><i><b id="loadBar"></b></i></div>
 <script type="module">
@@ -47,6 +48,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createHero } from './hero.js';
 import { buildTree, TREE_AXIS } from './tree.js';
 import { buildProps } from './props.js';
+import { createCameraRig, createDOF } from './camera.js';
+import { createPerf } from './perf.js';
 import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
 
 const $=id=>document.getElementById(id);
@@ -57,7 +60,7 @@ const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ASSET=window.__ASSET||'';
 const V=(x,y,z)=>new THREE.Vector3(x,y,z);
-let loaded=0;const TOTAL=11;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
+let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
 
 await RAPIER.init();prog();
 // ================= renderer =================
@@ -76,7 +79,9 @@ const TL=new THREE.TextureLoader();
 const tex=(n,rep=1,srgb=true)=>new Promise(res=>TL.load(ASSET+n,t=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;prog();res(t);}));
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,treeG,heroG,zombG]=await Promise.all([glb('oak-glb.txt'),tex('bark3.jpg'),tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('tree-glb.txt'),glb('hero-glb.txt'),glb('zombie-glb.txt')]);
+// [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb('oak-glb.txt'),tex('bark3.jpg'),tex('floor-atlas.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
+let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
 // ================= lights & sky =================
@@ -92,19 +97,21 @@ scene.add(new THREE.Mesh(new THREE.SphereGeometry(220,32,16),new THREE.ShaderMat
 const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.MeshBasicMaterial({color:0xF2F0E6,fog:false}));scene.add(moon);
 
 // ================= ground, forest, fog, grading: see env.js =================
-const ENV=(await import(new URL(ASSET+'env.js',document.baseURI).href)).createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});
+const ENVM=await import(new URL(ASSET+'env.js',document.baseURI).href);const ENV=ENVM.createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});
+// one global wind for leaves, grass, ferns, bushes and ropes (game/wind.js): calm spells, breezes, rolling gusts
+const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).createWind({THREE,legacy:ENV.U.wind});window.__wind=WIND;
 
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
-function placeTree(x,z,h,ry){const t=treeG.scene.clone(true);const b=new THREE.Box3().setFromObject(t);const k=h/(b.max.y-b.min.y);t.scale.setScalar(k);const c=b.getCenter(V());t.position.set(x-c.x*k,-b.min.y*k,z-c.z*k);t.rotation.y=ry;t.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;if(o.material){o.material.metalness=0;o.material.roughness=.9;o.material.color&&o.material.color.multiplyScalar(1.25);}}});scene.add(t);return {t,k,b};}
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[-4.6,0.8,10.6,12.1,0.55,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.5,5,6.85,8.05,0.75,4.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
-const TREE=buildTree(THREE,{model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
- avoidLeaves:[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]]});
+const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
+const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
+ avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
-const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;
+const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,wind:WIND,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;
 const barkTris=TREE.tris;
 // ================= physics world =================
 const world=new RAPIER.World({x:0,y:-9.81,z:0});world.timestep=1/60;
@@ -139,13 +146,14 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  float wob=pN(vec2(L*.9,sd))*2.2+pN(vec2(L*3.1,sd+7.))*.5;
  float g=sin(Wm*95.+wob*4.)*.5+.5; g=pow(g,3.);
  float fine=pN(vec2(L*7.,Wm*260.+sd));
- col*=.86+.10*fine-.13*g;
- float streak=pN(vec2(L*.35+sd,Wm*14.));col*=.9+.2*streak;
+ // walls (critic T6): wide even honey boards, the grain only a whisper, so the wall doesn't read as a barcode
+ col*=1.-mix(.14,.06,wall)+mix(.10,.05,wall)*fine-mix(.13,.035,wall)*g;
+ float streak=pN(vec2(L*.35+sd,Wm*14.));col*=1.-mix(.1,.04,wall)+mix(.2,.08,wall)*streak;
  if(pH(sd+3.3)>.45){vec2 kc=vec2((pH(sd+1.)-.5)*sz.x*.8,(pH(sd+2.)-.5)*sz.y*.5);vec2 d=vec2(L,Wm)-kc;d.y*=2.2;float r=length(d);
   col*=mix(1.,.55,smoothstep(.045,.0,r))*(1.-.18*smoothstep(.11,.05,r)*(.5+.5*sin(r*160.)));}
  float ew=(.5-abs(lp.y))*sz.y, el=(.5-abs(lp.x))*sz.x;
  float top=step(.499,abs(lp.z));
- col*=mix(mix(.42,.62,wall),1.,smoothstep(.0,mix(.022,.012,wall),ew)*smoothstep(.0,.04,el));
+ col*=mix(mix(.42,.66,wall),1.,smoothstep(.0,mix(.022,.008,wall),ew)*smoothstep(.0,.04,el));
  col*=1.+.16*smoothstep(.045,.02,ew)*step(0.,lp.y)*smoothstep(.0,.012,ew)*top;
  col*=mix(.62,1.,top);
  return pow(col,vec3(2.2));}`;
@@ -180,23 +188,26 @@ const L1=3.0,L2=5.9,L3=8.0;const ZB=1.5,ZF=4.1;// back and front of the rooms
 const groups={};
 // roofs like the photo: a thick wooden slab with a big overhang, covered by chunky, staggered slate-blue shingles
 const roofMat=new THREE.MeshStandardMaterial({map:roofT,roughness:.75});
-const shingleMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.7});
+const shingleMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.88});
 shingleMat.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vSL;').replace('#include <begin_vertex>','#include <begin_vertex>\nvSL=position;');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vSL;').replace('#include <map_fragment>','float se=min(.5-abs(vSL.x),.5-abs(vSL.z));diffuseColor.rgb*=mix(.55,1.,smoothstep(0.,.08,se))*mix(.7,1.,step(.49,vSL.y));diffuseColor.rgb*=.9+.2*smoothstep(-.5,.5,vSL.z);');};
-const SHING=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),shingleMat,1400);SHING.count=0;SHING.castShadow=true;SHING.receiveShadow=true;scene.add(SHING);
+const SHING=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),shingleMat,2000);SHING.count=0;SHING.castShadow=true;SHING.receiveShadow=true;scene.add(SHING);
 function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
-  const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.3,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
+  const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.38,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
   // shingles: rows from the ridge down, each row overlapping the one below, staggered
-  const rows=Math.ceil(sl/.27);
-  for(let r=0;r<rows;r++){const t=(r+.5)/rows;const along=-sl/2+t*sl;const off=(r%2)*.19;
-   for(let zz=-d/2+.19-off;zz<d/2+.05;zz+=.38){const ww=rnd(.33,.39),ll=rnd(.38,.44);if(zz-ww/2<-d/2-.06||zz+ww/2>d/2+.06)continue;
-    const lp=V(along,.15+.04,zz);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
-    q.setFromEuler(new THREE.Euler(rnd(-.05,.05),rnd(-.08,.08),-s*ang+s*(.09+rnd(-.03,.03)),'ZYX'));
-    const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,.075,ww));SHING.setMatrixAt(SHING.count,m4);
-    const k=rnd(.8,1.25);c.setRGB(.2*k,.24*k,.31*k*rnd(.95,1.1));SHING.setColorAt(SHING.count,c);SHING.count++;}}}
+  // thick dark slate, hand-laid: rows of uneven depth, shingles of random width, the odd one slipped or tilted (critic T4)
+  const rows=Math.ceil(sl/.28);
+  for(let r=0;r<rows;r++){const t=(r+.5)/rows;const along=-sl/2+t*sl+rnd(-.03,.03);
+   let zz=-d/2-.05-rnd(0,.25);
+   while(zz<d/2+.05){const ww=rnd(.27,.47),ll=rnd(.38,.5);const zc=zz+ww/2;zz+=ww+rnd(.005,.03);if(zc-ww/2<-d/2-.08||zc+ww/2>d/2+.08)continue;
+    const slip=rnd(0,1)<.08?rnd(.04,.09):0;
+    const lp=V(along+slip,.15+.06+rnd(-.008,.012),zc);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
+    q.setFromEuler(new THREE.Euler(rnd(-.07,.07),rnd(-.12,.12),-s*ang+s*(.1+rnd(-.04,.04)),'ZYX'));
+    const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.1,.13),ww));SHING.setMatrixAt(SHING.count,m4);
+    const k=rnd(.75,1.2)*(rnd(0,1)<.12?.7:1);c.setRGB(.07*k,.075*k,.095*k*rnd(.92,1.1));SHING.setColorAt(SHING.count,c);SHING.count++;}}}
  const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
  // gable trim boards on the front like the photo's dark fascia
  for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
@@ -210,29 +221,59 @@ function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z)
  const flat=a=>new THREE.Euler(-Math.PI/2+rnd(-.01,.01),a+rnd(-.006,.006),rnd(-.004,.004),'YXZ');
  if(o.radial){const [cx,cz,R,zmin]=o.radial;const n=Math.round(Math.PI*R*.82/.25);
   for(let k=0;k<=2*n;k++){const a=-Math.PI+k*Math.PI/n;const dx=Math.cos(a),dz=Math.sin(a);if(cz+dz*R*.6<zmin-.3)continue;
-   for(const [r0,r1] of runs(r=>ok(cx+dx*r,cz+dz*r),0,R,.04,.25)){const r1b=r1-rnd(0,.015);const rm=(r0+r1b)/2;board(V(cx+dx*rm,y+rnd(-.006,.006),cz+dz*rm),r1b-r0,.25,.07,flat(-a));}}
-  // thick dark rim along the round edge, in short straight pieces
-  for(let k=0;k<2*n;k++){const a0=-Math.PI+k*Math.PI/n,a1=a0+Math.PI/n,am=(a0+a1)/2;const rr=R-.07;const px=cx+Math.cos(am)*rr,pz=cz+Math.sin(am)*rr;if(!ok(cx+Math.cos(am)*(R-.15),cz+Math.sin(am)*(R-.15)))continue;
-   board(V(px,y-.1,pz),2*rr*Math.sin(Math.PI/n/2)+.02,.26,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
+   for(const [r0,r1] of runs(r=>ok(cx+dx*r,cz+dz*r),0,R,.04,.25)){const r1b=r1>R-.2?R-.12:r1-rnd(0,.015);const rm=(r0+r1b)/2;board(V(cx+dx*rm,y+rnd(-.006,.006),cz+dz*rm),r1b-r0,.25,.07,flat(-a));}}
+  // a smooth round rim laid over the board ends (critic T11: no saw teeth), in many short pieces, plus the dark edge band below
+  const nr=6*n;for(let k=0;k<nr;k++){const a0=-Math.PI+k*2*Math.PI/nr,am=a0+Math.PI/nr;const rr=R-.1;const px=cx+Math.cos(am)*rr,pz=cz+Math.sin(am)*rr;if(!ok(cx+Math.cos(am)*(R-.15),cz+Math.sin(am)*(R-.15)))continue;
+   board(V(px,y+.012,pz),2*rr*Math.sin(Math.PI/nr)+.025,.2,.075,new THREE.Euler(-Math.PI/2,-am-Math.PI/2,0,'YXZ'));
+   board(V(cx+Math.cos(am)*(R-.07),y-.1,cz+Math.sin(am)*(R-.07)),2*R*Math.sin(Math.PI/nr)+.02,.26,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
   for(let x=cx-R+.4;x<cx+R;x+=1.1)for(const [a2,b2] of runs(z=>ok(x,z),z0,z1,.05,.3))board(V(x,y-.12,(a2+b2)/2),b2-a2,.18,.13,new THREE.Euler(0,Math.PI/2,0),{dark:true});
   return;}
  for(let x=x0+.125;x<x1;x+=.25)for(const [a,b2] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e=b2>=z1-.05?b2+rnd(-.05,.05):b2;board(V(x,y+rnd(-.006,.006),(a+e)/2),e-a,.24,.07,flat(-Math.PI/2));}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
  if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
-function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.16;x<x1;x+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.004,.004)),b2-a,.305,.05,new THREE.Euler(rnd(-.006,.006),0,Math.PI/2+rnd(-.004,.004)),{tint:rnd(1.6,1.75),wall:true});}
-function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.16;z<z1;z+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.004,.004),(a+b2)/2,z),b2-a,.305,.05,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.004,.004)),{tint:rnd(1.45,1.6),wall:true});}
+function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.16;x<x1;x+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.004,.004)),b2-a,.305,.05,new THREE.Euler(rnd(-.006,.006),0,Math.PI/2+rnd(-.004,.004)),{tint:rnd(1.64,1.72),wall:true});}
+function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.16;z<z1;z+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.004,.004),(a+b2)/2,z),b2-a,.305,.05,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.004,.004)),{tint:rnd(1.5,1.57),wall:true});}
 const disc=(cx,cz,r,zmin)=>(x,z)=>(x-cx)**2+(z-cz)**2<=r*r&&z>=zmin;
 function brace(a,b2,w=.16){const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),{dark:true});}
 function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.42));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;post(x,y,y+.95,z);}
  if(skip){if(skip[0]>x0)brace(V(x0,y+.95,z0),V(skip[0],y+.95,lerp(z0,z1,(skip[0]-x0)/(x1-x0))),.09);if(x1>skip[1])brace(V(skip[1],y+.95,lerp(z0,z1,(skip[1]-x0)/(x1-x0))),V(x1,y+.95,z1),.09);}else brace(V(x0,y+.95,z0),V(x1,y+.95,z1),.09);}
-const ropeMat=new THREE.MeshStandardMaterial({color:0xB89E72,roughness:1});
-// rope sides are two strands twisted around each other, with a knot at every rung
+// rope ladders: tied over the floor edge with a knot round a peg, two twisted strands per side, round rungs lashed
+// with knots, slightly uneven, the bottom hanging free. They sway in the wind in the vertex shader, weighted by the
+// distance below the tie point (top stays put), driven by the global wind (game/wind.js windRope).
 const knotGeo=new THREE.SphereGeometry(.026,8,6);
-function ropeLadder(x,y0,y1,z){const H=y1-y0+.3;for(const sx of [-.23,.23])for(const ph of [0,Math.PI]){const pts=[];const n=Math.ceil(H/.03);for(let i=0;i<=n;i++){const t=i/n,yy=y0-.05+t*H,a=yy/.11*Math.PI*2+ph,sag=Math.sin(t*Math.PI)*.025;pts.push(V(x+sx+Math.cos(a)*.011,yy,z+Math.sin(a)*.011+sag));}
-  const m=new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),n,.012,5),ropeMat);m.castShadow=true;scene.add(m);}
- for(let y=y0+.28;y<y1;y+=.31)for(const sx of [-.23,.23]){const k=new THREE.Mesh(knotGeo,ropeMat);k.position.set(x+sx,y,z+Math.sin(Math.PI*(y-y0+.05)/H)*.025);k.scale.set(1,1.3,1);scene.add(k);}
- for(let y=y0+.28;y<y1;y+=.31)board(V(x,y,z),.52,.055,.045,new THREE.Euler(rnd(-.03,.03),0,rnd(-.03,.03)),{dark:true});}
+function swayMat(m){m.onBeforeCompile=sh=>{WIND.hook(sh);sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float swayW;attribute float swayL;')
+ .replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed+=windRope(transformed,swayW,swayL)*smoothstep(.05,.45,transformed.y);');};m.customProgramCacheKey=()=>'ropesway';return m;}
+const ropeMat=swayMat(new THREE.MeshStandardMaterial({color:0xB89E72,roughness:1}));
+const rungMat=swayMat(new THREE.MeshStandardMaterial({color:0x7A5236,roughness:.85}));
+function mergeSway(parts,top,H,ph){let nV=0,nI=0;for(const g of parts){nV+=g.attributes.position.count;nI+=g.index.count;}
+ const P=new Float32Array(nV*3),N=new Float32Array(nV*3),U=new Float32Array(nV*2),W=new Float32Array(nV),PH=new Float32Array(nV).fill(H),I=new Uint32Array(nI);let v=0,i=0;
+ for(const g of parts){const p=g.attributes.position,n=g.attributes.normal,u=g.attributes.uv;for(let k=0;k<p.count;k++){const o=v+k;P[o*3]=p.getX(k);P[o*3+1]=p.getY(k);P[o*3+2]=p.getZ(k);N[o*3]=n.getX(k);N[o*3+1]=n.getY(k);N[o*3+2]=n.getZ(k);if(u){U[o*2]=u.getX(k);U[o*2+1]=u.getY(k);}W[o]=Math.min(1,Math.max(0,(top-p.getY(k))/H));}
+  for(const t of g.index.array)I[i++]=t+v;v+=p.count;g.dispose();}
+ const G=new THREE.BufferGeometry();G.setAttribute('position',new THREE.BufferAttribute(P,3));G.setAttribute('normal',new THREE.BufferAttribute(N,3));G.setAttribute('uv',new THREE.BufferAttribute(U,2));G.setAttribute('swayW',new THREE.BufferAttribute(W,1));G.setAttribute('swayL',new THREE.BufferAttribute(PH,1));G.setIndex(new THREE.BufferAttribute(I,1));return G;}
+const _m4=new THREE.Matrix4(),_q=new THREE.Quaternion();
+function placed(geo,pos,rot,scl){_q.setFromEuler(rot||new THREE.Euler());_m4.compose(pos,_q,scl||V(1,1,1));return geo.clone().applyMatrix4(_m4);}
+function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-bot,ph=x*3.1+z*1.7;const ropes=[],rungs=[];
+ const gnd=y0<.5;
+ // a belly away from the edge; on the ground the last half metre of the ladder lies on the earth, curling outwards
+ const bow=t=>Math.sin(t*Math.PI)*.055+(gnd?.42*Math.pow(Math.max(0,(t-.86)/.14),2):0);
+ const wob=rnd(0,6.28),xw=t=>Math.sin(t*Math.PI*1.4+wob)*.07*t; // the hanging ladder wanders a little sideways, more towards the free end
+ const rungY=[];for(let y=y0+.28;y<y1;y+=.31)rungY.push(y);
+ for(const sx of [-.23,.23]){
+  // the side's centre line: over the edge onto the floor to the peg, down the face, and a loose tail at the bottom
+  const C=[V(x+sx*1.05,top+.04,z-.34),V(x+sx,top+.05,z-.12),V(x+sx,top-.04,z+.02)];
+  const n=Math.ceil((top-bot)/.05);for(let i=1;i<=n;i++){const t=i/n,yy=top-.04-t*(top-.04-bot);C.push(V(x+xw(t)+sx*(1-.04*t)+Math.sin(yy*7.3+sx*9)*.006,yy,z+bow(t)));}
+  if(y0>.5)C.push(V(x+sx*.95,y0+.025,z+.16),V(x+sx*.85+rnd(-.05,.05),y0+.025,z+.34));else C.push(V(x+sx*.97,bot-.09,z+.04),V(x+sx*.9,bot-.13,z+.1));
+  const base=new THREE.CatmullRomCurve3(C),L=base.getLength(),m=Math.ceil(L/.02);
+  for(const sp of [0,Math.PI]){const pts=[];for(let i=0;i<=m;i++){const u=i/m,c=base.getPointAt(u),a=u*L/.11*Math.PI*2+sp;pts.push(c.add(V(Math.cos(a)*.011,0,Math.sin(a)*.011)));}
+   ropes.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),m,.012,5));}
+  // tie: a fat knot round a short peg on the floor
+  ropes.push(placed(knotGeo,V(x+sx*1.05,top+.04,z-.34),null,V(2.2,1.6,2.2)));
+  rungs.push(placed(new THREE.CylinderGeometry(.03,.035,.16,6),V(x+sx*1.05,top+.06,z-.34)));
+  for(const y of rungY){const t=(top-y)/H;ropes.push(placed(knotGeo,V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1)));}}
+ // round rungs, a little uneven like hand-lashed sticks
+ for(const y of rungY){const t=(top-y)/H;rungs.push(placed(new THREE.CylinderGeometry(.022,.022,.5,6),V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t)),new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
+ for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=true;me.frustumCulled=false;scene.add(me);}}
 function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});for(let y=y0+.3;y<y1;y+=.32)board(V(x,y,z),.5,.06,.05,null,{dark:true});}
 // the photo is an open cutaway: no plank fences across the room fronts while there are no zombies (BARRICADES=false)
 const BARRICADES=false;
@@ -261,7 +302,7 @@ if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
 floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.7,1.0,2.05]]});
-wallBack(BX0,BX1,BD+.03,BD+2.3,.95,[[-.75,-.05,BD+1.05,BD+1.75]]);
+wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
 roof(BX0,BX1,BD+2.3,.8,3.8,1.15);post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
 // outside ledge between the bedroom door and the rope ladder to the deck
@@ -278,9 +319,16 @@ if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
 // lookout deck (right, top)
 floorBoards(.8,4.25,DK,.3,3.0);rail(.8,3.0,4.25,3.0,DK,[1.05,1.65]);rail(4.25,.6,4.25,3.0,DK);
 brace(V(1.6,DK-2.4,1.0),V(2.6,DK-.13,1.6),.17);brace(V(4.0,WS+3.5,1.6),V(4.0,DK-.13,1.6),.16);
+// real window glass: thin, see-through from both sides, a faint cool tint, more reflective at grazing angles
+const glass=new THREE.MeshStandardMaterial({color:0xD6E6F0,emissive:0x5E8CC0,emissiveIntensity:.55,roughness:.04,metalness:.1,transparent:true,opacity:.16,side:THREE.DoubleSide,depthWrite:false});
+const glassFresnel=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <project_vertex>','#include <project_vertex>\nvFr=1.-abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));');
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vFr;').replace('#include <opaque_fragment>','gl_FragColor=vec4(outgoingLight,mix(diffuseColor.a,.55,pow(vFr,3.)));');};
+glass.onBeforeCompile=glassFresnel;glass.userData.ownGlass=true;
 // the little window in the trunk above the deck (photo): a plank frame on the bark with a dark, warm-lit opening
 {const wx=.8,wy=DK+1.05,wz=frontZ(wx,wy)+.04,g=new THREE.Group();g.position.set(wx,wy,wz);scene.add(g);
- const hole=new THREE.Mesh(new THREE.PlaneGeometry(.62,.78),new THREE.MeshStandardMaterial({color:0x2A160C,emissive:0xFF9040,emissiveIntensity:.07,roughness:1}));hole.position.z=-.02;g.add(hole);
+ // behind the glass: a small dark nook in the trunk; the pane itself is clear glass
+ const hole=new THREE.Mesh(new THREE.BoxGeometry(.62,.78,.35),new THREE.MeshStandardMaterial({color:0x3A2414,roughness:1,side:THREE.BackSide}));hole.position.z=-.17;g.add(hole);
+ const tg=glass.clone();tg.onBeforeCompile=glassFresnel;tg.userData.ownGlass=true;tg.emissiveIntensity=.12;const pane=new THREE.Mesh(new THREE.PlaneGeometry(.62,.78),tg);pane.position.z=.0;pane.renderOrder=2;g.add(pane);
  for(const [w,h,x,y] of [[.86,.13,0,.45],[.86,.13,0,-.45],[.13,1.03,-.37,0],[.13,1.03,.37,0],[.62,.05,0,0]]){const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,.1),darkBoard);b.position.set(x,y,.02);b.castShadow=true;g.add(b);}
  const sill=new THREE.Mesh(new THREE.BoxGeometry(1.0,.07,.22),darkBoard);sill.position.set(0,-.53,.07);g.add(sill);}
 // kitchen ladders: landing↑kitchen (through a hatch), kitchen↑bedroom (through a hatch)
@@ -301,29 +349,42 @@ const OBST=[];
 function prop(n,x,y,z,{h,w,ry=0,bright=1,solid=true,seat=false}={}){const o=PROPS[n].scene.clone(true);o.rotation.y=ry;o.updateMatrixWorld(true);let b=new THREE.Box3().setFromObject(o);const sz=b.getSize(V());const k=h?h/sz.y:w/Math.max(sz.x,sz.z);o.scale.setScalar(k);o.updateMatrixWorld(true);b=new THREE.Box3().setFromObject(o);const c=b.getCenter(V());o.position.set(x-c.x,y-b.min.y,z-c.z);
  o.traverse(m=>{if(m.isMesh){m.castShadow=true;m.receiveShadow=true;if(m.material){m.material=m.material.clone();m.material.metalness=Math.min(m.material.metalness??0,.15);m.material.roughness=Math.max(.55,m.material.roughness??.8);if(bright!==1&&m.material.color)m.material.color.multiplyScalar(bright);}}});scene.add(o);b=new THREE.Box3().setFromObject(o);if(solid&&b.min.y<y+.5)OBST.push({x0:b.min.x,x1:b.max.x,z0:b.min.z,z1:b.max.z,y:y,seat,n});o.userData.box=b;return o;}
 function rug(x,y,z,w,d,c1,c2){const cv=document.createElement('canvas');cv.width=128;cv.height=128;const g=cv.getContext('2d');g.fillStyle=c1;g.fillRect(0,0,128,128);g.strokeStyle=c2;g.lineWidth=6;g.strokeRect(8,8,112,112);g.lineWidth=3;g.strokeRect(20,20,88,88);for(let i=0;i<6;i++){g.fillStyle=c2;g.fillRect(28+i*13,58,7,12);}const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshStandardMaterial({map:t,roughness:1}));m.rotation.x=-Math.PI/2;m.position.set(x,y+.035,z);m.receiveShadow=true;scene.add(m);}
-const glass=new THREE.MeshStandardMaterial({color:0x9CC4E0,emissive:0x5E8CC0,emissiveIntensity:.55,roughness:.1});
-const WINS=[];function win(x0,x1,y0,y1,z,side,room){const g=new THREE.Group();const gm=glass.clone();WINS.push({mat:gm,room,g});const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),gm);g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}
+
+const WINS=[];function win(x0,x1,y0,y1,z,side,room){const g=new THREE.Group();const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;WINS.push({mat:gm,room,g});const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),gm);p.renderOrder=2;g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}
  if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);}
-win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(-.75,-.05,BD+1.05,BD+1.75,.99,0,'bedroom');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
+win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
 // all furniture and objects: props.js (bevelled, textured, interactive). P3.oven / P3.book / P3.tools / P3.surfaces
 const P3=buildProps({scene,renderer,OBST,floors:[boards,beams],L:{KT,BD,WS,DK,LL}});window.__props=P3;
 const chairO=P3.chairO,bunk=P3.bunk;
+// moss, soil, leaf litter, ivy and ferns on the oak itself: see treedress.js (after the boards, so nothing pokes through a floor)
+let TDRESS=null;try{TDRESS=(await import(new URL(ASSET+'treedress.js',document.baseURI).href)).createTreeDress({scene,TREE,MOBILE,leafT,U:ENV.U,rootD:GROUND.rootD,avoid:TREE_AVOID,blockers:[boards,beams],roofs:SHING});window.__treedress=TDRESS;}catch(e){console.error('treedress',e);}
 // the glowing doorway in the trunk (bottom right)
 // the glowing hollow in the trunk (bottom right) is carved into the tree mesh itself (game/tree.js)
 // every warm light in the house comes from a real source (lanterns, dome lamp, candle, oven fire, trunk door): game/lights.js
 const {createLights}=await import(new URL(ASSET+'lights.js',document.baseURI).href);
 const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},windows:WINS});window.__lights=LIGHTS;
+// [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
+const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
+// [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
+const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;
 
 // ================= splinters, dust, fog, rain, fireflies =================
 const SPL=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),boardMat,260);SPL.count=0;SPL.castShadow=true;SPL.frustumCulled=false;{const r=new THREE.InstancedBufferAttribute(new Float32Array(260),1),t=new THREE.InstancedBufferAttribute(new Float32Array(260).fill(.2),1);SPL.geometry.setAttribute('aRow',r);SPL.geometry.setAttribute('aTile',t);}scene.add(SPL);
 const spl=[];function splinters(p,n){for(let i=0;i<n&&spl.length<260;i++){const s=V(rnd(.06,.2),rnd(.015,.03),rnd(.012,.02));const rb=world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(p.x+rnd(-.2,.2),p.y+rnd(-.1,.1),p.z+rnd(-.1,.2)).setLinvel(rnd(-2.5,2.5),rnd(.5,3.5),rnd(-.5,2)).setAngvel({x:rnd(-20,20),y:rnd(-20,20),z:rnd(-20,20)}));world.createCollider(RAPIER.ColliderDesc.cuboid(s.x/2,s.y/2,s.z/2).setDensity(500).setFriction(.8).setRestitution(.2),rb);spl.push({rb,s,age:0,life:rnd(5,8)});}}
 const SOFT=(()=>{const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');const g=x.createRadialGradient(32,32,1,32,32,31);g.addColorStop(0,'rgba(255,255,255,1)');g.addColorStop(.5,'rgba(255,255,255,.4)');g.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=g;x.fillRect(0,0,64,64);return new THREE.CanvasTexture(c);})();
 const puffs=[];function puff(p,n,col=0xCFC8BB,size=1){for(let i=0;i<n;i++){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:SOFT,color:col,transparent:true,opacity:0,depthWrite:false}));s.position.set(p.x+rnd(-.2,.2),p.y+rnd(-.1,.2),p.z+rnd(-.2,.2));scene.add(s);puffs.push({s,age:0,life:rnd(.7,1.3),v:V(rnd(-.6,.6),rnd(.2,.8),rnd(-.6,.6)),s0:.2*size,s1:rnd(.7,1.2)*size});}}
-const rain=(()=>{const n=2200,pos=new Float32Array(n*6);for(let i=0;i<n;i++){const x=rnd(-16,16),y=rnd(0,24),z=rnd(-6,10);pos.set([x,y,z,x+.04,y-.5,z],i*6);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));const m=new THREE.LineBasicMaterial({color:0xC2D2E8,transparent:true,opacity:0,depthWrite:false});const l=new THREE.LineSegments(g,m);l.frustumCulled=false;scene.add(l);return {pos,n,m,l};})();
+// rain: game/rain.js (wind thread), created above right after the lights
 const motesMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,uniforms:{t:{value:0},night:{value:0},day:{value:1},px:{value:PR}},
- vertexShader:`attribute float ph;uniform float t,night,day,px;varying float a;varying vec3 col;void main(){vec3 p=position;p.x+=sin(t*.3+ph)*.8;p.y+=sin(t*.23+ph*2.)*.5;p.z+=cos(t*.27+ph)*.6;vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=night*bl+day*.3;col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=(day*2.+night*5.)*px*(26./-mv.z);gl_Position=projectionMatrix*mv;}`,
+ vertexShader:`attribute float ph;uniform float t,night,day,px;varying float a;varying vec3 col;void main(){vec3 p=position;p.x+=sin(t*.3+ph)*.8;p.y+=sin(t*.23+ph*2.)*.5;p.z+=cos(t*.27+ph)*.6;
+#ifdef WIND
+p.xz+=windSway(p,.5)*.6;
+#endif
+vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=night*bl+day*.3;col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=(day*2.+night*5.)*px*(26./-mv.z);gl_Position=projectionMatrix*mv;}`,
  fragmentShader:`varying float a;varying vec3 col;void main(){float k=smoothstep(.5,0.,length(gl_PointCoord-.5));gl_FragColor=vec4(col*1.8*k*a,k*a);}`});
-{const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;scene.add(p);}
+{const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;WIND.hookRaw(motesMat);scene.add(p);}
+// [WIND] fireflies drift and leaves fall with the wind (game/wind.js)
+if(ENV.fireflies)WIND.hookRaw(ENV.fireflies.material);
+{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE});}
 // god rays: soft beams through the canopy
 const rayMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{t:{value:0},o:{value:0},col:{value:new THREE.Color(1,.86,.6)}},
  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
@@ -352,7 +413,6 @@ function prepChar(g,h){g.scene.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.cast
    for(const tr of c.tracks){if(/Hips\.position$/.test(tr.name)){const v=tr.values;const n=v.length;if(h)HIPS[name]={s:V(v[0],v[1],v[2]),e:V(v[n-3],v[n-2],v[n-1])};if(RMC.has(name))continue;const x0=v[0],z0=v[2];const climb=['444','438','437'].includes(name);const y0=v[1];for(let i=0;i<v.length;i+=3){v[i]=x0;v[i+2]=z0;if(climb)v[i+1]=y0;}}}
    clips[name]=c;}
  return clips;}
-const zClips=prepChar(zombG,false);
 // bow and quiver for the hero
 function makeBow(){const g=new THREE.Group();const curve=new THREE.CatmullRomCurve3([V(0,-.55,0),V(.09,-.28,0),V(.12,0,0),V(.09,.28,0),V(0,.55,0)]);const limb=new THREE.Mesh(new THREE.TubeGeometry(curve,24,.018,6),new THREE.MeshStandardMaterial({color:0x6B4528,roughness:.6}));limb.castShadow=true;g.add(limb);
  const str=new THREE.Mesh(new THREE.CylinderGeometry(.003,.003,1.1,4),new THREE.MeshBasicMaterial({color:0xE8E2D0}));g.add(str);const grip=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.12,8),new THREE.MeshStandardMaterial({color:0x3A2414,roughness:.9}));g.add(grip);return g;}
@@ -381,7 +441,7 @@ const ROUTES={
  'Забор кухни':{start:()=>V(-16,0,rnd(4,9)),walk:[V(-4.2,0,5.3)],climb:{from:V(-4.2,0,4.78),to:V(-4.2,KT+.02,4.78),anim:'444',speed:.55},stand:V(-3.9,KT+.02,4.28),face:Math.PI,climbFace:Math.PI,hit:'198'},
  'Забор мастерской':{start:()=>V(16,0,rnd(4,9)),walk:[V(4.4,0,6.0)],climb:{from:V(4.4,0,5.48),to:V(4.4,WS+.02,5.48),anim:'444',speed:.55},stand:V(4.1,WS+.02,4.9),face:Math.PI,climbFace:Math.PI,hit:'198'},
 };
-function spawnZombie(name){if(name&&!ROUTES[name])name={'Люк':'Калитка','Окно кухни':'Забор кухни','Окно мастерской':'Забор мастерской'}[name];const R=ROUTES[name||Object.keys(ROUTES)[Math.floor(rnd(0,3))]];const root=skClone(zombG.scene);root.traverse(o=>{if(o.isSkinnedMesh||o.isMesh){o.castShadow=true;o.frustumCulled=false;}});scene.add(root);
+function spawnZombie(name){if(!zombG){loadZombie();return null;}if(name&&!ROUTES[name])name={'Люк':'Калитка','Окно кухни':'Забор кухни','Окно мастерской':'Забор мастерской'}[name];const R=ROUTES[name||Object.keys(ROUTES)[Math.floor(rnd(0,3))]];const root=skClone(zombG.scene);root.traverse(o=>{if(o.isSkinnedMesh||o.isMesh){o.castShadow=true;o.frustumCulled=false;}});scene.add(root);
  const z={root,mixer:new THREE.AnimationMixer(root),actions:{},cur:null,alive:true,R,group:name||Object.keys(ROUTES).find(k=>ROUTES[k]===R),stage:'walk',wi:0,speed:rnd(.7,1),hitT:rnd(.5,1)};
  for(const k in zClips)z.actions[k]=z.mixer.clipAction(zClips[k]);
  // eyes glow
@@ -433,7 +493,7 @@ let hour=19.3,dayNo=1,weather='clear',rainK=0,spawnLeft=0,spawnT=0,over=false,hi
 let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSET+'brain.js',document.baseURI).href);BRAIN=createBrain({HH,lights:LIGHTS,hour:()=>hour,isNight:h=>isNight(h)});window.__brain=BRAIN;}catch(e){console.error('brain',e);}}
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return isNight(hour)?10/70:14/110;}// a day of ~3 minutes
-const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.7,.95,1.15],[6,0x3B5785,0xF2A36B,0x8A8FA0,0xFF9C5A,1.5,.4,1.0],[8,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.7,1.0],
+const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.7,.95,1.15],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.9,.7,1.08],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.7,1.0],
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.8,.95],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.6,1.0],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,1.05,1.12],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.75,1.0,1.15],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.7,.95,1.15]];
 function pal(h){let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=smooth(0,1,(h-a[0])/(b[0]-a[0]));const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 function fmt(h){const hh=Math.floor(h),mm=Math.floor((h-hh)*6)*10;return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');}
@@ -441,7 +501,9 @@ function hud(){$('ic').textContent=isNight(hour)?'☾':(hour<8||hour>18?'◐':'�
  $('hearts').textContent='♥'.repeat(Math.max(0,hero.hp))+'♡'.repeat(Math.max(0,3-hero.hp));$('zn').textContent=zombies.filter(z=>z.alive).length;$('bN').disabled=isNight(hour)||hour>19||over;}
 function toast(t,sub){const e=$('toast');e.innerHTML=t+(sub?`<small>${sub}</small>`:'');e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),2400);}
 function hint(h){const e=$('hint');e.innerHTML=h;e.classList.remove('off');hintT=5;}
-$('bW').onclick=()=>{ac();startAmb();weather=weather==='clear'?'rain':'clear';$('bW').textContent=weather==='rain'?'☂︎':'☁︎';};
+$('bW').onclick=()=>{ac();startAmb();WIND.setRain(weather==='clear');};
+// [WIND] rain comes and goes with the weather (game/wind.js); the button just starts or stops a rain spell
+WIND.on('rain',e=>{weather=e.on?'rain':'clear';$('bW').textContent=e.on?'☂︎':'☁︎';});
 $('bN').onclick=()=>{ac();startAmb();if(!isNight(hour)&&hour<19.2)hour=19.2;};
 
 // ================= aiming (drag back, release) =================
@@ -464,29 +526,44 @@ function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guar
  aimTarget=z;reload=1.15;HH.play('224',{loop:false,fade:.08,speed:1.5});
  setTimeout(()=>{if(!z.alive){reload=Math.min(reload,.3);return;}const t=zChest(z);const p0=arrowOrigin(t);const v=solveShot(p0,t,z);if(v)shoot(p0,v);else{shoot(p0,t.clone().sub(p0).normalize().multiplyScalar(22).add(V(0,2,0)));}},330);
  setTimeout(()=>{if(hero.task==='guard')HH.play('231',{fade:.2});},1050);return true;}
-let yaw=.05,pitch=.13,zoom=1;const ptrs=new Map();let mode=null,pinch0=null,last=null,down=null;
-cv.addEventListener('pointerdown',e=>{ac();startAmb();if(over){location.reload();return;}ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});cv.setPointerCapture(e.pointerId);
- if(ptrs.size===2){const [a,b]=[...ptrs.values()];pinch0={d:Math.hypot(a.x-b.x,a.y-b.y),z:zoom};mode='pinch';return;}
- mode='orbit';last={x:e.clientX,y:e.clientY};down={x:e.clientX,y:e.clientY,t:performance.now()};});
-cv.addEventListener('pointermove',e=>{if(!ptrs.has(e.pointerId))return;ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
- if(mode==='pinch'&&ptrs.size===2){const [a,b]=[...ptrs.values()];zoom=clamp(pinch0.z*pinch0.d/Math.max(10,Math.hypot(a.x-b.x,a.y-b.y)),.32,1);return;}
- if(mode==='orbit'){yaw=clamp(yaw-(e.clientX-last.x)*.006,-.75,.75);pitch=clamp(pitch+(e.clientY-last.y)*.004,.02,.6);last={x:e.clientX,y:e.clientY};}});
-function endPtr(e){ptrs.delete(e.pointerId);if(mode==='pinch'){if(ptrs.size===0)mode=null;return;}if(ptrs.size)return;mode=null;
- if(down&&e.type==='pointerup'&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<12&&performance.now()-down.t<350){const z=pickZombie(e.clientX,e.clientY);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}down=null;}
-cv.addEventListener('pointerup',endPtr);cv.addEventListener('pointercancel',endPtr);
-cv.addEventListener('wheel',e=>{e.preventDefault();zoom=clamp(zoom*(1+e.deltaY*.001),.32,1);},{passive:false});
+// camera input lives in camera.js (free orbit / pinch-to-point / pan / double-tap fly-to / hero follow)
+const isHeroObj=o=>{for(;o;o=o.parent)if(o===hero.root)return true;return false;};
+const rig=createCameraRig({camera,dom:cv,scene,
+ solid:(x,y,z)=>y>0&&y<16&&inTrunk(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
+ isHero:isHeroObj,follow:()=>hero.root.position.clone().add(V(0,1,0)),
+ onUser:()=>{ac();startAmb();if(over)location.reload();},
+ onFollow:on=>{$('bF').classList.toggle('on',on);},
+ onTap:(x,y)=>{const z=pickZombie(x,y);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}});
+// whatever sits between the camera and the focus dithers away (leaves up to 2.2 m, bark/walls/props up to 1.2 m, scaled by zoom): the free camera never shows the inside of a board
+{const solidMat=mt=>mt.isMeshStandardMaterial||mt.isMeshLambertMaterial||mt.isMeshPhongMaterial;const nf=()=>{rig.nearFade(scene,2.2,undefined,.7);rig.nearFade(TREE.group,1.2,()=>true,.45);rig.nearFade(scene,1.2,solidMat,.45,.25);};nf();setTimeout(nf,8000);}
+$('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
+$('bH').onclick=()=>{ac();rig.goHome();};
 
 // ================= post & camera =================
 const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;composer.addPass(new OutputPass());composer.addPass(ENV.gradePass);
+// [PERF] shared quality governor + FPS readout (game/perf.js). Steps run cheapest-looking first and undo when the phone keeps up again.
+const PERF=createPerf({renderer,MOBILE});const PR0=PR;
+PERF.addStep('bloom',()=>{if(!bloom.enabled)return false;bloom.enabled=false;},()=>{bloom.enabled=true;},10);
+const prStep=(lo)=>[()=>{if(PR<=lo+.01)return false;PR=Math.max(lo,PR-.2);renderer.setPixelRatio(PR);resize();},()=>{PR=Math.min(PR0,PR+.2);renderer.setPixelRatio(PR);resize();}];
+PERF.addStep('px',...prStep(1.3),20);
+if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),15);PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),50);}
+if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,40+i);
+// [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
+let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
+PERF.addStep('sunShadow',()=>{if(sunEvery>=3)return false;sunEvery=3;},()=>{sunEvery=MOBILE?2:1;},30);
+PERF.addStep('px',...prStep(1.1),60);PERF.addStep('px',...prStep(1),70);
+const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
+window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
+PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
-function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));}
+function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
 addEventListener('resize',resize);
 
 // ================= main loop =================
 const clock=new THREE.Clock();let acc=0,fr=0,ft=0,perf=false;
 function frame(){requestAnimationFrame(frame);try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
-function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;
+function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;
  const wasN=isNight(hour);hour+=dt*hps()*TS;if(hour>=24)hour-=24;const nowN=isNight(hour);
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}
  if(!over&&wasN&&!nowN){dayNo++;sfx.dawn();toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
@@ -497,20 +574,21 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
  sun.color.copy(P.sun);sun.intensity=P.sunI*dim;hemi.intensity=P.hemiI;hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp;
- scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4);scene.fog.near=camDist*zoom*.95-mornK*12-rainK*6;scene.fog.far=camDist*zoom+70-mornK*30-rainK*25-nightK*35;
+ scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4);scene.fog.near=rig.dist*.95-mornK*12-rainK*6;scene.fog.far=rig.dist+70-mornK*30-rainK*25-nightK*35;
  moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  // no warm room fill: daylight only; at night rooms are lit by their lamps alone (game/lights.js)
  ambL.intensity=dayK*(1-rainK*.3)*.55;
  P3.update(dt,{reading:false/* the hero turns the pages himself (hero.js) */,cooking:false,heat:LIGHTS.level('oven')});
  LIGHTS.update({dt,T,lampOn,dayK,task:hero.task,state:hero.state,asleep:!!hero.inBed});
- rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.035+mornK*.09)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
+ rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
- rain.m.opacity=rainK*.5;if(rainK>.02){const a=rain.pos;for(let i=0;i<rain.n;i++){const j=i*6;a[j+1]-=dt*14;a[j+4]-=dt*14;a[j]+=dt*.7;a[j+3]+=dt*.7;if(a[j+4]<0){const x=rnd(-16,16),y=rnd(20,24),z=rnd(-6,10);a.set([x,y,z,x+.04,y-.5,z],j);}}rain.l.geometry.attributes.position.needsUpdate=true;}
- if(amb){amb.wind.gain.value=.012+nightK*.01;amb.rain.gain.value=rainK*.05;}
+ WIND.update({dt,T,rainK});SMOKE.update(dt,T,scene.fog.color);
+ RAIN.update(dt,T,rainK,scene.fog.color);
+ if(amb){const wl=WIND.level();amb.wind.gain.value=(.006+nightK*.006)+.014*Math.min(1.6,wl);amb.rain.gain.value=rainK*.05;}
  // --- spawn ---
- if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}
+ if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){if(!zombG)loadZombie();else{spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}}
  // --- hero: body, routine, walking (hero.js) ---
  if(!over)HH.update(dt*TS);
  bow.visible=hero.task==='guard';
@@ -548,21 +626,19 @@ function frameBody(){const dt=Math.min(.05,clock.getDelta());const T=performance
  for(let i=arrows.length-1;i>=0;i--){const a=arrows[i];a.age+=dt;if(a.rb){const t=a.rb.translation();a.g.position.set(t.x,t.y,t.z);if(!a.stuck){const v=a.rb.linvel();const dir=V(v.x,v.y,v.z);if(dir.lengthSq()>.01)a.g.quaternion.setFromUnitVectors(V(1,0,0),dir.normalize());}}
   else if(a.hitZombie&&a.hitZombie.rag&&a.hitZombie.rag.Spine1){const r=a.hitZombie.rag.Spine1.rb.translation();a.g.position.lerp(V(r.x,r.y,r.z),.3);}
   if(a.age>12){scene.remove(a.g);if(a.rb)world.removeRigidBody(a.rb);arrows.splice(i,1);}}
- // camera: steady framing with a slight breathing drift
- {// focus: whole house when zoomed out; the hero (day) or the fight (night) when zoomed in
-  const k=1-(zoom-.32)/.68;let f=hero.root.position.clone().add(V(0,1,0));const zs=zombies.filter(z=>z.alive&&z.stage!=='walk');
-  if(zs.length&&hero.task==='guard'){f=zs.reduce((a,z)=>a.add(z.root.position),V()).multiplyScalar(1/zs.length).add(hero.root.position).multiplyScalar(.5).add(V(0,1,0));}
-  const tgt=V(0,7.4,2.4).lerp(f,k);look.lerp(tgt,Math.min(1,dt*2.5));}
- if(camOv){look.set(camOv[0],camOv[1],camOv[3]);}const cd=camOv?camOv[2]:camDist*zoom;
- trauma=Math.max(0,trauma-dt*1.8);const tr=trauma*trauma;const drift=RM?0:Math.sin(T*.07)*.03;const yw=yaw+drift;
- camera.position.set(look.x+Math.sin(yw)*Math.cos(pitch)*cd+(RM?0:Math.sin(T*47)*.12*tr),look.y+Math.sin(pitch)*cd+(RM?0:Math.cos(T*41)*.12*tr),look.z+Math.cos(yw)*Math.cos(pitch)*cd);camera.lookAt(look);
+ // camera (camera.js): damped free camera + hit shake + a slight breathing drift
+ trauma=Math.max(0,trauma-dt*1.8);const tr=trauma*trauma;
+ if(camOv){look.set(camOv[0],camOv[1],camOv[3]);camera.position.set(look.x+Math.sin(.05)*camOv[2],look.y+Math.sin(.13)*camOv[2],look.z+Math.cos(.05)*camOv[2]);camera.lookAt(look);}
+ else rig.update(dt,{drift:RM?0:Math.sin(T*.07)*.03,shake:(RM||tr<1e-4)?null:V(Math.sin(T*47)*.12*tr,Math.cos(T*41)*.12*tr,0)});
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
+ if(!camOv)DOF.update(dt,rig.focusDist);
+ if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
  hud();composer.render();
- fr++;ft+=dt;if(fr>=90){const fps=fr/ft;fr=0;ft=0;if(fps<40){if(bloom.enabled&&MOBILE)bloom.enabled=false;else if(PR>1.01){PR=Math.max(1,PR-.2);renderer.setPixelRatio(PR);resize();}else if(ENV.degrade)ENV.degrade();}}
+ PERF.end();
  }
 resize();hud();$('load').classList.add('hide');
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>startTask(n),
- view:(y,p,z)=>{yaw=y;pitch=p;zoom=z;},cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
+ view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
 window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,E:HH.E};
 requestAnimationFrame(frame);
 </script>
