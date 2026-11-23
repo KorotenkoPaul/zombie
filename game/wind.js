@@ -252,6 +252,11 @@ export function createWind(opt = {}) {
       return { x: Math.cos(ang) * s, z: Math.sin(ang) * s, s, gust: g };
     },
     level() { return W.sample({ x: 0, z: 0 }).s; },
+    // the CPU twin of GLSL windSwayS(p, freq): world xz sway offset (multiply by your amplitude), for code that must
+    // know where a shader-swayed thing is (sounds at the end of a swing, a hand on a rope ladder)
+    swayAt(p, freq) { const x = p.x ?? p[0], z = p.z ?? p[2]; const s = W.sample({ x, z }).s, dx = Math.cos(ang), dz = Math.sin(ang);
+      const ph = T * freq - (x * dx + z * dz) * 0.45, o1 = Math.sin(ph) * 0.6 + Math.sin(ph * 2.17 + 1.3) * 0.4, o2 = Math.sin(ph * 1.31 + 2.1);
+      const sh = 0.1 + 0.9 * s, a = 0.35 * s * s + o1 * sh * 0.55, b = o2 * sh * 0.3; return { x: dx * a - dz * b, z: dz * a + dx * b }; },
     // how loud the leaves should rustle now, 0..1 (the crown, a moment after the gust passes the far trees)
     rustle() { const s0 = base + W.gustAt(0, 0); return Math.min(1, 0.05 + s0 * 0.55); },
     // W.on('gust' | 'creak' | 'mode', fn) -> off(). gust: {phase:'start', amp} / {phase:'end'}; creak: {strength 0..1, pos [x,y,z]};
@@ -281,6 +286,7 @@ export function createWind(opt = {}) {
       if (fogMats) { const seen = new Set(); for (const m of fogMats) { const u = m.material && m.material.uniforms; const cv = u && u.col && u.col.value;
         if (cv && cv.lerp && !seen.has(cv)) { seen.add(cv); cv.lerp(c, f * 0.6); } } }
     },
+    emit(k, e) { emit(k, e); },   // other wind-thread modules (housewind.js) raise events here too
     on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
@@ -346,7 +352,7 @@ export function createWind(opt = {}) {
       let cap = N;
       fall = dt => {
         const s0 = W.level();
-        acc += dt * (0.04 + 0.7 * s0 * s0);                     // leaves per second grow with the wind
+        acc += dt * (0.12 + 0.8 * s0 * s0);                     // a few leaves are always in the air; more as the wind grows
         // a gust reaching the crown shakes a handful loose at once
         { const g = W.gustAt(0, 0); if (!gIn && g > 0.2) { gIn = true; acc += 2 + Math.min(5, g * 5); } else if (gIn && g < 0.08) gIn = false; }
         while (acc >= 1) { acc -= 1; if (L.reduce((n, l) => n + (l.on ? 1 : 0), 0) >= cap) { acc = 0; break; } const l = L.find(l => !l.on); if (!l) break;

@@ -37,3 +37,9 @@ Code: index.html, block "wood: every board is its own body" (`plankShader`, `bev
 - Round landings (`floorBoards` with `radial:`) now match the photo: thick parallel planks running front-to-back, each cut to the circle so the chunky ends trace the curve. The sunburst and the rim board over the ends are gone. A dark curved band sits under the edge, with joists across underneath every 0.8 m.
 - `brace()` sinks its trunk end 14 cm into the bark, so it reads as a real joint. Beams, braces and posts longer than 0.6 m get a coach bolt (head, washer, rust halo) in the shader at each end.
 - Struts that passed through walkable boards were moved: the centre-landing brace now starts at y 3.0, and the two kitchen knee braces start above the centre landing. `tests/planks/braces.js` checks that no diagonal beam crosses a floor (it should print []).
+
+## Round 7: trunk door (index.html, after the LG brace)
+- DOORP={x,ang,y0,y1,w,depth} is shared with buildTree (door:DOORP).
+- surf()/at() raycast TREE.bark radially so the frame sits in the bark; piece() makes oriented instances.
+- Jambs, a 7-piece arch, and the keystone are `beams` instances (kind 'door'); the threshold and 5 cave floor planks are `boards` instances (kind 'door'). No new draw calls.
+- The lantern bracket belongs to Lights. Test: tests/planks/door.js.

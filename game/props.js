@@ -86,7 +86,21 @@ function pictureCanvas() { return canvas(160, 120, (g) => { const s = g.createLi
 function labelCanvas(c1, c2) { return canvas(64, 32, (g) => { g.fillStyle = c1; g.fillRect(0, 0, 64, 32); g.fillStyle = c2; g.fillRect(0, 10, 64, 12); g.fillStyle = 'rgba(255,255,255,.6)'; g.fillRect(8, 14, 30, 3); }); }
 
 // ---------------- geometry helpers ----------------
-const rb = (w, h, d, r = .012, seg = 1) => new RoundedBoxGeometry(w, h, d, seg, Math.max(.0005, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4)));
+// perf: a one-segment rounded box is a chamfered box: 6 faces, 12 bevel strips, 8 corner triangles (44 triangles instead of 108).
+// Normals run from face to face across each bevel, so it shades like RoundedBoxGeometry; UVs are per-face planar like a box.
+function chamferBox(w, h, d, r) { const H = [w / 2, h / 2, d / 2]; const pos = [], nor = [], uvs = [];
+  const pt = (ax, s) => { const p = [0, 0, 0]; for (let k = 0; k < 3; k++) p[k] = s[k] * (k === ax ? H[k] : H[k] - r); return p; }; const nm = (ax, s) => { const n = [0, 0, 0]; n[ax] = s[ax]; return n; };
+  const tri = (A, B, C) => { const e1 = [0, 1, 2].map(k => B[0][k] - A[0][k]), e2 = [0, 1, 2].map(k => C[0][k] - A[0][k]); const cx = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    const nn = [0, 1, 2].map(k => A[1][k] + B[1][k] + C[1][k]); const v = (cx[0] * nn[0] + cx[1] * nn[1] + cx[2] * nn[2]) >= 0 ? [A, B, C] : [A, C, B];
+    for (const [p, n] of v) { pos.push(...p); nor.push(...n); const a = Math.abs(n[0]) >= Math.abs(n[1]) && Math.abs(n[0]) >= Math.abs(n[2]) ? 0 : Math.abs(n[1]) >= Math.abs(n[2]) ? 1 : 2; const o = [0, 1, 2].filter(k => k !== a); uvs.push(p[o[0]] / (2 * H[o[0]]) + .5, p[o[1]] / (2 * H[o[1]]) + .5); } };
+  const quad = (A, B, C, D) => { tri(A, B, C); tri(A, C, D); }; const V3 = (ax, s) => [pt(ax, s), nm(ax, s)];
+  for (let ax = 0; ax < 3; ax++) for (const sa of [-1, 1]) { const o = [0, 1, 2].filter(k => k !== ax); const S = (u, v) => { const s = [0, 0, 0]; s[ax] = sa; s[o[0]] = u; s[o[1]] = v; return s; };
+    quad(V3(ax, S(-1, -1)), V3(ax, S(1, -1)), V3(ax, S(1, 1)), V3(ax, S(-1, 1))); }
+  for (let a = 0; a < 3; a++) for (let b = a + 1; b < 3; b++) { const c = 3 - a - b; for (const sa of [-1, 1]) for (const sb of [-1, 1]) { const S = sc => { const s = [0, 0, 0]; s[a] = sa; s[b] = sb; s[c] = sc; return s; };
+    quad(V3(a, S(-1)), V3(a, S(1)), V3(b, S(1)), V3(b, S(-1))); } }
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) { const s = [sx, sy, sz]; tri(V3(0, s), V3(1, s), V3(2, s)); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); return g; }
+const rb = (w, h, d, r = .012, seg = 1) => { const rr2 = Math.max(.0005, Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4)); return seg === 1 ? chamferBox(w, h, d, rr2) : new RoundedBoxGeometry(w, h, d, seg, rr2); };
 // box-projected UVs in metres; wood grain follows `grain` axis (0=x,1=y,2=z)
 function boxUV(geo, grain, scale = 1 / .9) {
   const p = geo.attributes.position, n = geo.attributes.normal, uv = geo.attributes.uv; const ox = R() * 5, oy = R() * 5;
@@ -337,7 +351,13 @@ function stove() {
   const fire = new THREE.Group(); fire.userData.live = true; fire.position.set(0, oy0 + .03, -D / 2 + .13); g.add(fire);
   const flameGeo = lathe([[0, 0], [.022, .01], [.028, .035], [.02, .07], [.008, .1], [0, .115]], 10);
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xFFA040, transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false });
-  const flames = []; for (let i = 0; i < 6; i++) { const f = new THREE.Mesh(flameGeo, flameMat); f.position.set(-.13 + i * .052 + rr(-.01, .01), 0, rr(-.03, .03)); f.userData.k = rr(.7, 1.3); f.userData.ph = R() * 6.28; f.userData.live = true; fire.add(f); flames.push(f); }
+  // perf: the six flames are one mesh; each vertex carries its flame's spot, speed and phase and the flicker runs in the vertex shader
+  const flameU = { uT: { value: 0 }, uHeat: { value: 0 } }; const flames = [];
+  { const fg = flameGeo.index ? flameGeo.toNonIndexed() : flameGeo; const gs = []; for (let i = 0; i < 6; i++) { const q = fg.clone(); const n = q.attributes.position.count; const fl = new Float32Array(n * 4); const fx = -.13 + i * .052 + rr(-.01, .01), fz = rr(-.03, .03), k = rr(.7, 1.3), ph = R() * 6.28;
+      for (let v = 0; v < n; v++) fl.set([fx, fz, k, ph], v * 4); q.setAttribute('fl', new THREE.Float32BufferAttribute(fl, 4)); gs.push(q); }
+    flameMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, flameU); sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 fl; uniform float uT, uHeat;').replace('#include <begin_vertex>',
+      'float fn = sin(uT * 9. * fl.z + fl.w) * .5 + sin(uT * 23. * fl.z + fl.w * 2.) * .3; vec3 transformed = position * vec3(1. + fn * .12, (.6 + uHeat * .7) * (1. + fn * .35), 1. + fn * .12); float fa = sin(uT * 5. + fl.w) * .12; transformed.xy = mat2(cos(fa), sin(fa), -sin(fa), cos(fa)) * transformed.xy; transformed.x += fl.x; transformed.z += fl.y;'); };
+    flameMat.customProgramCacheKey = () => 'ovenFlames'; const fm = new THREE.Mesh(mergeGeometries(gs, false), flameMat); fm.frustumCulled = false; fm.userData.live = true; fire.add(fm); }
   // baking tray with buns on the rack
   { const tr = new THREE.Group(); tr.position.set(0, oy0 + .206, .02); g.add(tr); add(tr, rb(ow * .78, .012, D * .55, .004), M.iron, 0, .006, 0); for (let i = 0; i < 4; i++) { const b = add(tr, new THREE.SphereGeometry(.035, 14, 8, 0, 6.283, 0, Math.PI / 2), M.bread, -.13 + i * .087, .012, rr(-.03, .03)); b.scale.y = .7; } }
   for (let i = 0; i < 7; i++) add(g, new THREE.CylinderGeometry(.004, .004, D - .1, 6), M.steel, -ow / 2 + .04 + i * (ow - .08) / 6, oy0 + .2, .02, Math.PI / 2);
@@ -369,7 +389,7 @@ function stove() {
     door, handle: () => door.localToWorld(V(0, dh - .05, .075)), flameMat, fireGroup: fire,
     setOpen(k) { openK = clamp01(k); door.rotation.x = openK * 1.45; }, get open() { return openK; },
     setHeat(k) { M.fire.emissiveIntensity = .25 + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 + .6 * k; heatK = k; },
-    flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; for (const f of flames) { const u = f.userData, n = Math.sin(t * 9 * u.k + u.ph) * .5 + Math.sin(t * 23 * u.k + u.ph * 2) * .3; f.scale.set(1 + n * .12, (.6 + heatK * .7) * (1 + n * .35), 1 + n * .12); f.rotation.z = Math.sin(t * 5 + u.ph) * .12; } flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
+    flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; flameU.uT.value = t; flameU.uHeat.value = heatK; flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
   };
   return g;
 }
@@ -1218,6 +1238,8 @@ export function buildProps(ctx) {
     // a material whose casting parts add up to a few hundred triangles is not worth its own shadow draw: fold it into the non-casting mesh
     for (const [k, e] of [...by]) { if (!e.cast) continue; let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; const kn = k.slice(0, -1) + 'n'; if (n > 400) continue;
       if (by.has(kn)) { by.get(kn).gs.push(...e.gs); by.delete(k); } else e.cast = false; }
+    // and a small non-casting remainder of a material that also casts joins the casting mesh (one draw instead of two; a few extra shadow triangles)
+    for (const [k, e] of [...by]) { if (e.cast) continue; const ks = k.slice(0, -1) + 's'; if (!by.has(ks)) continue; let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; if (n > 1500) continue; by.get(ks).gs.push(...e.gs); by.delete(k); }
     const sg = new THREE.Group(); sg.name = 'propsStatic'; for (const { mat, cast, gs } of by.values()) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = cast; m.receiveShadow = true; sg.add(m); gs.forEach(x => x.dispose()); } scene.add(sg); out.staticGroup = sg; }
   { const ws = V(); for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup) continue; r.updateMatrixWorld(true);
       r.traverse(o => { if (!o.isMesh || !o.castShadow || o.isInstancedMesh) return; if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); o.getWorldScale(ws); if (o.geometry.boundingSphere.radius * Math.max(ws.x, ws.y, ws.z) < CAST_R) o.castShadow = false; }); } }
@@ -1230,7 +1252,7 @@ export function buildProps(ctx) {
   // perf: every tool sitting at home (hooks, shelves, stove, bench) is drawn from one shared proxy mesh per material. Each tool
   // has an id in a vertex attribute; when it leaves home (grabbed, easing back, its parent moved, hidden) its id is masked out of
   // the proxy (vertices collapse) and its own meshes show again. Shadow-casting and live sub-parts always stay on the tool itself.
-  { const names = Object.keys(out.tools).slice(0, 64), uHide = { value: new Array(64).fill(0) }, by = new Map(), TP = []; const prox = new Map();
+  { const names = Object.keys(out.tools).slice(0, 63), uHide = { value: new Array(64).fill(0) }, by = new Map(), TP = []; const prox = new Map();
     const proxMat = m => { if (prox.has(m)) return prox.get(m); const pm = m.clone(); const ob = m.onBeforeCompile, ck = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
       pm.onBeforeCompile = (sh, r) => { if (ob && ob !== THREE.Material.prototype.onBeforeCompile) ob.call(m, sh, r); sh.uniforms.uHide = uHide;
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
@@ -1242,7 +1264,15 @@ export function buildProps(ctx) {
         if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(c.matrixWorld); g.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1));
         const key = m.uuid + (g.attributes.color ? g.attributes.color.itemSize : 0); if (!by.has(key)) by.set(key, { m, gs: [] }); by.get(key).gs.push(g); ms.push(c); });
       if (ms.length) { ms.forEach(c => c.visible = false); o.parent.updateMatrixWorld(true); TP.push({ i, o, h, ms, at: true, mw: ms.map(c => c.matrixWorld.clone()) }); } });
-    const pg = new THREE.Group(); pg.name = 'toolProxy'; for (const { m, gs } of by.values()) { const mesh = new THREE.Mesh(mergeGeometries(gs, false), proxMat(m)); mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false; pg.add(mesh); gs.forEach(g => g.dispose()); }
+    // where the house's static merge already has a mesh of the same material, the tools join it (static parts get tool id 63, never masked)
+    const injD = sh => { sh.uniforms.uHide = uHide; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
+    const dMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); dMat.onBeforeCompile = injD; dMat.customProgramCacheKey = () => 'toolProxyD'; const pMat = new THREE.MeshDistanceMaterial(); pMat.onBeforeCompile = injD; pMat.customProgramCacheKey = () => 'toolProxyP';
+    const pg = new THREE.Group(); pg.name = 'toolProxy'; for (const { m, gs } of by.values()) {
+      const cands = out.staticGroup ? out.staticGroup.children.filter(t => t.material === m && !t.customDepthMaterial) : []; const tg = cands.find(t => !t.castShadow) || cands[0];
+      const need = Object.keys(gs[0].attributes).filter(k => k !== 'tid').sort().join(); if (tg && Object.keys(tg.geometry.attributes).sort().join() === need && (!tg.geometry.attributes.color || tg.geometry.attributes.color.itemSize === gs[0].attributes.color.itemSize)) {
+        const sgG = tg.geometry; sgG.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(sgG.attributes.position.count).fill(63), 1)); const mg = mergeGeometries([sgG, ...gs], false);
+        if (mg) { tg.geometry = mg; sgG.dispose(); tg.material = proxMat(m); if (tg.castShadow) { tg.customDepthMaterial = dMat; tg.customDistanceMaterial = pMat; } gs.forEach(g => g.dispose()); continue; } sgG.deleteAttribute('tid'); }
+      const mesh = new THREE.Mesh(mergeGeometries(gs, false), proxMat(m)); mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false; pg.add(mesh); gs.forEach(g => g.dispose()); }
     scene.add(pg); out.toolProxy = pg;
     const vis = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     out._toolProxyInfo = () => TP.map(t => t.o === undefined ? '' : (t.at ? 1 : 0)).join(''); out._toolProxyTick = () => { for (const t of TP) { const { o, h } = t; const at = o.parent === h.parent && !homing.has(o) && o.position.distanceToSquared(h.pos) < 1e-8 && Math.abs(o.quaternion.dot(h.quat)) > .999999 && Math.abs(o.scale.x - (h.scale || 1)) < 1e-5 && vis(o) && t.ms.every((c, k) => c.matrixWorld.equals(t.mw[k])); /* any part moved (parent, covers, lids) -> the tool draws itself */

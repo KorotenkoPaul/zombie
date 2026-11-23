@@ -150,7 +150,8 @@ const TREE_H=16;
 const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
-const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:1.15,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:.95,top:.42,clear:.45}],door:{x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95},
+const DOORP={x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95};// the glowing hollow (tree.js); its plank frame is built with the boards
+const TREE=buildTree(THREE,{wind:WIND,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:1.15,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:.95,top:.42,clear:.45}],door:DOORP,
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
@@ -501,6 +502,28 @@ const LG=2.3,LL=2.45,LC=3.4+HY,WS=3.6+HY,KT=5.0+HY,BD=7.4+HY,DK=9.0+HY;
 // hollow landing (right, low) with the glowing doorway in the trunk
 floorBoards(-.2,3.2,LG,.6,2.7,{shape:disc(1.5,1.0,1.65,.6),radial:[1.5,1.0,1.65,.6]});
 brace(V(1.4,.9,frontZ(1.4,1.0)-.05),V(2.6,LG-.12,1.9),.13);
+// ---- the trunk door like the photo: a thick plank frame set into the bark round the arch (jambs + arch pieces, hiding the
+// ragged bark edge), a worn threshold, and a plank floor running into the warm cave. Instances only, no physics.
+{const D=DOORP,ax=TAX[0],az=TAX[1],H=D.y1-D.y0;const rc=new THREE.Raycaster();
+ const surf=(ang,y)=>{const dx=Math.cos(ang),dz=Math.sin(ang);rc.set(V(ax+dx*7,y,az+dz*7),V(-dx,0,-dz));rc.far=7;const h=rc.intersectObject(TREE.bark,false)[0];return h?7-h.distance:null;};
+ const R0=surf(D.ang+(D.w/2+.2)/2.2,D.y0+.6)||surf(D.ang-(D.w/2+.2)/2.2,D.y0+.6)||2.2;
+ const at=(side,y,inset)=>{let r=surf(D.ang+Math.sign(side||1)*(Math.abs(side)+.12)/R0,y)||R0;const a=D.ang+side/r;r=(surf(a+Math.sign(side||1)*.05/r,y)||r)-inset;return V(ax+Math.cos(a)*r,y,az+Math.sin(a)*r);};
+ const out=V(Math.cos(D.ang),0,Math.sin(D.ang)),sideV=V(-Math.sin(D.ang),0,Math.cos(D.ang));
+ const piece=(a,b,wd,dp,kind)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();const ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex))).normalize();const ey=ez.clone().cross(ex);
+  const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(rnd(.85,1)));
+   const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
+ const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
+ // jambs, a little proud of the bark and sunk into it
+ for(const sd of [-1,1])piece(at(sd*hw,D.y0-.04,.1),at(sd*hw,yS+.02,.1),fw,.34,'beam');
+ // arch: short chunky pieces round the top
+ const N=7;let prev=at(-hw,yS,.08);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*hw,yS+Math.sin(t)*ah,.08);piece(prev.clone().addScaledVector(prev.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(prev).normalize(),.03),fw,.3,'beam');prev=p;}
+ // a keystone block on top
+ {const p=at(0,yS+ah+.02,.05);piece(p.clone().addScaledVector(V(0,1,0),-.12),p.clone().addScaledVector(V(0,1,0),.12),.2,.34,'beam');}
+ // threshold: a thick worn board across the foot of the opening, flush with the landing
+ {const a=at(-hw-.06,D.y0+.02,.04),b=at(hw+.06,D.y0+.02,.04);piece(a,b,.24,.08,'board');}
+ // plank floor into the cave, boards running inward, slightly lower than the threshold
+ {const c0=at(0,D.y0+.03,.14);for(let k=-2;k<=2;k++){const a=c0.clone().addScaledVector(sideV,k*.205),b=a.clone().addScaledVector(out,-.95);piece(b,a,.19,.05,'board');}}
+ boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
 // left low landing
 floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
 // center landing (half disc around the trunk front) + gate over the ground ladder
@@ -566,7 +589,7 @@ const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+
 // a wall's outer face is the one facing away from its room; beams, posts and frames are out in the weather.
 ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[3],0,0);});
 {const inRoom=(c,m=0)=>ROOMS.find(r=>c.x>r[0]-m&&c.x<r[1]+m&&c.z>r[4]-m&&c.z<r[5]+m&&c.y>r[2]-.35&&c.y<r[3]+.2);
- for(const p of PL){if(p.kind==='shingle'||p.kind==='roof')continue;const A=p.kind==='beam'?dWx:aWx;let a=.8,b=.8;
+ for(const p of PL){if(p.kind==='shingle'||p.kind==='roof'||p.kind==='door')continue;const A=p.kind==='beam'?dWx:aWx;let a=.8,b=.8;
   if(p.kind==='floor'){a=inRoom(p.c,-.05)?0:1;b=.25;}
   else if(p.kind==='wall'){const r=inRoom(p.c,.35);if(r){const n=V(0,0,1).applyQuaternion(p.q);const out=n.x*(p.c.x-(r[0]+r[1])/2)+n.z*(p.c.z-(r[4]+r[5])/2)>0;a=out?1:0;b=out?0:1;}else{a=.7;b=.7;}}
   A.setXY(p.i,a,b);}
@@ -597,6 +620,10 @@ const {createLights}=await import(new URL(ASSET+'lights.js',document.baseURI).hr
 const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},windows:WINS});window.__lights=LIGHTS;
 // [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
 const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
+// [WIND] autumn particles (game/particles.js): dust in the lamplit rooms, the hero's breath on cold mornings
+const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).createParticles({THREE,scene,wind:WIND,lights:LIGHTS,rooms:LEAF_AVOID,hero:{head:()=>heroBones&&heroBones.Head,mouth:()=>window.__hero&&window.__hero.mouth?window.__hero.mouth():null},MOBILE});window.__particles=PARTS;
+// [WIND] the house answers the wind (game/housewind.js): the landing lantern swings on its chain, the telescope shivers in gusts
+const HOUSEWIND=(await import(new URL(ASSET+'housewind.js',document.baseURI).href)).createHouseWind({wind:WIND,scene,ladders:[{id:'ladder-ground',x:0,z:4.0,y0:0,y1:LC+.05},{id:'ladder-deck',x:1.35,z:3.15,y0:BD,y1:DK+.05}]});window.__housewind=HOUSEWIND;
 // [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
 const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
 // [WIND] morning fog bank rolling in from the forest on the breeze (game/fogbank.js)
@@ -789,7 +816,7 @@ function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guar
  setTimeout(()=>{if(hero.task==='guard')HH.play('231',{fade:.2});},1050);return true;}
 // camera input lives in camera.js (free orbit / pinch-to-point / pan / double-tap fly-to / hero follow)
 const isHeroObj=o=>{for(;o;o=o.parent)if(o===hero.root)return true;return false;};
-const rig=createCameraRig({camera,dom:cv,scene,
+const rig=createCameraRig({camera,dom:cv,scene,rooms:()=>ROOMS,
  solid:(x,y,z)=>trunkSolid(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
  isHero:isHeroObj,follow:()=>hero.root.position.clone().add(V(0,1,0)),
  onUser:()=>{ac();startAmb();if(over)location.reload();},
@@ -801,14 +828,14 @@ $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
 // ================= post & camera =================
-const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;composer.addPass(new OutputPass());composer.addPass(ENV.gradePass);
+const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;{const OUTP=new OutputPass();ENV.foldGrade(OUTP);composer.addPass(OUTP);}/* the colour grade runs inside the output pass (env.js foldGrade) */
 // [PERF] shared quality governor + FPS readout (game/perf.js). Steps run cheapest-looking first and undo when the phone keeps up again.
 const PERF=createPerf({renderer,MOBILE});const DPR=PR;
 // pixel ratio ladder: each step is one rung down (capped by the screen's own density)
 const prStep=(hi,lo,order)=>PERF.addStep('px',()=>{const l=Math.min(lo,DPR);if(PR<=l+.01)return false;PR=l;renderer.setPixelRatio(PR);resize();},()=>{PR=Math.min(hi,DPR);renderer.setPixelRatio(PR);resize();},order);
 const PX=[prStep(2.5,2.2,1),prStep(2.2,2,2),prStep(2,1.75,20),prStep(1.75,1.5,55),prStep(1.5,1.3,60),prStep(1.3,1.1,65),prStep(1.1,1,70)];
 // [WIND] weather quality steps: dry window glass, half the rain streaks, fewer splashes, fewer falling leaves
-[WIND,RAIN].forEach(m=>m.addPerfSteps&&m.addPerfSteps(PERF));
+[WIND,RAIN,PARTS].forEach(m=>m.addPerfSteps&&m.addPerfSteps(PERF));
 PERF.addStep('bloom',()=>{if(!bloom.enabled)return false;bloom.enabled=false;},()=>{bloom.enabled=true;},10);
 if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),15);PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),50);}
 if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LIGHTS.winGlow(true),45);
@@ -875,7 +902,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
- WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);
+ WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
  RAIN.update(dt,T,rainK,scene.fog.color);
  if(AUDIO)AUDIO.update(dt);
  // --- spawn ---

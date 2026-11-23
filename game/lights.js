@@ -78,12 +78,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const im = new THREE.InstancedMesh(linkGeo, ironM, n); im.userData.noHang = true; im.castShadow = false;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = b.clone().sub(a).normalize(), base = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), up);
     for (let i = 0; i < n; i++) { q.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, (i % 2) * Math.PI / 2, Math.PI / 2))); m.compose(a.clone().lerp(b, (i + .5) / n), q, V(1, 1.25, 1)); im.setMatrixAt(i, m); }
-    scene.add(im); return im;
+    scene.add(im); lastChain = im; return im;
   }
+  let lastChain = null, lastHang = null;  // [WIND] what the last hang() built, so a lantern outside can swing in the wind
   function hang(pos, topOff = .23) {
     const top = pos.clone().add(V(0, topOff, 0)), list = solids();
     rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = rc.intersectObjects(list, false)[0];
-    if (up) { chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 6, 12), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); hook.userData.noHang = true; scene.add(hook); return 'chain'; }
+    if (up) { chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 6, 12), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); hook.userData.noHang = true; scene.add(hook); lastHang = { top: up.point.clone(), chain: lastChain }; return 'chain'; }
     // bracket: find the nearest vertical surface around the lantern's top
     let best = null;
     for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2, d = V(Math.cos(a), 0, Math.sin(a)); const o = top.clone().add(V(0, .25, 0)); rc.set(o, d); rc.far = 1.3; const h = rc.intersectObjects(list, false)[0]; if (h && (!best || h.distance < best.h.distance)) best = { h, d }; }
@@ -102,7 +103,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const plate = new THREE.Mesh(new THREE.BoxGeometry(.03, .16, .08), ironM); plate.position.copy(wall); plate.lookAt(tip); plate.rotateY(Math.PI / 2); plate.userData.noHang = true; scene.add(plate);
     const brace = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, 1, 5), ironM); const b0 = wall.clone().add(V(0, -.16, 0)), b1 = wall.clone().lerp(tip, .6);
     brace.scale.y = b0.distanceTo(b1); brace.position.copy(b0).lerp(b1, .5); brace.quaternion.setFromUnitVectors(V(0, 1, 0), b1.clone().sub(b0).normalize()); brace.userData.noHang = true; scene.add(brace);
-    chain(top, tip); return 'bracket';
+    chain(top, tip); lastHang = { top: tip.clone(), chain: lastChain }; return 'bracket';
   }
 
   function bulbMesh(pos, r, col = 0xFFE0A0) {
@@ -169,8 +170,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // can't shine up through the boards into the kitchen and make it look lit (no shadow map on this one)
     const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.SpotLight(0xFFB25E, 0, 5.5, 1.1, .7, 1.6); l.position.copy(p);
     l.target.position.copy(p).add(V(0, -3, .2)); scene.add(l, l.target);
-    housing(p); hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
+    const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
     add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
+    // [WIND] the whole lantern (body, bulb, light, chain) hangs from one pivot at the chain's top: game/housewind.js swings it
+    if (lastHang) { const piv = new THREE.Group(); piv.position.copy(lastHang.top); scene.add(piv); piv.updateMatrixWorld(true);
+      let bm = null; scene.traverse(o => { if (o.isMesh && o.material === b) bm = o; });
+      for (const o of [hg, lastHang.chain, bm, l, l.target]) if (o) piv.attach(o);
+      (window.__swing = window.__swing || []).push({ name: 'landing lantern', piv, len: lastHang.top.y - p.y + .1, mass: 1 }); }
   }
 
   // ---------- oven fire (Props draws the fire; we own whether it burns) ----------
