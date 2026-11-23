@@ -188,14 +188,16 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
 
  // far forest: a painted backdrop (Fal, from the reference: gnarled oak silhouettes in blue fog) on a cylinder around the scene.
  // Mirrored-repeat so there is no seam; at night the painting shows as is, by day it is re-tinted with the fog colour.
- const bgU={map:{value:null},fogc:{value:new THREE.Color()},hor:{value:new THREE.Color()},night:{value:1},ok:{value:0}};
- new THREE.TextureLoader().load(new URL('forest-bg.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.MirroredRepeatWrapping;t.anisotropy=4;bgU.map.value=t;bgU.ok.value=1;});
+ const bgU={map:{value:null},dmap:{value:null},fogc:{value:new THREE.Color()},hor:{value:new THREE.Color()},night:{value:1},ok:{value:0}};
+ new THREE.TextureLoader().load(new URL('forest-bg.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.MirroredRepeatWrapping;t.anisotropy=4;bgU.map.value=t;bgU.ok.value=1;if(!bgU.dmap.value)bgU.dmap.value=t;});
+ new THREE.TextureLoader().load(new URL('forest-bg-day.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=THREE.MirroredRepeatWrapping;t.anisotropy=4;bgU.dmap.value=t;});
  {const RAD=96,H=64,Y0=-3;const g=new THREE.CylinderGeometry(RAD,RAD,H,64,1,true);g.translate(0,H/2+Y0,0);
   const mat=new THREE.ShaderMaterial({uniforms:bgU,side:THREE.BackSide,transparent:true,depthWrite:false,fog:false,
    vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-   fragmentShader:`uniform sampler2D map;uniform vec3 fogc,hor;uniform float night,ok;varying vec2 vUv;
-    void main(){vec3 c=texture2D(map,vec2(vUv.x*5.,vUv.y)).rgb;c=mix(c,fogc*1.1,.3*(1.-vUv.y*.6));float l=dot(c,vec3(.3,.55,.15));
-     vec3 day=mix(fogc*.55,mix(fogc,hor,.4)*1.25,smoothstep(.05,.55,l));
+   fragmentShader:`uniform sampler2D map,dmap;uniform vec3 fogc,hor;uniform float night,ok;varying vec2 vUv;
+    void main(){vec2 uv=vec2(vUv.x*5.,vUv.y);vec3 c=texture2D(map,uv).rgb;c=mix(c,fogc*1.1,.3*(1.-vUv.y*.6));
+     // day: the daytime painting of the same forest, nudged toward the current sky/fog colour (sunrise/sunset tint)
+     vec3 dc=texture2D(dmap,uv).rgb;vec3 day=dc*mix(vec3(1.),mix(fogc,hor,.5)/max(dot(mix(fogc,hor,.5),vec3(.33)),.05),.3);day=mix(day,fogc,.18*(1.-vUv.y*.6));
      vec3 nt=c*.82;
      vec3 o=mix(day,nt,night);float a=smoothstep(1.,.86,vUv.y)*ok;
      gl_FragColor=vec4(o,a);

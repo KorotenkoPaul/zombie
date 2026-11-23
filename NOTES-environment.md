@@ -15,10 +15,11 @@
 
 ## Checkpoint 2 (2026-11-23, v20)
 - Fal works from this cloud (queue.fal.run + v3*.fal.media). `pipeline/fal.py` + nano-banana-pro/edit with the reference photo.
-- `game/forest-bg.jpg`: painted far forest (gnarled oaks in blue fog) on a 96 m cylinder, mirrored 5x; night shows it as painted, day re-tints with fog colour. Replaced the crude silhouette rings. Source: assets/textures-src/forest-bg-src.jpg.
+- `game/forest-bg.jpg`: painted far forest (gnarled oaks in blue fog) on a 96 m cylinder, mirrored 5x; night shows the night painting; by day a daytime painting of the same forest (forest-bg-day.jpg, Fal edit of the night one) tinted toward the sky colour. Replaced the crude silhouette rings. Source: assets/textures-src/forest-bg-src.jpg.
 - `game/ground3.jpg`: painted forest floor (grass, moss, teal ferns, oak leaves), seamless; swapped into the ground material after load.
 - Height fog: env.js patches THREE.ShaderChunk fog_* globally. Every fog:true material gets an analytic exponential ground fog (H=1.7 m) with static world noise. Strength comes from index.html's (fogFar-fogNear), so night/morning/rain are thicker. Clears within ~5-13 m of the trunk so the roots read dark (Tree thread ask).
 - Puffs: lit warm by the 6 lowest lamp/door halos (uniform lp[6]); fade near ground (no hard cut lines); fade in front of the trunk.
+- Ferns (canvas fronds, sway) and mushroom clusters (caps glow warm at night, uniform env.shroomGlow) at r 3.4-9 around the trunk.
 - Sheets fade when seen edge-on (no water look). `window.__env` exposes sheets/puffs for debugging.
 
 ## Testing in this cloud
