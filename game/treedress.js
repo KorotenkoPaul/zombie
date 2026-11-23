@@ -83,6 +83,7 @@ export function createTreeDress(C) {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+${MOBILE ? '#define TD_LITE' : ''}
 varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
@@ -103,14 +104,28 @@ uniform float tdCool;` + NOISE)
         .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec3 wn=normalize(tdN); float y=tdP.y;
+#ifdef USE_MAP
+          // the sculpted model's own painted texture has long vertical streaks: keep only its broad colour (a blurred mip),
+          // the bark detail comes from the relief below
+          { vec4 mb=texture2D(map,vMapUv,5.);
+            diffuseColor.rgb=diffuseColor.rgb/max(sampledDiffuseColor.rgb,vec3(.004))*mix(sampledDiffuseColor.rgb,mb.rgb,.85); }
+#endif
           // ---- bark relief: light worn crust on the ridges, deep dark furrows, fibrous detail up close ----
           { vec2 rv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float r=length(rv); vec3 rad=r>1e-3?vec3(rv.x/r,0.,rv.y/r):vec3(1.,0.,0.);
             // roots and limbs: furrows along them. Near the ground the roots run outwards; higher up the limbs rise a little as they go out.
             tdA=normalize(rad+vec3(0.,y>3.?.25:0.,0.)); tdC=vec3(-rad.z,0.,rad.x); tdB=normalize(cross(tdC,tdA));
             tdLf=smoothstep(2.5,3.7,r); }
           tdFade=1.-smoothstep(5.,16.,length(cameraPosition-tdP));
+          // phones: one macro read and no close-up octave (GPU-bound at night); desktop: anti-tiling second read + micro detail up close
+          vec4 hb=vec4(.5,1.,.5,1.);
+#ifdef TD_LITE
+          vec4 ha=tdTri(tdHao,tdP,wn,tdScale);
+#else
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
-          vec4 ha=mix(tdTri(tdHao,tdP,wn,tdScale),tdTri(tdHao,tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale),brk), hb=tdTri(tdHao,tdP+7.3,wn,tdScale*3.3);
+          vec4 ha=tdTri(tdHao,tdP,wn,tdScale);
+          if(brk>.01)ha=mix(ha,tdTri(tdHao,tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale),brk);
+          if(tdFade>.01)hb=tdTri(tdHao,tdP+7.3,wn,tdScale*3.3);
+#endif
           tdH=ha.r;float cav=ha.g*mix(1.,.6+.4*hb.g,tdFade);
           float rel=tdRelief;
           diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.6,1.,cav),rel);
@@ -155,8 +170,14 @@ uniform float tdCool;` + NOISE)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec3 wn=normalize(tdN);
+#ifdef TD_LITE
+          vec3 dn=tdTriN(tdP,wn,tdScale,3.);
+#else
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
-          vec3 dn=mix(tdTriN(tdP,wn,tdScale,3.),tdTriN(tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk)+tdTriN(tdP+7.3,wn,tdScale*3.3,1.1)*tdFade;
+          vec3 dn=tdTriN(tdP,wn,tdScale,3.);
+          if(brk>.01)dn=mix(dn,tdTriN(tdP*1.37+vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
+          if(tdFade>.01)dn+=tdTriN(tdP+7.3,wn,tdScale*3.3,1.1)*tdFade;
+#endif
           vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
@@ -564,7 +585,7 @@ uniform float tdCool;` + NOISE)
     const tex = (() => {
       const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const x = cv.getContext('2d'); const r = rng(99);
       for (let i = 0; i < 46; i++) {
-        const x0 = 8 + r() * 48, len = 80 + r() * 170, w = 0.8 + r() * 1.6; const c = 120 + r() * 60;
+        const x0 = 32 + (r() + r() - 1) * 22, len = 80 + r() * 170, w = 0.8 + r() * 1.6; const c = 120 + r() * 60;
         x.strokeStyle = `rgba(${c * 0.82 | 0},${c | 0},${c * 0.72 | 0},${0.65 + r() * 0.35})`; x.lineWidth = w; x.beginPath(); x.moveTo(x0, 0);
         let px = x0; for (let y = 8; y < len; y += 8) { px += (r() - 0.5) * 3 - (px - 32) * 0.02 * (y / 256); x.lineTo(px, y); } x.stroke();
         // little tufts along the strand
@@ -573,9 +594,12 @@ uniform float tdCool;` + NOISE)
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
     })();
     // two crossed cards, top at y=0 hanging down to y=-1 (uv.y 1 at the top)
-    const a = new THREE.PlaneGeometry(1, 1).translate(0, -0.5, 0), b = a.clone().rotateY(Math.PI / 2);
+    const a = new THREE.PlaneGeometry(1, 1, 2, 6).translate(0, -0.5, 0);
+    { const q = a.attributes.position; for (let i = 0; i < q.count; i++) { const t = -q.getY(i); q.setX(i, q.getX(i) * (1 - 0.75 * t)); } }
+    const b = a.clone().rotateY(Math.PI / 2);
     const g = mergeGeometries([a, b]);
-    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.35, side: THREE.DoubleSide, roughness: 1, color: 0xa8b296 });
+    tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter; // averaged mips turned the strands into solid strips far away
+    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, color: 0xa8b296 });
     mat.onBeforeCompile = sh => {
       const W = window.__wind; if (!W) return; W.hook(sh);
       sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -583,7 +607,7 @@ uniform float tdCool;` + NOISE)
        vec3 off=windRope(ip,t,len)*3.5+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));
        transformed+=windLocal(off);}`);
     };
-    const N = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
+    const N = Math.round(45 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
     const under = sampler(q => q.n.y < -0.35 && q.c.y > 3.6 && q.c.y < 10.5 && radial(q.c.x, q.c.z) > 2.2);
     for (let k = 0; k < 600 && n < N; k++) {
       const s0 = under(); if (!s0) break; const p0 = s0.p;
