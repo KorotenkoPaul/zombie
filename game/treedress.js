@@ -77,10 +77,11 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, rimK: { value: 1 },
+    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, near: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
-    D.update = () => {
+    D.update = (cam) => {
+      if (cam) D.barkU.near.value = Math.hypot(cam.position.x - AX, cam.position.z - AZ) < 9 && cam.position.y < 17 ? 1 : 0;
       const now = performance.now() / 1000, dt = Math.min(0.5, Math.max(0, now - (D._lt || now))); D._lt = now;
       const W = window.__wind, on = W && W.raining ? W.raining() : 0;
       D._rk = (D._rk || 0) + (on - (D._rk || 0)) * Math.min(1, dt / 6); const rain = D._rk;
@@ -146,7 +147,7 @@ export function createTreeDress(C) {
     }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
@@ -157,7 +158,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdL=0.,tdFade=0.,tdH=.5;
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -189,20 +190,15 @@ vec3 tdSN(vec3 p,float m,float cc,vec2 cd,vec3 n,vec3 A,vec3 B,vec3 C,float s,fl
  if(w.z>0.)tz=tdTex(tdNrm,vec2(cc,b)*s,vec2(cx.x,bx.x),vec2(cx.y,bx.y)).xyz*2.-1.;
  return ((C*tx.x+A*tx.y)*w.x+(B*ty.x+A*ty.y)*w.y+(C*tz.x+B*tz.y)*w.z)*k;}
 // p = tdP*m+o. Both mappings, blended between the trunk and the roots / limbs.
-#ifdef TD_LITE
-vec3 tdFA(){return normalize(mix(vec3(0.,1.,0.),tdA,tdLf));}vec3 tdFC(){return normalize(mix(vec3(0.,0.,1.),tdC,tdLf)+vec3(1e-4));}
-vec4 tdTri(sampler2D t,float m,vec3 o,vec3 n,float s){vec3 p=tdP*m+o,A=tdFA(),C=tdFC(),B=normalize(cross(C,A));
- return tdS(t,p,m,mix(p.z,tdU*m+o.z,tdLf),mix(vec2(tdDx.z,tdDy.z),tdUd,tdLf),n,A,B,C,s*mix(1.,TDRS,tdLf));}
-vec3 tdTriN(float m,vec3 o,vec3 n,float s,float k){vec3 p=tdP*m+o,A=tdFA(),C=tdFC(),B=normalize(cross(C,A));
- return tdSN(p,m,mix(p.z,tdU*m+o.z,tdLf),mix(vec2(tdDx.z,tdDy.z),tdUd,tdLf),n,A,B,C,s*mix(1.,TDRS,tdLf),k);}
-#else
+// both mappings, blended in the trunk/root band; phones keep that band narrow (mixing the two coordinates instead of the two
+// reads made a huge gradient across the band: long streaks on some roots)
 vec4 tdTri(sampler2D t,float m,vec3 o,vec3 n,float s){vec3 p=tdP*m+o;vec4 a=vec4(0.),b=vec4(0.);
  if(tdLf<.99)a=tdS(t,p,m,p.z,vec2(tdDx.z,tdDy.z),n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s);
  if(tdLf>.01)b=tdS(t,p,m,tdU*m+o.z,tdUd,n,tdA,tdB,tdC,s*TDRS);return mix(a,b,tdLf);}
 vec3 tdTriN(float m,vec3 o,vec3 n,float s,float k){vec3 p=tdP*m+o;vec3 a=vec3(0.),b=vec3(0.);
  if(tdLf<.99)a=tdSN(p,m,p.z,vec2(tdDx.z,tdDy.z),n,vec3(0.,1.,0.),vec3(1.,0.,0.),vec3(0.,0.,1.),s,k);
  if(tdLf>.01)b=tdSN(p,m,tdU*m+o.z,tdUd,n,tdA,tdB,tdC,s*TDRS,k);return mix(a,b,tdLf);}
-#endif
+
 uniform float tdCool;` + NOISE)
         .replace('#include <map_fragment>', `#include <map_fragment>
         {
@@ -223,7 +219,7 @@ uniform float tdCool;` + NOISE)
             // roots and limbs: furrows along them. Near the ground the roots run outwards; higher up the limbs rise a little as they go out.
             tdA=normalize(rad+vec3(0.,.25*smoothstep(2.5,4.,y),0.)); tdC=vec3(-rad.z,0.,rad.x); tdB=normalize(cross(tdC,tdA));
             #ifdef TD_LITE
-            tdLf=smoothstep(2.95,3.25,r); // phones blend the coordinates (one read), which stretches the plates: keep that band narrow
+            tdLf=smoothstep(2.8,3.4,r); // phones: a narrower blend band (two reads only inside it)
 #else
             tdLf=smoothstep(2.5,3.7,r);
 #endif
@@ -241,6 +237,9 @@ uniform float tdCool;` + NOISE)
           vec4 hb=vec4(.5,1.,.5,1.);
 #ifdef TD_LITE
           vec4 ha=tdTri(tdHao,1.,vec3(0.),wn,tdScale);
+          // phones, only while the camera is near the trunk (uniform branch): the fine octave for close-ups, its height also drives
+          // a screen-space micro bump below (no extra normal-map read)
+          if(tdNear>.5){ hb=tdTri(tdHao,36./11.,vec3(7.3),wn,tdScale); tdHB=hb.r*tdFade; }
 #else
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
           vec4 ha=tdTri(tdHao,1.,vec3(0.),wn,tdScale);
@@ -347,6 +346,8 @@ uniform float tdCool;` + NOISE)
           vec3 wn=normalize(tdN);
 #ifdef TD_LITE
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
+          if(tdNear>.5){ vec3 dpx=dFdx(tdP),dpy=dFdy(tdP); float hx=dFdx(tdHB),hy=dFdy(tdHB); vec3 r1=cross(dpy,wn),r2=cross(wn,dpx); float det=dot(dpx,r1);
+            dn-=sign(det)*(hx*r1+hy*r2)/max(abs(det),1e-7)*.01*(1.-.6*tdLf); } // micro bump from the fine octave's height
 #else
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
@@ -926,7 +927,7 @@ uniform float tdCool;` + NOISE)
   }
 
   // keep the bark's wet/rim uniforms in step with the time of day and the rain, without touching the main loop
-  { const prev = TREE.bark.onBeforeRender; TREE.bark.onBeforeRender = function (...a) { D.update(); if (!D.boardLeaves && D.placeBoardLeaves) D.placeBoardLeaves(); if (prev) prev.apply(this, a); }; }
+  { const prev = TREE.bark.onBeforeRender; TREE.bark.onBeforeRender = function (...a) { D.update(a[2]); if (!D.boardLeaves && D.placeBoardLeaves) D.placeBoardLeaves(); if (prev) prev.apply(this, a); }; }
 
   // phones: small dressing neither casts nor receives shadows (cheaper shaders, nothing in the shadow pass)
   if (MOBILE) D.group.children.forEach(m => { m.castShadow = false; m.receiveShadow = false; });

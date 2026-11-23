@@ -166,7 +166,7 @@ const HY=1.0,LG_=2.3;// house raised 1 m to match the photo (all levels below re
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
 const DOORP={x:1.0,ang:1.15,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95};// the glowing hollow (tree.js); its plank frame is built with the boards
-const TREE=buildTree(THREE,{wind:WIND,renderer,model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:1.9,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:.95,top:.42,clear:.45}],door:DOORP,
+const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:!/[?&]leafcards/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:1.9,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:.95,top:.42,clear:.45}],door:DOORP,
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
@@ -227,10 +227,12 @@ WEAR.stamp=(x,y,z,amt,rad=.25)=>{let li=0,bd=9;WEAR.lv.forEach((l,i)=>{const d=M
  const tw=WEAR.W/7,px=(x+6)/12*tw,pz=(z+1)/8*WEAR.H,r=rad/12*tw;for(let j=Math.floor(pz-r);j<=Math.ceil(pz+r);j++)for(let i=Math.floor(px-r);i<=Math.ceil(px+r);i++){if(i<0||i>=tw||j<0||j>=WEAR.H)continue;
  const d=Math.hypot(i-px,j-pz)/r;if(d>=1)continue;const k=j*WEAR.W+li*Math.round(tw)+i;WEAR.f[k]=Math.min(1,WEAR.f[k]+amt*(1-d*d));WEAR.u8[k]=WEAR.f[k]*255;}WEAR.dirty=true;return true;};
 const boardMat=new THREE.MeshStandardMaterial({roughness:.8});
+// LOD distance scale shared by the board and slate shaders: 1 normal, .5 = the cheap far path starts 2x closer (perf governor step 'plankLod')
+const PLOD={value:1};
 const PLANK_GLSL=`float pH(float n){return fract(sin(n*127.1)*43758.5453);}
 float pH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i),pH2(i+vec2(1,0)),f.x),mix(pH2(i+vec2(0,1)),pH2(i+vec2(1,1)),f.x),f.y);}
-uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];
+uniform float uLod;uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];
 vec2 pDH=vec2(0.);float pRgh=.8;
 vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);return normalize(abs(det)*sn-g);}
 // nail heads over every joist / batten: two per crossing. returns (dome height 0..1, rust halo 0..1, distance)
@@ -251,7 +253,7 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  vec3 tx=pTex(uv,wall,0.);
  // LOD (perf round): metres per pixel on this board. Far away (> ~5 mm/px: across a room on a phone) the relief, nail heads
  // and cupping are below a pixel, so their taps and noise are skipped; they fade in smoothly as the camera comes close.
- vec2 ux=dFdx(uv),uy=dFdy(uv),mx=dFdx(m.xy),my=dFdy(m.xy);float fp=max(length(mx),length(my));float near=1.-smoothstep(.0035,.0065,fp);
+ vec2 ux=dFdx(uv),uy=dFdy(uv),mx=dFdx(m.xy),my=dFdy(m.xy);float fp=max(length(mx),length(my));float near=1.-smoothstep(.0035*uLod,.0065*uLod,fp);
  // a little more contrast than the scan: the grain reads under warm lamp light
  vec3 col=pow(tx,vec3(1.25))*1.3*(wall>.5?uTintB:uTintA);
  float lum=pL(tx);pRgh=.7+.25*(1.-lum);
@@ -312,7 +314,7 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  col=mix(col,col*vec3(1.32,1.2,1.0),fr);
  pDH=dH;return col;}`;
 function plankShader(m,o={}){const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv},uRoomA:{value:WEAR.ra},uRoomB:{value:WEAR.rb},tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
- m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U);
+ m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U,{uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec2 aWx;attribute vec3 aBev;varying float vSeed,vFresh,vUpX;varying vec2 vWx;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
   .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.007,.28*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;vUpX=normalize((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).xyz).y;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;vUpX=0.;\n#endif\nvSeed=aRow;vLP=transformed;vFresh=aFresh;vWx=aWx;');
@@ -382,7 +384,7 @@ const [slateT,mossT]=await Promise.all([tex('slate.jpg'),tex('moss.jpg')]);
 const SHING_GLSL=`float sH(float n){return fract(sin(n*127.1)*43758.5453);}
 float sH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float sN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(sH2(i),sH2(i+vec2(1,0)),f.x),mix(sH2(i+vec2(0,1)),sH2(i+vec2(1,1)),f.x),f.y);}
-uniform sampler2D tSlate,tMoss;
+uniform float uLod;uniform sampler2D tSlate,tMoss;
 vec2 sDH=vec2(0.);float sRgh=.8;
 vec3 snArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);return normalize(abs(det)*sn-g);}
 // moss amount at a world point: soft patches, more on the back (shady, trunk) half and lower down each slope
@@ -396,13 +398,16 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  vec2 uv=(top>.5?m.xz:(an.x>an.z?m.zy:m.xy))/.9+off;
  vec3 tx=texture2D(tSlate,uv).rgb;float lum=dot(tx,vec3(.3,.6,.1));
  vec3 col=pow(tx,vec3(1.1))*vec3(.5,.5,.5);
+ // the scan is quite blue (mean 89,104,120) and the night ambient is blue too: keep only a hint of the blue-grey so the roof
+ // reads dark slate under the moon, not saturated blue
+ col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,.4)*vec3(1.04,1.,.95);
  // each slate its own tone: some bluer, some greener-grey, some rust-brown stained, a few pale weathered
- float t=sH(sd+2.2);col*=mix(vec3(.72,.76,.86),vec3(1.12,1.08,1.02),t);
+ float t=sH(sd+2.2);col*=mix(vec3(.8,.8,.84),vec3(1.1,1.06,1.0),t);
  if(sH(sd+7.)<.12)col*=vec3(1.18,1.02,.86);
  sRgh=.62+.3*(1.-lum*3.);
  vec2 ux=dFdx(uv),uy=dFdy(uv),mx=dFdx(m.xz),my=dFdy(m.xz);vec3 wx=dFdx(vW),wy=dFdy(vW);
  // LOD (perf round): far slates (> ~7 mm/px) skip the relief taps, crack relief, lichen specks and moss relief
- float near=1.-smoothstep(.005,.009,max(length(mx),length(my)));vec2 dH=vec2(0.);
+ float near=1.-smoothstep(.005*uLod,.009*uLod,max(length(mx),length(my)));vec2 dH=vec2(0.);
  if(near>0.){float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
   dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004*near;}
  if(top>.5){
@@ -419,7 +424,7 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
   vec3 mc=texture2D(tMoss,vW.xz*1.7+vec2(vW.y*.7)).rgb;col=mix(col,mc*vec3(.42,.5,.36),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
-shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT}});
+shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT},uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);vDn=1.;\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;vDn=-sign((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).y+1e-6);\n#endif')
   .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.018,.3*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;\n#endif\nvSeed=aRow;vFresh=aFresh;vLP=transformed;');
@@ -961,7 +966,7 @@ $('bH').onclick=()=>{ac();rig.goHome();};
 // ================= post & camera =================
 const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;{const OUTP=new OutputPass();ENV.foldGrade(OUTP);composer.addPass(OUTP);}/* the colour grade runs inside the output pass (env.js foldGrade) */
 // [PERF] shared quality governor + FPS readout (game/perf.js). Steps run cheapest-looking first and undo when the phone keeps up again.
-const PERF=createPerf({renderer,MOBILE});const DPR=PR;
+const PERF=createPerf({renderer,MOBILE});const DPR=PR;PERF.addStep('plankLod',()=>{PLOD.value=.5;},()=>{PLOD.value=1;},40);/* (Planks) board/slate fine detail only up close */
 // pixel ratio ladder: each step is one rung down (capped by the screen's own density)
 const prStep=(hi,lo,order)=>PERF.addStep('px',()=>{const l=Math.min(lo,DPR);if(PR<=l+.01)return false;PR=l;renderer.setPixelRatio(PR);resize();},()=>{PR=Math.min(hi,DPR);renderer.setPixelRatio(PR);resize();},order);
 const PX=[prStep(2.5,2.2,1),prStep(2.2,2,2),prStep(2,1.75,20),prStep(1.75,1.5,55),prStep(1.5,1.3,60),prStep(1.3,1.1,65),prStep(1.1,1,70)];
@@ -1127,7 +1132,7 @@ window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,h
  view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
 window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,trunkSolid,LIMB,E:HH.E};
 // [GRAB] what each hand holds right now (game/grab.js): collide.js leaves a gripping hand on its handle
-try{const {createGrab}=await import(new URL(ASSET+'grab.js',document.baseURI).href);window.__grab=createGrab({THREE,bones:heroBones});}catch(e){console.error('grab',e);}
+try{const {createGrab}=await import(new URL(ASSET+'grab.js',document.baseURI).href);window.__grab=createGrab({THREE,bones:heroBones});try{window.__grab.buildFists(hero.root);window.__grab.wrapProps(window.__props||P3);}catch(e){console.error('fist',e);}}catch(e){console.error('grab',e);}
 // [COLLIDE] hard body boundaries: after hero.js poses the body, the skin is pushed out of walls, beams and furniture (game/collide.js)
 try{const {createCollide}=await import(new URL(ASSET+'collide.js',document.baseURI).href);window.__collide=createCollide({scene,HH,P3,trunk:{SL,TAX}});}catch(e){console.error('collide',e);}
 // [PERF] the loading screen stays up until the heavy first work is done: every texture uploaded to the GPU, shaders linked
@@ -1135,7 +1140,14 @@ try{const {createCollide}=await import(new URL(ASSET+'collide.js',document.baseU
 // it disappears are a frozen picture that ignores swipes.
 // [PERF] a transparent double-sided material is drawn twice per frame by three.js (back faces, then front) and rebuilds
 // its shader key each time (~2 draws + CPU per object). For flat things (window glass, rugs) one pass looks the same.
-{const _b=new THREE.Box3(),_v=V();const single=()=>scene.traverse(o=>{if(!o.isMesh)return;for(const m of [].concat(o.material||[])){if(!m.transparent||m.side!==THREE.DoubleSide||m.forceSinglePass)continue;if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();o.geometry.boundingBox.getSize(_v);if(Math.min(_v.x,_v.y,_v.z)<.01)m.forceSinglePass=true;}});single();setTimeout(single,9000);}
+{const _b=new THREE.Box3(),_v=V();const single=()=>scene.traverse(o=>{if(!o.isMesh)return;for(const m of [].concat(o.material||[])){if(!m.transparent||m.side!==THREE.DoubleSide||m.forceSinglePass)continue;if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();o.geometry.boundingBox.getSize(_v);if(Math.min(_v.x,_v.y,_v.z)<.01)m.forceSinglePass=true;}});single();setTimeout(single,9000);
+ // a material shared by an InstancedMesh and a plain Mesh flips three.js between two shader variants every time they are drawn
+ // in turn (getProgram + uniform re-upload each switch): the instanced users get their own copy. The copy keeps the owner's
+ // shader hook (onBeforeCompile + cache key); the hooks here share their uniform objects, so both copies animate together.
+ const split=()=>{const use=new Map();scene.traverse(o=>{if(!o.isMesh)return;for(const m of [].concat(o.material||[])){let u=use.get(m);if(!u)use.set(m,u={i:[],p:[]});(o.isInstancedMesh?u.i:u.p).push(o);}});
+  const plainHook=THREE.Material.prototype.onBeforeCompile;let n=0;const left=[];
+  for(const [m,u] of use){if(!u.i.length||!u.p.length)continue;const c=m.clone();if(m.onBeforeCompile!==plainHook){c.onBeforeCompile=m.onBeforeCompile;c.customProgramCacheKey=m.customProgramCacheKey;left.push(m.name||m.type);}for(const o of u.i)o.material=Array.isArray(o.material)?o.material.map(x=>x===m?c:x):c;n++;}
+  PERF.splitMats=n;PERF.sharedHooked=left;};split();setTimeout(split,9000);}
 {const T0=performance.now();$('loadTx').textContent='Готовим картинку…';scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,4000))]);}catch(e){}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
