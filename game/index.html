@@ -644,7 +644,8 @@ const SHUT=(()=>{let tq=[];const rooms={kitchen:[KX0+.02,KX1,KT+.03,BD-.15,3.97]
    const L=Math.hypot(w-.3,h-.32),m=new THREE.Mesh(new THREE.BoxGeometry(L,.1,.028),bat);m.position.set(0,-h/2,flip*.034);m.rotation.z=Math.atan2(h-.32,w-.3)*(rnd(0,1)<.5?1:-1);g.add(m);
    g.traverse(m=>{if(m.isMesh){m.castShadow=!MOBILE;m.receiveShadow=true;}});};
   for(let i=0;i<np;i++){const up=new THREE.Group();up.position.set(x0+PW*(i+.5),y1,z);scene.add(up);panel(up,PW-.02,h1,1);
-   const lo=new THREE.Group();lo.position.set(0,-h1,0);up.add(lo);panel(lo,PW-.02,H-h1,1);bakeStatic(lo);bakeStatic(up,m=>m===lo||lo.children.includes(m));ups.push(up);los.push(lo);}
+   const lo=new THREE.Group();lo.position.set(0,-h1,0);up.add(lo);panel(lo,PW-.02,H-h1,1);bakeStatic(lo);bakeStatic(up,m=>m===lo||lo.children.includes(m));ups.push(up);los.push(lo);
+   /* moving, outside the rooms: not furniture for collide.js (its scan skips 'Shape' geometry; the merged panels broke its hash) */up.traverse(m=>{if(m.isMesh)m.geometry.type='ShutterShapeGeometry';});}
   R[name]={ups,los,mat,bat,k:0,want:0,c:V((x0+x1)/2,(y0+y1)/2,z)};api.k[name]=0;}
  let lastLock=false;
  api.update=(dt)=>{const B=window.__brain,lk=!!(B&&B.locked);
