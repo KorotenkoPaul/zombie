@@ -138,3 +138,34 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
   - The one point over target was the owl at 25 m: −18.8 dB short-term. Owl volume went from .5 to .32 (−4 dB).
   - 1–2 a.m. sat at about −51 dB. Autumn crickets went from .3 to .4 so the deep night is quiet but never empty.
 - The curtains are animated by lights.js (dusk half-drawn, lockdown shut). Lights has the `curtain_*` names to call.
+
+## Round 19: footstep sync with the new hero, rung contacts, hand contacts
+- The new hero lifts the heel only 4–6 cm, so contact by toe height missed steps. A step is now detected when the swinging foot comes to a stop: its world speed falls from over max(1.1, 1.5×walk) to under max(.3, .3×walk). In swing the foot moves at 2–3 m/s; planted, it is still. The strike is predicted from the deceleration, so the sound is scheduled inside the frame (`step(..., delay)`) rather than a frame late. Each foot can strike at most once per .3 s. Frames where the pose did not advance (the foot only rode along with the root) are skipped. The pre-roll for slow frames below 12.5 fps is unchanged.
+- Ladder and rope rungs: a rung sound plays when a foot that was travelling vertically faster than .55 m/s settles below .12 m/s. If the bones give no signal for 1.2 s, it falls back to the old cadence.
+- QA: `node tests/audio/feet_sync.js`, then `python3 tests/audio/feet_sync_report.py /tmp/feet_30.json`. This runs on the virtual clock at 30 fps with the route cook, wash, craft, look, window, read, telescope.
+  - Result: median offset of −8 ms against the moment the foot stops (heel strike), with 90 % of steps within roughly −60..+10 ms.
+  - About 7 % of contacts are missed. About 18 % of steps are "extra"; these are mostly real small re-plants when he starts, stops or turns.
+- Hand contacts are read from state:
+  - the oven door (`__props.oven.open` crossing .15 or .08) plays oven_open or oven_close at the handle;
+  - a hand taking a tool or item (`hero.hold[hand]` changes) plays tool_pickup, and putting it back plays it softer and lower;
+  - the hatch ring and the door bolt were already wired in round 16.
+
+## Round 20: footstep sync on the original hero, plus shuffles
+- The original hero is the default again; the new hero loads with `?hero=new`. Same detector, re-verified with `tests/audio/feet_sync.js` (30 fps, virtual clock).
+- Small re-plants (turning, starting, stopping) now play a soft scuff instead of a full step: 30 % of the gain, 0.1–0.16 s long, and they don't duck the music. A step counts as a re-plant when the foot's peak swing speed (median of 3 frames, so a one-frame foot snap doesn't count) stays under max(1.6, 1.9×walk).
+- Feet are now tracked down to walking speed .12 instead of .25, which catches the first and last steps of a walk.
+- `feet_sync_report.py` now counts full hits, soft hits, misses and extra full steps separately. Result on the original hero, both feet:
+  - 90 strikes, 70 hit by a full step and 15 by a shuffle, 5 missed (5.5 %).
+  - 9 extra full steps out of 79 (11 %, previously 13–18 %).
+  - Timing: median −6 to −23 ms, p10 −53 / −39 ms, p90 +6 / +10 ms.
+
+## Round 21: tool sounds on contact
+- `__audio.contact({tool, kind:'hit'|'stroke'|'scrape', pos, strength, dur, dir})` lets the grab thread send exact contacts. The first call switches off Sound's own detection, the same way footstep() does.
+- Until then, contacts are read from the right hand while it holds a tool (`hero.hold.Right.tool`):
+  - Hammer (benchHammer): after a downswing faster than 1 m/s, the hit is the moment the hand brakes to 40 % of its peak speed. It plays hammer, and half the time a nail ring as well.
+  - Saw (plankSaw): the hand's travel along his facing direction. A stroke turns when the hand comes back 8 mm from its extreme. Each stroke plays a slice of the saw clip as long as the previous stroke, higher on the push and lower on the pull.
+  - Ladle: a short stir scrape at each peak of hand speed (over .15 m/s, at least .45 s apart).
+- While contacts are synced, hero.js's timer calls (hammer / nails / sfx.hammer, saw every .8 s, stir) are dropped.
+- QA: `K=45 ROUTE=saw,hammer node tests/audio/tool_sync.js`, then analyse TH/TC in /tmp/feet_30.json.
+  - Hammer: 34 of 35 downswing bottoms got a hit within one frame (0 to −33 ms); one hit came 266 ms early.
+  - Saw: 32 strokes for 34 turns, median 67 ms after the turn (the 8 mm hysteresis). The current saw clip moves the hand only 2–4 cm, so this will tighten once the grips are fixed.
