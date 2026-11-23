@@ -1,0 +1,15 @@
+{
+	admin off
+	auto_https off
+}
+
+:{$PORT:8080} {
+	root * /srv
+	encode zstd gzip
+	# Always revalidate so every push is visible at once (ETag keeps it cheap).
+	header Cache-Control "no-cache"
+	header /version.txt Cache-Control "no-store"
+	@txt path *.txt
+	header @txt Content-Type "text/plain; charset=utf-8"
+	file_server
+}
