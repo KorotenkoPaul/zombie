@@ -60,7 +60,7 @@ div.brainP{left:var(--sl);bottom:calc(var(--sb) + var(--ib) + var(--gap));width:
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <div id="stage"></div>
 <div class="hud"><div class="grp"><span class="chip"><span id="ic">☀︎</span><span id="tod">День 1 · 08:00</span></span></div><div class="grp"><span class="chip" id="zc" hidden style="display:none">🧟 <span id="zn">0</span></span><span class="chip hearts" id="hearts" style="display:none">♥♥♥</span></div></div>
-<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button><button class="ib" id="bS" aria-label="Звук">🔊</button></div>
+<div class="tools"><button class="ib" id="bW" aria-label="Сменить погоду">☁︎</button><button class="ib" id="bN" aria-label="Дождаться ночи">☾</button><button class="ib" id="bF" aria-label="Следить за героем">◎</button><button class="ib" id="bH" aria-label="Весь домик">⌂</button><button class="ib" id="bS" aria-label="Звук">🔊</button><button class="ib" id="bM" aria-label="Музыка">♫</button></div>
 <div class="hint" id="hint"><b>Веди пальцем</b> — повернуть вокруг дерева, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
 <div class="toast" id="toast"></div>
 <div class="load" id="load"><span id="loadTx">Загружаем лес…</span><i><b id="loadBar"></b></i></div>
@@ -749,6 +749,7 @@ $('bW').onclick=()=>{ac();startAmb();WIND.setRain(weather==='clear');};
 // [WIND] rain comes and goes with the weather (game/wind.js); the button just starts or stops a rain spell
 WIND.on('rain',e=>{weather=e.on?'rain':'clear';$('bW').textContent=e.on?'☂︎':'☁︎';});
 {const bS=$('bS'),sy=()=>{bS.textContent=AUDIO&&AUDIO.muted()?'🔇':'🔊';};sy();bS.onclick=()=>{if(!AUDIO)return;const first=!AUDIO.started();ac();startAmb();AUDIO.mute(first?false:!AUDIO.muted());sy();};}
+{const bM=$('bM'),sy=()=>{const on=!AUDIO||AUDIO.music();bM.style.opacity=on?1:.4;bM.setAttribute('aria-pressed',on);};sy();bM.onclick=()=>{if(!AUDIO)return;ac();startAmb();AUDIO.music(!AUDIO.music());sy();};}
 $('bN').onclick=()=>{ac();startAmb();if(!isNight(hour)&&hour<19.2)hour=19.2;};
 
 // ================= aiming (drag back, release) =================
