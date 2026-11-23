@@ -321,6 +321,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
   let sph = 7.9, sphH = null, sphT = 0;
   function secPerHour() { return sph; }
   function measureClock(dt) { const h = hour(); if (sphH == null) { sphH = h; sphT = 0; return; } sphT += dt; let d = h - sphH; if (d < 0) d += 24; if (sphT > 4) { if (d > .05 && d < 3) sph = sph * .7 + (sphT / d) * .3; sphH = h; sphT = 0; } }
+  // the jacket (Pavel): off and on its hook before bed; in the morning on only if it is cold or raining; off again once it warms up.
+  // Body: task 'jacket' {on} at the peg, state HH.gear.coat (Character). Without them nothing is planned.
+  const canJacket = () => !!(HH.hasTask && HH.hasTask('jacket') && HH.gear);
+  const wearing = () => { try { return !!(HH.gear && HH.gear.coat); } catch (e) { return false; } };
   function roomsOnWay(node) {
     if (!node || !HH.route || !H.node) return [];
     let r; try { r = HH.route(H.node, node) || []; } catch (e) { return []; }
@@ -340,6 +344,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
     { const H8 = house(); const up = r => r === 'bedroom';
       if (!locked && H8 && H8.hatch && H8.hatch.isOpen && !H8.hatch.isOpen() && name !== 'sleep' && up(from) !== up(to) && !(A.node && /^(deck|ledge|ll_)/.test(A.node))) {
         if (HH.hasTask && HH.hasTask('hatch')) plan.push({ task: 'hatch', opts: { open: true }, why: 'открывает люк' }); else H8.hatch.open(); } }
+    if (name === 'sleep' && canJacket() && wearing()) plan.push({ task: 'jacket', opts: { on: false }, why: 'перед сном вешает куртку на крючок' });
+    // warm again (midday, dry): the jacket comes off when he passes by; cold or wet: on before going out (or in a cold morning)
+    else if (canJacket() && name !== 'sleep' && !JOBS[name]) {
+      const out = ['deck', 'ground'].includes(area(name)) || (ACTS[name] && ACTS[name].room === 'outside');
+      if (wearing() && !chilly(h) && !raining() && Math.random() < .6) plan.push({ task: 'jacket', opts: { on: false }, why: 'потеплело — снимает куртку' });
+      else if (!wearing() && (raining() || chilly(h)) && (out || day.justWoke) && Math.random() < .75) plan.push({ task: 'jacket', opts: { on: true }, why: raining() ? 'дождь — надевает куртку' : 'зябко — надевает куртку' });
+    }
     // going to bed: make the house safe first (Pavel): usually he closes the floor hatch and bolts the door, sometimes he forgets
     if (name === 'sleep') {
       const H8 = house();
@@ -358,7 +369,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (name !== 'read' && from === 'bedroom' && candleOn()) plan.unshift({ task: 'switch', opts: { light: 'candle', on: false }, why: 'задувает свечу' });
     // trips: the bow from the workshop for the hunt; the jacket from the hook when it rains or is chilly (sometimes he skips it)
     if (EXTRA[name]) { const E = EXTRA[name]; plan.push({ task: E.task || name, opts: repairTarget(name), why: reason, extra: name }); }
-    else if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, linger: name === 'fetch' ? rnd(4, 9) : 0, washFace: name === 'fetch' && !dark(h) && Math.random() < .5, away: secPerHour(h) * (name === 'hunt' ? rnd(.6, 1.1) : rnd(.4, .8)), lantern: dark(h), bow: name === 'hunt', jacket: raining() || (chilly(h) && Math.random() < .8) || Math.random() < .1 }, why: reason, job: name });
+    else if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, linger: name === 'fetch' ? rnd(4, 9) : 0, washFace: name === 'fetch' && !dark(h) && Math.random() < .5, away: secPerHour(h) * (name === 'hunt' ? rnd(.6, 1.1) : rnd(.4, .8)), lantern: dark(h), bow: name === 'hunt', jacket: raining() || (chilly(h) && Math.random() < .8) || Math.random() < .1, keepJacket: raining() || chilly(h) }, why: reason, job: name });
     else plan.push({ task: name, opts: ECON && name === 'cook' ? { fromFridge: true } : {}, why: reason });
   }
 
