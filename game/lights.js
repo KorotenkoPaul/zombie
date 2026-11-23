@@ -18,6 +18,8 @@ import * as THREE from 'three';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const clamp01 = x => Math.max(0, Math.min(1, x));
+const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const _v = new THREE.Vector3();
 
 // how a source wakes up and dies down (seconds), and how it flickers
 const KINDS = {
@@ -26,6 +28,7 @@ const KINDS = {
   candle:   { on: 1.0, off: .35, flick: 'candle' },
   fire:     { on: 4.5, off: 14,  flick: 'fire' },    // oven: the fire takes, the embers die slowly
   door:     { on: 1.5, off: 1.5, flick: 'flame' },
+  glow:     { on: .4,  off: .3,  flick: 'bulb' },     // a radio dial, an indicator: emissive only
 };
 
 export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] }) {
@@ -126,7 +129,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     const panes = claimHousing(kPos);
     const b = bulbMesh(kPos, .07);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 6.5 : 6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 5.2 : 4.6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -235,10 +238,15 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
   };
   const glows = [];
+  // the camera, captured as the scene renders: a window's outside halo must not shine into the room through the glass
+  let cam = null;
+  { const prev = scene.onBeforeRender; scene.onBeforeRender = function (r, sc, c, ...a) { cam = c; if (prev) prev.call(this, r, sc, c, ...a); }; }
   for (const [room, R] of Object.entries(ROOMS)) {
     if (MOBILE && room !== 'workshop') continue;      // phones: the lantern itself has a softer, longer falloff instead (fewer lights)
-    const b = new THREE.PointLight(0xFFBE80, 0, 3.8, 1.3); b.position.copy(R.c); scene.add(b);
-    glows.push({ room, l: b, I: R.bounce });
+    // bounce = light thrown back by the lit walls: no falloff inside the room (decay 0, soft cut at the walls), so it
+    // never makes a hot spot on whatever stands next to it (the upper bunk sat 10 cm from the old one and burned white)
+    const b = new THREE.PointLight(0xFFBE80, 0, 3.6, 0); b.position.copy(R.c); scene.add(b);
+    glows.push({ room, l: b, I: R.bounce * .5 });
   }
   for (const w of windows) {
     if (!w.g || !ROOMS[w.room]) continue;
@@ -247,9 +255,15 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const out = p.clone().sub(ROOMS[w.room].c); out.y = 0; if (out.dot(n) < 0) n.negate();
     const hp = p.clone().addScaledVector(n, .12);
     w.n = n; w.room0 = ROOMS[w.room].c; w.glowAt = p.clone().addScaledVector(n, .5);
-    if (ENV && ENV.addHalo) { const h = Object.assign(new THREE.Object3D(), { intensity: 0 }); h.position.copy(hp); scene.add(h); ENV.addHalo(h, 1.25); glows.push({ room: w.room, halo: h, I: 2.6 }); }
+    if (ENV && ENV.addHalo) { const h = Object.assign(new THREE.Object3D(), { intensity: 0 }); h.position.copy(hp); scene.add(h); ENV.addHalo(h, 1.25); glows.push({ room: w.room, halo: h, I: 2.6, hp, n }); }
     const back = Math.abs(n.z) > .7;
-    if (back && !MOBILE) { const l = new THREE.PointLight(0xFFA850, 0, 3.4, 1.6); l.position.copy(p).addScaledVector(n, .45); scene.add(l); glows.push({ room: w.room, l, I: 2.4, spill: true }); }
+    // spill: a cone thrown OUT of the window onto the bark and leaves. A spot pointing away from the room, so it can't
+    // reach the inside walls through the boards (the old point light lit a hot stripe beside the kitchen window).
+    if (back && !MOBILE) {
+      const l = new THREE.SpotLight(0xFFA850, 0, 3.6, 1.05, .85, 1.6); l.position.copy(p).addScaledVector(n, .2);
+      l.target.position.copy(p).addScaledVector(n, 2).add(V(0, -.5, 0)); scene.add(l, l.target);
+      glows.push({ room: w.room, l, I: 3, spill: true });
+    }
   }
   const warm = {};
 
@@ -367,7 +381,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       w.sp.position.set(w.x0 + Math.sin(w.age * 2.2 + w.ph) * .03 * a, w.y0 + a * .38, w.z0 + Math.cos(w.age * 1.7 + w.ph) * .02 * a);
       w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); }
   }
-  let cookT = 0, candleT = 0, t = 0, frame = 0;
+  let cookT = 0, t = 0, frame = 0;
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
 
   // smooth 1D value noise in [-1, 1]: flames breathe instead of pulsing like a sine
@@ -388,7 +402,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     t += dt; frame++;
     const cooking = task === 'cook' && state === 'work';
     cookT = cooking ? 40 : Math.max(0, cookT - dt);     // the fire is fed while cooking and burns a while after
-    const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT, candleT };
+    const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     for (const s of src.values()) {
       // Pavel: a lamp or candle never goes out by itself. If the hero forgot it, it keeps burning until he puts it out.
@@ -414,12 +428,20 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
       if (s.extra) s.extra(k, f);
-      if (!s.lights.length && s.haloObj) s.haloObj.intensity = 4.5 * k * f;
-      const share = s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
+      if (!s.lights.length && s.haloObj) s.haloObj.intensity = (s.kind === 'glow' ? .5 : 4.5) * k * f;
+      const share = s.kind === 'glow' ? .04 : s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
     wgWins.forEach((w, i) => { const v = Math.min(1, warm[w.room] || 0) * (1 - dayK) * 1.6; wgC.value[i].set(1.0 * v, .58 * v, .26 * v); });
-    for (const g of glows) { const v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8); if (g.l) g.l.intensity = v; if (g.halo) g.halo.intensity = v; }
+    for (const g of glows) {
+      let v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8);
+      if (g.l) g.l.intensity = v;
+      if (g.halo) {
+        // seen from inside the room (or right at the pane) the window is just glass: no glow sprite in front of your eyes
+        if (cam && g.n) { const d = _v.copy(cam.position).sub(g.hp), sd = d.dot(g.n), far = d.length(); v *= smooth(-.05, .5, sd) * smooth(.6, 1.6, far); }
+        g.halo.intensity = v;
+      }
+    }
     updateBeams(dayK, T); updateWisps(dt); updateHand(dt);
     for (const w of windows) {
       // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
@@ -454,6 +476,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
+    _dbg: () => ({ scene, cam }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,
     set: (n, on) => { const s = src.get(n); if (!s) return false; s.manual = !!on; setOn(s, !!on); return true; },
@@ -468,6 +491,18 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     detachHand: () => { const s = src.get('hand'); if (s) { s.manual = null; setOn(s, false); } scene.add(hand.g); hand.g.visible = false; hand.attached = null; },
     // window glow on the oak can be compiled out (one shader rebuild) by a frame-rate governor
     winGlow: on => { if (on === undefined) return wgOn; on = !!on; if (on === wgOn) return false; wgOn = on; for (const m of wgMats) m.needsUpdate = true; return true; },
+    // new sources from other systems (Props' radio dial, a new lamp...): addSource('radio', { room: 'workshop', kind: 'glow',
+    //   pos: Vector3, mats: [[material, emissiveIntensityWhenOn]], opac: [[material, opacityWhenOn]], light: { color, I, dist } })
+    // kind: oil | electric | candle | glow. A real light is only made on desktop (phones keep the light budget); the switch
+    // logic, halo, room warmth and API are the same as for the built-in sources. Starts off; set(name, true) to turn on.
+    addSource: (n, o = {}) => {
+      if (src.has(n) || !o.pos) return false;
+      const lights = [];
+      if (o.light && !MOBILE) { const l = new THREE.PointLight(o.light.color ?? 0xFFB25E, 0, o.light.dist ?? 2.5, 1.6); l.position.copy(o.pos); scene.add(l); lights.push({ l, I: o.light.I ?? 1.5 }); }
+      add(n, o.room || 'outside', KINDS[o.kind] ? o.kind : 'glow', o.pos, { lights, emis: o.mats || [], opac: o.opac || [], haloSize: o.haloSize ?? .35, autoFn: () => false });
+      for (const [m] of o.mats || []) if (m) m.emissiveIntensity = 0;
+      api.names = [...src.keys()]; return true;
+    },
     update, degrade, upgrade, quality: q => q === undefined ? quality : setQuality(q),
   };
   return api;
