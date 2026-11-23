@@ -50,7 +50,7 @@ export function buildTree(THREE, o) {
   const rootAng = [0.35, 0.95, 2.2, 2.75, 3.6, 4.35, 5.2, 5.85];
   const door = o.door;
   const doorAng = door.ang ?? Math.atan2(1.0, door.x - AX); // aim the hollow at the front-right
-  const R = y => {
+  let R = y => {
     let r = 2.0 + 1.35 * Math.exp(-Math.max(y, 0) / 0.95);
     if (y > 3) r -= 0.03 * (y - 3);
     if (y > 10.5) r -= 0.12 * (y - 10.5);
@@ -138,6 +138,51 @@ export function buildTree(THREE, o) {
   // ---------- merge, keep the wood out of the rooms ----------
   const P = [], UV = [], G = [], I = [];
   for (const p of parts) { const off = P.length / 3; P.push(...p.P); UV.push(...p.UV); G.push(...p.G); for (const i of p.I) I.push(i + off); }
+  let modelMap = null;
+  if (o.model) {
+    // ---------- sculpted oak from the photo (Fal: photo -> bare tree picture -> Meshy image-to-3D) ----------
+    // scaled so the trunk is as thick as in the photo, roots sunk into the ground, axis on TREE_AXIS
+    o.model.updateMatrixWorld(true);
+    let src = null; o.model.traverse(m => { if (m.isMesh && !src) src = m; });
+    const sg = src.geometry.clone(); sg.applyMatrix4(src.matrixWorld);
+    modelMap = src.material.map || null;
+    const sp = sg.attributes.position, su = sg.attributes.uv, si = sg.index;
+    let y0 = 1e9, y1 = -1e9; for (let i = 0; i < sp.count; i++) { const y = sp.getY(i); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    const H = y1 - y0; let cx = 0, cz = 0, cn = 0;
+    for (let i = 0; i < sp.count; i++) { const t = (sp.getY(i) - y0) / H; if (t > 0.42 && t < 0.55) { cx += sp.getX(i); cz += sp.getZ(i); cn++; } }
+    cx /= cn; cz /= cn; let rr = 0, rn = 0;
+    for (let i = 0; i < sp.count; i++) { const t = (sp.getY(i) - y0) / H; if (t > 0.42 && t < 0.55) { const d = Math.hypot(sp.getX(i) - cx, sp.getZ(i) - cz); if (d < H * 0.25) { rr += d; rn++; } } }
+    rr /= rn; const k = (o.height || 18) / H; const _k = k, ry = o.modelRot || 0, cr = Math.cos(ry), sr = Math.sin(ry);
+    parts.length = 0; P.length = 0; UV.length = 0; G.length = 0; I.length = 0; leafSpots.length = 0;
+    for (let i = 0; i < sp.count; i++) {
+      const x = (sp.getX(i) - cx) * k * (o.widen || 1.3), z = (sp.getZ(i) - cz) * k * (o.widen || 1.3);
+      P.push(AX + x * cr + z * sr, (sp.getY(i) - y0) * k - (o.sink ?? 0.35), AZ - x * sr + z * cr);
+      UV.push(su ? su.getX(i) : 0, su ? su.getY(i) : 0); G.push(0);
+    }
+    // trunk radius along the hollow's direction, measured from the mesh (for the hollow, the cave and the door light)
+    const Rt = new Float32Array(260);
+    for (let i = 0; i < P.length; i += 3) { const dx = P[i] - AX, dz = P[i + 2] - AZ, d = Math.hypot(dx, dz); if (d > 4.5) continue; if (Math.abs(angDiff(Math.atan2(dz, dx), doorAng)) > 0.3) continue; const b = Math.round(P[i + 1] * 10); if (b >= 0 && b < 260) Rt[b] = Math.max(Rt[b], d); }
+    for (let b = 1; b < 260; b++) if (!Rt[b]) Rt[b] = Rt[b - 1]; for (let b = 258; b >= 0; b--) if (!Rt[b]) Rt[b] = Rt[b + 1];
+    const Rs = Float32Array.from(Rt, (v, b) => { let a = 0, n = 0; for (let j = -3; j <= 3; j++) { const q = Rt[Math.min(259, Math.max(0, b + j))]; if (q) { a += q; n++; } } return n ? a / n : 1.5; });
+    R = y => Rs[Math.min(259, Math.max(0, Math.round(y * 10)))];
+    // carve the arched hollow into the front of the trunk, glow around its lip
+    const outer = i => { const dx = P[i * 3] - AX, dz = P[i * 3 + 2] - AZ; return Math.hypot(dx, dz) > R(P[i * 3 + 1]) - 0.55; };
+    const mk = i => doorMask(Math.atan2(P[i * 3 + 2] - AZ, P[i * 3] - AX), P[i * 3 + 1]);
+    for (let i = 0; i < P.length / 3; i++) { if (!outer(i)) continue; const m = mk(i); if (m < 1.5) G[i] = Math.max(0, 1 - (m - 0.9) / 0.6) * 0.5; }
+    const n3 = si ? si.count : sp.count;
+    for (let t = 0; t < n3; t += 3) {
+      const a = si ? si.getX(t) : t, b = si ? si.getX(t + 1) : t + 1, c = si ? si.getX(t + 2) : t + 2;
+      const inA = outer(a) && mk(a) < 0.97, inB = outer(b) && mk(b) < 0.97, inC = outer(c) && mk(c) < 0.97;
+      if (inA && inB && inC) continue; I.push(a, b, c);
+    }
+    // leaves: clumps at the limb tips and a crown at the top, with gaps between them
+    const cand = [];
+    for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i] - AX, P[i + 2] - AZ), y = P[i + 1]; if ((d > 3.6 && y > 4.5 && (Math.abs(P[i] - AX) > 3 || y > 15)) || y > 15.5) cand.push([P[i], y, P[i + 2], d + y * 0.35]); }
+    cand.sort((a, b) => b[3] - a[3]);
+    const picked = [];
+    for (const c of cand) { if (picked.length >= (o.leafClumps || 24)) break; if (picked.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.8)) continue; picked.push(c); }
+    for (const c of picked) leafSpots.push({ p: V(c[0], c[1] + 0.3, c[2]), s: c[1] > 15 ? rnd(2.3, 2.9) : rnd(1.6, 2.2) });
+  }
   const M = 0.1;
   for (let i = 0; i < P.length; i += 3) {
     let x = P[i], y = P[i + 1], z = P[i + 2];
@@ -158,7 +203,8 @@ export function buildTree(THREE, o) {
 
   // ---------- bark: the painted texture along the wood, relief from the same texture, cool-warm painted shading ----------
   const barkT = o.barkT; barkT.wrapS = barkT.wrapT = THREE.RepeatWrapping; barkT.repeat.set(1, 1);
-  const mat = new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 1.4, roughness: 0.9, color: 0xF0B080 });
+  const mat = modelMap ? new THREE.MeshStandardMaterial({ map: modelMap, roughness: 0.92, color: 0xE8D2C0 })
+    : new THREE.MeshStandardMaterial({ map: barkT, bumpMap: barkT, bumpScale: 1.4, roughness: 0.9, color: 0xF0B080 });
   mat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float glow;varying float vGlow;varying float vY;')
       .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGlow=glow;vY=(modelMatrix*vec4(transformed,1.)).y;');
@@ -180,9 +226,9 @@ export function buildTree(THREE, o) {
   // soft, lit-from-above clumps: cards near the clump centre are darker (painted volume)
   lmat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
-  const total = MOB(o) ? 800 : 1300;
+  const total = MOB(o) ? 460 : 720;
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   const qg = new THREE.PlaneGeometry(1, 1);
   const im = new THREE.InstancedMesh(qg, lmat, total);
@@ -197,12 +243,17 @@ export function buildTree(THREE, o) {
       const dir = V(dx, dy, dz); const rr = Math.max(0.35, dir.length()); dir.normalize();
       const p = s.p.clone().add(V(dir.x * s.s * rr, dir.y * s.s * 0.7 * rr, dir.z * s.s * rr));
       if (inB(p.x, p.y, p.z, 0.8)) continue;
-      const look = new THREE.Matrix4().lookAt(V(0, 0, 0), dir, V(0, 1, 0));
+      // cards turned mostly towards the viewer, like the painted clumps in the photo
+      const look = new THREE.Matrix4().lookAt(V(0, 0, 0), dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)).normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
-      sc.setScalar(rnd(1.5, 2.4));
+      sc.setScalar(rnd(2.3, 3.3));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
-      const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1)); im.setColorAt(n, col);
-      shade[n] = 0.55 + 0.45 * Math.min(1, rr) * (0.75 + 0.25 * Math.max(0, dir.y));
+      const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1));
+      // lighter, yellow-green leaves on the clump edges and the odd autumn-yellow card, like the photo
+      if (rr > 0.8 && dir.y > -0.2) col.multiply(new THREE.Color(1.18, 1.14, 0.8));
+      if (rnd(0, 1) < 0.07) col.setRGB(1.5, 1.25, 0.45);
+      im.setColorAt(n, col);
+      shade[n] = (0.5 + 0.5 * Math.min(1, rr)) * (0.7 + 0.5 * Math.max(0, dir.y));
       n++;
     }
   }
