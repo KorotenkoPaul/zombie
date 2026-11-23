@@ -235,8 +235,8 @@ export function createHero(ctx){
   else if(L.phase==='stand'){H.ground=true;play('0',{fade:.4});done();}
   else if(L.phase==='over'){// down: step back over the edge (the pull-up played backwards)
    const a=actions['435'];const d=a.getClip().duration;const end=rmCurve['435']?rmAt('435',99):V(0,1.4,1.06);
-   if(!L.start){root.rotation.y=F;const goal=V(L.x,L.yTop,cz).add(rotY(V(end.x,0,end.z),F));const k=1-Math.exp(-dt*5);p.x=lerp(p.x,goal.x,k);p.z=lerp(p.z,goal.z,k);H.ground=true;play('0',{fade:.3});
-    if(Math.hypot(p.x-goal.x,p.z-goal.z)<.05){L.start=1;p.set(goal.x,L.yTop,goal.z);a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=-1;a.time=d;a.enabled=true;if(H.cur)H.cur.crossFadeTo(a,.3,false);a.play();H.cur=a;}}
+   if(!L.start){root.rotation.y+=wrapA(F-root.rotation.y)*(1-Math.exp(-dt*5));const goal=V(L.x,L.yTop,cz).add(rotY(V(end.x,0,end.z),F));const k=1-Math.exp(-dt*5);p.x=lerp(p.x,goal.x,k);p.z=lerp(p.z,goal.z,k);H.ground=true;play('0',{fade:.3});
+    if(Math.hypot(p.x-goal.x,p.z-goal.z)<.05&&Math.abs(wrapA(F-root.rotation.y))<.06){root.rotation.y=F;L.start=1;p.set(goal.x,L.yTop,goal.z);a.reset();a.setLoop(THREE.LoopOnce,1);a.clampWhenFinished=true;a.timeScale=-1;a.time=d;a.enabled=true;if(H.cur)H.cur.crossFadeTo(a,.3,false);a.play();H.cur=a;}}
    else if(a.time<=1e-3){L.phase='climb';L.start=0;}}}
 
  // ---------- daily life ----------
