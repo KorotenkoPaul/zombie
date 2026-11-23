@@ -273,6 +273,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     scores = Object.keys(ACTS).map(n => score(n, h));
     for (const n in EXTRA) { const x = extraScore(n, h); if (x) scores.push(x); }
     // no water in the tap bucket (or the drain bucket is full): no washing, tea or cooking until he sees to it
+    // the body has a real dishes task (tap, plates put away): the old 'wash' gesture is not used
+    if (HH.hasTask && HH.hasTask('dishes')) for (const x of scores) if (x.name === 'wash') x.s -= 20;
     if (WATER()) for (const x of scores) if (WET[x.name] && (stock.clean < WET[x.name] || stock.dirtyW > .95)) x.s -= 9;
     if (!ECON && WATER()) for (const n of ['fetch', 'dump']) scores.push(jobScore(n, h));
     if (ECON) { for (const x of scores) if (x.name === 'cook') { if (!stock.meat || !stock.logs || stock.meal) x.s -= 9; } for (const n in JOBS) scores.push(jobScore(n, h)); }
@@ -290,6 +292,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
 
   // ---------- plan an activity: lights first, a pause maybe, then the thing ----------
   const AREA_NODE = { kitchen: 'kmid', bedroom: 'bed_app', workshop: 'wmid', deck: 'deck', ground: 'g_foot', outside: 'deck' };
+  // real seconds per game hour (measured from the clock, so it follows any change of the day length)
+  let sph = 7.9, sphH = null, sphT = 0;
+  function secPerHour() { return sph; }
+  function measureClock(dt) { const h = hour(); if (sphH == null) { sphH = h; sphT = 0; return; } sphT += dt; let d = h - sphH; if (d < 0) d += 24; if (sphT > 4) { if (d > .05 && d < 3) sph = sph * .7 + (sphT / d) * .3; sphH = h; sphT = 0; } }
   function roomsOnWay(node) {
     if (!node || !HH.route || !H.node) return [];
     let r; try { r = HH.route(H.node, node) || []; } catch (e) { return []; }
@@ -327,7 +333,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (name !== 'read' && from === 'bedroom' && candleOn()) plan.unshift({ task: 'switch', opts: { light: 'candle', on: false }, why: 'задувает свечу' });
     // trips: the bow from the workshop for the hunt; the jacket from the hook when it rains or is chilly (sometimes he skips it)
     if (EXTRA[name]) { const E = EXTRA[name]; plan.push({ task: E.task || name, opts: repairTarget(name), why: reason, extra: name }); }
-    else if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, lantern: dark(h), bow: name === 'hunt', jacket: raining() || (chilly(h) && Math.random() < .8) || Math.random() < .1 }, why: reason, job: name });
+    else if (JOBS[name]) plan.push({ task: JOBS[name].task, opts: { ...JOBS[name].opts, away: secPerHour(h) * (name === 'hunt' ? rnd(1.5, 2.5) : rnd(1, 1.8)), lantern: dark(h), bow: name === 'hunt', jacket: raining() || (chilly(h) && Math.random() < .8) || Math.random() < .1 }, why: reason, job: name });
     else plan.push({ task: name, opts: ECON && name === 'cook' ? { fromFridge: true } : {}, why: reason });
   }
 
@@ -341,7 +347,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (st.task !== 'cook' && !(st.task === 'switch' && plan.some(p => p.task === 'cook'))) bookCook();
     job = st.job || null; extra = st.extra || null; lastOpts = st.opts;
     // using water: the tap bucket goes down, the drain bucket fills
-    { const w = WET[st.extra || st.task]; if (w && WATER() && !propsWater()) { stock.clean = clamp(stock.clean - w); stock.dirtyW = clamp(stock.dirtyW + w * .9); showStock(); } }
+    { const w = WET[st.extra || st.task], W = propsWater();
+      if (w && WATER() && !W) { stock.clean = clamp(stock.clean - w); stock.dirtyW = clamp(stock.dirtyW + w * .9); showStock(); }
+      // tea and cooking take water from the tap bucket too (the body's dishes task runs the tap itself)
+      else if (W && (st.task === 'tea' || st.task === 'cook') && W.setClean) { W.setClean(W.clean - w); W.setDirty(W.dirty + w * .8); } }
     if (extra) { recent.unshift(extra); recent.length = 4; }
     // he stops reading: from now on the candle is his to blow out (or to forget)
     if (cur && cur.name === 'read' && st.task !== 'read' && hasCandle) lights.set('candle', candleOn());
@@ -482,6 +491,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   let pausing = 0, expected, cmdNext = false, job = null, extra = null, lastOpts = null;
   function tick(dt, v) {
     const dh = gameHours();
+    measureClock(dt);
     if (lockAsk) { lockAsk = false; brain.lockdown(true); }
     // the clock was set by hand (debug, tests): needs fit the new hour, as on a fresh start; what he is doing goes on
     if (jumped) { jumped = false; const h = hour(); const keep = { ...stock }, c = cur, e = expected, pl = plan.splice(0); brain.prime(h); Object.assign(stock, keep); cur = c; expected = e; plan.push(...pl); showStock(); tr('clockjump'); }
@@ -521,7 +531,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if ((h >= wake && h < 12 && need.energy > .6) || (h >= wake + 1.2 && h < 12) || nap) {
         wake = rnd(5.6, 6.6); bedTime = rnd(20.8, 21.6);
         if (locked && h < 12) brain.lockdown(false);   // morning: the night is over (not after an evening nap)
-        day.hadTea = false; day.bolted = false; day.justWoke = true; day.justAte = false;
+        if (h < 12) { day.hadTea = false; day.bolted = false; day.justWoke = true; day.justAte = false; }   // a new day (not after a nap)
         tr('wake'); const d = decide(h); planFor(d.name, h, 'проснулся, хочет: ' + reasonOf(d));
         if (locked) { const rest = plan.splice(0); lockSteps(); plan.push(...rest); }
         startNext();
@@ -688,7 +698,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     else if (job === 'wood') stock.logs += 3;
     else if (job === 'fetch') { /* the body's fetchwater already sets the bucket on the shelf above the sink */ stock.clean = 1; const W = propsWater(); W && W.setClean && W.setClean(1); }
     else if (job === 'dump') { stock.dirtyW = 0; const W = propsWater(); W && W.setDirty && W.setDirty(0); }
-    else if (job === 'eat') { stock.meal = 0; day.justAte = true; try { const D = window.__props && window.__props.dishes; if (D && D.setDirty) D.setDirty(Math.min(4, D.state().dirty + 1)); } catch (e) {} need.hunger = clamp(need.hunger - .75); need.comfort = clamp(need.comfort - .15); }
+    else if (job === 'eat') { stock.meal = 0; day.justAte = true; /* the body's eat leaves the plate dirty in the sink */ need.hunger = clamp(need.hunger - .75); need.comfort = clamp(need.comfort - .15); }
     job = null; showStock();
   });
   showStock();
