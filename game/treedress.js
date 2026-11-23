@@ -72,7 +72,7 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, rimK: { value: 1 },
+    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
     D.update = () => {
@@ -82,19 +82,76 @@ export function createTreeDress(C) {
       const night = Math.min(1, ENVR.strength.value / 0.8 || 0);
       D.barkU.wet.value = Math.max(night * 0.08, rain); /* dew is only a faint sheen; glossy only while it rains */
       /* soaked bark: soaks up in ~25 s of rain, then dries over ~4 min, last in the furrows, the runs down the bark and the foot */
-      const d = D.barkU.damp; d.value = rain > 0.05 ? Math.min(1, d.value + dt * rain / 25) : Math.max(0, d.value - dt / 240); };
+      const d = D.barkU.damp; d.value = rain > 0.05 ? Math.min(1, d.value + dt * rain / 25) : Math.max(0, d.value - dt / 240);
+      /* hoar frost on the root tops on cold clear nights (Wind's __weather temp: ~4 °C before dawn): forms over ~90 s, melts in ~60 s */
+      if (now - (D._wt || 0) > 0.5) { D._wt = now; const ws = window.__weather && window.__weather.state ? window.__weather.state() : null;
+        D._ft = ws ? Math.min(1, Math.max(0, (5.3 - ws.temp) / 1.1)) * (ws.wet < 0.3 && !(ws.rainAmt > 0.05) ? 1 : 0) : 0; }
+      const f = D.barkU.frost; f.value = (D._ft || 0) > f.value ? Math.min(D._ft, f.value + dt / 90) : Math.max(D._ft || 0, f.value - dt / 60); };
+    // ---- junctions: where the limbs leave the trunk and where the house's beams bite into the bark ----
+    // per-vertex attribute tdJ: x = crease (crotch / the fold where a limb meets the trunk, from how concave the surface is at
+    // ~0.5 m scale), y = collar (the swollen bark ring just outside a crease), z = near a beam (0..1, gates the per-pixel bites)
+    D.bites = [];
+    {
+      const g = TREE.bark.geometry, P = g.attributes.position, Nn = g.attributes.normal, n = P.count, ix = g.index;
+      const mw = TREE.bark.matrixWorld; TREE.bark.updateMatrixWorld(true);
+      const wp = new Float32Array(n * 3), wn = new Float32Array(n * 3); const t = V(0, 0, 0), nm = new THREE.Matrix3().getNormalMatrix(mw);
+      for (let i = 0; i < n; i++) { t.fromBufferAttribute(P, i).applyMatrix4(mw); wp.set([t.x, t.y, t.z], i * 3); t.fromBufferAttribute(Nn, i).applyMatrix3(nm).normalize(); wn.set([t.x, t.y, t.z], i * 3); }
+      // weld by position (the sculpt has seams), then vertex adjacency
+      const wk = new Int32Array(n), wmap = new Map(); let nw = 0; const wpos = [];
+      for (let i = 0; i < n; i++) { const k = Math.round(wp[i * 3] * 500) + ',' + Math.round(wp[i * 3 + 1] * 500) + ',' + Math.round(wp[i * 3 + 2] * 500); let w = wmap.get(k); if (w === undefined) { w = nw++; wmap.set(k, w); wpos.push(wp[i * 3], wp[i * 3 + 1], wp[i * 3 + 2]); } wk[i] = w; }
+      const nb = Array.from({ length: nw }, () => new Set()); const I = ix ? ix.array : null; const nt = I ? I.length : n;
+      for (let f = 0; f < nt; f += 3) { const a = wk[I ? I[f] : f], b = wk[I ? I[f + 1] : f + 1], c = wk[I ? I[f + 2] : f + 2]; nb[a].add(b).add(c); nb[b].add(a).add(c); nb[c].add(a).add(b); }
+      const nbA = nb.map(x => Int32Array.from(x)); const wnor = new Float32Array(nw * 3); for (let i = 0; i < n; i++) { const w = wk[i]; wnor[w * 3] += wn[i * 3]; wnor[w * 3 + 1] += wn[i * 3 + 1]; wnor[w * 3 + 2] += wn[i * 3 + 2]; }
+      // Laplacian-smoothed copy of the surface: how far it moves along the normal says concave (+) or convex (-) at that scale
+      let sp = Float32Array.from(wpos); const tmp = new Float32Array(nw * 3);
+      for (let it = 0; it < (MOBILE ? 14 : 18); it++) { for (let w = 0; w < nw; w++) { const l = nbA[w]; if (!l.length) { tmp[w * 3] = sp[w * 3]; tmp[w * 3 + 1] = sp[w * 3 + 1]; tmp[w * 3 + 2] = sp[w * 3 + 2]; continue; } let x = 0, y = 0, z = 0; for (const j of l) { x += sp[j * 3]; y += sp[j * 3 + 1]; z += sp[j * 3 + 2]; } const k = 1 / l.length; tmp[w * 3] = sp[w * 3] * .4 + x * k * .6; tmp[w * 3 + 1] = sp[w * 3 + 1] * .4 + y * k * .6; tmp[w * 3 + 2] = sp[w * 3 + 2] * .4 + z * k * .6; } sp = tmp.slice(); }
+      const cv = new Float32Array(nw); for (let w = 0; w < nw; w++) { const nx = wnor[w * 3], ny = wnor[w * 3 + 1], nz = wnor[w * 3 + 2], L = Math.hypot(nx, ny, nz) || 1; cv[w] = ((sp[w * 3] - wpos[w * 3]) * nx + (sp[w * 3 + 1] - wpos[w * 3 + 1]) * ny + (sp[w * 3 + 2] - wpos[w * 3 + 2]) * nz) / L; }
+      // thresholds from the upper wood (limbs and junctions), so the scale of the model doesn't matter
+      const up = []; for (let w = 0; w < nw; w++) if (wpos[w * 3 + 1] > 3.5) up.push(cv[w]); up.sort((a, b) => a - b);
+      const pc = q => up[Math.min(up.length - 1, Math.floor(q * up.length))] || 0; const c0 = pc(0.86), c1 = pc(0.985);
+      const sm = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+      const cr = new Float32Array(nw); for (let w = 0; w < nw; w++) cr[w] = sm(c0, c1, cv[w]) * sm(2.2, 3.6, wpos[w * 3 + 1]);
+      // the collar ring: within ~0.6 m of a crease (by distance, the mesh is coarse), filled in later once the grid exists
+      const sp2 = new Float32Array(nw);
+      // beams and boards whose end sits on the bark: contact points (the beam's end, snapped to the nearest bark vertex)
+      const cell = 0.3, GR = new Map(); for (let w = 0; w < nw; w++) { const k = Math.floor(wpos[w * 3] / cell) + ',' + Math.floor(wpos[w * 3 + 1] / cell) + ',' + Math.floor(wpos[w * 3 + 2] / cell); let l = GR.get(k); if (!l) GR.set(k, l = []); l.push(w); }
+      const nearest = (x, y, z, R) => { let best = R, bi = -1; const m = Math.ceil(R / cell), cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
+        for (let a = -m; a <= m; a++) for (let b = -m; b <= m; b++) for (let c = -m; c <= m; c++) { const l = GR.get((cx + a) + ',' + (cy + b) + ',' + (cz + c)); if (!l) continue; for (const w of l) { const d = Math.hypot(wpos[w * 3] - x, wpos[w * 3 + 1] - y, wpos[w * 3 + 2] - z); if (d < best) { best = d; bi = w; } } } return bi; };
+      for (let w = 0; w < nw; w++) { if (cr[w] < 0.3) continue; const x = wpos[w * 3], y = wpos[w * 3 + 1], z = wpos[w * 3 + 2], cx = Math.floor(x / cell), cy = Math.floor(y / cell), cz = Math.floor(z / cell);
+        for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) for (let c = -2; c <= 2; c++) { const l = GR.get((cx + a) + ',' + (cy + b) + ',' + (cz + c)); if (!l) continue;
+          for (const j of l) { const d = Math.hypot(wpos[j * 3] - x, wpos[j * 3 + 1] - y, wpos[j * 3 + 2] - z); if (d < 0.65) sp2[j] = Math.max(sp2[j], cr[w] * sm(0.65, 0.2, d)); } } }
+      const M = new THREE.Matrix4(), pos = V(0, 0, 0), q = new THREE.Quaternion(), sc = V(0, 0, 0), ax = V(0, 0, 0);
+      for (const im of blockers) { if (!im || !im.isInstancedMesh) continue; if (!im.geometry.boundingBox) im.geometry.computeBoundingBox(); const bb = im.geometry.boundingBox, ext = V(0, 0, 0); bb.getSize(ext); const ctr = bb.getCenter(V(0, 0, 0));
+        for (let i = 0; i < im.count; i++) { im.getMatrixAt(i, M); M.decompose(pos, q, sc); const e = [ext.x * Math.abs(sc.x), ext.y * Math.abs(sc.y), ext.z * Math.abs(sc.z)]; const L = Math.max(...e); const k = e.indexOf(L); if (L < 0.5) continue;
+          const wid = Math.max(...e.filter((_, j) => j !== k)); if (wid > 0.4) continue; // beams and posts, not wide planks laid flat
+          const c = ctr.clone().applyMatrix4(M); ax.set(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0).applyQuaternion(q);
+          if (Math.hypot(c.x - AX, c.z - AZ) > 9) continue;
+          for (const sgn of [-1, 1]) { const ep = c.clone().addScaledVector(ax, sgn * L * 0.5); const w = nearest(ep.x, ep.y, ep.z, 0.35); if (w < 0) continue;
+            const pt = V(wpos[w * 3], wpos[w * 3 + 1], wpos[w * 3 + 2]); if (D.bites.some(b => b.distanceTo(pt) < 0.12)) continue; pt.w = wid * 0.5 + 0.05; D.bites.push(pt); } } }
+      D.biteAll = D.bites.length; const NB = 72; D.bites.sort((a, b) => a.y - b.y); D.bites = D.bites.slice(0, NB);
+      const J = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { const w = wk[i]; const x = wpos[w * 3], y = wpos[w * 3 + 1], z = wpos[w * 3 + 2];
+        let bite = 0; for (const b of D.bites) { const d = Math.hypot(b.x - x, b.y - y, b.z - z); bite = Math.max(bite, 1 - sm(b.w + 0.2, b.w + 0.75, d)); }
+        J[i * 3] = cr[w]; J[i * 3 + 1] = sp2[w] * (1 - cr[w]) * (1 - sm(0, c0, cv[w])); J[i * 3 + 2] = bite; }
+      g.setAttribute('tdJ', new THREE.BufferAttribute(J, 3));
+      D.junction = { creases: cr.filter(x => x > 0.5).length, bites: D.bites.length, verts: nw };
+      D.creaseAt = () => { const m = new Map(); for (let w = 0; w < nw; w++) if (cr[w] > 0.6) { const k = [0, 1, 2].map(j => Math.round(wpos[w * 3 + j] / 1.5)).join(','); const e = m.get(k) || [0, 0, 0, 0]; e[0] += wpos[w * 3]; e[1] += wpos[w * 3 + 1]; e[2] += wpos[w * 3 + 2]; e[3]++; m.set(k, e); } return [...m.values()].filter(e => e[3] > 4).map(e => [+(e[0] / e[3]).toFixed(1), +(e[1] / e[3]).toFixed(1), +(e[2] / e[3]).toFixed(1), e[3]]); };
+      D.biteU = { value: Array.from({ length: NB }, (_, i) => D.bites[i] ? new THREE.Vector4(D.bites[i].x, D.bites[i].y, D.bites[i].z, D.bites[i].w) : new THREE.Vector4(0, -99, 0, 0)) };
+    }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
-      sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);');
+      sh.uniforms.tdBite = D.biteU; sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);vTdJ=tdJ;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
 ${MOBILE ? '#define TD_LITE' : ''}
 #define TDRS .68
+#define TDNB 72
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
-varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdL=0.,tdFade=0.,tdH=.5;
+varying vec3 vTdJ;uniform vec4 tdBite[TDNB];float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -176,6 +233,27 @@ uniform float tdCool;` + NOISE)
             // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
             diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
             diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.82,.8,1.05),vec3(1.),smoothstep(.15,.6,tdH)),tdCool); }
+          // ---- junctions (tdJ from the mesh): crotches, the collar round each limb, and the house's beams biting into the bark ----
+          tdCr=vTdJ.x; tdCo=vTdJ.y;
+          // crotch / crease: the bark squeezed into tight folds and deep shade where the limb meets the trunk
+          diffuseColor.rgb*=mix(1.,.5,tdCr*tdCr)*mix(1.,.7+.3*cav,tdCr);
+          // collar: the swollen ring round the limb base, its ridges squeezed tight and a little paler with weathering
+          diffuseColor.rgb*=mix(1.,mix(.78,1.18,smoothstep(.3,.8,tdH)),tdCo*.75);
+          if(vTdJ.z>.01){ float pk=0.;
+            for(int i=0;i<TDNB;i++){ vec4 b=tdBite[i]; vec3 dv=tdP-b.xyz; float d=length(dv); if(d>b.w+.8)continue;
+              float ci=1.-smoothstep(b.w*.8,b.w*1.02,d);                                    // crushed under the beam's end
+              float rl=smoothstep(b.w*.85,b.w+.05,d)*(1.-smoothstep(b.w+.05,b.w+.2,d));      // callus roll the bark grew round it
+              float wr=1.-smoothstep(b.w,b.w+.5,d);                                          // rubbed by the wood moving in the wind
+              // water runs off the beam and stains the bark below it
+              float run=(1.-smoothstep(b.w*.5,b.w*1.1,length(dv.xz)))*smoothstep(.02,.12,-dv.y)*(1.-smoothstep(.2,.9,-dv.y));
+              if(rl>tdBR){tdBR=rl;tdBD=dv/max(d,1e-3);pk=(d-(b.w+.05))/.08;}
+              tdBC=max(tdBC,ci);tdBW=max(tdBW,wr);tdBT=max(tdBT,run); }
+            tdBR*=clamp(pk,-1.,1.); // signed: the roll's inner slope faces the beam, the outer slope faces away
+            float g=dot(diffuseColor.rgb,vec3(.33));
+            diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.08,g*1.02,g*.95)*1.25,tdBW*.35*smoothstep(.4,.8,tdH)); // worn, greyer ridges
+            diffuseColor.rgb*=1.-tdBC*.45;                       // crushed, dark and dirty
+            diffuseColor.rgb*=1.+abs(tdBR)*.25;                  // the fresh callus is a touch lighter
+            diffuseColor.rgb*=1.-tdBT*.35*smoothstep(.2,.6,1.-tdH*.5); }
           vec2 ax=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float rd=length(ax);
           float lum=dot(diffuseColor.rgb,vec3(.3,.59,.11));
           // big soft patches + fine breakup
@@ -200,6 +278,8 @@ uniform float tdCool;` + NOISE)
           mm*=smoothstep(.32,.55,big+zone*.25);
           mm*=1.-rootTop*.45;
           mm+=(1.-tdH)*.18*smoothstep(.05,.3,mm); // moss settles into the furrows first
+          mm=max(mm,tdCr*smoothstep(-.25,.45,wn.y)*smoothstep(.2,.55,big+fine*.4)*smoothstep(3.,4.5,y)); // moss packs the crotches
+          mm*=1.-tdBW*.85;
           mm=clamp(mm*tdMoss,0.,1.)*(1.-clamp(vGlow*2.5,0.,1.));
           // linear colours: deep olive in the shade, a little brighter yellow-green where it catches light
           vec3 moss=mix(vec3(.030,.048,.014),vec3(.085,.125,.028),smoothstep(.3,.8,fine));
@@ -229,6 +309,9 @@ uniform float tdCool;` + NOISE)
             float hold=run*.62+(1.-tdH)*.28+foot*.3-mm*.25;
             float dm=smoothstep(1.02-tdDamp*.85,1.2-tdDamp*.85,hold)*smoothstep(0.,.25,tdDamp);
             diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*diffuseColor.rgb*2.2,dm*.45); diffuseColor.rgb*=1.-dm*.32; tdDM=dm; }
+          // hoar frost: white rime on the upward faces of the roots near the ground, on the ridges first (furrows stay dark)
+          if(tdFrost>.003){ float fm=tdFrost*smoothstep(.55,.9,wn.y)*(1.-smoothstep(.6,2.2,y))*smoothstep(.45,.8,tdH+ha.b*.3+(big-.5)*.6)*(1.-mm*.5);
+            diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.34,.37,.42)*(.7+.6*ha.b),fm*.5); tdFM=fm; } // a light dusting, not snow
           tdMM=mm;tdL=lum;
         }`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -243,11 +326,14 @@ uniform float tdCool;` + NOISE)
           if(tdFade>.01)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.7*tdLf); // on roots the fine octave read as wood grain
 #endif
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
+          dn*=1.-tdBC*.6;                    // crushed bark is flattened
+          dn+=tdBD*tdBR*.9;                   // the callus roll round a beam
+          dn*=1.+tdCo*.5;                     // collar: deeper squeezed folds
           vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.32,tdWM); // dry bark is fully matte')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.32,tdWM*(1.-tdFM)); // dry bark is fully matte')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
@@ -765,6 +851,6 @@ uniform float tdCool;` + NOISE)
 
   // phones: small dressing neither casts nor receives shadows (cheaper shaders, nothing in the shadow pass)
   if (MOBILE) D.group.children.forEach(m => { m.castShadow = false; m.receiveShadow = false; });
-  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, caught: D.caughtLeaves, baseShroom: D.baseShroom, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, wet: +D.barkU.wet.value.toFixed(2), damp: +D.barkU.damp.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
+  D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, caught: D.caughtLeaves, baseShroom: D.baseShroom, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, junction: D.junction, frost: +D.barkU.frost.value.toFixed(2), wet: +D.barkU.wet.value.toFixed(2), damp: +D.barkU.damp.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
   return D;
 }

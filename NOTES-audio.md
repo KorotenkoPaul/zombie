@@ -74,3 +74,18 @@
 - Drizzle: rain bed ×.55 and slightly higher pitch. Storm: ×1.35, lower pitch; gusts follow the wind level.
 - Thunder is procedural (`thunder(dist, strength)`, also `__audio.thunder()` for testing): it arrives dist/343 s after the flash (max 12 s), a close strike (<1 km) has a crack, and a far one is a low rolling rumble of 4–9 s. It hooks `__weather.on('lightning', {pos|dist, strength})`; without those events a storm rumbles far away every 25–60 s.
 - Mist: forest bus −30 % and low-passed to 4.5 kHz, songbirds ×.55. Calm evenings: only strong gusts make a sound.
+
+## Round 12: whole-day mix review (phone profile)
+Method: iPhone 13 emulation, a 12 s slice of every game hour plus rain at 22, 13 and 2, recorded from `__audio.node()`. Each voice is logged to `window.__audioTrace` (QA only) so loud and quiet stretches can be attributed to clips. `state().quiet` shows the seconds since the last creature call.
+Mix targets (mix bus RMS, camera at the default orbit):
+- Ambience day and night: −45 to −35 dB RMS; short-term (400 ms) peaks no higher than about −20 dB. Night sits a few dB above day, so it feels alive but tense.
+- Hero foley near the camera is the foreground: up to −20 dB short-term, never clipping.
+- Music is an underscore and stays below the forest: bus level .2 (was .5, which put it about 15 dB over the dusk forest).
+- Silence: no stretch longer than about 7 s by day and 6 s at night without a creature (the lull guard). A rest of 3–8 s is fine: quiet is part of the mood.
+- Texture layers should never read as a constant wash: pond lapping now plays every 3–8 s (it was every 1–3 s), and dew drips now come mostly at night and in the morning, not all day.
+Found and fixed: music too loud at dusk; pond lapping almost constant; autumn middays and the 17:00 hand-over went 10–15 s with no life; drips in dry afternoons. Pond voices sit on the real pond from `__ground.pond` (x −8.4, z 9.2, r 2.3) and move there automatically if the pond moves.
+
+## Round 13: house sway
+- `__wind.on('sway', {part, id, pos, amp, hit?})` (Wind, fc33e5b) fires when a part turns back at the end of a swing. Parts: 'landing lantern' (a hook squeak: creak_a pitched up, short), the telescope (a pivot creak, gusts only), 'ladder-ground' and 'ladder-deck' (rope strain: fs_rope_a/b slowed). `hit` gives a knock (shutter / trunk_door_close) for future shutters. The door is Props' own (it plays 'shutter').
+- Cost and taste: each id sounds at most once every 1.3–2.4 s, there are at most ~3 sway sounds a second overall, and swings below .12 are skipped. Larger swings are more likely to creak. Amp is scaled by the wind level, so a breeze creaks softly and a storm creaks hard.
+- Positional on the forest bus, so the room muffling (−55 % and a 1.5 kHz low-pass indoors) applies by itself. `__audio.sway(e)` plays one by hand for tests.
