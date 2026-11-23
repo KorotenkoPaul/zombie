@@ -282,9 +282,9 @@ export function createMotion({ hero, db, opts = {} }) {
     if (hit) { FP.n++; FP.bones += hit; }
     fr2.set(fr1); fr1.set(fRaw); fN++;
     if (any) root.updateMatrixWorld(true); }
-  // the final pass runs as the velocity limiter ("no snaps") of the 'guard' slot (HERO-RULES.md §1, #8), registered once; no HH.update wrapping
+  // the final pass is the velocity limiter ("no snaps") in the 'pops' slot, right before Pose's guard (the last writer); registered once, no HH.update wrapping
   let fReg = false;
-  function ensureFinal() { if (fReg || typeof hero.stage !== 'function') return; fReg = true; hero.stage('guard', dt => final(dt)); }
+  function ensureFinal() { if (fReg || typeof hero.stage !== 'function') return; fReg = true; hero.stage(hero.SLOTS && hero.SLOTS.includes('pops') ? 'pops' : 'guard', dt => final(dt)); }
   function stepOffsets(dt) {
     for (let i = 0; i < NB * 3; i++) { const y = yB[(i / 3) | 0], e = Math.exp(-y * dt); const j1 = offV[i] + offX[i] * y; offX[i] = e * (offX[i] + j1 * dt); offV[i] = e * (offV[i] - j1 * y * dt); }
     { const e = Math.exp(-yP * dt); for (let k = 0; k < 3; k++) { const j1 = offPV[k] + offP[k] * yP; offP[k] = e * (offP[k] + j1 * dt); offPV[k] = e * (offPV[k] - j1 * yP * dt); } } }

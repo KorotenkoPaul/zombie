@@ -21,6 +21,7 @@ invariants, checked live and before every deploy.** No task gets its own special
 | 5 | `contacts` | hero.js + ladders | hands on declared contacts (reachTo, act.post): last of the body passes, so nothing moves the chest after a hand is placed |
 | 6 | `collide` | collide.js | skin pushed out of walls, furniture, the trunk |
 | 7 | `grab` | grab.js | exact hand holds re-applied after collide |
+| 7b | `pops` | motion.js | velocity limiter: a bone that breaks from its own motion is inertialized (no snaps); before the guard |
 | 8 | `guard` | pose module | ANATOMICAL GUARD, last: joint limits, knee direction, velocity limits (no snaps), balance |
 
 Modules register with `HH.stage(slot, fn)` and run in slot order (wrapping `HH.update` is the old way and is removed module by module).

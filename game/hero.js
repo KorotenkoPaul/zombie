@@ -1181,10 +1181,11 @@ export function createHero(ctx){
   if(FZ.t>6||FZ.lt>2.5){FZ.t=0;FZ.lt=0;console.warn('[hero] freeze guard: recover',H.task,nm,p.toArray().map(v=>+v.toFixed(2)));H.trans=false;H.lad=null;H.stk=null;H.once=null;
    play(IDLE(),{fade:.5});const n=H.task;if(n&&act){if(act.leave&&!act.left){act.left=true;try{act.leave(()=>{endTask(false);});}catch(e){endTask(false);}}else endTask(false);}}}
  // ===== HERO-RULES.md section 1: one pose pipeline. Modules register per slot; slots run in this order every frame =====
- const SLOTS=['clip','motion','support','look','contacts','collide','grab','guard'];const STAGES={};for(const k of SLOTS)STAGES[k]=[];
+ const SLOTS=['clip','motion','support','look','contacts','collide','grab','pops','guard'];// 'pops': motion.js anti-pop (velocity limiter) right before Pose's guard, which stays the last writer
+ const STAGES={};for(const k of SLOTS)STAGES[k]=[];
  function stage(slot,fn){if(!STAGES[slot])throw new Error('unknown slot '+slot);STAGES[slot].push(fn);return ()=>{const i=STAGES[slot].indexOf(fn);if(i>=0)STAGES[slot].splice(i,1);};}
  function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt,H);}catch(e){console.error('stage '+slot,e);L.splice(i--,1);}}}
- function update(dt){if(dt<=0)return;const r=updateCore(dt);if(!window.__heroFast){runSlot('collide',dt);runSlot('grab',dt);runSlot('guard',dt);if(INV.on)invCheck(dt);}return r;}
+ function update(dt){if(dt<=0)return;const r=updateCore(dt);if(!window.__heroFast){runSlot('collide',dt);runSlot('grab',dt);runSlot('pops',dt);runSlot('guard',dt);if(INV.on)invCheck(dt);}return r;}
  // HERO-RULES 3, live: ?inv in the URL (or HH.inv.on=true) checks the final pose every frame and counts what breaks, per task.
  // HH.inv.report() lists them; the first of each kind per task is logged with the frame so a thread can jump to it.
  const INV={on:/[?&]inv\b/.test(location.search),n:0,hits:{},prev:null,report(){return Object.entries(this.hits).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>k+' x'+v.n+' worst '+v.worst.toFixed(v.unit==='deg'?0:2)+v.unit+' first f'+v.f);},reset(){this.hits={};this.n=0;}};
