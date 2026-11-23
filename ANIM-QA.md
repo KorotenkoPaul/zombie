@@ -26,7 +26,7 @@ Priorities: **P1**: visible at normal play (through objects ≥ 2–4 cm, broken
 | P1 | Root jumps up when lying down (hy_sleep_bed) | f11156 | +24.8 cm in one frame |
 | P2 | Slow start of walks (still) | f11368, f14017, f8466 | up to 1.47 s |
 | P1 | hy_standup at 0.5x (still) | f8301 | 4.8 s total |
-| note | The house is now instanced/merged geometry, so feet-into-floorboard values of 2–3.6 cm may be ~1 cm too high (being verified) | | |
+| P2 | Feet 2–3.6 cm into floor boards in many places (boards are exact boxes, so the values are exact) | f144, f2577, f7478 | 2–3.6 cm |
 
 ## Open issues (run 3, master c7cd2d0)
 
