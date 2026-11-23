@@ -598,5 +598,69 @@
 "un_rustle": [
 "something moving through bushes in the dark forest not far away, slow rustle then silence, eerie, natural recording",
 3
+],
+"bucket_fill": [
+"dipping a wooden bucket into a pond and filling it with water, gurgle and splash, outdoors, close, natural recording",
+3
+],
+"slosh_a": [
+"water sloshing in a wooden bucket being carried, a single gentle slosh, close, natural recording",
+1.2
+],
+"slosh_b": [
+"water swaying and sloshing in a carried bucket, soft, close, natural recording",
+1.2
+],
+"tap_stream": [
+"a thin stream of water running from an old tap into a metal basin, steady, close, natural recording",
+5
+],
+"drip_bucket_a": [
+"a single water drop falling into a half full metal bucket, plink, close, isolated",
+0.8
+],
+"drip_bucket_b": [
+"one water drip into a bucket of water, small plop, close, isolated",
+0.8
+],
+"bucket_dump": [
+"dumping a bucket of water out onto the ground from a height, splash on grass and earth, outdoors, natural recording",
+2.5
+],
+"hatch_open": [
+"lifting a heavy wooden trapdoor hatch, slow creak of old hinges, close, natural recording",
+2.5
+],
+"hatch_close": [
+"a heavy wooden trapdoor hatch falling shut with a dull wooden thud, close, natural recording",
+1.5
+],
+"nail_a": [
+"hammering a nail into a wooden roof shingle, three quick hits, outdoors, close, natural recording",
+2
+],
+"nail_b": [
+"a few hammer blows driving a nail into wood, slightly muffled, close, natural recording",
+2
+],
+"saw_shingle": [
+"sawing a thin wooden roof shingle with a small hand saw, quick short strokes, close, natural recording",
+3
+],
+"bed_turn_a": [
+"a person turning over in bed in their sleep, quilt rustle and a soft wooden bed creak, close, quiet",
+2.5
+],
+"bed_turn_b": [
+"shifting under a thick blanket in bed, soft fabric rustle, quiet, close",
+2
+],
+"snore_a": [
+"soft gentle snoring of a sleeping young man, quiet and peaceful, slow breaths, close, no other sounds",
+6
+],
+"snore_b": [
+"light quiet snore and slow sleepy breathing, peaceful, close",
+5
 ]
 }

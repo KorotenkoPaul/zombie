@@ -34,3 +34,8 @@
 - `__audio.footstep(side, pos?, {surface, gain})`: Character can drive exact contacts; the first call turns auto mode off.
 - Footstep clips are decoded as soon as the foley pack arrives (they must never be late).
 - Night unease layer `unease`: distant branch crack, unclear cry, metal clank, thud, wail, bushes; night only, ~0.3-1 per night, rate x (0.2 + 1.1 * __brain.need.safety). Never the same one twice in a row. `__audio.on('unease', e => …)` with {name, pos, anx}: Brain can make the hero stop and listen.
+
+## Round 5: water, hatch, repair, sleep
+- New foley (names / aliases): bucket_fill (pond, fill_bucket), slosh (carry_water; call on each step while carrying), tap (water_tap; use loop()), drip_bucket (drain_drip), bucket_dump (dump_water), hatch_open / hatch_close (hatch, trapdoor), nails (repair_nail, roof_nail), saw_shingle (shingle), bed_turn (turn_over), snore (snoring).
+- Automatic while `hero.inBed`: a soft snore every 7-16 s and turning over every 35-90 s at the bed. `__audio.autoSleep(false)` hands it to Character/Brain.
+- Live build: master auto-deploys to Railway (https://game-production-8358051a.up.railway.app/); the claude.ai artifact has a 200 publishes/day limit.

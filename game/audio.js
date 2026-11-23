@@ -372,7 +372,7 @@ export function createAudio(ctx) {
     gustSound(env.wind, env); gustNext = now + rnd(3, 9) / Math.max(.2, env.wind) + rnd(0, 4);
   }
 
-  let dripNext = 0, creakNext = 6;
+  let dripNext = 0, creakNext = 6, autoSleep = true, snoreNext = 0, turnNext = 0;
   // ---------- footsteps: surface under the foot, at the moment the foot lands ----------
   // Character can drive them exactly with __audio.footstep(side, pos?, {surface}); until it does, audio.js watches
   // the toe bones itself: a foot that comes down to the floor after being lifted is a step.
@@ -452,6 +452,12 @@ export function createAudio(ctx) {
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
     const op = L2 && L2.pos ? L2.pos('oven') : null;
     if (op) bed('fire', ['fire_a', 'fire_b'], fireLvl, l => ({ gain: .5 * l, pos: op, ref: 2.2, roll: 1.3, rev: .2, indoor: true, offset: rnd(0, 2) }));
+    // the hero asleep: soft snores now and then, and turning over (Character/Brain can switch this off: __audio.autoSleep(false))
+    if (autoSleep && asleep && hero.root && actLoaded) {
+      const hp = hero.root.position, at = { x: hp.x, y: hp.y + .5, z: hp.z };
+      if (now > snoreNext) { if (snoreNext > 0) playAct('snore', at); snoreNext = now + rnd(7, 16); }
+      if (now > turnNext) { if (turnNext > 0) playAct('bed_turn', at); turnNext = now + rnd(35, 90); }
+    } else { snoreNext = now + rnd(4, 9); turnNext = now + rnd(25, 60); }
     // old planks creak under the hero now and then
     if (hero && hero.root) {
       const p = hero.root.position, mv = Math.hypot(p.x - lastHero.x, p.z - lastHero.z) / gdt, vy = (p.y - lastHero.y) / gdt;
@@ -488,14 +494,21 @@ export function createAudio(ctx) {
     jacket: { c: ['jacket_on'], v: .38 }, backpack: { c: ['backpack'], v: .38 }, fridge_open: { c: ['fridge_open'], v: .42 }, fridge_close: { c: ['fridge_close'], v: .42 },
     meat_pan: { c: ['meat_pan'], v: .42 }, eat: { c: ['eat'], v: .32 }, plate: { c: ['plate_set'], v: .38 },
     forest_steps: { c: ['forest_steps'], v: .32, out: 1 }, door_open: { c: ['trunk_door'], v: .42 }, door_close: { c: ['trunk_door_close'], v: .42 }, woodpile: { c: ['logs_stack', 'firewood_drop'], v: .42 },
-    sizzle: { c: ['sizzle', 'meat_pan'], v: .3 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
+    sizzle: { c: ['sizzle', 'meat_pan'], v: .3 },
+    bucket_fill: { c: ['bucket_fill'], v: .45, out: 1 }, slosh: { c: ['slosh_a', 'slosh_b'], v: .26, rate: .08 }, tap: { c: ['tap_stream'], v: .32 },
+    drip_bucket: { c: ['drip_bucket_a', 'drip_bucket_b'], v: .22, rate: .12 }, bucket_dump: { c: ['bucket_dump'], v: .45, out: 1 },
+    hatch_open: { c: ['hatch_open'], v: .45 }, hatch_close: { c: ['hatch_close'], v: .5 },
+    nails: { c: ['nail_a', 'nail_b', 'hammer_b'], v: .48, out: 1 }, saw_shingle: { c: ['saw_shingle'], v: .42, out: 1 },
+    bed_turn: { c: ['bed_turn_a', 'bed_turn_b', 'blanket'], v: .3 }, snore: { c: ['snore_a', 'snore_b'], v: .16, rate: .05 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
   };
   // the 20 approved actions by their plain names (Character may call either)
   const ALIAS = { tea: 'tea_pour', kettle_tea: 'kettle', chopping: 'chop_veg', vegetables: 'chop_veg', stir_pot: 'stir', stove_wood: 'firewood_oven', dishes: 'wash',
     sawing: 'saw', nail: 'hammer', hammering: 'hammer', sharpening: 'sharpen', fix_lantern: 'lantern_fix', diary: 'write', writing: 'write', sweeping: 'sweep',
     water_plant: 'water', watering: 'water', door_bolt: 'bolt', check_bolt: 'bolt', count_supplies: 'supplies', radio: 'radio_tune', ledge_sit: 'edge_sit',
     carry_firewood: 'firewood_carry', armful: 'firewood_carry', listen: 'window',
-    bow: 'bow_release', shoot: 'bow_release', fridge: 'fridge_open', meat: 'meat_pan', fry: 'meat_pan', eating: 'eat', forest: 'forest_steps', forest_walk: 'forest_steps', logs_to_pile: 'woodpile', put_on_jacket: 'jacket' };
+    bow: 'bow_release', shoot: 'bow_release', fridge: 'fridge_open', meat: 'meat_pan', fry: 'meat_pan', eating: 'eat', forest: 'forest_steps', forest_walk: 'forest_steps', logs_to_pile: 'woodpile', put_on_jacket: 'jacket',
+    pond: 'bucket_fill', fill_bucket: 'bucket_fill', carry_water: 'slosh', water_tap: 'tap', drain_drip: 'drip_bucket', dump_water: 'bucket_dump', hatch: 'hatch_open', trapdoor: 'hatch_open',
+    repair_nail: 'nails', roof_nail: 'nails', shingle: 'saw_shingle', turn_over: 'bed_turn', snoring: 'snore' };
   const P0 = { x: 0, y: 0, z: 0 };
   function toPos(p) {
     if (!p) { const r = ctx.hero && ctx.hero.root; return r ? { x: r.position.x, y: r.position.y + 1, z: r.position.z } : P0; }
@@ -546,7 +559,7 @@ export function createAudio(ctx) {
 
   const api = {
     start, update, mute: setMute, muted: () => muted, started: () => started, loaded: () => loaded, actionsReady: () => actLoaded, actions: () => Object.keys(ACT).concat(Object.keys(ALIAS)),
-    loop: loopAct,
+    loop: loopAct, autoSleep: b => { autoSleep = !!b; },
     footstep: (side, pos, o = {}) => { autoFeet = false; const q = toPos(pos); step(side, q, o.surface || surfaceAt(q, envNow), o.gain ?? 1); },
     on: (k, f) => { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     setSeason: s => { season0 = s || null; populate(Object.keys(L), { season: season(), rain: 0, wind }); },
