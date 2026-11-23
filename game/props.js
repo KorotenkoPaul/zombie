@@ -150,7 +150,7 @@ function makeMaterials(renderer) {
     brass: metal(0xD8AE55, .85, .28, 1.2),
     copper: metal(0xC0754A, .9, .32, 1),
     hood: metal(0x7E858D, .85, .34, 1.0),
-    fridge: metal(0xA8ADB2, .55, .3, 1.0),   // silver-grey retro fridge like the photo
+    fridge: metal(0xDAD4C4, .35, .3, 1.0) /* cream-silver like the photo (Critic P8) */,   // silver-grey retro fridge like the photo
     ceramic: metal(0xF2EDE3, 0, .22, .7),
     glazeBlue: metal(0x6F8FA8, 0, .25, .7),
     glazeCream: metal(0xE8D9B8, 0, .3, .7),
@@ -189,8 +189,8 @@ const PLAINV = new Map();
 // roughness rides in the vertex colour's alpha (opaque materials ignore alpha), so one material covers every roughness
 function plainOf(m) {
   if (!m || !m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.polygonOffset || m.alphaTest || m.map || m.bumpMap || m.normalMap || m.transparent || m.vertexColors || m.userData.keep || m.emissive.getHex() !== 0) return null;
-  const mt = m.metalness > .5 ? 1 : 0; const side = m.side === THREE.BackSide ? THREE.BackSide : THREE.DoubleSide; const key = `vc|${mt}|${side}`;
-  if (!PLAINV.has(key)) { const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: mt ? .85 : 0, side }); pm.userData.plainV = true;
+  const mt = Math.round(m.metalness * 4) / 4, env = m.envMap ? Math.round((m.envMapIntensity || 1) * 2) / 2 : 0; const side = m.side === THREE.BackSide ? THREE.BackSide : THREE.DoubleSide; const key = `vc|${mt}|${env}|${side}`;
+  if (!PLAINV.has(key)) { const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: mt, envMap: env ? m.envMap : null, envMapIntensity: env || 1, side }); /* metalness and env reflections kept per band (Critic P8: enamel and the fridge went dark without them) */ pm.userData.plainV = true;
     pm.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);'); };
     pm.customProgramCacheKey = () => 'plainV'; PLAINV.set(key, pm); }
   return PLAINV.get(key); }
@@ -1098,8 +1098,8 @@ export function buildProps(ctx) {
     out.radio = { obj: rad, get on() { return rs.on; }, setOn(k) { rs.on = clamp01(k); R.dm.emissiveIntensity = rs.on * 1.6; }, setTune(k) { rs.tune = clamp01(k); R.needle.position.x = -.05 + .1 * rs.tune; R.knob.rotation.y = rs.tune * 5; }, knob(t = V()) { return rad.localToWorld(t.copy(R.knobLocal)); }, dialMat: R.dm };
     out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
   tool('broom', broom(), scene, -4.03, floorAt(-4.03, BD, 1.62), 1.62, [0, 0, .11]);
-  const plantO = place('plant', plant(), -3.97, BD, 2.62); PT.plant = [plantO, V(0, .3, 0)];
-  tool('wateringCan', wateringCan(), scene, -3.94, floorAt(-3.94, BD, 3.08), 3.08, [0, -.9, 0]);
+  const plantO = place('plant', plant(), -3.47, BD, 1.17); /* against the back wall between the crate and the bunk, off the kitchen hatch */ PT.plant = [plantO, V(0, .3, 0)];
+  tool('wateringCan', wateringCan(), scene, -3.3, floorAt(-3.3, BD, 1.5), 1.5, [0, -.4, 0]);
   tool('diary', diary(), scene, -.37 + TX, tTop, 1.31 + TZ, [0, .22, 0]); tool('pencil', pencil(), scene, -.22 + TX, tTop, 1.3 + TZ, [0, .5, 0]);
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
   // --- workshop: whetstone and a lantern to repair on the bench; jacket on a peg by the open side; bow and quiver on the left wall
@@ -1229,7 +1229,8 @@ export function buildProps(ctx) {
   // finds by position, tools, the open book, the candle flame). The emptied groups stay in place with their boxes.
   // perf: phones get a stricter shadow budget (only furniture-sized parts cast)
   const MOB = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); const CAST_R = MOB ? .35 : .2; out.mobile = MOB;
-  { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp']); /* stove merged too: its door, fire and pots are live */
+  const NOMERGE = /[?&]nomerge/.test(location.search); /* debug: keep every prop as built (support checks) */
+  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp']); /* stove merged too: its door, fire and pots are live */
     const roots = []; for (let i = nScene0; i < scene.children.length; i++) { const o = scene.children[i]; if (KEEP.has(o.name) || o.userData.live || o.userData.book || Object.values(out.tools).includes(o)) continue; roots.push(o); }
     const by = new Map(); const kill = []; const MST = out._mergeStats = {}; out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
@@ -1248,13 +1249,13 @@ export function buildProps(ctx) {
   // perf: the same merge inside every object that stays separate (kept furniture, live objects, tools): static parts by material
   // (plain colours share one vertex-coloured material), keeping each part's shadow flags; anything the code moves or edits is a
   // userData.live node and stays as it is, and a material that has a single part is left alone too.
-  { for (const m of Object.values(out.materials || {})) if (m) m.userData.keep = true; if (quiltMesh) quiltMesh.userData.live = true;
+  if (!NOMERGE) { for (const m of Object.values(out.materials || {})) if (m) m.userData.keep = true; if (quiltMesh) quiltMesh.userData.live = true;
     const deep = o => { bake(o, true); for (const c of o.children.slice()) walk(c); }, walk = c => { if (c.userData.live) deep(c); else for (const k of c.children.slice()) walk(k); };
     for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup || r.userData.book || r.isLight) continue; deep(r); } }
   // perf: every tool sitting at home (hooks, shelves, stove, bench) is drawn from one shared proxy mesh per material. Each tool
   // has an id in a vertex attribute; when it leaves home (grabbed, easing back, its parent moved, hidden) its id is masked out of
   // the proxy (vertices collapse) and its own meshes show again. Shadow-casting and live sub-parts always stay on the tool itself.
-  { const names = Object.keys(out.tools).slice(0, 63), uHide = { value: new Array(64).fill(0) }, by = new Map(), TP = []; const prox = new Map();
+  if (!NOMERGE) { const names = Object.keys(out.tools).slice(0, 63), uHide = { value: new Array(64).fill(0) }, by = new Map(), TP = []; const prox = new Map();
     const proxMat = m => { if (prox.has(m)) return prox.get(m); const pm = m.clone(); const ob = m.onBeforeCompile, ck = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
       pm.onBeforeCompile = (sh, r) => { if (ob && ob !== THREE.Material.prototype.onBeforeCompile) ob.call(m, sh, r); sh.uniforms.uHide = uHide;
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
