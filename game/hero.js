@@ -133,6 +133,15 @@ export function createHero(ctx){
  // the rooms can be shifted sideways as a block (lv.XL: left rooms, lv.XR: right rooms); landings at LC stay
  {const XL=lv.XL||0,XR=lv.XR||0;if(XL||XR)for(const k in N){const n=N[k];if(n.p.y<LC+.3)continue;n.p.x+=n.p.x<0?XL:XR;}}
  const LAD={'kh_b>kh_t':{lz:3.45,side:1},'kl_b>bl_t':{lz:2.0,side:1},'ll_b>ll_t':{lz:3.15,side:1}};
+ // the ground (ground.js __ground.exits.forest): rope ladder from the gate down to the clearing, the path out to the forest edge,
+ // a hidden spot out in the fog, and the work spots by the chopping stump and the firewood pile
+ {const X=window.__ground&&window.__ground.exits&&window.__ground.exits.forest;if(X&&X.nodes){const ids=['g_foot','g_path1','g_fork','g_exit1','g_exit2','g_edge','g_out'];
+  for(const k of ids)if(X.nodes[k])N[k]={p:X.nodes[k].clone(),tight:true};/* tight: walk the path ground.js laid round the roots and stones, no shortcuts */const chain=ids.filter(k=>N[k]);for(let i=1;i<chain.length;i++)E.push([chain[i-1],chain[i]]);
+  if(N.g_foot){E.push(['g_foot','gate','ladder']);LAD['g_foot>gate']={lz:4.0,side:1};}
+  if(N.g_out)N.g_out.face=X.faceOut;
+  const near=p=>chain.reduce((b,k)=>{const d=Math.hypot(N[k].p.x-p.x,N[k].p.z-p.z);return d<b[1]?[k,d]:b;},[null,1e9])[0];
+  if(X.chopStand){N.g_chop={p:X.chopStand.clone(),face:Math.atan2(X.chopStump.x-X.chopStand.x,X.chopStump.z-X.chopStand.z)};E.push(['g_chop',near(X.chopStand)]);}
+  if(X.woodStand){N.g_wood={p:X.woodStand.clone(),face:Math.atan2(X.woodPile.x-X.woodStand.x,X.woodPile.z-X.woodStand.z)};E.push(['g_wood',near(X.woodStand)]);}}}
 
  // ---------- fit to the real furniture ----------
  const rc=new THREE.Raycaster();

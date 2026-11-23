@@ -1,33 +1,61 @@
+<!doctype html>
+<html lang="ru">
 <meta charset="utf-8">
 <title>Домик на дереве</title>
+<!-- [UI] phone / home-screen app: real device width (no 980px desktop layout), no page zoom, full screen under the notch -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0B1020">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Домик">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700&display=swap">
 <style>
-/* A real 3D treehouse at the edge of a foggy forest; UI stays small and out of the way */
-:root{--amber:#FFB54D;--glass:rgba(12,16,30,.45);--body:"Rubik",system-ui,sans-serif;color-scheme:dark}
-html,body{height:100%}
-body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hidden;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;touch-action:none}
+/* A real 3D treehouse at the edge of a foggy forest; UI stays out of the way but is easy to hit with a thumb.
+   [UI] Sizes scale with the short screen side: buttons never under 46px (Apple asks 44pt), text 14px+. */
+:root{--amber:#FFB54D;--glass:rgba(12,16,30,.5);--body:"Rubik",system-ui,-apple-system,sans-serif;color-scheme:dark;
+ --ib:clamp(46px,12.5vmin,58px);--gap:clamp(8px,2.4vmin,12px);--edge:clamp(10px,3vmin,16px);
+ --sl:max(var(--edge),env(safe-area-inset-left,0px));--sr:max(var(--edge),env(safe-area-inset-right,0px));
+ --st:calc(env(safe-area-inset-top,0px) + var(--edge));--sb:calc(max(env(safe-area-inset-bottom,0px),4px) + var(--edge));
+ --fs:clamp(14px,3.7vmin,16px)}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{position:fixed;inset:0;margin:0;background:#0B1020;color:#fff;font-family:var(--body);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:none}
 #stage{position:fixed;inset:0}
-#stage canvas{display:block;width:100%!important;height:100%!important}
-.hud{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:max(10px,env(safe-area-inset-left,0px));right:max(10px,env(safe-area-inset-right,0px));display:flex;justify-content:space-between;pointer-events:none;gap:6px}
-.chip{background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;display:flex;align-items:center;gap:5px;white-space:nowrap}
-.grp{display:flex;gap:5px}
-.hearts{color:#FF7A6A;letter-spacing:1px}
-.tools{position:fixed;right:max(10px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 10px);display:flex;flex-direction:column;gap:6px}
-.ib{width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.2);background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+#stage canvas{display:block;width:100%!important;height:100%!important;touch-action:none}
+.hud{position:fixed;top:var(--st);left:var(--sl);right:var(--sr);display:flex;justify-content:space-between;pointer-events:none;gap:var(--gap)}
+.chip{background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:999px;min-height:36px;box-sizing:border-box;padding:6px 14px;font-size:var(--fs);font-weight:700;line-height:1.2;display:flex;align-items:center;gap:7px;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.45);font-variant-numeric:tabular-nums}
+.grp{display:flex;gap:var(--gap)}
+.hearts{color:#FF7A6A;letter-spacing:2px}
+.tools{position:fixed;right:var(--sr);bottom:var(--sb);display:flex;flex-direction:column;gap:var(--gap)}
+.ib{width:var(--ib);height:var(--ib);border-radius:50%;border:1px solid rgba(255,255,255,.24);background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;font-family:var(--body);font-size:calc(var(--ib) * .44);line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;margin:0;touch-action:manipulation;-webkit-appearance:none;appearance:none;box-shadow:0 2px 10px rgba(0,0,0,.25);transition:transform .12s,background-color .2s}
+.ib:active{transform:scale(.9);background:rgba(255,190,110,.3)}
+.ib:focus{outline:none}
 .ib:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .ib:disabled{opacity:.35}
 .ib.on{background:rgba(255,190,110,.45);border-color:rgba(255,210,150,.8)}
-.hint{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);transform:translateX(-50%);max-width:68%;background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:5px 10px;font-size:11px;line-height:1.35;text-align:center;transition:opacity .6s;pointer-events:none}
+/* hint sits bottom-centre and keeps clear of the button column on both sides, so it stays centred */
+.hint{position:fixed;left:50%;bottom:var(--sb);transform:translateX(-50%);box-sizing:border-box;width:max-content;max-width:min(520px,calc(100% - 2 * (var(--ib) + var(--gap) + max(var(--sl),var(--sr)))));background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:8px 12px;font-size:var(--fs);line-height:1.4;text-align:center;transition:opacity .6s;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.45)}
 .hint b{color:var(--amber)}
 .hint.off{opacity:0}
-.toast{position:fixed;left:50%;top:20%;transform:translate(-50%,-50%) scale(.85);opacity:0;font-weight:700;font-size:18px;text-align:center;text-shadow:0 2px 10px rgba(0,0,0,.7);transition:opacity .5s,transform .6s cubic-bezier(.2,1.3,.4,1);pointer-events:none;white-space:nowrap}
-.toast small{display:block;font-size:11px;font-weight:500;opacity:.85;margin-top:2px}
+.toast{position:fixed;left:50%;top:22%;max-width:88vw;transform:translate(-50%,-50%) scale(.85);opacity:0;font-weight:700;font-size:clamp(22px,6.4vmin,30px);line-height:1.2;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.75);transition:opacity .5s,transform .6s cubic-bezier(.2,1.3,.4,1);pointer-events:none}
+.toast small{display:block;font-size:var(--fs);font-weight:500;opacity:.9;margin-top:4px}
 .toast.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
-.load{position:fixed;inset:0;display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;font-size:13px;background:#0B1020;transition:opacity .8s}
-.load i{display:block;width:140px;height:3px;border-radius:3px;background:rgba(255,255,255,.15);overflow:hidden}
+.load{position:fixed;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;font-size:clamp(16px,4.2vmin,18px);background:#0B1020;transition:opacity .8s}
+.load i{display:block;width:min(220px,60vw);height:4px;border-radius:4px;background:rgba(255,255,255,.15);overflow:hidden}
 .load i b{display:block;height:100%;width:0;background:var(--amber);transition:width .3s}
 .load.hide{opacity:0;pointer-events:none}
+/* the hero's-thoughts button and panel come from brain.js; these selectors win over its own small sizes */
+button.brainB{left:var(--sl);bottom:var(--sb);width:var(--ib);height:var(--ib);border-radius:50%;border:1px solid rgba(255,255,255,.24);background:var(--glass);font-size:calc(var(--ib) * .44);padding:0;touch-action:manipulation;-webkit-backdrop-filter:blur(8px)}
+div.brainP{left:var(--sl);bottom:calc(var(--sb) + var(--ib) + var(--gap));width:min(250px,calc(100vw - 2 * var(--ib) - 4 * var(--gap)));font-size:14px;-webkit-backdrop-filter:blur(8px)}
+/* phone on its side: little height, so the column of buttons gets a bit tighter */
+@media (orientation:landscape) and (max-height:500px){:root{--ib:clamp(44px,11.5vmin,52px);--gap:7px;--edge:10px}}
 </style>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <div id="stage"></div>
@@ -36,11 +64,18 @@ body{margin:0;background:#0B1020;color:#fff;font-family:var(--body);overflow:hid
 <div class="hint" id="hint"><b>Веди пальцем</b> — повернуть вокруг дерева, <b>щипок</b> — приблизить к месту, <b>двумя</b> — сдвинуть, <b>двойной тап</b> — подлететь.</div>
 <div class="toast" id="toast"></div>
 <div class="load" id="load"><span id="loadTx">Загружаем лес…</span><i><b id="loadBar"></b></i></div>
+<script>/* [UI] iOS ignores user-scalable=no: stop pinch page zoom and rubber-band scroll (buttons use touch-action:manipulation against double-tap zoom). The canvas keeps its own gestures (camera.js). */
+(function(){var cv=function(e){return e.target&&e.target.tagName==='CANVAS';};
+['gesturestart','gesturechange','gestureend'].forEach(function(n){document.addEventListener(n,function(e){if(!cv(e))e.preventDefault();},{passive:false});});
+document.addEventListener('touchmove',function(e){if(!cv(e))e.preventDefault();},{passive:false});
+document.addEventListener('dblclick',function(e){e.preventDefault();},{passive:false});})();</script>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { clone as skClone } from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -76,11 +111,18 @@ const camera=new THREE.PerspectiveCamera(38,1,.2,300);
 
 // ================= assets =================
 const TL=new THREE.TextureLoader();
-const tex=(n,rep=1,srgb=true)=>new Promise(res=>TL.load(ASSET+n,t=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;prog();res(t);}));
+// [PERF] textures with a <name>-ktx2.txt twin (pipeline/ktx2.mjs) load as Basis KTX2 and stay compressed on the GPU
+// (ASTC/ETC2 on iPhone: ~1 byte per pixel instead of 4, mipmaps included); anything that fails falls back to the jpg/png
+const KTX2N=new Set(/[?&]noktx/.test(location.search)?[]:['bark2.jpg','roof2.jpg','ground2.jpg','leaf2.png']);
+const ktx2=new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/basis/').detectSupport(renderer);
+const texSetup=(t,rep,srgb)=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;t.needsUpdate=true;prog();return t;};
+const texImg=n=>new Promise((res,rej)=>TL.load(ASSET+n,res,undefined,rej));
+const texKtx=n=>fetch(ASSET+n.replace(/\.(jpg|png)$/,'-ktx2.txt')).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(b=>{const u=URL.createObjectURL(new Blob([Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0))]));return ktx2.loadAsync(u).finally(()=>URL.revokeObjectURL(u));});
+const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('ktx2 fallback',n,e);return texImg(n);}):texImg(n)).then(t=>texSetup(t,rep,srgb));
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb('oak-glb.txt'),tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -298,9 +340,15 @@ shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT}
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=sRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=snArb(-vViewPosition,normal,sDH,faceDirection);');};
 const shingGeo=bevelBoxGeo();const sRow=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aRow',sRow);
-const SHING=new THREE.InstancedMesh(shingGeo,shingleMat,2000);SHING.count=0;SHING.castShadow=true;SHING.receiveShadow=true;scene.add(SHING);
+const SHING=new THREE.InstancedMesh(shingGeo,shingleMat,2000);SHING.count=0;SHING.castShadow=!MOBILE;/* [PERF] the roof slabs still cast the roof's shadow on phones */SHING.receiveShadow=true;scene.add(SHING);
 // [PERF] shingles live on layer 5: the main camera and the sun's shadow camera see it, lamp (point) shadow cameras don't
 SHING.layers.set(5);camera.layers.enable(5);sun.shadow.camera.layers.enable(5);
+// [PERF] static house parts built from several meshes are baked into one mesh per material (draw calls on phones)
+function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().invert();const by=new Map(),rm=[];
+ g.traverse(m=>{if(!m.isMesh||m.isInstancedMesh||keep(m)||m.material.transparent)return;const geo=(m.geometry.index?m.geometry.toNonIndexed():m.geometry.clone());geo.applyMatrix4(inv.clone().multiply(m.matrixWorld));
+  if(!by.has(m.material))by.set(m.material,[]);by.get(m.material).push({geo,m});rm.push(m);});
+ for(const [mat,L] of by){if(L.length<2)continue;const mg=mergeGeometries(L.map(x=>x.geo));if(!mg)continue;for(const x of L)x.m.parent.remove(x.m);
+  const me=new THREE.Mesh(mg,mat);me.castShadow=L.some(x=>x.m.castShadow);me.receiveShadow=L.some(x=>x.m.receiveShadow);g.add(me);}}
 function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
@@ -320,9 +368,12 @@ function roof(x0,x1,y,z0,z1,h){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const 
     const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.1,.13),ww));SHING.setMatrixAt(SHING.count,m4);
     const k=rnd(.8,1.15)*(rnd(0,1)<.12?.75:1);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));SHING.count++;}}}
  const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);
+ // gable walls (Pavel / critic T4): the triangles under the roof are closed with vertical boards, back and front
+ for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<x1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
+  if(inTrunk(xx,y+hg/2,gz,.05))continue;board(V(xx,y+hg/2+.02,gz),hg+.04,.305,.05,new THREE.Euler(0,rnd(-.03,.03),Math.PI/2),{tint:rnd(.93,1.07),wall:true});}
  // gable trim boards on the front like the photo's dark fascia
  for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
- meshesToBeams(g); SHING.instanceMatrix.needsUpdate=true;sRow.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
+ meshesToBeams(g);bakeStatic(g); SHING.instanceMatrix.needsUpdate=true;sRow.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
  world.createCollider(RAPIER.ColliderDesc.cuboid((x1-x0)/2,h*.45,(z1-z0)/2).setTranslation((x0+x1)/2,y+h*.45,(z0+z1)/2));}
 function post(x,y0,y1,z){board(V(x,(y0+y1)/2,z),y1-y0,.2,.2,new THREE.Euler(0,0,Math.PI/2),{dark:true});}
 // ---- boards that respect the trunk: every run is cut where wood would go through bark ----
@@ -387,7 +438,7 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   for(const y of rungY){const t=(top-y)/H;ropes.push(placed(knotGeo,V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1)));}}
  // round rungs, a little uneven like hand-lashed sticks
  for(const y of rungY){const t=(top-y)/H;rungs.push(placed(new THREE.CylinderGeometry(.022,.022,.5,6),V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t)),new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
- for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=true;me.frustumCulled=false;scene.add(me);}}
+ for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;scene.add(me);}}
 function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});for(let y=y0+.3;y<y1;y+=.32)board(V(x,y,z),.5,.06,.05,null,{dark:true});}
 // the photo is an open cutaway: no plank fences across the room fronts while there are no zombies (BARRICADES=false)
 const BARRICADES=false;
@@ -403,19 +454,33 @@ brace(V(1.4,.9,frontZ(1.4,1.0)-.05),V(2.6,LG-.12,1.9),.13);
 // left low landing
 floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
 // center landing (half disc around the trunk front) + gate over the ground ladder
-floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-.9,1.3,frontZ(-.9,1.3)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(.3,1.3,frontZ(.3,1.3)-.08),V(.6,LC-.13,3.3),.15);
+floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-.9,1.3,frontZ(-.9,1.3)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(-.15,1.3,frontZ(-.15,1.3)-.08),V(-.05,LC-.13,3.45),.15);/* critic T19: kept left of the hollow's mouth */
 if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
 ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
 const KX0=-4.4,KX1=-.9;
-floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9],[-4.3,-3.7,1.0,2.05]]});
+floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]]});
 wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
 wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]]);wallSide(KX1,.8,2.2,KT+.03,BD-.15);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);brace(V(-2.2,KT-2.3,frontZ(-2.2,KT-2.3)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,KT-2.2,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
-floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.7,1.0,2.05]]});
+floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.7,2.02,2.95]]});/* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.32) and steps off behind it (z 1.62) */
+// the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
+// shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
+const HATCH=(()=>{const x0=-4.3,x1=-3.7,z0=2.02,z1=2.95,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+ const lid=new THREE.Group();g.add(lid);const L=z1-z0;
+ for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(.145,.05,L-.01),boardMat);m.position.set(x0-(x0+x1)/2+.08+i*.148,0,-L/2);m.castShadow=m.receiveShadow=true;lid.add(m);}
+ for(const zz of [-.18,-L+.18]){const m=new THREE.Mesh(new THREE.BoxGeometry(.58,.04,.09),darkBoard);m.position.set(0,-.04,zz);lid.add(m);}
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(.045,.009,6,14),new THREE.MeshStandardMaterial({color:0x2A2622,metalness:.7,roughness:.45}));ring.position.set(0,.03,-L+.12);ring.rotation.x=Math.PI/2;lid.add(ring);
+ for(const xx of [-.2,.2]){const h=new THREE.Mesh(new THREE.BoxGeometry(.05,.02,.12),ring.material);h.position.set(xx,.03,-.04);lid.add(h);}
+ bakeStatic(lid,m=>m===ring);const OPEN=1.95;let ang=OPEN,target=OPEN;lid.rotation.x=ang;
+ const grab=new THREE.Vector3();
+ return {update(dt){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;lid.rotation.x=ang;ring.getWorldPosition(grab);},
+  open(){target=OPEN;},close(){target=0;},toggle(){target=target===0?OPEN:0;},isOpen(){return target!==0;},
+  get angle(){return ang;},grab,box:[x0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
+window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
 roof(BX0,BX1,BD+2.3,.8,3.8,1.15);post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
@@ -459,7 +524,7 @@ function prop(n,x,y,z,{h,w,ry=0,bright=1,solid=true,seat=false}={}){const o=PROP
 function rug(x,y,z,w,d,c1,c2){const cv=document.createElement('canvas');cv.width=128;cv.height=128;const g=cv.getContext('2d');g.fillStyle=c1;g.fillRect(0,0,128,128);g.strokeStyle=c2;g.lineWidth=6;g.strokeRect(8,8,112,112);g.lineWidth=3;g.strokeRect(20,20,88,88);for(let i=0;i<6;i++){g.fillStyle=c2;g.fillRect(28+i*13,58,7,12);}const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshStandardMaterial({map:t,roughness:1}));m.rotation.x=-Math.PI/2;m.position.set(x,y+.035,z);m.receiveShadow=true;scene.add(m);}
 
 const WINS=[];function win(x0,x1,y0,y1,z,side,room){const g=new THREE.Group();const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;WINS.push({mat:gm,room,g});const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),gm);p.renderOrder=2;g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}
- if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);meshesToBeams(g);}
+ if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);meshesToBeams(g);bakeStatic(g);}
 win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
 // all furniture and objects: props.js (bevelled, textured, interactive). P3.oven / P3.book / P3.tools / P3.surfaces
 const P3=buildProps({scene,renderer,OBST,floors:[boards,beams],L:{KT,BD,WS,DK,LL}});window.__props=P3;
@@ -608,7 +673,7 @@ if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=M
  while(n<N&&performance.now()-t0<2500){hour+=dt*hps();if(hour>=24)hour-=24;HH.update(dt);n++;}}catch(e){console.error('prewarm',e);}}
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return isNight(hour)?10/70:14/110;}// a day of ~3 minutes
-try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
+try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
 const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.68,.6,.94],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98]];
 function pal(h){let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=smooth(0,1,(h-a[0])/(b[0]-a[0]));const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
@@ -669,6 +734,8 @@ PERF.addStep('bloom',()=>{if(!bloom.enabled)return false;bloom.enabled=false;},(
 if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),15);PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.upgrade(),50);}
 if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LIGHTS.winGlow(true),45);
 // fog simplification can't be undone: last resort
+// [PERF] thermal guard: when even px 1.5 can't keep up, hold a steady 30 FPS instead of thrashing (phones heat up fast)
+PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
 if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+i);
 // [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
 let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
@@ -703,8 +770,8 @@ addEventListener('resize',resize);
 
 // ================= main loop =================
 const clock=new THREE.Clock();let acc=0,fr=0,ft=0,perf=false;
-function frame(){requestAnimationFrame(frame);try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
-function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;
+function frame(){requestAnimationFrame(frame);if(PERF.skip())return;try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
+function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;HATCH.update(dt);
  const wasN=isNight(hour);hour+=dt*hps()*TS;if(hour>=24)hour-=24;const nowN=isNight(hour);
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}
  if(!over&&wasN&&!nowN){dayNo++;toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
@@ -777,6 +844,10 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  hud();if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
+// [PERF] phones: objects smaller than 20 cm stop casting the sun/moon shadow (~100 of 256 casters, each one a draw call
+// in the shadow pass; their shadow is a few texels of a 1024 map over 24 m). They still receive shadows. Runs again later
+// for things built after loading.
+if(MOBILE){const _b=new THREE.Box3(),_v=V();const tiny=()=>{let n=0;scene.traverse(o=>{if(!o.isMesh||!o.castShadow||o.isInstancedMesh||o.isSkinnedMesh||o.userData.keepShadow)return;_b.setFromObject(o);_b.getSize(_v);if(Math.max(_v.x,_v.y,_v.z)<.2){o.castShadow=false;n++;}});return n;};PERF.tinyCasters=tiny();setTimeout(()=>{PERF.tinyCasters+=tiny();},8000);}
 // [PERF] phones start at pixel ratio 1.5 and climb to 2.2 while frames keep vsync (perf.js)
 if(MOBILE)PERF.preset([PX[1],PX[2],PX[3]]);
 resize();hud();$('load').classList.add('hide');PERF.openDebugWhenReady();
