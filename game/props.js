@@ -244,11 +244,14 @@ function book({ w = .145, h = .205, cover = M.covers[1], open = 1 } = {}) {
     p.needsUpdate = true; pg.computeVertexNormals();
   }
   function turn(dir = 1) { if (st.turning) return false; st.turning = dir; st.a = 0; page.visible = true; shapePage(dir > 0 ? 0 : Math.PI); return true; }
-  function update(dt) { if (!st.turning) return; st.a = Math.min(1, st.a + dt / .85); const e = st.a < .5 ? 2 * st.a * st.a : 1 - Math.pow(-2 * st.a + 2, 2) / 2; const a = st.turning > 0 ? e * Math.PI : (1 - e) * Math.PI; shapePage(a); if (st.a >= 1) { st.turning = 0; page.visible = false; } }
+  // openTo(k, sec): the covers swing to k (0 closed, 1 flat open) with an ease, for picking up / putting down
+  const ot = { from: open, to: open, t: 1, d: .6 };
+  function openTo(k, d = .6) { ot.from = st.open; ot.to = clamp01(k); ot.t = 0; ot.d = Math.max(.05, d); }
+  function update(dt) { if (ot.t < 1) { ot.t = Math.min(1, ot.t + dt / ot.d); const e = ot.t * ot.t * (3 - 2 * ot.t); setOpen(ot.from + (ot.to - ot.from) * e); } if (!st.turning) return; st.a = Math.min(1, st.a + dt / .85); const e = st.a < .5 ? 2 * st.a * st.a : 1 - Math.pow(-2 * st.a + 2, 2) / 2; const a = st.turning > 0 ? e * Math.PI : (1 - e) * Math.PI; shapePage(a); if (st.a >= 1) { st.turning = 0; page.visible = false; } }
   // world position of the corner a hand would lift to turn the page
   function corner(target = V()) { return g.localToWorld(target.set(w * .95, .02, h * .4)); }
   setOpen(open);
-  g.userData.book = { setOpen, turn, update, corner, state: st };
+  g.userData.book = { setOpen, openTo, turn, update, corner, state: st };
   return g;
 }
 const clamp01 = x => Math.max(0, Math.min(1, x));
@@ -565,7 +568,7 @@ export function buildProps(ctx) {
   place('door', plankDoor(2.0), .33, BD, 1.82, { ry: -Math.PI / 2, solid: false });
   place('hooks', bake(coatHooks()), .17, BD + 1.6, .97, { solid: false, wall: true });
   { const b = closedBook(.035, .2, .15, M.covers[4]); b.rotation.set(0, .6, Math.PI / 2); b.position.set(.25, 1.07 + .045 + .15 + .03, .12); bunk.add(b); }
-  { const s = switchPlate(); s.position.set(.37, BD + 1.15, 2.5); s.rotation.y = -Math.PI / 2; scene.add(s); }
+  { /* on the bedroom's right wall beside the door (the door opening is z 2.3..3.25), at hand height */ const s = switchPlate(); s.position.set(.372, BD + 1.15, 2.12); s.rotation.y = -Math.PI / 2; scene.add(s); s.name = 'switch'; out.switches = { bedroom: s }; }
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const b = closedBook(bw, rr(.16, .22), .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12); s.add(b); x += bw + .003; } const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
 
@@ -597,7 +600,23 @@ export function buildProps(ctx) {
     o.scale.setScalar(((o.userData.home && o.userData.home.scale) || 1) / ws); if (rot) o.quaternion.copy(rot); else o.quaternion.identity();
     const grip = (o.userData.grip || V()).clone().applyQuaternion(o.quaternion).multiplyScalar(o.scale.x); o.position.copy(offset).multiplyScalar(1 / ws).sub(grip); return o;
   };
-  out.release = (name) => { const o = out.tools[name]; const h = o && o.userData.home; if (!h) return; h.parent.add(o); o.position.copy(h.pos); o.quaternion.copy(h.quat); o.scale.setScalar(h.scale || 1); };
+  // release(name) snaps the tool home; release(name, { blend: .4 }) lets go where the hand is and eases it onto its hook / spot
+  const homing = new Map();
+  out.release = (name, { blend = 0 } = {}) => { const o = out.tools[name]; const h = o && o.userData.home; if (!h) return;
+    if (blend > 0 && o.parent !== h.parent) { h.parent.attach(o); homing.set(o, { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.x, t: 0, d: blend, h }); return; }
+    homing.delete(o); h.parent.add(o); o.position.copy(h.pos); o.quaternion.copy(h.quat); o.scale.setScalar(h.scale || 1); };
+  // world spot where the tool lives (hook or bench), so the hand can reach there before release
+  out.toolHome = (name, target = V()) => { const o = out.tools[name]; const h = o && o.userData.home; if (!h) return null; h.parent.updateMatrixWorld(true); return target.copy(h.pos).applyMatrix4(h.parent.matrixWorld); };
+  // chair: chairPull(k) slides it back from the table by k * 0.2 m (0 = its home, where the seated pose is fitted).
+  // Character: pull to 1 on the approach, ease back to 0 as the hips land (he scoots in), 1 again when he gets up.
+  let chHome = null, chDir = null, chBox0 = null; const chairSt = { k: 0, to: 0, rate: 1 / .5 };
+  out.chairPull = (k, sec = .5) => { if (!chHome) { /* taken on first use, after the room shift */ chHome = chairO.position.clone(); const tb = placed.table; chDir = tb ? chHome.clone().sub(tb.userData.box.getCenter(V())).setY(0).normalize() : V(0, 0, 1); chBox0 = chairO.userData.box.clone(); }
+    chairSt.to = clamp01(k); chairSt.rate = 1 / Math.max(.05, sec); };
+  function tweens(dt) {
+    for (const [o, m] of homing) { m.t = Math.min(1, m.t + dt / m.d); const e = m.t * m.t * (3 - 2 * m.t); o.position.copy(m.p).lerp(m.h.pos, e); o.quaternion.copy(m.q).slerp(m.h.quat, e); o.scale.setScalar(m.s + ((m.h.scale || 1) - m.s) * e); if (m.t >= 1) homing.delete(o); }
+    if (chairSt.k !== chairSt.to) { const d = chairSt.to - chairSt.k, st = chairSt.rate * dt; chairSt.k = Math.abs(d) <= st ? chairSt.to : chairSt.k + Math.sign(d) * st; const e = chairSt.k * chairSt.k * (3 - 2 * chairSt.k);
+      const off = chDir.clone().multiplyScalar(.2 * e); chairO.position.copy(chHome).add(off); chairO.updateMatrixWorld(true); chairO.userData.box.copy(chBox0).translate(off); }
+  }
   out.chairO = chairO; out.bunk = bunk;
   out.lanternHousing = (parent, rod = .15) => { const h = lanternHousing(rod); bake(h); parent.add(h); return h; };
   void tq;
@@ -629,7 +648,8 @@ export function buildProps(ctx) {
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
-    out.oven.setHeat(heat); void cooking; // lights.js owns the oven heat (passed in as heat) tAcc += dt; out.oven.flicker(tAcc);
+    out.oven.setHeat(heat); void cooking; /* lights.js owns the oven heat (passed in as heat) */ tAcc += dt; out.oven.flicker(tAcc);
+    tweens(dt);
   };
   // ---------- stovepipe: from the hood duct across the kitchen ceiling, out through the left wall,
   // then up outside the bedroom wall past the eaves, with a rain cap (smoke.js reads out.chimneyTop) ----------
