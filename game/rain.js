@@ -52,7 +52,7 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
      vec4 v=mix(a,b,position.y);v.xy+=vec2(d.y,-d.x)*position.x*max(.006,-a.z*.0026);/* about 1.5 px on screen at any distance */
      vA=on*(.14+.16*position.y)*(.55+.45*uSF)*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
     `varying float vA;void main(){gl_FragColor=vec4(uCol,vA);}`));
-  drops.material.uniforms.uKeep = { value: 1 }; drops.frustumCulled = false; drops.renderOrder = 8; drops.visible = false; scene.add(drops);
+  drops.material.uniforms.uKeep = { value: 1 }; drops.frustumCulled = false; drops.renderOrder = 8; drops.visible = false; scene.add(drops); drops.matrixAutoUpdate = false;
 
   // ---------------- splashes and drips (filled in once the height map is done) ----------------
   let splash = null, drips = null;
@@ -71,7 +71,7 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
       `varying float vA;varying vec2 vUv;void main(){float r=length(vUv*vec2(1.,1.3));
        float crown=smoothstep(.55,.8,r)*smoothstep(1.,.85,r)*(.6+.4*sin(atan(vUv.y,vUv.x)*9.));
        float a=(crown+smoothstep(.25,0.,length(vUv-vec2(0.,.35)))*.6)*vA;if(a<.01)discard;gl_FragColor=vec4(uCol*1.15,a);}`));
-    splash.material.uniforms.uKeep = { value: 1 }; splash.frustumCulled = false; splash.renderOrder = 8; splash.visible = drops.visible; scene.add(splash);
+    splash.material.uniforms.uKeep = { value: 1 }; splash.frustumCulled = false; splash.renderOrder = 8; splash.visible = drops.visible; scene.add(splash); splash.matrixAutoUpdate = false;
 
     // drips: where a roof/deck cell drops off to something much lower next to it. Find the edge more exactly with a few rays.
     const edges = [];
@@ -99,7 +99,7 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
        v.xy+=vec2(position.x*.0065*(.5+.5*grow),(position.y-.5)*.016*st);vUv=vec2(position.x,position.y*2.-1.);
        vA=on*.8*smoothstep(1.,3.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
       `varying float vA;varying vec2 vUv;void main(){float a=smoothstep(1.,.3,length(vUv))*vA;if(a<.01)discard;gl_FragColor=vec4(uCol*1.3,a);}`));
-    drips.frustumCulled = false; drips.renderOrder = 8; drips.visible = drops.visible; scene.add(drips);
+    drips.frustumCulled = false; drips.renderOrder = 8; drips.visible = drops.visible; scene.add(drips); drips.matrixAutoUpdate = false;
     R.mesh.splash = splash; R.mesh.drips = drips;
   }
 

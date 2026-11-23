@@ -53,3 +53,10 @@ Code: index.html, block "wood: every board is its own body" (`plankShader`, `bev
 - Slates: a soft shadow band on each slate's top just under the butt of the slate above (vDn = downslope sign per instance), so the overlap reads as depth.
 - Wooden ladder rungs: board opt rung → seed +400 (wall flag excludes ≥400). The middle of the top and the front edge are worn pale and smooth, and the ends are grimy.
 - Rope-ladder rungs: rungWear(rungMat) samples the dark wood scan along the stick and adds bark scraps near the ends, a polished middle and grime by the lashings. Rungs are 9-sided with varied radius and taper. Same draw calls.
+
+## Round 10: perf (phone profile)
+- tests/planks/perf_planks.js (iPhone 13 emulation) reports screen coverage of boards/beams/slates and the render time of those meshes alone, with the real shader vs a plain MeshStandardMaterial (SwiftShader CPU time as a proxy for fragment work).
+- Before: the real shader cost 4.5–6× plain. Boards+beams cover 25–50% of a typical frame and slates 80–90% of a roof close-up.
+- LOD: plank() and slate() compute metres per pixel from dFdx/dFdy of the local position. Far boards (> ~5 mm/px) skip the 3 bump taps, the pTop cupping differences and the nail heads. Far slates (> ~7 mm/px) skip the bump taps, crack relief, lichen and moss relief. Everything fades in with distance (no pop). Measured: default view −43%, overview −28%, kitchen −11%, roof −12%.
+- textureGrad inside the branch was slower (SwiftShader), so it stays texture2D with bias.
+- Shadows on phones: only the sun/moon map (every 3rd frame); boards+beams cast 42k tris there, slates don't cast. Splitting interior floors out would add a draw call per pass for a few k tris, so it's not done.
