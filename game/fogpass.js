@@ -18,6 +18,7 @@
 // Toggle for comparisons: __fogpass.setEnabled(false) draws the fog the old way (full resolution, in the scene).
 
 export const FOG_LAYER = 7;  // [ENV] was 5, which the roof shingles also use (index: SHING.layers.set(5) to skip lamp shadows): the fog pass drew the roofs into its depth-less target, black over everything
+let lightT = 0;   // [WIND] frames until the next check for new lights (see render)
 
 export function createFogPass({ THREE, renderer, scene, camera, composer, FullScreenQuad, Pass, MOBILE = false }) {
   const rt = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });
@@ -75,6 +76,9 @@ void main(){fpMain();gl_FragColor.a*=fpOcc();
       for (const u of envU) { if (!saved.has(u.tDepth)) saved.set(u.tDepth, [u.tDepth.value, u.uRes.value.clone()]);
         u.tDepth.value = read.depthTexture; u.uRes.value.set(w, h); u.cNear.value = camera.near; u.cFar.value = camera.far; } FP.fpNear.value = camera.near; FP.fpFar.value = camera.far; FP.fpOn.value = read.depthTexture ? 1 : 0;
       const mask = camera.layers.mask, bg = scene.background, su = rd.shadowMap.autoUpdate, ac = rd.autoClear, cc = rd.getClearAlpha(), col = rd.getClearColor(new THREE.Color());
+      // the lights must pass this layer too: three keeps one light list per scene, and a pass that sees no lights changes
+      // its hash, so on the next main render EVERY lit material re-checks its program (~130 getProgram calls a frame on a phone)
+      if ((lightT -= 1) <= 0) { lightT = 120; scene.traverse(o => { if (o.isLight) o.layers.enable(FOG_LAYER); }); }
       camera.layers.set(FOG_LAYER); scene.background = null; rd.shadowMap.autoUpdate = false;
       rd.setRenderTarget(rt); rd.setClearColor(0x000000, 0); rd.clear(true, false, false); rd.autoClear = false;
       rd.render(scene, camera);
