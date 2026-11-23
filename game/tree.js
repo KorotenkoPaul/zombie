@@ -202,6 +202,13 @@ export function buildTree(THREE, o) {
     const picked = [];
     for (const c of cand) { if (picked.length >= (o.leafClumps || 24)) break; if (picked.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.8)) continue; picked.push(c); }
     for (const c of picked) leafSpots.push({ p: V(c[0], c[1] + 0.3, c[2]), s: c[1] > 15 ? rnd(2.3, 2.9) : rnd(1.6, 2.2) });
+    // the crown: the photo's top is a full canopy of big clumps with only small sky gaps
+    const top = [];
+    for (let i = 0; i < P.length; i += 3) if (P[i + 1] > 15.2 && Math.abs(P[i] - AX) < 7.5) top.push([P[i], P[i + 1], P[i + 2]]);
+    for (let j = top.length - 1; j > 0; j--) { const r = Math.floor(rnd(0, j + 1)); [top[j], top[r]] = [top[r], top[j]]; }
+    const crown = [];
+    for (const c of top) { if (crown.length >= 10) break; if ([...crown, ...picked].some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.2)) continue; crown.push(c); }
+    for (const c of crown) leafSpots.push({ p: V(c[0], c[1] + 1.0, c[2] + 0.4), s: rnd(2.3, 2.9) });
   }
   const M = 0.1;
   for (let i = 0; i < P.length; i += 3) {
@@ -248,7 +255,7 @@ export function buildTree(THREE, o) {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
-  const total = MOB(o) ? 460 : 720;
+  const total = MOB(o) ? 600 : 950;
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   const qg = new THREE.PlaneGeometry(1, 1);
   const im = new THREE.InstancedMesh(qg, lmat, total);
