@@ -45,3 +45,10 @@
 - Stove crackle (fire bed) and old fridge hum (fridge_hum at ctx.fridge or (-1.43, KT+0.8, 1.38)) are steep-rolloff positional beds that are not played at all when the camera is further than 14 m / 7 m. Fridge cycles on 40-90 s / off 25-60 s.
 - Phones (`mobile: MOBILE` from index.html): max 9 voices, 1.7 s forest reverb; 32 kHz context; lazy decode with LRU.
 - iOS unlock: document-level touchend/click/pointerup/keydown (capture) start or resume the context and play a 1-sample silent buffer the first time; re-armed after an 'interrupted' state (calls, Siri). Works the same in Safari and home-screen (standalone) mode. The ring/silent switch still mutes Web Audio on iOS (system behaviour).
+
+## Round 7: the hero's body (all quiet)
+- Names: breath_climb, breath_heavy (breath), grunt (lift, effort), cloth (rustle), zip_up (zip), zip_down (unzip, jacket_off), sigh.
+- Body sounds (breath, grunt, sigh) never overlap (1.6 s lock) and are not priority: on a full phone voice cap they are the first to be skipped.
+- Automatic: breath while climbing up (every 2.2-3.4 s), cloth rustle when he sets off and every 4-9 s while walking.
+- `__audio.carry(true|false)`: Character calls it when he picks up / puts down logs or a bucket; it grunts on pick-up and breathes heavier while walking with the load.
+- Sigh at the telescope / ledge: Character calls `__audio.play('sigh')` when he settles.

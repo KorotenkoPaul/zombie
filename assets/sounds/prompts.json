@@ -678,5 +678,61 @@
 "fridge_click": [
 "an old refrigerator compressor clicking on and starting to hum, close, natural recording",
 2
+],
+"breath_climb_a": [
+"a young man breathing steadily through the nose and mouth while climbing a ladder, two slow effort breaths, soft, close, no words",
+2.5
+],
+"breath_climb_b": [
+"calm exertion breathing of a man climbing, short soft inhale and exhale, close, no voice",
+2
+],
+"breath_heavy_a": [
+"a young man breathing a bit heavier while carrying something heavy, soft exhale, close, no words",
+2.5
+],
+"breath_heavy_b": [
+"quiet effortful breath out while carrying a load, soft, close, no words",
+1.5
+],
+"grunt_a": [
+"a very soft short effort grunt of a young man lifting a log, subtle, close, no words",
+1
+],
+"grunt_b": [
+"a quiet low hmph of effort when picking up a heavy bucket, subtle, close, no words",
+1
+],
+"grunt_c": [
+"a small soft exhale with effort while lifting, subtle, close, no words",
+1
+],
+"cloth_a": [
+"soft rustle of a wool sweater and leather vest as a person moves their arms, short, close, foley",
+1
+],
+"cloth_b": [
+"brief fabric and leather rustle of clothes when turning around, short, close, foley",
+0.8
+],
+"cloth_c": [
+"soft cotton trousers and sweater rustle, a single movement, close, foley",
+0.8
+],
+"zip_up": [
+"zipping up a jacket zipper quickly, close, foley",
+1.2
+],
+"zip_down": [
+"unzipping a jacket zipper, close, foley",
+1.2
+],
+"sigh_a": [
+"a calm, content soft sigh of a young man looking into the distance, quiet, close, no words",
+2
+],
+"sigh_b": [
+"a slow thoughtful sigh, relaxed and quiet, close, no words",
+2.5
 ]
 }

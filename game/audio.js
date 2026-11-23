@@ -389,7 +389,7 @@ export function createAudio(ctx) {
   // ---------- footsteps: surface under the foot, at the moment the foot lands ----------
   // Character can drive them exactly with __audio.footstep(side, pos?, {surface}); until it does, audio.js watches
   // the toe bones itself: a foot that comes down to the floor after being lifted is a step.
-  let gnow = 0, dbgF = null, autoFeet = true, ladderNext = 0, cadNext = 0, cadSide = 'L', frameDt = .016;
+  let gnow = 0, breathNext = 0, clothNext = 0, moving = false, carrying = false, dbgF = null, autoFeet = true, ladderNext = 0, cadNext = 0, cadSide = 'L', frameDt = .016;
   const FT = { boards: ['step_wood_a', 'step_wood_b', 'step_wood_c'], dirt: ['fs_dirt_a', 'fs_dirt_b', 'fs_dirt_c'], wet: ['fs_wet_a', 'fs_wet_b', 'fs_wet_c'],
     leaves: ['fs_leaves_a', 'fs_leaves_b', 'fs_leaves_c'], ladder: ['fs_ladder_a', 'fs_ladder_b'], rope: ['fs_rope_a', 'fs_rope_b'] };
   const FV = { boards: .2, dirt: .2, wet: .22, leaves: .24, ladder: .22, rope: .24 };
@@ -410,8 +410,13 @@ export function createAudio(ctx) {
   function feet(p, mv, vy, env) {
     const B2 = ctx.bones; if (!B2) return;
     // climbing: a rung every ~0.45 s
-    if (Math.abs(vy) > .25 && mv < .35) { if (gnow > ladderNext) { step('L', { x: p.x, y: p.y + .2, z: p.z }, ctx.ropeAt && ctx.ropeAt(p) ? 'rope' : 'ladder'); ladderNext = gnow + rnd(.4, .55); } return; }
-    if (mv < .25) { footSt.L.armed = footSt.R.armed = false; return; }
+    if (Math.abs(vy) > .25 && mv < .35) { if (vy > 0 && gnow > breathNext) { playAct('breath_climb'); breathNext = gnow + rnd(2.2, 3.4); }
+      if (gnow > ladderNext) { step('L', { x: p.x, y: p.y + .2, z: p.z }, ctx.ropeAt && ctx.ropeAt(p) ? 'rope' : 'ladder'); ladderNext = gnow + rnd(.4, .55); } return; }
+    if (mv < .25) { footSt.L.armed = footSt.R.armed = false; moving = false; return; }
+    // clothes rustle as he sets off, and now and then on the way; heavier breath when carrying something
+    if (!moving || gnow > clothNext) { if (!moving && Math.random() < .55 || moving) playAct('cloth', { x: p.x, y: p.y + 1.1, z: p.z }); clothNext = gnow + rnd(4, 9); }
+    moving = true;
+    if (carrying && gnow > breathNext) { playAct('breath_heavy'); breathNext = gnow + rnd(2.8, 4.5); }
     // slow frames (a weak phone, a background tab): the toe lift falls between frames, so walk by cadence instead
     if (frameDt > .08) { if (gnow > cadNext) { cadSide = cadSide === 'L' ? 'R' : 'L'; step(cadSide, p, surfaceAt(p, env), Math.min(1.2, .6 + mv * .4)); cadNext = gnow + .62 / Math.max(.6, mv); } return; }
     for (const [side, bn] of [['L', B2.LeftToeBase || B2.LeftFoot], ['R', B2.RightToeBase || B2.RightFoot]]) {
@@ -518,7 +523,11 @@ export function createAudio(ctx) {
     drip_bucket: { c: ['drip_bucket_a', 'drip_bucket_b'], v: .22, rate: .12 }, bucket_dump: { c: ['bucket_dump'], v: .45, out: 1 },
     hatch_open: { c: ['hatch_open'], v: .45 }, hatch_close: { c: ['hatch_close'], v: .5 },
     nails: { c: ['nail_a', 'nail_b', 'hammer_b'], v: .48, out: 1 }, saw_shingle: { c: ['saw_shingle'], v: .42, out: 1 },
-    bed_turn: { c: ['bed_turn_a', 'bed_turn_b', 'blanket'], v: .3 }, snore: { c: ['snore_a', 'snore_b'], v: .16, rate: .05 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
+    bed_turn: { c: ['bed_turn_a', 'bed_turn_b', 'blanket'], v: .3 },
+    // the hero's body: always quiet, one at a time (see body())
+    breath_climb: { c: ['breath_climb_a', 'breath_climb_b'], v: .15, body: 1 }, breath_heavy: { c: ['breath_heavy_a', 'breath_heavy_b'], v: .16, body: 1 },
+    grunt: { c: ['grunt_b', 'grunt_c'], v: .18, body: 1 }, cloth: { c: ['cloth_a', 'cloth_b', 'cloth_c'], v: .13, rate: .08 },
+    zip_up: { c: ['zip_up'], v: .26 }, zip_down: { c: ['zip_down'], v: .26 }, sigh: { c: ['sigh_a', 'sigh_b'], v: .2, body: 1 }, snore: { c: ['snore_a', 'snore_b'], v: .16, rate: .05 }, creak: { c: ['creak_a'], v: .25 }, footsteps: { c: ['step_a'], v: .25 },
   };
   // the 20 approved actions by their plain names (Character may call either)
   const ALIAS = { tea: 'tea_pour', kettle_tea: 'kettle', chopping: 'chop_veg', vegetables: 'chop_veg', stir_pot: 'stir', stove_wood: 'firewood_oven', dishes: 'wash',
@@ -527,7 +536,8 @@ export function createAudio(ctx) {
     carry_firewood: 'firewood_carry', armful: 'firewood_carry', listen: 'window',
     bow: 'bow_release', shoot: 'bow_release', fridge: 'fridge_open', meat: 'meat_pan', fry: 'meat_pan', eating: 'eat', forest: 'forest_steps', forest_walk: 'forest_steps', logs_to_pile: 'woodpile', put_on_jacket: 'jacket',
     pond: 'bucket_fill', fill_bucket: 'bucket_fill', carry_water: 'slosh', water_tap: 'tap', drain_drip: 'drip_bucket', dump_water: 'bucket_dump', hatch: 'hatch_open', trapdoor: 'hatch_open',
-    repair_nail: 'nails', roof_nail: 'nails', shingle: 'saw_shingle', turn_over: 'bed_turn', snoring: 'snore' };
+    repair_nail: 'nails', roof_nail: 'nails', shingle: 'saw_shingle', turn_over: 'bed_turn', snoring: 'snore',
+    lift: 'grunt', effort: 'grunt', breath: 'breath_heavy', zip: 'zip_up', unzip: 'zip_down', jacket_off: 'zip_down', rustle: 'cloth' };
   const P0 = { x: 0, y: 0, z: 0 };
   function toPos(p) {
     if (!p) { const r = ctx.hero && ctx.hero.root; return r ? { x: r.position.x, y: r.position.y + 1, z: r.position.z } : P0; }
@@ -545,12 +555,16 @@ export function createAudio(ctx) {
     const a = ACT[name] || ACT[ALIAS[name]];
     const clip = a ? pick(a.c) : RAW[name] ? name : null;
     if (!clip) { console.warn('audio: no sound', name); return null; }
+    if (a && a.body) { if (A.currentTime < bodyUntil) return null; }
     const opts = actOpts(a || { v: .4 }, pos, Object.assign({ outdoor: a && a.out }, o));
+    if (a && (a.body || a === ACT.cloth)) opts.prio = false;   // a breath is the first thing to give up its voice
+    if (a && a.body) bodyUntil = A.currentTime + 1.6;
     const h = { v: null, dead: false, stop: (f = .15) => { h.dead = true; stopVoice(h.v, f); } };
     if (B[clip]) h.v = voice(clip, opts);
     else decode(clip).then(() => { if (!h.dead && !muted) h.v = voice(clip, opts); });   // first use: decoded in a few ms, then played
     return h;
   }
+  let bodyUntil = 0;
   const loops = new Set();
   function loopAct(name, pos, o = {}) {
     const a = ACT[name] || ACT[ALIAS[name]]; if (!a) return null;
@@ -578,7 +592,7 @@ export function createAudio(ctx) {
 
   const api = {
     start, update, mute: setMute, muted: () => muted, started: () => started, loaded: () => loaded, actionsReady: () => actLoaded, actions: () => Object.keys(ACT).concat(Object.keys(ALIAS)),
-    loop: loopAct, autoSleep: b => { autoSleep = !!b; },
+    loop: loopAct, carry: b => { carrying = !!b; if (b) playAct('grunt'); }, autoSleep: b => { autoSleep = !!b; },
     footstep: (side, pos, o = {}) => { autoFeet = false; const q = toPos(pos); step(side, q, o.surface || surfaceAt(q, envNow), o.gain ?? 1); },
     on: (k, f) => { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     setSeason: s => { season0 = s || null; populate(Object.keys(L), { season: season(), rain: 0, wind }); },
