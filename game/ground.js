@@ -85,10 +85,11 @@ export function createGround(C){const __before=new Set(C.scene.children);
  // the side track is narrower and fainter than the main path (fewer trips), widening a little where it meets it
  const exitD=(x,z)=>segD(EXIT,x,z)-(.2+.06*smooth(3,0,Math.hypot(x-1.4,z-7.2))+(vnoise(x*1.9+4,z*1.9)-.5)*.16);
  // ---- the pond: a small still forest pool a short walk left of the oak (water for the sink), with a muddy bank and its own track ----
- const POND={x:-8.4,z:9.2,rx:2.7,rz:1.9,a:.35};
+ // in front of the oak, left of the ladder path, so it shows from the default camera view (moved from (-8.4,9.2) on Pavel's ask)
+ const POND={x:-2.3,z:9.0,rx:2.1,rz:1.4,a:-.15};
  const pondD=(x,z)=>{const dx=x-POND.x,dz=z-POND.z,c=Math.cos(POND.a),sn=Math.sin(POND.a);const u=(dx*c+dz*sn)/POND.rx,v=(-dx*sn+dz*c)/POND.rz;const r=Math.hypot(u,v);
   const an=Math.atan2(v,u);const wob=1+(vnoise(Math.cos(an)*1.4+5,Math.sin(an)*1.4+2)-.5)*.32;return (r-wob)*(POND.rx+POND.rz)*.5;};
- const PTRACK=[[.2,10.8],[-1.7,11.1],[-3.6,10.8],[-5.2,10.2],[-6.2,9.9]];
+ const PTRACK=[[1.2,9],[.2,9.5],[-.4,9.5]];
  const ptrackD=(x,z)=>segD(PTRACK,x,z)-(.19+(vnoise(x*2.1+8,z*2.1)-.5)*.14);
  const trackD=(x,z)=>Math.min(pathMain(x,z),exitD(x,z),ptrackD(x,z));
  // everything that keeps off the paths keeps off the water and its bare muddy rim too (and the ground shader paints that rim as wet earth)
@@ -112,6 +113,10 @@ export function createGround(C){const __before=new Set(C.scene.children);
  {const E=window.__env;if(E&&E.update&&!E.__groundHook){const o=E.update;E.update=s=>{ST.rainK=s.rainK||0;ST.mornK=s.mornK||0;ST.nightK=s.nightK||0;ST.T=s.T||0;return o(s);};E.__groundHook=true;}}
  // the hero's feet: grass leans away from him when he walks through it
  const heroU={value:new THREE.Vector3(0,-99,0)};const critU={value:new THREE.Vector3(0,-99,0)};
+ // events for Sound: __ground.on('critter', e => ...) with e = {kind, act, pos:[x,y,z], id, dur?}
+ const LST={};G.on=(type,fn)=>{(LST[type]=LST[type]||[]).push(fn);return ()=>{LST[type]=LST[type].filter(f=>f!==fn);};};
+ const emit=(kind,act,x,y,z,id,extra)=>{const L=LST.critter;if(!L||!L.length)return;const e=Object.assign({kind,act,pos:[x,y,z],id},extra||{});for(const f of L){try{f(e);}catch(err){console.error(err);}}};
+
  const wetFrag=(k)=>`{float wet=uWet*${k};roughnessFactor=mix(roughnessFactor,.32,wet);}`;
  const addWet=(s,k)=>{s.uniforms.uWet=wetU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nuniform float uWet;').replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n'+wetFrag(k));};
  // contact-shadow texture for the ground shader: dark right at the wood, fading over ~1 m
@@ -473,7 +478,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    fi.count=nf;scene.add(fi);}
   // reeds: tall, slim, dark blades in clumps along the back of the pond, swaying with the grass
   {const reedG=tuftGeo(MOBILE?9:14,MOBILE?3:5,91,.55,1.15,.22);const NR=MOBILE?9:14;const im=new THREE.InstancedMesh(reedG,grassMat,NR);let n=0;
-   for(let t=0;t<600&&n<NR;t++){const x=POND.x+rr(-3.4,3.4),z=POND.z+rr(-2.6,2.6);const d=pondD(x,z);if(d<-.3||d>.25||x>POND.x+1.2||rootD(x,z)<.5)continue;
+   for(let t=0;t<600&&n<NR;t++){const x=POND.x+rr(-3.4,3.4),z=POND.z+rr(-2.6,2.6);const d=pondD(x,z);if(d<-.3||d>.25||x>POND.x+1.2||z>POND.z+.3||rootD(x,z)<.5)continue;// back and left banks: the camera side stays open
     const sz=rr(.8,1.25);M.compose(V(x,Math.max(level-.05,groundH(x,z)-.02),z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(.7,1),sz,sz*rr(.7,1)));im.setMatrixAt(n,M);Col.setHSL(rr(.2,.27),rr(.25,.4),rr(.3,.42));im.setColorAt(n,Col);n++;}
    im.count=n;im.receiveShadow=true;scene.add(im);G.reeds=im;}
   // stones on the bank, half in the mud
@@ -490,8 +495,8 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const fill=V(fx+dir.x*.12,level,fz+dir.z*.12);const stand=V(fx-dir.x*.42,0,fz-dir.z*.42);stand.y=groundH(stand.x,stand.z);
   const P3=(x,z)=>V(x,groundH(x,z),z);
   G.pond={mesh:water,level,x:POND.x,z:POND.z,r:(POND.rx+POND.rz)*.5,radius:(POND.rx+POND.rz)*.5,center:V(POND.x,level,POND.z),fill,stand,face:Math.atan2(dir.x,dir.z),
-   path:[...[[0,4.3],[.5,5.6],[1.4,7.2],[1.2,9],[.2,10.8]],...PTRACK.slice(1)].map(([x,z])=>P3(x,z)).concat([stand]),
-   nodes:{g_foot:P3(0,4.3),g_path2:P3(1.2,9),g_pfork:P3(.2,10.8),g_ptrack:P3(-3.6,10.8),g_pond:stand},pondD};
+   path:[...[[0,4.3],[.5,5.6],[1.4,7.2],[1.2,9]],...PTRACK.slice(1)].map(([x,z])=>P3(x,z)).concat([stand]),
+   nodes:{g_foot:P3(0,4.3),g_path2:P3(1.2,9),g_pfork:P3(1.2,9),g_pond:stand},pondD};
   G._pond=(dt,cam)=>{WU.uT.value+=dt;const E2=window.__env;if(E2&&E2.moonRim){WU.uMoon.value.copy(E2.moonRim.dir.value);WU.uNight.value=E2.moonRim.strength.value;}
    const fc=scene.fog&&scene.fog.color;if(fc){WU.uSky.value.copy(fc);WU.uDeep.value.copy(fc).multiplyScalar(.12).add(Col.setRGB(.01,.018,.016));}};}
 
@@ -681,7 +686,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     grp.userData.legs=[];for(const [lx,lz] of [[-1,1],[1,1],[-1,-1],[1,-1]]){const L=new THREE.Mesh(lg,lm);L.position.set(lx*(hog?.06:.018),hog?.05:.03,lz*(hog?.08:.03));grp.add(L);grp.userData.legs.push(L);}}
    grp.traverse(o=>{if(o.isMesh){o.castShadow=!MOBILE;o.receiveShadow=true;}});grp.visible=false;scene.add(grp);return grp;};
   const critters={hog:mk('hog'),mouse:mk('mouse')};G.critters=critters;
-  let cur=null,wait=rr(25,50),route=null,ti=0,pause=0,dist=0;
+  let cur=null,wait=rr(25,50),route=null,ti=0,pause=0,dist=0,curl=0,scared=false,lastStep=0;
   // a route from the forest edge, around the trunk (never through the roots), into the forest on the other side
   const plan=()=>{const a0=rr(0,6.28),a1=a0+Math.PI*rr(.6,1.4)*(R()<.5?1:-1);const pts=[];const N=40;
    for(let i=0;i<=N;i++){const t=i/N;const a=a0+(a1-a0)*t;const r=lerp3(17,rr(6,9),17,t);pts.push(V(Math.cos(a)*r,0,Math.sin(a)*r));}
@@ -691,17 +696,23 @@ export function createGround(C){const __before=new Set(C.scene.children);
     for(const p of (G.puddleSpots||[])){const px=p.x??p[0],pz=p.z??p[1],pr=(p.r??p[2]??.6)+.15;const dx=q.x-px,dz=q.z-pz,d=Math.hypot(dx,dz);if(d<pr){const k2=(pr-d)/Math.max(d,1e-3);q.x+=dx*k2;q.z+=dz*k2;}}
     q.y=groundH(q.x,q.z);}return new THREE.CatmullRomCurve3(pts);};
   const lerp3=(a,b,c,t)=>t<.5?a+(b-a)*smooth(0,.5,t):b+(c-b)*smooth(.5,1,t);
-  G._critters=(dt)=>{if(!cur){wait-=dt*(1+eve());if(wait>0)return;cur=critters[R()<.55?'hog':'mouse'];route=plan();dist=0;pause=0;cur.position.copy(route.getPointAt(0));cur.rotation.y=Math.atan2(...(()=>{const a=route.getPointAt(0),b=route.getPointAt(.01);return [b.x-a.x,b.z-a.z];})());cur.visible=true;return;}
-   const u=cur.userData;const L=route.getLength();
-   if(pause>0){pause-=dt;u.head.rotation.y=Math.sin(pause*6)*.4;}
-   else{dist+=dt*u.speed*(u.dash?(.75+.35*Math.sin(dist*1.6)):1);if(R()<dt*(u.dash?.5:.25))pause=rr(.6,2.2);u.head.rotation.y*=.9;}
+  G._critters=(dt)=>{if(!cur){wait-=dt*(1+eve());if(wait>0)return;cur=critters[R()<.55?'hog':'mouse'];route=plan();dist=0;pause=0;curl=0;scared=false;lastStep=0;cur.position.copy(route.getPointAt(0));{const p0=route.getPointAt(0);emit(cur===critters.hog?'hedgehog':'mouse','appear',p0.x,p0.y,p0.z,cur===critters.hog?'hedgehog':'mouse');}cur.rotation.y=Math.atan2(...(()=>{const a=route.getPointAt(0),b=route.getPointAt(.01);return [b.x-a.x,b.z-a.z];})());cur.visible=true;return;}
+   const u=cur.userData;const L=route.getLength();const kind=cur===critters.hog?'hedgehog':'mouse';const P=cur.position;
+   // the hero close by: the hedgehog curls up and waits; the mouse bolts along its way
+   {const h=heroU.value;const near=h.y>-50&&h.y<groundH(h.x,h.z)+.6&&Math.hypot(h.x-P.x,h.z-P.z)<2.5;
+    if(near&&!scared){scared=true;if(u.dash)emit(kind,'flee',P.x,P.y,P.z,kind);else{curl=rr(4,7);pause=0;emit(kind,'curl',P.x,P.y,P.z,kind);}}if(!near&&curl<=0)scared=false;}
+   if(curl>0){curl-=dt;cur.scale.setScalar(1);cur.children[0]&&(u.head.rotation.x=Math.min(.9,u.head.rotation.x+dt*3));if(curl<=0){u.head.rotation.x=0;emit(kind,'uncurl',P.x,P.y,P.z,kind);}}
+   else if(pause>0){pause-=dt;u.head.rotation.y=Math.sin(pause*6)*.4;}
+   else{dist+=dt*u.speed*(u.dash?(.75+.35*Math.sin(dist*1.6)):1)*(scared&&u.dash?2.5:1);if(!scared&&R()<dt*(u.dash?.5:.25)){pause=rr(.6,2.2);emit(kind,'sniff',P.x,P.y,P.z,kind,{dur:pause});}u.head.rotation.y*=.9;
+    // footsteps in the litter: one event every few strides (Sound rate-limits)
+    if(dist-lastStep>(u.dash?.35:.25)){lastStep=dist;emit(kind,u.dash&&scared?'dash':'step',P.x,P.y,P.z,kind);}}
    const t=Math.min(1,dist/L);const pos=route.getPointAt(t),ahead=route.getPointAt(Math.min(1,t+.01));
    cur.position.copy(pos);cur.position.y=groundH(pos.x,pos.z)+(pause>0?0:Math.abs(Math.sin(dist*u.step))*u.bob);
    // turn smoothly toward the way ahead (no snapping on tight bends)
    {const want=Math.atan2(ahead.x-pos.x,ahead.z-pos.z);let d=want-cur.rotation.y;d=Math.atan2(Math.sin(d),Math.cos(d));cur.rotation.y+=d*Math.min(1,dt*6);}
    if(u.legs){const ph=dist*u.step*.5;u.legs.forEach((L,i)=>{L.rotation.x=pause>0?L.rotation.x*.85:Math.sin(ph+((i===0||i===3)?0:Math.PI))*.6;});}
    critU.value.set(pos.x,cur.position.y,pos.z);
-   if(t>=1){cur.visible=false;cur=null;critU.value.set(0,-99,0);wait=rr(70,160);}};
+   if(t>=1){emit(kind,'leave',P.x,P.y,P.z,kind);cur.visible=false;cur=null;critU.value.set(0,-99,0);wait=rr(70,160);}};
   G.spawnCritter=k=>{wait=0;if(cur){cur.visible=false;cur=null;}if(k){cur=critters[k];route=plan();dist=0;pause=0;cur.visible=true;}};}
  // ---- night ground mist: a soft, slowly curling wisp of low fog round the hero's feet and the critters' feet ----
  // three thin horizontal layers (5, 12 and 22 cm up) of procedural fog; a few quads, no extra passes, so it costs nothing on a phone
@@ -726,9 +737,6 @@ export function createGround(C){const __before=new Set(C.scene.children);
  // ================= daytime life: butterflies, ground birds, a squirrel =================
  // All code-animated and instanced (one draw call each), only by day, and they all keep away from the hero.
  const dayK=()=>1-eve();
- // events for Sound: __ground.on('critter', e => ...) with e = {kind, act, pos:[x,y,z], id, dur?}
- const LST={};G.on=(type,fn)=>{(LST[type]=LST[type]||[]).push(fn);return ()=>{LST[type]=LST[type].filter(f=>f!==fn);};};
- const emit=(kind,act,x,y,z,id,extra)=>{const L=LST.critter;if(!L||!L.length)return;const e=Object.assign({kind,act,pos:[x,y,z],id},extra||{});for(const f of L){try{f(e);}catch(err){console.error(err);}}};
  const heroNear=(x,z,r)=>{const h=heroU.value;return h.y>-50&&h.y<groundH(h.x,h.z)+.6&&Math.hypot(h.x-x,h.z-z)<r;};
  const paintV=(g,c)=>{g=g.index?g.toNonIndexed():g;const a=new Float32Array(g.attributes.position.count*3);for(let i=0;i<a.length;i+=3)a.set(c,i);g.setAttribute('color',new THREE.BufferAttribute(a,3));if(g.attributes.uv)g.deleteAttribute('uv');return g;};
  const IM=new THREE.Matrix4(),IQ=new THREE.Quaternion(),IE=new THREE.Euler(),IS=V(1,1,1),IP=V();
@@ -767,8 +775,10 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const g=mergeGeometries(parts);g.translate(0,.062,0);const im=new THREE.InstancedMesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.85}),NBD);im.frustumCulled=false;im.visible=false;scene.add(im);G.birds=im;
   const spot=()=>{for(let k=0;k<40;k++){const a=rr(0,6.28),r=rr(3.5,11);const x=Math.cos(a)*r,z=Math.sin(a)*r*.9;if(rootD(x,z)>.5&&(!G.pondD||G.pondD(x,z)>.6))return [x,z];}return [5,8];};
   const Bd=[];for(let i=0;i<NBD;i++){const [x,z]=spot();Bd.push({x,z,y:groundH(x,z),yaw:rr(0,6.28),st:'look',t:rr(.3,2),hop:0,hx:0,hz:0,peck:0,air:0,gone:0});}
-  G._birds=(dt)=>{const k=dayK()*(1-ST.rainK);const want=k>.5;im.visible=want;if(!want)return;
-   Bd.forEach((b,i)=>{if(b.gone>0){b.gone-=dt;if(b.gone<=0){const [x,z]=spot();Object.assign(b,{x,z,st:'land',air:1.2,t:1});}else{IM.makeScale(0,0,0);im.setMatrixAt(i,IM);return;}}
+  G._birds=(dt)=>{const day=dayK()>.5;const rain=ST.rainK>.25;im.visible=day;if(!day)return;
+   Bd.forEach((b,i)=>{if(b.gone>0){b.gone-=rain?0:dt;if(b.gone<=0){const [x,z]=spot();Object.assign(b,{x,z,st:'land',air:1.2,t:1});}else{IM.makeScale(0,0,0);im.setMatrixAt(i,IM);return;}}
+    if(rain&&b.st!=='fly'&&b.gone<=0){// shelter: off into the trees until the rain stops
+     emit('bird','flee',b.x,groundH(b.x,b.z),b.z,'bird'+i);b.st='fly';const a=Math.atan2(b.z,b.x);b.hx=Math.cos(a);b.hz=Math.sin(a);b.t=2.5;}
     if(b.st!=='fly'&&heroNear(b.x,b.z,3)){emit('bird','flee',b.x,groundH(b.x,b.z),b.z,'bird'+i);b.st='fly';const h=heroU.value;b.hx=Math.sign(b.x-h.x||1);b.hz=Math.sign(b.z-h.z||1);b.t=2.5;}
     let pitch=0,bob=0;b.t-=dt;
     if(b.st==='fly'){// flush: up and away over the bushes
@@ -804,6 +814,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
      // bounding gait: little arcs; climbs smoothly onto the root near the perch
      const near=Math.hypot(s.pos.x-s.p.x,s.pos.z-s.p.z);const gy=groundH(s.pos.x,s.pos.z);s.pos.y=near<.6?gy+(s.p.y-gy)*(1-near/.6):gy;s.t+=dt;s.pos.y+=Math.abs(Math.sin(s.t*11))*.05;
      const want=Math.atan2(d.x,d.z);let dd=want-s.yaw;dd=Math.atan2(Math.sin(dd),Math.cos(dd));s.yaw+=dd*Math.min(1,dt*10);return false;};
+   if(s.ph!=='out'&&ST.rainK>.25){emit('squirrel','flee',s.pos.x,s.pos.y,s.pos.z,'squirrel');s.ph='out';}
    if(s.ph!=='out'&&heroNear(s.pos.x,s.pos.z,3.5)){emit('squirrel','chitter',s.pos.x,s.pos.y,s.pos.z,'squirrel');emit('squirrel','flee',s.pos.x,s.pos.y,s.pos.z,'squirrel');s.ph='out';}
    if(s.ph==='in'&&!s.climbed&&Math.hypot(s.pos.x-s.p.x,s.pos.z-s.p.z)<.7){s.climbed=true;emit('squirrel','climb',s.pos.x,s.pos.y,s.pos.z,'squirrel',{dur:.35});}
    if(s.ph==='in'){if(go(s.p,2.2)){s.ph='sit';s.pos.copy(s.p);}}

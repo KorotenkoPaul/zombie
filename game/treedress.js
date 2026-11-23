@@ -80,7 +80,7 @@ export function createTreeDress(C) {
       const W = window.__wind, on = W && W.raining ? W.raining() : 0;
       D._rk = (D._rk || 0) + (on - (D._rk || 0)) * Math.min(1, dt / 6); const rain = D._rk;
       const night = Math.min(1, ENVR.strength.value / 0.8 || 0);
-      D.barkU.wet.value = Math.max(night * 0.08, rain); /* dew is only a faint sheen; glossy only while it rains */
+      D.barkU.wet.value = rain; /* sheen only while it rains (no dew gloss): dry bark stays fully matte */ void night;
       /* soaked bark: soaks up in ~25 s of rain, then dries over ~4 min, last in the furrows, the runs down the bark and the foot */
       const d = D.barkU.damp; d.value = rain > 0.05 ? Math.min(1, d.value + dt * rain / 25) : Math.max(0, d.value - dt / 240);
       /* hoar frost on the root tops on cold clear nights (Wind's __weather temp: ~4 °C before dawn): forms over ~90 s, melts in ~60 s */
@@ -313,9 +313,9 @@ uniform float tdCool;` + NOISE)
             diffuseColor.rgb=mix(diffuseColor.rgb,lc*(.55+lum*2.5),li*(kind<.85?.55:.45)); }
           // wet bark: darker, and glossy in the grooves' ridges (moss stays matte); streaks run down from the limbs
 #ifdef TD_LITE
-          float streak=big;
+          float streak=big*.6+tdH*.4;
 #else
-          float streak=td_n(vec3(tdP.x*2.2,tdP.y*.25,tdP.z*2.2));
+          float streak=big*.6+tdH*.4; // patchy, on the ridges first: no stretched noise, so no glossy stripes
 #endif
           tdWM=tdWet*(1.-mm*.8)*(.55+.45*smoothstep(.3,.7,streak));
           diffuseColor.rgb*=1.-tdWM*.3;
@@ -349,7 +349,7 @@ uniform float tdCool;` + NOISE)
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.32,tdWM*(1.-tdFM)); // dry bark is fully matte')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.45,tdWM*(1.-tdFM)); // a soft wet sheen, not varnish // dry bark is fully matte')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
