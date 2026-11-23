@@ -97,10 +97,10 @@ export function createGround(C){const __before=new Set(C.scene.children);
  const exitD=(x,z)=>segD(EXIT,x,z)-(.2+.06*smooth(3,0,Math.hypot(x-1.4,z-7.2))+(vnoise(x*1.9+4,z*1.9)-.5)*.16);
  // ---- the pond: a small still forest pool a short walk left of the oak (water for the sink), with a muddy bank and its own track ----
  // in front of the oak, left of the ladder path, so it shows from the default camera view (moved from (-8.4,9.2) on Pavel's ask)
- const POND={x:-2.3,z:9.0,rx:2.1,rz:1.4,a:-.15};
+ const POND={x:-1.4,z:7.6,rx:1.75,rz:1.15,a:-.12};// 1.4 m nearer than before: from the home view it sat under the bottom edge of the screen
  const pondD=(x,z)=>{const dx=x-POND.x,dz=z-POND.z,c=Math.cos(POND.a),sn=Math.sin(POND.a);const u=(dx*c+dz*sn)/POND.rx,v=(-dx*sn+dz*c)/POND.rz;const r=Math.hypot(u,v);
   const an=Math.atan2(v,u);const wob=1+(vnoise(Math.cos(an)*1.4+5,Math.sin(an)*1.4+2)-.5)*.32;return (r-wob)*(POND.rx+POND.rz)*.5;};
- const PTRACK=[[1.2,9],[.2,9.5],[-.4,9.5]];
+ const PTRACK=[[1.4,7.2],[.9,7.6],[.5,7.7]];
  const ptrackD=(x,z)=>segD(PTRACK,x,z)-(.19+(vnoise(x*2.1+8,z*2.1)-.5)*.14);
  const trackD=(x,z)=>Math.min(pathMain(x,z),exitD(x,z),ptrackD(x,z));
  // everything that keeps off the paths keeps off the water and its bare muddy rim too (and the ground shader paints that rim as wet earth)
@@ -232,7 +232,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    const s=gen();const cnt=2+Math.floor(R()*6);
    for(let j=0;j<cnt&&pts.length<N;j++){const x=s[0]+rr(-.9,.9),z=s[1]+rr(-.9,.9);const d=rootD(x,z);if(d<.06)continue;const r=Math.hypot(x,z);
     // density: dense along root edges, sparse on bare trodden earth near the trunk, patchy elsewhere
-    const pd=pathD(x,z);if(pd<-.05||(pd<.12&&R()<.75))continue;const tr=(!far&&trackD(x,z)<.5)?smooth(.5,.05,trackD(x,z)):0;
+    const pd=pathD(x,z);if(pd<-.05||(pd<.12&&R()<.75))continue;if(z>POND.z-.3&&pondD(x,z)<1.1)continue;/* the camera side of the pond stays open */const tr=(!far&&trackD(x,z)<.5)?smooth(.5,.05,trackD(x,z)):0;
     const dens=Math.max(smooth(1.4,.15,d),smooth(.38,.62,fbm2(x*.18+2,z*.18+9))*(.25+.75*smooth(3,6,r))*(MOBILE?.6:1));if(R()>dens)continue;
     const sz=rr(size[0],size[1])*(1+smooth(10,40,r)*.5);let q=slopeQ(x,z,rr(0,6.28));
     // trodden: squashed low and pushed over, away from the track (a worn edge, not a mown lawn)
@@ -441,30 +441,36 @@ export function createGround(C){const __before=new Set(C.scene.children);
    // y was mirrored above, so flip the winding back (the surface faces up)
    const ix=geo.index.array;for(let i=0;i<ix.length;i+=3){const t=ix[i+1];ix[i+1]=ix[i+2];ix[i+2]=t;}}
   const U={uT:{value:0},uMoon:{value:new THREE.Vector3(-.7,.5,.15).normalize()},uNight:{value:0},uDeep:{value:new THREE.Color(.02,.035,.04)},
-   uNz:NZU,uSky:{value:new THREE.Color(.3,.4,.5)},tDiffuse:{value:null},textureMatrix:{value:new THREE.Matrix4()},color:{value:new THREE.Color(1,1,1)}};
+   uSp0:{value:new THREE.Vector4(0,0,-9,0)},uSp1:{value:new THREE.Vector4(0,0,-9,0)},uNz:NZU,uSky:{value:new THREE.Color(.3,.4,.5)},tDiffuse:{value:null},textureMatrix:{value:new THREE.Matrix4()},color:{value:new THREE.Color(1,1,1)}};
   const VS=`#include <fog_pars_vertex>
    uniform mat4 textureMatrix;attribute float aD;varying float vD;varying vec3 vW;varying vec4 vRU;
    void main(){vD=aD;vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;vRU=textureMatrix*vec4(position,1.);vec4 mvPosition=viewMatrix*w;gl_Position=projectionMatrix*mvPosition;
    #include <fog_vertex>
    }`;
   const FS=(refl)=>`#include <fog_pars_fragment>
-   uniform float uT,uNight;uniform vec3 uMoon,uDeep,uSky,color;uniform sampler2D tDiffuse;varying float vD;varying vec3 vW;varying vec4 vRU;`+GLSL_NOISE+`
+   uniform float uT,uNight;uniform vec3 uMoon,uDeep,uSky,color;uniform vec4 uSp0,uSp1;
+   vec2 splash(vec2 p,vec4 s){float age=uT-s.z;if(age<0.||age>3.)return vec2(0.);vec2 d=p-s.xy;float r=length(d)+1e-4;float fr=age*.38;float w=sin((r-fr)*46.)*exp(-age*1.4)*smoothstep(.12,0.,abs(r-fr))*s.w;return d/r*w;}uniform sampler2D tDiffuse;varying float vD;varying vec3 vW;varying vec4 vRU;`+GLSL_NOISE+`
    void main(){
     // ripples and rain rings from Wind (game/wind.js W.hookWater): calm = nearly a mirror, gusts roughen it
-    vec3 n=waterNormal(vW);
+    vec3 n=waterNormal(vW);{vec2 sp=splash(vW.xz,uSp0)+splash(vW.xz,uSp1);n=normalize(n+vec3(sp.x,0.,sp.y)*.5);}
     vec3 V=normalize(cameraPosition-vW);vec3 R=reflect(-V,n);float fr=.03+.97*pow(1.-max(dot(V,n),0.),5.);
     // what the water mirrors: the sky over a dark ragged treeline (phones), or the real scene (desktop)
-    float an=atan(R.z,R.x);float tl=.32+.16*vn(vec2(an*4.,1.3))+.06*vn(vec2(an*17.,4.1));
-    vec3 sky=mix(uSky*.75,uSky*1.05,smoothstep(.4,.9,R.y));sky=mix(uSky*.12,sky,smoothstep(tl-.04,tl+.06,R.y));
+    float an=atan(R.z,R.x);float tl=.05+.1*vn(vec2(an*4.,1.3))+.04*vn(vec2(an*17.,4.1));
+    // a bright sky in it even at the low home-view angle, so the pond reads as water from afar (day and night)
+    vec3 sky=mix(uSky*1.,uSky*1.35,smoothstep(.2,.9,R.y));sky=mix(uSky*.2,sky,smoothstep(tl-.03,tl+.05,R.y));
     ${refl?'vec4 ru=vRU;ru.xy+=waterSlope(vW)*.03*ru.w;sky=texture2DProj(tDiffuse,ru).rgb*color;':''}
     vec3 c=mix(uDeep,sky,clamp(fr*1.1+.05,0.,1.));
     c+=vec3(.85,.92,1.)*pow(max(dot(R,uMoon),0.),220.)*uNight*2.5;
+    // night: darker open water inside a thin moonlit waterline, so its shape still reads through the blue mist
+    c*=1.-.35*uNight*smoothstep(-.1,-.5,vD);c+=uSky*vec3(.9,1.,1.1)*.9*uNight*smoothstep(-.16,-.05,vD)*smoothstep(.03,-.03,vD);
     // shallow at the rim: you see the mud bottom through it, then it fades into the bank
     float sh=smoothstep(0.,-.7,vD);c=mix(c*vec3(.75,.7,.6)+vec3(.02,.016,.01),c,sh);float a=mix(.0,.95,smoothstep(.04,-.25,vD));
     gl_FragColor=vec4(c,a);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
+    vec3 pre=gl_FragColor.rgb;
     #include <fog_fragment>
+    gl_FragColor.rgb=mix(gl_FragColor.rgb,pre,.6);// the fog thins over the water: it stays visible at night
    }`;
   const fogU=THREE.UniformsLib.fog;let water;
   if(!MOBILE){water=new Reflector(geo,{textureWidth:512,textureHeight:512,clipBias:.003,shader:{name:'Pond',uniforms:{...THREE.UniformsUtils.clone(fogU),...U},vertexShader:VS,fragmentShader:FS(true)}});
@@ -529,8 +535,12 @@ export function createGround(C){const __before=new Set(C.scene.children);
     M.compose(V(x,Math.max(groundH(x,z),level)-sz*.18,z),Q.setFromEuler(E.set(rr(-.05,.05),rr(0,6.28),rr(-.05,.05))),Sc.set(sz*1.25,sz*.32,sz));im.setMatrixAt(im.count,M);im.setColorAt(im.count,Col.setScalar(40));im.count++;}// 40 = 'worn' flag for the stone shader (no moss cap)
    im.instanceMatrix.needsUpdate=true;if(im.instanceColor)im.instanceColor.needsUpdate=true;}
   G.pond={mesh:water,level,x:POND.x,z:POND.z,r:(POND.rx+POND.rz)*.5,radius:(POND.rx+POND.rz)*.5,center:V(POND.x,level,POND.z),fill,stand,face:Math.atan2(dir.x,dir.z),
-   path:[...[[0,4.3],[.5,5.6],[1.4,7.2],[1.2,9]],...PTRACK.slice(1)].map(([x,z])=>P3(x,z)).concat([stand]),
-   nodes:{g_foot:P3(0,4.3),g_path2:P3(1.2,9),g_pfork:P3(1.2,9),g_pond:stand},pondD};
+   path:[...[[0,4.3],[.5,5.6],[1.4,7.2]],...PTRACK.slice(1)].map(([x,z])=>P3(x,z)).concat([stand]),
+   nodes:{g_foot:P3(0,4.3),g_path2:P3(1.4,7.2),g_pfork:P3(1.4,7.2),g_pond:stand},pondD};
+  // splash rings for the bucket dip (Character) or anything that falls in: __ground.pond.splash(x,z,k=1)
+  // also emits __ground.on('pond', e) with {act:'splash', pos:[x,y,z], k} for Sound
+  let spI=0;G.pond.splash=(x,z,k=1)=>{const u=water.material.uniforms[spI?'uSp1':'uSp0'];spI^=1;u.value.set(x,z,WU.uT.value,Math.min(2,k));
+   const L=LST.pond;if(L)for(const f of L){try{f({act:'splash',pos:[x,level,z],k});}catch(e){console.error(e);}}};
   G._pond=(dt,cam)=>{WU.uT.value+=dt;const E2=window.__env;if(E2&&E2.moonRim){WU.uMoon.value.copy(E2.moonRim.dir.value);WU.uNight.value=E2.moonRim.strength.value;}
    const fc=scene.fog&&scene.fog.color;if(fc){WU.uSky.value.copy(fc);WU.uDeep.value.copy(fc).multiplyScalar(.12).add(Col.setRGB(.01,.018,.016));}};}
 

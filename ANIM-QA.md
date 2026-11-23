@@ -15,10 +15,26 @@ Priorities: **P1**: visible at normal play (through objects ≥ 2–4 cm, broken
 | 1 | d5e8ad1 | 24,660 | seated jitter fixed; legs folded next to the head after the kitchen ladder; head in the upper bunk |
 | 2 | 46310d0 (v81) | 25,620 | legs at head **fixed**, head in upper bunk **fixed**, walking through the bunk end **fixed**; slow motion measured |
 | 3 | c7cd2d0 (v91) | 16,980 | tempo mostly fixed (walk 1.0 m/s, sit/stand 1.5 s); robot braking/starting and ladder speed jumps open; ladder clipping open |
+| 12 | 711f89f | 147k ×2 heroes | new checks: head bend/twist, ankles, ladder hands/feet vs real rungs, magic-wand props; old hero is the default again |
 | 7 | 2d246eb | 74,700 | trip/store/fridge/eat/water in the tour; jacket and bow taken in the bedroom, not at the workshop pegs; stuck on the gate ladder and in the hatch task |
 | 6 | f58e5ff | 47,220 | full tour of all 32 new tasks (9 repairs, hatch, bolt, firewood...); kitchen ping-pong gone; NEW: 2.4 m teleport into bed, 25 cm into the woodpile, ladder exits 12–22x speed jumps |
 | 5 | 610ced0 | 19,020 | P1 jumps 223 → 106, robot P1 6 → 0, crab walk and detours P1 gone; NEW checks: stays and turning back (see below) |
 | 4 | 77c392b | 16,320 | creeping to a stop fixed (1 case left); NEW: 15 cm root teleport at the top of the kitchen ladder, walking backwards after the ladder top, 25 cm root jump into bed |
+
+## New in run 12 (master 711f89f, old hero = default; new hero via ?hero=new)
+
+| P | what | frames | measured |
+|---|---|---|---|
+| P1 | Ladder hands grip air: 15–60 cm from the nearest rung while still; bedroom↔kitchen climb runs ~0.7 m off the rungs (x -3.98, z 2.3) | f11042, f14426, f54844, f89356, f139087 | hands 15–60 cm, feet 10–33 cm |
+| P1 | Head bent vs chest | f132326 (fix_wall), f77224 (droplogs), f144366 (railing), f108902–962 (sweep) | 162°, 132°, 125°, 124° + 107° twist |
+| P1 | New hero: head flips 90° sideways while walking | f64573–64577 | 90° for 4 frames |
+| P1 | Ankle bent up past neutral while walking | f81907, f61701 | 92°, 85° |
+| P1 | Ledge: knee bent the wrong way, foot next to the head | f6748, f118316 | 145° |
+| P1 | Pelvis turns 180° in one frame at trip start | f48754, f74506 | 180° |
+| P1 | Shins into a wall (fix_wall); hand into the bunk (sweep); feet into a 95x20 beam (cook) | f132268, f108903, f10920 | 14.8, 12.6, 10 cm |
+| P1 | Magic wand (median palm distance while it moves): hatch lid 108, bedroom door 66–135, hammer 94, broom 76, buckets 56–65, plates 61, radio 60, counter 53, lantern 50, saw 49, knife 30, oven door 17–40, fridge 9–17 cm | f77989, f6550, f131969, f108930, f17197, f58306, f148620, f18116, f52473, f95718, f103274, f88876, f54407 | > 5 cm |
+| P1 | Ladder entry speed jump; sharp turns | f77358, f145619; f59144, f32265 | 15x; 500–570 °/s |
+| P2 | Turns back after 4–8 s | f13756, f56895, f90034, f62938 | 4–8 s |
 
 ## New in run 7 (master 2d246eb): trips, food, water, jacket
 
