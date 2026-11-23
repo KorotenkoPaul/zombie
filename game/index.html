@@ -1148,10 +1148,18 @@ try{const {createCollide}=await import(new URL(ASSET+'collide.js',document.baseU
   const plainHook=THREE.Material.prototype.onBeforeCompile;let n=0;const left=[];
   for(const [m,u] of use){if(!u.i.length||!u.p.length)continue;const c=m.clone();if(m.onBeforeCompile!==plainHook){c.onBeforeCompile=m.onBeforeCompile;c.customProgramCacheKey=m.customProgramCacheKey;left.push(m.name||m.type);}for(const o of u.i)o.material=Array.isArray(o.material)?o.material.map(x=>x===m?c:x):c;n++;}
   PERF.splitMats=n;PERF.sharedHooked=left;};split();setTimeout(split,9000);}
+// [PERF] phones: opaque draws sorted by shader program (then material) instead of front-to-back. Apple GPUs remove hidden
+// opaque pixels in hardware (TBDR), so depth order buys nothing there, while every program switch re-uploads lights and
+// shadow uniforms on the CPU.
+if(MOBILE){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
+ renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
 {const T0=performance.now();$('loadTx').textContent='Готовим картинку…';scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,4000))]);}catch(e){}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
  PERF.startupMs=Math.round(performance.now()-T0);}
-let _shown=0;const _reveal=()=>{if(++_shown<3){requestAnimationFrame(_reveal);return;}$('load').classList.add('hide');};
+// every shadow map is drawn during these hidden frames too, so the shadow/depth shader variants compile now and not when
+// the hero first walks up to a lamp
+const _shadowL=[];scene.traverse(o=>{if(o.isLight&&o.castShadow&&o.shadow)_shadowL.push(o);});
+let _shown=0;const _reveal=()=>{for(const l of _shadowL)l.shadow.needsUpdate=true;if(++_shown<3){requestAnimationFrame(_reveal);return;}$('load').classList.add('hide');};
 requestAnimationFrame(frame);requestAnimationFrame(_reveal);
 </script>
