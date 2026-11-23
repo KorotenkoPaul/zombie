@@ -13,6 +13,8 @@ const VIEWS = [
   ['kitchen-side', { target: [-2.1, 6.9, 1.3], yaw: -0.7, pitch: 0.2, dist: 2.2 }],
   ['workshop-right', { target: [2.4, 6.2, 1.6], yaw: 0.75, pitch: 0.15, dist: 2.5 }],
   ['crown-through', { target: [0.5, 13.5, 1.5], yaw: 0.4, pitch: 0.25, dist: 6 }],
+  ['K3-kitchen-right', { target: [-2.6, 6.9, 2], yaw: 0.7, pitch: 0.15, dist: 3 }],
+  ['K3-workshop', { target: [2.8, 5.6, 2.2], yaw: 0.75, pitch: 0.15, dist: 3 }],
   ['right-limit-far', { target: [0, 7.4, 2.4], yaw: 0.8, pitch: 0.2, k: 1 }],
 ];
 (async () => {
