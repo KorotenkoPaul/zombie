@@ -6,7 +6,7 @@ const p=await b.newPage({...devices['iPhone 13']});p.on('pageerror',e=>console.l
 await p.goto('http://localhost:'+(process.env.PORT||8126)+'/index.html');await p.waitForFunction(()=>window.__th&&document.getElementById('load').classList.contains('hide'),null,{timeout:300000});
 await p.evaluate(()=>{__th.setHour(21.5);if(window.__camera&&__camera.dof)__camera.dof(false);});await p.waitForTimeout(4000);
 const views=[['default',null],['overview',[[0,7.4,2.4],0,.15,14]],['kitchen',[[-2.4,6.6,2.6],0.1,.35,3.2]],['roof',[[-1.9,11.2,2.3],.35,.55,4.2]]];
-for(const [n,v] of views){if(v)await p.evaluate(([t,yaw,pitch,dist])=>{__th.cam();__th.rig.set({target:new __dbg.THREE.Vector3(...t),yaw,pitch,dist,snap:true});},v);await p.waitForTimeout(3000);
+for(const [n,v] of views){if(process.env.ONLY&&!process.env.ONLY.split(',').includes(n))continue;if(v)await p.evaluate(([t,yaw,pitch,dist])=>{__th.cam();__th.rig.set({target:new __dbg.THREE.Vector3(...t),yaw,pitch,dist,snap:true});},v);await p.waitForTimeout(3000);
  console.log(n,await p.evaluate(()=>{const R=__perf.renderer,T=__dbg.THREE;let s=__dbg.hero.root;while(s.parent)s=s.parent;let camera=null;const orig=R.render;R.render=function(sc,c){if(sc===s&&c&&c.isPerspectiveCamera&&!camera)camera=c;return orig.apply(this,arguments);};
   return new Promise(res=>requestAnimationFrame(()=>requestAnimationFrame(()=>{R.render=orig;const M=__planks.meshes;const mine=[M.boards,M.beams,M.shingles];
    const W=390,H=844;const rt=new T.WebGLRenderTarget(W,H);const px=new Uint8Array(4);const buf=new Uint8Array(W*H*4);

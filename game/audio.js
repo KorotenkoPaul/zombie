@@ -153,6 +153,8 @@ export function createAudio(ctx) {
   const RAW = {}, B = {}, USED = {}, PENDING = {};
   const BUDGET_S = 140;   // seconds of decoded audio kept at most (~27 MB at 48 kHz, ~18 MB at 32 kHz)
   let decodedS = 0;
+  // play now if decoded, else right after decoding (a first use must not be lost)
+  function vplay(k, o) { if (B[k] || k.startsWith('syn_')) return voice(k, o); decode(k).then(b => { if (b && !muted) voice(k, o); }); return null; }
   function getBuf(k) { if (k.charCodeAt(0) === 115 && k.startsWith('syn_')) return synBuf(k); const b = B[k]; if (b) { USED[k] = now; return b; } decode(k); return null; }
   function decode(k) {
     if (B[k]) return Promise.resolve(B[k]); if (PENDING[k]) return PENDING[k]; if (!RAW[k] || !A) return Promise.resolve(null);
@@ -530,6 +532,10 @@ export function createAudio(ctx) {
   function hookCritters() {
     if (critHooked) return; const G = window.__ground; if (!G || typeof G.on !== 'function') return; critHooked = true;
     G.on('critter', critter);
+    // the bucket dips into the pond: a splash, then the water rushing in (the hero's own bucket_fill gurgle follows)
+    G.on('pond', e => { if (!e || !loaded || muted || (e.act && e.act !== 'splash')) return; const k = clamp01(e.k ?? .7), q = toPos(e.pos);
+      vplay(pick(['slosh_a', 'slosh_b']), { pos: q, gain: .22 + .3 * k, rate: rnd(1.05, 1.2), dur: rnd(.45, .7), offset: 0, fadeIn: .004, fadeOut: .2, ref: 3, roll: 1, rev: .25, prio: true });
+      if (k > .4) vplay('drip_bucket_a', { pos: q, gain: .18 * k, rate: rnd(.6, .75), delay: rnd(.08, .16), fadeIn: .003, fadeOut: .15, ref: 3, roll: 1, rev: .3, prio: true }); });
   }
 
   // ---------- house sway (Wind): ropes strain, lantern hooks squeak, hinges creak, a loose shutter knocks ----------
@@ -723,8 +729,8 @@ export function createAudio(ctx) {
     if (window.__feetLog) window.__feetLog.push(['TC', +gnow.toFixed(3), e.tool || e.kind, +(e.dur || 0).toFixed(2)]);
     const q = toPos(e.pos), k = clamp01(e.strength ?? .8), t = e.tool;
     if (t === 'hammer' || e.kind === 'hit') { TS.last = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); if (Math.random() < .5) playAct('nails', q, { gain: .35 * k, delay: .012, internal: 1 }); return; }
-    if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); if (B[c]) voice(c, o); else decode(c); TS.last = now; return; }
-    if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); if (B[c]) voice(c, o); else decode(c); TS.last = now; }
+    if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); vplay(c, o); TS.last = now; return; }
+    if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); vplay(c, o); TS.last = now; }
   }
   function toolSync(hero) {
     if (!toolAuto || !hero || !hero.hold || !ctx.bones || !ctx.bones.RightHand) { TS.tool = null; return; }

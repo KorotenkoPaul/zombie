@@ -169,3 +169,7 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
 - QA: `K=45 ROUTE=saw,hammer node tests/audio/tool_sync.js`, then analyse TH/TC in /tmp/feet_30.json.
   - Hammer: 34 of 35 downswing bottoms got a hit within one frame (0 to −33 ms); one hit came 266 ms early.
   - Saw: 32 strokes for 34 turns, median 67 ms after the turn (the 8 mm hysteresis). The current saw clip moves the hand only 2–4 cm, so this will tighten once the grips are fixed.
+
+## Round 22: bucket splash
+- `__ground.on('pond', {act:'splash', pos, k})` (Ground's `pond.splash()`, called when the bucket dips) plays a splash (a slosh played higher and short) and, for k > .4, a low "gloop" of water rushing in. The hero's own bucket_fill gurgle follows it.
+- A new helper, `vplay(name, o)`, plays a clip as soon as it is decoded, so a first use is never dropped. Without it, the splash was silent until slosh had been decoded once. Saw and stir contacts now use it too.
