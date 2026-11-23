@@ -30,16 +30,21 @@ float td_n(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
 float td_f(vec3 p){return td_n(p)*.55+td_n(p*2.13+3.1)*.3+td_n(p*4.37+7.7)*.15;}`;
 
 // leaf flutter for instanced cards: small rotation-ish wobble growing with distance from the stem (uv.y)
+// ivy leaves: tip flutter driven by Wind (wind.js windSway: ~.1 calm, ~.4 breeze, ~2 in a gust), so gusts visibly ruffle them
 const FLUTTER = `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
- float gust=.55+.45*sin(uT*.35+ip.x*.05-ip.z*.04);
- float k=clamp(uv.y,0.,1.)*SW*uW*gust;
- transformed.z+=sin(uT*2.3+ip.x*3.1+ip.y*2.7)*k;
- transformed.x+=sin(uT*1.7+ip.z*2.9+ip.y*1.3)*k*.5;}`;
+ float k=clamp(uv.y,0.,1.)*SW;
+#ifdef WIND_GLSL_ON
+ vec2 w=windSway(ip,2.6);
+ transformed+=windLocal(vec3(w.x,0.,w.y))*k*.6+windLocal(vec3(0.,0.,1.))*sin(uT*7.3+ip.x*13.1+ip.y*7.7)*k*.04*length(w);
+#else
+ transformed.z+=sin(uT*2.3+ip.x*3.1+ip.y*2.7)*k*uW;
+#endif
+}`;
 function swayMat(mat, U, amp, chunk) {
   mat.onBeforeCompile = s => {
     if (mat.userData.AX !== undefined) branchHook(s, mat.userData.AX, mat.userData.AZ);
     s.uniforms.uT = U.t; s.uniforms.uW = U.wind;
-    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;')
+    s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;' + (s.vertexShader.includes('windSway') ? '\n#define WIND_GLSL_ON' : ''))
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n{const float SW=${amp.toFixed(3)};${chunk}}`);
   };
   return mat;
@@ -72,7 +77,7 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, rimK: { value: 1 },
+    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 1 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
     D.update = () => {
@@ -80,7 +85,9 @@ export function createTreeDress(C) {
       const W = window.__wind, on = W && W.raining ? W.raining() : 0;
       D._rk = (D._rk || 0) + (on - (D._rk || 0)) * Math.min(1, dt / 6); const rain = D._rk;
       const night = Math.min(1, ENVR.strength.value / 0.8 || 0);
-      D.barkU.wet.value = rain; /* sheen only while it rains (no dew gloss): dry bark stays fully matte */ void night;
+      D.barkU.wet.value = rain; /* sheen only while it rains (no dew gloss): dry bark stays fully matte */
+      /* by day the oak is a warm grey-brown, its cool violet cast is a night look; under the house it gets bounce light */
+      D.barkU.cool.value = 0.15 + 0.35 * night; D.barkU.day.value = 1 - night;
       /* soaked bark: soaks up in ~25 s of rain, then dries over ~4 min, last in the furrows, the runs down the bark and the foot */
       const d = D.barkU.damp; d.value = rain > 0.05 ? Math.min(1, d.value + dt * rain / 25) : Math.max(0, d.value - dt / 240);
       /* hoar frost on the root tops on cold clear nights (Wind's __weather temp: ~4 °C before dawn): forms over ~90 s, melts in ~60 s */
@@ -139,7 +146,7 @@ export function createTreeDress(C) {
     }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
@@ -150,7 +157,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdL=0.,tdFade=0.,tdH=.5;
+varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -300,6 +307,7 @@ uniform float tdCool;` + NOISE)
           // linear colours: deep olive in the shade, a little brighter yellow-green where it catches light
           vec3 moss=mix(vec3(.030,.048,.014),vec3(.085,.125,.028),smoothstep(.3,.8,fine));
           moss=mix(moss,vec3(.028,.045,.035),foot*.5);
+          moss*=mix(vec3(1.),vec3(.72,1.08,.62),tdDamp); // soaked moss: deeper and greener
           diffuseColor.rgb=mix(diffuseColor.rgb,moss*(.7+2.*lum),mm*.9);
           // grey-green lichen spots on the drier upper bark
 #ifdef TD_LITE
@@ -357,6 +365,9 @@ uniform float tdCool;` + NOISE)
           float fr=pow(1.-max(dot(wn,wv),0.),3.);
           float rim=fr*max(dot(wn,normalize(tdRimD)),0.)*tdRimS*tdRimK*(1.-.7*smoothstep(.5,.9,wn.y)); // an edge light, not a sheen on the tops
           totalEmissiveRadiance+=tdRimC*rim*(.12+tdL*1.6)*(1.-tdMM*.5)*(1.+tdWM*.8);
+          // daylight bounced off the ground, the roots and the house's planks: warm fill so the trunk in the house's shade reads
+          // as brown bark, not a black hole (weaker in the furrows and the deep crotches)
+          totalEmissiveRadiance+=diffuseColor.rgb*vec3(1.1,.95,.8)*tdDay*.5*(.45+.55*tdH)*(1.-tdCr*.7);
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
@@ -417,7 +428,17 @@ uniform float tdCool;` + NOISE)
       branchHook(sh, AX, AZ);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
-        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}');
+        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}')
+        // weather (same uniforms as the bark): soaked moss deeper and greener, hoar frost on the tops of the cushions on cold nights.
+        // Only the green instances (moss), not the brown soil lumps that share this mesh.
+        .replace('#include <color_fragment>', `#include <color_fragment>
+{ vec3 c=diffuseColor.rgb; float green=smoothstep(.05,.3,(c.g-c.r)/max(c.g,1e-3));
+  c=mix(c,c*vec3(.72,1.1,.6),tdDamp*green);
+  vec3 wN=normalize((vec4(vNormal,0.)*viewMatrix).xyz); float top=smoothstep(.3,.85,wN.y);
+  float fr=tdFrost*top*green*(.35+.65*smoothstep(.4,.65,td_n(tdP*70.)));
+  c=mix(c,vec3(.24,.26,.3),fr*.45); diffuseColor.rgb=c; }`)
+        .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost;');
+      sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost;
     };
     const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);

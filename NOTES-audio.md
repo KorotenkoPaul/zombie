@@ -129,3 +129,32 @@ Found and fixed: music too loud at dusk; pond lapping almost constant; autumn mi
 - Sleep: each night has its own sleeper. On 55 % of nights he snores, in spells of 1.5–5 minutes with quiet stretches of 2–7 minutes between. Outside the snoring spells he takes a slow synth breath every 4–5.5 s (in 1.4 s, a pause, out 2 s, band-passed around 520 Hz, very quiet), and only when the camera is within 8 m of the bed. He still turns over every 35–90 s.
 - Awake: when he stands still and the camera is within 3.5 m of him, he breathes softly, a faster version of the same breath every 3–4 s.
 - The blind QA heard the rings as curtain rings on a rod and the breath as slow, soft breathing.
+
+## Round 18: sleep check and a second full-day pass
+- Sleep was checked live by reloading until the random start put the hero in bed (2:00). With the camera by the bed, the slow synth breaths play every 4–5 s. Snoring spells follow the per-night draw.
+- Full day on the phone profile, after rounds 11–17:
+  - Every hour falls between −52 and −31 dB RMS, with short-term peaks at −26 dB or below.
+  - The longest silence is 8.6 s.
+  - The one point over target was the owl at 25 m: −18.8 dB short-term. Owl volume went from .5 to .32 (−4 dB).
+  - 1–2 a.m. sat at about −51 dB. Autumn crickets went from .3 to .4 so the deep night is quiet but never empty.
+- The curtains are animated by lights.js (dusk half-drawn, lockdown shut). Lights has the `curtain_*` names to call.
+
+## Round 19: footstep sync with the new hero, rung contacts, hand contacts
+- The new hero lifts the heel only 4–6 cm, so contact by toe height missed steps. A step is now detected when the swinging foot comes to a stop: its world speed falls from over max(1.1, 1.5×walk) to under max(.3, .3×walk). In swing the foot moves at 2–3 m/s; planted, it is still. The strike is predicted from the deceleration, so the sound is scheduled inside the frame (`step(..., delay)`) rather than a frame late. Each foot can strike at most once per .3 s. Frames where the pose did not advance (the foot only rode along with the root) are skipped. The pre-roll for slow frames below 12.5 fps is unchanged.
+- Ladder and rope rungs: a rung sound plays when a foot that was travelling vertically faster than .55 m/s settles below .12 m/s. If the bones give no signal for 1.2 s, it falls back to the old cadence.
+- QA: `node tests/audio/feet_sync.js`, then `python3 tests/audio/feet_sync_report.py /tmp/feet_30.json`. This runs on the virtual clock at 30 fps with the route cook, wash, craft, look, window, read, telescope.
+  - Result: median offset of −8 ms against the moment the foot stops (heel strike), with 90 % of steps within roughly −60..+10 ms.
+  - About 7 % of contacts are missed. About 18 % of steps are "extra"; these are mostly real small re-plants when he starts, stops or turns.
+- Hand contacts are read from state:
+  - the oven door (`__props.oven.open` crossing .15 or .08) plays oven_open or oven_close at the handle;
+  - a hand taking a tool or item (`hero.hold[hand]` changes) plays tool_pickup, and putting it back plays it softer and lower;
+  - the hatch ring and the door bolt were already wired in round 16.
+
+## Round 20: footstep sync on the original hero, plus shuffles
+- The original hero is the default again; the new hero loads with `?hero=new`. Same detector, re-verified with `tests/audio/feet_sync.js` (30 fps, virtual clock).
+- Small re-plants (turning, starting, stopping) now play a soft scuff instead of a full step: 30 % of the gain, 0.1–0.16 s long, and they don't duck the music. A step counts as a re-plant when the foot's peak swing speed (median of 3 frames, so a one-frame foot snap doesn't count) stays under max(1.6, 1.9×walk).
+- Feet are now tracked down to walking speed .12 instead of .25, which catches the first and last steps of a walk.
+- `feet_sync_report.py` now counts full hits, soft hits, misses and extra full steps separately. Result on the original hero, both feet:
+  - 90 strikes, 70 hit by a full step and 15 by a shuffle, 5 missed (5.5 %).
+  - 9 extra full steps out of 79 (11 %, previously 13–18 %).
+  - Timing: median −6 to −23 ms, p10 −53 / −39 ms, p90 +6 / +10 ms.

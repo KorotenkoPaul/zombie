@@ -82,3 +82,35 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - Rope ladders: they already sway in their shader (windRope). `W.swayAt(p, freq)` is the CPU twin of windSwayS, used to track their free-end swing.
 - Events for Sound: `__wind.on('sway', e)` at the end of each swing: {part 'lantern'|'telescope'|'ladder', id, pos, amp 0..1}. `W.emit(k, e)` is now public for wind-thread modules.
 - Breath now uses Character's `window.__hero.mouth()`, and falls back to the Head bone.
+
+## Round 15: rain on the phone, glow near camera fix
+- The height map now includes InstancedMeshes (count <= 4000): Planks builds the decks as instanced boards, and rain had been falling through them.
+- Drips run on `uDK = max(rainK*1.2, wet^1.4*.85)`, so they keep falling after the rain and thin out as things dry. Big drops from the leaf tips (18 on phones / 40 on desktop, sampled from TREE.leaves) share the same single draw.
+- Wet boards: every MeshStandardMaterial that is the top surface somewhere under the sky (recorded while building the height map) gets a chained hook. Where the height map says nothing is above it, it darkens by 34% and its roughness drops to .22. On flat boards in a long rain (wet > .55) shallow water films form (roughness .04) in noise patches. Uniform names are uWetB/uHB/uBoxB, because Ground declares uWet. It runs after Planks' roughness (injected after metalnessmap_fragment).
+- index.html motes ([WIND] fix): point size capped at 18 px*dpr, and faded out within 2 m of the camera. Before, a mote at the lens became a huge soft green disc at night.
+
+## Round 16: cloth
+- Curtains (lights.js exposes window.__curtains, a [WIND] line): the hem stirs in a draught through the window frame on gusty days. Nothing in a calm, a faint breath in a breeze, a stir in a gust. It's done in the vertex shader of each window's curtain material, with one uniform per window.
+- `__housewind.addCloth(material, worldPos, {outside})`: the same hem sway for any hanging cloth (laundry, a flag), stronger outside. Hanging things on a rope/chain: register a pivot in window.__swing (see round 13).
+- Smoke already bends with gusts: smoke.js uses windStrength at the pipe top, which includes the gust front.
+
+## Round 17: the hero in the wind
+- Foot kicks (particles.js): when a foot lands while he walks (hips speed .5-4 m/s, outside the rooms), 2-3 leaf bits hop up on the ground, or 1-2 dust specks on the landings. They flutter down and drift with the wind. Pool of 16 on phones / 24 on desktop, one draw. Perf step 'footKick' (order 58).
+- Breath already shows only outdoors, or indoors when it is very cold (feels < 2 °C, at half strength).
+- Hair and clothes stirring belongs to Character (hero.js). They can read __wind.sample(headPos) and __rain.covered(pos).
+
+## Round 18: phone cost audit and soft quality steps
+- CPU per frame (all wind-thread updates; SwiftShader host, so expect about 5x on a phone): wind .008 ms, rain .001, particles .020, housewind .015, smoke ~0. Total about .045 ms.
+- Draws in a night storm on a phone, at most about 11: falling leaves 1 (16 inst, 32 tris), rain streaks 1 (1600 inst, 3200 tris, thin, fill-light), splashes 1 (220 inst), drips 1 (44 inst), room dust 0-3 (Points of 140, only rooms with a lit lamp), breath 0-1 (10 pts, only when cold), foot kicks 0-1 (16 pts, only right after a step), smoke 0-1 (16 pts), fog bank 0-1 (one sheet, half-res inside fogpass). Curtains, lantern, telescope and ladders add no draws: uniforms or transforms on existing meshes.
+- Quality steps no longer pop. wetGlass fades over 2.5 s. rainDrops and rainSplash thin out one instance at a time (uKeep, gl_InstanceID) over ~1 s, then cut instanceCount. roomDust fades (uK) over ~2 s. leafFall and footKick only stop spawning, so the ones already in the air live out.
+
+## Round 19: autumn leaf litter (wind.js makeLitter)
+- A falling leaf that comes to rest on a built surface (roof, landing, deck: rain height map > ground + .5 m) joins
+  the litter after 12–30 s instead of fading. One InstancedMesh (80 phone / 200 desktop), shares the falling leaf's
+  geometry and material, brown autumn tints, slight curl and random size. Ring buffer: when full the oldest goes.
+- The world starts lived-in: 30–45% of the pool is seeded on top surfaces under the crown once the rain map is ready.
+- Strong wind (level > .8) now and then lifts a litter leaf back into the air (most stay).
+- The hero: while task matches /clear_roof|clearleaves|sweep/ and he stands still, the nearest leaf within 1.8 m (his
+  feet level up to +2.2 m: a roof edge in reach) is flicked off every .35 s; it flies and lands on the ground or pond.
+- API `__wind.litter`: level() 0..1 (n / 60% of pool; Brain weights clear_roof by it), count(), near(x,y,z,r),
+  sweep(x,y,z,r,max) -> n, clear(), stats(), mesh. Cost: ~0.016 ms/frame CPU, +1 draw call, ≤ 160 tris (phone).

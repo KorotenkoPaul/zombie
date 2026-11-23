@@ -15,7 +15,7 @@
     const touch = opt.touch, W = innerWidth, H = innerHeight;
     const groundH = opt.groundH, solidStrict = opt.solid;
     const out = { frames: 0, seqs: 0, viol: {}, samples: {}, collided: 0, maxRatioDrop: 0 };
-    let orbitRef = null, zin = 0, legitGoal = true, lastKind = '', lastGesture = '', curSeq = 0, log = [];
+    let limbIn = 0, orbitRef = null, zin = 0, legitGoal = true, lastKind = '', lastGesture = '', curSeq = 0, log = [];
     let prev = null;
     function bad(kind, info) {
       out.viol[kind] = (out.viol[kind] || 0) + 1;
@@ -43,10 +43,10 @@
       if (prev) {
         const dE = Math.log(E / prev.E);
         const settling = Math.abs(Math.log(d.cd / d.gd)) > 0.002 || Math.abs(Math.log(d.cd / prev.cd)) > 1e-4;
-        const allowed = zoomCause || (settling && legitGoal) || d.collK < 0.999 || prev.coll < 0.999 || d.hit === 'ground' || prev.hit === 'ground' || d.hit === 'wall' || prev.hit === 'wall' || d.hit === 'room' || prev.hit === 'room';
+        const allowed = zoomCause || (settling && legitGoal) || d.collK < 0.999 || prev.coll < 0.999 || d.hit === 'ground' || prev.hit === 'ground' || d.hit === 'wall' || prev.hit === 'wall' || d.hit === 'room' || prev.hit === 'room' || d.hit === 'limb' || prev.hit === 'limb';
         const collDelta = Math.log((E / d.cd) / (prev.E / prev.cd));       // shortening by collision alone
         // a collision may slide the camera in/out (flying around the trunk) but never snap
-        if (Math.abs(collDelta) > 0.2 && Math.max(E, prev.E) > 4 && !['room', 'wall'].includes(d.hit || prev.hit))
+        if (Math.abs(collDelta) > 0.2 && Math.max(E, prev.E) > 4 && !['room', 'wall', 'limb'].includes(d.hit || prev.hit))
           bad('collision-snap', { E0: +prev.E.toFixed(2), E1: +E.toFixed(2), dist: +d.cd.toFixed(2), hit: d.hit || prev.hit, yaw: +d.cy.toFixed(3), pitch: +d.cp.toFixed(3), target: t.map(v => +v.toFixed(2)), kind: lastKind });
         if (!allowed && Math.abs(dE) > 0.004 && Math.abs(collDelta) <= 0.01) bad('unrequested-zoom', { E0: prev.E, E1: E, kind: lastKind, cd0: prev.cd, cd: d.cd, gd: d.gd, gd0: before.gd, hit: d.hit, coll: d.collK, p: [cp.x, cp.y, cp.z], t, pitch: d.cp });
         const jump = Math.hypot(cp.x - prev.p[0], cp.y - prev.p[1], cp.z - prev.p[2]);
@@ -64,6 +64,8 @@
           if (ok) bad('inside-wall', { p: c.map(v => +v.toFixed(2)), face: f, room: b, t, kind: lastKind });
         }
       }
+      limbIn = opt.limb && opt.limb(cp.x, cp.y, cp.z) ? limbIn + 1 : 0;   // the push-out is eased over a few frames
+      if (limbIn > 6) bad('inside-limb', { p: [cp.x, cp.y, cp.z].map(v => +v.toFixed(2)), t, kind: lastKind });
       if (cp.y < groundH(cp.x, cp.z) + 0.15) bad('under-ground', { p: [cp.x, cp.y, cp.z].map(v => +v.toFixed(2)), g: groundH(cp.x, cp.z) });
       // --- limits and a sensible focus ---
       if (Math.abs(d.cy - d.home.yaw) > d.YAW_LIM + 0.02) bad('yaw-limit', { yaw: d.cy, kind: lastKind });
@@ -72,7 +74,7 @@
       if (r > B.r + 3.8 || t[1] > B.yMax + 3.6 || t[1] < groundH(t[0], t[2]) - 0.01) bad('focus-out', { t, r: +r.toFixed(2) });
       if (!isFinite(E) || !isFinite(cp.x)) bad('nan', {});
       if (d.cd < 1.42 || d.cd > d.hardD + 0.05) bad('dist-range', { cd: d.cd });
-      if (orbitRef && (d.hit === 'room' || d.hit === 'wall' || (prev && prev.coll < 0.999 && orbitRef.E === prev.E))) orbitRef.room = true;   // a room hold releasing
+      if (orbitRef && (d.hit === 'room' || d.hit === 'wall' || d.hit === 'limb' || (prev && prev.coll < 0.999 && orbitRef.E === prev.E))) orbitRef.room = true;   // a room hold releasing
       if (orbitRef) {
         if (zin > 0 || d.flyK > 0 || d.cine || d.follow || Math.abs(Math.log(d.cd / orbitRef.cd)) > 0.003) orbitRef = null;
         else if (Math.abs(Math.log(E / orbitRef.E)) > 0.12 && orbitRef.E > 5 && !orbitRef.room)   // zoomed into a room, its walls hold the camera in (intended)

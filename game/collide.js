@@ -123,10 +123,20 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // ---------- spatial hash ----------
   const CS = .4; const G = new Map(); const key = (i, j, k) => ((i + 2048) * 4096 + (j + 2048)) * 4096 + (k + 2048);
   const corners = (s, pad) => { const mn = V(1e9, 1e9, 1e9), mx = V(-1e9, -1e9, -1e9); for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) { const p = s.c.clone().addScaledVector(s.ax[0], sx * s.h[0]).addScaledVector(s.ax[1], sy * s.h[1]).addScaledVector(s.ax[2], sz * s.h[2]); mn.min(p); mx.max(p); } mn.subScalar(pad); mx.addScalar(pad); return [mn, mx]; };
-  S.forEach((s, n) => {
+  function hashIn(s, n) {
     const [mn, mx] = corners(s, s.inst >= 0 ? .02 : .25);
-    for (let i = Math.floor(mn.x / CS); i <= Math.floor(mx.x / CS); i++) for (let j = Math.floor(mn.y / CS); j <= Math.floor(mx.y / CS); j++) for (let k = Math.floor(mn.z / CS); k <= Math.floor(mx.z / CS); k++) { const kk = key(i, j, k); let a = G.get(kk); if (!a) G.set(kk, a = []); a.push(n); }
-  });
+    // guard: nothing in the house spans more than ~12 m; a sky dome, a NaN or a degenerate matrix would flood the hash
+    if (![mn.x, mn.y, mn.z, mx.x, mx.y, mx.z].every(Number.isFinite) || mx.x - mn.x > 12 || mx.y - mn.y > 12 || mx.z - mn.z > 12) { s.off = true; s.dead = true; skipped['huge ' + s.name] = 1; return; }
+    for (let i = Math.floor(mn.x / CS); i <= Math.floor(mx.x / CS); i++) for (let j = Math.floor(mn.y / CS); j <= Math.floor(mx.y / CS); j++) for (let k = Math.floor(mn.z / CS); k <= Math.floor(mx.z / CS); k++) { const kk = key(i, j, k); let a = G.get(kk); if (!a) G.set(kk, a = []); if (!a.includes(n)) a.push(n); }
+  }
+  S.forEach(hashIn);
+  // moving things (hatch lid, oven door, book, tools): every half second re-read their matrices; one that moved is hashed
+  // into the cells it now covers (old cells keep a harmless stale entry: the depth test uses the real pose)
+  const MOV = S.map((s, n) => n).filter(n => S[n].inst < 0); let movK = 0;
+  function trackMoving() {
+    if (++movK % 30) return;
+    for (const n of MOV) { const s = S[n], e = s.obj.matrixWorld.elements; let same = true; for (let i = 0; i < 16; i++) if (Math.abs(e[i] - s.m[i]) > 1e-6) { same = false; break; } if (same) continue; s.m.set(e); frameOf(s, s.obj.matrixWorld); hashIn(s, n); }
+  }
   // background voxelisation: nearest to the hero first, a few ms per frame
   function buildSome(budgetMs) {
     if (!pending.length) return; const t0 = performance.now(); const hp = root.position;
@@ -185,10 +195,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   // deepest shape at p: returns depth beyond the allowance for this body part, OUT.n = way out
   const nB = V();
-  function probe(p, part, lying) {
+  function probe(p, part, lying) { const GR = window.__grab;
     const kk = key(Math.floor(p.x / CS), Math.floor(p.y / CS), Math.floor(p.z / CS)); const a = G.get(kk); let best = 0;
     if (a) for (const n of a) {
-      const s = S[n]; if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
+      const s = S[n]; if (s.dead) continue; if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;/* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
       let allow = part === 3 ? ALLOW.feet : ALLOW.hard;
       if (s.cls >= 2) allow = (lying && p.y < root.position.y + .6) ? ALLOW.pillow : ALLOW.soft;
       else if (s.cls === 1 && (part === 4 || part === 5)) allow = ALLOW.seat;
@@ -279,10 +289,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++;
-    buildSome(1.5);
+    buildSome(1.5); trackMoving();
     floorGuard(dt);
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 14);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGrow[c] = grow[c]; grow[c] = 0; }
+    { const GR = window.__grab; if (GR) for (const c of [2, 3]) if (GR.grip[c === 2 ? 'Left' : 'Right']) { off.limb[c].set(0, 0, 0); hold[c] = 0; } }// a gripping hand stays on its handle (game/grab.js)
     if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) off.limb[c].multiplyScalar(c >= 4 ? relFoot : rel);
     const fit = !!hero.fit, lying = !!(hero.inBed || hero.swing);
     root.position.add(off.root); applied.copy(off.root); root.updateMatrixWorld(true);
@@ -300,7 +311,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         if (tc <= 1) { sumN[tc].addScaledVector(OUT.n, ex); sumW[tc] += ex; if (ex > pd[tc]) pd[tc] = ex; }
         // legs: only lift a foot / shin out of what is under it; a sideways nudge of a planted foot is a visible slide
         if (P.chain >= 4 && OUT.n.y < .5) continue;
-        if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
+        if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4 && OUT.n.y >= .5) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
       // on a ladder only hands and feet are corrected (moving the body or bending the head pops on the pull-up)
       if (hero.lad) { pd[0] = 0; pd[1] = 0; anyP = pd.some(v => v > 0); }

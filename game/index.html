@@ -100,8 +100,10 @@ let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(l
 
 await RAPIER.init();prog();
 // ================= renderer =================
-const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
-const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
+const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);
+/* [PERF] the scene is drawn into the composer's own (non-MSAA) target, so canvas MSAA only smoothed the final full-screen copy: off on phones, same picture, less memory and bandwidth */
+const renderer=new THREE.WebGLRenderer({antialias:!MOBILE,powerPreference:'high-performance'});
+let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
 renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();const l=$('load');if(l){l.classList.remove('hide');$('loadTx').textContent='Перезапускаем картинку…';}setTimeout(()=>location.reload(),1500);});
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.0;renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -123,7 +125,7 @@ const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('k
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb('hero-glb.txt')]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(new URLSearchParams(location.search).get('hero')==='new'?'hero-new-glb.txt':'hero-glb.txt')/* ?hero=new = the adult survivor redesign (Pavel kept the original hero) */]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -145,7 +147,12 @@ scene.add(new THREE.Mesh(new THREE.SphereGeometry(220,32,16),new THREE.ShaderMat
    float lit=pow(s,3.)*lowSun;vec3 cc=mix(mix(hor,top,.35)*.62,hor*1.05,smoothstep(.55,.85,d))+sunCol*lit*(.9-.5*smoothstep(.55,.9,d))*glowK;
    c=mix(c,cc,cov*.85);stars*=1.-cov;}
   c+=vec3(stars);gl_FragColor=vec4(c,1.);}`})));
-const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.MeshBasicMaterial({color:0xF2F0E6,fog:false}));scene.add(moon);
+// [ENV] the moon has phases: one step of the cycle per night (8 nights round), starting from a random phase. moonIll = lit fraction.
+let MOON0=Math.random();let moonIll=1;window.__moon={ill:()=>moonIll,setPhase:f=>{MOON0=((f-dayNo/8)%1+1)%1;}};/* setPhase(.5)=full, 0=new */const moonU={ph:{value:Math.PI}};
+const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.ShaderMaterial({uniforms:moonU,fog:false,
+ vertexShader:`varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+ fragmentShader:`uniform float ph;varying vec3 vN;void main(){vec3 L=vec3(sin(ph),0.,-cos(ph));float d=smoothstep(-.06,.12,dot(normalize(vN),L));
+  float rim=pow(1.-max(vN.z,0.),3.);vec3 c=mix(vec3(.05,.07,.1)/* earthshine */,vec3(.95,.94,.9),d)*(1.-rim*.25);gl_FragColor=vec4(c,1.);}`}));scene.add(moon);
 
 // ================= ground, forest, fog, grading: see env.js =================
 const ENVM=await import(new URL(ASSET+'env.js',document.baseURI).href);const ENV=ENVM.createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});skyU.tN.value=ENV.noiseTex;
@@ -184,6 +191,20 @@ const TRK=(()=>{const NB=32,out=[];for(const seg of SL){const r=new Float32Array
  const v=[...r].filter(q=>q>0).sort((a,b)=>a-b),med=v.length?v[v.length>>1]:0;for(let b=0;b<NB;b++)r[b]=Math.min(r[b]||med,med*1.15);out.push(r);}
  // branch roots are bumps a metre or two high: the smallest radius within ±1 m keeps the trunk and drops them
  return out.map((r,i)=>r.map((v,b)=>{let m=v;for(let j=Math.max(0,i-10);j<=Math.min(out.length-1,i+10);j++)m=Math.min(m,out[j][b]);return m;}));})();
+// camera proxy for the crown's limbs above 11.5 m: the bark voxelised at 0.3 m, closed shells filled (flood fill from
+// outside), built once at load (~ms), O(1) per query. The camera never sits inside a limb, and when zoomed in it stops in
+// front of one instead of behind it (camera.js o.limb).
+const LIMB=(()=>{const V=.3,Y0=11.5;let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9,mnz=1e9,mxz=-1e9;
+ for(let t=0;t<barkTris.length;t+=3){const y=barkTris[t+1];if(y<Y0)continue;const x=barkTris[t],z=barkTris[t+2];if(x<mnx)mnx=x;if(x>mxx)mxx=x;if(y>mxy)mxy=y;if(z<mnz)mnz=z;if(z>mxz)mxz=z;}
+ if(mxx<mnx)return ()=>false;const x0=mnx-V*2,y0=Y0-V*2,z0=mnz-V*2,NX=Math.ceil((mxx-x0)/V)+3,NY=Math.ceil((mxy-y0)/V)+3,NZ=Math.ceil((mxz-z0)/V)+3,N=NX*NY*NZ,g=new Uint8Array(N);
+ const mark=(x,y,z)=>{const i=Math.floor((x-x0)/V),j=Math.floor((y-y0)/V),k=Math.floor((z-z0)/V);if(i>=0&&j>=0&&k>=0&&i<NX&&j<NY&&k<NZ)g[i+NX*(j+NY*k)]=1;};
+ const T=barkTris;for(let t=0;t<T.length;t+=9){if(T[t+1]<Y0&&T[t+4]<Y0&&T[t+7]<Y0)continue;
+  const L=Math.max(Math.hypot(T[t]-T[t+3],T[t+1]-T[t+4],T[t+2]-T[t+5]),Math.hypot(T[t]-T[t+6],T[t+1]-T[t+7],T[t+2]-T[t+8]),Math.hypot(T[t+3]-T[t+6],T[t+4]-T[t+7],T[t+5]-T[t+8]));const n=Math.min(40,Math.ceil(L/V*1.5));
+  for(let a=0;a<=n;a++)for(let b=0;a+b<=n;b++){const u=a/n,v=b/n,w=1-u-v;mark(T[t]*w+T[t+3]*u+T[t+6]*v,T[t+1]*w+T[t+4]*u+T[t+7]*v,T[t+2]*w+T[t+5]*u+T[t+8]*v);}}
+ const q=new Int32Array(N);let h=0,e=0;const push=c=>{if(g[c]===0){g[c]=2;q[e++]=c;}};
+ for(let i=0;i<NX;i++)for(let j=0;j<NY;j++)for(let k=0;k<NZ;k++)if(i===0||j===0||k===0||i===NX-1||j===NY-1||k===NZ-1)push(i+NX*(j+NY*k));
+ while(h<e){const c=q[h++],i=c%NX,j=((c/NX)|0)%NY,k=(c/(NX*NY))|0;if(i>0)push(c-1);if(i<NX-1)push(c+1);if(j>0)push(c-NX);if(j<NY-1)push(c+NX);if(k>0)push(c-NX*NY);if(k<NZ-1)push(c+NX*NY);}
+ return (x,y,z)=>{if(y<Y0)return false;const i=Math.floor((x-x0)/V),j=Math.floor((y-y0)/V),k=Math.floor((z-z0)/V);return i>=0&&j>=0&&k>=0&&i<NX&&j<NY&&k<NZ&&g[i+NX*(j+NY*k)]!==2;};})();
 function trunkSolid(x,y,z,m=0){if(y<0||y>11.5)return false;const r=TRK[clamp(Math.round(y*10),0,TRK.length-1)],NB=r.length;const dx=x-TAX[0],dz=z-TAX[1];
  const a=(Math.atan2(dz,dx)/(2*Math.PI)*NB+NB)%NB,b0=Math.floor(a)%NB,t=a-Math.floor(a);return Math.hypot(dx,dz)<r[b0]*(1-t)+r[(b0+1)%NB]*t+m;}
 function runs(ok,a0,a1,step=.04,min=.1){const out=[];let s=null;for(let a=a0;a<=a1+1e-6;a+=step){const g=ok(Math.min(a,a1));if(g&&s===null)s=a;if((!g||a+step>a1+1e-6)&&s!==null){const e=g?a1:a-step;if(e-s>=min)out.push([s,e]);s=null;}}return out;}
@@ -221,7 +242,7 @@ float pTop(vec2 mm,vec3 sz,float sd,float wall){float yw=mm.y/max(sz.y*.5,.01);f
 vec3 pTex(vec2 uv,float wall,float bias){return wall>.5?texture2D(tWoodB,uv,bias).rgb:texture2D(tWoodA,uv,bias).rgb;}
 float pL(vec3 c){return dot(c,vec3(.3,.6,.1));}
 vec3 plank(vec3 lp,vec3 sz,float sd){
- float wall=step(99.5,sd);vec3 m=lp*sz;vec3 an=abs(vN0);float fr=vFresh,old=1.-fr;
+ float wall=step(99.5,sd)*step(sd,399.5);vec3 m=lp*sz;vec3 an=abs(vN0);float fr=vFresh,old=1.-fr;
  // which face: 0 the broad face, 1 the long sides (seen down in the gaps), 2 the sawn ends
  float face=an.x>an.y&&an.x>an.z?2.:(an.y>an.z?1.:0.);
  vec2 off=vec2(pH(sd+.7)*7.,pH(sd+1.9)*3.);
@@ -243,6 +264,12 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
   // worn, lighter along the rounded edges
   float ew=sz.y*.5-abs(m.y),el=sz.x*.5-abs(m.x);col*=1.+.1*smoothstep(.012,.0,min(ew,el));
   if(vN0.z<0.&&wall<.5){col*=vec3(.68,.6,.55);pRgh=.95;}
+  // a batten's face seen from inside through the 1–3 cm slot between two planks: in the slot's shadow
+  if(sd>199.5&&sd<399.5){float inr=sd>299.5?-vN0.z:vN0.z;if(inr>.5)col*=vec3(.27,.25,.24);}
+  // ladder rung (seed 400+): boots and hands have polished the middle of the top pale and smooth, the front edge rounded
+  // and grey with wear; grime gathers at the ends by the rails
+  if(sd>399.5){float x=abs(m.x),tp=step(.5,vN0.z),fe=smoothstep(.2,1.,abs(vN0.y));float wr=smoothstep(.21,.05,x)*(.55+.45*pN(m.xy*vec2(9.,40.)+sd))*max(tp,.75*fe);
+   col=mix(col,vec3(.4,.29,.19)*(.85+.3*pL(tx)),wr*.7);pRgh=mix(pRgh,.42,wr*tp);col*=1.-.32*smoothstep(.17,.24,x);}
   if(uNails>.5&&sz.y>.12&&(vN0.z>0.||wall>.5)){vec3 nl=pNail(m.xy,sz,wall);col=mix(col,col*vec3(.55,.42,.33),nl.y*.6);float nh=smoothstep(.0055,.0035,nl.z);
    col=mix(col,vec3(.035,.032,.03)+vec3(.05,.03,.02)*pN(m.xy*900.),nh);pRgh=mix(pRgh,.45,nh);}
   // beams, braces and posts: a coach bolt through each end (square-ish iron head on a washer, rust bleeding into the wood)
@@ -329,7 +356,7 @@ const tM=new THREE.Matrix4(),tQ=new THREE.Quaternion(),tP=V(),tS=V();
 function board(c,len,w,t,rot,opt={}){const q=new THREE.Quaternion().setFromEuler(rot||new THREE.Euler());
  const rb=world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(c.x,c.y,c.z).setRotation({x:q.x,y:q.y,z:q.z,w:q.w}));
  const col=world.createCollider(RAPIER.ColliderDesc.cuboid(len/2,w/2,t/2).setDensity(600).setFriction(.8).setRestitution(.15),rb);
- const dark=!!opt.dark;const mesh=dark?beams:boards;const i=mesh.count++;const rowA=dark?dRow:aRow,tileA=dark?dTile:aTile;rowA.setX(i,rnd(0,97)+(opt.wall?100:0));tileA.setX(i,Math.max(.04,len/3.84));mesh.setColorAt(i,new THREE.Color().setScalar(opt.tint??rnd(.9,1.04)));
+ const dark=!!opt.dark;const mesh=dark?beams:boards;const i=mesh.count++;const rowA=dark?dRow:aRow,tileA=dark?dTile:aTile;rowA.setX(i,rnd(0,97)+(opt.wall?100:0)+(opt.bat?(opt.bat<0?100:200):0)+(opt.rung?400:0));tileA.setX(i,Math.max(.04,len/3.84));mesh.setColorAt(i,new THREE.Color().setScalar(opt.tint??rnd(.9,1.04)));
  PL.push({mesh,i,kind:dark?'beam':(opt.wall?'wall':'floor'),c:c.clone(),q:q.clone()});const b={rb,col,size:V(len,w,t),mesh,i,dark,breakable:!!opt.breakable,hp:opt.hp||4,group:opt.group||null,loose:false,home:{c:c.clone(),q:q.clone()}};B.push(b);col.userData=b;syncBoard(b);return b;}
 function syncBoard(b){const p=b.rb.translation(),q=b.rb.rotation();tM.compose(tP.set(p.x,p.y,p.z),tQ.set(q.x,q.y,q.z,q.w),b.size);b.mesh.setMatrixAt(b.i,tM);}
 const colToBoard=new Map();
@@ -372,6 +399,9 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  vec2 ux=dFdx(uv),uy=dFdy(uv);float hb=dot(texture2D(tSlate,uv,2.).rgb,vec3(.33));
  vec2 dH=vec2(dot(texture2D(tSlate,uv+ux,2.).rgb,vec3(.33))-hb,dot(texture2D(tSlate,uv+uy,2.).rgb,vec3(.33))-hb)*.004;
  if(top>.5){
+  // the slate above lies on this one: under its butt edge a soft shadow band (the overlap reads as depth, not as a drawn line),
+  // and a little grime washed down along it
+  {float dB=sz.x*.5-m.x*vDn;float ao=smoothstep(.12,.25,dB)*(.8+.2*sN(m.xz*vec2(3.,20.)+sd));col*=1.-.55*ao;sRgh=mix(sRgh,.95,ao);}
   vec2 mx=dFdx(m.xz),my=dFdy(m.xz);float c0=sCrack(m.xz,sz,sd);dH+=vec2(sCrack(m.xz+mx,sz,sd)-c0,sCrack(m.xz+my,sz,sd)-c0);col*=1.-.75*old*smoothstep(0.,-.003,c0);dH*=mix(1.,.3,vFresh);
   // pale lichen rosettes
   float li=smoothstep(.9,.95,sN(m.xz*90.+sd))*smoothstep(.55,.8,sN(m.xz*6.+sd*2.))*step(.6,sH(sd+11.));col=mix(col,vec3(.16,.17,.13),li*.6*old);
@@ -383,10 +413,10 @@ vec3 slate(vec3 lp,vec3 sz,float sd){
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
 shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT}});
- sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
-  .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
+ sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
+  .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);vDn=1.;\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;vDn=-sign((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).y+1e-6);\n#endif')
   .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.018,.3*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;\n#endif\nvSeed=aRow;vFresh=aFresh;vLP=transformed;');
- sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed,vFresh;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+SHING_GLSL)
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+SHING_GLSL)
   .replace('#include <map_fragment>','diffuseColor.rgb*=slate(vLP,vSz,vSeed);')
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=sRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=snArb(-vViewPosition,normal,sDH,faceDirection);');};
@@ -459,12 +489,28 @@ function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z)
    board(V(cx+Math.cos(am)*(R-.12),y-.1,cz+Math.sin(am)*(R-.12)),2*R*Math.sin(Math.PI/nr)+.02,.2,.11,new THREE.Euler(0,-am+Math.PI/2,0),{dark:true});}
   for(let z=cz+.25;z<cz+R-.2;z+=.8)for(const [a2,b2] of runs(x=>ok(x,z)&&ok(x,z+.1),cx-R,cx+R,.05,.3))board(V((a2+b2)/2,y-.115,z),b2-a2-.1,.14,.12,null,{dark:true});
   return;}
- for(let x=x0+.125;x<x1;x+=.25)for(const [a,b2] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e=b2>=z1-.05?b2+rnd(-.05,.05):b2;const L=lay();board(V(x+rnd(-.004,.004),y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}
+ // long runs are laid as 0.8–1.9 m boards butted end to end, joints staggered row to row (real end grain and joint lines)
+ for(let x=x0+.125;x<x1;x+=.25){const xo=rnd(-.004,.004);for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e0=b0>=z1-.05?b0+rnd(-.05,.05):b0;for(const [a,e] of cutRun(a0,e0,.8,1.9,.004)){const L=lay();L.lift=Math.min(L.lift,.0035);L.roll=Math.max(-.02,Math.min(.02,L.roll));/* rugs lie flat on top */board(V(x+xo,y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}}}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
  if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
-function wallBack(x0,x1,y0,y1,z,holes=[]){for(let x=x0+.16;x<x1;x+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x,(a+b2)/2,z+rnd(-.005,.005)),b2-a,rnd(.288,.303),rnd(.045,.055),new THREE.Euler(rnd(-.004,.004),rnd(-.03,.03),Math.PI/2+rnd(-.003,.003)),{tint:rnd(.93,1.07),wall:true});}
-function wallSide(x,z0,z1,y0,y1,holes=[]){for(let z=z0+.16;z<z1;z+=.31)for(const [a,b2] of runs(y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05),y0,y1,.05,.12))board(V(x+rnd(-.005,.005),(a+b2)/2,z),b2-a,rnd(.288,.303),rnd(.045,.055),new THREE.Euler(0,Math.PI/2+rnd(-.02,.02),Math.PI/2+rnd(-.004,.004)),{tint:rnd(.88,1.0),wall:true});}
+// split a run [a,b] into pieces lo..hi long with a gap g between them (first piece random, so joints stagger)
+function cutRun(a,b,lo,hi,g){const out=[];let s=a;if(b-a>hi){s=a+rnd(lo*.4,hi*.8);out.push([a,s-g/2]);s+=g/2;}while(b-s>hi){const e=s+rnd(lo,hi);if(b-e<lo*.5)break;out.push([s,e-g/2]);s=e+g/2;}out.push([s,b]);return out;}
+// wall planks: some full height, some two pieces butted at a random height; each board sits at its own depth (pushed in,
+// away from the outside), and a narrow batten covers every joint on the outside (board-on-batten), so from inside each gap
+// shows a shadowed board behind it instead of the room beyond, and from outside the wall has real steps of relief.
+// out: which side is the outside (-1 = toward -z/-x).
+function wallPlank(c,len,t,rot,o){board(c,len,rnd(.282,.3),t,rot,o);}
+function wallBack(x0,x1,y0,y1,z,holes=[],out=-1){const ok=x=>y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05);
+ for(let x=x0+.16;x<x1;x+=.31){const dz=-out*rnd(0,.01),t=rnd(.045,.055),tn=rnd(.93,1.07);
+  for(const [a0,b0] of runs(ok(x),y0,y1,.05,.12))for(const [a,b2] of (b0-a0>1.4&&Math.random()<.45?cutRun(a0,b0,.6,1.5,.006):[[a0,b0]]))
+   wallPlank(V(x,(a+b2)/2,z+dz+out*(.05-t)/2),b2-a,t,new THREE.Euler(rnd(-.004,.004),rnd(-.03,.03),Math.PI/2+rnd(-.003,.003)),{tint:tn*rnd(.97,1.03),wall:true});
+  const xb=x+.155;if(xb<x1-.05)for(const [a,b2] of runs(ok(xb),y0+.02,y1-.02,.05,.12))board(V(xb,(a+b2)/2,z+out*.035),b2-a,rnd(.065,.08),.022,new THREE.Euler(0,0,Math.PI/2+rnd(-.004,.004)),{tint:rnd(.82,.95),wall:true,bat:out});}}
+function wallSide(x,z0,z1,y0,y1,holes=[],out=-1){const ok=z=>y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05);
+ for(let z=z0+.16;z<z1;z+=.31){const dx=-out*rnd(0,.01),t=rnd(.045,.055),tn=rnd(.88,1.0);
+  for(const [a0,b0] of runs(ok(z),y0,y1,.05,.12))for(const [a,b2] of (b0-a0>1.4&&Math.random()<.45?cutRun(a0,b0,.6,1.5,.006):[[a0,b0]]))
+   wallPlank(V(x+dx+out*(.05-t)/2,(a+b2)/2,z),b2-a,t,new THREE.Euler(0,Math.PI/2+rnd(-.02,.02),Math.PI/2+rnd(-.004,.004)),{tint:tn*rnd(.97,1.03),wall:true});
+  const zb=z+.155;if(zb<z1-.05)for(const [a,b2] of runs(ok(zb),y0+.02,y1-.02,.05,.12))board(V(x+out*.035,(a+b2)/2,zb),b2-a,rnd(.065,.08),.022,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.004,.004)),{tint:rnd(.8,.92),wall:true,bat:out});}}
 const disc=(cx,cz,r,zmin)=>(x,z)=>(x-cx)**2+(z-cz)**2<=r*r&&z>=zmin;
 function brace(a,b2,w=.16){a=a.clone().addScaledVector(b2.clone().sub(a).normalize(),-.14);const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),{dark:true});}
 function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.42));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;post(x,y,y+.95,z);}
@@ -476,7 +522,23 @@ const knotGeo=new THREE.SphereGeometry(.026,8,6);
 function swayMat(m){m.onBeforeCompile=sh=>{WIND.hook(sh);sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float swayW;attribute float swayL;')
  .replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed+=windRope(transformed,swayW,swayL)*smoothstep(.05,.45,transformed.y);');};m.customProgramCacheKey=()=>'ropesway';return m;}
 const ropeMat=swayMat(new THREE.MeshStandardMaterial({color:0xB89E72,roughness:1}));
-const rungMat=swayMat(new THREE.MeshStandardMaterial({color:0x7A5236,roughness:.85}));
+// rope-ladder rungs: lashed sticks of real wood (the dark scan along the stick), scraps of bark left near the ends, and the
+// middle of each rung polished pale and smooth on top where boots and hands go, grimy by the lashings
+function rungWear(m){const prev=m.onBeforeCompile;m.onBeforeCompile=(sh,r)=>{prev(sh,r);sh.uniforms.tRung={value:woodDarkT};
+ sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 vRU;varying vec3 vRW,vRN;').replace('#include <begin_vertex>','#include <begin_vertex>\nvRU=uv;vRW=position;vRN=normal;');
+ sh.fragmentShader=sh.fragmentShader.replace('#include <common>',`#include <common>
+uniform sampler2D tRung;varying vec2 vRU;varying vec3 vRW,vRN;float rgW=0.;
+float rH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float rN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(rH(i),rH(i+vec2(1,0)),f.x),mix(rH(i+vec2(0,1)),rH(i+vec2(1,1)),f.x),f.y);}`)
+ .replace('#include <map_fragment>',`#include <map_fragment>
+{float L=(vRU.y-.5)*.64;float sd=floor(vRW.y*3.2+vRW.x*1.7+vRW.z*2.3);vec2 tu=vec2(L/2.4+rH(vec2(sd,1.))*5.,vRU.x*.14+rH(vec2(sd,2.)));
+ vec3 col=texture2D(tRung,tu).rgb*vec3(1.3,1.,.8)*(.9+.25*rH(vec2(sd,3.)));
+ float bark=smoothstep(.56,.7,rN(vec2(L*14.,vRU.x*6.)+sd))*smoothstep(.07,.2,abs(L));col=mix(col,vec3(.11,.085,.065)*(.7+.6*rN(vec2(L*90.,vRU.x*40.))),bark);
+ float tp=smoothstep(.15,.8,vRN.y);float wr=smoothstep(.23,.05,abs(L))*(.55+.45*rN(vec2(L*25.,vRU.x*9.)+sd))*(.3+.7*tp)*(1.-bark);
+ col=mix(col,vec3(.5,.37,.25)*(.8+.4*dot(col,vec3(.6))),wr*.75);col*=1.-.3*smoothstep(.2,.3,abs(L));diffuseColor.rgb*=col;rgW=wr*tp;}`)
+ .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.45,rgW);');};
+ m.customProgramCacheKey=()=>'ropesway|rung';return m;}
+const rungMat=rungWear(swayMat(new THREE.MeshStandardMaterial({color:0xffffff,roughness:.85})));
 function mergeSway(parts,top,H,ph){let nV=0,nI=0;for(const g of parts){nV+=g.attributes.position.count;nI+=g.index.count;}
  const P=new Float32Array(nV*3),N=new Float32Array(nV*3),U=new Float32Array(nV*2),W=new Float32Array(nV),PH=new Float32Array(nV).fill(H),I=new Uint32Array(nI);let v=0,i=0;
  for(const g of parts){const p=g.attributes.position,n=g.attributes.normal,u=g.attributes.uv;for(let k=0;k<p.count;k++){const o=v+k;P[o*3]=p.getX(k);P[o*3+1]=p.getY(k);P[o*3+2]=p.getZ(k);N[o*3]=n.getX(k);N[o*3+1]=n.getY(k);N[o*3+2]=n.getZ(k);if(u){U[o*2]=u.getX(k);U[o*2+1]=u.getY(k);}W[o]=Math.min(1,Math.max(0,(top-p.getY(k))/H));}
@@ -503,9 +565,9 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   rungs.push(placed(new THREE.CylinderGeometry(.03,.035,.16,6),V(x+sx*1.05,top+.06,z-.34)));
   for(const y of rungY){const t=(top-y)/H;ropes.push(placed(knotGeo,V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1)));}}
  // round rungs, a little uneven like hand-lashed sticks
- for(const y of rungY){const t=(top-y)/H;rungs.push(placed(new THREE.CylinderGeometry(.022,.022,.64,6),V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t)),new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
+ for(const y of rungY){const t=(top-y)/H;{const r=rnd(.019,.024);rungs.push(placed(new THREE.CylinderGeometry(r,r*rnd(.85,1),.64,9),V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t)),new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}}
  for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;scene.add(me);}}
-function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});for(let y=y0+.3;y<y1;y+=.32)board(V(x,y,z),.5,.06,.05,null,{dark:true});}
+function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});for(let y=y0+.3;y<y1;y+=.32)board(V(x,y,z),.5,.06,.05,null,{dark:true,rung:true});}
 // the photo is an open cutaway: no plank fences across the room fronts while there are no zombies (BARRICADES=false)
 const BARRICADES=false;
 function barricade(name,center,len){const g={name,boards:[],center};groups[name]=g;if(!BARRICADES)return g;
@@ -549,7 +611,7 @@ ropeLadder(0,0,LC+.05,4.0);
 const KX0=-4.4,KX1=-.9;
 floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]]});
 wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
-wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]]);wallSide(KX1,.8,2.2,KT+.03,BD-.15);
+wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]],-1);wallSide(KX1,.8,2.2,KT+.03,BD-.15,[],1);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start above the centre landing (they used to pass through it) */brace(V(-2.3,LC+.4,frontZ(-2.3,LC+.4)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,LC+.45,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
@@ -557,12 +619,12 @@ const BX0=-4.2,BX1=.4;
 floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]]});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
-const HATCH=(()=>{const x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+const HATCH=(()=>{const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
  // the opening reads as a real hole (Pavel): a dark trim frame round it on the bedroom floor, and the floor's thickness lined
  // with boards inside it, so from the kitchen below it is a framed square hole with the ladder going up through it
- {const fr=new THREE.Group();scene.add(fr);const W=x1-x0,D=z1-z0,cx=(x0+x1)/2,cz=(z0+z1)/2;
+ {const fr=new THREE.Group();scene.add(fr);const W=x1-hx0,D=z1-z0,cx=(hx0+x1)/2,cz=(z0+z1)/2;
   const bx=(sx,sy,sz,px,py,pz,mat)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(px,py,pz);m.castShadow=m.receiveShadow=true;fr.add(m);};
-  for(const sd of [-1,1]){bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,darkBoard);bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),darkBoard);
+  for(const sd of [-1,1]){if(sd>0)bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,darkBoard);/* -x: the wall is the edge */bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),darkBoard);
    bx(.035,.26,D,cx+sd*(W/2-.017),y-.15,cz,boardMat);bx(W-.07,.26,.035,cx,y-.15,cz+sd*(D/2-.017),boardMat);}
   bakeStatic(fr);}
  const lid=new THREE.Group();g.add(lid);const L=z1-z0;
@@ -572,12 +634,14 @@ const HATCH=(()=>{const x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.
  for(const xx of [-.2,.2]){const h=new THREE.Mesh(new THREE.BoxGeometry(.05,.02,.12),ring.material);h.position.set(xx,.03,-.04);lid.add(h);}
  bakeStatic(lid,m=>m===ring);const OPEN=1.95;let ang=OPEN,target=OPEN;lid.rotation.x=ang;
  const grab=new THREE.Vector3();
- return {update(dt){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;lid.rotation.x=ang;ring.getWorldPosition(grab);},
+ let fall=0,held=false;/* hero.js drives the lid by the ring while his hand holds it (drive), and lets it drop shut (drop) */
+ return {update(dt){if(fall){fall+=dt*7;ang-=fall*dt;if(ang<=0){ang=0;target=0;fall=0;try{window.__audio&&window.__audio.play('hatch_close',grab);}catch(e){}}}else if(!held){ang+=(target-ang)*Math.min(1,dt*5);if(Math.abs(target-ang)<.002)ang=target;}lid.rotation.x=ang;ring.getWorldPosition(grab);},
+  drive(a){held=true;fall=0;ang=target=Math.max(0,Math.min(OPEN,a));lid.rotation.x=ang;lid.updateMatrixWorld(true);ring.getWorldPosition(grab);},letGo(open){held=false;if(open)target=OPEN;else{target=0;fall=fall||.01;}},ringAt(a,out){const k=lid.rotation.x;lid.rotation.x=a;lid.updateMatrixWorld(true);ring.getWorldPosition(out);lid.rotation.x=k;lid.updateMatrixWorld(true);return out;},OPEN,
   open(){target=OPEN;},close(){target=0;},toggle(){target=target===0?OPEN:0;},isOpen(){return target!==0;},
-  get angle(){return ang;},grab,box:[x0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
+  get angle(){return ang;},grab,lid,box:[hx0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
-wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]]);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]]);
+wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]],-1);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]],1);
 roof(BX0,BX1-.32,BD+2.3,.8,3.8,1.9,BX1);/* steep gable with its pediment to the viewer, like the photo (critic T4) *//* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
 // outside ledge between the bedroom door and the rope ladder to the deck
 floorBoards(BX1,1.8,BD,2.1,3.65,{noEdge:true});brace(V(.5,BD-1.6,2.3),V(1.6,BD-.12,2.9),.12);
@@ -586,10 +650,43 @@ ropeLadder(1.35,BD,DK+.05,3.15);
 const WX0=.9,WX1=4.6;
 floorBoards(WX0,WX1+.15,WS,.8,5.3);
 wallBack(WX0,WX1,WS+.03,WS+2.3,1.2,[[3.2,3.95,WS+1.05,WS+1.75]]);
-wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]]);wallSide(WX0,1.0,2.3,WS+.03,WS+2.3);
+wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]],1);wallSide(WX0,1.0,2.3,WS+.03,WS+2.3,[],-1);
 roof(WX0,WX1,WS+2.3,1.0,4.0,.95);post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
 brace(V(2.0,WS-2.2,frontZ(2.0,WS-2.2)-.1),V(4.2,WS-.15,4.6),.16);brace(V(1.6,WS-2,1.4),V(4.0,WS-.15,1.5),.17);
 if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
+// ---- lockdown shutters (for the zombie nights): each open room front has folding plank shutters. Open, they are folded up
+// under the eave like an awning (two panels stacked, hinged at the top); in lockdown (window.__brain.locked) they swing down
+// and the lower panel unfolds, so the house reads sealed. Close to the camera they turn see-through so the hero stays visible.
+// API: window.__house.shutters {k:{kitchen,bedroom,workshop} 0 open..1 closed, set(room,on), auto (follow the brain)}
+const SHUT=(()=>{let tq=[];const rooms={kitchen:[KX0+.02,KX1,KT+.03,BD-.15,3.97],bedroom:[BX0,BX1,BD+.03,BD+2.28,3.93],workshop:[WX0,WX1,WS+.03,WS+2.28,4.13]};
+ const R={},api={k:{},auto:true,set(room,on){const r=R[room];if(!r)return;const w=on?1:0;if(r.want===w)return;r.want=w;try{window.__audio&&window.__audio.play&&window.__audio.play(on?'shutter_close':'shutter_open',r.c);}catch(e){}},
+ // Brain: close()/open() all rooms one after another (or one room by name); a call takes over from the auto follow
+ close(room){api.auto=false;if(room)return api.set(room,1);tq=['kitchen','workshop','bedroom'].map((r,i)=>[r,i*1.6,true]);},
+ open(room){api.auto=false;if(room)return api.set(room,0);tq=['bedroom','workshop','kitchen'].map((r,i)=>[r,i*1.2,false]);},snap(room,on){if(R[room])R[room].want=R[room].k=on?1:0;},state:room=>R[room]&&R[room].k};
+ for(const [name,[x0,x1,y0,y1,z]] of Object.entries(rooms)){
+  const mat=boardMat.clone();plankShader(mat);const bat=boardMat.clone();plankShader(bat);bat.color.setScalar(.62);
+  const H=y1-y0,h1=H*.5,np=Math.max(1,Math.round((x1-x0)/2.3)),PW=(x1-x0)/np,ups=[],los=[];
+  const panel=(g,w,h,flip)=>{for(let x=-w/2+.15;x<w/2-.05;x+=.3){const m=new THREE.Mesh(new THREE.BoxGeometry(rnd(.275,.29),h-.01,.04),mat);m.position.set(x+rnd(-.004,.004),-h/2,rnd(-.004,.004));g.add(m);}
+   for(const yy of [-.16,-h+.16]){const m=new THREE.Mesh(new THREE.BoxGeometry(w-.14,.11,.03),bat);m.position.set(0,yy,flip*.035);g.add(m);}
+   const L=Math.hypot(w-.3,h-.32),m=new THREE.Mesh(new THREE.BoxGeometry(L,.1,.028),bat);m.position.set(0,-h/2,flip*.034);m.rotation.z=Math.atan2(h-.32,w-.3)*(rnd(0,1)<.5?1:-1);g.add(m);
+   g.traverse(m=>{if(m.isMesh){m.castShadow=!MOBILE;m.receiveShadow=true;}});};
+  for(let i=0;i<np;i++){const up=new THREE.Group();up.position.set(x0+PW*(i+.5),y1,z);scene.add(up);panel(up,PW-.02,h1,1);
+   const lo=new THREE.Group();lo.position.set(0,-h1,0);up.add(lo);panel(lo,PW-.02,H-h1,1);bakeStatic(lo);bakeStatic(up,m=>m===lo||lo.children.includes(m));up.visible=false;ups.push(up);los.push(lo);
+   /* moving, outside the rooms: not furniture for collide.js (its scan skips 'Shape' geometry; the merged panels broke its hash) */up.traverse(m=>{if(m.isMesh)m.geometry.type='ShutterShapeGeometry';});}
+  R[name]={ups,los,mat,bat,k:0,want:0,c:V((x0+x1)/2,(y0+y1)/2,z)};api.k[name]=0;}
+ let lastLock=false;
+ api.update=(dt)=>{const B=window.__brain,lk=!!(B&&B.locked);
+  if(api.auto&&lk!==lastLock){lastLock=lk;tq=['kitchen','workshop','bedroom'].map((r,i)=>[r,i*1.6,lk]);}
+  tq=tq.filter(q=>{q[1]-=dt;if(q[1]<=0){api.set(q[0],q[2]);return false;}return true;});
+  for(const [name,r] of Object.entries(R)){const k0=r.k;r.k+=Math.sign(r.want-r.k)*Math.min(Math.abs(r.want-r.k),dt/2.6);api.k[name]=r.k;
+   if(k0<1&&r.k>=1){try{window.__audio&&window.__audio.play&&window.__audio.play('board_up',r.c);}catch(e){}}
+   const e=t=>t*t*(3-2*t),a=e(Math.min(1,r.k/.55)),b=e(Math.max(0,(r.k-.4)/.6));
+   for(const up of r.ups){up.rotation.x=-1.42*(1-a);up.visible=r.k>.002;}/* open: stowed out of sight (Pavel saw the raised awnings as black slabs over the leaves) */for(const lo of r.los)lo.rotation.x=-(Math.PI-.06)*(1-b);
+   // close to the camera a closed front turns see-through (the hero inside stays visible); from afar the house reads sealed
+   const d=camera.position.distanceTo(r.c),f=Math.min(1,Math.max(0,(13-d)/6))*b,op=1-.75*f*f*(3-2*f);
+   for(const m of [r.mat,r.bat]){m.opacity=op;m.transparent=op<.98;m.depthWrite=op>.98;}}};
+ api._R=R;return api;})();
+window.__house=Object.assign(window.__house||{},{shutters:SHUT});
 // lookout deck (right, top)
 floorBoards(.8,4.25,DK,.3,3.0);rail(.8,3.0,4.25,3.0,DK,[.84,1.86]);/* the gap at the rope-ladder top is wider than the hero (collide.js) */rail(4.25,.6,4.25,3.0,DK);
 brace(V(1.6,DK-2.4,1.0),V(2.6,DK-.13,1.6),.17);brace(V(4.0,WS+3.5,1.6),V(4.0,DK-.13,1.6),.16);
@@ -643,11 +740,11 @@ const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},w
 // [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
 const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
 // [WIND] autumn particles (game/particles.js): dust in the lamplit rooms, the hero's breath on cold mornings
-const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).createParticles({THREE,scene,wind:WIND,lights:LIGHTS,rooms:LEAF_AVOID,hero:{head:()=>heroBones&&heroBones.Head,mouth:()=>window.__hero&&window.__hero.mouth?window.__hero.mouth():null},MOBILE});window.__particles=PARTS;
+const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).createParticles({THREE,scene,wind:WIND,lights:LIGHTS,rooms:LEAF_AVOID,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,hero:{bones:()=>heroBones,head:()=>heroBones&&heroBones.Head,mouth:()=>window.__hero&&window.__hero.mouth?window.__hero.mouth():null},MOBILE});window.__particles=PARTS;
 // [WIND] the house answers the wind (game/housewind.js): the landing lantern swings on its chain, the telescope shivers in gusts
 const HOUSEWIND=(await import(new URL(ASSET+'housewind.js',document.baseURI).href)).createHouseWind({wind:WIND,scene,ladders:[{id:'ladder-ground',x:0,z:4.0,y0:0,y1:LC+.05},{id:'ladder-deck',x:1.35,z:3.15,y0:BD,y1:DK+.05}]});window.__housewind=HOUSEWIND;
 // [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
-const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],MOBILE});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
+const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],crown:TREE.leaves,MOBILE});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
 // [WIND] morning fog bank rolling in from the forest on the breeze (game/fogbank.js)
 const FOGBANK=(await import(new URL(ASSET+'fogbank.js',document.baseURI).href)).createFogBank({THREE,scene,wind:WIND,MOBILE});window.__fogbank=FOGBANK;
 
@@ -662,12 +759,12 @@ const motesMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blend
 #ifdef WIND
 p.xz+=windSwayS(position,.5)*.6;
 #endif
-vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=night*bl+day*.3;col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=min((day*2.+night*5.)*px*(26./-mv.z),16.*px);/* a mote drifting past the lens must not fill the screen with a green blob */gl_Position=projectionMatrix*mv;}`,
+vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=(night*bl+day*.3)*smoothstep(.5,2.,-mv.z);col=mix(vec3(1.,.95,.8),vec3(.85,1.,.45),night);gl_PointSize=min((day*2.+night*5.)*px*(26./-mv.z),16.*px);/* a mote drifting past the lens must not fill the screen with a green blob; [WIND] also fades out within 2 m */gl_Position=projectionMatrix*mv;}`,
  fragmentShader:`varying float a;varying vec3 col;void main(){float k=smoothstep(.5,0.,length(gl_PointCoord-.5));gl_FragColor=vec4(col*1.8*k*a,k*a);}`});
 {const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;WIND.hookRaw(motesMat);scene.add(p);}
 // [WIND] fireflies drift and leaves fall with the wind (game/wind.js)
 if(ENV.fireflies)WIND.hookRaw(ENV.fireflies.material);
-{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE,surfaceH:(x,z)=>window.__rain&&__rain.ready?__rain.heightAt(x,z):null});}
+{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE,surfaceH:(x,z)=>window.__rain&&__rain.ready?__rain.heightAt(x,z):null,hero:()=>({pos:hero.root.position,task:hero.task,still:!hero.path.length})});}
 // god rays: soft beams through the canopy
 const rayMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{t:{value:0},o:{value:0},col:{value:new THREE.Color(1,.86,.6)}},
  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
@@ -799,7 +896,7 @@ let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSE
 if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=Math.random()*24;BRAIN.prime(hour);const t0=performance.now(),dt=1/30;let n=0;const N=Math.floor(rnd(900,2400));
  while(n<N&&performance.now()-t0<2500){hour+=dt*hps();if(hour>=24)hour-=24;HH.update(dt);n++;}}catch(e){console.error('prewarm',e);}}
 function isNight(h){return !(h>=6&&h<20);}
-function hps(){return isNight(hour)?10/70:14/110;}// a day of ~3 minutes
+function hps(){return isNight(hour)?10/180:14/300;}// a day of 8 minutes (Pavel 2026-11-23): 5 min of daylight, 3 min of night
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
 const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
  [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.68,.6,.94],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98]];
@@ -843,7 +940,7 @@ function fireAt(z){if(!z||!z.alive)return false;aimTarget=z;if(hero.task==='guar
  setTimeout(()=>{if(hero.task==='guard')HH.play('231',{fade:.2});},1050);return true;}
 // camera input lives in camera.js (free orbit / pinch-to-point / pan / double-tap fly-to / hero follow)
 const isHeroObj=o=>{for(;o;o=o.parent)if(o===hero.root)return true;return false;};
-const rig=createCameraRig({camera,dom:cv,scene,rooms:()=>ROOMS,
+const rig=createCameraRig({camera,dom:cv,scene,rooms:()=>ROOMS,limb:LIMB,
  solid:(x,y,z)=>trunkSolid(x,y,z,.3),groundY:(x,z)=>ENVM.groundH?ENVM.groundH(x,z):0,
  isHero:isHeroObj,follow:()=>hero.root.position.clone().add(V(0,1,0)),
  onUser:()=>{ac();startAmb();if(over)location.reload();},
@@ -868,16 +965,23 @@ if(LIGHTS.degrade){PERF.addStep('lights',()=>LIGHTS.degrade()||false,()=>LIGHTS.
 if(LIGHTS.winGlow)PERF.addStep('winGlow',()=>LIGHTS.winGlow(false)||false,()=>LIGHTS.winGlow(true),45);
 // fog simplification can't be undone: last resort
 // [PERF] thermal guard: when even px 1.5 can't keep up, hold a steady 30 FPS instead of thrashing (phones heat up fast)
-PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
+// [PERF] phones: a steady 30 FPS from the start (half the GPU work of 60, the main source of heat), slow climbing (10 s calm,
+// no climb for 60 s after a drop) so quality doesn't pop. ?fps60 turns the phone cap off.
+if(MOBILE&&!/[?&]fps60/.test(location.search)){PERF.minMs=1000/30;PERF.calmWins=5;PERF.downHold=60;}
+if(!PERF.minMs)PERF.addStep('fps30',()=>{if(PERF.cap>1)return false;PERF.cap=2;},()=>{PERF.cap=1;},56);
 if(ENV.degrade)for(let i=0;i<3;i++)PERF.addStep('fog',()=>ENV.degrade(),null,80+i);
 // [PERF] the sun/moon shadow map is redrawn every 2nd frame on phones (every 3rd under load): the sun crawls and a 1-frame lag on the hero's shadow can't be seen
-let sunEvery=MOBILE?2:1,sunF=0;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
-PERF.addStep('sunShadow',()=>{if(sunEvery>=3)return false;sunEvery=3;},()=>{sunEvery=MOBILE?2:1;},30);
+// (at the phones' 30 FPS cap it is redrawn every frame again, so the hero's shadow never steps; every 2nd under load)
+const SUN0=MOBILE&&!PERF.minMs?2:1;let sunEvery=SUN0,sunF=0,sunN=0;const sunHP=new THREE.Vector3(),sunLD=new THREE.Vector3();window.__sunShadowN=()=>sunN;sun.shadow.autoUpdate=false;sun.shadow.needsUpdate=true;
+PERF.addStep('sunShadow',()=>{if(sunEvery>=SUN0+1)return false;sunEvery=SUN0+1;},()=>{sunEvery=SUN0;},30);
 const DOF=createDOF({renderer,composer,camera,mobile:MOBILE});composer.insertPass(DOF.pass,1);
 // [WIND] shared half-resolution fog pass (game/fogpass.js): Environment's fog sheets, puffs and mist bands plus the
 // morning fog bank are drawn into a quarter-pixel target and blended over the frame once. __fogpass.setEnabled(false) = old way.
 const FOGPASS=await (async()=>{try{const {Pass,FullScreenQuad}=await import('three/addons/postprocessing/Pass.js');const fp=(await import(new URL(ASSET+'fogpass.js',document.baseURI).href)).createFogPass({THREE,renderer,scene,camera,composer,FullScreenQuad,Pass,MOBILE});
  composer.insertPass(fp.pass,1);fp.add([...(MOBILE?rays.children:[]),...(ENV.sheets||[]),ENV.puffs,...(ENV.mist||[]),...((typeof FOGBANK!=='undefined'&&FOGBANK.sheets)||[])]);return fp;}catch(e){console.error('fogpass',e);return null;}})();window.__fogpass=FOGPASS;
+// [ENV] phones: the output pass composites the half-res fog itself (one full-screen pass less) whenever nothing runs between them
+if(FOGPASS&&MOBILE)FOGPASS.scale=.4;/* [ENV] the fog is soft: 0.4 res (16% of the pixels) looks the same as 0.5 on the phone */
+if(FOGPASS&&MOBILE&&ENV.outU)FOGPASS.merge=()=>{if(DOF.active||window.__fogMergeOff)return false;ENV.outU.tFog.value=FOGPASS.fogTexture;ENV.outU.fogOn.value=1;return true;};
 window.__camera={rig,DOF,dof:on=>{DOF.enabled=on;},get quality(){return {dof:DOF.enabled,dofActive:DOF.active,fps:DOF.fps};},set quality(q){if(q&&'dof' in q)DOF.enabled=q.dof;}};
 PERF.addStep('dof',()=>{if(!DOF.enabled)return false;DOF.enabled=false;},()=>{DOF.enabled=true;},5);
 // [PERF] GPU cost finder (perf.js; 5 quick taps on the clock or ?perfdebug): each test switches ONE thing off.
@@ -899,6 +1003,16 @@ let noPost=false;
  let lv=[];PERF.addTest('лампы',()=>{lv=[];scene.traverse(o=>{if((o.isPointLight||o.isSpotLight)&&o.visible){lv.push(o);o.visible=false;}});},()=>{lv.forEach(o=>o.visible=true);lv=[];});
  let dofW=false;PERF.addTest('DOF',()=>{dofW=DOF.enabled;DOF.enabled=false;},()=>{DOF.enabled=dofW;});
  PERF.addTest('постобработка',()=>{noPost=true;},()=>{noPost=false;});
+ /* [ENV] the environment's layers one by one */
+ {const E=ENV,vis=(list,on)=>list.filter(Boolean).forEach(o=>o.visible=on);let ck=0;
+  PERF.addTest('env: полосы тумана',()=>vis(E.sheets,false),()=>vis(E.sheets,true));
+  PERF.addTest('env: клубы тумана',()=>vis([E.puffs],false),()=>vis([E.puffs],true));
+  PERF.addTest('env: дымка',()=>vis(E.mist||[],false),()=>vis(E.mist||[],true));
+  PERF.addTest('env: дальние кольца',()=>vis(E.farRings||[],false),()=>vis(E.farRings||[],true));
+  PERF.addTest('env: фон-картина',()=>vis([E.backdrop],false),()=>vis([E.backdrop],true));
+  PERF.addTest('env: кроны леса',()=>vis([E.canopy,E.forestTrunks],false),()=>vis([E.canopy,E.forestTrunks],true));
+  PERF.addTest('env: облака неба',()=>{ck=1;},()=>{ck=0;});window.__skyNoCloud=()=>ck;
+  PERF.addTest('env: цветокоррекция',()=>{E.gradePass.uniforms.gOn.value=0;},()=>{E.gradePass.uniforms.gOn.value=1;});}
  let prW=1;PERF.addTest('пикселей ×¼',()=>{prW=PR;renderer.setPixelRatio(PR/2);resize();},()=>{renderer.setPixelRatio(prW);resize();});}
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
@@ -913,12 +1027,13 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}
  if(!over&&wasN&&!nowN){dayNo++;toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
  // --- light & sky ---
+ {const ph=((MOON0+dayNo/8)%1)*Math.PI*2;moonU.ph.value=ph;moonIll=.5-.5*Math.cos(ph);}
  const P=pal(hour);rainK=lerp(rainK,weather==='rain'?WIND.rainAmt():0,dt*.6);/* [WIND] drizzle .35, rain .75, storm 1 */const dim=1-rainK*.45;
  const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));
- skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
+ skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
- sun.color.copy(P.sun);sun.intensity=P.sunI*dim;hemi.intensity=P.hemiI;hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp;
+ sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)));sun.shadow.radius=3+nightK*3;/* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI;hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp;
  scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4);scene.fog.near=rig.dist*.95-mornK*12-rainK*6;scene.fog.far=rig.dist+70-mornK*30-rainK*25-nightK*35;
  moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
@@ -928,7 +1043,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  LIGHTS.update({dt,T,lampOn,dayK,task:hero.task,state:hero.state,asleep:!!hero.inBed});
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.visible=rayMat.uniforms.o.value>.002;/* [ENV] skip the three big additive planes when they add nothing (night, rain) */rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
- ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour});
+ ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour,moonIll});
  WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
  RAIN.update(dt,T,rainK,scene.fog.color);
  if(AUDIO)AUDIO.update(dt);
@@ -975,23 +1090,46 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  trauma=Math.max(0,trauma-dt*1.8);const tr=trauma*trauma;
  if(camOv){look.set(camOv[0],camOv[1],camOv[3]);camera.position.set(look.x+Math.sin(.05)*camOv[2],look.y+Math.sin(.13)*camOv[2],look.z+Math.cos(.05)*camOv[2]);camera.lookAt(look);}
  else rig.update(dt,{drift:RM?0:Math.sin(T*.07)*.03,shake:(RM||tr<1e-4)?null:V(Math.sin(T*47)*.12*tr,Math.cos(T*41)*.12*tr,0)});
+ SHUT.update(dt);/* after the camera moved: the fade reads its distance */
  hintT-=dt;if(hintT<0)$('hint').classList.add('off');
  if(!camOv)DOF.update(dt,rig.focusDist);
- if(++sunF>=sunEvery){sunF=0;sun.shadow.needsUpdate=true;}
- hud();if(noPost)renderer.render(scene,camera);else composer.render();
+ {/* [LIGHTS] phone heat: redraw the sun/moon shadow map only as often as its content changes. Hero walking/climbing or the light
+    direction turning by >0.3 deg -> every sunEvery frames (as before); hero standing at a task -> half as often; at night the moon
+    shadow is soft (radius 6) and faint -> half again (walking: at most every 4th); at the 30 FPS cap the base is every frame; a thin moon or rain clouds -> standing, every 16th. Desktop unchanged. */
+  let ev=sunEvery;
+  if(MOBILE){const hp=hero.root.position,mv=sunHP.distanceTo(hp)>Math.max(dt,1/60)*.25;sunHP.copy(hp);
+   if(sunLD.dot(sun.position)<sun.position.length()*sunLD.length()*.999986)sunF=ev;           // the light turned: redraw now
+   const moonPow=(.28+.72*moonIll)*(1-rainK*.85);
+   ev=mv?Math.min(4,ev*(nightK>.5?2:1)):Math.min(16,ev*2*(nightK>.5?2:1)*(nightK>.5&&moonPow<.45?2:1));}   /* walking: never under ~8 redraws/s */
+  if(++sunF>=ev){sunF=0;sun.shadow.needsUpdate=true;sunLD.copy(sun.position);sunN++;}}
+ hud();if(ENV.outU)ENV.outU.fogOn.value=0;/* the fog pass turns it on when it hands its fog to the output pass */if(noPost)renderer.render(scene,camera);else composer.render();
  PERF.end();
  }
 // [PERF] phones: objects smaller than 20 cm stop casting the sun/moon shadow (~100 of 256 casters, each one a draw call
 // in the shadow pass; their shadow is a few texels of a 1024 map over 24 m). They still receive shadows. Runs again later
 // for things built after loading.
 if(MOBILE){const _b=new THREE.Box3(),_v=V();const tiny=()=>{let n=0;scene.traverse(o=>{if(!o.isMesh||!o.castShadow||o.isInstancedMesh||o.isSkinnedMesh||o.userData.keepShadow)return;_b.setFromObject(o);_b.getSize(_v);if(Math.max(_v.x,_v.y,_v.z)<.2){o.castShadow=false;n++;}});return n;};PERF.tinyCasters=tiny();setTimeout(()=>{PERF.tinyCasters+=tiny();},8000);}
-// [PERF] phones start at pixel ratio 1.5 and climb to 2.2 while frames keep vsync (perf.js)
-if(MOBILE)PERF.preset([PX[1],PX[2],PX[3]]);
-resize();hud();$('load').classList.add('hide');PERF.openDebugWhenReady();
+// [PERF] phones start at pixel ratio 1.5 and climb while frames keep their interval (perf.js)
+// at the 30 FPS cap the ceiling is 1.75 (one rung up): above that the extra pixels mostly turn into heat on a 3x screen
+if(MOBILE){PERF.preset([PX[1],PX[2],PX[3]]);if(PERF.minMs){PX[1].up=null;PX[2].up=null;}}
+// [PERF] compile every shader now, behind the loading screen: hidden things (night sprites, sun rays, rain, fog layers)
+// otherwise compile the first time they show up, a visible stall of 50-200 ms on a phone (e.g. at dawn)
+{const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);try{renderer.compile(scene,camera);}catch(e){console.warn('prewarm',e);}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;PERF.prewarmed=renderer.info.programs.length;window.__pw=new Set();scene.traverse(o=>__pw.add(o));}
+resize();hud();PERF.openDebugWhenReady();
 window.__th={state:()=>({hour:+hour.toFixed(2),dayNo,hp:hero.hp,task:hero.task,heroNode:HH.node(),path:hero.path.length,zombies:zombies.map(z=>[z.group,z.stage,z.alive,+z.root.position.x.toFixed(1),+z.root.position.y.toFixed(1)]),broken:B.filter(b=>b.loose).length,arrows:arrows.length}),setHour:h=>{hour=h;},spawn:n=>spawnZombie(n),shoot:(x,y,z)=>shoot(bowPos(),V(x,y,z)),guard:()=>startTask('guard'),rain:on=>{weather=on?'rain':'clear';},task:n=>BRAIN?BRAIN.command(n):startTask(n),
  view:(y,p,z)=>{rig.set({target:look.clone().set(0,7.4,2.4),yaw:y,pitch:p,dist:rig.homeDist*z,snap:true,home:z===1});},rig,cam:(x,y,d,zz=2.2)=>{camOv=x===undefined?null:[x,y,d,zz];},ragInfo:()=>zombies.filter(z=>z.rag).map(z=>Object.fromEntries(Object.entries(z.rag).map(([k,v])=>{const t=v.rb.translation();return [k,[+t.x.toFixed(2),+t.y.toFixed(2),+t.z.toFixed(2)]];}))),zpos:()=>zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());return [h.x,h.y,h.z].map(v=>+v.toFixed(2));}),dbg:()=>({cam:camera.position.toArray().map(v=>+v.toFixed(2)),z:zombies.map(z=>{const h=z.bones.Hips.getWorldPosition(V());const s=h.clone().project(camera);let n=0;z.root.traverse(o=>{if(o.isSkinnedMesh)n++;});return {root:z.root.position.toArray(),scale:z.root.scale.x,vis:z.root.visible,inScene:!!z.root.parent,sk:n,scr:[s.x,s.y,s.z].map(v=>+v.toFixed(2))};})}),aimAt:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);for(let T=.3;T<2.2;T+=.05){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);if(v.length()>26)continue;const pts=trajectory(p0,v);if(pts[pts.length-1].distanceTo(t)<.95){shoot(p0,v);return [T,v.length()];}}return 'blocked';},aimDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=z.root.position.clone().add(V(0,1.1,0));const p0=bowPos();const d=t.clone().sub(p0);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.4,.7,1,1.4]){const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const e=pts[pts.length-1];const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,e.toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board '+h.userData.size.toArray().map(v=>+v.toFixed(2)):'?')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},gs:()=>guardSpot(),warp:i=>{const z=zombies.filter(z=>z.alive)[i];z.stage='attack';z.root.position.copy(z.R.stand);play(z,z.R.hit);},arrowsInfo:()=>arrows.map(a=>[a.stuck,!!a.hitZombie,a.g.position.toArray().map(v=>+v.toFixed(2))]),zScreen:i=>{const z=zombies.filter(z=>z.alive)[i];if(!z)return null;const s=zChest(z).project(camera);return [(s.x*.5+.5)*innerWidth,(-s.y*.5+.5)*innerHeight];},solveDbg:i=>{const z=zombies.filter(z=>z.alive)[i];const t=zChest(z);const p0=arrowOrigin(t);const out=[p0.toArray().map(v=>+v.toFixed(2)),t.toArray().map(v=>+v.toFixed(2))];for(const T of [.35,.6,.9,1.3]){const d=t.clone().sub(p0);const v=V(d.x/T,(d.y+.5*9.81*T*T)/T,d.z/T);trajectory.hit=null;const pts=trajectory(p0,v);const h=trajectory.hit;const tr=h?h.translation():null;out.push([T,pts[pts.length-1].toArray().map(v=>+v.toFixed(2)),h?(h.userData?(h.userData.zombie?'Z':(h.userData.size?'board':'ud')):'nouser'):'none',tr?[tr.x,tr.y,tr.z].map(v=>+v.toFixed(2)):null]);}return out;},nav:()=>HH.navCheck(),obst:()=>OBST.map(o=>[o.n,+o.x0.toFixed(2),+o.x1.toFixed(2),+o.z0.toFixed(2),+o.z1.toFixed(2),+o.y.toFixed(1)]),fit:()=>window.__fit,ragAll:()=>zombies.filter(z=>z.alive).forEach(z=>ragdoll(z,{x:rnd(-2,2),y:1,z:1.5},z.root.position.clone().add(V(0,1.2,0))))};
-window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,trunkSolid,E:HH.E};
+window.__dbg={hero,heroBones,play:HH.play,N,THREE,PROPS,HH,inTrunk,trunkSolid,LIMB,E:HH.E};
+// [GRAB] what each hand holds right now (game/grab.js): collide.js leaves a gripping hand on its handle
+try{const {createGrab}=await import(new URL(ASSET+'grab.js',document.baseURI).href);window.__grab=createGrab({THREE,bones:heroBones});}catch(e){console.error('grab',e);}
 // [COLLIDE] hard body boundaries: after hero.js poses the body, the skin is pushed out of walls, beams and furniture (game/collide.js)
 try{const {createCollide}=await import(new URL(ASSET+'collide.js',document.baseURI).href);window.__collide=createCollide({scene,HH,P3,trunk:{SL,TAX}});}catch(e){console.error('collide',e);}
-requestAnimationFrame(frame);
+// [PERF] the loading screen stays up until the heavy first work is done: every texture uploaded to the GPU, shaders linked
+// (parallel compile where the browser has it), collide.js built and two real frames drawn. Otherwise the first seconds after
+// it disappears are a frozen picture that ignores swipes.
+{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
+ if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
+  try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,4000))]);}catch(e){}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
+ PERF.startupMs=Math.round(performance.now()-T0);}
+let _shown=0;const _reveal=()=>{if(++_shown<3){requestAnimationFrame(_reveal);return;}$('load').classList.add('hide');};
+requestAnimationFrame(frame);requestAnimationFrame(_reveal);
 </script>
