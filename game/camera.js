@@ -21,7 +21,7 @@ export function createCameraRig(o) {
   const onTap = o.onTap || (() => {});
   const onUser = o.onUser || (() => {});       // any user gesture (audio unlock etc.)
   // soft bounds for the focus point: a cylinder around the oak; beyond it the camera is pulled back like a rubber band
-  const BOUND = o.bound || { cx: 0, cz: 1, r: 12.5, yMin: 0.2, yMax: 19 };   // r reaches the pond at (-8.4, 9.2)
+  const BOUND = o.bound || { cx: 0, cz: 1, r: 10, yMin: 0.2, yMax: 19 };
 
   const home = { target: new THREE.Vector3(0, 7.4, 2.4), yaw: 0.05, pitch: 0.13, dist: 30 };
   // goal (what the input asks for) and cur (what is rendered, damped toward goal)
