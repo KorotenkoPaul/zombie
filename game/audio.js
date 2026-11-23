@@ -50,13 +50,13 @@ const PLACE = {
 const L = {
   // ---- night ----
   cricket: { clips: ['cricket_a', 'cricket_b', 'cricket_c'], n: 5, place: 'ground', vol: .22, pitch: .07, p: 1,
-    act: (h, e) => nightW(h, 19.8, 5.2, 1.4) * SEASON_K(e.season, { summer: 1, spring: .55, autumn: .3, winter: 0 }) * (1 - .75 * e.rain),
+    act: (h, e) => nightW(h, 19.8, 5.2, 1.4) * SEASON_K(e.season, { summer: 1, spring: .55, autumn: .4, winter: 0 }) * (1 - .75 * e.rain),
     texture: [2.5, 6], gap: [.3, 2.5], rest: [.3, 2.5] },
   frog: { clips: ['frog_a', 'frog_b', 'frog_c', 'frog_d', 'toad_a'], n: 3, place: 'pond', vol: .34, pitch: .06, p: .9,
     pondy: 1,
     act: (h, e) => (nightW(h, 20.3, 4.6, 1.2) + .7 * win(h, 18.8, 20.6, .8)) * SEASON_K(e.season, { summer: 1, spring: 1, autumn: .25, winter: 0 }) * (1 + .7 * e.rain),
     bout: [1, 4], gap: [1, 3.5], rest: [5, 18] },
-  owl: { clips: ['owl_a', 'owl_a', 'owl_c', 'owl_b'], n: 2, place: 'far', vol: .5, pitch: .04, p: .85, sticky: true,
+  owl: { clips: ['owl_a', 'owl_a', 'owl_c', 'owl_b'], n: 2, place: 'far', vol: .32, pitch: .04, p: .85, sticky: true,
     act: (h, e) => nightW(h, 20.6, 5.2, 1) * (1 - .6 * e.rain),
     bout: [2, 4], gap: [5, 11], rest: [22, 60] },
   wolf: { clips: ['wolf_a', 'wolf_b'], n: 1, place: 'veryfar', vol: .55, pitch: .05, rev: .9,
