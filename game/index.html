@@ -405,9 +405,40 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
 {const sm=renderer.shadowMap,r0=sm.render.bind(sm);const draw=(L,sc,cam)=>{
   if(!PSG&&--psT<=0){psT=60;PSG=scene.getObjectByName('propsStatic')||null;}
   const ps=[];if(PSG&&!window.__psSun&&L.includes(sun))PSG.traverse(m=>{if(m.isMesh&&m.castShadow)ps.push(m);});
-  if(!ps.length){r0(L,sc,cam);return;}
-  const nu=sm.needsUpdate,rest=L.filter(l=>l!==sun);for(const m of ps)m.castShadow=false;try{r0([sun],sc,cam);}finally{for(const m of ps)m.castShadow=true;}
-  if(rest.length){sm.needsUpdate=nu;r0(rest,sc,cam);}};
+  const nu=sm.needsUpdate,rest=L.filter(l=>l!==sun);
+  if(L.includes(sun)){for(const m of ps)m.castShadow=false;try{r0([sun],sc,cam);}finally{for(const m of ps)m.castShadow=true;}}
+  for(const l of rest){sm.needsUpdate=nu;if(l.shadow&&l.shadow.needsUpdate&&!l.shadow.autoUpdate&&!window.__lampSkipOff){try{lampDraw(l,sc,cam);}catch(e){/* never break the frame: plain draw */console.warn('lamp shadow skip',e);window.__lampSkipOff=true;l.shadow.needsUpdate=true;r0([l],sc,cam);}}else r0([l],sc,cam);}};
+/* [PERF] lamp shadows: the whole bark (43k tris) and the merged house props (~36k) were drawn into every lamp's shadow map,
+   though a lamp's cone only reaches a small part of them. Per (lamp, big static caster) we keep only the triangles whose box
+   touches the lamp's shadow frustum (the rest can't put a single texel into the map) as a hidden mesh sharing the caster's
+   vertices, and draw that instead. Each crop is checked once on the lamp's own turn: the map is drawn with the crop and with
+   the full caster (the hero left out of both) and read back, and the crop is only kept if not one texel differs.
+   A lamp that moves or changes its cone is redone. ?lampskip=off or __lampSkipOff=true draws everything. */
+ const lampSt=new Map();let lampTestF=-1e9;const _lp=new THREE.Vector3(),_lt=new THREE.Vector3();if(/[?&]lampskip=off/.test(location.search))window.__lampSkipOff=true;
+ const lampCands=()=>{const c=[];if(TREE&&TREE.bark&&TREE.bark.castShadow)c.push(TREE.bark);if(PSG)PSG.traverse(m=>{if(m.isMesh&&m.castShadow&&!m.userData.lampCrop)c.push(m);});return c;};
+ const readMap=l=>{const m=l.shadow.map;if(!m)return null;const b=new Uint8Array(m.width*m.height*4);renderer.readRenderTargetPixels(m,0,0,m.width,m.height,b);return b;};
+ const _cv=new THREE.Vector3(),_cb=new THREE.Box3();
+ // the caster's triangles that touch the lamp's shadow frustum (sharing its vertex buffer); null = none touch, 'full' = all do
+ function cropOf(c,fr){const g=c.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=c.matrixWorld,I=[];
+  for(let t=0;t+2<n;t+=3){_cb.makeEmpty();for(let k=0;k<3;k++){_cv.fromBufferAttribute(pa,ix?ix[t+k]:t+k).applyMatrix4(mw);_cb.expandByPoint(_cv);}if(fr.intersectsBox(_cb))I.push(ix?ix[t]:t,ix?ix[t+1]:t+1,ix?ix[t+2]:t+2);}
+  if(!I.length)return null;if(I.length===n)return 'full';
+  const cg=new THREE.BufferGeometry();cg.setAttribute('position',pa);cg.setIndex(I);
+  const pm=new THREE.Mesh(cg,new THREE.MeshBasicMaterial({colorWrite:false,side:c.material.side,shadowSide:c.material.shadowSide}));pm.castShadow=true;pm.visible=false;pm.frustumCulled=false;pm.userData.lampCrop=1;pm.raycast=()=>{};pm.matrixAutoUpdate=false;c.add(pm);return pm;}
+ function lampDraw(l,sc,cam){let st=lampSt.get(l);l.getWorldPosition(_lp);(l.target||l).getWorldPosition(_lt);
+  const key=[l.angle,l.distance,l.shadow.camera.near,l.shadow.camera.far].join();if(!st||st.key!==key||st.p.distanceToSquared(_lp)>1e-6||st.t.distanceToSquared(_lt)>1e-6){if(st)for(const pm of st.sub.values())if(pm&&pm.parent){pm.parent.remove(pm);pm.geometry.dispose();pm.material.dispose();}st={key,p:_lp.clone(),t:_lt.clone(),sub:new Map(),tested:new Set()};lampSt.set(l,st);}
+  const now=performance.now();const test=now-lampTestF>250&&(sm.autoUpdate||sm.needsUpdate)?lampCands().find(c=>!st.tested.has(c)):null;
+  const on=[],shown=[];const use=(c,pm)=>{if(!c.castShadow)return;c.castShadow=false;on.push(c);if(pm){pm.visible=true;shown.push(pm);}};
+  for(const [c,pm] of st.sub)use(c,pm);
+  try{if(!test){r0([l],sc,cam);return;}
+   lampTestF=now;st.tested.add(test);l.shadow.updateMatrices(l);const pm=cropOf(test,l.shadow.getFrustum());if(pm==='full'){r0([l],sc,cam);return;}
+   const heroM=[];let hr=null;try{hr=hero&&hero.root;}catch(e){}/* declared further down */if(hr&&hr.traverse)hr.traverse(o=>{if(o.isMesh&&o.castShadow){heroM.push(o);o.castShadow=false;}});const nu=sm.needsUpdate;let A,B;
+   try{test.castShadow=false;if(pm)pm.visible=true;l.shadow.needsUpdate=true;r0([l],sc,cam);A=readMap(l);test.castShadow=true;if(pm)pm.visible=false;l.shadow.needsUpdate=true;sm.needsUpdate=nu;r0([l],sc,cam);B=readMap(l);}
+   finally{test.castShadow=true;if(pm)pm.visible=false;for(const o of heroM)o.castShadow=true;}
+   let same=!!(A&&B&&A.length===B.length);if(same)for(let i=0;i<A.length;i++)if(A[i]!==B[i]){same=false;break;}
+   if(!A||!B){if((st.fail=(st.fail||0)+1)<3)st.tested.delete(test);lampTestF=now+2000;}/* no map yet: try again later */if(same){st.sub.set(test,pm);use(test,pm);}else if(pm){test.remove(pm);pm.geometry.dispose();pm.material.dispose();}
+   l.shadow.needsUpdate=true;sm.needsUpdate=nu;r0([l],sc,cam);/* the real map, hero included */}
+  finally{for(const c of on)c.castShadow=true;for(const pm of shown)pm.visible=false;}}
+ window.__lampSkip=()=>[...lampSt].map(([l,st])=>({light:l.type+'@'+st.p.toArray().map(v=>v.toFixed(1)),sub:[...st.sub].map(([o,pm])=>(o===TREE.bark?'bark':o.parent&&o.parent.name)+':'+((o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3|0)+'->'+(pm?pm.geometry.index.count/3:0)),tested:st.tested.size,cands:lampCands().length}));
 /* [PERF] worst-case frames (night, every lamp lit): the lamp shadow maps (~120-140k tris each) and the sun/moon's (~110k) came
    due on the same frame now and then (~600k tris in one frame). One shadow map a frame (sun or one lamp); whatever else is due waits a frame (longest waiting first), so a map is at most a frame or two late. */
  const waitN=new Map();const due=l=>l.castShadow&&l.shadow&&!l.shadow.autoUpdate&&l.shadow.needsUpdate;
@@ -500,7 +531,7 @@ shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT}
 const shingGeo=bevelBoxGeo();const sRow=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aRow',sRow);const sFresh=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aFresh',sFresh);
 const SHING=new THREE.InstancedMesh(shingGeo,shingleMat,2000);SHING.count=0;SHING.castShadow=!MOBILE;/* [PERF] the roof slabs still cast the roof's shadow on phones */SHING.receiveShadow=true;scene.add(SHING);
 // [PERF] shingles live on layer 5: the main camera and the sun's shadow camera see it, lamp (point) shadow cameras don't
-SHING.layers.set(5);camera.layers.enable(5);sun.shadow.camera.layers.enable(5);
+SHING.layers.set(5);camera.layers.enable(5);sun.shadow.camera.layers.enable(5);sun.shadow.camera.layers.enable(6);/* layer 6: the hero's shadow-only proxy (hero.js), never drawn in the main pass */
 // [PERF] static house parts built from several meshes are baked into one mesh per material (draw calls on phones)
 function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().invert();const by=new Map(),rm=[];
  g.traverse(m=>{if(!m.isMesh||m.isInstancedMesh||keep(m)||m.material.transparent)return;const geo=(m.geometry.index?m.geometry.toNonIndexed():m.geometry.clone());geo.applyMatrix4(inv.clone().multiply(m.matrixWorld));
