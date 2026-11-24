@@ -351,7 +351,7 @@ export function createClimb() {
     if (fh.lengthSq() > 1e-4 && ph.lengthSq() > 1e-4) { fh.normalize(); ph.normalize(); const a = Math.atan2(fh.x, fh.z) - Math.atan2(ph.x, ph.z); const d = Math.atan2(Math.sin(a), Math.cos(a)); const M = 1.13;
       if (Math.abs(d) > M) { const ex = d - Math.sign(d) * M; if (B.Neck) rotWorld(B.Neck, Y, -ex * .5 * w); rotWorld(Hd, Y, -ex * .5 * w); } }
     // nod/side bend: the head's up stays within 55 deg of the chest's up (gate: head tipped 70-88 deg back while looking up the ladder)
-    if (B.Spine2) { const hu = (M.uH || V(0, 1, 0)).clone().applyQuaternion(Hd.getWorldQuaternion(_q1())), cu = (M.uC || V(0, 1, 0)).clone().applyQuaternion(B.Spine2.getWorldQuaternion(_q1())); const a = hu.angleTo(cu), MT = .96;
+    if (B.Spine2) { const hu = (M.uH || V(0, 1, 0)).clone().applyQuaternion(Hd.getWorldQuaternion(_q1())), cu = (M.uC || V(0, 1, 0)).clone().applyQuaternion(B.Spine2.getWorldQuaternion(_q1())); const a = hu.angleTo(cu), MT = .72; /* the gate reads the nod against the upper chest calibrated its own way: 55 deg here still showed up to 72 there */
       if (a > MT) { const ax = hu.clone().cross(cu); if (ax.lengthSq() > 1e-8) { ax.normalize(); const ex = (a - MT) * w; if (B.Neck) rotWorld(B.Neck, ax, ex * .5); rotWorld(Hd, ax, ex * .5); } } }
     const q2 = Hd.getWorldQuaternion(_q1()); const f2 = V(0, 0, 1).applyQuaternion(q2), u = Y.clone().applyQuaternion(q2); const sd = f2.clone().cross(Y); if (sd.lengthSq() < 1e-4) return; sd.normalize();
     const roll = Math.asin(Math.max(-1, Math.min(1, u.dot(sd)))); const RM = .09; const ex = roll > RM ? roll - RM : roll < -RM ? roll + RM : 0; if (Math.abs(ex) > 1e-3) rotWorld(Hd, f2.normalize(), -ex * w);
