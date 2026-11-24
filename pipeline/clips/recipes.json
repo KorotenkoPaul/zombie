@@ -318,5 +318,29 @@
   "t0": 23.0,
   "t1": 27.3,
   "note": "Same actor sweeping with the hands swapped: LEFT hand on top of the handle, right hand low. 4.3 s (the turn-away at the end is cut)."
+ },
+ "walk_start": {
+  "src": "69_03",
+  "t0": 0.3,
+  "t1": 2.7,
+  "note": "Real mocap: standing still, then starting to walk forward (+Z), reaches ~0.9 m/s. Blend into the walk cycle at the end."
+ },
+ "walk_start_b": {
+  "src": "69_04",
+  "t0": 0.3,
+  "t1": 2.7,
+  "note": "Second walk-start take (69_04)."
+ },
+ "walk_stop": {
+  "src": "16_33",
+  "t0": 0.7,
+  "t1": 2.4,
+  "note": "Real mocap: walking at ~0.8 m/s, then stopping on both feet. Blend in from the walk cycle at the start."
+ },
+ "walk_stop_b": {
+  "src": "16_34",
+  "t0": 0.9,
+  "t1": 2.9,
+  "note": "Second walk-stop take (16_34), slightly longer settle."
  }
 }

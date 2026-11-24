@@ -64,6 +64,10 @@ Sources: CMU Graphics Lab Motion Capture Database (free for any use, incl. comme
 | turn90_R_b | 1.47 | 0 | 0.115 | 0.88-0.89 | `"turn90_R_b": {"src": "turn90_R_b", "smooth": 1}` | {} | Second 90 deg right turn take (69_18). |
 | turn_in_place_a | 9.4 | 0 | 0.066 | 0.87-0.89 | `"turn_in_place_a": {"src": "turn_in_place_a", "smooth": 1}` | {} | Real mocap turn in place (several turns). Motion matching DB. |
 | turn_in_place_b | 8.8 | 0 | 0.075 | 0.88-0.89 | `"turn_in_place_b": {"src": "turn_in_place_b", "smooth": 1}` | {} | Turn in place, opposite direction. |
+| walk_start | 2.43 | 0 | 0.052 | 0.86-0.88 | `"walk_start": {"src": "walk_start", "smooth": 1}` | {} | Real mocap: standing still, then starting to walk forward (+Z), reaches ~0.9 m/s. Blend into the walk cycle at the end. |
+| walk_start_b | 2.43 | 0 | 0.046 | 0.86-0.89 | `"walk_start_b": {"src": "walk_start_b", "smooth": 1}` | {} | Second walk-start take (69_04). |
+| walk_stop | 1.7 | 0 | 0.097 | 0.86-0.88 | `"walk_stop": {"src": "walk_stop", "smooth": 1}` | {} | Real mocap: walking at ~0.8 m/s, then stopping on both feet. Blend in from the walk cycle at the start. |
+| walk_stop_b | 2 | 0 | 0.068 | 0.85-0.88 | `"walk_stop_b": {"src": "walk_stop_b", "smooth": 1}` | {} | Second walk-stop take (16_34), slightly longer settle. |
 | wash_hands_front | 15.33 | 0 | 0.04 | 0.91-0.91 | `"wash_hands_front": {"src": "wash_hands_front", "smooth": 1, "loop": true, "close": 0.8}` | {'LeftFore/torso': (-3, 6.4)} | CORRECTION after the real-mesh render: 79_90 'washing' is washing the face/head (hands go up to the face), not dishes. Use it for washing the face at the bucket/pond; for dishes keep hy_wash (its clip data has correct knees). 15.3 s, standing legs from 80_16. |
 | wipe_window | 8.83 | 0 | 0.017 | 0.87-0.88 | `"wipe_window": {"src": "wipe_window", "smooth": 1, "loop": true, "close": 0.6}` | {} | Real mocap wiping a window/surface at chest-head height (use for drying a plate / wiping). |
 
