@@ -288,5 +288,29 @@
   "src": "70_05",
   "mirror": true,
   "note": "Same as carry_bucket_R, bucket in the LEFT hand."
+ },
+ "turn90_L": {
+  "src": "69_16",
+  "t0": 0.0,
+  "t1": 1.45,
+  "note": "One 90 deg turn in place to the LEFT, real stepping feet (69_16 first turn). Play at speed 1.3-1.6 for a brisk turn; chain two for 180 deg."
+ },
+ "turn90_L_b": {
+  "src": "69_16",
+  "t0": 1.75,
+  "t1": 3.4,
+  "note": "Second 90 deg left turn take (69_16), slightly different footwork; alternate with turn90_L."
+ },
+ "turn90_R": {
+  "src": "69_18",
+  "t0": 1.15,
+  "t1": 2.85,
+  "note": "One 90 deg turn in place to the RIGHT, real stepping feet (69_18). Same use as turn90_L."
+ },
+ "turn90_R_b": {
+  "src": "69_18",
+  "t0": 2.75,
+  "t1": 4.2,
+  "note": "Second 90 deg right turn take (69_18)."
  }
 }
