@@ -148,7 +148,7 @@ module.exports=function install(cfg){
  // the hatch lid swings or falls on its own after letGo (real gravity): mark those frames so the no-touch check skips them
  const HT=window.__house&&window.__house.hatch;let hatchFree=false;
  if(HT&&HT.letGo&&!HT.__qa){HT.__qa=1;const lg=HT.letGo.bind(HT),dr=HT.drive.bind(HT);HT.letGo=o=>{hatchFree=true;return lg(o);};HT.drive=a=>{hatchFree=false;return dr(a);};}
- const HAND=[heroBones.LeftHand,heroBones.RightHand];
+ const HAND=[heroBones.LeftHand,heroBones.RightHand];const DYN=new Set(),DV=V(),DL=V(),DS=V(),DI=new THREE.Matrix4();const BODYP=VS.map(()=>[V(),0]);
  const QB=['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase'].map(n=>heroBones[n]);
  const out={frames:[],GN,BN,nColl:C.length,skipped,verts:VS.length,rungs:RUNGS,QN:['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase']};
  const vp=V(),q=new THREE.Quaternion();
@@ -163,7 +163,7 @@ module.exports=function install(cfg){
   // lying / sitting: how far the lowest part of each body group is above whatever is under it (1 cm steps down to 40 cm)
   const supOn=!!(H.inBed||H.seated)&&!H.swing;const sup=GN.map(()=>40);const sp=V();
   const solidAt=p=>{let r=false;query(p,(sh)=>{if(!r&&depth(sh,p)>.002)r=true;});return r;};
-  for(const [vi,g] of VS){vp.fromBufferAttribute(pos,vi);M.applyBoneTransform(vi,vp);vp.applyMatrix4(M.matrixWorld);
+  let nb=0;for(const [vi,g] of VS){vp.fromBufferAttribute(pos,vi);M.applyBoneTransform(vi,vp);vp.applyMatrix4(M.matrixWorld);if(nb<BODYP.length)BODYP[nb][0].copy(vp),BODYP[nb][1]=g;nb++;
    if(supOn&&(vi/step)%2===0&&sup[g]>0){sp.copy(vp);let k=0;for(;k<sup[g]&&k<40;k++){if(solidAt(sp))break;sp.y-=.01;}if(k<sup[g])sup[g]=k;}
    query(vp,(s,ci)=>{const d=depth(s,vp);if(d>pen[g][0]){pen[g][0]=d;pen[g][1]=ci;pen[g][2]=[+vp.x.toFixed(3),+vp.y.toFixed(3),+vp.z.toFixed(3)];}});
    if((vi/step)%2===0){const d=trunkDepth(vp);if(d>pen[g][0]){pen[g][0]=d;pen[g][1]=TRUNK;pen[g][2]=[+vp.x.toFixed(3),+vp.y.toFixed(3),+vp.z.toFixed(3)];}}}
@@ -180,7 +180,19 @@ module.exports=function install(cfg){
    if(pr.length)r.mv=pr;if(hatchFree)r.hfree=1;
    // held tools: anything hung under a hand bone (not a bone); distance from that palm to the tool's mesh
    const gr=[];HAND.forEach((hb,k)=>{for(const ch of hb.children){if(ch.isBone||!ch.visible||ch.isLight)continue;BX.setFromObject(ch);if(BX.isEmpty()||BX.getSize(vp).length()>1.5)continue;gr.push([propName(ch)||ch.name||(ch.children[0]&&ch.children[0].name)||'tool',k,+(BX.distanceToPoint(HP[k])*100).toFixed(1)]);}});
-   if(gr.length)r.grip=gr;}
+   if(gr.length)r.grip=gr;
+   // things that move (carried bucket, held tools, opened doors, plates): body vertices inside them. Static furniture is covered by the colliders above
+   for(const o of moved)if(!isHero(o))DYN.add(o);HAND.forEach(hb=>{for(const ch of hb.children)if(!ch.isBone&&ch.visible&&!ch.isLight)DYN.add(ch);});
+   const hp2=H.root.position;let best=null;
+   for(const o of DYN){if(!o.visible)continue;o.getWorldPosition(vp);if(vp.distanceTo(hp2)>1.6)continue;const nm=propName(o)||o.name||'held';
+    o.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry||m.isSkinnedMesh)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(DV);if(sz.length()<.03||sz.length()>2.5)return;
+     DI.copy(m.matrixWorld).invert();const cx=(bb.min.x+bb.max.x)/2,cz=(bb.min.z+bb.max.z)/2,rr=Math.min(sz.x,sz.z)/2;const round=Math.abs(sz.x-sz.z)<.15*Math.max(sz.x,sz.z);
+     const sc=DS.setFromMatrixScale(m.matrixWorld);const k=Math.min(sc.x,sc.y,sc.z);
+     for(const [p,g2] of BODYP){if(g2===1||g2===2)continue;DL.copy(p).applyMatrix4(DI);if(DL.y<bb.min.y||DL.y>bb.max.y)continue;let d;
+      if(round){const rd=Math.hypot(DL.x-cx,DL.z-cz);if(rd>=rr)continue;d=Math.min(rr-rd,DL.y-bb.min.y,bb.max.y-DL.y);}
+      else{if(DL.x<bb.min.x||DL.x>bb.max.x||DL.z<bb.min.z||DL.z>bb.max.z)continue;d=Math.min(DL.x-bb.min.x,bb.max.x-DL.x,DL.y-bb.min.y,bb.max.y-DL.y,DL.z-bb.min.z,bb.max.z-DL.z);}
+      d*=k;if(d>.01&&(!best||d>best[2]))best=[nm,g2,d];}});}
+   if(best)r.dp=[best[0],GN[best[1]],+(best[2]*100).toFixed(1)];}
   out.frames.push(r);}
 
  window.__A={sample,out,movNames:()=>MOV.map(m=>[m.nm,m.n,m.at,m.kids]),C,depth,query,floorUnder,collNames:()=>C.map(s=>s.name)};
