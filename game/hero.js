@@ -1847,7 +1847,7 @@ export function createHero(ctx){
  // world matrix the static boot needs to sit exactly where the skinned boot is drawn right now
  function bootWorld(B,out){root.updateMatrixWorld(true);const S=B.S;out.copy(B.foot.matrixWorld).multiply(S.boneInverses[B.fi]).multiply(_bm2.makeTranslation(B.c0.x,B.c0.y,B.c0.z));
   if(B.src.bindMode==='detached'){/* not used by these rigs */}return out;}
- function bootSpot(sd){const ed=N.bededge;const hd=FIT.bed&&FIT.bed.headDir||1;// beside the bed, to his right (the foot end), toes to the room
+ function bootSpot(sd){{const B=BT.side[sd];if(B&&B.spot)return {p:B.spot.p.clone(),yaw:B.spot.yaw};}const ed=N.bededge;const hd=FIT.bed&&FIT.bed.headDir||1;// beside the bed, to his right (the foot end), toes to the room
   const k=sd==='Right'?0:1;return {p:V(ed.p.x-hd*(.42+k*.14),(ed.floor??floorTop(BD)),(FIT.bed?FIT.bed.z1:ed.p.z)+.16+k*.03),yaw:(sd==='Right'?.18:-.12)};}
  function bootShow(sd,on){const B=BT.side[sd];if(!B)return;B.on=on;if(B.skin)B.skin.visible=on;if(!BOOTS){BT.sockU.value=(BT.side.Left&&!BT.side.Left.on||BT.side.Right&&!BT.side.Right.on)?1:0;}}
  function bootPark(sd){const B=BT.side[sd];if(!B)return;const s=bootSpot(sd);const pm=B.prop;scene.attach(pm);pm.position.copy(s.p);pm.rotation.set(0,s.yaw,0);pm.scale.setScalar(BT.sc||1);pm.visible=true;}
@@ -1856,11 +1856,11 @@ export function createHero(ctx){
  // set down: from the hand to its spot beside the bed in a short, eased move (the hand lets go just above the floor)
  const BTW=[];function bootTween(pm,toP,toQ,d,then){scene.attach(pm);BTW.push({pm,p0:pm.position.clone(),q0:pm.quaternion.clone(),toP,toQ,t:0,d,then});}
  function bootTweenTick(dt){for(let i=BTW.length-1;i>=0;i--){const w=BTW[i];w.t+=dt;const k=smooth(0,1,Math.min(1,w.t/w.d));w.pm.position.lerpVectors(w.p0,w.toP,k);w.pm.quaternion.slerpQuaternions(w.q0,w.toQ,k);if(w.t>=w.d){BTW.splice(i,1);w.then&&w.then();}}}
- function bootDown(sd){const B=BT.side[sd];if(!B)return;const s=bootSpot(sd);bootTween(B.prop,s.p,new THREE.Quaternion().setFromAxisAngle(V(0,1,0),s.yaw),.14);AU('thud',s.p);}
+ function bootDown(sd){const B=BT.side[sd];if(!B)return;const s=bootSpot(sd);{const hp=wp(bones[sd+'Hand']);const dx=hp.x-s.p.x,dz=hp.z-s.p.z,dd=Math.hypot(dx,dz);const k=dd>.3?.3/dd:1;/* set down right under the hand (the gate saw the boot glide 17 cm from the palm) */s.p.x+=dx*k;s.p.z+=dz*k;if(FIT.bed)s.p.z=Math.max(s.p.z,FIT.bed.z1+.1);B.spot=s;}bootTween(B.prop,s.p,new THREE.Quaternion().setFromAxisAngle(V(0,1,0),s.yaw),.14);AU('thud',s.p);}
  // morning: the boot comes up from the floor into the hand, then onto the foot (the prop eases onto the skinned boot's place, then swaps)
  function bootPick(sd,hand){const B=BT.side[sd];if(!B)return;const pm=B.prop;pm.visible=true;const h=bones[hand+'Hand'];const hp=h.getWorldPosition(V());
   bootTween(pm,hp.clone().add(V(0,-.06,0)),pm.quaternion.clone(),.12,()=>{h.attach(pm);});}
- function bootOn(sd){const B=BT.side[sd];if(!B)return;const pm=B.prop;bootWorld(B,_bbm);const P_=V(),Q_=new THREE.Quaternion(),S_=V();_bbm.decompose(P_,Q_,S_);bootTween(pm,P_,Q_,.25,()=>{pm.visible=false;bootShow(sd,true);});}
+ function bootOn(sd){const B=BT.side[sd];if(!B)return;B.spot=null;const pm=B.prop;bootWorld(B,_bbm);const P_=V(),Q_=new THREE.Quaternion(),S_=V();_bbm.decompose(P_,Q_,S_);bootTween(pm,P_,Q_,.25,()=>{pm.visible=false;bootShow(sd,true);});}
  // the vest: off seated and laid folded at the foot end of the mattress; on again standing
  function hasVest(){bootInit();return !!(VEST||BT.dv);}
  function vestProp(){if(BT.vestProp||!hasVest())return BT.vestProp;if(!VEST){const D=BT.dv;const P=D.geo.attributes.position;const pos=P.array;const c=D.bb.getCenter(V());
@@ -1895,11 +1895,12 @@ export function createHero(ctx){
   const t=V().crossVectors(up,V(0,1,0));if(t.lengthSq()<1e-8)return;const ax=f.clone().multiplyScalar(Math.sign(t.dot(f))||1);for(const n of ["Spine","Spine1","Spine2"])rotW(bones[n],ax,d/3);}
  // pulling a boot off he brings the foot up, not his face down to it (gate HARD: foot next to the head, 55 cm): the chest straightens
  // until the head is ~60 cm from either foot
- function seatFootGap(){if(!bones.Head||!bones.Spine)return;root.updateMatrixWorld(true);const ht=bones.HeadTop_End||root.getObjectByName('mixamorigHeadTop_End');const hd=wp(ht||bones.Head);let d=9;for(const sd of ['Left','Right']){const f=bones[sd+'Foot'];if(f)d=Math.min(d,f.getWorldPosition(V()).distanceTo(hd));}
-  if(d>=.6)return;const f=fwd(root.rotation.y);const lat=V().crossVectors(V(0,1,0),f).normalize();const a=Math.min(.55,(.6-d)*2.6);for(const n of ['Spine','Spine1','Spine2'])rotW(bones[n],lat,-a/3);}
- function bseqTick(dt){bootTweenTick(dt);if(!BSEQ.a)return;seatLeanLimit();seatSideLimit();seatFootGap();const t=BSEQ.a.time;
+ function seatFootGap(){if(!bones.Head||!bones.Spine)return;root.updateMatrixWorld(true);const ht=bones.HeadTop_End||root.getObjectByName('mixamorigHeadTop_End');const hd=wp(ht||bones.Head);let d=9;for(const sd of ['Left','Right'])for(const n of [sd+'Foot',sd+'ToeBase']){const f=bones[n];if(f)d=Math.min(d,f.getWorldPosition(V()).distanceTo(hd));}
+  if(d>=.62)return;const f=fwd(root.rotation.y);const lat=V().crossVectors(V(0,1,0),f).normalize();const a=Math.min(.6,(.62-d)*2.8);for(const n of ['Spine','Spine1','Spine2'])rotW(bones[n],lat,-a/3);}
+ function bseqTick(dt){bootTweenTick(dt);if(!BSEQ.a)return;seatLeanLimit();seatSideLimit();const t=BSEQ.a.time;
   // the hand really goes down to the boot's spot by the bed: it sets the boot down there / picks it up from there (no boot flying to the floor)
-  const R=BSEQ.r;if(R){const w=smooth(R.at-.55,R.at-.04,t)*(1-smooth(R.at+.12,R.at+.55,t));if(w>.001){const sp=bootSpot(R.sd).p.clone();sp.y+=.09;reachTo(R.sd,sp,w);}}while(BSEQ.b.length&&t>=BSEQ.b[0][0]){const [,f]=BSEQ.b.shift();f();}}
+  const R=BSEQ.r;if(R){const w=smooth(R.at-.55,R.at-.04,t)*(1-smooth(R.at+.12,R.at+.55,t));if(w>.001){const sp=bootSpot(R.sd).p.clone();sp.y+=.09;reachTo(R.sd,sp,w);}}
+  seatFootGap();while(BSEQ.b.length&&t>=BSEQ.b[0][0]){const [,f]=BSEQ.b.shift();f();}}
  // clip times (s, after trimming) of the hand events, measured from the mocap keypoints
  const BOOT_OFF={grab:2.05/1.25,down:4.1/1.25},BOOT_ON=BOOTREV.R?{pick:BOOTREV.R-4.1/1.25+.05,on:BOOTREV.R-2.05/1.25}:{pick:.55/1.25,on:2.1/1.25},VEST_OFF={off:2.0};
  function undressSeq(done){bootInit();const steps=[];
@@ -2072,7 +2073,7 @@ export function createHero(ctx){
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);if(H.ground&&!H.fit&&!window.__noRootStep)terrainFeet(g);if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
+  if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);if(H.ground&&!H.fit&&!window.__noRootStep)terrainFeet(g);if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);toeGuard(g,dt);}if(!H.inBed&&!H.bedB&&!H.bedC)kneeGuard();/* BED: lying down the pelvis faces up, so its flat forward is meaningless and the guard flipped the knees (3 rad leg twist) */}
   bedHand();bedLegClear(dt);
   H.bucketTilt=false;/* OUTDOOR: set again by a task that tips a bucket on purpose this frame (grab.js leaves it unplumbed) */
   if(act&&act.post)act.post(dt);if(act&&act.fr)fridgePost(act);/* KITCHEN: the hand on the fridge handle / shelf */try{slungPost();}catch(e){}
