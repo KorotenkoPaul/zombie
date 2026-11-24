@@ -18,17 +18,17 @@ const OUT=path.resolve(arg('out','/tmp/pose'));const ONLY=arg('only',null);const
 fs.mkdirSync(OUT,{recursive:true});
 // scenarios: setup runs in the page (H = __dbg.HH), frames to run, shots at these frames
 const SC=[
- {name:'idle',setup:`H.spawn('window');`,frames:900,shots:[700,800,900]},
- {name:'deck-look',setup:`H.spawn('look');`,frames:1500,shots:[900,1200,1500]},
- {name:'read',setup:`H.spawn('read');`,frames:600,shots:[300,600]},
- {name:'ledge',setup:`H.spawn('look');H.H.path=[];setTimeout(()=>{},0);`,after:`H.startTask('ledge');`,afterAt:5,frames:3600,shots:[2700,3000,3600]},
- {name:'telescope',setup:`H.spawn('telescope');`,frames:1500,shots:[1100,1500]},
+ {name:'idle',setup:`H.spawn('window');`,frames:900,shots:[...Array(8)].map((_,i)=>200+i*100)},
+ {name:'deck-look',setup:`H.spawn('look');`,frames:1500,shots:[...Array(10)].map((_,i)=>150+i*150)},
+ {name:'read',setup:`H.spawn('read');`,frames:900,shots:[...Array(6)].map((_,i)=>150+i*150),view:[[0,.9,1.3],[-.6,.7,1.2],[.6,.7,1.2]]},
+ {name:'ledge',setup:`H.spawn('look');H.H.path=[];setTimeout(()=>{},0);`,after:`H.startTask('ledge');`,afterAt:120,frames:3600,shots:[...Array(12)].map((_,i)=>2000+i*150)},
+ {name:'telescope',setup:`H.spawn('telescope');`,frames:1500,shots:[...Array(8)].map((_,i)=>300+i*150)},
  {name:'sleep-back',setup:`window.__sleepPose='back';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0],[-.5,.5,.9,'LeftFoot']]},
  {name:'sleep-sideL',setup:`window.__sleepPose='sideL';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0],[-.5,.5,.9,'LeftFoot']]},
  {name:'sleep-sideR',setup:`window.__sleepPose='sideR';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0]]},
  {name:'sleep-bellyL',setup:`window.__sleepPose='bellyL';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0],[-.5,.5,.9,'LeftFoot']]},
  {name:'getup',setup:`window.__sleepPose='back';H.spawn('sleep');setTimeout(()=>{},0);`,after:`H.startTask('look');`,afterAt:240,frames:900,shots:[300,400,500,600,700]},
- {name:'liedown',setup:`H.spawn('window');`,after:`H.startTask('sleep');`,afterAt:30,frames:1700,shots:[1000,1100,1200,1300,1700],view:[[0,.3,2.6]]},
+ {name:'liedown',setup:`H.spawn('window');`,after:`H.startTask('sleep');`,afterAt:30,frames:4000,trig:`H.H.trans&&H.H.fit&&H.H.fit.mode==='sit'`,rel:420,shots:[...Array(29)].map((_,i)=>i*15),view:[[0,.3,2.6],[1.57,.35,2.6],[3.14,.35,2.6],[-1.2,.7,2.6]]},
  {name:'fix_board',setup:`H.spawn('fix_board');`,frames:1500,shots:[1100,1500]},
  {name:'clear_roof',setup:`H.spawn('clear_roof');`,frames:1500,shots:[1100,1500]},
  {name:'pond',setup:`H.spawn('fetchwater');`,frames:3000,shots:[]},
@@ -77,11 +77,13 @@ async function shot(p,file,view){for(const [k,v] of (view||[[.6,.25,2.3],[2.3,.2
   if(SHOTS)await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
   await p.evaluate(()=>__qa.start());
   await p.evaluate(s=>{const H=__dbg.HH;H.setBrain({tick(){}});__th.setHour(/sleep/.test(s.name)?1:/getup/.test(s.name)?6.5:14);window.__PR=null;eval(s.setup);},sc);
-  const rows=[];
+  const rows=[];let f0=null;
   for(let f=1;f<=sc.frames;f++){
    if(sc.after&&f===sc.afterAt)await p.evaluate(s=>{const H=__dbg.HH;eval(s.after);},sc);
    await p.evaluate(()=>__qa.step(1,1/60));rows.push(await p.evaluate(MEASURE));
-   if(SHOTS&&sc.shots.includes(f))await shot(p,`${OUT}/${sc.name}_${String(f).padStart(4,'0')}`,sc.view);
+   if(sc.trig&&f0==null&&await p.evaluate(s=>{const H=__dbg.HH;return !!eval(s.trig);},sc)){f0=f;console.log('trigger at',f);}
+   const fr=sc.trig?(f0==null?-1:f-f0):f;if(sc.trig&&fr>sc.rel)break;
+   if(SHOTS&&sc.shots.includes(fr))await shot(p,`${OUT}/${sc.name}_${String(fr).padStart(4,'0')}`,sc.view);
   }
   fs.writeFileSync(`${OUT}/${sc.name}.json`,JSON.stringify(rows));res[sc.name]=summ(rows.filter(r=>!r.walk&&!r.lad));
   console.log(sc.name,((Date.now()-t0)/1000).toFixed(0)+'s',JSON.stringify(res[sc.name]));if(errs.length)console.log('  errs',errs.slice(0,3).join(' | '));

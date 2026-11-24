@@ -19,7 +19,7 @@ const LIMITS={
  detour:1.35,      // walked length / straight distance for one walk
  // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
  // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
- walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:70,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,propBodyCm:3,supportCm:3,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+ walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:70,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,gripCm:3.5,propBodyCm:3,supportCm:3,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
 };
 const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -43,7 +43,12 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  let sgn=0;F.forEach((f,i)=>{if(f.fl.includes('P'))for(const s of ['Left','Right'])if(M[i][s].knee<160)sgn+=Math.sign(M[i][s].bend);});const sgnWalk=Math.sign(sgn)||1;sgn=1;// geometric (hip vs toes around the shin), no calibration; sgnWalk only reported
  // ---- 1. penetration ----
  const pen=[];F.forEach((f,i)=>f.pen.forEach((p,g)=>{if(!p)return;const [cm,ci,pos]=p;const nm=names[ci]||'?';const G=GN[g];if(/ (\d{4,})x/.test(nm)&&+nm.match(/ (\d+)x/)[1]>1200)return;
-  let tol=lim.pen[G];if(SOFT.test(nm))tol=Math.max(tol,lim.penSoft);if(SOFT.test(nm)&&(f.fl.includes('B')||f.fl.includes('W'))&&pos&&pos[1]<f.root[1]+.6)tol=Math.max(tol,lim.penPillow);if(SEAT.test(nm)&&(G==='hips'||G==='shins'))tol=Math.max(tol,lim.penSeat);
+  let tol=lim.pen[G];
+  // on a ladder a palm wrapped round a rung/rail and the ball of the foot on a rung sink a little into it: that is grip, not penetration.
+  // Allowed for hands/feet against thin bars (two sizes <= 8 cm: rungs, rails, ropes) or near a known rung, up to lim.gripCm; a shin or arm through it still counts
+  if(f.fl.includes('L')&&/^(handL|handR|feet)$/.test(G)){const mm=nm.match(/ (\d+)x(\d+)x(\d+)cm/);const thin=mm&&[+mm[1],+mm[2],+mm[3]].filter(v=>v<=8).length>=2;
+   const nearRung=pos&&(D.rungs||[]).some(r=>{const v=[pos[0]-r.c[0],pos[1]-r.c[1],pos[2]-r.c[2]];const t=Math.max(-r.h,Math.min(r.h,v[0]*r.d[0]+v[1]*r.d[1]+v[2]*r.d[2]));return Math.hypot(v[0]-r.d[0]*t,v[1]-r.d[1]*t,v[2]-r.d[2]*t)<.06;});
+   if(thin||nearRung)tol=Math.max(tol,lim.gripCm);}if(SOFT.test(nm))tol=Math.max(tol,lim.penSoft);if(SOFT.test(nm)&&(f.fl.includes('B')||f.fl.includes('W'))&&pos&&pos[1]<f.root[1]+.6)tol=Math.max(tol,lim.penPillow);if(SEAT.test(nm)&&(G==='hips'||G==='shins'))tol=Math.max(tol,lim.penSeat);
   if(cm>tol)pen.push({i,G,nm,cm,pos,tol});}));
  // merge into events: same body part + same object, gaps < 0.3 s
  const ev={};for(const q of pen){const k=q.G+'|'+q.nm.replace(/#\d+/,'#');const e=ev[k]&&ev[k][ev[k].length-1];
@@ -64,7 +69,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  // ---- 3. joints ----
  F.forEach((f,i)=>{for(const s of ['Left','Right']){const m=M[i][s];
   if(m.knee<lim.kneeMin)add('joint',i,{bone:s+'Leg',value:+m.knee.toFixed(0),unit:'deg knee',limit:lim.kneeMin,what:'knee folded too far'});
-  if(m.knee<150&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
+  // deep squats (interior < 60 deg) make the side test ill-conditioned: there only a flat fold counts (Pose: interior < 20 deg or ankle within 10 cm of the hip)
+  {const U=bone(F[i],s+'UpLeg'),A=bone(F[i],s+'Foot');const ah=len(sub(A,U))*100;if(m.knee<20||ah<10)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg folded flat',limit:160,what:'leg folded flat (knee interior '+m.knee.toFixed(0)+' deg, ankle '+ah.toFixed(0)+' cm from the hip)'});}
+  if(m.knee>=60&&m.knee<150&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
   if(m.footHead<lim.footHeadM&&!f.fl.includes('B'))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
   if(m.footUp>lim.footUpM)add('joint',i,{bone:s+'Foot',value:+(m.footUp*100).toFixed(0),unit:'cm along body above hip',limit:lim.footUpM*100,what:'leg folded up past the hip'});}});
  // ---- 4. foot sliding while planted ----
@@ -229,7 +236,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  // priority
  for(const q of merged){const r=q.limit?q.value/q.limit:2;let P=3;
   if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2))?1:q.value>=2?2:3;
-  else if(q.type==='joint')P=/broken|next to the head|past the hip/.test(q.what)?1:2;
+  else if(q.type==='joint')P=/broken|next to the head|past the hip|folded flat/.test(q.what)?1:2;
   else if(q.type==='jump'||q.type==='snap-turn')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='foot-slide')P=q.value>=8?1:q.value>=4?2:3;

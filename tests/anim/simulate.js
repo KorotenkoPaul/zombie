@@ -1,7 +1,7 @@
 // Runs the hero's life at a fixed timestep and samples every frame. Shared by run.js (measure) and shots.js (replay + render).
 const install=require('./sampler.js');
 const TASKS=['read','cook','wash','tea','craft','look','sleep'];
-async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log=console.log,gate=0}={}){
+async function simulate(p,{only=null,start=6.5,hours=25,dt=1/60,tour=true,capture=null,log=console.log,gate=0}={}){
  const info=await p.evaluate(`(${install})({})`);
  await p.evaluate(()=>__qa.start());
  await p.evaluate(h=>{__qa.reseed(12345);__th.setHour(h);},start);
@@ -32,7 +32,7 @@ async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log
    ['trip',15,{kind:'wood',jacket:false},240],['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
    ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],['splitwood',10],
    ['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11]]);
-  for(const [t,h,opts,maxS] of EXTRA){const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
+  for(const [t,h,opts,maxS] of EXTRA){if(only&&!only.test(t))continue;const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
    // through the brain (the body alone does not route between floors); the brain may slip its own chore in first, so ask again until he takes it
    const ask=()=>p.evaluate(([t,o,g])=>{const B=window.__brain;const MR=Math.random;
     // gate: bed straight away. The bedtime chores (bolt, hatch) are planned by dice and are their own gate tasks; without this sleep came and went as a block
