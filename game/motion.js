@@ -295,6 +295,11 @@ export function createMotion({ hero, db, opts = {} }) {
   // ---------- per frame, called by hero.js right after mixer.update ----------
   const traj = [null, null, null];
   const T0 = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  // the DB was recorded on the rig at scale 1; if a bone scale was left changed (a bind-pose scale not restored), the legs are longer or
+  // shorter than the clips and the foot locks fold the knees. Measure the live leg scale (motion.leg()) and warn once per change; compensating here made it worse (tested), the scale must be restored.
+  let legR = 1, legWarn = 0;
+  function legK() { const h = HB[HIPS], u = HB[LU], l = HB[LL]; if (!h || !u || !l) return 1;
+    const r = h.scale.y * u.scale.y * l.scale.y; if (Math.abs(r - legR) > 1e-3) { legR = r; if (Math.abs(r - 1) > .03 && legWarn !== r) { legWarn = r; console.warn('[motion] leg scale ' + r.toFixed(3) + ' differs from the DB rig (1.0): the knees will fold; restore the bone scale (skeleton.pose() leaves the bind scale)'); } } return legR; }
   function post(dt) { if (!(dt > 0)) return; dt = Math.min(dt, .1); ensureFinal();
     // three.js only writes a bone when the clip value changes, so the hips position may still be what we wrote last frame
     { const hp = HB[HIPS].position; if (!(wroteH && hp.x === outH[0] && hp.y === outH[1] && hp.z === outH[2])) pureH = [hp.x, hp.y, hp.z]; }
@@ -341,7 +346,7 @@ export function createMotion({ hero, db, opts = {} }) {
       // into the hero's root frame (root sits at the simulation)
       const rel = S.cyaw - yaw; const rq = yawQ(rel); const t3 = new Float32Array(3); qrot(rq, 0, curH, 0, t3, 0);
       const ox = S.char.x - p.x, oz = S.char.z - p.z, c2 = Math.cos(-yaw), s2 = Math.sin(-yaw);
-      curH[0] = t3[0] + ox*c2 + oz*s2; curH[1] = t3[1]; curH[2] = t3[2] - ox*s2 + oz*c2;
+      curH[0] = t3[0] + ox*c2 + oz*s2; curH[1] = t3[1]; legK(); curH[2] = t3[2] - ox*s2 + oz*c2;
       const hq = cur.slice(HIPS*4, HIPS*4 + 4); qmul(rq, 0, hq, 0, cur, HIPS*4);
       // layering: an action clip from hero.js keeps the upper body
       const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : null;
@@ -401,6 +406,6 @@ export function createMotion({ hero, db, opts = {} }) {
 
   // timing check: n full searches against random database frames as queries (Date.now: works under a frozen performance.now)
   function bench(n = 400) { let pr = 0; const t0 = Date.now(); for (let i = 0; i < n; i++) { const g = (Math.random() * total) | 0; for (let k = 0; k < NF; k++) Qv[k] = F[g*NF + k] + (Math.random() - .5) * .3; search(Qv, -1, 1e9); pr += S.pruned; } return { msPerSearch: (Date.now() - t0) / n, pruned: pr / n }; }
-  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones, reg: fReg, frames: fN }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
+  const api = { leg: () => legR, pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones, reg: fReg, frames: fN }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
   return api;
 }
