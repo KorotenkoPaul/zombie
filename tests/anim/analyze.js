@@ -59,7 +59,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   F.forEach((f,i)=>{const d=f.dp;if(!d){if(ev&&i-ev.i1>18)flush();return;}const [nm,g,cm]=d;if(ev&&(ev.nm!==nm||ev.g!==g)&&i-ev.i1>18)flush();if(ev&&ev.nm===nm&&ev.g===g){ev.i1=i;if(cm>ev.cm){ev.cm=cm;ev.ip=i;}}else{flush();ev={nm,g,cm,i0:i,i1:i,ip:i};}});flush();}
  // ---- 2. jumps (second difference spikes) ----
  const J=['Hips','Head','HeadTop_End','LeftHand','RightHand','LeftFoot','RightFoot','LeftLeg','RightLeg'];
- for(let i=2;i<F.length;i++){if(F[i].tag!==F[i-1].tag)continue;
+ for(let i=2;i<F.length;i++){if(F[i].tag!==F[i-1].tag||F[i].f<30)continue;
   for(const n of J){const a=bone(F[i],n),b=bone(F[i-1],n),c=bone(F[i-2],n);const d2=len([a[0]-2*b[0]+c[0],a[1]-2*b[1]+c[1],a[2]-2*b[2]+c[2]])*100;
    if(d2>lim.jumpCm)add('jump',i,{bone:n,value:+d2.toFixed(1),unit:'cm/frame²',limit:lim.jumpCm,step:+(len(sub(a,b))*100).toFixed(1)});}
   const r2=len([F[i].root[0]-2*F[i-1].root[0]+F[i-2].root[0],F[i].root[1]-2*F[i-1].root[1]+F[i-2].root[1],F[i].root[2]-2*F[i-1].root[2]+F[i-2].root[2]])*100;
