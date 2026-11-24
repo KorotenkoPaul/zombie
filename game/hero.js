@@ -261,7 +261,7 @@ export function createHero(ctx){
       gate seed 1 stoke f39182 put the right ankle 3 cm from the hip joint (knee 177 deg, foot inside the thigh). Never ask for less reach than the
       deepest real squat (knee interior 25 deg): a target closer to the hip keeps its height and slides out along the ground, away from the hip */
    const tg=a.clone().add(V(0,dy,0)),t1=k.distanceTo(hp),s1=a.distanceTo(k),mn=Math.sqrt(t1*t1+s1*s1-2*t1*s1*Math.cos(25*Math.PI/180)),rel=tg.clone().sub(hp);
-   if(rel.length()<mn&&typeof dy0!=='number'){/* WALK: per-foot floors (a step): a lift that would fold the leg past the deepest squat is cut short in height, the foot keeps its place (sliding it out along the ground made the swing foot jump 5-17 cm at the step) */const hz=Math.hypot(rel.x,rel.z);if(hz<mn)tg.y=Math.min(tg.y,hp.y-Math.sqrt(mn*mn-hz*hz));}else if(rel.length()<mn){const vy=rel.y,hz=V(rel.x,0,rel.z);let hl=hz.length();if(hl<1e-3){hz.copy(fb);hl=1;}const need=Math.sqrt(Math.max(0,mn*mn-vy*vy));tg.set(hp.x+hz.x/hl*need,tg.y,hp.z+hz.z/hl*need);}
+   if(rel.length()<mn&&typeof dy0!=='number'&&root.position.y>2){/* WALK: per-foot floors (a step): a lift that would fold the leg past the deepest squat is cut short in height, the foot keeps its place (sliding it out along the ground made the swing foot jump 5-17 cm at the step) */const hz=Math.hypot(rel.x,rel.z);if(hz<mn)tg.y=Math.min(tg.y,hp.y-Math.sqrt(mn*mn-hz*hz));}else if(rel.length()<mn){const vy=rel.y,hz=V(rel.x,0,rel.z);let hl=hz.length();if(hl<1e-3){hz.copy(fb);hl=1;}const need=Math.sqrt(Math.max(0,mn*mn-vy*vy));tg.set(hp.x+hz.x/hl*need,tg.y,hp.z+hz.z/hl*need);}
    ik2(U,L,F,tg,pole,w,true);}}
  // seated / perched: put each ankle at its standing height above the boards, then lift the toes out of the floor
  // targets and knee direction are low-passed so clip noise and IK flips never reach the feet
@@ -381,7 +381,7 @@ export function createHero(ctx){
   const rate=lerp(4.2,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1);
   // turning has inertia: angular speed ramps up and down, so there is never a snap in heading
   const wav=clamp(da*3,-rate,rate);H.av=(H.av||0)+clamp(wav-(H.av||0),-11*dt,11*dt);root.rotation.y+=H.av*dt;H.face=root.rotation.y;
-  const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;if(!(N[step.node].tight&&toT<.9)){const q=p.clone();pushOut(q);const m=.6*dt;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}
+  const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;/* WALK: the push off walls and roots eases in and out (it switched on at full rate when the route left a tight node: the path bent 50 deg in one frame at the forest fork, 545 deg/s) */{const on=!(N[step.node].tight&&toT<.9);H.pw=clamp((H.pw??1)+(on?3:-3)*dt,0,1);if(H.pw>0){const q=p.clone();pushOut(q);const m=.6*dt*H.pw;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}}
   const moving=H.v>.06||Math.abs(da)>.25;
   // MOTION HOOK: with motion matching a one-off action clip (stretching, a gesture) keeps playing on the upper body while he walks off
   /* WALK: a work clip (bent over the oven, stirring) that was still running kept the upper body hunched for up to 2 s of walking: it may only finish a short gesture (0.4 s) */
