@@ -1343,8 +1343,12 @@ export function createHero(ctx){
   const w=S.w;const solve=()=>{root.updateMatrixWorld(true);const PG0=window.__poseGuard;
    /* still out of reach: he leans in from the hips (spine bent toward the nail, eased, at most ~30 deg), never the arm stretching */
    {const hp=bones.Hips.getWorldPosition(V());const dir=V(nail.x-hp.x,0,nail.z-hp.z);const s0=bones.RightArm.getWorldPosition(V());const need=s0.distanceTo(nail)-(armLen+(window.__lean0?.17:.06));
-    S.lean=(S.lean||0)+(clamp(need/.5,0,window.__lean0?.55:.85)-(S.lean||0))*(1-Math.exp(-dt*4));if(S.lean>.005&&dir.lengthSq()>1e-4){const ax=V(0,1,0).cross(dir.normalize()).normalize();
-     for(const n of ['Spine','Spine1','Spine2']){const b=bones[n];if(!b)continue;const qw=new THREE.Quaternion().setFromAxisAngle(ax,S.lean/3);const bw=b.getWorldQuaternion(new THREE.Quaternion());const pq=b.parent.getWorldQuaternion(new THREE.Quaternion());
+    S.lean=(S.lean||0)+(clamp(need/(window.__lean0?.5:.25),0,window.__lean0?.55:1.1)-(S.lean||0))*(1-Math.exp(-dt*4));if(S.lean>.005&&dir.lengthSq()>1e-4){const ax=V(0,1,0).cross(dir.normalize()).normalize();
+     /* half of it (up to ~35 deg) is a hinge at the hips, as people bend: the pelvis tips forward and the thighs keep their place */
+     const hh=window.__noHinge?0:Math.min(S.lean*.5,.6);if(hh>.005){const Hb=bones.Hips,ups=['LeftUpLeg','RightUpLeg'].map(n=>bones[n]).filter(Boolean);const uw=ups.map(b=>b.getWorldQuaternion(new THREE.Quaternion()));
+      const hw=Hb.getWorldQuaternion(new THREE.Quaternion()),hp=Hb.parent.getWorldQuaternion(new THREE.Quaternion());Hb.quaternion.copy(hp.invert().multiply(new THREE.Quaternion().setFromAxisAngle(ax,hh).multiply(hw)));Hb.updateMatrixWorld(true);
+      ups.forEach((b,i)=>{const pq=b.parent.getWorldQuaternion(new THREE.Quaternion());b.quaternion.copy(pq.invert().multiply(uw[i]));b.updateMatrixWorld(true);});}
+     for(const n of ['Spine','Spine1','Spine2']){const b=bones[n];if(!b)continue;const qw=new THREE.Quaternion().setFromAxisAngle(ax,(S.lean-hh)/3);const bw=b.getWorldQuaternion(new THREE.Quaternion());const pq=b.parent.getWorldQuaternion(new THREE.Quaternion());
       b.quaternion.copy(pq.invert().multiply(qw.multiply(bw)));b.updateMatrixWorld(true);}}}
    /* the back inside its range before the arm is solved on it (else the guard straightens it afterwards and carries the fist off the nail) */
    if(PG0&&PG0.fit&&!window.__noFit){for(const n of ['Spine','Spine1','Spine2'])if(bones[n])PG0.fit(bones[n]);if(PG0.fitSpine)PG0.fitSpine();bones.Hips.updateMatrixWorld(true);}
@@ -1357,40 +1361,52 @@ export function createHero(ctx){
     const g=nail.clone().addScaledVector(y,-.23).addScaledVector(x,-.1);if(g.distanceTo(sh)<=armLen*.97)break;}
    /* the hammer's pose (handle steepness al, handle turned sideways yw) is the one the arm can really give with the wrist and forearm
       inside their range: a few candidates are solved and the one with the face nearest the nail wins; both ease, never flip */
-   const mkQh=(al_,yw)=>{const dd=d.clone().applyAxisAngle(up,yw),kk=dd.clone().cross(up).normalize();const R=new THREE.Quaternion().setFromAxisAngle(kk,-.75*lift-al_);
+   /* the hammer's pose: steepness al and sideways turn yw (the face stays toward the surface), cocked back by lf while lifting, plus the
+      forearm's roll ps (pronation). The arm, wrist and forearm stay inside the pose guard's ranges (a world-fixed hammer bent the
+      wrist 45-50 deg past its range and the guard then threw the face 40 cm off the nail).
+      Two key poses per blow are solved (the face on the nail, and the top of the lift) and the arm swings between them by the lift:
+      solving every frame jumped between answers (up to 1 m/frame2 at the fist). They are solved again at each new blow. */
+   let LF=lift;const mkQh=(al_,yw)=>{const dd=d.clone().applyAxisAngle(up,yw),kk=dd.clone().cross(up).normalize();const R=new THREE.Quaternion().setFromAxisAngle(kk,-.75*LF-al_);
     const Y=dd.applyQuaternion(R),X=up.clone().negate().applyQuaternion(R);const Z=X.clone().cross(Y);
     return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,Y,Z)).multiply(hm.quaternion.clone().invert());};
-   if(S.al==null){S.al=al;S.yw=0;}let Qh=mkQh(S.al,S.yw);
-   const hb=bones.RightHand;const want=nail.clone().addScaledVector(up,.2*lift).addScaledVector(d,-.07*lift);
+   const hb=bones.RightHand;const Tf=lf=>hit.clone().addScaledVector(up,.15*lf).addScaledVector(d,-.07*lf),Wf=lf=>nail.clone().addScaledVector(up,.2*lf).addScaledVector(d,-.07*lf);
    /* solved at full weight, then blended from the clip's arm by w (iterating at weight w compounded to ~1-(1-w)^8: a 20+ cm snap on the first frame) */
    const AB=[bones.RightArm,bones.RightForeArm,hb],q0=AB.map(b=>b.quaternion.clone());
-   /* inside the joints' range (pose.js guard): the arm and wrist are fitted here, and the fist goes wherever the face then needs it,
-      instead of the guard bending the wrist back afterwards (the face landed 40 cm off the nail) */
    const PG=window.__poseGuard,fit=PG&&PG.fit&&!window.__noFit?b=>PG.fit(b):()=>0;
-   /* the wrist holds the hammer as the clip's own fist does (its natural grip, inside the wrist's range); the forearm rolls about its
-      own axis (pronation, the wrist stays put) until the head points into the surface, and the arm carries the face onto the nail.
-      (A world-fixed hammer bent the wrist 45-50 deg past its range, and the guard then threw the face 40 cm off the nail) */
-   const fa=bones.RightForeArm,Hn=(!window.__hnClip&&PG&&PG.rest&&PG.rest(hb))||q0[2].clone(),qy=new THREE.Quaternion(),Y1=V(0,1,0),into=up.clone().negate();
-   const poseAt=tgt=>{armIK('Right',tgt,pole,1);fit(bones.RightArm);bones.RightArm.updateMatrixWorld(true);
-     hb.quaternion.copy(Hn);hb.updateMatrixWorld(true);hm.updateMatrixWorld(true);
-     {const ax=V(0,1,0).applyQuaternion(fa.getWorldQuaternion(new THREE.Quaternion())).normalize();const hx=V(1,0,0).applyQuaternion(hm.getWorldQuaternion(new THREE.Quaternion()));
-      const p1=hx.addScaledVector(ax,-hx.dot(ax)),p2=into.clone().addScaledVector(ax,-into.dot(ax));
-      if(p1.lengthSq()>1e-4&&p2.lengthSq()>1e-4){p1.normalize();p2.normalize();const ph=Math.atan2(p1.clone().cross(p2).dot(ax),p1.dot(p2));fa.quaternion.multiply(qy.setFromAxisAngle(Y1,ph));fit(fa);fa.updateMatrixWorld(true);hm.updateMatrixWorld(true);}}
-     /* then the wrist bends the rest of the way to the hammer's pose, as far as its range allows */
-     if(!window.__noWristQ){hb.quaternion.copy(fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(Qh));fit(hb);hb.updateMatrixWorld(true);hm.updateMatrixWorld(true);}};
-   const run=n=>{AB.forEach((b,i)=>b.quaternion.copy(q0[i]));bones.RightArm.updateMatrixWorld(true);let tgt=T.clone(),err=9;for(let i=0;i<n;i++){poseAt(tgt);
-     const f=hm.localToWorld(V(...HFACE));const e=want.clone().sub(f);err=e.length();if(window.__hmDbg)(S.errs=S.errs||[]).push(+err.toFixed(3),+tgt.distanceTo(sh).toFixed(3));if(err<.006)break;tgt.add(e);const off=tgt.clone().sub(T);if(off.length()>.45)tgt.copy(T).add(off.setLength(.45));}return err;};
-   /* the hammer's steepness (al) and sideways turn (yw) are the ones this arm can really give inside its range: a few are tried
-      and the nearest face wins; both ease toward it, never flip */
-   if(PG&&PG.fit&&!window.__noFit&&!window.__noSearch){let ba=S.al,by=S.yw,be=1e9;for(const ca of [0,.25,.5,.75,1,1.25,S.al])for(const cy of [-.5,0,.5,S.yw]){Qh=mkQh(ca,cy);const e=run(4)+.02*Math.abs(ca-S.al)+.02*Math.abs(cy-S.yw);if(e<be){be=e;ba=ca;by=cy;}}
-    const kk=1-Math.exp(-dt*5);S.al+=(ba-S.al)*kk;S.yw+=(by-S.yw)*kk;Qh=mkQh(S.al,S.yw);}
-   S.errs=[];S.e=run(10);
+   const fa=bones.RightForeArm,qy=new THREE.Quaternion(),Y1=V(0,1,0);let PS=0,Qh=null,want=null,TT=null;
+   const poseAt=(tgt,free)=>{armIK('Right',tgt,pole,1);if(!window.__noArmFit)fit(bones.RightArm);if(PS)fa.quaternion.multiply(qy.setFromAxisAngle(Y1,PS));if(!free)fit(fa);bones.RightArm.updateMatrixWorld(true);
+     hb.quaternion.copy(fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(Qh));if(!free)fit(hb);hb.updateMatrixWorld(true);hm.updateMatrixWorld(true);};
+   let tEnd=null;
+   const run=(n,free,st)=>{AB.forEach((b,i)=>b.quaternion.copy(q0[i]));bones.RightArm.updateMatrixWorld(true);let tgt=(st||TT).clone(),err=9;tEnd=tgt;for(let i=0;i<n;i++){poseAt(tgt,free);
+     const f=hm.localToWorld(V(...HFACE));const e=want.clone().sub(f);err=e.length();if(err<.004)break;tgt.addScaledVector(e,free?1:(window.__gainF||.45));const off=tgt.clone().sub(TT);if(off.length()>.45)tgt.copy(TT).add(off.setLength(.45));}return err;};
+   const setLF=lf=>{LF=lf;TT=Tf(lf);want=Wf(lf);};
+   const key=(lf,starts)=>{setLF(lf);Qh=mkQh(S.al,S.yw);PS=S.ps;let best=null;for(const st of starts){const e=run(30,false,st);if(!best||e<best.e-.002)best={e,t:tEnd.clone(),q:AB.map(b=>b.quaternion.clone())};}return best;};
+   const shNow=bones.RightArm.getWorldPosition(V());
+   if(!S.K||S.K.n!==S.n||S.K.sh.distanceTo(shNow)>.03||window.__keyEvery){
+    setLF(0);
+    if(PG&&PG.over&&!window.__noFit&&!window.__noSearch){
+     const cost=(ca,cy,cp)=>{Qh=mkQh(ca,cy);PS=cp;const e=run(8,true);return PG.over(hb,hb.quaternion)+PG.over(fa,fa.quaternion)+e*300+(S.ps!=null?4*(Math.abs(ca-S.al)+Math.abs(cy-S.yw)+Math.abs(cp-S.ps)):0);};
+     let bc=1e9,bb=null;for(const ca of [0,.3,.6,.9,1.2])for(const cy of [-.5,0,.5])for(const cp of [-1,-.5,0,.5,1]){const v=cost(ca,cy,cp);if(v<bc){bc=v;bb=[ca,cy,cp];}}
+     if(S.ps!=null){const v=cost(S.al,S.yw,S.ps);if(v<=bc+.5)bb=[S.al,S.yw,S.ps];}
+     /* refined around the best */
+     for(const st of [.15,.07])for(const dv of [[st,0,0],[-st,0,0],[0,st,0],[0,-st,0],[0,0,st*2],[0,0,-st*2]]){const c=[bb[0]+dv[0],bb[1]+dv[1],bb[2]+dv[2]];const v=cost(...c);if(v<bc){bc=v;bb=c;}}
+     S.al=bb[0];S.yw=bb[1];S.ps=bb[2];}
+    else{if(S.al==null)S.al=al;if(S.yw==null)S.yw=0;if(S.ps==null)S.ps=0;}
+    const k0=key(0,[Tf(0),...(S.K?[S.K.t0]:[])]);const km=key(.5,[k0.t.clone().add(Tf(.5)).sub(Tf(0)),Tf(.5)]);const k1=key(1,[km.t.clone().add(Tf(1)).sub(Tf(.5)),Tf(1),k0.t.clone().add(Tf(1)).sub(Tf(0))]);
+    S.K={n:S.n,sh:shNow.clone(),q0:k0.q,qm:km.q,q1:k1.q,t0:k0.t,t1:k1.t,e0:k0.e};}
+   /* this frame: between the two keys by the lift */
+   AB.forEach((b,i)=>{if(lift<=.5)b.quaternion.copy(S.K.q0[i]).slerp(S.K.qm[i],lift*2);else b.quaternion.copy(S.K.qm[i]).slerp(S.K.q1[i],lift*2-1);});bones.RightArm.updateMatrixWorld(true);hm.updateMatrixWorld(true);
+   /* near the nail the face is put back on it exactly (the body breathes and settles a little between blows): solved from this
+      blow's own key, never from last frame, so it cannot flip between answers */
+   if(lift<.25&&window.__near){const sl=AB.map(b=>b.quaternion.clone());setLF(lift);Qh=mkQh(S.al,S.yw);PS=S.ps;run(10,false,S.K.t0.clone().add(Tf(lift)).sub(Tf(0)));
+    const k=smooth(.25,.08,lift);AB.forEach((b,i)=>{const qn=b.quaternion.clone();b.quaternion.copy(sl[i]).slerp(qn,k);});bones.RightArm.updateMatrixWorld(true);hm.updateMatrixWorld(true);}
+   S.e=lift<.01?S.K.e0:hm.localToWorld(V(...HFACE)).distanceTo(Wf(lift));
    if(w<.999){AB.forEach((b,i)=>{const q=b.quaternion.clone();b.quaternion.copy(q0[i]).slerp(q,w);});bones.RightArm.updateMatrixWorld(true);hm.updateMatrixWorld(true);}
    /* never a one-frame teleport of the fist (QA: 83 cm/frame2 on the kitchen-ladder railing, an elbow flip near full reach): against the
       motion of the last two frames the wrist may deviate at most 8 cm per frame (the blow itself stays well inside that) */
    {const hp=hb.getWorldPosition(V());const fresh=S.lt!=null&&Math.abs(a.T-S.lt-dt)<1e-3;S.lt=a.T;
-    if(fresh&&S.p1&&S.T1&&!window.__noClamp){const pred=S.p1.clone().add(T).sub(S.T1);/* where the fist would be if it only followed the blow's own target */const dv=hp.clone().sub(pred);if(dv.length()>.08){poseAt(pred.add(dv.setLength(.08)));hp.copy(hb.getWorldPosition(V()));}}
-    else if(!fresh){S.p1=null;}S.p1=hp;S.T1=T.clone();}};
+    if(fresh&&S.p1&&S.T1&&!window.__noClamp&&!S.K){const pred=S.p1.clone().add(T).sub(S.T1);/* where the fist would be if it only followed the blow's own target */const dv=hp.clone().sub(pred);if(dv.length()>.08){poseAt(pred.add(dv.setLength(.08)));hp.copy(hb.getWorldPosition(V()));}}
+    else if(!fresh){S.p1=null;}S.p1=hp;S.T1=T.clone();S.wp=hp.clone();}};
   /* after look / collide have moved the chest (grab.js late slot), else right here */
   const G=window.__grab;if(G&&G.late)G.late(solve);else solve();
   if(u>=.8&&!S.hit&&S.w>.9&&!a.hmFar){S.hit=1;AU('nails',nail);}}
@@ -1457,9 +1473,14 @@ export function createHero(ctx){
    post:R.floorHands?(a,dt)=>{squatDrop(a,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,D-a.T<.6);handsOnFloor(floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y);}:R.wipe&&pos?(a,dt)=>{const W=a.win||(a.win=W0);if(W&&W.upd)W.upd(a,dt);if(R.wipe==='rope')squatDrop(a,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,D-a.T<.6);wipeWindow(a,dt,W,D-a.T<.8);}:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{if(R.nail==='floor')kneelDrop(a,dt,floorOf(pos),D-a.T<.6);/* a floor nail is placed once he has knelt (the pelvis still turns for the first moments of the kneel) */if(R.nail==='floor'&&(a.nlT=(a.nlT||0)+dt)<1.2&&!window.__nail0)a.nl=null;const n=a.nl||(a.nl=nailOf(R,pos));
      /* a wall or rail nail right under his chin can't be struck with a hammer held in a real wrist: the blow goes a little to his right
         along the board instead (the same board, ~0.58 m from the shoulder) */
-     if(!a.nlFix&&R.nail!=='floor'&&R.nail!=='roof'&&!window.__nail0&&a.T>.3){a.nlFix=1;const sh=bones.RightArm.getWorldPosition(V());const nr=nrmOf(R,n);const tg=V(0,1,0).cross(nr);
-      if(tg.lengthSq()>1e-3&&sh.distanceTo(n)<.55){tg.normalize();const f=V(Math.sin(H.face),0,Math.cos(H.face));if(tg.dot(V(-f.z,0,f.x))<0)tg.negate();
-       const w0=n.clone().sub(sh);const b=w0.dot(tg),c=w0.lengthSq()-.58*.58;const sl=-b+Math.sqrt(Math.max(0,b*b-c));n.addScaledVector(tg,Math.min(.4,Math.max(0,sl)));}}
+     if(!a.nlFix&&R.nail!=='floor'&&R.nail!=='roof'&&!window.__nail0&&a.T>.3){a.nlFix=1;const sh=bones.RightArm.getWorldPosition(V());const nr=nrmOf(R,n).clone().normalize();
+      if(sh.distanceTo(n)<.55){const f=V(Math.sin(H.face),0,Math.cos(H.face)),rt=V(-f.z,0,f.x);
+       /* candidate directions along the surface (his right first), each kept only if the same surface is still there (a ray back along the normal) */
+       const dirs=[rt,rt.clone().add(f).normalize(),f,rt.clone().negate(),rt.clone().negate().add(f).normalize()].map(d=>d.addScaledVector(nr,-d.dot(nr))).filter(d=>d.lengthSq()>.05).map(d=>d.normalize());
+       for(const tg of dirs){const w0=n.clone().sub(sh);const b=w0.dot(tg),c=w0.lengthSq()-.58*.58;const sl=Math.min(.4,Math.max(0,-b+Math.sqrt(Math.max(0,b*b-c))));if(sl<.02)continue;
+        const q=n.clone().addScaledVector(tg,sl);const o=q.clone().addScaledVector(nr,.08);const r=new RAPIER.Ray({x:o.x,y:o.y,z:o.z},{x:-nr.x,y:-nr.y,z:-nr.z});
+        const hh=world.castRay(r,.14,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});const t=hh?(hh.toi??hh.timeOfImpact):null;
+        if(t!=null&&Math.abs(t-.08)<.02){n.copy(q);break;}}}}
      a.endIn=D-a.T;repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
    tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;if(hamr&&a.hm&&!a.hmFar)return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});
   /* called away mid-blow (Brain, the tour): the arm eases back to the clip over a third of a second instead of snapping */
