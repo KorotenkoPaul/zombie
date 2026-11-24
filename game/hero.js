@@ -1835,16 +1835,20 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const nn=nearNode(S);if(nn)goTo(nn,run);else run();}
  /* a deep mocap squat (hy_pickground) rocks both boots back onto the heels, toes up off the boards (ToeBase 6-10 cm over its planted
     height, gate: orig hero stands on air 8 cm): each boot is turned about the ankle until its toes are back on the floor */
- function toesDown(rest=.05){const fl=H.floorY;if(fl==null)return;for(const s of ['Left','Right']){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;
+ const tdL={};function toesDown(rest=.05,W=1){const fl=H.floorY;if(fl==null)return;for(const s of ['Left','Right']){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;
+   {const L=tdL[s];tdL[s]=null;if(L&&F.quaternion.equals(L.q)){F.quaternion.copy(L.base);F.updateMatrixWorld(true);}}/* unchanged since my turn last frame: from the boot as the pose left it, not turned again on top */
+   const qb=F.quaternion.clone();
    const a=F.getWorldPosition(V()),t=T.getWorldPosition(V());const v=t.clone().sub(a);const L=v.length();const want=Math.max(-.92*L,fl+rest-a.y);if(t.y-fl-rest<.002||L<.03||want>=t.y-a.y)continue;/* as far down as the boot can tip (it skipped a boot it could not quite reach: legs jittered 13 cm) */
    const hz=Math.sqrt(L*L-want*want),h0=Math.hypot(v.x,v.z);if(h0<1e-4)continue;const v2=V(v.x/h0*hz,want,v.z/h0*hz);
-   const q=new THREE.Quaternion().setFromUnitVectors(v.clone().normalize(),v2.normalize());const pw=F.parent.getWorldQuaternion(new THREE.Quaternion());const fw=F.getWorldQuaternion(new THREE.Quaternion()).premultiply(q);
-   F.quaternion.copy(pw.invert().multiply(fw));F.updateMatrixWorld(true);}}
+   const q=new THREE.Quaternion().slerp(new THREE.Quaternion().setFromUnitVectors(v.clone().normalize(),v2.normalize()),W);const pw=F.parent.getWorldQuaternion(new THREE.Quaternion());const fw=F.getWorldQuaternion(new THREE.Quaternion()).premultiply(q);
+   F.quaternion.copy(pw.invert().multiply(fw));F.updateMatrixWorld(true);tdL[s]={base:qb,q:F.quaternion.clone()};}}
  let sqA=null,sqOn=0;/* run last (guard stage): earlier, the leg planting after the task's post put the boots back on their toes */
  function squatFeet(a){const fl=H.floorY;if(fl==null)return;const hy=n=>bones[n]?bones[n].getWorldPosition(V()).y-fl:9;
   if(!a.sf0)return;
-  const d0=clamp(Math.min(hy('LeftFoot'),hy('RightFoot'))-a.sf0.ank,0,.12);a.sqD=(a.sqD||0)+clamp(d0-(a.sqD||0),-.012,.012);const d=a.sqD;/* eased: at most 1.2 cm a frame */if(d>.002){const hp=bones.Hips;const w=hp.getWorldPosition(V()).add(V(0,-d,0));hp.position.copy(hp.parent.worldToLocal(w));hp.updateMatrixWorld(true);}
-  toesDown(Math.max(.02,a.sf0.toe));}
+  /* only where the boots really come off the boards (toes 1.5-4 cm over their rest), eased in and out: always on, it shook the old hero's right boot */
+  const need=Math.min(hy('LeftToeBase'),hy('RightToeBase'))-a.sf0.toe;if(a.step==='clip'&&need>.03)a.sqOn=1;const tg=a.step==='clip'&&a.sqOn&&a.t<(a.clipDur||1.2)-.7?1:0;a.sqW=(a.sqW||0)+clamp(tg-(a.sqW||0),-.025,.025);/* latched for the squat, out before he is up: following the toes frame by frame it wavered and shook the boots */const W=a.sqW;if(W<.01)return;
+  /* the toes only: lowering the whole body with the legs as well shook the boots (gate jitter 8-9 mm, 5 Hz) */
+  toesDown(Math.max(.02,a.sf0.toe),W);}
  /* OUTDOOR: the drain bucket under the counter is taken and put back with the right hand from beside it: the pail stands ahead of his right
     foot, out at that side, never between his knees (from straight in front, 0.15 m to his left, the squat's shins went through it 8-9 cm) */
  function drainVisit(a,clip,hits,then){if(!a.sf0&&H.floorY!=null&&!H.path.length){const hy=n=>bones[n]?bones[n].getWorldPosition(V()).y-H.floorY:9;const k=Math.min(hy('LeftFoot'),hy('RightFoot')),t=Math.min(hy('LeftToeBase'),hy('RightToeBase'));if(k>0&&k<.2&&t>0&&t<.12)a.sf0={ank:k,toe:t};}/* his standing boots, before he sets off */const pt=PT('drainBay');const P=PP();const bk=P&&P.tools&&P.tools.drainBucket;const h=P&&P.toolHome?P.toolHome('drainBucket'):null;const cn=bk&&bk.userData.home&&bk.userData.home.parent;
@@ -2109,10 +2113,10 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // OUTDOOR: both hands free on a ladder. What he carries in a hand goes over his shoulder on its rope (sling) for the climb
  // and back into the hand at the top or bottom; the carry overlay never runs on the ladder (it fought the rung grips).
  const SLING={logArmful:{off:[0,.1,-.17],rot:[0,0,Math.PI/2],hand:'Left',ho:[.1,.12,.1]},waterBucket:{off:[.1,-.02,-.2],rot:[0,0,.2],hand:'Right',ho:[0,.06,.02]},drainBucket:{off:[.1,-.02,-.2],rot:[0,0,.2],hand:'Right',ho:[0,.06,.02]},meatBag:{off:[.1,.18,-.14],rot:[0,0,0],hand:'Right',ho:[0,.1,.02]}};
- const slung={},unsl={},unslF={};
+ const slung={},unsl={},unslF={},slungBy={};
  function slingTick(){const P=PP();if(!P||!P.tools)return;const lad=!!H.lad;unslingIdle(P);
   for(const n in SLING){const o=P.tools[n];if(!o)continue;const S=SLING[n];
-   if(lad&&o.parent===bones[S.hand+'Hand']){onBack(n,V(...S.off),S.rot);if(SLUNG_AT[n])scene.attach(o);/* placed in the world by slungPost every frame */slung[n]=1;AU('cloth');}
+   if(lad&&o.parent===bones[S.hand+'Hand']){onBack(n,V(...S.off),S.rot);slungBy[n]=act;if(SLUNG_AT[n])scene.attach(o);/* placed in the world by slungPost every frame */slung[n]=1;AU('cloth');}
    else if(!lad&&slung[n]&&!(H.path[0]&&H.path[0].t==='ladder')&&bones[S.hand+'Hand'].getWorldPosition(V()).y<bones.Hips.getWorldPosition(V()).y+.05){slung[n]=0;/* only what really hangs on him: a bucket back on its shelf (parent the scene too) is never pulled into the hand from across the house (gate: the trip started with the supply bucket in his fist) */const hm=P.toolHome&&P.toolHome(n);const near=o.getWorldPosition(V()).distanceTo(bones.Hips.getWorldPosition(V()))<.9&&!(hm&&o.getWorldPosition(V()).distanceTo(hm)<.1);if(near&&(o.parent===bones.Spine2||o.parent===scene)){if(SLUNG_AT[n]&&o.parent===scene){slung[n]=1;if(!unsl[n])unsl[n]={t:0,hand:S.hand,ho:S.ho};}/* off the rope by hand: the fist goes to the bail first, then takes it (Grab: it flew 50-60 cm into the fist) */else try{P.grab(n,bones[S.hand+'Hand'],{offset:V(...S.ho)});AU('cloth');}catch(e){}}}}
   if(lad&&H.ov&&H.carry&&H.ov.T===ovTracks(H.carry)&&H.ov.end-H.ov.t>.3)H.ov.end=H.ov.t+.3;}
  // after every pose: what is slung for the ladder hangs on its rope between the shoulder blades, upright in the world,
@@ -2181,12 +2185,17 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
      const M=new THREE.Matrix4().compose(p,q,o.getWorldScale(V()));o.parent.updateWorldMatrix(true,false);M.premultiply(o.parent.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);wp.copy(p);wq.copy(q);}}
    easeSt[n]={par:o.parent,w:wp,q:wq,vis:o.visible,e:S&&S.e||null,tl,lp:o.position.clone(),lq:o.quaternion.clone()};}}
  function isHeroPart(x){for(let q=x;q;q=q.parent)if(q===root)return true;return false;}
+ let slAge=0;
  function slungPost(){const P=PP();if(!P||!P.tools)return;lateReg();
   for(const n in unsl){const U=unsl[n];const o=P.tools[n];if(!o||o.parent!==scene||H.lad||(H.path[0]&&H.path[0].t==='ladder')){delete unsl[n];continue;}U.t+=1/60;
    const g=o.localToWorld((o.userData.grip||V()).clone());odReach(U.hand,g,smooth(0,.3,U.t));
    if((U.t>.25&&odPalmTo(U.hand,g)<.07)||U.t>.7){delete unsl[n];slung[n]=0;try{P.grab(n,bones[U.hand+'Hand'],{offset:V(...U.ho)});AU('cloth');}catch(e){}unslF[n]={t:0,hand:U.hand,g};}}
   for(const n in unslF){const F=unslF[n];F.t+=1/60;if(F.t>=.35||H.lad){delete unslF[n];continue;}odReach(F.hand,F.g,1-smooth(0,.35,F.t));}unslingIdle(P);let f=null,any=false;
-  for(const n in SLUNG_AT){const o=P.tools[n];if(!o||!slung[n]||(o.parent!==bones.Spine2&&o.parent!==scene))continue;f=f||fwd(root.rotation.y);const S=SLUNG_AT[n];
+  slAge=(H.lad||(H.path[0]&&H.path[0].t==='ladder'))?0:slAge+1/60;
+  for(const n in SLUNG_AT){const o=P.tools[n];if(!o||!slung[n]||(o.parent!==bones.Spine2&&o.parent!==scene))continue;
+   /* a load is on the rope only for a climb: 2.5 s off any ladder with no hand going for it, it is not on him (the supply bucket, back on its shelf,
+      was still flagged and dragged along at his hip with its rope loop through his arm and the oven: watch R26-3) */
+   if(slAge>2.5&&!unsl[n]&&o.parent===scene){const hm=P.toolHome&&P.toolHome(n);if(!hm||o.getWorldPosition(V()).distanceTo(hm)<.25){slung[n]=0;continue;}if(slungBy[n]!==act){slung[n]=0;try{P.release(n);}catch(e){}continue;}/* left over from a job that is over: back home, never along on the next one */if(SLING[n])unsl[n]={t:0,hand:SLING[n].hand,ho:SLING[n].ho};}/* his own job's load: the hand takes it off the rope */f=f||fwd(root.rotation.y);const S=SLUNG_AT[n];
    const hs=(o.userData.home&&o.userData.home.scale)||1;const sp=bones.Spine2.getWorldPosition(V());
    // clear of whatever sticks out furthest behind him: on a ladder the hips and thighs push back past the shoulder blades
    // (frame by frame his pelvis sat inside the bucket all the way up the rope ladder)
@@ -2328,7 +2337,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    // OUTDOOR: the pour: the fist lifts the bucket out over the edge, the other hand under its bottom tips it right over, then back
    // taking it from under the sink and putting it back: the fist carries it on a clean path between its spot and his side,
    // never past his legs (frame by frame his shin went into it as the pick-up clip swung the hand back by the feet)
-   a.post=()=>{if(a.step==='clip'){sqA=a;if(!sqOn){sqOn=1;lateFn(()=>{const A=sqA;sqA=null;if(A&&act===A&&A.step==='clip')squatFeet(A);});}}if(a.step==='clip'&&PP().tools.drainBucket.parent===bones.RightHand){const k=a.t/Math.max(.3,a.clipDur);const hs=PP().tools.drainBucket.userData.home.scale||1;
+   a.post=()=>{if(a.step!=='clip')a.sqOn=0;if(a.step==='clip'||(a.sqW||0)>.01){sqA=a;if(!sqOn){sqOn=1;lateFn(()=>{const A=sqA;sqA=null;if(A&&act===A)squatFeet(A);});}}else{a.sqD=0;a.sqW=0;}/* eased out after the squat too (reset at its end, the boots jumped back up) */if(a.step==='clip'&&PP().tools.drainBucket.parent===bones.RightHand){const k=a.t/Math.max(.3,a.clipDur);const hs=PP().tools.drainBucket.userData.home.scale||1;
      const hg=PP().toolHome('drainBucket').add(V(0,.35*hs,0));const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const cy=bones.Hips.getWorldPosition(V()).addScaledVector(r,.42).addScaledVector(f,.06).add(V(0,-.12,0));cy.y=Math.max(cy.y,root.position.y+.42);/* in the squat the knees splay: the bucket is held up and out past them, its bottom off the floor (gate: shins 15 cm in it) */
      const u=a.back?smooth(.12,.45,k):1-smooth(.5,.85,k);const mid=hg.clone().addScaledVector(r,.36);mid.y=Math.max(mid.y,cy.y);/* out to the right at the bay first, then back to his side: never back past the shins */odReach('Right',u>.5?mid.lerp(hg,smooth(.5,1,u)):cy.clone().lerp(mid,smooth(0,.5,u)),1);odHang('drainBucket',0,true);return;}
     if(a.step!=='pour'){odHang('drainBucket',0);return;}H.bucketTilt=true;const D=a.D||2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
