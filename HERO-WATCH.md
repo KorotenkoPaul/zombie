@@ -83,6 +83,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R10-3 | P1 | bolt (19ccd8d) | coming in he stands inside the swinging door leaf (the leaf cuts through his body, f4116–f4188) and the bolt sticks out of his back (f4200); then he grips the bolt by its knob and slides it (good contact, f4224–f4344) but the door is still ~30° open while he bolts it | f4080–f4344 | r10-19ccd8d/bolt_through_door_leaf_bolts_open_door.jpg | Character / collide |
 | R10-4 | ok | hatch (19ccd8d) | lid lies closed flat over the hole when he leaves for the bolt | f3744 | — | — |
 | R10-5 | P2 | sleep lie-down (19ccd8d) | swinging onto the lower bunk he ends on his back with knees bent and both boots-off feet lifted ~40 cm in the air over the bed edge, soles to the room (f5400); then the right arm drapes off the mattress down to the ladder (f5436, R7-10 still); vest still on (R7-9) | f5328–f5508 | r10-19ccd8d/bedlie_legs_in_air_arm_hangs_vest_on.jpg | bed |
+| R10-6 | ok | firewood (19ccd8d) | whole errand natural: down the rope ladder hands on the ropes, walk along the track to the woodpile, picks logs (hy_picklog), carries them in both arms, slings the bundle on his back for the rope ladder and climbs with hands on the ropes | f3840–f7656 | r10-19ccd8d/firewood_ok.jpg | — |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
