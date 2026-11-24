@@ -24,6 +24,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | B5 | P3 | sleep | Sleeps in his boots while his slippers stand by the bed | f4704–f5364 | same | sleep family |
 | B6 | P2 | hammer | Mostly good (upright, handle-end grip, strikes land on the board). The backswing lifts the hammer straight up in front of his face, head at nose height (f4488, f4668), instead of above the shoulder; left hand hovers flat over the board instead of holding it | f4308–f5388 | r4-085e32c/hammer_ok_backswing_at_face_f4308-5388.jpg | workshop family via hero-dev |
 | B7 | P1 | ledge sit | "Sit on the edge with legs dangling" happens behind the deck railing: he sits on the boards inside the rail and his legs go straight through the railing posts; nothing dangles over the edge | f6792–f7488 (hy_dangle) | r4-085e32c/ledge_legs_through_railing_f6792-7488.jpg | rest family (spot choice: an open edge without a rail) / collide |
+| B8 | P1 | chop | Chops the air below the worktop: the knife hand moves at hip height in front of the cabinet doors, ~20 cm under the counter, while the cutting board and vegetables sit on the counter above; the left hand hangs at his side | f8316–f9540 (hy_chop) | r4-085e32c/chop_knife_below_worktop_f8316-9540.jpg | cooking family via hero-dev |
 
 ## Open on post-21:33 builds (features being re-landed)
 
