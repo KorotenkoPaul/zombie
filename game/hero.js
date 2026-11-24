@@ -1076,7 +1076,18 @@ export function createHero(ctx){
     if(y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02){root.rotation.y+=Math.PI*.6*dt;H.face=root.rotation.y;}else{p.addScaledVector(f,.22*dt);}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
   water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
-  listen:(o)=>{const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<1.5))||pick(WINDOWS);return job({node:wn,slide:false,clip:'hy_listen',dur:[12,22],reps:2,look:a=>root.position.clone().add(V(Math.sin(a.T*.35)*2.5,1.55,0)).addScaledVector(fwd(N[wn].face??0),5)});},
+  listen:(o)=>{const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<1.5))||pick(WINDOWS);
+   // LEISURE (frame check: hy_listen held both arms out from the body, palms forward, like a shrug frozen for 20 s): he stands still
+   // at the open front of the room and listens to the night: weight on one leg (calm idle), leans out a little, turns the head so an
+   // ear is to the forest for a few seconds, looks out again; now and then cups his right hand behind the ear
+   const fw=()=>fwd(N[wn].face??0);
+   return job({node:wn,slide:false,clip:IDLE(),loop:true,dur:[14,24],vary:false,
+    start:a=>{a.side=Math.random()<.5?1:-1;a.ph=0;a.pt=rnd(2,3.5);a.cup=rnd(5,9);},
+    look:a=>{const f=fw(),r=V(-f.z,0,f.x);const hd=bones.Head.getWorldPosition(V());const k=a.ear||0;return hd.addScaledVector(f,3).addScaledVector(r,a.side*2.6*k).add(V(0,-.15-.25*k,0));},lookW:.9,
+    tick:(a,dt)=>{H.face=N[wn].face??H.face;a.pt-=dt;if(a.pt<0){a.ph^=1;a.pt=a.ph?rnd(3.5,6):rnd(2.5,4);if(a.ph&&Math.random()<.4)a.side=-a.side;}
+     a.ear=clamp((a.ear||0)+(a.ph?dt/1.1:-dt/1.1),0,1);a.cup-=dt;a.cw=clamp((a.cw||0)+(a.cup<0&&a.cup>-3?dt/.7:-dt/.6),0,1);if(a.cup<-3.4)a.cup=rnd(8,14);},
+    post:(a,dt)=>{const f=fw(),ax=V(0,1,0).cross(f).normalize();const lean=.07*smooth(0,1,a.ear||0);rotW(bones.Spine1,ax,lean);rotW(bones.Spine2,ax,lean*.6);/* leans out a little toward the sound */
+     const w=smooth(0,1,a.cw||0);if(w>.01){const hd=bones.Head.getWorldPosition(V());const r=V(-f.z,0,f.x);const s=a.side>0?'Right':'Left';gripNoLean(s,hd.clone().addScaledVector(r,a.side*.11).addScaledVector(f,-.03).add(V(0,-.02,0)),w);}}});},
   bolt:(o)=>{const P=window.__props||P3;const D=P&&P.door;const to=o&&o.lock===false?0:1;
    // GRAB DOOR: the door and its bolt move only under his palm (grab.js door hand + props door.hand). The open door sweeps a
    // quarter circle (0.77 m) round its hinge, so he walks round just outside that sweep, a little ahead of the leaf, his palm
