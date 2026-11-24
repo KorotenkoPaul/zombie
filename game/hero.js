@@ -822,7 +822,7 @@ export function createHero(ctx){
        fist: on the shorter hero it never settled (the kettle swung 20-50 cm, through his hips and shins; gate orig) */
       const G=window.__grab;const dir=rgt().multiplyScalar(oth==='Left'?1:-1).addScaledVector(fwd(root.rotation.y),-.3).normalize();a.kDir=dir.clone();/* across and a little back towards him: the kettle body stays out in front, off his chest */
       if(!a.kOff)a.kOff=dir.clone().multiplyScalar(.17).add(V(0,-.1,0));/* spout from the grip point: 17 cm across, 10 down (tipped) */
-      const cy=bones.Spine2.getWorldPosition(V()).y+.0;/* the fist at chest height at most: lifted to fix the spout height it went up to his forehead, the forearm across the face (watch r24) */
+      const cyT=bones.Spine2.getWorldPosition(V()).y;if(a.cyv==null)a.cyv=Math.max(cyT,(G&&G.gripPoint?G.gripPoint(oth).y:cyT));a.cyv+=(cyT-a.cyv)*.06;const cy=Math.max(cyT,a.cyv);/* the cap comes down to the chest over ~0.7 s from where the fist is: clamped at once it pulled the kettle fist down 10-20 cm in a frame *//* the fist at chest height at most: lifted to fix the spout height it went up to his forehead, the forearm across the face (watch r24) */
       const g=t.clone().sub(a.kOff);if(g.y>cy)g.y=cy;const k0=a.k0?a.k0.clone().add(V(0,-.04,0)):g;const gb=k0.clone().lerp(g,w);
       const pp=a.pa0&&G?a.pa0.clone().add(gb.clone().sub(a.k0).add(V(0,.04,0))):null;
       const put=()=>{if(!pp)reachTo(oth,a.k0||gb,1-w);/* the stoop he reached the ring with straightens as the kettle comes in (no snap upright); kPalm leans by itself: a second lean toward the grip point on top of it pushed his head 6 cm forward on the first pour frame (gate: head 14 cm) */if(pp)kPalm(pp);else reachGrip(oth,gb,1);levelK();yawK(dir,w);tipNow();
