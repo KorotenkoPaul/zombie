@@ -943,7 +943,7 @@ export function createHero(ctx){
   if(o.jacket&&!GEAR.coat&&COAT)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketon',[[.14,()=>{try{PP().setHere&&PP().setHere('jacket',false);}catch(e){}COAT.on=true;GEAR.coat=true;}],[.55,()=>AU('zip')]]/* no rigid jacket in the hand: it leaves the peg at the touch and settles on the body (skinned coat fades in) */,next));
   if(o.bow&&!GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',V(.06,.12,-.16),[0,0,-.5]);onBack('bow',V(-.02,.06,-.15),[0,0,.55]);/* GRAB: slung across the back, hands free for the ladder */GEAR.bow=true;}]],next));
   if(o.lantern&&!GEAR.lantern&&hasTool('lantern'))seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{PP().grab('lantern',bones.RightHand,{offset:V(0,.06,.03)});window.__lights&&window.__lights.attachHand&&window.__lights.attachHand(bones.RightHand);window.__lights.set('hand',true);}catch(e){}GEAR.lantern=true;}]],next));
-  const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
+  const run=i=>{if(a.leaving)return;if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  function gearOff(a,then,keep={}){const seq=[];
   if(GEAR.lantern)seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{window.__lights.set('hand',false);window.__lights.detachHand();PP().release('lantern',{blend:.3});}catch(e){}GEAR.lantern=false;}]],next));
   if(GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowhang',[[.2,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.14});}catch(e){}GEAR.bow=false;}]],next));
@@ -952,6 +952,77 @@ export function createHero(ctx){
  function dropGearNow(){if(GEAR.coat&&COAT){COAT.on=false;try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}
   for(const n of ['bow','quiver','lantern','meatBag','logArmful','waterBucket','drainBucket','plate'])try{PP().release(n);}catch(e){}
   if(GEAR.lantern)try{window.__lights.set('hand',false);window.__lights.detachHand();}catch(e){}GEAR.bow=GEAR.lantern=false;try{window.__audio.carry(false);}catch(e){}H.carry=null;}
+ // ---- OUTDOOR: wood splitting (MAKE.splitwood) -------------------------------------------------------------------------
+ const SPL_RH=.26,SPL_RR=.115,SPL_T={place:3.0,swing:1.9,after:.9};
+ const SPLM={bark:new THREE.MeshStandardMaterial({color:0x5a4330,roughness:.95}),wood:new THREE.MeshStandardMaterial({color:0xcfa572,roughness:.85})};
+ // a sawn round (bark round the side, pale end grain) and the half of one (flat split face)
+ function roundMesh(){const g=new THREE.Group();const c=new THREE.Mesh(new THREE.CylinderGeometry(SPL_RR*.97,SPL_RR,SPL_RH,14),[SPLM.bark,SPLM.wood,SPLM.wood]);c.position.y=SPL_RH/2;g.add(c);c.castShadow=true;return g;}
+ function halfMesh(){const g=new THREE.Group();const c=new THREE.Mesh(new THREE.CylinderGeometry(SPL_RR*.97,SPL_RR,SPL_RH,10,1,false,0,Math.PI),[SPLM.bark,SPLM.wood,SPLM.wood]);c.position.y=SPL_RH/2;g.add(c);
+  const f=new THREE.Mesh(new THREE.PlaneGeometry(SPL_RR*1.96,SPL_RH*.99),SPLM.wood);f.rotation.y=-Math.PI/2;f.position.y=SPL_RH/2;g.add(f);c.castShadow=true;return g;}
+ // where things are round the block: its top, the stack of rounds at his left, the halves on the ground
+ function splitState(blk){if(blk.userData.split)return blk.userData.split;const b=blk.userData.box||new THREE.Box3().setFromObject(blk);
+  const S={blk,top:V(blk.position.x,b.max.y,blk.position.z),stack:[],halves:[]};blk.userData.split=S;return S;}
+ // a graph node where he stands to split: 1.05 m from the block, on the side toward the nearest ground path node (added once)
+ function blockNode(blk,S){if(N.g_block)return;const c=S.top;let best=null,bd=1e9;for(const k in N){if(!/^g_/.test(k)||/^g_p\d|g_pond|g_out|g_edge|g_exit2/.test(k))continue;const d=Math.hypot(N[k].p.x-c.x,N[k].p.z-c.z);if(d<bd){bd=d;best=k;}}
+  if(!best)return;const b=N[best].p;let u=V(b.x-c.x,0,b.z-c.z).normalize();
+  // the clearest spot round the block: away from the oak's roots (ground.js rootD) and from the log pile / sawhorse
+  {const G=window.__ground;let bs=-1e9;for(let i=0;i<16;i++){const a=i*Math.PI/8;const v=V(Math.sin(a),0,Math.cos(a));let sc=0;for(const k of [.5,1.05,1.6]){const x=c.x+v.x*k,z=c.z+v.z*k;sc+=G&&G.rootD?Math.min(.8,G.rootD(x,z)):0;}
+    const q=c.clone().addScaledVector(v,1.05);for(const n of ['logpile','sawhorse']){const o=PP().objects&&PP().objects[n];if(o&&o.userData.box){const bb=o.userData.box;const dx=Math.max(bb.min.x-q.x,0,q.x-bb.max.x),dz=Math.max(bb.min.z-q.z,0,q.z-bb.max.z);sc-=Math.max(0,.7-Math.hypot(dx,dz))*3;}}
+    sc+=.15*v.dot(u);if(sc>bs){bs=sc;u.copy(v);}}}const p=c.clone().addScaledVector(u,1.05);const G=window.__ground;p.y=G&&G.heightAt?G.heightAt(p.x,p.z):b.y;
+  N.g_block={p,face:Math.atan2(-u.x,-u.z)};(adj.g_block=adj.g_block||[]).push({to:best});(adj[best]=adj[best]||[]).push({to:'g_block'});}
+ function splitStock(S,n){// the rounds he sawed earlier stand by the block; topped up only while he is away from it (never under his eyes)
+  if(S.stack.length>=n)return;const G=window.__ground;const c=S.top;const st=N.g_block?N.g_block.p.clone():root.position.clone();const d=V(c.x-st.x,0,c.z-st.z).normalize();const r=V(d.z,0,-d.x);/* his left */
+  while(S.stack.length<n+1){const i=S.stack.length;const m=roundMesh();const p=st.clone().addScaledVector(r,.3+(i%2)*.24).addScaledVector(d,.42-Math.floor(i/2)*.24);/* in front, to his left: the squat reaches it */p.y=G&&G.heightAt?G.heightAt(p.x,p.z):p.y-.42;m.position.copy(p);m.rotation.y=Math.random()*6;scene.add(m);S.stack.push(m);}
+  while(S.halves.length>12){const h=S.halves.shift();scene.remove(h);}}
+ function splitPost(a,dt,S){const P=PP();const ax=P&&P.tools&&P.tools.axe;if(!ax||ax.parent!==bones.RightHand)return;
+  const T=SPL_T;a.pt+=dt;const c=S.top;const rp=root.position;const d=V(c.x-rp.x,0,c.z-rp.z);const hd=d.length();d.normalize();const r=V(-d.z,0,d.x),up=V(0,1,0);
+  H.face=Math.atan2(d.x,d.z);
+  const hits=a.plan[a.ri];if(hits==null){a.w=Math.max(0,(a.w||0)-dt/.4);H.squat=0;return;}
+  if(a.ph==='lead'){axeRest(a,d,smooth(0,.5,a.pt));if(a.pt>.6){a.ph='place';a.pt=0;}return;}
+  // 1. a round from the stack onto the block: squat, left palm on its top, lift, stand it on the block
+  if(a.ph==='place'){const u=a.pt/T.place;let rd=a.rd;if(!rd){rd=a.rd=S.stack.pop()||(()=>{const m=roundMesh();m.position.copy(c).addScaledVector(r,.5);m.position.y-=.42;scene.add(m);return m;})();a.r0=rd.position.clone();}
+   // the body: real mocap squat-and-lift (hy_pickground, CMU: hips lowest 0.9-1.3 s); without it a code squat
+   const t=a.pt;if(!a.pk){a.pk=1;if(has('hy_pickground'))once('hy_pickground',{fade:.3});}const PK=has('hy_pickground');
+   H.squat=PK?0:.42*smooth(.15,.8,t)*(1-smooth(1.3,1.9,t));const tp=rd.getWorldPosition(V()).add(V(0,SPL_RH+.01,0));
+   const w=smooth(.35,.85,t)*(1-smooth(2.65,3.0,t));
+   if(t>1.02&&rd.parent!==bones.LeftHand&&!a.placed){bones.LeftHand.attach(rd);AU('wood',tp);}
+   if(t>2.6&&rd.parent===bones.LeftHand){scene.attach(rd);rd.position.copy(c);rd.rotation.set(0,rd.rotation.y,0);a.placed=1;AU('wood',c);}
+   let at=tp;if(rd.parent===bones.LeftHand){/* carried up with the rising body, then over to the block top */const k=smooth(1.35,2.6,t);const to=c.clone().add(V(0,SPL_RH+.01,0));at=a.r0.clone().add(V(0,SPL_RH+.01,0)).lerp(to,k);at.y+=.3*Math.sin(Math.PI*k);}
+   else if(a.placed)at=c.clone().add(V(0,SPL_RH+.01,0));
+   if(w>.01)reachGrip('Left',at,w);a.lk=at;axeRest(a,d,1);
+   if(t>=T.place){a.ph='swing';a.pt=0;a.hit=0;a.lk=null;a.pk=0;a.placed=0;}return;}
+  // 2. the swing: angle th round a pivot just in front of the shoulders, in the vertical plane through the round
+  const Ls=bones.LeftArm.getWorldPosition(V()),Rs=bones.RightArm.getWorldPosition(V());const piv=Ls.clone().add(Rs).multiplyScalar(.5).addScaledVector(d,.06).add(V(0,-.04,0));
+  const tgt=c.clone().add(V(0,SPL_RH-.015,0));const q=tgt.clone().sub(piv);const qh=V(q.x,0,q.z).length();const rH=q.length();const thS=Math.atan2(q.y,qh);
+  if(a.ph==='swing'){// the body is real mocap (hy_axechop, CMU: slow lift 1.2 s, fast drop 0.35 s, hit at 1.57 s of 1.9 s); the axe angle follows its phase
+   const C='hy_axechop',cd=has(C)?durOf(C):1.9;if(!a.clipOn&&has(C)){a.clipOn=1;play(C,{fade:.3});const A=actions[C];if(A)A.time=0;}
+   const A=has(C)?actions[C]:null;const u=A?(A.time%cd)/cd:a.pt/T.swing;if(a.lu!=null&&u<a.lu-.5){a.struck=0;a.cyc=(a.cyc||0)+1;}a.lu=u;
+   const last=a.hit+1>=hits;const thT=1.95,UT=.63,US=.82;let th;
+   if(u<UT)th=thS+(thT-thS)*smooth(0,UT,u);else if(u<US){const k=(u-UT)/(US-UT);th=thT+(thS-.05-thT)*k*k;}else th=thS-.05;
+   if(u>=US&&!a.struck){a.struck=1;a.hit++;try{window.__audio&&window.__audio.contact?window.__audio.contact({tool:'axe',kind:'hit',pos:tgt.toArray(),strength:rnd(.8,1)}):AU('chop',tgt);}catch(e){AU('chop',tgt);}
+    if(a.hit>=hits)splitRound(a,S,d,r);}
+   if(u>US&&a.rd&&u<.95)th+=Math.sin((u-US)*60)*.025;/* stuck: rock the handle to free it */
+   a.w=Math.min(1,(a.w||0)+dt/.35);H.squat=.04;
+   holdAxe(a,piv,d,r,th,rH,a.w);
+   if(a.hit>=hits&&u>.97){a.pt=0;a.struck=0;a.clipOn=0;a.lu=null;a.ph='after';play(IDLE(),{fade:.6});}return;}
+  if(a.ph==='after'){const u=a.pt/T.after;a.w=Math.max(0,1-smooth(0,.6,u));H.squat=.04*(1-u);axeRest(a,d,1);if(a.w>.01)holdAxe(a,piv,d,r,thS-.05+.3*smooth(0,.6,u),rH,a.w);
+   if(u>=1){a.ri++;a.ph=a.plan[a.ri]!=null?'place':'done';a.pt=0;a.hit=0;}}}
+ // the axe at rest in the right hand: hanging head down along the leg, the blade forward (never sticking out sideways)
+ function axeRest(a,d,w){const G=window.__grab;if(!G||!G.gripPoint||w<.01)return;const gp=G.gripPoint('Right');const tip=gp.clone().add(V(0,-1,0)).addScaledVector(d,.22);holdToolAt('Right','axe',gp,tip,w,d.clone());}
+ // both hands on the axe handle: right hand at the tool's grip, left hand at the handle's end; the blade faces the way it swings
+ function holdAxe(a,piv,d,r,th,rH,w){const dir=d.clone().multiplyScalar(Math.cos(th)).add(V(0,Math.sin(th),0));const tan=d.clone().multiplyScalar(-Math.sin(th)).add(V(0,Math.cos(th),0));
+  const head=piv.clone().addScaledVector(dir,rH);const gR=piv.clone().addScaledVector(dir,rH-.58);const gL=piv.clone().addScaledVector(dir,Math.max(.22,rH-.68)).addScaledVector(r,.01);
+  reachGrip('Left',gL,w*.95);holdToolAt('Right','axe',gR,head,w,tan.clone().negate());
+  const G2=window.__grab;if(G2&&G2.late)G2.late(()=>holdToolAt('Right','axe',gR,head,w,tan.clone().negate()));H.noPop={side:'Right',age:0};a.dbg=[gR,gL,head];}
+ // the round comes apart: two halves tip outwards off the block and drop onto the ground on both sides
+ function splitRound(a,S,d,r){const rd=a.rd;if(!rd)return;a.rd=null;a.split++;const p=rd.position.clone();const yaw=Math.atan2(d.x,d.z);scene.remove(rd);
+  AU('chop',p);for(const s of [-1,1]){const h=halfMesh();h.position.copy(p);h.rotation.set(0,yaw+(s<0?Math.PI:0)+Math.PI/2,0);scene.add(h);S.halves.push(h);
+   const G=window.__ground;const land=p.clone().addScaledVector(r,s*rnd(.3,.45)).addScaledVector(d,rnd(-.12,.12));land.y=G&&G.heightAt?G.heightAt(land.x,land.z):p.y-.42;
+   SPLF.push({h,t:0,p0:p.clone(),land,s,yaw:h.rotation.y,spin:rnd(-.6,.6)});}}
+ const SPLF=[];function splitFall(dt){for(let i=SPLF.length-1;i>=0;i--){const f=SPLF[i];f.t+=dt;const k=Math.min(1,f.t/.55);
+  // tips over its outer bottom edge first, then drops to the ground lying on its bark
+  const tip=smooth(0,.35,f.t/.55);const drop=k*k;const pos=f.p0.clone().lerp(f.land,smooth(.1,1,k));pos.y=f.p0.y+(f.land.y-f.p0.y)*drop+.06*Math.sin(Math.PI*k);
+  f.h.position.copy(pos);f.h.rotation.set(0,f.yaw+f.spin*k,0);f.h.rotateZ(-(Math.PI/2)*Math.min(1,tip+drop*.6));f.h.updateMatrixWorld(true);if(k>=1){SPLF.splice(i,1);AU('wood',f.land);}}}
  const carryOv=()=>{if(H.carry&&H.path.length&&has(H.carry)&&!H.ov)overlay(H.carry,{fade:.3,until:.98,weight:.85});};
  Object.assign(MAKE,{
   // out to the forest for meat or wood; gear from the workshop, out of sight for a while, back with the haul, gear off again
@@ -963,11 +1034,15 @@ export function createHero(ctx){
     const unload=next=>{if(!a.haul){next();return;}const P=PP();
      if(a.haul==='meatBag'){try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}fridgeVisit(a,'in',next);}
      else visit(a,PT('woodpile'),.5,'hy_droplogs',[[.6,()=>{try{P.release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],next);};
-    unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);},{jacket:!!o.keepJacket}));};
-   gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{a.step='out';goTo(OUT,()=>{a.step='away';a.t=0;root.visible=false;
+    a.unload=unload;if(a.leaving)return;unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);},{jacket:!!o.keepJacket}));};
+   gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{if(a.leaving)return;a.step='out';goTo(OUT,()=>{if(a.leaving)return;a.step='away';a.t=0;root.visible=false;
      if(kind==='hunt'&&Math.random()<.3)res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};});});
    a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='away'){if(a.t>away){const back=N.g_fork||N.g_path1||N.g_foot;const p=root.position;H.face=back?Math.atan2(back.p.x-p.x,back.p.z-p.z):(N[OUT].face??H.face)+Math.PI;root.rotation.y=H.face;home();}}};
-   a.leave=cb=>{root.visible=true;dropGearNow();cb();};return a;},
+   // called away (OUTDOOR): never walks off with the bow, quiver or lantern on him; the meat goes into the fridge and
+   // the gear back on its pegs first, by hand (Pavel: worn only for the hunt). Out of sight in the forest he first comes back.
+   a.leave=cb=>{a.leaving=true;root.visible=true;if(a.step==='away'){a.step='home';}
+    const off=()=>{if(GEAR.bow||GEAR.lantern||GEAR.coat)gearOff(a,()=>{play(IDLE(),{fade:.4});cb();},{});else cb();};
+    if(a.haul&&a.unload){const u=a.unload;a.unload=null;u(off);}else{if(a.haul){try{PP().release(a.haul);window.__audio.carry(false);}catch(e){}H.carry=null;a.haul=null;}off();}};return a;},
   store:(o={})=>{const a={step:'go',t:0};const P=PP();try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}H.carry='hy_carrysack';
    fridgeVisit(a,'in',()=>endTask({ok:true}));
    a.update=dt=>{if(!stepTick(a,dt))carryOv();};a.leave=cb=>{try{P.release('meatBag');P.fridge.openTo(0,.4);}catch(e){}H.carry=null;cb();};return a;},
@@ -1009,6 +1084,22 @@ export function createHero(ctx){
       a.step='back';visit(a,PT('drainBay'),.5,'hy_picklog',[[.5,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}});});});
    a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='pour'){a.t+=dt;if(a.t>.8&&!a.p){a.p=1;try{P.water.pour('drainBucket',true);}catch(e){}AU('bucket_dump',root.position);}}};
    a.leave=cb=>{try{P.water.pour('drainBucket',false);P.release('drainBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+  // OUTDOOR (Сделать вылазки наружу естественными): splitting firewood at the chopping block by the oak with the real axe.
+  // He takes the axe out of the block, picks a round from the little stack beside it (squat, left hand), stands it on the block,
+  // then swings two-handed: the axe goes up over his head round the shoulders and comes down so its edge lands on the round's top
+  // (left hand at the handle's end, right hand above it). A blow either sticks (wiggle, pull out, swing again) or splits the round:
+  // the halves tip off both sides onto the ground. The axe goes back into the block at the end. Everything moves only in a hand.
+  splitwood:(o={})=>{const P=PP();const blk=P&&P.objects&&P.objects.chopblock;if(!blk||!hasTool('axe')){return {update:()=>endTask({ok:false})};}
+   const S=splitState(blk);const top=()=>S.top.clone();
+   // the plan: rounds, each split with 1-3 blows; the job lasts exactly as long as the plan
+   const n=o.rounds||(2+(Math.random()<.5?1:0)),plan=[];let tot=.6;for(let i=0;i<n;i++){const hits=Math.random()<.55?1:Math.random()<.7?2:3;plan.push(hits);tot+=SPL_T.place+hits*SPL_T.swing+SPL_T.after;}
+   blockNode(blk,S);
+   return job({pt:()=>top().add(V(0,SPL_RH,0)),node:N.g_block?'g_block':undefined,slide:false,stand:1.05,tools:[['axe','Right']],dur:[tot,tot],vary:false,
+    start:a=>{a.plan=plan;a.ri=0;a.ph='lead';a.pt=0;a.split=0;splitStock(S,n);},
+    look:a=>a.lk||top().add(V(0,SPL_RH,0)),lookW:.9,
+    post:(a,dt)=>splitPost(a,dt,S),
+    end:a=>{H.squat=0;a.w=0;if(a.rd&&a.rd.parent!==scene){scene.attach(a.rd);}},
+    result:a=>({ok:true,split:a.split})});},
   hatch:MAKE.hatch,
  });
  {const cookBase=MAKE.cook;MAKE.cook=(o={})=>{if(!o.fromFridge)return cookBase(o);const a={step:'go',t:0};const P=PP();
@@ -1185,7 +1276,7 @@ export function createHero(ctx){
  function stage(slot,fn){if(!STAGES[slot])throw new Error('unknown slot '+slot);STAGES[slot].push(fn);return ()=>{const i=STAGES[slot].indexOf(fn);if(i>=0)STAGES[slot].splice(i,1);};}
  function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt,H);}catch(e){console.error('stage '+slot,e);L.splice(i--,1);}}}
  function update(dt){if(dt<=0)return;const r=updateCore(dt);if(!window.__heroFast){runSlot('collide',dt);runSlot('grab',dt);runSlot('guard',dt);}return r;}
- function updateCore(dt){if(dt<=0)return;H._dt=dt;freezeGuard(dt);if(SPL.length)splashTick(dt);
+ function updateCore(dt){if(dt<=0)return;H._dt=dt;freezeGuard(dt);if(SPL.length)splashTick(dt);if(SPLF.length)splitFall(dt);
   // ===== BRAIN HOOK: an attached brain (game/brain.js) decides what to do; the body below only carries it out =====
   if(brain){if(H.wait){H.wait.t-=dt;if(H.wait.t<=0){const f=H.wait.then;H.wait=null;f&&f();}}
    const mode=ctx.mode?ctx.mode():null;if(mode&&mode!==H.task&&(mode==='guard'||mode==='repair')&&!H.trans)startTask(mode);
@@ -1285,7 +1376,7 @@ export function createHero(ctx){
    H.edgeRoot=V(ed.p.x,root.position.y,ed.p.z);undress(true,true);H.fit={mode:'hold',base:floorTop(BD),y:li.seat+LIE_CLEAR};play(SLEEPB,{fade:0});H.task='sleep';act=MAKE.sleep({inBed:true});act.name='sleep';
    H.wait={t:.05,then:()=>bedPress(true)};return;}
   const A=ACT[task]||{};let at=typeof A.at==='string'?A.at:null;if(task==='window')at=pick(WINDOWS);
-  let from=at&&N[at]&&!N[at].seat&&!o.walking?at:null;
+  let from=o.from&&N[o.from]?o.from:at&&N[at]&&!N[at].seat&&!o.walking?at:null;/* o.from: tests start him on a given node */
   if(!from){const keys=Object.keys(N).filter(k=>N[k]&&N[k].p&&N[k].seat==null&&!N[k].tight&&adj[k]&&k!==at);from=pick(keys);}
   if(at&&N[at]&&N[at].seat!=null&&!o.walking)from=at==='chair'?'chair_app':at==='bedlie'?'bed_app':from;
   const P=N[from].p;root.position.set(P.x,P.y,P.z);const f=floorAt(P.x,P.y,P.z,.4);if(f!=null)root.position.y=f;H.floorY=root.position.y;
