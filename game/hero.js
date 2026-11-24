@@ -964,7 +964,7 @@ export function createHero(ctx){
  function palmTo(side,t){return t?odPalm(side).distanceTo(t):9;}
  function reachGrip(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
   for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+OD_PALM);if(ex<=.01)break;
-   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(.6-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
+   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();if(d.dot(fwd(root.rotation.y))<-.1)break;/* never arch backwards to reach (frame by frame: a banana back at the top of the axe swing); the arm alone goes there */const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(.6-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>OD_PALM*1.5?s1.clone().addScaledVector(tw,(tl-OD_PALM)/tl):t;armIK(side,wt,sidePole(side),clamp(w,0,1));}
  // the axe in the world: head at `head`, handle running from the head along -dir, edge toward `blade`
@@ -1111,11 +1111,19 @@ export function createHero(ctx){
  // after every pose: what is slung for the ladder hangs on its rope between the shoulder blades, upright in the world,
  // well below the neck (frame by frame the Spine2 offsets put the bucket over his head like a hat and the sack into his head)
  const SLUNG_AT={waterBucket:[.28,-.5],drainBucket:[.3,-.52],meatBag:[.24,-.12]};
- function slungPost(){const P=PP();if(!P||!P.tools)return;let f=null;
+ // the rope it hangs by: from the handle up over the right shoulder, across the chest to the left hip and round the back again
+ let strap=null;const strapMat=new THREE.MeshStandardMaterial({color:0x8a6a45,roughness:1});
+ function strapTo(o,f,hs){const r=V(-f.z,0,f.x),l=r.clone().negate();const top=o.localToWorld(V(0,.36,0));const sh=bones.RightShoulder.getWorldPosition(V());const sp=bones.Spine2.getWorldPosition(V()),hp=bones.Hips.getWorldPosition(V());
+  const pts=[top,sh.clone().addScaledVector(f,-.1).add(V(0,.07,0)),sh.clone().addScaledVector(f,.06).add(V(0,.05,0)),sp.clone().addScaledVector(f,.14).addScaledVector(l,.02),hp.clone().addScaledVector(f,.1).addScaledVector(l,.15).add(V(0,.05,0)),
+   hp.clone().addScaledVector(l,.19).add(V(0,.08,0)),hp.clone().addScaledVector(f,-.14).addScaledVector(l,.08).add(V(0,.12,0)),top.clone().addScaledVector(r,.05).add(V(0,-.02,0))];
+  const g=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts,true),48,.011,5,true);
+  if(!strap){strap=new THREE.Mesh(g,strapMat);strap.castShadow=true;strap.frustumCulled=false;scene.add(strap);}else{strap.geometry.dispose();strap.geometry=g;}strap.visible=true;}
+ function slungPost(){const P=PP();if(!P||!P.tools)return;let f=null,any=false;
   for(const n in SLUNG_AT){const o=P.tools[n];if(!o||!slung[n]||o.parent!==bones.Spine2)continue;f=f||fwd(root.rotation.y);const S=SLUNG_AT[n];
    const hs=(o.userData.home&&o.userData.home.scale)||1;const pos=bones.Spine2.getWorldPosition(V()).addScaledVector(f,-S[0]).add(V(0,S[1]*hs,0));
    const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,root.rotation.y,0,'YXZ'));const par=o.parent;par.updateWorldMatrix(true,false);
-   const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}}
+   const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);if(!any&&n!=='meatBag'){any=true;strapTo(o,f,hs);}}
+  if(!any&&strap)strap.visible=false;}
 
  const carryOv=()=>{slingTick();if(H.carry&&H.path.length&&!H.lad&&has(H.carry)&&!H.ov)overlay(H.carry,{fade:.3,until:.98,weight:.85});};
  Object.assign(MAKE,{
@@ -1374,7 +1382,8 @@ export function createHero(ctx){
   if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   bedHand();bedLegClear(dt);
   if(act&&act.post)act.post(dt);if(act&&act.fr)fridgePost(act);/* KITCHEN: the hand on the fridge handle / shelf */try{slungPost();}catch(e){}
-  // GRAB tick (lost in the 00:20 rollback): eases released tools onto their hooks and closes the fists round what they hold
+  // GRAB tick (lost in the 00:20 rollback): eases released tools onto their hooks and closes the fists round what they hold;
+  // without it every blended release left the tool hanging in the air where the hand let go (the axe over the chopping block)
   try{const G=window.__grab;if(G&&G.tick)G.tick(dt,H);}catch(e){}
   if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);runSlot('contacts',dt);}
 
