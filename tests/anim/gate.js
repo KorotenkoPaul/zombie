@@ -11,7 +11,7 @@ const {open}=require('./lib');const {simulate}=require('./simulate');const {anal
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const HEROES=arg('heroes','old,new').split(',');const CAP=+arg('cap',15);const OUT=path.resolve(arg('out','/tmp/anim-gate'));
 const BASE=path.join(__dirname,'gate-baseline.json');const UPDATE=process.argv.includes('--update-baseline');
-const GATE=new Set(['joint','owl-head','foot-bend','unsupported','penetration','grip','no-touch','jump','snap-turn','ladder-grip']);
+const GATE=new Set(['joint','owl-head','foot-bend','unsupported','penetration','grip','no-touch','jump','snap-turn','ladder-grip','prop-through-body']);
 const Q={old:'',new:'?hero=new'};
 const FROM=arg('from',null);// re-check recorded frames (DIR/<hero>/frames.json.gz) with the current analyze.js, no browser
 async function one(h){let D,errs=[];if(FROM){D=JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(FROM,h,'frames.json.gz'))));}else{const o=await open({seed:1,query:Q[h]??''});errs=o.errs;
