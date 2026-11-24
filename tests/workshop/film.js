@@ -6,7 +6,7 @@ const arg=(k,d)=>{const i=process.argv.indexOf(k);return i>0?process.argv[i+1]:d
  const tmp=fs.mkdtempSync('/tmp/claude-0/wsfilm-');const {b,p,errs}=await open({seed:1,vp:{width:360,height:420},query:arg('--query','')});
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  await p.evaluate(()=>__qa.start());await p.evaluate(()=>{__qa.reseed(7);__th.setHour(11);__dbg.HH.setBrain({tick(){}});});
- await p.evaluate(([t,o])=>{for(let k=0;k<4;k++){__dbg.HH.spawn('craft');__qa.step(30,1/60);const H=__dbg.hero;if(H.task==='craft'&&!H.inBed&&!H.seated)break;}__dbg.HH.startTask(t,o);},[task,opts]);
+ await p.evaluate(([t,o,SP])=>{for(let k=0;k<4;k++){__dbg.HH.spawn(SP);__qa.step(30,1/60);const H=__dbg.hero;if(H.task===SP&&!H.inBed&&!H.seated)break;}__dbg.HH.startTask(t,o);},[task,opts,arg('--spawn','craft')]);
  const until=arg('--until','take,work').split(',');const fr=await p.evaluate(u=>{let i=0;for(;i<9000;i++){__qa.step(1,1/60);const a=__dbg.HH.act;if(a&&u.includes(a.step))break;}return i;},until);console.log('reached',until,'after',(fr/60).toFixed(1),'s');
  let t=0,files=[];const log=[];
  for(const s of at){const n=Math.round((s-t)*60);if(n>0)await p.evaluate(n=>__qa.step(n,1/60),n);t=s;

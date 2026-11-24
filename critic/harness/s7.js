@@ -1,7 +1,7 @@
 // Free-camera close-ups through the real camera rig (window.__th.rig.set), i.e. the same near-fade,
 // collision and bounds the player gets. yaw is limited to home±0.75 for the player; views outside that are marked "ext".
 // Usage: node s7.js <outdir> [hour]
-const {open}=require('./lib');const O=process.argv[2];const HOUR=+(process.argv[3]||19.6);
+const {open,waitFrames}=require('./lib');const O=process.argv[2];const HOUR=+(process.argv[3]||19.6);
 const HY=1.0,KT=5.0+HY,BD=7.4+HY,WS=3.6+HY,DK=9.0+HY,LC=3.4+HY;
 // [name, target [x,y,z], yaw, pitch, dist]
 const S=[
@@ -20,5 +20,5 @@ const S=[
 (async()=>{const {b,p,errs}=await open({});await p.evaluate(h=>{window.__H0=h;__th.setHour(h);__th.cam();},HOUR);await p.waitForTimeout(3000);
 const ONLY=process.env.SHOTS?process.env.SHOTS.split(','):null;
 for(const [n,t,y,pi,d] of S.filter(s=>!ONLY||ONLY.includes(s[0]))){await p.evaluate(([t,y,pi,d])=>{const V=__dbg.THREE.Vector3;__th.rig.set({target:new V(...t),yaw:y,pitch:pi,dist:d,snap:true,home:false});__th.setHour(window.__H0);},[t,y,pi,d]);
- await p.waitForTimeout(2500);await p.screenshot({path:O+'/'+n+'.png'});const st=await p.evaluate(()=>__th.rig.state);console.log(n,JSON.stringify(st));}
+ await waitFrames(p,3);await p.screenshot({path:O+'/'+n+'.png'});const st=await p.evaluate(()=>__th.rig.state);console.log(n,JSON.stringify(st));}
 console.log(errs.filter(e=>!/Sprite/.test(e)).join('\n'));await b.close();})();
