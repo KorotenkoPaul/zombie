@@ -1374,26 +1374,41 @@ export function buildProps(ctx) {
       // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
       const top = yc + q.r + .03; const o = Math.max(0, d - q.r * .4); const dr = o < .08 ? 4 * o * o : .0256 + .64 * (o - .08) + 6 * (o - .08) * (o - .08);
       const h = top - dr - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
+  // ---- BED (2026-11-24, Pavel: "the quilt just appears on top of him, he never covers himself"): the quilt's head flap folds over a
+  // hinge across the bed. fold 0 = flat (a made bed), 1 = turned down onto the lower half. Character moves it with his hand on the
+  // flap's free edge (quiltFold / quiltEdge), so it only ever moves where his hand takes it; quiltLive(s) refreshes it every frame.
+  let qxMax = -1e9; if (qBase) for (let i = 0; i < qBase.length; i += 3) if (qBase[i + 1] <= qLowMax + .1 && qBase[i] > qxMax) qxMax = qBase[i];
+  const FL = .3, FR = .1, qFlat = qLowMax - .034, qHinge = qxMax - FL; const fold = { a: 0, shown: 0 }; const _fp = [0, 0];
+  // a point of the flap: x along the quilt, yo its height over the flat top (negative on the hanging sides), a the fold angle 0..PI.
+  // The cloth bends round the hinge on a radius (no crease through itself), then runs straight; it keeps its thickness on the turn.
+  function foldPt(x, yo, a, o) { const s = x - qHinge; if (s <= 0 || a < 1e-4) { o[0] = x; o[1] = qFlat + yo; return o; }
+    if (yo < 0) yo *= 1 - .85 * a / Math.PI;/* its hanging sides fold flat with it */ const rho = FR / a; let px, py, th;
+    if (s <= FR) { th = s / rho; px = qHinge + rho * Math.sin(th); py = qFlat + rho * (1 - Math.cos(th)); }
+    else { th = a; px = qHinge + rho * Math.sin(a) + (s - FR) * Math.cos(a); py = qFlat + rho * (1 - Math.cos(a)) + (s - FR) * Math.sin(a); }
+    o[0] = px - yo * Math.sin(th); o[1] = py + yo * Math.cos(th); return o; }
+  out.quiltFold = (v) => { if (v == null) return fold.a / Math.PI; fold.a = clamp01(v) * Math.PI; };
+  out.quiltLive = (t) => { press.fast = Math.max(press.fast || 0, t); };
+  // the flap's free edge in the world, at the z of the given world point (kept off the corners): where his fingers hold it
+  out.quiltEdge = (pw, sf = 1, zm = .33) => { if (!quiltMesh) return null; bunk.updateMatrixWorld(true); const pl = bunk.worldToLocal(pw.clone()); const zl = Math.max(-zm, Math.min(zm, pl.z));/* zm: up to its side hem */
+    foldPt(qHinge + FL * sf, .012, fold.a, _fp);/* sf: how far along the flap the hand holds it (1 = its free edge) */ let X = _fp[0], Y = _fp[1]; if (press.cover && press.k > .001 && cb.length) Y += liftAt(X, zl, Y) * press.k; return bunk.localToWorld(V(X, Y, zl)); };
+  out._quiltFoldDbg = () => ({ qxMax, qHinge, qFlat, a: fold.a });
   function pressQuilt(dt) {
-    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5);
-    if (press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones())) { coverT -= dt; if (coverT <= 0 || Math.abs(press.k - press.shown) >= .01) { coverT = .2; press.shown = press.k; bunk.updateMatrixWorld(true);
-        if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } }
-        const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, e = .02, k = press.k;
-        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
-          const L0 = liftAt(x, z, y > qTop ? y : qTop) * (y >= qTop ? 1 : Math.max(0, (y - qBot) / (qTop - qBot))); if (L0 <= .002) continue;/* the hanging sides: the hem stays down, the cloth slopes from the lifted top edge to it (no box with a zigzag hem over a bare mattress) */ a[i + 1] = y + L0 * k;
-          if (nBase[i + 1] > .4) { const gx = (liftAt(x + e, z, y) - liftAt(x - e, z, y)) / (2 * e) * k, gz = (liftAt(x, z + e, y) - liftAt(x, z - e, y)) / (2 * e) * k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; } }
-        P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
-      return; }
-    if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
-    const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, c = press.at, e = .01;
-    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (Math.abs(y - c.y) > .3) continue;
-      if (press.cover) { const L0 = bodyLift(x, z, c); if (L0 <= 0) continue; a[i + 1] = y + L0 * press.k;
-        if (nBase[i + 1] > .4) { const gx = (bodyLift(x + e, z, c) - bodyLift(x - e, z, c)) / (2 * e) * press.k, gz = (bodyLift(x, z + e, c) - bodyLift(x, z - e, c)) / (2 * e) * press.k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; }
-        continue; }
-      // an elongated hollow along the bed (body length on x), deepest under the hips, with a slight rim of bunched cloth
-      const dx = (x - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d > 1.35) continue;
-      const sink = d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008; a[i + 1] = y - sink * press.k; }
-    P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
+    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5); if (press.fast > 0) press.fast -= dt;
+    const cover = press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones()); coverT -= dt;
+    const folded = Math.abs(fold.a - fold.shown) > 1e-3;
+    if (cover) { if (!(coverT <= 0 || press.fast > 0 || folded || Math.abs(press.k - press.shown) >= .01)) return; }
+    else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
+    press.shown = press.k; fold.shown = fold.a;
+    if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } } }
+    const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
+    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
+      let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }
+      if (cover && k > .001) { /* the hanging sides: the hem stays down, the cloth slopes from the lifted top edge to it */let L0 = liftAt(X, z, Y > qTop ? Y : qTop); if (Y < qTop) L0 *= Math.max(0, (Y - qBot) / (qTop - qBot)); Y += L0 * k; }
+      else if (!cover && c && k > .001 && Math.abs(y - c.y) <= .3) { // an elongated hollow along the bed where he sits or lies on it, deepest under the hips
+        const dx = (X - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d <= 1.35) Y -= (d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008) * k; }
+      a[i] = X; a[i + 1] = Y; }
+    P.needsUpdate = true; quiltMesh.geometry.computeVertexNormals(); quiltMesh.geometry.computeBoundingSphere(); }
   out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
