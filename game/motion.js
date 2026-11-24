@@ -249,7 +249,7 @@ export function createMotion({ hero, db, opts = {} }) {
     const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : '';
     const key = cn + '|' + (S.on ? 1 : 0) + (H.lad ? 1 : 0) + (H.fit ? 1 : 0) + (H.seated ? 1 : 0) + (H.inBed ? 1 : 0) + (H.swing ? 1 : 0) + (H.once ? 1 : 0) + '|' + (H.state || '');
     if (key !== FP.key) { FP.hot = .6; FP.key = key; } else FP.hot = Math.max(0, FP.hot - dt);
-    const off = !FP.on || window.__noPops;
+    const off = !FP.on || window.__noPops || (FP.hot <= 0 && window.__climb && window.__climb.active && window.__climb.weight > .99); // climb IK: every limb is solved each frame from eased targets on the rungs; pop smoothing only dragged the hands 20-50 cm off them
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
     let any = false, hit = 0;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const i3 = b*3;
