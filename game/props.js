@@ -603,6 +603,29 @@ function plankDoor(h = 1.9, w = .77) { const g = new THREE.Group(); const fr = n
 function switchPlate() { const g = new THREE.Group(); add(g, rb(.08, .12, .012, .006), M.ceramic, 0, 0, .006); add(g, rb(.018, .035, .02, .004), M.ceramic, 0, 0, .014); return g; }
 
 // ------------- workshop -------------
+// an old nail tin (Critic P10): worn painted tinplate with a paper label, rolled beads and a loose lid with a wire bail.
+// Matte, rusty and only faintly reflective, so the night env map does not light it up like plastic.
+let _tinMats = null;
+function tinMats() { if (_tinMats) return _tinMats;
+  let ls = 311; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; }; /* own RNG: the shared seed must not shift */ const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d');
+  x.fillStyle = '#4C4E44'; x.fillRect(0, 0, 512, 128); /* faded olive paint */
+  for (let i = 0; i < 260; i++) { x.fillStyle = `rgba(${90 + LR() * 60 | 0},${50 + LR() * 30 | 0},${25 + LR() * 15 | 0},${.15 + LR() * .4})`; const w = 2 + LR() * 14; x.fillRect(LR() * 512, LR() * 128, w, w * (.5 + LR())); } /* rust freckles */
+  for (let i = 0; i < 40; i++) { x.fillStyle = `rgba(110,58,28,${.15 + LR() * .25})`; const xx = LR() * 512; x.fillRect(xx, LR() * 30 + 90, 2 + LR() * 3, 10 + LR() * 30); } /* streaks from the bottom */
+  x.fillStyle = '#C9B48A'; x.fillRect(150, 26, 230, 70); x.fillStyle = 'rgba(90,60,30,.25)'; for (let i = 0; i < 30; i++) x.fillRect(150 + LR() * 230, 26 + LR() * 70, 4 + LR() * 20, 2 + LR() * 6); /* stained paper label */
+  x.fillStyle = '#8A2A1E'; x.fillRect(150, 30, 230, 9); x.fillRect(150, 83, 230, 9); x.fillStyle = '#2A2018'; x.font = 'bold 30px serif'; x.textAlign = 'center'; x.fillText('ГВОЗДИ', 265, 74);
+  x.fillStyle = 'rgba(60,40,25,.6)'; x.fillRect(372, 26, 8, 70); x.fillRect(150, 26, 4, 70); /* torn, darkened edges */
+  const env = ENV0; const body = new THREE.MeshStandardMaterial({ map: texOf(c), roughness: .78, metalness: .35, envMap: env, envMapIntensity: .25 });
+  const rim = new THREE.MeshStandardMaterial({ color: 0x5A4A3C, roughness: .7, metalness: .45, envMap: env, envMapIntensity: .25 });
+  return (_tinMats = { body, rim }); }
+function nailTin() { const g = new THREE.Group(); const { body, rim } = tinMats(); const r = .105, h = .13;
+  add(g, new THREE.CylinderGeometry(r, r, h - .012, 32, 1, true), body, 0, h / 2, 0, 0, 2.9, 0);
+  add(g, new THREE.CircleGeometry(r, 24), rim, 0, .002, 0, Math.PI / 2);
+  for (const y of [.004, h - .008]) add(g, new THREE.TorusGeometry(r + .002, .004, 6, 32), rim, 0, y, 0, Math.PI / 2); /* rolled beads */
+  const lid = new THREE.Group(); lid.position.set(.012, h + .004, -.006); lid.rotation.set(.05, .3, -.035); g.add(lid); /* sits a little askew, not pressed home */
+  add(lid, new THREE.CylinderGeometry(r + .006, r + .006, .012, 32), rim); add(lid, new THREE.TorusGeometry(r - .02, .003, 5, 28), rim, 0, .007, 0, Math.PI / 2);
+  const bail = new THREE.TorusGeometry(r + .004, .0018, 4, 20, Math.PI); add(g, bail, M.iron, 0, h - .02, 0, .5, 0, 0); /* wire handle, tipped back */
+  for (const s of [-1, 1]) add(g, new THREE.SphereGeometry(.006, 8, 6), rim, s * (r + .002), h - .02, 0);
+  return g; }
 function workbench() {
   const g = new THREE.Group(); const L = 1.7, D = .66, H = .9; const info = {};
   for (let i = 0; i < 3; i++) W(g, L, .065, D / 3 - .006, 0, H - .0325, -D / 2 + (i + .5) * D / 3, { mat: M.woodLight, r: .02 });
@@ -611,7 +634,7 @@ function workbench() {
   for (let i = 0; i < 4; i++) W(g, L - .24, .025, (D - .2) / 4 - .01, 0, .215, -D / 2 + .1 + (i + .5) * (D - .2) / 4, { mat: M.woodDark, r: .006 });
   // things on the lower shelf
   { const b = new THREE.Group(); b.position.set(.35, .23, 0); g.add(b); W(b, .36, .14, .22, 0, .07, 0, { mat: M.woodDark }); add(b, new THREE.CylinderGeometry(.01, .01, .3, 8), M.iron, 0, .2, 0, 0, 0, Math.PI / 2); for (const s of [-1, 1]) W(b, .02, .2, .02, s * .15, .15, 0, { mat: M.woodDark, grain: 1 }); }
-  add(g, lathe([[0, 0], [.12, 0], [.12, .1], [0, .1]]), M.steel, -.4, .228, .02);
+  { const t = nailTin(); t.position.set(-.4, .228, .02); g.add(t); } /* Critic P10: was a bare steel puck that glowed at night */
   // front vice at the left end
   { const v = new THREE.Group(); v.position.set(-L / 2 + .22, H - .06, D / 2); g.add(v); add(v, rb(.24, .11, .05, .01), M.iron, 0, -.02, .025); W(v, .26, .1, .045, 0, -.02, .08, { mat: M.woodDark }); add(v, new THREE.CylinderGeometry(.014, .014, .18, 10), M.steel, 0, -.03, .14, Math.PI / 2); add(v, new THREE.CylinderGeometry(.01, .01, .22, 8), M.steel, 0, -.03, .23, 0, 0, Math.PI / 2); for (const s of [-1, 1]) add(v, new THREE.SphereGeometry(.018, 10, 8), M.steel, s * .11, -.03, .23); }
   // on top: plans, a tin of screwdrivers, a box of nails, a block plane
