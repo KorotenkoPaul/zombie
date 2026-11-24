@@ -9,11 +9,12 @@ const {open}=require('./lib');
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const OUT=path.resolve(arg('out','/tmp/bedfilm'));const Q=arg('query','');const EVERY=+arg('every',.5);const SZ=+arg('size',320);
 const POSES=arg('poses','sideL,bellyR,back').split(',').filter(Boolean);const ONLY=arg('only','');// 'in' | 'out' | ''
+const SPAWN=process.argv.includes('--spawn');// start already in bed (skips the walk and the lie-down)
 fs.mkdirSync(OUT+'/raw',{recursive:true});
 (async()=>{const t0=Date.now();const {b,p,errs}=await open({seed:3,query:Q,vp:{width:SZ,height:SZ}});
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  await p.evaluate(()=>__qa.start());
- await p.evaluate(()=>{__qa.reseed(777);__th.setHour(21.6);if(window.__brain&&__brain.setNeeds)try{__brain.setNeeds({energy:.1});}catch(e){} __th.task('sleep');});
+ if(SPAWN)await p.evaluate(()=>{__qa.reseed(777);__th.setHour(23);__dbg.HH.spawn('sleep');});else await p.evaluate(()=>{__qa.reseed(777);__th.setHour(21.6);if(window.__brain&&__brain.setNeeds)try{__brain.setNeeds({energy:.1});}catch(e){} __th.task('sleep');});
  const log=[];let shotN=0;let frame=0;
  const st=()=>p.evaluate(()=>{const H=__dbg.hero,B=__dbg.HH.FIT&&__dbg.HH.FIT.bed,bo=__dbg.heroBones;const g=n=>bo[n]?bo[n].getWorldPosition(new __dbg.THREE.Vector3()):null;
   const gap={};if(B)for(const n of ['Hips','Spine2','Head','LeftFoot','RightFoot','LeftLeg','RightLeg','LeftHand','RightHand']){const v=g(n);if(v)gap[n]=+((v.y-B.mat)*100).toFixed(1);}
