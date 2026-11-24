@@ -284,7 +284,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const day = h >= 7 && h < 17.5, dawnDusk = h >= 6.3 && h < 19;
     const emergency = need.hunger > .85 && !stock.meat && !stock.meal;
     let { s, top } = value(JOBS[n].eff);
-    if ((n === 'hunt' && h > 14.5) || (n === 'wood' && h > 15.5)) s -= emergency && n === 'hunt' ? .5 : 3;   // a trip takes hours: set off early enough to be home by dark
+    // a shelter in the apocalypse: nobody leaves it in the dark (critic B1). Trips only set off 7:00-15:00, home well before dusk;
+    // a hungry night is sat out at home (tea, the last of the supplies) and the hunt waits for the morning
+    if (JOBS[n].task === 'trip' && (h < 7 || h > (n === 'hunt' ? 14.5 : 15))) return { name: n, s: -50, top };
     if (n === 'hunt') { if (stock.meat >= 2 || stock.meal) s = -9; if (!day && !(emergency && !raining())) s -= 3; else if (!day && !dawnDusk) s -= .4; }
     if (n === 'wood') { if (stock.logs > 2) s = -9; if (!day) s -= 3; }
     // the pond walk is something to see (Pavel): by daylight he tops the bucket up early, at night only when it is really empty
@@ -636,6 +638,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (!v.task || !cur) { choose(h, !v.task ? 'idle' : 'nocur:' + v.task); return; }
     // rain while he is outside: back under the roof
     if (raining() && cur && ACTS[cur.name] && ACTS[cur.name].room === 'outside' && !plan.length) { why = 'дождь — уходит под крышу'; choose(h, 'rain'); setGait(); return; }
+    if (cur.name === 'trip' && !cur.cmd && (h >= 18.5 || h < 6) && !cur.dusk) { cur.dusk = true; why = 'темнеет — домой'; tr('dusk:home'); choose(h, 'dusk'); return; }
     if (v.step === 'go') return;
 
     // commitment: stay until the need is met or he has had enough; leave early only for something urgent

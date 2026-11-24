@@ -129,6 +129,8 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let j = 0; j < 3; j++) { let t = f + TR[j]; if (t > n - 1) { if (!endStill) ok = false; t = n - 1; }
         loc(R[t*3], R[t*3+1], t2, 0); F[o + 15 + j*2] = t2[0]; F[o + 16 + j*2] = t2[1];
         const dy = R[t*3+2] - y; F[o + 21 + j*2] = Math.sin(dy); F[o + 22 + j*2] = Math.cos(dy); }
+      // generated turn-backs start on wide, splayed, sliding legs and their hips lag the body by 0.2 s at every walk start: starts and turns come from mocap
+      if (/^hy_turnback/.test(c.name)) ok = false;
       valid[gi] = ok ? 1 : 0; }
     c.fl = new Float32Array(n * 6); for (let f = 0; f < n; f++) for (let k = 0; k < 6; k++) c.fl[f*6 + k] = F[(g0 + f)*NF + k];
     g0 += n; }
@@ -250,13 +252,16 @@ export function createMotion({ hero, db, opts = {} }) {
     const key = cn + '|' + (S.on ? 1 : 0) + (H.lad ? 1 : 0) + (H.fit ? 1 : 0) + (H.seated ? 1 : 0) + (H.inBed ? 1 : 0) + (H.swing ? 1 : 0) + (H.once ? 1 : 0) + '|' + (H.state || '');
     if (key !== FP.key) { FP.hot = .6; FP.key = key; } else FP.hot = Math.max(0, FP.hot - dt);
     const off = !FP.on || window.__noPops;
+    // a blow is meant to be sharp (hero.js repairs hammer, H.noPop = {side, until}): that arm is left out of the pop filter while it lasts
+    const np = H.noPop && H.noPop.until > T0() ? H.noPop.side : null;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
     let any = false, hit = 0;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const i3 = b*3;
-      if (!off && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
+      const offB = off || (np && names[b] && new RegExp('^' + np + '(Arm|ForeArm|Hand)$').test(names[b]));
+      if (!offB && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
         if (dv > (FP.hot > 0 ? FP.thrHot : FP.thr)) { // start from what was on screen last frame
           const t = [0, 0, 0, 0]; qmul(fShown, b*4, [-fRaw[b*4], -fRaw[b*4+1], -fRaw[b*4+2], fRaw[b*4+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], fX, i3); fV[i3] = fV[i3+1] = fV[i3+2] = 0; hit++; } }
-      if (off) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; }
+      if (offB) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; }
       const e = Math.exp(-fY * dt); for (let k = 0; k < 3; k++) { const j1 = fV[i3+k] + fX[i3+k] * fY; fX[i3+k] = e * (fX[i3+k] + j1 * dt); fV[i3+k] = e * (fV[i3+k] - j1 * fY * dt); }
       if (Math.abs(fX[i3]) + Math.abs(fX[i3+1]) + Math.abs(fX[i3+2]) > 1e-4) { const o = [0, 0, 0, 0]; qexp(o, 0, fX[i3], fX[i3+1], fX[i3+2]); qmul(o, 0, fRaw, b*4, fShown, b*4); B.quaternion.set(fShown[b*4], fShown[b*4+1], fShown[b*4+2], fShown[b*4+3]); any = true; }
       else { fShown[b*4] = fRaw[b*4]; fShown[b*4+1] = fRaw[b*4+1]; fShown[b*4+2] = fRaw[b*4+2]; fShown[b*4+3] = fRaw[b*4+3]; } }
@@ -316,7 +321,7 @@ export function createMotion({ hero, db, opts = {} }) {
       const fi = Math.floor(t0); const dx = c.dr[fi*3] * adv, dz = c.dr[fi*3+1] * adv, dy = c.dr[fi*3+2] * adv; const cs = Math.cos(S.cyaw), sn = Math.sin(S.cyaw);
       S.char.x += dx*cs + dz*sn; S.char.z += -dx*sn + dz*cs; S.cyaw += dy;
       // pull toward the simulation (short half-life), never further than a hand's width away
-      const kp = 1 - Math.exp(-dt * Math.LN2 / .18), ky = 1 - Math.exp(-dt * Math.LN2 / .14);
+      const kp = 1 - Math.exp(-dt * Math.LN2 / .12), ky = 1 - Math.exp(-dt * Math.LN2 / .14);
       S.char.x += (p.x - S.char.x) * kp; S.char.z += (p.z - S.char.z) * kp; S.cyaw += wrapA(yaw - S.cyaw) * ky;
       const ex = S.char.x - p.x, ez = S.char.z - p.z, el = Math.hypot(ex, ez), MAXD = .12; if (el > MAXD) { S.char.x = p.x + ex / el * MAXD; S.char.z = p.z + ez / el * MAXD; }
       const ea = wrapA(S.cyaw - yaw); if (Math.abs(ea) > .5) S.cyaw = yaw + Math.sign(ea) * .5;
