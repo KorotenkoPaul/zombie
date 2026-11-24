@@ -47,6 +47,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R6-6 | P1 | rope + wooden ladders (13785b2) | R5-4 confirmed with close-ups: climbing the rope ladder (bucket slung) both arms spread wide, palms open in the air, neither hand on a rope or rung; feet do step the rungs | main f4728–f5160; close-up replay f5016 | r6-13785b2/rope_ladder_arms_spread_no_grip.jpg | ladders |
 | R6-7 | P3 | walk to pond (13785b2) | walking off the rope ladder he tips his head far back looking at the sky for a few steps | f5304 | r6-13785b2/fetchwater_stands_in_pond_f5856-6024.jpg | look |
 | R6-8 | P1 | hammer (13785b2) | same as R6-4 on the hammer task: backswing brings the hammer head right in front of his face/eyes; the lantern stands where he hammers and the head comes down beside its roof | f7416, f7704, f7884, f7956 | r6-13785b2/hammer_backswing_at_face_lantern_in_way.jpg | workshop |
+| R6-9 | ok/P3 | trip (13785b2) | rope ladder to the ground and the walk to the forest along the track look natural, bow on the back. P3: walking back to the oak he tips the head far back again (same as R6-7) | f6900–f8268 | r6-13785b2/trip_walk_ok_head_tilt_f8268.jpg | look |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
