@@ -1144,7 +1144,11 @@ export function createHero(ctx){
   const G=window.__grab;if(G){G.hold('Right',bd,null);G.hold('Left',bd,null);a.chHold=1;}
   holdToolAt('Right','knife',gp,T,a.cw,V(0,-1,0));{const w=a.cw;if(G&&G.late)G.late(()=>holdToolAt('Right','knife',gp,T,w,V(0,-1,0)));}
   // left palm on the carrot, 5 cm to the far side of the cut (toward the carrot's tip), fingers curled over it
-  const lp=L(V((off-.055)*sx,.058,.045));gripNoLean('Left',lp,a.cw*.95);{const w=a.cw;if(G&&G.late)G.late(()=>gripNoLean('Left',lp,w*.95));}
+  const lp0=L(V((off-.055)*sx,.058,.045));
+  /* GRAB (gate: left hand 4.2 cm into the worktop): the palm does not blend straight from where it hangs to the carrot (that line cuts
+     the counter's front edge); it is carried at full IK from where it was, up over the edge in an arc, and down onto the carrot */
+  if(!a.lh0)a.lh0=bones.LeftHand.getWorldPosition(V());const e=smooth(0,1,a.cw);const lp=a.lh0.clone().lerp(lp0,e).add(V(0,.16*Math.sin(Math.PI*Math.min(1,e*1.15)),0));if(e>=1)lp.copy(lp0);
+  const lw=Math.min(1,a.cw*4)*.95;gripNoLean('Left',lp,lw);if(G&&G.late)G.late(()=>gripNoLean('Left',lp,lw));
   H.look=cut;H.lookW=1;}
  Object.assign(MAKE,{
   // kitchen
