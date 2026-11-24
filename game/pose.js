@@ -91,10 +91,11 @@ export function createPoseGuard({ hero }) {
   const cd = new THREE.Quaternion(), qi = new THREE.Quaternion(); let curDt = 0;
   // a chain (bones a..b, each the child of the previous) held so its end turns at most yaw / tips at most tilt from the bind pose;
   // the correction is spread evenly over the chain
-  function chain(js, yaw, tilt) { if (js.some(j => !j)) return 0;
+  function chain(js, yaw, tilt, hard) { if (js.some(j => !j)) return 0;
     q3.set(0, 0, 0, 1); q4.set(0, 0, 0, 1); for (const j of js) { q3.multiply(j.b.quaternion); q4.multiply(j.r); }
     q1.copy(q4).invert().multiply(q3); const d = decomp(q1);
-    const sw = Math.hypot(d.x, d.z), k = sw > 1e-6 ? soft(sw, -tilt, tilt) / sw : 1, t = soft(d.t, -yaw, yaw);
+    const lim = hard ? (v, a) => Math.max(-a + 6.5, Math.min(a - 6.5, v)) : (v, a) => soft(v, -a, a);
+    const sw = Math.hypot(d.x, d.z), k = sw > 1e-6 ? lim(sw, tilt) / sw : 1, t = lim(d.t, yaw);
     const m = Math.abs(t - d.t) + sw * (1 - k); if (m < .05) return 0;
     recomp(d.x * k, t, d.z * k, q2); const tgt = q4.multiply(q2); // wanted chain rotation in the chain parent's frame
     const C = new THREE.Quaternion().multiplyQuaternions(tgt, q3.invert()); // correction in the parent frame
@@ -146,6 +147,18 @@ export function createPoseGuard({ hero }) {
     root.updateMatrixWorld(true); }
   function stats() { const r = { ...stat, joints: {} }; for (const j of J) if (j.cn || j.vn) r.joints[j.n] = { rom: j.cn, deg: +(j.cl / Math.max(1, j.cn)).toFixed(1), speed: j.vn }; return r; }
   function reset() { J.forEach(j => { j.has = false; j.cl = j.cn = j.vn = 0; }); Object.assign(stat, { frames: 0, rom: 0, vel: 0, head: 0, spine: 0, knee: 0, worst: {} }); }
-  run.stats = stats; run.reset = reset; run.LIM = LIM;
+  // fit(bone): an IK that wants its result left alone puts a joint inside the range itself (just inside the soft margin, so the
+  // guard then changes nothing) and corrects its target from there; returns degrees moved
+  function fit(bone) { const j = J.find(x => x.b === bone); if (!j || !j.rom || j.hinge) return 0; q1.multiplyQuaternions(j.ri, bone.quaternion); const d = decomp(q1);
+    const inr = (v, r) => { if (!r) return v; const m = Math.min(6, (r[1] - r[0]) / 4) + .5; return Math.min(r[1] - m, Math.max(r[0] + m, v)); };
+    const x = inr(d.x, j.x), t = inr(d.t, j.t), z = inr(d.z, j.z); const m = Math.abs(x - d.x) + Math.abs(t - d.t) + Math.abs(z - d.z); if (m < .05) return 0;
+    recomp(x, t, z, q2); bone.quaternion.multiplyQuaternions(j.r, q2); return m; }
+  // over(bone, q): degrees by which the local rotation q of bone would be outside its range (0 = the guard leaves it alone)
+  function over(bone, q) { const j = J.find(x => x.b === bone); if (!j || !j.rom || j.hinge) return 0; q1.multiplyQuaternions(j.ri, q); const d = decomp(q1);
+    const o = (v, r) => { if (!r) return 0; const m = Math.min(6, (r[1] - r[0]) / 4); return Math.max(0, v - (r[1] - m), (r[0] + m) - v); };
+    return o(d.x, j.x) + o(d.t, j.t) + o(d.z, j.z); }
+  run.stats = stats; run.reset = reset; run.LIM = LIM; run.fit = fit; run.over = over; run.rest = bone => { const j = J.find(x => x.b === bone); return j ? j.r.clone() : null; };
+  // fitSpine(): the back's whole bend and turn put inside the guard's chain limits (same use as fit)
+  run.fitSpine = () => chain([byName.Spine, byName.Spine1, byName.Spine2], SPINE.yaw, SPINE.tilt, true);
   return run;
 }
