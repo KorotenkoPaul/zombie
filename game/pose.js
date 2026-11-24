@@ -47,8 +47,9 @@ export function createPoseGuard({ hero }) {
   let sk = null; root.traverse(o => { if (o.isSkinnedMesh && !sk) sk = o; });
   if (!sk || !B || !B.Hips) return null;
   // bind-pose local rotations
-  const S = sk.skeleton, saved = S.bones.map(b => b.quaternion.clone()); S.pose();
-  const rest = new Map(S.bones.map(b => [b, b.quaternion.clone()])); S.bones.forEach((b, i) => b.quaternion.copy(saved[i]));
+  const S = sk.skeleton, saved = S.bones.map(b => [b.quaternion.clone(), b.position.clone(), b.scale.clone()]); S.pose();
+  // S.pose() also writes bind positions and scales (Hips 1.25): put all three back, only the bind rotations are kept
+  const rest = new Map(S.bones.map(b => [b, b.quaternion.clone()])); S.bones.forEach((b, i) => { b.quaternion.copy(saved[i][0]); b.position.copy(saved[i][1]); b.scale.copy(saved[i][2]); });
   root.updateMatrixWorld(true);
   const J = [];
   for (const n of ORDER) { const bn = B[n]; if (!bn) continue; const side = /^Right/.test(n) ? -1 : /^Left/.test(n) ? 1 : 0;
