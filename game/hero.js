@@ -674,7 +674,6 @@ export function createHero(ctx){
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):t;/* the palm, not the wrist, on the point */
   armIK(side,wt,sidePole(side),clamp(w,0,1));}
- const PALM=.06;
  function palmTo(side,t){const G=window.__grab;const p=G&&G.gripPoint?G.gripPoint(side):bones[side+'Hand'].getWorldPosition(V());return p&&t?p.distanceTo(t):9;}
  const gripHome=n=>{const G=window.__grab;return G&&G.toolGripHome?G.toolGripHome(n):toolHome(n);};
  function reachGrip(side,t,w){const G=window.__grab;if(!G||!G.gripPoint){reachTo(side,t,w);return;}reachTo(side,G.palmTarget(side,t),w);
@@ -689,7 +688,6 @@ export function createHero(ctx){
    armIK(side,wrist,sidePole(side),w);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cur=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(cur.slerp(Qh,w)));hb.updateMatrixWorld(true);
    Fw=hb.getWorldPosition(V()).sub(bones[side+'ForeArm'].getWorldPosition(V())).normalize();}
   return true;}
- function gripNoLean(side,t,w){const G=window.__grab;const p=G&&G.palmTarget?G.palmTarget(side,t):t;const s1=bones[side+'Arm'].getWorldPosition(V());const tw=p.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):p;armIK(side,wt,sidePole(side),clamp(w,0,1));}
  function stirPost(a,dt){const P=PP();const pot=P&&P.tools&&P.tools.pot,la=P&&P.tools&&P.tools.ladle;if(!pot||!la||la.parent!==bones.RightHand)return;
   a.sw=Math.min(1,(a.sw||0)+dt/.6);a.sa=(a.sa||0)+dt*4.6;pot.updateMatrixWorld(true);const c=pot.localToWorld(V(0,.07,0));const sh=bones.RightArm.getWorldPosition(V());
   const toMe=V(sh.x-c.x,0,sh.z-c.z).normalize();const B=c.clone().add(V(Math.cos(a.sa)*.045,0,Math.sin(a.sa)*.045));// the bowl in the soup
@@ -707,9 +705,29 @@ export function createHero(ctx){
    const e=V(clamp(ls.x,b.min.x+.04,b.max.x-.04),a.sy+.012,clamp(ls.z,b.min.z+.04,b.max.z-.04));if(e.distanceTo(ls)<armLen*.98+PALM)gripNoLean('Left',e,a.sw*.9);}
   // a scrape each half turn (Sound): the bowl along the pot side
   const half=Math.floor(a.sa/Math.PI);if(half!==a.sh){a.sh=half;try{window.__audio&&window.__audio.contact&&window.__audio.contact({tool:'spoon',kind:'scrape',pos:B.toArray(),strength:.45,dur:Math.PI/4.6});}catch(e){}}}
+ // KITCHEN chop: the knife tip stays on the board beyond the carrot, the handle rocks down through it (a cut every ~0.5 s: slow lift,
+ // quick press), each cut a few mm further along; the left palm holds the carrot a finger's width from the blade
+ function chopPost(a,dt){const P=PP();const bd=P&&P.tools&&P.tools.board,kn=P&&P.tools&&P.tools.knife;if(!bd||!kn||kn.parent!==bones.RightHand)return;
+  a.cw=Math.min(1,(a.cw||0)+dt/.7);bd.updateMatrixWorld(true);const L=v=>bd.localToWorld(v);
+  const sh=bones.RightArm.getWorldPosition(V());const c0=L(V(0,.022,.045));const toMe=V(sh.x-c0.x,0,sh.z-c0.z).normalize();
+  const xr=L(V(1,0,0)).sub(L(V(0,0,0)));xr.y=0;xr.normalize();const rt=V(-toMe.z,0,toMe.x).multiplyScalar(-1);/* his right */const sx=xr.dot(rt)>=0?1:-1;// board +x on his right?
+  // the cut moves along the carrot toward its thin end, then starts again
+  a.cp=(a.cp||0)+dt;const per=.52;const ph=(a.cp%per)/per;const n=Math.floor(a.cp/per);const off=.03-(n%6)*.006;
+  const cut=L(V(off*sx,.022,.045));const away=toMe.clone().multiplyScalar(-1);
+  const T=cut.clone().addScaledVector(away,.075).add(V(0,.004,0));// the tip rests on the board past the carrot
+  const lift=ph<.72?.012+.075*Math.sin(ph/.72*Math.PI/2):.087-.075*smooth(.72,1,ph);// slow lift, quick press down
+  const dir=toMe.clone().addScaledVector(rt,.25).normalize();const dy=Math.min(.19,.018+lift);const hd=Math.sqrt(.2*.2-dy*dy);
+  const gp=T.clone().addScaledVector(dir,hd).add(V(0,dy,0));
+  if(n!==a.cn&&ph>.95){}if(n!==a.cn){a.cn=n;if(a.cw>.9){AU('chop',cut);try{window.__audio&&window.__audio.contact&&window.__audio.contact({tool:'knife',kind:'hit',pos:cut.toArray(),strength:.35});}catch(e){}}}
+  {/* bend a little over the board from the chest (people lean over a cutting board; the counter keeps his hips ~0.5 m away) */const ax=V(0,1,0).cross(away).normalize();const ang=.16*a.cw;rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);root.updateMatrixWorld(true);}
+  const G=window.__grab;if(G){G.hold('Right',bd,null);G.hold('Left',bd,null);a.chHold=1;}
+  holdToolAt('Right','knife',gp,T,a.cw,V(0,-1,0));{const w=a.cw;if(G&&G.late)G.late(()=>holdToolAt('Right','knife',gp,T,w,V(0,-1,0)));}
+  // left palm on the carrot, 5 cm to the far side of the cut (toward the carrot's tip), fingers curled over it
+  const lp=L(V((off-.055)*sx,.058,.045));gripNoLean('Left',lp,a.cw*.95);{const w=a.cw;if(G&&G.late)G.late(()=>gripNoLean('Left',lp,w*.95));}
+  H.look=cut;H.lookW=1;}
  Object.assign(MAKE,{
   // kitchen
-  chop:(o)=>job({pt:()=>PT('board'),stand:.42,clip:'hy_chop',loop:true,dur:[22,40],tools:[['knife','Right']],tick:(a,dt)=>{a.ct=(a.ct||0)+dt;if(a.ct>.45){a.ct=0;AU('chop',PT('board'));}}}),
+  chop:(o)=>job({pt:()=>PT('board'),stand:.3,/* KITCHEN (watcher B8): no hy_chop clip (it chopped at hip height under the worktop, bow-legged, the left hand hanging): he stands upright at the board, the knife is held by hand IK and rocks on its tip over the carrot, the left hand holds the carrot */loop:true,dur:[22,40],tools:[['knife','Right']],vary:false,post:(a,dt)=>chopPost(a,dt),end:a=>{if(a.chHold){a.chHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
   pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.45,/* KITCHEN: no hy_stir clip (it sways the whole body and mimes beside the pot): the stirring arm is hand IK (stirPost), the body stands calm */loop:true,dur:[25,45],tools:[['ladle','Right']],vary:false,post:(a,dt)=>stirPost(a,dt),end:a=>{if(a.stirHold){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
   stoke:(o)=>{// KITCHEN: logs from the woodpile into the oven, all by hand. Squat at the pile, both palms on the logs, the armful goes into the
    // left arm; walk over cradling it; squat at the oven, the right hand takes the door handle and lowers the door as far as the hand carries it;
