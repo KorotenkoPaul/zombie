@@ -58,7 +58,7 @@ export function createGrab({ THREE, bones }) {
   // F forward past the knuckles), b + B = a second tool direction and where it faces (F forward, P palm, D back of the hand, T, K),
   // tilt = how far the handle leans from straight across the palm toward the fingers (a knife lies diagonally, a hammer square).
   const GRIP = {
-    ladle: { g: [0, .135, -.011], a: [0, -1, 0], A: 'K', b: [0, 0, 1], B: 'F', tilt: .35 },
+    ladle: { g: [0, .08, -.011], /* the upper third of the handle, not its very end (watch R25-7, kitchen thread) */ a: [0, -1, 0], A: 'K', b: [0, 0, 1], B: 'F', tilt: .35 },
     hammer: { g: [0, -.085, 0], a: [0, 1, 0], A: 'T', b: [1, 0, 0], B: 'F', tilt: .15 },
     knife: { g: [-.05, 0, 0], a: [1, 0, 0], A: 'T', b: [0, -1, 0], B: 'P', tilt: .75 },
     saw: { g: [-.065, -.06, 0], a: [1, 0, 0], A: 'F', b: [0, 1, 0], B: 'T', tilt: 0, fwd: true },
