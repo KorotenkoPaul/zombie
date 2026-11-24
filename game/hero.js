@@ -888,7 +888,12 @@ export function createHero(ctx){
   odHang('waterBucket',.55*a.dip);}
  // a bucket in the fist hangs plumb from its handle (world upright, turned with him), tipped only when he tips it; never
  // follows the wrist's twist (it was swinging out at the hip or upside down at the feet)
- function odHang(n,tilt=0){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o||o.parent!==bones.RightHand)return;const hb=bones.RightHand;hb.updateWorldMatrix(true,false);
+ function odHang(n,tilt=0){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o||o.parent!==bones.RightHand)return;const hb=bones.RightHand;
+  // a full bucket is never inside his leg: the straight arm holds the fist out at the side, level with the hip, and the
+  // heavy bucket hardly swings (frame by frame the rim went through the thigh at every step)
+  if(!tilt){const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());const R=odPalm('Right');const d=R.clone().sub(hp);
+   const lat=d.dot(r),fw=d.dot(f);const want=R.clone().addScaledVector(r,Math.max(0,.32-lat)).addScaledVector(f,clamp(fw,-.06,.06)-fw);if(want.distanceTo(R)>.005)reachGrip('Right',want,1);}
+  hb.updateWorldMatrix(true,false);
   const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt,root.rotation.y,0,'YXZ'));const hs=(o.userData.home&&o.userData.home.scale)||1;
   const g=V(0,.35,0).multiplyScalar(hs).applyQuaternion(q);const pos=odPalm('Right').sub(g);
   const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
