@@ -5,9 +5,9 @@ const fs=require('fs'),path=require('path');const {open}=require('./lib');
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const OUT=path.resolve(arg('out','/tmp/phs'));const SEED=+arg('seed',1),EVERY=+arg('every',180),MAXS=+arg('max',45);
 const W=+arg('w',390),H=+arg('h',844),DPR=+arg('dpr',2);
-const TASKS=arg('tasks','eat:13,sleep:22.5,dishes:9,cook:12,diary:20').split(',').map(s=>{const [t,h]=s.split(':');return [t,+h||10];});
+const TASKS=arg('tasks','eat:13,sleep:22.5,dishes:9,cook:12,diary:20').split(',').map(s=>{const [t,h,j]=s.split(':');return [t,+h||10,j?+j:null];});
 (async()=>{fs.mkdirSync(OUT,{recursive:true});
- const {b,p,errs}=await open({seed:SEED,vp:{width:W,height:H},dpr:DPR});
+ const {b,p,errs}=await open({seed:SEED,vp:{width:W,height:H},dpr:DPR,query:arg('query','')});
  await p.addStyleTag({content:'#load,#hint{display:none!important}'});await p.evaluate(()=>__qa.start());
  await p.evaluate(()=>{const T=__dbg.THREE,HH=__dbg.HH,R=__camera.rig;
   window.__ph={
@@ -31,18 +31,19 @@ const TASKS=arg('tasks','eat:13,sleep:22.5,dishes:9,cook:12,diary:20').split(','
  const step=n=>p.evaluate(n=>__qa.step(n,1/60),n);
  await p.evaluate(()=>{__qa.reseed(4242);__th.setHour(9);});await step(1200);
  const all=[];
- for(let n=0;n<TASKS.length;n++){const [t,h]=TASKS[n];const name=String(n).padStart(2,'0')+'_'+t;
+ for(let n=0;n<TASKS.length;n++){const [t,h,jump]=TASKS[n];let jumped=false;const name=String(n).padStart(2,'0')+'_'+t;
   await p.evaluate(h=>__th.setHour(h),h);
   const ask=()=>p.evaluate(t=>{const B=window.__brain;if(B&&B.command)B.command(t);else __th.task(t);},t);await ask();
   let seen=false,fr=0,after=0,last=-1e9,flags=0;const log=[];
   while(fr<60*(MAXS+40)){const s=await p.evaluate(()=>__ph.st());if(s.task===t)seen=true;
    if(!seen&&fr%600===0&&fr>0){if(fr>=2400)break;await ask();}
    const bad=await p.evaluate(()=>__ph.chk());if(bad.length)flags++;
-   if(seen&&(fr-last>=EVERY||(bad.length&&fr-last>=60))&&log.length<MAXS*60/EVERY+6){last=fr;const bb=await p.evaluate(()=>__ph.shot());
+   if(seen&&(fr-last>=EVERY||(bad.length&&fr-last>=60))&&log.length<(jump!==null?2:1)*MAXS*60/EVERY+6){last=fr;const bb=await p.evaluate(()=>__ph.shot());
     const cx=(bb[0]+bb[2])/2,cy=(bb[1]+bb[3])/2,hh=Math.max(200,(bb[3]-bb[1])*1.7),ww=hh*.85;
     const clip={x:Math.max(0,Math.min(W-ww,cx-ww/2)),y:Math.max(0,Math.min(H-hh,cy-hh/2)),width:Math.min(ww,W),height:Math.min(hh,H)};
     const file=`${OUT}/${name}_f${String(fr).padStart(5,'0')}.jpg`;try{await p.screenshot({path:file,type:'jpeg',quality:88,clip});}catch(e){}
     log.push({fr,file:path.basename(file),bad,...s});}
+   if(jump!==null&&seen&&!jumped&&fr>=60*MAXS*0.6){jumped=true;await p.evaluate(h=>__th.setHour(h),jump);}
    if(seen&&s.task!==t){if(++after>=8)break;}
    await step(20);fr+=20;}
   all.push({name,t,seen,flags20:flags,log});fs.writeFileSync(OUT+'/log.json',JSON.stringify(all));
