@@ -8,7 +8,7 @@ module.exports=function install(cfg){
  const solidMat=o=>{const m=Array.isArray(o.material)?o.material[0]:o.material;if(!m)return false;if(m.transparent&&m.opacity<.6)return false;if(m.depthWrite===false||m.blending===THREE.AdditiveBlending)return false;return true;};
  const visible=o=>{while(o){if(!o.visible)return false;o=o.parent;}return true;};
  // ---------- colliders: oriented boxes, cylinders and spheres in world space ----------
- const VOX={n:0,cells:0},VCACHE=new Map();const C=[];const m4=new THREE.Matrix4(),mi=new THREE.Matrix4();
+ const VOX={n:0,cells:0},VCACHE=new Map();let CUR=null;/* the mesh each static shape was baked from */const C=[];const m4=new THREE.Matrix4(),mi=new THREE.Matrix4();
  function addShape(geo,mw,name,kind){if(!geo.boundingBox)geo.computeBoundingBox();const bb=geo.boundingBox;const t=geo.type,pr=geo.parameters||{};
   const e=mw.elements;const ax=[V(e[0],e[1],e[2]),V(e[4],e[5],e[6]),V(e[8],e[9],e[10])];const sc=ax.map(a=>a.length());if(sc.some(s=>s<1e-6))return;ax.forEach((a,i)=>a.multiplyScalar(1/sc[i]));
   const lc=bb.getCenter(V()),lh=bb.getSize(V()).multiplyScalar(.5);
@@ -19,9 +19,9 @@ module.exports=function install(cfg){
   let shape='box',r=0;
   if(t==='CylinderGeometry'&&Math.abs(sc[0]-sc[2])<1e-3&&Math.abs((pr.radiusTop||0)-(pr.radiusBottom||0))<.02){shape='cyl';r=Math.max(pr.radiusTop,pr.radiusBottom)*sc[0];}
   else if(t==='SphereGeometry'&&Math.abs(sc[0]-sc[1])<1e-3&&Math.abs(sc[1]-sc[2])<1e-3&&(pr.phiLength??6.3)>6.2&&(pr.thetaLength??3.2)>3.1){shape='sph';r=pr.radius*sc[0];}
-  const big=Math.hypot(...h)*2;if(/^(Box|Cylinder|Sphere|Buffer|Lathe|Torus|Extrude|Tube|Icosahedron)/.test(name)||/^#/.test(name))name=name+' '+h.map(v=>Math.round(v*200)).sort((a,b)=>b-a).join('x')+'cm';C.push({c,ax,h,shape,r,name,kind,big});}
+  const big=Math.hypot(...h)*2;if(/^(Box|Cylinder|Sphere|Buffer|Lathe|Torus|Extrude|Tube|Icosahedron)/.test(name)||/^#/.test(name))name=name+' '+h.map(v=>Math.round(v*200)).sort((a,b)=>b-a).join('x')+'cm';C.push({c,ax,h,shape,r,name,kind,big,src:CUR});}
  let skipped={};
- scene.traverse(o=>{if(!o.isMesh||mine(o)||!visible(o)||!solidMat(o)||o.isSkinnedMesh)return;const t=o.geometry.type;
+ scene.traverse(o=>{CUR=o;if(!o.isMesh||mine(o)||!visible(o)||!solidMat(o)||o.isSkinnedMesh)return;const t=o.geometry.type;
   if(/Plane|Circle|Shape|Ring/.test(t)){skipped[t]=(skipped[t]||0)+1;return;}
   const name=label(o);
   if(o.isInstancedMesh){if(o.count>1500){skipped['inst>1500 '+name]=o.count;return;}
@@ -87,7 +87,7 @@ module.exports=function install(cfg){
   const data={cs,nx,ny,nz,D};VCACHE.set(g.uuid,data);pushVox(data,mw,sc,bb,sz,name);VOX.cells+=D.length;}
  function pushVox(d,mw,sc,bb,sz,name){const inv=mw.clone().invert();const sMin=Math.min(sc.x,sc.y,sc.z);
   const c=bb.getCenter(V()).applyMatrix4(mw);const e=mw.elements;const ax=[V(e[0],e[1],e[2]).normalize(),V(e[4],e[5],e[6]).normalize(),V(e[8],e[9],e[10]).normalize()];
-  C.push({c,ax,h:[sz.x*sc.x/2,sz.y*sc.y/2,sz.z*sc.z/2],shape:'vox',inv,bmin:bb.min.clone(),cs:d.cs,nx:d.nx,ny:d.ny,nz:d.nz,D:d.D,sMin,name,kind:'vox'});VOX.n++;}
+  C.push({c,ax,h:[sz.x*sc.x/2,sz.y*sc.y/2,sz.z*sc.z/2],shape:'vox',inv,bmin:bb.min.clone(),cs:d.cs,nx:d.nx,ny:d.ny,nz:d.nz,D:d.D,sMin,name,kind:'vox',src:CUR});VOX.n++;}
  // ---------- spatial hash ----------
  const CS=.25,G=new Map();const key=(i,j,k)=>i+','+j+','+k;
  C.forEach((s,idx)=>{let mn=V(1e9,1e9,1e9),mx=V(-1e9,-1e9,-1e9);for(const sx of [-1,1])for(const sy of [-1,1])for(const sz of [-1,1]){const p=s.c.clone().addScaledVector(s.ax[0],sx*s.h[0]).addScaledVector(s.ax[1],sy*s.h[1]).addScaledVector(s.ax[2],sz*s.h[2]);mn.min(p);mx.max(p);}
@@ -96,6 +96,10 @@ module.exports=function install(cfg){
   for(let i=Math.floor(mn.x/CS);i<=Math.floor(mx.x/CS);i++)for(let j=Math.floor(mn.y/CS);j<=Math.floor(mx.y/CS);j++)for(let k=Math.floor(mn.z/CS);k<=Math.floor(mx.z/CS);k++){const kk=key(i,j,k);let a=G.get(kk);if(!a)G.set(kk,a=[]);a.push(idx);}});
  C.push({c:V(),ax:[V(1,0,0),V(0,1,0),V(0,0,1)],h:[0,0,0],shape:'none',name:'trunk (bark)',kind:'trunk',global:false});const TRUNK=C.length-1;
  const GLOBAL=C.map((s,i)=>s.global?i:-1).filter(i=>i>=0);
+ // a shape whose mesh has left its baked place (tool taken off its hook, can lifted, door swung) is not solid there any more:
+ // its empty home must not count. The moved mesh itself is checked live as a moving object (DYN)
+ const AWAY=new Uint8Array(C.length),BYSRC=new Map();C.forEach((s,i)=>{if(!s.src)return;let a=BYSRC.get(s.src);if(!a)BYSRC.set(s.src,a=[s.src.matrixWorld.clone(),[]]);a[1].push(i);});
+ function markAway(){for(const [o,[m0,ix]] of BYSRC){const e=o.matrixWorld.elements,e0=m0.elements;let d=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-e0[k]);if(x>d)d=x;}let v=true;for(let x=o;x;x=x.parent)if(x.visible===false){v=false;break;}const aw=(d>.01||!v)?1:0;for(const i of ix)AWAY[i]=aw;}}
  const tmp=V();
  // depth of point p inside shape s (>0 inside, <=0 outside)
  function depth(s,p){tmp.copy(p).sub(s.c);const x=tmp.dot(s.ax[0]),y=tmp.dot(s.ax[1]),z=tmp.dot(s.ax[2]);
@@ -105,7 +109,7 @@ module.exports=function install(cfg){
    if(i<0||j<0||k<0||i>=s.nx||j>=s.ny||k>=s.nz)return -1;const d=s.D[(k*s.ny+j)*s.nx+i];return d?(d/10-.5)*s.cs*s.sMin:-1;}
   return s.r-Math.hypot(x,y,z);}
  const vq=V();
- function query(p,fn){const kk=key(Math.floor(p.x/CS),Math.floor(p.y/CS),Math.floor(p.z/CS));const a=G.get(kk);if(a)for(const i of a)fn(C[i],i);for(const i of GLOBAL)fn(C[i],i);}
+ function query(p,fn){const kk=key(Math.floor(p.x/CS),Math.floor(p.y/CS),Math.floor(p.z/CS));const a=G.get(kk);if(a)for(const i of a)if(!AWAY[i])fn(C[i],i);for(const i of GLOBAL)if(!AWAY[i])fn(C[i],i);}
  // surface under a point: highest top of a box/cyl below p (vertical ray)
  function floorUnder(p,up=.3,down=1.2){let best=null,bn='';const q=V();for(let d=-up;d<=down;d+=CS*.9){q.set(p.x,p.y-d,p.z);query(q,(s,i)=>{const top=topAt(s,p.x,p.z);if(top!=null&&top<=p.y+up&&top>=p.y-down&&(best==null||top>best)){best=top;bn=s.name;}});}return best==null?null:[best,bn];}
  function topAt(s,x,z){ // highest y of shape s at column x,z (shapes with one local axis ~vertical)
@@ -142,7 +146,7 @@ module.exports=function install(cfg){
  const propName=o=>{for(let x=o,d=0;x&&d<6;x=x.parent,d++)if(PN.has(x))return PN.get(x)+(d?'/'+d:'');return null;};
  const MOV=[];const heroRoot=hero.root;const isHero=o=>{for(let x=o;x;x=x.parent)if(x===heroRoot)return true;return false;};
  scene.traverse(o=>{if(o===scene||o.isLight||o.isCamera||isHero(o)||o.isInstancedMesh||o.isPoints||o.isSprite)return;if(o.isMesh&&o.geometry){if(!o.geometry.boundingSphere)o.geometry.computeBoundingSphere();if(o.geometry.boundingSphere.radius>2.5)return;}
-  if(!o.isMesh&&!o.isGroup&&o.type!=='Object3D')return;if(o.userData.fluid)return;/* running water (tap, pour, drip) follows the bucket or tap, nobody's hand moves it */const nm=propName(o)||[o.name,o.parent&&o.parent.name,o.parent&&o.parent.parent&&o.parent.parent.name].filter(Boolean).join('<')||(o.geometry?o.geometry.type:o.type);
+  if(!o.isMesh&&!o.isGroup&&o.type!=='Object3D')return;if(o.userData.fluid||o.userData.fx)return;/* running water (tap, pour, drip) follows the bucket or tap, nobody's hand moves it */const nm=propName(o)||[o.name,o.parent&&o.parent.name,o.parent&&o.parent.parent&&o.parent.parent.name].filter(Boolean).join('<')||(o.geometry?o.geometry.type:o.type);
   const wp=new THREE.Vector3();o.getWorldPosition(wp);let kids=0;o.traverse(()=>kids++);MOV.push({o,last:o.matrixWorld.elements.slice(),nm,id:MOV.length,n:0,at:[+wp.x.toFixed(2),+wp.y.toFixed(2),+wp.z.toFixed(2)],kids});});
  const BX=new THREE.Box3(),HP=[V(),V()],FA=V();const MI=new Map(MOV.map(m=>[m.o,m]));
  // the hatch lid swings or falls on its own after letGo (real gravity): mark those frames so the no-touch check skips them
@@ -152,7 +156,7 @@ module.exports=function install(cfg){
  const QB=['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase'].map(n=>heroBones[n]);
  const out={frames:[],GN,BN,nColl:C.length,skipped,verts:VS.length,rungs:RUNGS,QN:['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase']};
  const vp=V(),q=new THREE.Quaternion();
- function sample(f,dt,hour,tag){scene.updateMatrixWorld();const H=hero;
+ function sample(f,dt,hour,tag){scene.updateMatrixWorld();markAway();const H=hero;
   const r={f,tag,hour:+hour.toFixed(3),task:H.task,state:H.state,clip:H.cur?H.cur.getClip().name:'',fl:(H.seated?'S':'')+(H.inBed?'B':'')+(H.swing?'W':'')+(H.lad?'L':'')+(H.trans?'T':'')+(H.path&&H.path.length?'P':'')+(H.fit?'F'+H.fit.mode[0]:''),
    node:H.node,ts:H.cur?+(H.cur.getEffectiveTimeScale()*(H.mixer?H.mixer.timeScale:1)).toFixed(3):0,root:H.root.position.toArray().map(v=>+v.toFixed(4)),ry:+H.root.rotation.y.toFixed(4),b:[]};
   for(const b of BB){b.getWorldPosition(vp);r.b.push(+vp.x.toFixed(4),+vp.y.toFixed(4),+vp.z.toFixed(4));}
@@ -162,7 +166,10 @@ module.exports=function install(cfg){
   const pen=GN.map(()=>[0,-1,null]);
   // lying / sitting: how far the lowest part of each body group is above whatever is under it (1 cm steps down to 40 cm)
   const supOn=!!(H.inBed||H.seated)&&!H.swing;const sup=GN.map(()=>40);const sp=V();
-  const solidAt=p=>{let r=false;query(p,(sh)=>{if(!r&&depth(sh,p)>.002)r=true;});return r;};
+  // live boxes of moved seats (chair scooted under the table with him on it: the baked collider is still at its home spot)
+  const SEATB=[];if(supOn)for(const o of DYN)if(o.userData.seat&&o.visible)o.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();SEATB.push([new THREE.Matrix4().copy(m.matrixWorld).invert(),g.boundingBox]);});
+  const inSeat=p=>{for(const [mi,bb] of SEATB){DL.copy(p).applyMatrix4(mi);if(bb.containsPoint(DL))return true;}return false;};
+  const solidAt=p=>{let r=false;query(p,(sh)=>{if(!r&&depth(sh,p)>.002)r=true;});return r||(SEATB.length>0&&inSeat(p));};
   let nb=0;for(const [vi,g] of VS){vp.fromBufferAttribute(pos,vi);M.applyBoneTransform(vi,vp);vp.applyMatrix4(M.matrixWorld);if(nb<BODYP.length)BODYP[nb][0].copy(vp),BODYP[nb][1]=g;nb++;
    if(supOn&&(vi/step)%2===0&&sup[g]>0){sp.copy(vp);let k=0;for(;k<sup[g]&&k<40;k++){if(solidAt(sp))break;sp.y-=.01;}if(k<sup[g])sup[g]=k;}
    query(vp,(s,ci)=>{const d=depth(s,vp);if(d>pen[g][0]){pen[g][0]=d;pen[g][1]=ci;pen[g][2]=[+vp.x.toFixed(3),+vp.y.toFixed(3),+vp.z.toFixed(3)];}});
@@ -199,11 +206,11 @@ module.exports=function install(cfg){
    // things that move (carried bucket, held tools, opened doors, plates): body vertices inside them. Static furniture is covered by the colliders above
    for(const o of moved)if(!isHero(o))DYN.add(o);HAND.forEach(hb=>{for(const ch of hb.children)if(!ch.isBone&&ch.visible&&!ch.isLight)DYN.add(ch);});
    const hp2=H.root.position;let best=null;
-   for(const o of DYN){if(!o.visible)continue;o.getWorldPosition(vp);if(vp.distanceTo(hp2)>1.6)continue;const nm=propName(o)||o.name||'held';
-    o.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry||m.isSkinnedMesh)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(DV);if(sz.length()<.03||sz.length()>2.5)return;
+   for(const o of DYN){if(!o.visible||o.userData.fluid||o.userData.fx)continue;if(o.userData.seat&&(H.seated||H.trans||!moved.has(o)))continue;/* the chair he sits on (moved under the table with him on it) is the seat, not a penetration; standing still it is plain furniture for the colliders */o.getWorldPosition(vp);if(vp.distanceTo(hp2)>1.6)continue;const nm=propName(o)||o.name||'held';let off=false;for(let x=o;x&&!off;x=x.parent)if(x.userData&&x.userData.offFoot)off=true;/* boot sliding off its foot (game sets userData.offFoot): feet/shins inside it is how it comes off */
+    o.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry||m.isSkinnedMesh||m.userData.fluid||m.userData.fx)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(DV);if(sz.length()<.03||sz.length()>2.5)return;
      DI.copy(m.matrixWorld).invert();const cx=(bb.min.x+bb.max.x)/2,cz=(bb.min.z+bb.max.z)/2,rr=Math.min(sz.x,sz.z)/2;const round=Math.abs(sz.x-sz.z)<.15*Math.max(sz.x,sz.z);
      const sc=DS.setFromMatrixScale(m.matrixWorld);const k=Math.min(sc.x,sc.y,sc.z);
-     for(const [p,g2] of BODYP){if(g2===1||g2===2)continue;DL.copy(p).applyMatrix4(DI);if(DL.y<bb.min.y||DL.y>bb.max.y)continue;let d;
+     for(const [p,g2] of BODYP){if(g2===1||g2===2||(off&&(g2===3||g2===4)))continue;DL.copy(p).applyMatrix4(DI);if(DL.y<bb.min.y||DL.y>bb.max.y)continue;let d;
       if(round){const rd=Math.hypot(DL.x-cx,DL.z-cz);if(rd>=rr)continue;d=Math.min(rr-rd,DL.y-bb.min.y,bb.max.y-DL.y);}
       else{if(DL.x<bb.min.x||DL.x>bb.max.x||DL.z<bb.min.z||DL.z>bb.max.z)continue;d=Math.min(DL.x-bb.min.x,bb.max.x-DL.x,DL.y-bb.min.y,bb.max.y-DL.y,DL.z-bb.min.z,bb.max.z-DL.z);}
       d*=k;if(d>.01&&(!best||d>best[2]))best=[nm,g2,d];}});}

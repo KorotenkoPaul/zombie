@@ -269,10 +269,84 @@ export function buildTree(THREE, o) {
     }
     P[i] = x; P[i + 1] = y; P[i + 2] = z;
   }
+  // ---------- roots (Pavel / critic T22): the model's roots are a few big flat faces. Refine them where they lie on the
+  // ground and carve irregular folds running out along each root, a few sharp cuts across them, and bark lumps, all
+  // deep enough to read from the normal camera. Edges are split by a rule that depends only on the edge itself
+  // (length + where its midpoint is), so neighbours always agree: no cracks, UV seams included. Phones: coarser.
+  let GR = null;
+  if (o.model && o.rootDetail !== false) {
+    const MOBI = MOB(o), Lmax = MOBI ? 0.5 : 0.28, LmaxT = MOBI ? 0.38 : 0.2, passes = 2; /* phones: coarser (day budget) */
+    const rootW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (d - 2.3) / 0.8)) * Math.min(1, Math.max(0, (2.0 - y) / 0.8)) * Math.min(1, Math.max(0, (y + 0.6) / 0.4)) * Math.min(1, Math.max(0, (11 - d) / 2)); };
+    // the trunk itself (Pavel: too smooth from the normal view): long irregular cuts and bark plates, carved inwards only
+    // (the house's beams and landings sit against it), never round the hollow's mouth
+    const trunkW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); if (d > 3.6 || d < 0.3 || y < 0.2 || y > 9.8) return 0;
+      const an = Math.atan2(z - AZ, x - AX), nd = Math.max(0, 1 - Math.max(0, Math.abs(angDiff(an, doorAng)) - 0.5) / 0.35) * Math.max(0, Math.min(1, (door.y1 + 1.5 - y) / 0.6));
+      return (1 - nd) * Math.min(1, (y - 0.2) / 0.6) * Math.min(1, (9.8 - y) / 1.2) * Math.min(1, (3.6 - d) / 0.5); };
+    const zoneW = (x, y, z) => Math.max(rootW(x, y, z), trunkW(x, y, z));
+    const n0 = P.length / 3, t0 = I.length / 3;
+    for (let pass = 0; pass < passes; pass++) {
+      const mid = new Map(), out = [];
+      const split = (a, b) => { const k = a < b ? a * 4194304 + b : b * 4194304 + a; let m = mid.get(k); if (m !== undefined) return m;
+        const ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2], bx = P[b * 3], by = P[b * 3 + 1], bz = P[b * 3 + 2];
+        const mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
+        const el = Math.hypot(ax - bx, ay - by, az - bz), wr = rootW(mx, my, mz), wt = trunkW(mx, my, mz);
+        if (!((wr > 0 && el > Lmax) || (wt > 0 && el > LmaxT))) { mid.set(k, -1); return -1; }
+        m = P.length / 3; P.push(mx, my, mz); UV.push((UV[a * 2] + UV[b * 2]) / 2, (UV[a * 2 + 1] + UV[b * 2 + 1]) / 2); G.push((G[a] + G[b]) / 2); mid.set(k, m); return m; };
+      for (let t = 0; t < I.length; t += 3) { const v = [I[t], I[t + 1], I[t + 2]], m = [split(v[0], v[1]), split(v[1], v[2]), split(v[2], v[0])], n = (m[0] >= 0) + (m[1] >= 0) + (m[2] >= 0);
+        if (!n) { out.push(v[0], v[1], v[2]); continue; }
+        if (n === 3) { out.push(v[0], m[0], m[2], m[0], v[1], m[1], m[2], m[1], v[2], m[0], m[1], m[2]); continue; }
+        // rotate so the first split edge is v0-v1 (m0)
+        let r = m[0] >= 0 && (n === 1 || m[2] < 0) ? 0 : m[1] >= 0 && (n === 1 || m[0] < 0) ? 1 : 2;
+        const A = v[r], B = v[(r + 1) % 3], C = v[(r + 2) % 3], mAB = m[r], mBC = m[(r + 1) % 3];
+        if (n === 1) out.push(A, mAB, C, mAB, B, C);
+        else out.push(A, mAB, C, mAB, B, mBC, mAB, mBC, C); }
+      I.length = 0; for (const q of out) I.push(q);
+    }
+    // vertex normals of the refined mesh (area weighted) to push along
+    const nv = P.length / 3, Nn = new Float32Array(nv * 3);
+    for (let t = 0; t < I.length; t += 3) { const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; for (const q of [a, b, c]) { Nn[q] += nx; Nn[q + 1] += ny; Nn[q + 2] += nz; } }
+    // weld normals of coincident vertices (UV seams) so both sides move the same way
+    { const wm = new Map(); for (let i = 0; i < nv; i++) { const k = Math.round(P[i * 3] * 2e3) + ',' + Math.round(P[i * 3 + 1] * 2e3) + ',' + Math.round(P[i * 3 + 2] * 2e3); const j = wm.get(k);
+        if (j === undefined) wm.set(k, i); else { Nn[j * 3] += Nn[i * 3]; Nn[j * 3 + 1] += Nn[i * 3 + 1]; Nn[j * 3 + 2] += Nn[i * 3 + 2]; Nn[i * 3] = -1e9; Nn[i * 3 + 1] = j; } }
+      for (let i = 0; i < nv; i++) if (Nn[i * 3] === -1e9) { const j = Nn[i * 3 + 1]; Nn[i * 3] = Nn[j * 3]; Nn[i * 3 + 1] = Nn[j * 3 + 1]; Nn[i * 3 + 2] = Nn[j * 3 + 2]; } }
+    GR = new Float32Array(nv);
+    const hsh = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+    for (let i = 0; i < nv; i++) { const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], w = rootW(x, y, z), wt = trunkW(x, y, z); if (w <= 0 && wt <= 0) continue;
+      let nx = Nn[i * 3], ny = Nn[i * 3 + 1], nz = Nn[i * 3 + 2]; const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      const d = Math.hypot(x - AX, z - AZ), an = Math.atan2(z - AZ, x - AX);
+      let h = 0;
+      if (w > 0) {
+        // roots, sized to read from the normal camera (~20 m): broad folds running out along the root, finer furrows,
+        // slanted cuts, burls and swellings
+        const f0 = Math.pow(Math.max(0, Math.cos(an * 16 + Math.sin(d * 0.9 + an * 2) * 1.6 + y * 1.4)), 2);
+        const f1 = Math.pow(Math.max(0, Math.cos(an * 34 + Math.sin(d * 1.3 + an * 3) * 1.4 + y * 2.2)), 3);
+        const f2 = Math.pow(Math.max(0, Math.cos(an * 71 - d * 0.8 + y * 3.1 + 1.7)), 6);
+        const ck = Math.pow(Math.max(0, Math.cos(d * 4.1 + an * 9 + Math.sin(an * 5) * 2)), 40) * Math.max(0, Math.sin(an * 7 + d * 0.6 + 0.8) - 0.35) * 1.6;
+        const lp = Math.sin(x * 2.3 + Math.sin(z * 1.7)) * Math.sin(z * 2.1 + y * 1.9) * Math.sin(y * 2.7 + x * 1.1);
+        const big = Math.max(0, Math.sin(an * 4 + d * 0.9 + 2.2)) * Math.max(0, Math.sin(d * 1.6 - an * 2));
+        const up = 0.55 + 0.45 * Math.max(0, ny);
+        h += w * up * (-0.2 * f0 - 0.1 * f1 - 0.05 * f2 - 0.18 * ck + 0.09 * lp + 0.16 * big + (hsh(Math.round(x * 6), Math.round(z * 6)) - 0.5) * 0.015);
+      }
+      if (wt > 0) {
+        // trunk: long splits that wander and stop, finer furrows between them, and the bark broken across into plates
+        const ph = an * 13 + 0.7 * Math.sin(y * 0.45 + an * 2) + 0.05 * y;
+        const cut = Math.pow(Math.max(0, Math.cos(ph)), 26) * Math.min(1, Math.max(0, (Math.sin(y * 0.55 + an * 4.3 + 1.1) - 0.05) * 2.5));
+        const fur = Math.pow(Math.max(0, Math.cos(an * 29 - y * 0.15 + Math.sin(y * 0.8 + an) * 0.6)), 4);
+        const plate = Math.pow(Math.max(0, Math.cos(y * 3.3 + an * 6 + Math.sin(an * 11) * 1.5)), 18) * (0.4 + 0.6 * fur);
+        const kd = Math.min(1, d / 1.4);
+        h += wt * kd * -(0.17 * cut + 0.055 * fur + 0.04 * plate + 0.012 * hsh(Math.round(an * 40), Math.round(y * 5)));
+      }
+      GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
+      P[i * 3] += nx * h; P[i * 3 + 1] += ny * h; P[i * 3 + 2] += nz * h; }
+    if (typeof window !== 'undefined') window.__rootDetail = { verts: P.length / 3 - n0, tris: I.length / 3 - t0 };
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
   g.setAttribute('glow', new THREE.Float32BufferAttribute(G, 1));
+  { const gr = new Float32Array(P.length / 3); if (GR) gr.set(GR.subarray(0, Math.min(GR.length, gr.length))); g.setAttribute('tdGr', new THREE.BufferAttribute(gr, 1)); } // groove depth (roots / trunk cuts)
   g.setIndex(I); g.computeVertexNormals();
   // critic T16: the thin, curling side shoots of the model wrap around the house like snakes. Cut every thin piece
   // (under ~0.5 m thick) in the house band around the trunk; the main limbs and the crown's twigs stay.
@@ -405,10 +479,14 @@ export function buildTree(THREE, o) {
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       // phones have no inner cards, so some shell cards take the darker inner shade to keep the clumps' depth
       const rs = MOB(o) && rnd(0, 1) < 0.35 ? rnd(0.4, 0.78) : rr;
+      if (MOB(o) && rs < 0.62 && rnd(0, 1) < 0.5) continue; // [ENV perf] half of the deepest-shade shell cards: mostly covered by the cards in front (overdraw)
       const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1));
       // lighter, yellow-green leaves on the clump edges and the odd autumn-yellow card, like the photo
       if (rs > 0.8 && (!MOB(o) || rnd(0, 1) < 0.75) && dir.y > -0.2) col.multiply(new THREE.Color(1.18, 1.14, 0.8));
-      if (rnd(0, 1) < 0.07) col.setRGB(1.5, 1.25, 0.45);
+      // autumn (Environment, per the coordinator): ~30% warm cards, most on the clump edges and the crown's top-right like the
+      // photo: gold, orange and a few rust; the crown stays mostly green
+      { const smooth01 = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); }; const edge = rs > 0.8 && dir.y > -0.3 ? 0.22 : 0, tr = smooth01((p.x - AX) / 6) * smooth01((p.y - 13) / 5) * 0.22;
+        const w = rnd(0, 1); if (w < 0.14 + edge + tr) { const k = rnd(0, 1); if (k < 0.5) col.setRGB(1.5, 1.22, 0.42); else if (k < 0.85) col.setRGB(1.6, 0.98, 0.38); else col.setRGB(1.3, 0.68, 0.32); col.multiplyScalar(rnd(0.85, 1.05)); } }
       im.setColorAt(n, col);
       shade[n] = (0.5 + 0.5 * Math.min(1, rs)) * (0.7 + 0.5 * Math.max(0, dir.y));
       n++;
@@ -516,18 +594,20 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
       sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
  {vec3 q=vCW-cC;vec2 dd=cDir;float u=dot(q.xz,dd);float v=-q.x*dd.y+q.z*dd.x;
   float inn=clamp((cS.x*.55-u)/(cS.x*1.4),0.,1.);              // 0 at the mouth .. 1 at the back
-  float r=length(vec2(v,q.y))*7.+cN(vec2(v,q.y)*3.)*1.4;        // growth rings round the hollow's axis
-  float ring=smoothstep(.35,.5,abs(fract(r)-.5));
-  float fib=cN(vec2(atan(q.y,v)*9.,u*2.5))*.6+cN(vec2(atan(q.y,v)*31.,u*7.))*.4; // fibres running in
-  float crack=smoothstep(.08,.0,abs(cN(vec2(atan(q.y,v)*4.,u*1.3))-.5));
-  vec3 c=mix(vec3(.2,.12,.07),vec3(.34,.22,.13),fib)*(.78+.3*ring)*(1.-.5*crack);
+  // Critic T21: no growth rings (they only show on a saw cut; round the axis they read as a painted disc on the back wall).
+  // Inside a hollow trunk the grain runs UP: torn vertical fibres, dark splits, soft rot patches.
+  float ha=atan(v,u);
+  float fib=cN(vec2(ha*14.,q.y*1.3))*.55+cN(vec2(ha*43.,q.y*4.))*.3+cN(vec2(ha*120.,q.y*9.))*.15;
+  float crack=smoothstep(.07,.0,abs(cN(vec2(ha*5.,q.y*.7))-.5));
+  float rot=smoothstep(.55,.8,cN(vec2(ha*3.,q.y*1.6)+7.));
+  vec3 c=mix(vec3(.13,.08,.05),vec3(.28,.18,.11),fib)*(1.-.6*crack)*mix(1.,.6,rot);
   diffuseColor.rgb=c*mix(1.,.15,pow(inn,.8));}`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
  {vec3 q=vCW-cC;float u=dot(q.xz,cDir);float v=-q.x*cDir.y+q.z*cDir.x;float an=atan(q.y,v);
-  float hgt=cN(vec2(an*9.,u*2.5))*.6+cN(vec2(an*31.,u*7.))*.4-smoothstep(.08,0.,abs(cN(vec2(an*4.,u*1.3))-.5));
+  float ha=atan(v,u); float hgt=cN(vec2(ha*14.,q.y*1.3))*.55+cN(vec2(ha*43.,q.y*4.))*.3-smoothstep(.07,0.,abs(cN(vec2(ha*5.,q.y*.7))-.5))*1.2;
   vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition);float hx=dFdx(hgt),hy=dFdy(hgt);
   vec3 r1=cross(dpy,normal),r2=cross(normal,dpx);float det=dot(dpx,r1);
-  normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.06);}`)
+  normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.1);}`)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.3*smoothstep(-.6,1.2,u2);}');
     };
     cmat.customProgramCacheKey = () => 'hollow';
@@ -535,8 +615,10 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
     // lumps of rot, pushed inwards only so the cave never grows past the bark
     const cgeo = new THREE.SphereGeometry(1, MOB(o) ? 40 : 64, MOB(o) ? 26 : 40);
     { const pa = cgeo.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
-        const a = Math.atan2(y, z), k = 1 - 0.07 * Math.pow(0.5 + 0.5 * Math.sin(a * 11 + x * 2.2 + Math.sin(a * 3) * 1.5), 2) - 0.05 * (0.5 + 0.5 * Math.sin(a * 5 - x * 4 + 1.3)) * (0.5 + 0.5 * Math.sin(x * 7 + a * 2))
-          - 0.03 * Math.sin(x * 13 + a * 17) * Math.sin(a * 23);
+        // vertical ridges of torn heartwood and lumps of rot all round, deepest on the back wall facing the opening (T21)
+        const a = Math.atan2(z, x), bf = 0.6 + 0.6 * Math.min(1, Math.max(0, (0.2 - x) / 1.0)), w = Math.sin(y * 3.1) * 0.8 + y * 0.6;
+        const k = 1 - bf * (0.09 * Math.pow(0.5 + 0.5 * Math.sin(a * 9 + w), 3) + 0.05 * (0.5 + 0.5 * Math.sin(a * 4 + y * 5 + 1.3)) * (0.5 + 0.5 * Math.sin(y * 9 + a * 2))
+          + 0.03 * (0.5 + 0.5 * Math.sin(a * 23 + y * 2.3)) + 0.02 * Math.sin(a * 41 + y * 13) * Math.sin(y * 17 - a * 5));
         pa.setXYZ(i, x * k, y * (y < -0.6 ? 1 : k), z * k); }
       cgeo.computeVertexNormals(); }
     const cav = new THREE.Mesh(cgeo, cmat);
