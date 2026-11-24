@@ -633,6 +633,14 @@ export function createHero(ctx){
   const move=Math.max(0,d-stand);if(L<move+.6)return;
   const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);headroom(q,dx/d,dz/d);q.y=p.y;if(!segClear(p,q))return;
   a.cut=1;N.__stand={p:q};H.path=[{node:'__stand',t:last.t}];const th=H.then;H.then=()=>{H.node=a.nn;th&&th();};}
+ /* the belt: a tool fetched from far away is hung on his right hip when the work is done (it used to ease home across the house by
+    itself); the next job that needs it takes it from there, by hand. H.belt names the tool on the belt */
+ function beltPt(){const f=fwd(root.rotation.y);const r=V(-f.z,0,f.x);return bones.Hips.getWorldPosition(V()).addScaledVector(r,.17).addScaledVector(f,.03).add(V(0,-.06,0));}
+ function toBelt(n,hand){const P=window.__props||P3;if(!P||!P.grab||!bones.Hips)return false;const o=P.grab(n,bones.Hips,{offset:V()});if(!o){relTool(hand,n);return false;}
+  /* fixed in the pelvis' own frame (x left, y up, z forward, metres on both rigs): head up, handle down along the right thigh, tipped out a little */
+  const ws=bones.Hips.getWorldScale(V()).x||1;o.quaternion.setFromAxisAngle(V(0,0,1),-.12).multiply(new THREE.Quaternion().setFromAxisAngle(V(0,1,0),Math.PI/2));/* head fore-and-aft, not into the hip */o.position.set(-.2/ws,-.05/ws,0);if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;H.belt=n;return true;}
+ const beltHas=n=>{const P=window.__props||P3;const o=P&&P.tools&&P.tools[n];return H.belt===n&&!!o&&o.parent===bones.Hips;};
+ const farHome=n=>{const h=toolHome(n);return !!h&&h.distanceTo(root.position)>1.6;};
  function job(o){const a={step:'go',t:0,T:0,held:[],faceYaw:o.faceYaw??null};const sp0=typeof o.pt==='function'?o.pt():o.pt;
   if(!sp0&&!o.node){a.update=()=>endTask(false);return a;}
   const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
@@ -644,15 +652,15 @@ export function createHero(ctx){
    else{const nn=nearNode(s);a.nn=nn;if(nn)goTo(nn,()=>approachTo(a,s,o.stand??.45,begin));else approachTo(a,s,o.stand??.45,begin);}};
   /* a tool that lives somewhere else (the hammer on the workshop bench, the wrench) is fetched by walking there and taking it in the hand,
      then he goes to the work with it: never reached for from across the house (it used to fly into his hand) */
-  const far=tools.length&&(()=>{const h=toolHome(tools[0][0]);return h&&h.distanceTo(sp())>1.6&&h.distanceTo(root.position)>1.1;})();
+  const far=tools.length&&!beltHas(tools[0][0])&&(()=>{const h=toolHome(tools[0][0]);return h&&h.distanceTo(sp())>1.6&&h.distanceTo(root.position)>1.1;})();
   if(far){const h=toolHome(tools[0][0]);const fetch=()=>approachTo(a,h.clone().setY(root.position.y),.42,()=>{a.step='take';a.t=0;a.afterTake=()=>{a.fetched=true;a.step="go";a.t=0;go();};});const nn=nearNode(h);if(nn)goTo(nn,fetch);else fetch();}
   else go();
   a.update=dt=>{a.t+=dt;const s=sp();
    if(a.step==='go'&&!o.noCut&&!a.cut&&a.nn&&motion&&H.path.length&&!window.__noCut)cutShort(a,s,o.stand??.45);
    if(a.step==='approach'){H.look=s;H.lookW=.6;if(a.t>=a.adur){a.next();}return;}
    if(a.step==='take'){// reach each tool's home and close the hand on it
-    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=toolHome(n)||s;H.look=h;H.lookW=1;a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];
-    if(a.t>.5&&!a.gotIt){a.gotIt=true;grabTool(n,hand);AU('cloth');}if(a.t>.95){a.held.push(n);a.gotIt=false;a.t=0;a.ik=null;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else work();}}return;}
+    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=beltHas(n)?beltPt():toolHome(n)||s;H.look=h;H.lookW=1;a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];
+    if(a.t>.5&&!a.gotIt){a.gotIt=true;grabTool(n,hand);if(H.belt===n)H.belt=null;AU('cloth');}if(a.t>.95){a.held.push(n);a.gotIt=false;a.t=0;a.ik=null;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else work();}}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
     // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
     if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
@@ -661,11 +669,11 @@ export function createHero(ctx){
      if(a.pause){a.pause-=dt;H.look=a.pl;H.lookW=.7;if(a.pause<=0){a.pause=0;if(o.clip&&o.loop&&has(o.clip))play(o.clip,{fade:.6,speed:o.speed||1});else if(o.clip&&has(o.clip))once(o.clip,{fade:.45,speed:o.speed||1});}}}
     if(!o.loop&&o.clip&&o.reps&&!H.once&&!a.pause&&a.T<dur-1)once(o.clip,{fade:.4,speed:o.speed||1});
     if(a.T>=dur){a.step='put';a.t=0;o.end&&o.end(a);play(IDLE(),{fade:.5});}return;}
-   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=toolHome(n)||s;H.look=h;H.lookW=1;
-    a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];if(a.t>.5&&!a.rel){a.rel=true;relTool(hand,n);}if(a.t>.95){a.held.pop();a.rel=false;a.t=0;a.ik=null;}}};
+   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';if(a.toBelt==null)a.toBelt=farHome(n);const h=a.toBelt?beltPt():toolHome(n)||s;H.look=a.toBelt?null:h;H.lookW=1;
+    a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];if(a.t>.5&&!a.rel){a.rel=true;if(a.toBelt)toBelt(n,hand);else relTool(hand,n);}if(a.t>.95){a.held.pop();a.rel=false;a.toBelt=null;a.t=0;a.ik=null;}}};
   const finish=()=>{a.ik=null;endTask(o.result?o.result(a):undefined);};
   a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);};
-  a.leave=cb=>{for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
+  a.leave=cb=>{for(const n of a.held){const t=tools.find(x=>x[0]===n);const hd=t?t[1]:'Right';if(farHome(n))toBelt(n,hd);else relTool(hd,n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
  function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
  function teleParts(){const P=window.__props||P3;let t=P&&P.placed&&P.placed.telescope;if(!t){t=null;scene.traverse(o=>{if(!t&&o.name==='telescope'&&o.userData&&o.userData.tube)t=o;});if(!t)scene.traverse(o=>{if(!t&&o.userData&&o.userData.tube&&o.userData.tube.parent)t=o;});}const tube=t&&t.userData&&t.userData.tube;if(!tube||!tube.parent)return null;
