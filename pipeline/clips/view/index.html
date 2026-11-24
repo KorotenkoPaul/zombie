@@ -1,0 +1,16 @@
+<!doctype html><html><head><style>body{margin:0;background:#2b2f36}</style>
+<script type="importmap">{"imports":{"three":"/nm/three/build/three.module.js","three/addons/":"/nm/three/examples/jsm/"}}</script></head><body>
+<script type="module">
+import * as T from 'three'; import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js'; import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
+const W=360,H=420; const R=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true}); R.setSize(W,H); document.body.appendChild(R.domElement);
+const S=new T.Scene(); S.background=new T.Color(0x2b2f36); S.add(new T.HemisphereLight(0xffffff,0x445566,1.6)); const dl=new T.DirectionalLight(0xffffff,1.6); dl.position.set(2,4,3); S.add(dl);
+const g=new T.Mesh(new T.PlaneGeometry(6,6),new T.MeshStandardMaterial({color:0x556655})); g.rotation.x=-Math.PI/2; S.add(g); S.add(new T.GridHelper(6,12,0x889988,0x667766));
+const cam=new T.PerspectiveCamera(35,W/H,.05,50);
+const gl=await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync('/hero.glb'); const hero=gl.scene; S.add(hero);
+const bones={}; hero.traverse(o=>{if(o.isBone)bones[o.name.replace(/^mixamorig:?/,'')]=o; if(o.isMesh)o.frustumCulled=false;});
+window.setClip=async (url)=>{ window.C=await (await fetch(url)).json(); return C.frames; };
+window.pose=(f,view)=>{ const C=window.C; for(const b in C.tracks) if(bones[b]) bones[b].quaternion.fromArray(C.tracks[b],f*4);
+  bones.Hips.position.fromArray(C.hips,f*3); hero.updateMatrixWorld(true); const hp=new T.Vector3(); bones.Hips.getWorldPosition(hp);
+  const a=view==='side'?Math.PI/2:view==='front'?0:Math.PI/4, d=3.4; cam.position.set(hp.x+Math.sin(a)*d, 1.2, hp.z+Math.cos(a)*d); cam.lookAt(hp.x,Math.max(.5,hp.y*.9),hp.z); R.render(S,cam); return R.domElement.toDataURL('image/jpeg',.85); };
+window.ready=true;
+</script></body></html>

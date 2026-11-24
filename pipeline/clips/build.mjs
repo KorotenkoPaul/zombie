@@ -33,6 +33,9 @@ for (const [name, r] of Object.entries(R)) { if (only && !only.includes(name)) c
       W.premultiply(new T.Quaternion().setFromAxisAngle(new T.Vector3(0,1,0), yb - yu));
       const L = Hb.clone().invert().multiply(W); const k = (r.chestKeep ?? 1); const S0 = qa(B, 'Spine', idx(i)); S0.slerp(L, k).toArray(out.tracks.Spine, i * 4); }
     C = out; }
+  if (r.dampLegs) { const LEGS = ['LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','RightUpLeg','RightLeg','RightFoot','RightToeBase'];
+    for (const b of LEGS) { if (!C.tracks[b]) continue; const m = [0,0,0,0]; const q0 = qa(C, b, 0); for (let i = 0; i < C.frames; i++) { const q = qa(C, b, i); const s = q.dot(q0) < 0 ? -1 : 1; m[0] += s*q.x; m[1] += s*q.y; m[2] += s*q.z; m[3] += s*q.w; }
+      const M = new T.Quaternion(...m).normalize(); for (let i = 0; i < C.frames; i++) M.clone().slerp(qa(C, b, i), 1 - r.dampLegs).toArray(C.tracks[b], i * 4); } }
   if (r.mirror) mirror(C);
   faceZ(C);
   for (const b of Object.keys(C.tracks)) { const a = C.tracks[b]; for (let i = 1; i < C.frames; i++) { const d = a[i*4]*a[i*4-4] + a[i*4+1]*a[i*4-3] + a[i*4+2]*a[i*4-2] + a[i*4+3]*a[i*4-1]; if (d < 0) for (let k = 0; k < 4; k++) a[i*4+k] = -a[i*4+k]; } C.tracks[b] = a.map(v => +(+v).toFixed(5)); }

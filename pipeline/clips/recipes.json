@@ -1,11 +1,11 @@
 {
  "bed_liedown": {
   "src": "hy/r_bed_liedown2-11",
-  "note": "Bed P1. Seated on the bed edge facing +Z -> leans onto the LEFT side/elbow, lifts both legs, ends lying on the back with the head toward his left (+X). 4.0 s, Hunyuan (already bought batch), screened: knees always forward, hips 0.44-0.58 m (it lies on a raised bed, not the floor). Not a loop; root moves 0.22 m sideways (place in code)."
+  "note": "Bed P1. Seated on the bed edge facing +Z -> leans onto the LEFT side/elbow, lifts both legs, ends lying on the back with the head toward his left (+X). 4.0 s, Hunyuan (already bought batch), screened: knees always forward, hips 0.44-0.58 m (it lies on a raised bed, not the floor). Not a loop; root moves 0.22 m sideways (place in code). Real-mesh render: the arms flail a little mid-roll; bed_liedown_alt is calmer."
  },
  "bed_liedown_alt": {
   "src": "hy/r_bed_liedown-23",
-  "note": "Alternative of bed_liedown (other seed), same direction (head to his left), a bit more curled at the end."
+  "note": "Recommended over bed_liedown after the real-mesh render: calmer, no arm flailing. Seated on the edge facing +Z -> leans onto the left side, legs up, ends on the back, head toward +X. 4.0 s."
  },
  "bed_getup": {
   "src": "hy/r_bed_getup-23",
@@ -186,7 +186,7 @@
    "t0": 1.3,
    "t1": 16.6
   },
-  "note": "Real mocap 'washing' with both hands in front of the belly (79_90 upper body) on calm standing legs (80_16). 15.3 s. For the sink: left holds the plate, right rubs (hands via IK)."
+  "note": "CORRECTION after the real-mesh render: 79_90 'washing' is washing the face/head (hands go up to the face), not dishes. Use it for washing the face at the bucket/pond; for dishes keep hy_wash (its clip data has correct knees). 15.3 s, standing legs from 80_16."
  },
  "set_cup_down": {
   "src": "80_27",
@@ -196,13 +196,14 @@
   "src": "01_08",
   "t0": 12.5,
   "t1": 15.0,
-  "note": "Leisure P1 (replaces hy_dangle). Real mocap legs hanging and swinging from a high edge (01_08) + calm seated upper body from a stool (13_04, hands near the thighs, chest upright). 5.1 s, loop close 0.8. Hips ~1.3 m above the mocap floor: place the root on the ledge in code; hands to the ledge via IK if wanted.",
+  "note": "Leisure P1 (replaces hy_dangle). Real mocap legs hanging from a high edge (01_08), swing damped 55% so it reads as idle dangling, + calm seated upper body (14_31, hands near the thighs). 3.5 s, loop close 0.8. Hips ~1.3 m above the mocap floor: place the root on the ledge in code.",
   "upper": {
-   "src": "13_04",
-   "t0": 12.5,
-   "t1": 17.6
+   "src": "14_31",
+   "t0": 3.0,
+   "t1": 6.5
   },
-  "base": "pingpong"
+  "base": "pingpong",
+  "dampLegs": 0.55
  },
  "idle_stand_a": {
   "src": "77_02",
