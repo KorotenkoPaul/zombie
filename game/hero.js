@@ -234,7 +234,7 @@ export function createHero(ctx){
  const GRIP_R=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,-Math.PI/2)),GRIP_L=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,Math.PI/2));
  function grab(item,hand,pos,rot){const b=bones[hand+'Hand'];if(!b)return;b.add(item);item.position.set(...pos).multiplyScalar(hs(hand+'Hand'));item.rotation.set(...rot);item.scale.setScalar(hs(hand+'Hand'));item.visible=true;H.hold[hand]=item;}
  function release(hand){const it=H.hold[hand];if(!it)return;H.hold[hand]=null;it.parent&&it.parent.remove(it);}
- function grabTool(name,hand){if(!P3||!P3.grab)return false;const o=P3.grab(name,bones[hand+'Hand'],{offset:V(0,.075,.025),rot:hand==='Right'?GRIP_R:GRIP_L});if(o){H.hold[hand]={tool:name};return true;}return false;}
+ function grabTool(name,hand){if(!P3||!P3.grab)return false;{const t=P3.tools&&P3.tools[name];if(t&&t.userData.home0){t.userData.home=t.userData.home0;delete t.userData.home0;}}const o=P3.grab(name,bones[hand+'Hand'],{offset:V(0,.075,.025),rot:hand==='Right'?GRIP_R:GRIP_L});if(o){H.hold[hand]={tool:name};return true;}return false;}
  function releaseTool(hand){const h=H.hold[hand];if(h&&h.tool&&P3)P3.release(h.tool);H.hold[hand]=null;}
  // where loose things rest
  const kTop=(()=>{const f=floorTop(KT,-2.3,2.2);return f+.9;})();
@@ -976,7 +976,21 @@ export function createHero(ctx){
   /* fixed in the pelvis' own frame (x left, y up, z forward, metres on both rigs): head up, handle down along the right thigh, tipped out a little */
   const ws=bones.Hips.getWorldScale(V()).x||1;o.quaternion.setFromAxisAngle(V(0,0,1),-.12).multiply(new THREE.Quaternion().setFromAxisAngle(V(0,1,0),Math.PI/2));/* head fore-and-aft, not into the hip */o.position.set(-.2/ws,-.05/ws,0);if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;H.belt=n;return true;}
  const beltHas=n=>{const P=window.__props||P3;const o=P&&P.tools&&P.tools[n];return H.belt===n&&!!o&&o.parent===bones.Hips;};
- const farHome=n=>{const h=toolHome(n);return !!h&&h.distanceTo(root.position)>1.6;};
+ /* GRAB (watch r14: the 1.2 m broom jumped onto his hip upside down, the stick through the ceiling, and rode along all day): only small
+    tools go on the belt. A long one he carries home by hand (put), or, when a job is cut short, stands it down by hand where he is */
+ const SMALL=/^(knife|hammer|benchHammer|pencil|screwdriver\d*|wrench\w*|benchWrench|pliers)$/;
+ const farHome=n=>{if(!SMALL.test(n))return false;const h=toolHome(n);return !!h&&h.distanceTo(root.position)>1.6;};
+ const awayHome=n=>{const h=toolHome(n);return !SMALL.test(n)&&!!h&&h.distanceTo(root.position)>1.0;};
+ function standDown(n,hand){const P=window.__props||P3;const o=P&&P.tools&&P.tools[n];const hm=o&&o.userData.home;if(!o||!hm){relTool(hand,n);return;}
+  /* the hand sets it down upright right under itself (its resting pose), and that spot is where it is fetched from next time; taking it
+     there gives it its real home back, so the put afterwards carries it home */
+  const hp=bones[hand+'Hand'].getWorldPosition(V());const f=fwd(root.rotation.y);hp.addScaledVector(f,.05);const y=floorAt(hp.x,root.position.y+.3,hp.z,.4,.6)??root.position.y;
+  try{if(P.release)P.release(n);}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;
+  const q=new THREE.Quaternion();hm.parent.getWorldQuaternion(q);q.multiply(hm.quat);scene.attach(o);o.position.set(hp.x,y,hp.z);o.quaternion.copy(q);o.visible=true;
+  if(!o.userData.home0)o.userData.home0=hm;const ip=hm.parent===scene?o.position.clone():hm.parent.worldToLocal(o.position.clone());
+  hm.parent.updateMatrixWorld(true);const iq=new THREE.Quaternion();hm.parent.getWorldQuaternion(iq);iq.invert().multiply(o.quaternion);
+  o.userData.home={...hm,pos:ip,quat:iq};if(hm.parent!==scene)hm.parent.attach(o);}
+
  // squatting at a block or crate the knees go forward: he stays back so shins and feet never enter it (gate: shins 6.6 cm and
  // feet in the chopblock while the axe went back into it). job({clear:obj}) runs it in take/put too.
  function kneesClear(obj,dt,any){if(!obj||(!any&&(H.squat||0)<.05))return;const bb=new THREE.Box3().setFromObject(obj);const bc=bb.getCenter(V());const R=Math.min(bb.max.x-bb.min.x,bb.max.z-bb.min.z)/2;let need=0;
@@ -1017,7 +1031,8 @@ export function createHero(ctx){
      if(a.pause){a.pause-=dt;H.look=a.pl;H.lookW=.7;if(a.pause<=0){a.pause=0;if(o.clip&&o.loop&&has(o.clip))play(o.clip,{fade:.6,speed:o.speed||1});else if(o.clip&&has(o.clip))once(o.clip,{fade:.45,speed:o.speed||1});}}}
     if(!o.loop&&o.clip&&o.reps&&!H.once&&!a.pause&&a.T<dur-1)once(o.clip,{fade:.4,speed:o.speed||1});
     if(a.T>=dur){a.step='put';a.t=0;o.end&&o.end(a);play(IDLE(),{fade:.5});}return;}
-   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';if(a.toBelt==null)a.toBelt=farHome(n);const bt=a.toBelt;const h=bt?beltPt():gripHome(n)||toolHome(n)||s;H.look=bt?null:h;H.lookW=1;
+   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';if(!a.carried&&awayHome(n)){/* GRAB: a long tool is walked home in the hand and put there */a.carried=true;a.step='carry';a.t=0;const hh=toolHome(n);const back=()=>approachTo(a,hh.clone().setY(root.position.y),.42,()=>{a.step='put';a.t=0;a.st=0;});const me=nearNode(root.position.clone());if(me)H.node=me;/* he swept away from the job's node */const nn=nearNode(hh);if(nn)goTo(nn,back);else back();return;}
+    if(a.toBelt==null)a.toBelt=farHome(n);const bt=a.toBelt;const h=bt?beltPt():gripHome(n)||toolHome(n)||s;H.look=bt?null:h;H.lookW=1;
     /* a far home: the tool goes on the belt (right hip), no trip back across the house and no flying home */
     // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
     if(!a.st){a.st=1;a.pk=0;if(!bt)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
@@ -1027,7 +1042,7 @@ export function createHero(ctx){
     if(a.rel&&a.t-a.tr>.4&&!(H.squat>0)){a.held.pop();a.rel=false;a.toBelt=null;a.t=0;a.rg=null;a.st=0;}}};
   const finish=()=>{a.ik=null;H.squat=0;endTask(o.result?o.result(a):undefined);};
   a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
-  a.leave=cb=>{H.squat=0;for(const n of a.held){const t=tools.find(x=>x[0]===n);const hd=t?t[1]:'Right';if(farHome(n))toBelt(n,hd);else relTool(hd,n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
+  a.leave=cb=>{H.squat=0;for(const n of a.held){const t=tools.find(x=>x[0]===n);const hd=t?t[1]:'Right';if(farHome(n))toBelt(n,hd);else if(awayHome(n))standDown(n,hd);else relTool(hd,n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
  // GRAB: knees bent just enough that the shoulder is within arm's reach of a low grip, then up again (the code squat keeps the feet planted)
  function jobSquat(a,dt,h,hand,down){const sh=bones[hand+'Arm'].getWorldPosition(V());const hz=Math.hypot(sh.x-h.x,sh.z-h.z);const R0=armLen*.9+PALM-.03;
@@ -1144,7 +1159,11 @@ export function createHero(ctx){
   const G=window.__grab;if(G){G.hold('Right',bd,null);G.hold('Left',bd,null);a.chHold=1;}
   holdToolAt('Right','knife',gp,T,a.cw,V(0,-1,0));{const w=a.cw;if(G&&G.late)G.late(()=>holdToolAt('Right','knife',gp,T,w,V(0,-1,0)));}
   // left palm on the carrot, 5 cm to the far side of the cut (toward the carrot's tip), fingers curled over it
-  const lp=L(V((off-.055)*sx,.058,.045));gripNoLean('Left',lp,a.cw*.95);{const w=a.cw;if(G&&G.late)G.late(()=>gripNoLean('Left',lp,w*.95));}
+  const lp0=L(V((off-.055)*sx,.058,.045));
+  /* GRAB (gate: left hand 4.2 cm into the worktop): the palm does not blend straight from where it hangs to the carrot (that line cuts
+     the counter's front edge); it is carried at full IK from where it was, up over the edge in an arc, and down onto the carrot */
+  if(!a.lh0)a.lh0=bones.LeftHand.getWorldPosition(V());const e=smooth(0,1,a.cw);const lp=a.lh0.clone().lerp(lp0,e).add(V(0,.16*Math.sin(Math.PI*Math.min(1,e*1.15)),0));if(e>=1)lp.copy(lp0);
+  const lw=Math.min(1,a.cw*4)*.95;gripNoLean('Left',lp,lw);if(G&&G.late)G.late(()=>gripNoLean('Left',lp,lw));
   H.look=cut;H.lookW=1;}
  Object.assign(MAKE,{
   // kitchen
