@@ -680,7 +680,9 @@ export function createCameraRig(o) {
           if (prev) prev.call(mt, sh, rd);
           sh.uniforms[name] = uni; sh.uniforms.uNFFocus = focusU; sh.uniforms.uNFCut = cutU;
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;')
-            .replace('#include <project_vertex>', '#include <project_vertex>\nvCamDNF=length(mvPosition.xyz);\n#ifdef USE_INSTANCING\nvec3 nfp=instanceMatrix[3].xyz;\n#else\nvec3 nfp=floor(position*3.0);\n#endif\nvRndNF=fract(sin(dot(nfp,vec3(12.9898,78.233,37.719)))*43758.5453);');
+            // at the end of main(): works also when a material replaced the project_vertex chunk with its own
+            // billboard code (the forest impostors), as long as it leaves an mvPosition in main's scope
+            .replace(/}\s*$/, '\nvCamDNF=length(mvPosition.xyz);\n#ifdef USE_INSTANCING\nvec3 nfp=instanceMatrix[3].xyz;\n#else\nvec3 nfp=floor(position*3.0);\n#endif\nvRndNF=fract(sin(dot(nfp,vec3(12.9898,78.233,37.719)))*43758.5453);\n}');
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;uniform float ' + name + ';uniform float uNFFocus,uNFCut;')
             .replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n{float nf=smoothstep(' + name + '*0.25,' + name + ',vCamDNF);' +
               'nf=min(nf,mix(1.0,smoothstep(uNFFocus-2.6,uNFFocus-0.9,vCamDNF),uNFCut));' +

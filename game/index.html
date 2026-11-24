@@ -109,6 +109,8 @@ await RAPIER.init();prog();
 const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);
 /* [PERF] the scene is drawn into the composer's own (non-MSAA) target, so canvas MSAA only smoothed the final full-screen copy: off on phones, same picture, less memory and bandwidth */
 const renderer=new THREE.WebGLRenderer({antialias:!MOBILE,powerPreference:'high-performance'});
+/* [PERF] no synchronous shader error checks (getProgramParameter/InfoLog on first use stall until the driver finishes compiling); ?debug turns them back on */
+renderer.debug.checkShaderErrors=/[?&]debug/.test(location.search);
 let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
 renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();const l=$('load');if(l){l.classList.remove('hide');$('loadTx').textContent='Перезапускаем картинку…';}setTimeout(()=>location.reload(),1500);});
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
@@ -979,7 +981,7 @@ const rig=createCameraRig({camera,dom:cv,scene,rooms:()=>ROOMS,limb:LIMB,
  onFollow:on=>{$('bF').classList.toggle('on',on);},
  onTap:(x,y)=>{const z=pickZombie(x,y);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}});
 // only the oak's leaf cards fade (near the camera, and in front of the focus when zoomed in); the house, bark, grass and ferns never do
-{const nf=()=>rig.nearFade(TREE.group,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);nf();setTimeout(nf,8000);}
+{const nf=()=>{rig.nearFade(TREE.group,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);/* [CAMERA] the forest's understory bushes too: on the forest trip they stood between the ◎ view and the hero */for(const n of ['forestUnderstory'])scene.traverse(o=>{if(o.name===n)rig.nearFade(o,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);});};nf();setTimeout(nf,8000);}
 $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
@@ -1162,6 +1164,10 @@ try{window.__grab&&window.__grab.attach(HH);}catch(e){console.error('grab attach
 // [PERF] the loading screen stays up until the heavy first work is done: every texture uploaded to the GPU, shaders linked
 // (parallel compile where the browser has it), collide.js built and two real frames drawn. Otherwise the first seconds after
 // it disappears are a frozen picture that ignores swipes.
+// [PERF] the rain height map (one top-down render + pixel readback, then wet-board shader hooks on the boards it found)
+// used to run ~3 s into play: a stall of a second or more on a phone (GPU sync + new shader variants). Built here instead,
+// behind the loading screen and before the shader prewarm below, so the wrapped board shaders are compiled with the rest.
+try{for(let i=0;i<200&&RAIN&&!RAIN.ready;i++)RAIN.update(0,0,0,scene.fog.color);}catch(e){console.warn('rain map',e);}
 // [PERF] ?perfx: material split, program sort and texture pre-upload (off while the white-boards report on iPhone is checked)
 const PERFX=/[?&]perfx/.test(location.search);
 // [PERF] a transparent double-sided material is drawn twice per frame by three.js (back faces, then front) and rebuilds
@@ -1181,7 +1187,13 @@ if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).c
  renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
 {const T0=performance.now();$('loadTx').textContent='Готовим картинку…';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
-  try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,4000))]);}catch(e){}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
+  try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,15000))]);}catch(e){}
+  // one real draw of everything (hidden things shown, nothing culled) into the frame's own target: a compiled program is only
+  // linked and its uniforms read on first draw, and on iPhone (Metal) the pipeline for each draw state is built then too.
+  // Done here, behind the loading screen, instead of on the first zoom to the hero.
+  const cul=[];scene.traverse(o=>{if(o.frustumCulled){cul.push(o);o.frustumCulled=false;}});const sm=renderer.shadowMap.autoUpdate;
+  const lm=camera.layers.mask;camera.layers.enableAll();try{renderer.render(scene,camera);}catch(e){console.warn('prewarm draw',e);}camera.layers.mask=lm;for(const o of cul)o.frustumCulled=true;renderer.shadowMap.autoUpdate=sm;
+  renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
  PERF.startupMs=Math.round(performance.now()-T0);}
 // every shadow map is drawn during these hidden frames too, so the shadow/depth shader variants compile now and not when
 // the hero first walks up to a lamp
