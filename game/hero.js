@@ -290,7 +290,7 @@ export function createHero(ctx){
   for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const d=G.standAt(a.x,a.z)-g;if(Math.abs(d)<.01)continue;
    const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));const pl=pole.length();pole.multiplyScalar(1/Math.max(pl,1e-6)).lerp(fwd(root.rotation.y),1-smooth(.01,.04,pl));
    ik2(U,L,F,a.clone().add(V(0,clamp(d,-.25,.45),0)),pole,1,true);}}
- window.__SOLE=SOLE;function soleLock(g,dt){const moved=root.position.distanceTo(SOLE.rp)/Math.max(dt,1e-3),turned=Math.abs(wrapA(root.rotation.y-SOLE.ry))/Math.max(dt,1e-3);SOLE.rp.copy(root.position);SOLE.ry=root.rotation.y;
+ window.__SOLE=SOLE;function soleLock(g,dt){/* KITCHEN crouch: the root rising out of a squat is not walking (the soles were let go and the feet jumped 5-12 cm sideways) */const moved=(H.kSquat||(H.kSqG||0)>0?Math.hypot(root.position.x-SOLE.rp.x,root.position.z-SOLE.rp.z):root.position.distanceTo(SOLE.rp))/Math.max(dt,1e-3),turned=Math.abs(wrapA(root.rotation.y-SOLE.ry))/Math.max(dt,1e-3);SOLE.rp.copy(root.position);SOLE.ry=root.rotation.y;
   const still=moved<.05&&turned<.35&&!H.path.length&&!H.slide&&!H.swing;SOLE.still=still?Math.min(1,SOLE.still+dt*4):0;
   for(const s of ['Left','Right']){const S=SOLE[s],U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());
    const up=a.y-(g+(POSE.ankle??.1))>.04;// the clip lifts this foot
@@ -558,7 +558,7 @@ export function createHero(ctx){
    // KITCHEN: a look at the fire first, by hand (the hy_oven clip stooped bow-legged with the hand hovering while the door dropped by
    // itself): squat at the oven, the right palm on the handle lowers the door, a look at the embers, the hand lifts it shut, stand up
    const OVP=()=>{const P=window.__props||P3;return P&&P.oven&&P.oven.handle?P.oven:null;};const ovp=PT('oven');
-   const sqTo=(v,dt,rate=2.2)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);H.kSquat=H.squat>.001;H.kSqA=act;};
+   const sqTo=(v,dt,rate=1.0)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);H.kSquat=H.squat>.001;H.kSqA=act;};
    const sqFor=t=>{const sh=bones.RightArm.getWorldPosition(V());const hz=Math.hypot(sh.x-t.x,sh.z-t.z);const R0=armLen*.9+PALM-.03;const dy=sh.y+(H.squat||0)-t.y;return clamp(dy-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,.45);};
    const afterOven=()=>{/* GRAB: no spoon out of thin air and no clip stirring the air beside the stove: he steps up to the
      pot, takes the ladle out of it with his hand, then stirs in it (stirPost) */const PO=PP();const pp=PO&&PO.tools&&PO.tools.pot;
@@ -574,10 +574,10 @@ export function createHero(ctx){
      else if(a.step==='open'){o.setOpen(Math.min(1,o.open+dt/.9));H.look=m;H.lookW=.9;a.oik=['Right',o.handle(V()),1];if(G)G.hold('Right',o.door,()=>o.handle(V()));if(o.open>=1){if(G)G.free(o.door);a.step='peek';a.t=0;}}
      else if(a.step==='peek'){/* the hand lets go and rests on his knee while he looks at the fire */H.look=m;H.lookW=1;a.oik=['Right',h,1-smooth(0,.35,a.t)];if(a.t>1.7){a.step='shut';a.t=0;}}
      else if(a.step==='shut'){H.look=h;H.lookW=1;if(!a.sh){a.oik=['Right',h,smooth(0,.4,a.t)];if(a.t>.45){a.sh=1;a.t=0;}}else{o.setOpen(Math.max(0,o.open-dt/.7));a.oik=['Right',o.handle(V()),1];if(G)G.hold('Right',o.door,()=>o.handle(V()));if(o.open<=0){if(G)G.free(o.door);a.step='up';a.t=0;AU('ovenDoor',h);}}}
-     else if(a.step==='up'){a.oik=['Right',h,1-smooth(0,.35,a.t)];sqTo(0,dt,.9);if(a.t>.4&&(H.squat||0)<.01){H.squat=0;H.kSquat=0;kSlow(false);a.oik=null;afterOven();}}
+     else if(a.step==='up'){a.oik=['Right',h,1-smooth(0,.7,a.t)];sqTo(0,dt,.9);if(a.t>.75&&(H.squat||0)<.01){H.squat=0;H.kSquat=0;kSlow(false);a.oik=null;afterOven();}}
      return;}if(a.step==='topot'||a.step==='getladle'||a.step==='stir2'||a.step==='putladle'){
      const PO=PP();const pp=PO&&PO.tools&&PO.tools.pot;if(pp){H.look=pp.getWorldPosition(V()).add(V(0,.08,0));H.lookW=.9;}
-     if(a.step==='getladle'){const g=gripHome('ladle');a.reach=['Right',g,smooth(0,.5,a.t)];const G=window.__grab;const dd=G&&G.gripPoint?G.gripPoint('Right').distanceTo(g):0;if(!H.hold.Right||H.hold.Right.tool!=='ladle'){if(dd<.03||a.t>1.3){grabTool('ladle','Right');a.step='stir2';a.t=0;a.reach=null;}}}
+     if(a.step==='getladle'){const g=gripHome('ladle');a.reach=['Right',g,smooth(0,.5,a.t)];const G=window.__grab;const dd=G&&G.gripPoint?G.gripPoint('Right').distanceTo(g):0;if(!H.hold.Right||H.hold.Right.tool!=='ladle'){if(dd<.03||a.t>1.3){/* the palm where it took the ladle: the hand eases from there into the stir (it fell to the clip pose for a frame: 27 cm, head 15 cm) */a.lpa=G&&G.palmTarget?G.palmTarget('Right',G.gripPoint('Right')).clone():null;grabTool('ladle','Right');a.step='stir2';a.t=0;a.reach=null;}}}
      return;}
     H.face=N.stove.face;const ov=oven();
     if(a.step==='oven'){const k=a.t/durOf('hy_oven');const open=smooth(.24,.36,k)-smooth(.6,.72,k);ov&&ov.setOpen&&ov.setOpen(open);
@@ -589,7 +589,7 @@ export function createHero(ctx){
    const knee=sd=>bones[sd+'Leg'].getWorldPosition(V()).addScaledVector(fwd(root.rotation.y),.02).add(V(0,.07,0));
    a.post=dt=>{ikList(a.ik);const crouch=/^(ovsq|open|peek|shut|up)$/.test(a.step)?clamp((H.squat||0)/.18,0,1):0;
     if(crouch>.01){gripNoLean('Left',knee('Left'),crouch);if(a.oik&&a.oik[2]<1)gripNoLean('Right',knee('Right'),crouch*(1-(a.oik?a.oik[2]:0)));}
-    if(a.oik&&a.oik[2]>.01)reachGrip(a.oik[0],a.oik[1],Math.min(1,a.oik[2]));if(a.step==='stir2')stirPost(a,dt);if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
+    if(a.oik&&a.oik[2]>.01)reachGrip(a.oik[0],a.oik[1],Math.min(1,a.oik[2]));if(a.step==='stir2'){if(a.lpa&&a.t<.7)reachTo('Right',a.lpa,1-smooth(.1,.7,a.t));stirPost(a,dt);}if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
    a.leave=cb=>{a.ik=null;a.oik=null;H.squat=0;H.kSquat=0;kSlow(false);const ov=oven();try{window.__grab&&ov&&ov.door&&window.__grab.free(ov.door);}catch(e){}ov&&ov.setOpen&&ov.setOpen(0);pot.visible=false;
     if(H.hold.Right&&H.hold.Right.tool==='ladle'){/* the ladle goes back into the pot from his hand */try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}a.step='putladle';a.t=0;
      a.update=dt=>{a.t+=dt;const g=gripHome('ladle');a.reach=['Right',g,smooth(0,.45,a.t)*(1-smooth(.75,1.1,a.t))];const G=window.__grab;const dd=G&&G.gripPoint?G.gripPoint('Right').distanceTo(g):0;
@@ -1070,7 +1070,7 @@ export function createHero(ctx){
    const a={step:'go',t:0};const wp=PT('woodpile'),ovp=PT('oven');const P=window.__props||P3;const OV=()=>P&&P.oven;if(!wp||!ovp||!OV()||!OV().handle){a.update=()=>endTask(false);return a;}
    const G=()=>window.__grab;const rightOf=()=>{const f=fwd(root.rotation.y);return V(-f.z,0,f.x);};
    const arm=()=>P.tools&&P.tools.logArmful;let logs=[],home=[];
-   const sqTo=(v,dt,rate=2.2)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);H.kSquat=H.squat>.001;H.kSqA=act;};
+   const sqTo=(v,dt,rate=1.0)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);H.kSquat=H.squat>.001;H.kSqA=act;};
    // how far the hips must go down for the palm to reach t from the shoulder (feet stay put), +3 cm to spare
    const sqFor=(t,side='Right',mx=.45)=>{const sh=bones[side+'Arm'].getWorldPosition(V());const hz=Math.hypot(sh.x-t.x,sh.z-t.z);const R0=armLen*.9+PALM-.03;const dy=sh.y+(H.squat||0)-t.y;return clamp(dy-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,mx);};
    const mouth=()=>{const o=OV();const h=o.handle(V());const c=ovp.clone();return c.add(V(h.x-c.x,0,h.z-c.z).multiplyScalar(-.15)).setY(ovp.y+.02);};// inside the opening, above the embers
@@ -1078,7 +1078,7 @@ export function createHero(ctx){
    const toOven=()=>{const nn=nearNode(ovp)||'stove';goTo(nn,()=>approachTo(a,ovp,.62,()=>ovenSpot(a,()=>{a.step='ovsq';a.t=0;H.carry=null;play(IDLE(),{fade:.4});})));};
    const nn=nearNode(wp)||'kmid';goTo(nn,()=>approachTo(a,wp,.5,()=>{a.step='pksq';a.t=0;AU('grunt');}));
    a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
-    const o=OV();a.ik=[];kSlow(/^(pksq|ovsq|open|let|log|shut)$/.test(a.step)&&(H.squat||0)>.05);
+    const o=OV();a.ik=[];kSlow(/^(pksq|ovsq|open|let|log|shut|up)$/.test(a.step)&&(H.squat||0)>.05);
     if(a.step==='pksq'){// squat down to the pile, both hands onto the top logs
      H.look=wp;H.lookW=1;if(a.t<=1.0){if(a.sqd===undefined)a.sqd=sqFor(wp);sqTo(a.sqd,dt);}const w=smooth(.25,.9,a.t);a.ik=[['Left',wp.clone().add(V(0,.04,0)).addScaledVector(rightOf(),-.12),w],['Right',wp.clone().add(V(0,.04,0)).addScaledVector(rightOf(),.12),w]];
      if(a.t>1.0&&!a.got){a.got=1;try{P.grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});const ar=arm();if(ar){logs=ar.children.slice();home=logs.map(l=>({p:l.position.clone(),q:l.quaternion.clone(),v:l.visible}));}window.__audio&&window.__audio.carry&&window.__audio.carry(true);}catch(e){}
@@ -1102,7 +1102,7 @@ export function createHero(ctx){
     if(a.step==='shut'){const h=o.handle(V());H.look=h;H.lookW=1;if(!a.sh){a.ik=[['Right',a.pf?a.pf.clone().lerp(h,smooth(0,.4,a.t)):h,a.pf?1:smooth(0,.4,a.t)]];if(a.t>.45){a.sh=1;a.t=0;}return;}
      o.setOpen(Math.max(0,o.open-dt/.7));a.ik=[['Right',o.handle(V()),1]];if(G())G().hold('Right',o.door,()=>o.handle(V()));
      if(o.open<=0){if(G())G().free(o.door);a.step='up';a.t=0;AU('ovenDoor',h);}return;}
-    if(a.step==='up'){const h=o.handle(V());a.ik=[['Right',h,1-smooth(0,.35,a.t)]];sqTo(0,dt,.9);if(a.t>.4&&(H.squat||0)<.01){cleanup();play(IDLE(),{fade:.5});endTask({ok:true});a.step='done';}return;}};
+    if(a.step==='up'){const h=o.handle(V());a.ik=[['Right',h,1-smooth(0,.7,a.t)]];sqTo(0,dt,.9);if(a.t>.75&&(H.squat||0)<.01){cleanup();play(IDLE(),{fade:.5});endTask({ok:true});a.step='done';}return;}};
    // while squatting at the oven the armful rests on his left thigh (the left forearm across it), never dangling to the floor
    const lap=()=>{const hp=bones.Hips.getWorldPosition(V());const f=fwd(root.rotation.y);return hp.addScaledVector(f,.34).addScaledVector(rightOf(),-.14).add(V(0,-.02,0));};
    a.post=()=>{/* the gaze glides between the handle, the fire and the logs (a new look target turned head and spine at once: the head jumped 16 cm and the arms with it) */if(H.look){a.lk=a.lk?a.lk.lerp(H.look,1-Math.exp(-6/60)):H.look.clone();H.look=a.lk.clone();}
@@ -2100,6 +2100,7 @@ export function createHero(ctx){
   edgeTick(dt);bedTick(dt);overlayTick(dt);bseqTick(dt);gtTick(dt);bedClipTick(dt);
   // height: stand on the real floor, or put the hips on the seat / mattress
   /* KITCHEN: a crouch whose task is gone (cut off mid-squat) eases back up instead of staying on for the next task */
+  /* the root settles for a moment after a crouch: the soles stay locked meanwhile (soleLock took the last few mm of rise for walking and let the feet jump 11-14 cm) */if(H.kSquat)H.kSqG=.6;else if((H.kSqG||0)>0)H.kSqG-=dt;
   if(H.kSquat){if(!act||act!==H.kSqA){H.squat=Math.max(0,(H.squat||0)-1.2*dt);if(H.squat<=.001){H.squat=0;H.kSquat=0;kSlow(false);}}}
   if(H.fit){const f=H.fit;const hy=bones.Hips.position.y;let w=1;
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
