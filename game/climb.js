@@ -80,9 +80,10 @@ export function createClimb() {
     if (!M.shH && B.LeftArm && B.Hips && M.leg) M.shH = Math.max(.2, wp(B.LeftArm).distanceTo(wp(B.Hips))) + M.leg; // shoulder over the sole with the leg straight
     const zDir = Math.sign(o.cz - o.lz) || 1;
     const A = { o, lad, zDir, R: lad.rungs, up: o.up, K: 4, steps: 0, step: null, t: 0, mode: 'climb',
-      Dhip: lad.rope ? .27 : .26, T: o.up ? .74 : .66, hx: lad.rope ? .15 : .14, fx: .1, limb: {}, grab: 0, floorY: o.yBot, fy: o.up ? 0 : 1 };
+      Dhip: lad.rope ? .27 : .26, T: o.up ? .6 : .58, hx: lad.rope ? .15 : .14, fx: .1, limb: {}, grab: 0, floorY: o.yBot, fy: o.up ? 0 : 1 };
     A.edge = edgeOf(o, lad); A.P = V(lad.x, o.yTop, A.edge - zDir * .42); A.P.x += sideShift(lad.x, o.yTop, A.P.z);
     const nR = A.R.length;
+    if (B.LeftArm && B.RightArm) A.sh0 = Math.max(.6, Math.min(1.6, (wp(B.LeftArm).y + wp(B.RightArm).y) / 2 - p.y)); /* the real shoulder height over the soles, standing (the estimate from the leg put the v6 shoulder 25 cm too low: hands went to rungs at the waist) */
     for (const k of LIMBS) A.limb[k] = { r: 0, w: 1 };
     if (o.fromTop) {
       // down from the floor above: start standing at the edge, back to the hole (the climb over the edge, played backwards)
@@ -95,6 +96,8 @@ export function createClimb() {
       let n;
       if (o.up) n = -1; else { n = 0; let bd = 1e9; for (let i = 0; i < nR; i++) { const d = Math.abs(top(A, i) - p.y); if (d < bd) { bd = d; n = i; } } n = Math.min(n, nR - 2); }
       let hb = Math.min(nR - 2, n + A.K); { const ry = reachY(A, o.up ? o.yBot : top(A, n)); while (hb > Math.max(0, n + 1) && top(A, hb + 1) + .015 > ry) hb--; }
+      /* and not below the arm's reach either: the first grab went to rungs 70 cm under the shoulder of the short-armed v6 (hands 35-60 cm off their rungs at every mount) */
+      if (B.LeftArm && M.arm) { const shY = (o.up ? o.yBot : top(A, n)) + (wp(B.LeftArm).y - p.y), lo = shY - M.arm * .9, ry = reachY(A, o.up ? o.yBot : top(A, n)); while (hb < nR - 2 && top(A, hb) + .015 < lo && top(A, hb + 2) + .015 <= ry + .04) hb++; }
       A.limb.LF.r = n; A.limb.RF.r = o.up ? n : n + 1; A.limb.RH.r = hb; A.limb.LH.r = hb + 1;
       if (o.up) { A.limb.LF.floor = wp(B.LeftFoot); A.limb.RF.floor = wp(B.RightFoot); }
       for (const k of LIMBS) A.limb[k].from = wp(B[{ LF: 'LeftFoot', RF: 'RightFoot', LH: 'LeftHand', RH: 'RightHand' }[k]]);
@@ -168,7 +171,7 @@ export function createClimb() {
     const FF = { [h]: ff(h).setZ(A.edge - zD * .24), [l]: ff(l).setZ(A.P.z - zD * .02) };
     if (feetTop) { FF.LF = feetTop.LF.clone(); FF.RF = feetTop.RF.clone(); }
     const P = rootTop ? rootTop.clone() : A.P.clone();
-    A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: 1.75, h, l, FF, P, ys: top(A, L[l].r), hold: 0, idle: false };
+    A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: dir > 0 ? 1.35 : 1.55, h, l, FF, P, ys: top(A, L[l].r), hold: 0, idle: false };
   }
   function overTick(A, dt, p) {
     const c = A.C; if (c.hold > 0) c.hold -= dt; else c.s = Math.min(1, Math.max(0, c.s + c.dir * dt / c.T));
@@ -213,13 +216,13 @@ export function createClimb() {
     if (A.mode === 'over') { const r = overTick(A, dt, p); if (r === 'off') { S.act = null; S.wTarget = 0; S.fade = .35; } return r; }
     C.play('437', { speed: 0, fade: .3 });
     // take hold first: hands go to their rungs, the body settles, then the steps start
-    if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .45); const e = ease(A.grab); A.y = lerp(A.y0, A.up ? A.o.yBot : top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), e); placeRoot(A, p);
+    if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .38); const e = ease(A.grab); A.y = lerp(A.y0, A.up ? A.o.yBot : top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), e); placeRoot(A, p);
       if (A.p0) { p.x = lerp(A.p0.x, p.x, e); p.z = lerp(A.p0.z, p.z, e); } return null; } // from where the walk left him onto the ladder's line, eased (motion: root x snapped 4 cm and y 4 cm in one frame at every mount)
     if (A.mode === 'land') { // both feet on the floor: let go of the rungs, stand up
-      A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1 - sstep(0, .45, A.lt);
+      A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1 - sstep(0, .38, A.lt);
       // a step back off the ladder before walking away (gate: arms, hips and shins swept through the rail when he turned off at the foot)
-      A.back = BACK * sstep(.15, .75, A.lt);
-      if (A.lt > .8) { S.act = null; S.wTarget = 0; S.fade = .3; return 'bottom'; } /* the root stays where the last hip correction put it (gate: root 14 cm in one frame at the end) */
+      A.back = BACK * sstep(.1, .6, A.lt);
+      if (A.lt > .64) { S.act = null; S.wTarget = 0; S.fade = .3; return 'bottom'; } /* the root stays where the last hip correction put it (gate: root 14 cm in one frame at the end) */
       placeRoot(A, p); return null; }
     if (!A.step) { A.step = planStep(A); if (!A.step) {
       if (A.up) { startOver(A, 1); return overTick(A, dt, p); }
@@ -239,11 +242,11 @@ export function createClimb() {
   function placeRoot(A, p) { p.y = A.y; p.x = A.lad.x; p.z = A.o.cz + A.zDir * (A.back || 0); } // hips are fixed exactly in post()
 
   // highest wrist the arm reaches with the body standing on a foot at rootY (shoulder over the hips, ~a hip distance from the rungs)
-  function reachY(A, rootY) { const arm = (M.arm || .5) * .93, dz = A.Dhip - .065; return rootY + (A.shOff != null ? A.shOff : (M.shH || 1.1) * .9) + Math.sqrt(Math.max(0, arm * arm - dz * dz)); }
+  function reachY(A, rootY) { const arm = (M.arm || .5) * .93, dz = A.Dhip - .065; return rootY + (A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9) + Math.sqrt(Math.max(0, arm * arm - dz * dz)); }
   // can the hand reach the palm spot on the floor above (past the top rung and the edge beam) from a body standing at rootY?
   // (it went there with the body still low: the arm ran out 12 cm short and the fingers dragged through the edge beam)
   function reachFloor(A, rootY) { const arm = (M.arm || .5) * .95, g = restTarget(A, 'LH', A.R.length), rz = rungP(A, A.R.length - 1).z;
-    const dz = (A.Dhip - .065) + Math.abs(rz - g.z), sy = rootY + (A.shOff != null ? A.shOff : (M.shH || 1.1) * .9); return Math.hypot(dz, g.y - sy) <= arm; }
+    const dz = (A.Dhip - .065) + Math.abs(rz - g.z), sy = rootY + (A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9); return Math.hypot(dz, g.y - sy) <= arm; }
   function planStep(A) {
     const L = A.limb, nR = A.R.length, up = A.up;
     const fl = L.LF.r <= L.RF.r ? 'LF' : 'RF', fh = fl === 'LF' ? 'RF' : 'LF';
@@ -258,7 +261,8 @@ export function createClimb() {
     const hLo = L.LH.r <= L.RH.r ? 'LH' : 'RH', hHi = hLo === 'LH' ? 'RH' : 'LH';
     let hand = null, hto = null;
     // hands: one rung higher than the other hand; past the top rung the palm goes flat on the floor above
-    if (up) { if (L[hLo].r < minAfter + A.K && L[hLo].r < nR) { hand = hLo; hto = Math.min(nR, L[hHi].r + 1); if (hto > nR - 1) hto = reachFloor(A, top(A, minAfter)) ? nR : (L[hHi].r === nR - 1 ? nR - 2 : nR - 1); if (hto < nR) { const ry = reachY(A, top(A, minAfter)); while (hto > L[hLo].r && top(A, hto) + .015 > ry) hto--; } if (hto <= L[hLo].r) hand = null; } }
+    const lowOut = up && M.arm && L[hLo].r < nR && top(A, L[hLo].r) + .015 < top(A, minAfter) + (A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9) - M.arm * .9; /* the lower hand would be left below the arm's reach after this step (v6: hands 35 cm off their rungs while the body rose) */
+    if (up) { if ((L[hLo].r < minAfter + A.K || lowOut) && L[hLo].r < nR) { hand = hLo; hto = Math.min(nR, L[hHi].r + 1); if (hto > nR - 1) hto = reachFloor(A, top(A, minAfter)) ? nR : (L[hHi].r === nR - 1 ? nR - 2 : nR - 1); if (hto < nR) { const ry = reachY(A, top(A, minAfter)); while (hto > L[hLo].r && top(A, hto) + .015 > ry) hto--; } if (hto <= L[hLo].r && lowOut && L[hHi].r > L[hLo].r && L[hHi].r < nR && top(A, L[hHi].r) + .015 <= reachY(A, top(A, minAfter)) + .04) hto = L[hHi].r; /* nowhere higher to go (top rung taken, the boards out of reach): both hands on the top rung rather than one left behind (gate rope ladder: a hand 40 cm off its rung) */ if (hto <= L[hLo].r) hand = null; } }
     else { const ry = reachY(A, top(A, minAfter)) - .12; const hy = r => r >= nR ? A.o.yTop : top(A, r) + .015; // palm flat on the floor above: its height is the floor's
       if (L[hHi].r > minAfter + A.K || L[hHi].r >= nR || hy(L[hHi].r) > ry) { /* a palm still on the boards above comes onto the top rung with the first step down (gate: hand gripping air) *//* going down the hands stay a rung lower: the body hangs lower under them */ hand = hHi; hto = Math.min(nR - 1, L[hLo].r - 1); if (L[hLo].r >= nR) hto = nR - 1; while (hto > minAfter + 1 && top(A, hto) + .015 > ry) hto--; } }
     if (hand && hto === L[hand].r) hand = null;
@@ -266,7 +270,7 @@ export function createClimb() {
       if (hand) { move.push({ k: hand, to: hto, a: 0, b: .56, arc: .09 }); move.push({ k: mf, to, a: .26, b: .98, arc: .13 }); }
       else move.push({ k: mf, to, a: 0, b: .8, arc: .13 }); // long, overlapping swings: no limb accelerates harder than the gate's 2.5 cm/frame²
     } else {
-      move.push({ k: mf, to, a: 0, b: .66, arc: .13 }); if (hand) move.push({ k: hand, to: hto, a: .36, b: .98, arc: .09 });
+      move.push({ k: mf, to, a: 0, b: .66, arc: .13 }); if (hand) move.push({ k: hand, to: hto, a: .28, b: .98, arc: .09 });
       // the other hand out of reach too (both hands on one rung, the body went on down): it comes down in the same step, first
       { const o = hand === 'LH' ? 'RH' : hand === 'RH' ? 'LH' : (L.LH.r >= L.RH.r ? 'LH' : 'RH'); const ry2 = reachY(A, top(A, minAfter)) - .12;
         if (L[o].r >= nR || top(A, L[o].r) + .015 > ry2) { let t2 = L[o].r - 1; while (t2 > minAfter + 1 && top(A, t2) + .015 > ry2) t2--; if (hand && t2 === hto) t2 = Math.max(minAfter + 1, t2 - 1); if (t2 < L[o].r && t2 >= 0) move.push({ k: o, to: t2, a: .06, b: .62, arc: .09 }); } }
@@ -331,7 +335,7 @@ export function createClimb() {
       let ko = 1, base = V(); if (A.mode === 'over') { ko = 1 - sstep(0, .6, A.C.s); base = root.position.clone().sub(V(A.lad.x, A.C.ys, A.o.cz)); }
       const hp = wp(B.Hips).sub(base);
       const want = V(A.lad.x + sway, (A.mode === 'over' ? A.C.ys : A.y) + hipUp, planeZ + A.zDir * (A.Dhip + (A.back || 0)));
-      const d = want.sub(hp).multiplyScalar(ease(A.grab) * S.W * ko); d.y *= A.fy;
+      const d = want.sub(hp).multiplyScalar(ease(A.grab) * S.W * ko); d.y *= A.fy; { const hk = A.up && A.mode === 'climb' && fl < 0 ? 0 : 1; A.hipK = A.hipK == null ? hk : A.hipK + Math.sign(hk - A.hipK) * Math.min(Math.abs(hk - A.hipK), dt / .5); if (d.y < 0) d.y *= sstep(0, 1, A.hipK); } /* first foot on the bottom rung, the other still on the ground: the hips do not sink under the standing height (v6: shoulders dropped 20 cm and the hands lost the rungs above) */
       root.position.add(d); root.updateMatrixWorld(true);
       // upper body close to the ladder (the climb clip leans back ~16 cm: hands could not reach the rungs): pitch the spine
       // so the neck is ~24 cm from the rungs, split between the lower and the middle spine
@@ -393,7 +397,7 @@ export function createClimb() {
       if (t && CD && CD.depthAt && nearTop) { t = t.clone(); for (let n = 0; n < 12; n++) { let dd = 0; try { const dv = d => typeof d === 'number' ? d : (d && d.depth) || 0; /* wrist, palm, and the fingers (they hang ~5 cm below the wrist line, 10-15 cm ahead) */ for (const [f, dy] of [[0, 0], [.06, 0], [.11, -.045], [.15, -.055]]) dd = Math.max(dd, dv(CD.depthAt(t.x, t.y + dy, t.z - zDir * f))); } catch (e) { break; } if (dd <= .002) break; t.y += Math.min(.03, dd + .005); } }
       { const need = t && t0 ? t.y - t0.y : 0; const cur = S.lf[k] || 0; S.lf[k] = cur + (need - cur) * Math.min(1, dt * (need > cur ? 14 : 5)); if (t0) { t = t0.clone(); t.y += S.lf[k]; } } // eased lift
       // out of the arm's reach the hand slows down softly before it gets there (it went at 11 cm/frame and stopped dead at full stretch: gate, hand jump 7-11 cm/frame² reaching up for the floor above)
-      if (t && M.arm && B[s + 'Arm']) { const sp = wp(B[s + 'Arm']), v = t.clone().sub(sp), d = v.length(), Lm = M.arm * .99, x0 = .86 * Lm; if (d > x0) { const w = Lm - x0; v.setLength(x0 + w * Math.tanh((d - x0) / w)); t = sp.clone().add(v); } }
+      if (t && M.arm && B[s + 'Arm']) { const sp = wp(B[s + 'Arm']), v = t.clone().sub(sp), d = v.length(), Lm = M.arm * .96, x0 = .86 * Lm; const wu = sstep(sp.y - .02, sp.y + .14, t.y); if (d > x0 && wu > 0) /* only reaching up: a hand hanging on a rung below the shoulder with the arm near straight was pulled off it (11-40 cm off the rung) */ /* weighted in by height (an on/off switch at shoulder + 10 cm jerked the hand 10 cm/frame²) */ { const w = Lm - x0; v.setLength(x0 + w * Math.tanh((d - x0) / w)); t = t.clone().lerp(sp.clone().add(v), wu); } }
       const sx = (s === 'Left' ? -1 : 1) * zDir; const w = W * (hw ? hw[k] : 1); if (w < .002) continue;
       C.ik2(B[s + 'Arm'], B[s + 'ForeArm'], B[s + 'Hand'], t, V(sx * .7, -1, zDir * .45), w, false); if (window.__qa) { S.tl = S.tl || {}; S.tl[k] = [t.x, t.y, t.z, w, wp(B[s + 'Hand']).distanceTo(t)]; }
       const Hd = B[s + 'Hand']; if (Hd) { const a = wp(Hd); const dir = V(0, 1, 0).applyQuaternion(Hd.getWorldQuaternion(new THREE.Quaternion())); const tip = a.clone().addScaledVector(dir, .09);
