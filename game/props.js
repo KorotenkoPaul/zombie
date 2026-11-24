@@ -1076,7 +1076,7 @@ export function buildProps(ctx) {
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
 
   // ---------- deck and landings ----------
-  place('telescope', telescope(), 3.5, DK, 1.3, { ry: -.6 + Math.PI }).position.y += .018; /* feet on the boards, not in them */
+  place('telescope', telescope(), 3.28, DK, 1.3, { ry: -.6 + Math.PI }).position.y += .018; /* feet on the boards, not in them; 22 cm in from the rail (LEISURE: he stood between the rail posts behind the eyepiece and his foot and hand went into them) */
   place('dbasket', basket(), 1.4, DK, .95);
   place('lbarrel', barrel(.75), -2.6, LL, 1.4);
   place('lbucket', bucket(.34), -1.9, LL, 1.8);
@@ -1157,9 +1157,9 @@ export function buildProps(ctx) {
     const db = mkB(false, dm); tool('drainBucket', db, cn, .23, .08, .04);
     // tap stream and drips
     const sm = new THREE.MeshStandardMaterial({ color: 0xBFD8E4, roughness: .05, envMap: M.env, transparent: true, opacity: .55, depthWrite: false });
-    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; stream.userData.live = true; scene.add(stream);
-    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; pourS.userData.live = true; scene.add(pourS);
-    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; drip.userData.live = true; cn.add(drip);
+    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; stream.userData.live = true; stream.userData.fluid = true; scene.add(stream);
+    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; pourS.userData.live = true; pourS.userData.fluid = true; scene.add(pourS);
+    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; drip.userData.live = true; drip.userData.fluid = true; cn.add(drip);
     const ws = { clean: .7, dirty: .15, tap: false, drainT: 0, dripT: 0, pour: null };
     const setLvl = (b, k) => { const W2 = b.userData.water; W2.level = clamp01(k); const r = r0 + (r1 - r0) * W2.level - .012; W2.disc.visible = W2.level > .02; W2.disc.scale.set(r, r, 1); W2.disc.position.y = .015 + (H0 - .03) * W2.level; };
     // slosh: the water surface stays level in world space and rocks against the bucket's acceleration while carried
@@ -1209,7 +1209,7 @@ export function buildProps(ctx) {
   { const R = rad.userData.radio; const rs = { on: 0, tune: .3 }; R.knob.rotation.y = rs.tune * 5;
     out.radio = { obj: rad, get on() { return rs.on; }, setOn(k) { rs.on = clamp01(k); R.dm.emissiveIntensity = rs.on * 1.6; }, setTune(k) { rs.tune = clamp01(k); R.needle.position.x = -.05 + .1 * rs.tune; R.knob.rotation.y = rs.tune * 5; }, knob(t = V()) { return rad.localToWorld(t.copy(R.knobLocal)); }, dialMat: R.dm };
     out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
-  tool('broom', broom(), scene, -1.075, floorAt(-1.075, BD, 1.06), 1.06, [0, Math.PI / 2, .1]);
+  tool('broom', broom(), scene, -1.02, floorAt(-1.02, BD, 1.0), 1.0, [0, Math.PI / 2, .1]); /* GRAB: 6 cm further off the bunk's corner post (his fist brushed it taking the broom) */
   const plantO = place('plant', plant(), -.88, BD, 1.36); /* in front of the crate nightstand, off the kitchen hatch and the oak limb */ PT.plant = [plantO, V(0, .3, 0)];
   tool('wateringCan', wateringCan(), scene, -.65, floorAt(-.65, BD, 1.33), 1.33, [0, -1.2, 0]); /* GRAB: off his path from the reading chair, 55 cm from the walk lines (Collision measured; at 45 cm his shins still clipped it) */
   // diary + pencil sit beside the reading book, a forearm in from the edge (they used to lie 42 cm deep, past an arm's reach from the chair side)

@@ -107,7 +107,7 @@ export function createPoseGuard({ hero }) {
     return m; }
   // legs: when a clamp moved the thigh or the knee, the leg is re-solved (two-bone, knee as a hinge) so the ankle stays exactly
   // where it was planted and the foot keeps its orientation in the world
-  const LEGS = [['LeftUpLeg', 'LeftLeg', 'LeftFoot'], ['RightUpLeg', 'RightLeg', 'RightFoot']].map(([u, l, f]) => ({ u: byName[u], l: byName[l], f: byName[f], A: new THREE.Vector3(), F: new THREE.Quaternion(), ok: !!(byName[u] && byName[l] && byName[f]) }));
+  const LEGS = [['LeftUpLeg', 'LeftLeg', 'LeftFoot'], ['RightUpLeg', 'RightLeg', 'RightFoot']].map(([u, l, f]) => ({ u: byName[u], l: byName[l], f: byName[f], A: new THREE.Vector3(), F: new THREE.Quaternion(), S: new THREE.Quaternion(), ok: !!(byName[u] && byName[l] && byName[f]) }));
   const pq = new THREE.Quaternion(), vA = new THREE.Vector3();
   function worldQ(b, o) { return b.getWorldQuaternion(o); }
   function setWorldQ(b, wq) { b.parent.getWorldQuaternion(pq); b.quaternion.copy(pq.invert().multiply(wq)); }
@@ -122,7 +122,14 @@ export function createPoseGuard({ hero }) {
     recomp(Math.min(L.l.x[1], Math.max(L.l.x[0], dd.x + dFlex)), dd.t, dd.z, q2); K.quaternion.multiplyQuaternions(L.l.r, q2);
     U.updateMatrixWorld(true); const a = F.getWorldPosition(vA).sub(H).normalize(), b = L.A.clone().sub(H).normalize();
     const R = q4.setFromUnitVectors(a, b); worldQ(U, q3); setWorldQ(U, q3.premultiply(R));
-    U.updateMatrixWorld(true); setWorldQ(F, L.F); return true; }
+    // knee twist the clamp took out goes to the thigh: the whole leg turns about the hip-ankle line (the ankle stays) until the
+    // shin is back where the clip had it round that line, so the knee points where the toes point and the foot keeps its angle
+    // to the shin (keeping only the foot's world angle bent the ankle: gate foot-bend while walking 83 -> 106)
+    U.updateMatrixWorld(true); const ax = L.A.clone().sub(H); if (ax.lengthSq() > 1e-6) { ax.normalize();
+      worldQ(K, q1); q2.copy(L.S).multiply(q1.invert()); const pr = ax.dot(v3.set(q2.x, q2.y, q2.z));
+      q4.set(ax.x * pr, ax.y * pr, ax.z * pr, q2.w); const n = q4.length(); if (n > 1e-6) { q4.x /= n; q4.y /= n; q4.z /= n; q4.w /= n;
+        worldQ(U, q3); setWorldQ(U, q3.premultiply(q4)); U.updateMatrixWorld(true); } }
+    setWorldQ(F, L.F); return true; }
   // speed limit
   const rootPrev = new THREE.Vector3(); let gap = 0;
   function speed(dt) {
@@ -135,9 +142,31 @@ export function createPoseGuard({ hero }) {
     if (window.__poseOff || !(dt > 0)) return; dt = Math.min(dt, .1); stat.frames++; curDt = window.__heroFast ? 0 : dt;
     const lad = !!(hero.H && hero.H.lad); root.updateMatrixWorld(true);
     if (run.trace) { const t = run.trace; t.pre = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand', 'LeftLeg'].map(n => B[n].getWorldPosition(new THREE.Vector3()).toArray()); }
-    for (const L of LEGS) if (L.ok) { L.f.b.getWorldPosition(L.A); worldQ(L.f.b, L.F); }
+    for (const L of LEGS) if (L.ok) { L.f.b.getWorldPosition(L.A); worldQ(L.f.b, L.F); worldQ(L.l.b, L.S); }
     const legMoved = [false, false];
     if (run.trace) run.trace.cl = []; for (const j of J) { if (lad && j.arm) continue; const m = rom(j); if (m && run.trace && m > .5) run.trace.cl.push(j.n + ' ' + m.toFixed(1)); if (m) { stat.rom++; if (/Leg$/.test(j.n)) legMoved[/^Left/.test(j.n) ? 0 : 1] = true; const w = stat.worst[j.n]; if (!w || m > w) stat.worst[j.n] = +m.toFixed(1); } }
+    // a knee folded flat (calf through the thigh: interior < 25 deg, gate splitwood hy_pickground 13 deg, ankle 8 cm from the hip)
+    // is opened to ~21 deg: the ankle keeps its height and slides out along the ground, away from the hip; reach() re-solves the leg
+    const fold = (L, i) => { const H = L.u.b.getWorldPosition(v1), Kp = L.l.b.getWorldPosition(v3), A = L.A;
+      const l1 = H.distanceTo(Kp), l2 = Kp.distanceTo(A), at = deg => Math.sqrt(l1 * l1 + l2 * l2 - 2 * l1 * l2 * Math.cos(deg * D2R)), mn = at(21), d0 = at(30), rel = vA.copy(A).sub(H);
+      // soft: from 30 deg down the reach eases towards a 21-deg floor (a real deep squat, stoke 28 deg, is left alone) (tanh), so entering or leaving the fold never snaps the foot
+      const dl = rel.length(); if (dl >= d0) return;
+      // only a squat: kneeling (knee down on the boards or the roof, below the ankle) folds the knee that far for real (sitting on the
+      // heels); gate clear_roof f90119: opening a kneel lifted the knee 23 cm and the foot snapped back when it ended
+      const ky = Kp.y - A.y, kw = ky <= -.05 ? 0 : ky >= 0 ? 1 : (ky + .05) / .05, kw2 = kw * kw * (3 - 2 * kw); if (kw2 < 1e-3) return;
+      const want = dl + (d0 - (d0 - mn) * Math.tanh((d0 - dl) / (d0 - mn)) - dl) * kw2; if (want - dl < 1e-4) return;
+      const vy = rel.y; rel.y = 0; const hl = rel.length();
+      // slide direction: hip->ankle steadied by hip->knee (in a fold the ankle sits almost under the hip and its own direction swings:
+      // a 4 cm clip wobble became a 12 cm foot jump); the knee points where the shin opens to
+      const dir = v2.set(Kp.x - H.x, 0, Kp.z - H.z).add(rel); let dl2 = dir.length(); if (dl2 < 1e-3) { dir.set(0, 0, 1).applyQuaternion(root.quaternion); dl2 = 1; }
+      const need = Math.sqrt(Math.max(hl * hl, want * want - vy * vy)); dir.multiplyScalar(1 / dl2); /* pushed out along dir only as far as needed: no step at the onset */ const pr = rel.dot(dir), sl = -pr + Math.sqrt(pr * pr + need * need - hl * hl);
+      A.set(H.x + rel.x + dir.x * sl, A.y, H.z + rel.z + dir.z * sl); stat.fold = (stat.fold || 0) + 1; };
+    // the ankle offset itself eases in and out (~80 ms), like the joint corrections: a clip that dips in and out of the fold zone
+    // between two frames never throws the foot (gate clear_roof f90098, 19 cm/frame^2)
+    LEGS.forEach((L, i) => { if (!L.ok) return; if (!L.o) L.o = new THREE.Vector3(); const a0 = v2.copy(L.A); const ax = a0.x, ay = a0.y, az = a0.z;
+      if (!hero.inBed) fold(L, i); const tx = L.A.x - ax, ty = L.A.y - ay, tz = L.A.z - az; const grow = tx * tx + ty * ty + tz * tz > L.o.lengthSq(), k = curDt > 0 ? 1 - Math.exp(-curDt / (grow ? .025 : .08)) : 1; /* opens fast (the fold never shows), lets go slowly */
+      L.o.x += (tx - L.o.x) * k; L.o.y += (ty - L.o.y) * k; L.o.z += (tz - L.o.z) * k; L.A.set(ax + L.o.x, ay + L.o.y, az + L.o.z);
+      if (L.o.lengthSq() > 1e-8) legMoved[i] = true; });
     if (chain([byName.Spine, byName.Spine1, byName.Spine2], SPINE.yaw, SPINE.tilt)) stat.spine++;
     if (chain([byName.Neck, byName.Head], HEAD.yaw, HEAD.tilt)) stat.head++;
     root.updateMatrixWorld(true);
