@@ -1680,7 +1680,7 @@ export function createHero(ctx){
  /* the supply bucket shelf: he always stands square in front of it, wherever he comes from (from the sink side approachTo + pushOut
     left him 50 cm off to the side: the bail was out of reach and the hand went 27 cm into the shelf, full gate f19055) */
  function shelfVisit(a,clip,hits,then){const pt=PT('waterShelf');const P=PP();const h=P&&P.toolHome?P.toolHome('waterBucket'):null;if(!pt||!h){visit(a,pt,.45,clip,hits,then);return;}
-  const S=h.clone().add(V(-.2,0,.65));S.y=root.position.y;const yaw=Math.atan2(h.x-S.x,h.z-S.z);
+  const S=h.clone().add(V(-.2,0,.65));{const fy=floorAt(S.x,h.y-.3,S.z,.1,1.6);S.y=fy!=null?fy:h.y-1.26;}/* the kitchen floor under the shelf, not the floor he is on now (from the bedroom it sent him to a bedroom node) */const yaw=Math.atan2(h.x-S.x,h.z-S.z);
   const run=()=>{const fy=a.faceYaw;a.faceYaw=yaw;approachTo(a,S,0,()=>{a.faceYaw=fy;a.step='clip';a.t=0;a.hits=hits.slice();a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
    if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const x of a.hits)x[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const x of hits)x[1]();then();}});};
   const nn=nearNode(S);if(nn)goTo(nn,run);else run();}
@@ -1745,10 +1745,17 @@ export function createHero(ctx){
  const OD_PALM=.07;
  function odPalm(side){const h=bones[side+'Hand'].getWorldPosition(V()),f=bones[side+'ForeArm'].getWorldPosition(V());return h.add(h.clone().sub(f).normalize().multiplyScalar(OD_PALM));}
  function odPalmTo(side,t){return t?odPalm(side).distanceTo(t):9;}
- function odReach(side,t,w){/* OUTDOOR: palm-target reach (targets here are odPalm points); the kitchen's reachGrip aims the fist's grip point */const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
-  for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+OD_PALM);if(ex<=.01)break;
-   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();if(d.dot(fwd(root.rotation.y))<-.1)break;/* never arch backwards to reach (frame by frame: a banana back at the top of the axe swing); the arm alone goes there */const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(REACH_LEAN-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
-   rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
+ const odLean={Left:{v:0,f:-9},Right:{v:0,f:-9}};let odFrame=0,odFrameOn=0;
+ function odReach(side,t,w){/* OUTDOOR: palm-target reach (targets here are odPalm points); the kitchen's reachGrip aims the fist's grip point */const sh=bones[side+'Arm'];if(!sh||!t)return;
+  if(!odFrameOn){odFrameOn=1;stage('pre',()=>{odFrame++;});}
+  /* the lean toward a target out of reach is rate-limited (~1.1 rad/s): it used to follow 3x the shortfall in one frame, so a target
+     sliding out of or into reach threw the head 8 cm/frame² (gate: fetchwater shelf) */
+  const L=odLean[side];const again=L.f===odFrame;const prev=L.f>=odFrame-1?L.v:0;let want=0,ax=null;if(!again){
+  {const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+OD_PALM);const d=V(t.x-hp.x,0,t.z-hp.z);
+   if(ex>.01&&d.lengthSq()>1e-4){d.normalize();const fd=d.dot(fwd(root.rotation.y));/* never arch backwards to reach (a banana back at the top of the axe swing); fading out as the target comes round beside him */
+    if(fd>-.1){ax=V(0,1,0).cross(d).normalize();want=Math.min(REACH_LEAN,ex*3.4)*clamp(w,0,1)*smooth(-.1,.35,fd);}}}
+  const v=prev+clamp(want-prev,-.019,.019);L.v=v;L.f=odFrame;if(ax)L.ax=ax;else ax=L.ax;
+  if(ax&&v>.002){rotW(bones.Spine,ax,v*.45);rotW(bones.Spine1,ax,v*.35);rotW(bones.Spine2,ax,v*.2);}}/* once a frame: a second reach in the same frame (a guard re-place) only moves the arm */
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>OD_PALM*1.5?s1.clone().addScaledVector(tw,(tl-OD_PALM)/tl):t;armIK(side,wt,sidePole(side),clamp(w,0,1));}
  // the axe in the world: head at `head`, handle running from the head along -dir, edge toward `blade`
  const _odM=new THREE.Matrix4();
@@ -1926,7 +1933,7 @@ export function createHero(ctx){
  function slingTick(){const P=PP();if(!P||!P.tools)return;const lad=!!H.lad;unslingIdle(P);
   for(const n in SLING){const o=P.tools[n];if(!o)continue;const S=SLING[n];
    if(lad&&o.parent===bones[S.hand+'Hand']){onBack(n,V(...S.off),S.rot);if(SLUNG_AT[n])scene.attach(o);/* placed in the world by slungPost every frame */slung[n]=1;AU('cloth');}
-   else if(!lad&&slung[n]&&!(H.path[0]&&H.path[0].t==='ladder')&&bones[S.hand+'Hand'].getWorldPosition(V()).y<bones.Hips.getWorldPosition(V()).y+.05){slung[n]=0;if(o.parent===bones.Spine2||o.parent===scene)try{P.grab(n,bones[S.hand+'Hand'],{offset:V(...S.ho)});AU('cloth');}catch(e){}}}
+   else if(!lad&&slung[n]&&!(H.path[0]&&H.path[0].t==='ladder')&&bones[S.hand+'Hand'].getWorldPosition(V()).y<bones.Hips.getWorldPosition(V()).y+.05){slung[n]=0;/* only what really hangs on him: a bucket back on its shelf (parent the scene too) is never pulled into the hand from across the house (gate: the trip started with the supply bucket in his fist) */const hm=P.toolHome&&P.toolHome(n);const near=o.getWorldPosition(V()).distanceTo(bones.Hips.getWorldPosition(V()))<.9&&!(hm&&o.getWorldPosition(V()).distanceTo(hm)<.1);if(near&&(o.parent===bones.Spine2||o.parent===scene))try{P.grab(n,bones[S.hand+'Hand'],{offset:V(...S.ho)});AU('cloth');}catch(e){}}}
   if(lad&&H.ov&&H.carry&&H.ov.T===ovTracks(H.carry)&&H.ov.end-H.ov.t>.3)H.ov.end=H.ov.t+.3;}
  // after every pose: what is slung for the ladder hangs on its rope between the shoulder blades, upright in the world,
  // well below the neck (frame by frame the Spine2 offsets put the bucket over his head like a hat and the sack into his head)
@@ -1941,6 +1948,9 @@ export function createHero(ctx){
   const g=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts,true,'centripetal'),48,.012,6,true)/* centripetal: no loop overshooting above the shoulder (film: a hoop over his head on the ladder) */;
   if(!strap){strap=new THREE.Mesh(g,strapMat);strap.castShadow=true;strap.frustumCulled=false;scene.add(strap);}else{strap.geometry.dispose();strap.geometry=g;}strap.visible=true;}
  // a task cut short on a ladder left its load slung: it followed his hip into the next job (gate: a bucket round his feet at the sink)
+ /* cut off with the load slung on the rope (parent the scene or Spine2, not a hand) the release did nothing and it stayed on him
+    into the next task, where the hand took it up again (gate: the supply bucket went hunting) */
+ function relLoad(n){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o)return;slung[n]=0;if(o.parent!==bones.RightHand&&o.parent!==bones.LeftHand){const hm=P.toolHome&&P.toolHome(n);if(hm&&o.getWorldPosition(V()).distanceTo(hm)<.05)return;try{P.grab(n,bones.RightHand);}catch(e){}}try{P.release(n);}catch(e){}}
  function unslingIdle(P){if(act&&!act.dead)return;for(const n in slung){if(!slung[n])continue;slung[n]=0;const o=P.tools[n];if(o&&(o.parent===scene||o.parent===bones.Spine2))try{P.release(n);}catch(e){}}}
  function slungPost(){const P=PP();if(!P||!P.tools)return;unslingIdle(P);let f=null,any=false;
   for(const n in SLUNG_AT){const o=P.tools[n];if(!o||!slung[n]||(o.parent!==bones.Spine2&&o.parent!==scene))continue;f=f||fwd(root.rotation.y);const S=SLUNG_AT[n];
@@ -1960,7 +1970,7 @@ export function createHero(ctx){
  // shelf, in front of his chest, then to his side (QA: plumb from the fist it came down through his head and arms); put back the same way up
  /* out from the shelf towards where he stands (not his facing: in the full gate he stood turned and the hand went through the board) */
  const shelfOut=P3=>{const n=V(root.position.x-P3.x,0,root.position.z-P3.z);return n.lengthSq()>1e-6?n.normalize():fwd(root.rotation.y).multiplyScalar(-1);};
- function shelfPath(a){const P=PP();const o=P&&P.tools&&P.tools.waterBucket;if(a.step!=='clip'){a.spT=null;a.spOut=null;a.spFrom=null;a.spLast=null;return false;}
+ function shelfPath(a){const P=PP();const o=P&&P.tools&&P.tools.waterBucket;if(a.step!=='clip'){/* the clip is over: the hand eases from the end of the path into the carry, it does not snap (gate: hand 13, head 8 at the end of the take) */if(a.spLast&&o&&o.parent===bones.RightHand&&!a.put){a.spEnd=(a.spEnd||0)+1/60;const w=1-smooth(0,.4,a.spEnd);if(w>.01){odReach('Right',a.spLast,w);odHang('waterBucket',0,true);return true;}}a.spT=null;a.spOut=null;a.spFrom=null;a.spLast=null;a.spEnd=0;return false;}
   /* blended in from where the clip hand really is when the fist closes, and out after it lets go (gate: the hand jumped 38 between phases) */
   if(!o||o.parent!==bones.RightHand){if(!o)return false;const f=fwd(root.rotation.y);const hs=(o.userData.home&&o.userData.home.scale)||1;
    /* the shelf board is at his chin: the empty hand comes to the bail from in front of its edge, above it, and leaves the same way, never up or down through the board (gate: hand 9 cm in the shelf) */
@@ -1969,7 +1979,7 @@ export function createHero(ctx){
    if(a.spLast&&a.spT!=null){a.spOut=(a.spOut||0)+1/60;if(!a.spFrom)a.spFrom=a.spLast.clone();const Pf=a.spFrom.clone().addScaledVector(shelfOut(a.spFrom),.24).add(V(0,.05,0));const w=1-smooth(.22,.55,a.spOut);if(w>.01)odReach('Right',a.spFrom.clone().lerp(Pf,smooth(0,.25,a.spOut)),w);}return false;}
   if(a.spT==null)a.spT=a.t;const wIn=a.put?smooth(0,.25,a.t-a.spT):1;/* taking it, the hand is already on the path (it came to the bail along it) */
   const k=a.t/Math.max(.3,a.clipDur);const hs=(o.userData.home&&o.userData.home.scale)||1;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
-  const P3=P.toolHome('waterBucket').add(V(0,.35*hs,0)),n=shelfOut(P3),Pf=P3.clone().addScaledVector(n,.24).add(V(0,.05,0)),P2=P3.clone().add(V(0,-.24,0)).addScaledVector(n,.3);const fl=root.position.y;
+  const P3=P.toolHome('waterBucket').add(V(0,.35*hs,0)),n=shelfOut(P3),Pf=P3.clone().addScaledVector(n,.24).addScaledVector(V(n.z,0,-n.x),.16).add(V(0,.05,0)),/* out over the edge to his right, wide of his head */P2=P3.clone().add(V(0,-.24,0)).addScaledVector(n,.3);const fl=root.position.y;
   const P1=root.position.clone().addScaledVector(f,.42).addScaledVector(r,.06);P1.y=fl+1.18;
   const P0=bones.Hips.getWorldPosition(V()).addScaledVector(r,.28).addScaledVector(f,.06).add(V(0,-.12,0));
   const u=a.put?smooth(.08,.47,k):1-smooth(.47,.95,k);/* 1 = at the shelf */const seg=(A,B,x)=>A.clone().lerp(B,smooth(0,1,x));
@@ -2068,7 +2078,7 @@ export function createHero(ctx){
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
    a.update=dt=>{if(a.step==='fill'){pondFill(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
    a.post=()=>{if(a.step==='fill'&&a.dip){H.bucketTilt=true;pondFillPost(a);}else if(!shelfPath(a))odHang('waterBucket',0);};
-   a.leave=cb=>{try{slung.waterBucket=0;P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+   a.leave=cb=>{try{slung.waterBucket=0;relLoad('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
   setbucket:(o={})=>{const a={step:'go',t:0,put:1,post:()=>{if(!shelfPath(a))odHang('waterBucket',0);}};const P=PP();shelfVisit(a,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
@@ -2087,7 +2097,7 @@ export function createHero(ctx){
     if(a.step!=='pour'){odHang('drainBucket',0);return;}H.bucketTilt=true;const D=a.D||2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
     if(w>.01)odReach('Right',root.position.clone().addScaledVector(f,.62).addScaledVector(V(-f.z,0,f.x),.2).add(V(0,.85,0)),w);/* from the waist, leaning out over the edge: the tipped pail hangs in front of his belly, never up before his face (phone watch f1040) */const tilt=1.6*smooth(.45,.95,t)*(1-smooth(D-.8,D-.25,t));odHang('drainBucket',tilt);
     const bk=PP().tools.drainBucket;if(bk&&w>.01){const bt=bk.localToWorld(V(0,.02,0));odReach('Left',bt,.85*w*smooth(.3,.6,t));odHang('drainBucket',tilt);}};
-   a.leave=cb=>{try{slung.drainBucket=0;P.water.pour('drainBucket',false);P.release('drainBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+   a.leave=cb=>{try{slung.drainBucket=0;P.water.pour('drainBucket',false);relLoad('drainBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
   // OUTDOOR (Сделать вылазки наружу естественными): splitting firewood at the chopping block by the oak with the real axe.
   // He takes the axe out of the block, picks a round from the little stack beside it (squat, left hand), stands it on the block,
   // then swings two-handed: the axe goes up over his head round the shoulders and comes down so its edge lands on the round's top
