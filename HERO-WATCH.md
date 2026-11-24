@@ -90,6 +90,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R11-3 | P1 | bolt (6a6ff43) | R10-3 unchanged: walks in through the door leaf (leaf through his body f8124–f8172), then slides the bolt by its knob while the door still stands ~30° open | f8052–f8340 | r11-6a6ff43/bolt_still_through_leaf_door_open.jpg | Character / collide |
 | R12-1 | ok | bolt (a7473f6, has 21f989d) | R10-3/R11-3 fixed: he steps in beside the leaf (not through it), pulls the door shut by its edge (f1356–1380), then slides the bolt by its knob with the door closed (f1416–1452) | f1200–f1500 | r12-a7473f6/bolt_closes_door_then_bolts_ok.jpg | — |
 | R12-2 | P2 | sleep (a7473f6) | R7-9/R7-10/R10-5 unchanged: he fumbles at his chest (f2352–2448) but the vest stays on; swing onto the bed with both legs high in the air (f2520), arm hangs off the mattress (f2544–2568); then lies still under the quilt | f2328–f2832 | r12-a7473f6/sleep_vest_on_arm_hangs.jpg | bed |
+| R12-3 | P1 | sweep (a7473f6) | resolves R11-2: he sweeps in the gap between the bunk and the desk standing INSIDE the desk chair, his legs pass through the chair seat and back (f6900–f7476); at f6636 he leans over the desk and the broom sweeps across the desk top | f6552–f7872 | r12-a7473f6/sweep_inside_desk_chair.jpg | collide / Character (sweep spots) |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
