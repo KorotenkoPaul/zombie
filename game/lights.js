@@ -688,6 +688,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     }
     updateCurtains(dt, dayK); updateBeams(dayK, T); updateWisps(dt); updateHand(dt); updateHatch(dayK);
     if (pool) updatePool(dt);
+    updateHeroRim(dayK);
     for (const w of windows) {
       // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
       // no warm self-glow (critic T14). The warm glow of a lit window lives outside: halo + spill light (room glow).
@@ -792,6 +793,35 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       l.intensity = v.intensity * sl.w;
     }
   }
+
+  // ---------- the hero reads against the warm wood (Pavel: v6 melted into the orange interior) ----------
+  // No extra light: a thin rim on the hero's own materials only (fresnel edge in the fragment shader). At night it is
+  // the cool moonlit edge of the reference painting, by day a faint neutral edge. It brightens nothing else in the room,
+  // costs no light slot and no draw call. Hooked lazily, so a hero swap (?hero=old, v6, LOD) gets it too.
+  const rimU = { uRimC: { value: new THREE.Color() } }, RIM_NIGHT = new THREE.Color(0x7FA6E0), RIM_DAY = new THREE.Color(0xFFF1DC);
+  let rimRoot = null, rimN = 0; const rimShared = new Set();
+  function rimHook(m) {
+    if (!m || m.userData.heroRim || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.isMeshLambertMaterial)) return;
+    m.userData.heroRim = true; const prev = m.onBeforeCompile, prevSrc = prev ? prev.toString() : '';
+    const own = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey.bind(m) : null;
+    m.onBeforeCompile = (sh, r) => { if (prev) prev.call(m, sh, r); sh.uniforms.uRimC = rimU.uRimC;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uRimC;')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+{ float rv = 1. - clamp(dot(normalize(normal), normalize(vViewPosition)), 0., 1.); float rim = rv * rv * rv;
+  totalEmissiveRadiance += uRimC * rim * (.45 + .55 * diffuseColor.rgb); }`); };
+    m.customProgramCacheKey = () => (own ? own() : prevSrc) + '|heroRim'; m.needsUpdate = true;
+  }
+  function updateHeroRim(dayK) {
+    const r = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; if (!r) return;
+    if (r !== rimRoot || ++rimN % 120 === 0) {
+      // only the hero's own materials: a tool or lantern in his hand shares Props' materials with the whole house
+      if (r !== rimRoot) { rimRoot = r; rimShared.clear(); const mine = new Set(); r.traverse(o => mine.add(o));
+        scene.traverse(o => { if ((o.isMesh || o.isInstancedMesh) && !mine.has(o)) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => rimShared.add(m)); }); }
+      r.traverse(o => { if (o.isSkinnedMesh || (o.isMesh && !o.userData.noRim)) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (!rimShared.has(m) && !(m && (m.transparent || (m.emissive && m.emissive.getHex() !== 0 && !o.isSkinnedMesh)))) rimHook(m); }); }); }
+    // night: a cool edge strong enough to cut him out of the orange planks; day: barely there
+    rimU.uRimC.value.copy(RIM_DAY).multiplyScalar(.1).lerp(_rc.copy(RIM_NIGHT).multiplyScalar(.42), 1 - dayK);
+  }
+  const _rc = new THREE.Color();
 
   const api = {
     names: [...src.keys()],
