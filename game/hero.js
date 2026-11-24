@@ -521,7 +521,7 @@ export function createHero(ctx){
  let brain=null;let motion=null;let climb=null;/* CLIMB HOOK: game/climb.js, see setClimb *//* MOTION HOOK: game/motion.js, see setMotion */const gait={speed:1,turn:1};const endCbs=[];
  function endTask(res){kSlow(false);H.kSquat=0;const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n,res);}catch(e){console.error(e);}}}
  // lamps with a wall switch (props.js switchPlate): the hand goes to the plate, not to the lamp
- const SWITCH_AT=(ctx.props&&ctx.props.switches)?Object.fromEntries(Object.entries(ctx.props.switches).map(([k,v])=>[k,v.clone()])):{bedroom:V(.372,lv.BD+1.15,3.5)};// wall switch positions come from props.js
+ const SWITCH_AT=(ctx.props&&ctx.props.switches)?Object.fromEntries(Object.entries(ctx.props.switches).map(([k,v])=>[k,v.clone()])):{bedroom:V(.372,lv.BD+1.15,2.15)};// wall switch positions come from props.js
  const LAMP=()=>window.__lights||ctx.lights||null;
  function nearNode(p){let best=null,bd=1e9;for(const k in N){const n=N[k];if(!n||!n.p||n.seat!=null||!adj[k])continue;if(Math.abs(n.p.y-p.y)>2.6||n.p.y>p.y+.2)continue;const dy=p.y-n.p.y;const d=Math.hypot(n.p.x-p.x,n.p.z-p.z)+Math.max(0,dy-1.95)*10+(p.hand?Math.max(0,.8-dy)*20:0);if(d<bd){bd=d;best=k;}}return best;}
  // ===== END BRAIN HOOK state =====
@@ -537,17 +537,30 @@ export function createHero(ctx){
   switch:(o={})=>{const a={step:'go',t:0};const L=LAMP();const lp=SWITCH_AT[o.light]?SWITCH_AT[o.light].clone():(L&&L.pos?L.pos(o.light):null);const plate=!!SWITCH_AT[o.light];
    if(!lp){a.update=()=>endTask();return a;}
    const sp=lp.clone?lp.clone():V(lp.x,lp.y,lp.z);const node=nearNode(sp);
-   const approach=()=>{a.step='approach';a.t=0;const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
-    const fl=floorAt(p.x,p.y+.3,p.z,.5)??p.y;a.low=sp.y-fl<.75;a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):sp.clone().add(V(0,-.15,0));
+   // a wall plate: the room side of the wall is found from the collide grid; he stands square to the plate, an arm's length off
+   const plateN=()=>{const PN=ctx.props&&ctx.props.switchN&&ctx.props.switchN[o.light];if(PN)return PN.clone();/* the plate's own facing (props.js) */const C=window.__collide;if(!C||!C.depthAt)return null;let best=null,bd=1e9;for(const d of [V(1,0,0),V(-1,0,0),V(0,0,1),V(0,0,-1)]){const o1=sp.clone().addScaledVector(d,.3),o2=sp.clone().addScaledVector(d,-.06);if(C.depthAt(o1.x,o1.y,o1.z)>.005||C.depthAt(o2.x,o2.y,o2.z)<=.005)continue;const dd=Math.hypot(o1.x-root.position.x,o1.z-root.position.z);if(dd<bd){bd=dd;best=d;}}return best;};
+   const toggle=()=>{if(a.done)return;a.done=true;try{L.set(o.light,o.on!=null?!!o.on:!(L.get&&L.get(o.light)));}catch(e){}sfx&&sfx.click&&sfx.click();};
+   const reach=()=>{a.step='reach';a.t=0;if(a.low&&has('hy_take'))once('hy_take',{fade:.4,then:()=>play(IDLE(),{fade:.5})});else play(IDLE(),{fade:.4});};
+   const approach=()=>{const p=root.position;const fl=floorAt(p.x,p.y+.3,p.z,.5)??p.y;a.low=sp.y-fl<.75;
+    const n=plate?plateN():null;
+    if(n){/* PLATE: square to the wall (the hand straight in front of the right shoulder), turned to it while he steps, no squeeze past the door leaf or the frame */
+     a.from=a.viaNode?p.clone():null;a.knob=sp.clone().addScaledVector(n,.035)/* the fingers on the rocker, the palm clear of the wall boards */;const st=sp.clone().addScaledVector(n,.36).add(V(-n.z,0,n.x).multiplyScalar(.17))/* the body left of the plate: it is in front of the right shoulder */;st.y=p.y;a.faceYaw=Math.atan2(-n.x,-n.z);let k=0;
+     const go=()=>{approachTo(a,st,0,()=>{if(Math.hypot(root.position.x-st.x,root.position.z-st.z)>.06&&++k<4)go();else{a.faceYaw=null;reach();}});};go();return;}
+    a.step='approach';a.t=0;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
+    a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):sp.clone().add(V(0,-.15,0));
     const move=Math.max(0,Math.min(.9,d-(a.low?.45:.27)));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
-    a.dur=Math.max(.35,move/.8);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:0,k:0,d:a.dur};if(move>.1)play('30',{fade:.3,speed:1.1});};
-   if(node)goTo(node,approach);else approach();
-   a.update=dt=>{a.t+=dt;H.look=sp.clone();H.lookW=1;
-    if(a.step==='approach'&&a.t>=a.dur){a.step='reach';a.t=0;if(a.low&&has('hy_take'))once('hy_take',{fade:.4,then:()=>play(IDLE(),{fade:.5})});else play(IDLE(),{fade:.4});}
-    else if(a.step==='reach'){const tT=a.low&&has('hy_take')?durOf('hy_take')*.45:.42,tE=a.low&&has('hy_take')?durOf('hy_take'):.95;if(a.t>tT&&!a.done){a.done=true;try{L.set(o.light,o.on!=null?!!o.on:!(L.get&&L.get(o.light)));}catch(e){}sfx&&sfx.click&&sfx.click();}
-     if(a.t>tE)endTask();}};
-   a.post=()=>{if(a.step!=='reach')return;const w=smooth(0,.4,a.t)*(1-smooth(.6,.95,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
-    const v=a.knob.clone().sub(from);const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);if(!a.low)ikList([['Right',from.add(v),w]]);};
+    a.adur=Math.max(.35,move/.8);a.next=reach;H.slide={x:q.x-p.x,z:q.z-p.z,yaw:0,k:0,d:a.adur};if(move>.1)play('30',{fade:.3,speed:1.1});};
+   {/* PLATE close by on the same floor (the reading chair is 60 cm from it): straight there, no loop out to the door node and back */const p=root.position;const near=plate&&Math.hypot(sp.x-p.x,sp.z-p.z)<1.8&&Math.abs(sp.y-1.15-p.y)<.15&&!H.path.length;if(near||!node)approach();else{a.viaNode=true;goTo(node,approach);}}
+   a.update=dt=>{a.t+=dt;if(a.back)H.look=null;else{H.look=sp.clone();H.lookW=a.step==='reach'?1:.55;/* while he turns to it, the eyes lead and the head follows half way (gate owl-head 74 deg on orig) */}
+    if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
+    if(a.step==='reach'){const clip=a.low&&has('hy_take');const tT=clip?durOf('hy_take')*.45:.42,tE=clip?durOf('hy_take'):1.15;
+     /* the light changes when the fingers touch the switch (palm on it), not on a timer */
+     if(clip){if(a.t>tT)toggle();}else if(!a.done&&a.t>.2&&palmTo('Right',a.knob)<.05)toggle();
+     if(a.t>tE){if(!a.done&&palmTo('Right',a.knob)<.12)toggle();
+      endTask();}}
+    if(a.step==='ret'){if(a.t>=a.adur)a.next();}};
+   a.post=()=>{if(a.step!=='reach'||(a.low&&!plate))return;const w=smooth(0,.4,a.t)*(1-smooth(.75,1.1,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
+    const v=a.knob.clone().sub(from);const reach=armLen*.97+PALM;if(v.length()>reach)v.setLength(reach);reachGrip('Right',from.add(v),w);};
    return a;},
   // open or close the floor hatch over the kitchen ladder: go to its top or bottom, reach for the ring, it moves at the touch
   hatch:(o={})=>{// GRAB: BY HAND. He stands at the side of the opening facing the ring, crouches (code squat, feet planted), takes the
@@ -1402,7 +1415,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     a.v=(a.v||0)+clamp(vT-(a.v||0),-.6*dt,.5*dt);a.w=(a.w||0)+clamp(wT-(a.w||0),-3*dt,3*dt);
     if(a.v>1e-4)p.addScaledVector(fwd(root.rotation.y),a.v*dt);if(Math.abs(a.w)>1e-4){root.rotation.y+=a.w*dt;H.face=root.rotation.y;H.lookW=.25;}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
-  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
+  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',reps:Math.random()<.5?1:2,/* the job lasts the pour(s): with dur 5-6 s the 3 s clip ended and he stood 2-3 s frozen, can in hand, before putting it back (frames) */tools:[['wateringCan','Right']]}),
   listen:(o)=>{
    // LEISURE (phone watch 2e3a58e: he stood 50 s in the middle of the workshop facing the viewer with the window at his back, and the
    // cupped hand read as a wave): he goes to a real glazed window of the room he is in (index.html win(): centre, inward normal),
