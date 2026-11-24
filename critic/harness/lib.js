@@ -8,9 +8,11 @@ async function open(opts={}){
   if(!fs.existsSync(f)){console.log('MISSING',f);return r.abort();}
   r.fulfill({body:fs.readFileSync(f),contentType:f.endsWith('.wasm')?'application/wasm':'application/javascript'});});
  // expose the renderer instance (its render() is an own property, not on the prototype)
- await p.route(/\/index\.html$/,async r=>{const res=await r.fetch();let t=await res.text();t=t.replace(/(const renderer=new THREE\.WebGLRenderer\([^;]*\);)/,'$1window.__renderer=renderer;');if(!process.env.GOVERNOR)t=t.replace('const PERF=createPerf({renderer,MOBILE});','const PERF=createPerf({renderer,MOBILE});PERF.addStep=()=>{};/*critic: quality governor off, SwiftShader is slow*/');r.fulfill({response:res,body:t});});
+ await p.route(/\/index\.html$/,async r=>{const res=await r.fetch();let t=await res.text();t=t.replace(/(const renderer=new THREE\.WebGLRenderer\([^;]*\);)/,'$1window.__renderer=renderer;window.__rf=0;{const _r=renderer.render.bind(renderer);renderer.render=function(a,b){_r(a,b);window.__rf++;};}/*critic: count real frames*/');if(!process.env.GOVERNOR)t=t.replace('const PERF=createPerf({renderer,MOBILE});','const PERF=createPerf({renderer,MOBILE});PERF.addStep=()=>{};/*critic: quality governor off, SwiftShader is slow*/');r.fulfill({response:res,body:t});});
  await p.route('https://fonts.googleapis.com/**',r=>r.fulfill({body:'',contentType:'text/css'}));
  await p.goto('http://localhost:'+(process.env.PORT||8126)+'/index.html');await p.waitForFunction(()=>window.__th,null,{timeout:300000});
  return {b,p,errs};
 }
 module.exports={open};
+// Wait until n more frames have really been drawn (counts real renderer.render calls; a fixed pause is not enough in SwiftShader).
+module.exports.waitFrames=async(p,n=2,timeout=300000)=>{const f0=await p.evaluate(()=>window.__rf||0);await p.waitForFunction(t=>(window.__rf||0)>=t,f0+n,{polling:200,timeout});};
