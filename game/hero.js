@@ -2148,6 +2148,8 @@ export function createHero(ctx){
   const c=H.bedC,B=FIT.bed;if(!c||!B)return;
   // getting up the clip turned the pelvis ~50 degrees toward the pillow and swung the left arm over his head (into the upper bunk):
   // the pelvis turns to face the room as he comes up to sit, and a hand above ~35 cm over the mattress goes down beside the hip
+  // getting up: once the knee is past the front edge the shin hangs down to the floor (the clip held the legs straight out in the air, watcher f3405 detail)
+  if(c.dir<0){const kw=smooth(.45,.7,c.u);const fl=(N.bededge&&N.bededge.floor)??(B.mat-.5);if(kw>0)for(const sd of ['Left','Right']){const L=bones[sd+'Leg'],F=bones[sd+'Foot'];if(!L||!F)continue;const kz=wp(L).z;const ez=smooth(B.z1-.08,B.z1+.06,kz);if(ez>0)dropTo(L,F,fl+.12,kw*ez);}}
   if(c.dir<0){const k=smooth(.5,.95,c.u);if(k>0){const f=V(0,0,1).applyQuaternion(bones.Hips.getWorldQuaternion(new THREE.Quaternion()));const yaw=Math.atan2(f.x,f.z)-root.rotation.y;
     if(Math.hypot(f.x,f.z)>.3)rotW(bones.Hips,V(0,1,0),-wrapA(yaw)*k);}}
   root.updateMatrixWorld(true);const hp2=wp(bones.Hips),lr=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).setY(0).normalize();
