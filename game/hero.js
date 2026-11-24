@@ -855,7 +855,25 @@ export function createHero(ctx){
   if(FZ.ft>1.5){p.y=fl;H.floorY=fl;FZ.ft=0;}
   if(FZ.t>6||FZ.lt>2.5){FZ.t=0;FZ.lt=0;console.warn('[hero] freeze guard: recover',H.task,nm,p.toArray().map(v=>+v.toFixed(2)));H.trans=false;H.lad=null;H.stk=null;H.once=null;
    play(IDLE(),{fade:.5});const n=H.task;if(n&&act){if(act.leave&&!act.left){act.left=true;try{act.leave(()=>{endTask(false);});}catch(e){endTask(false);}}else endTask(false);}}}
- function update(dt){if(dt<=0)return;freezeGuard(dt);
+ // ===== HERO-RULES 1: one pose pipeline. Modules register a pass in a fixed slot instead of wrapping HH.update =====
+ const SLOTS=['pre','motion','look','contacts','collide','grab','pops','guard'];const STAGES={};for(const k of SLOTS)STAGES[k]=[];
+ function stage(slot,fn){if(!STAGES[slot])throw new Error('unknown hero slot '+slot);STAGES[slot].push(fn);return fn;}
+ function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt);}catch(e){console.error('hero slot '+slot,e);}}}
+ function update(dt){if(dt<=0)return;runSlot('pre',dt);const r=updateCore(dt);runSlot('collide',dt);runSlot('grab',dt);runSlot('pops',dt);runSlot('guard',dt);if(INV.on)invCheck(dt);return r;}
+ // HERO-RULES 3, live: ?inv in the URL (or HH.inv.on=true) checks the final pose every frame (geometry only, no bone axes)
+ // and counts what breaks per task; HH.inv.report() lists them, the first of each kind is logged with its frame
+ const INV={on:/[?&]inv\b/.test(location.search),n:0,hits:{},prev:null,report(){return Object.entries(this.hits).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>k+' x'+v.n+' worst '+v.worst.toFixed(v.unit==='deg'?0:2)+v.unit+' first f'+v.f);},reset(){this.hits={};this.n=0;}};
+ function invHit(kind,val,unit){const k=(H.task||H.state||'-')+(H.lad?' (ladder)':H.trans?' (transition)':H.state==='walk'?' (walking)':'')+' / '+kind;const h=INV.hits[k];if(!h){INV.hits[k]={n:1,worst:val,unit,f:INV.n};console.warn('[inv] f'+INV.n+' '+k+' '+val.toFixed(2)+unit);}else{h.n++;if(val>h.worst)h.worst=val;}}
+ function invCheck(dt){INV.n++;const busy=H.lad||H.trans||H.seated||H.inBed||H.fit||!root.visible;const w=n=>bones[n].getWorldPosition(V());
+  if(!busy&&H.ground&&H.floorY!=null){const lo=Math.min(w('LeftFoot').y,w('RightFoot').y)-H.floorY;if(lo>.16)invHit('feet in the air',lo,'m');}
+  // knees: the bend plane's normal (thigh x shin) points to his left for a real knee, to his right for a broken one
+  const lh=w('LeftUpLeg'),rh=w('RightUpLeg');const toR=rh.clone().sub(lh).normalize();
+  for(const sd of ['Left','Right']){const hp=sd==='Left'?lh:rh,kn=w(sd+'Leg'),an=w(sd+'Foot');const th=kn.clone().sub(hp),sh=an.clone().sub(kn);const ang=th.angleTo(sh);if(ang>.35&&th.clone().cross(sh).normalize().dot(toR)>.5)invHit(sd+' knee backwards',ang*57.3,'deg');}
+  // head roll: the ear-to-ear axis tilted from level
+  {const x=V(1,0,0).applyQuaternion(bones.Head.getWorldQuaternion(new THREE.Quaternion()));const r=Math.abs(Math.asin(clamp(x.y,-1,1)))*57.3;if(r>15&&!H.inBed)invHit('head roll',r,'deg');}
+  const hp=w('Hips');if(INV.prev&&dt>0){const v=hp.distanceTo(INV.prev.h)/dt;if(v>4&&!H.lad&&root.visible)invHit('hips snap',v,'m/s');const yv=Math.abs(wrapA(root.rotation.y-INV.prev.y))/dt;if(yv>9)invHit('turn snap',yv*57.3,'deg/s');}
+  INV.prev={h:hp,y:root.rotation.y};}
+ function updateCore(dt){freezeGuard(dt);
   // ===== BRAIN HOOK: an attached brain (game/brain.js) decides what to do; the body below only carries it out =====
   if(brain){if(H.wait){H.wait.t-=dt;if(H.wait.t<=0){const f=H.wait.then;H.wait=null;f&&f();}}
    const mode=ctx.mode?ctx.mode():null;if(mode&&mode!==H.task&&(mode==='guard'||mode==='repair')&&!H.trans)startTask(mode);
@@ -908,6 +926,7 @@ export function createHero(ctx){
    const f=floorAt(p.x,p.y,p.z,.32);if(f!=null&&f-p.y<.3&&p.y-f<.3){H.floorY=f;const d=f-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
+  runSlot('motion',dt);
   sleepTick(dt);lidTick(dt);coatTick(dt);
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
@@ -915,7 +934,7 @@ export function createHero(ctx){
   if(g!=null&&!H.lad){if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   bedHand();bedLegClear(dt);
   if(act&&act.post)act.post(dt);
-  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);}
+  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);runSlot('contacts',dt);}
 
  // ---------- overlay: an upper-body clip layered over whatever the legs do (stretch while walking off, scratch the head, sip...) ----------
  const UPPER=/^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|LeftArm|LeftForeArm|LeftHand|RightShoulder|RightArm|RightForeArm|RightHand)$/;
@@ -951,7 +970,7 @@ export function createHero(ctx){
  spawn('read');
 
  return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
-  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],get act(){return act;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
+  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,inv:INV,get act(){return act;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }
