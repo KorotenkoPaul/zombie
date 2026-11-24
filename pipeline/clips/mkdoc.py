@@ -1,6 +1,6 @@
 import json,glob,os
 R=json.load(open('/tmp/w/recipes.json'))
-loops={'stool_sit_idle':.8,'eat_sit':.6,'chop_axe':.3,'hammer_stand':.6,'hammer_kneel':.6,'saw_hand':.6,'stir_stand':.8,'squat_work':.6,'wash_hands_front':.8,'wipe_window':.6,'sweep':.8,'chop_axe_long':.4,'ledge_dangle':.8,'idle_stand_a':1,'idle_stand_b':.8,'idle_stand_c':1,'idle_wait':1,'idle_tired':1,'sit_ground':1,'reach_up_hold':.6,'look_around':1,'sit_tired':.8,'telescope_look':.8}
+loops={'stool_sit_idle':.8,'eat_sit':.6,'chop_axe':.3,'hammer_stand':.6,'hammer_kneel':.6,'saw_hand':.6,'stir_stand':.8,'squat_work':.6,'wash_hands_front':.8,'wipe_window':.6,'sweep':.8,'chop_axe_long':.4,'ledge_dangle':.8,'idle_stand_a':1,'idle_stand_b':.8,'idle_stand_c':1,'idle_wait':1,'idle_tired':1,'sit_ground':1,'reach_up_hold':.6,'sit_tired':.8,'telescope_look':.8}
 rows=[]
 for f in sorted(glob.glob('/tmp/w/outfk/*.json')):
     n=os.path.basename(f)[:-5]

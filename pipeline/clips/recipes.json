@@ -163,8 +163,10 @@
   "note": "Turn in place, opposite direction."
  },
  "look_around": {
-  "src": "77_04",
-  "note": "Leisure P2. Real mocap standing, looking around."
+  "src": "137_28",
+  "t0": 0,
+  "t1": 12.0,
+  "note": "Leisure P2 (deck 'look'). Real mocap 'normal wait': upright, looks around, turns ~85 deg to the right with two small steps, no crouch. 12 s. Play once (not a loop: it ends turned), or mirror-alternate. (Replaced 77_04/139_03: that actor crouches like a scout.)"
  },
  "stretch_yawn": {
   "src": "111_32",
