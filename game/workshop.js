@@ -121,7 +121,9 @@ export function createWorkshop(K) {
     if (!h) return true; const gp = V(...sp.g).multiplyScalar(h.scale || 1).applyQuaternion(h.quat).add(h.pos); const tip = gp.clone().add(V(...sp.a).applyQuaternion(h.quat)); const B = V(...sp.b).applyQuaternion(h.quat);
     if (!k.rel) { holdToolAt(side, name, gp, tip, 1, B); const g = G(); if (g && g.late) g.late(() => holdToolAt(side, name, gp, tip, 1, B));
       if (k.t > .05) { k.rel = true; k.t = 0; k.gp = gp; relTool(side, name, .06); } return false; }
-    const w = 1 - smooth(0, T, k.t); if (w > .01) reachGrip(side, k.gp.clone().add(V(0, .04 * (1 - w), 0)), w); if (k.t >= T) { a.pk = null; return true; } return false; }
+    const w = 1 - smooth(0, T, k.t); if (w > .01) reachGrip(side, k.gp.clone().add(V(0, .04 * (1 - w), 0)), w); if (k.t >= T) { a.pk = null; snapHome(name); return true; } return false; }
+  // a released tool lies exactly where it was taken from (the release blend and the settle tick left it 6 cm up, hanging in the air)
+  function snapHome(name) { const P = PP(); const o = P && P.tools && P.tools[name]; const h = o && o.userData.home; if (!h || o.parent !== h.parent) return; o.position.copy(h.pos); o.quaternion.copy(h.quat); o.updateMatrixWorld(true); }
 
   // ================= SAW: a cross cut on a board in the vice =================
   // the saw rests in the kerf; he takes it, saws with the right hand while the left holds the board, the offcut drops,
@@ -307,7 +309,7 @@ export function createWorkshop(K) {
   const toWC = (x, y, z) => { const sx = CR && CR.g.scale.x < 0 ? -1 : 1; return toW(x * sx, y, z); };
   function craft(o) {
     const setup = () => { if (!buildCraft()) return; trimObst(); const P = PP(); const hm = P && P.tools && P.tools.benchHammer; if (!hm || hm.parent !== scene) return;
-      const rs = RS(); const gp = toWC(.72, .9 + .018, .318); restPose('benchHammer', gp, dirW(-rs, 0, 0), V(0, 0, 0).add(dirW(0, 0, -1))); };
+      const rs = RS(); const gp = toWC(.72, .9 + .022, .318); restPose('benchHammer', gp, dirW(-rs, 0, 0), V(0, 0, 0).add(dirW(0, 0, -1))); };
     setup(); const S = { ph: 'take', t: 0, ni: 0, hits: 0 };
     const nailHead = i => { const n = CR.nails[i]; return toWC(n.o.position.x, n.o.position.y + .05 - n.sunk, n.o.position.z); };
     // strike geometry: face (+b) down on the nail, handle (a) horizontal pointing forward from the hand; phi lifts it round the pivot
