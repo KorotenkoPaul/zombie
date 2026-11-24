@@ -9,7 +9,7 @@ const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll
 (async()=>{const {b,p,errs}=await open({seed:5,vp:{width:560,height:700},query:arg('--query')||''});await p.evaluate(()=>__qa.start());
  await p.evaluate(([off,co])=>{window.__noClimb=off;window.__noPops=window.__NP;window.__ladFlip=co===2;window.__wcam=1;if(co===true)window.__colOff={legs:true,arms:true};const HH=__dbg.HH;HH.setBrain({tick(){}});if(HH.inv){HH.inv.on=true;HH.inv.reset();}},[OFF,process.argv.includes("--flip")?2:process.argv.includes("--coloff")]);
  await p.evaluate(f=>{window.__fine=f;},FINE);await p.evaluate(v=>{window.__NP=v;},process.argv.includes('--nopops'));if(arg('--flags'))await p.evaluate(fl=>{for(const f of fl.split(','))window[f]=true;},arg('--flags'));
- await p.evaluate(h=>{window.__holdT=h;},arg("--hold"));
+ await p.evaluate(h=>{window.__holdT=h;},arg("--hold"));if(process.argv.includes('--hatch'))await p.evaluate(()=>{const h=window.__house&&window.__house.hatch;if(h&&h.open)h.open();});
  if(SHOTS){fs.mkdirSync(SHOTS,{recursive:true});await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});}
  if(process.argv.includes('--pen')){await p.evaluate(`(${require('../anim/sampler.js')})({})`);await p.evaluate(()=>{window.__pen=1;});}
  const res=[];
