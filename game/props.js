@@ -543,7 +543,11 @@ function barrel(h = .78, mat) { const g = new THREE.Group(); const r0 = h * .3, 
   for (const t of [.1, .3, .7, .9]) { const y = t * h, r = r0 + b * Math.sin(Math.PI * t) + .006; const tor = add(g, new THREE.TorusGeometry(r, .012, 6, 40), M.iron, 0, y, 0, Math.PI / 2); tor.scale.z = 1.8; } return bake(g); }
 function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 = h * .5, r1 = h * .62; add(g, lathe([[0, 0], [r0, 0], [r1, h], [r1 - .012, h], [r0 - .012, .015], [0, .015]], 28), metal ? M.steel : M.stave);
   for (const t of metal ? [.97] : [.15, .8]) { const r = r0 + (r1 - r0) * t + .004; const tor = add(g, new THREE.TorusGeometry(r, metal ? .008 : .01, 6, 32), metal ? M.steel : M.iron, 0, h * t, 0, Math.PI / 2); if (!metal) tor.scale.z = 1.6; }
-  add(g, new THREE.TorusGeometry(r1, .004, 6, 24, Math.PI), M.iron, 0, h, 0, 0, Math.PI / 2, 0); return bake(g); }
+  /* the bail: from two ears at the rim up to 7 cm over its middle, where the fist holds it (a full half-circle rose 19 cm over the rim and the
+     fist, at the grip point, held it low by one side: the thin wire ran down into the water, watcher R20-3) */
+  { const ey = h - .012, er = r1 + .008;/* ears just under the rolled rim, outside it: lower ears on the tapered wall put the arc inside the rim, through the water */ add(g, new THREE.TorusGeometry(er, .004, 6, 24, Math.PI), M.iron, 0, ey, 0, 0, Math.PI / 2, 0).scale.set(1, .085 / er, 1);
+    for (const s of [-1, 1]) add(g, new THREE.CylinderGeometry(.012, .012, .008, 10), M.iron, 0, ey, s * er, Math.PI / 2, 0, 0); }
+  return bake(g); }
 const RUG_IMG = { check: 'rug-blue.jpg', orange: 'rug-orange.jpg', green: 'rug-green.jpg' };
 function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1 }); { const pg = new THREE.PlaneGeometry(w, d, 24, 16); pg.rotateX(-Math.PI / 2); const P = pg.attributes.position; const ph = R() * 6, fx = R() * w - w / 2;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i); let y = .006;
@@ -1157,9 +1161,9 @@ export function buildProps(ctx) {
     const db = mkB(false, dm); tool('drainBucket', db, cn, .23, .08, .04);
     // tap stream and drips
     const sm = new THREE.MeshStandardMaterial({ color: 0xBFD8E4, roughness: .05, envMap: M.env, transparent: true, opacity: .55, depthWrite: false });
-    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; stream.userData.live = true; stream.userData.fluid = true; scene.add(stream);
-    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; pourS.userData.live = true; pourS.userData.fluid = true; scene.add(pourS);
-    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; drip.userData.live = true; drip.userData.fluid = true; cn.add(drip);
+    const stream = new THREE.Mesh(new THREE.CylinderGeometry(.0035, .005, 1, 6, 1, true), sm); stream.visible = false; stream.userData.live = true; stream.userData.fluid = true; stream.userData.fx = true; stream.name = 'waterStream'; scene.add(stream);
+    const pourS = new THREE.Mesh(new THREE.CylinderGeometry(.012, .02, 1, 8, 1, true), sm); pourS.visible = false; pourS.userData.live = true; pourS.userData.fluid = true; pourS.userData.fx = true; pourS.name = 'pourStream'; scene.add(pourS);
+    const drip = new THREE.Mesh(new THREE.SphereGeometry(.006, 6, 5), sm); drip.visible = false; drip.userData.live = true; drip.userData.fluid = true; drip.userData.fx = true; drip.name = 'waterDrip'; cn.add(drip);
     const ws = { clean: .7, dirty: .15, tap: false, drainT: 0, dripT: 0, pour: null };
     const setLvl = (b, k) => { const W2 = b.userData.water; W2.level = clamp01(k); const r = r0 + (r1 - r0) * W2.level - .012; W2.disc.visible = W2.level > .02; W2.disc.scale.set(r, r, 1); W2.disc.position.y = .015 + (H0 - .03) * W2.level; };
     // slosh: the water surface stays level in world space and rocks against the bucket's acceleration while carried
@@ -1217,7 +1221,7 @@ export function buildProps(ctx) {
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
   // --- workshop: whetstone and a lantern to repair on the bench; jacket on a peg by the open side; bow and quiver on the left wall
   { const bt = wb.userData.floorY + .9; const ws = whetstone(); ws.position.set(2.72, bt, 2.14); ws.rotation.y = .03; /* at the front edge: the hero's arm reaches only the front 25 cm of this deep bench (workshop thread) */ scene.add(ws); PT.whetstone = [ws, V(0, .08, 0)];
-    tool('lantern', repairLantern(), scene, 2.42, bt, 2.07); /* front edge, in reach (workshop thread) */ PT.nails = [wb, V(.35, .95, -.18)]; PT.bench = [wb, V(0, .92, .1)]; }
+    tool('lantern', repairLantern(), scene, 2.55, bt, 2.07); /* front edge, in reach (workshop thread) */ PT.nails = [wb, V(.35, .95, -.18)]; PT.bench = [wb, V(0, .92, .1)]; }
   const peg = (x, y, z, ry) => { const p = new THREE.Group(); add(p, new THREE.CylinderGeometry(.014, .016, .09, 10), M.woodDark, 0, 0, .045, Math.PI / 2); add(p, new THREE.SphereGeometry(.02, 10, 8), M.woodDark, 0, 0, .09); add(p, rb(.06, .1, .015, .005), M.woodDark, 0, 0, .0075); p.position.set(x, y, z); p.rotation.y = ry; scene.add(p); return p; };
   { const pj = peg(4.575, WS + 1.72, 3.72, -Math.PI / 2); const jk = jacket(); tool('jacket', jk, scene, 4.575 - .07, WS + 1.72 - .005, 3.72, [0, -Math.PI / 2, 0]); jk.position.x = 4.575 - .06 - .02; PT.jacketPeg = [pj, V(0, 0, .09)]; }
   { const pb = [peg(.925, WS + 1.82, 2.1, Math.PI / 2), peg(.925, WS + 1.1, 2.1, Math.PI / 2)]; tool('bow', bowOnWall(), scene, .925 + .1, WS + 1.45, 2.1, [0, 0, 0]); PT.bowPeg = [pb[0], V(0, 0, .09)];
@@ -1282,7 +1286,11 @@ export function buildProps(ctx) {
   const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null, nBase = quiltMesh ? quiltMesh.geometry.attributes.normal.array.slice() : null;
   const press = { at: null, k: 0, shown: -1, cover: false };
   const qBot = (() => { if (!qBase) return 0; let m = 1e9; for (let i = 1; i < qBase.length; i += 3) if (qBase[i] < m) m = qBase[i]; return m; })();
-  const qTop = (() => { if (!qBase) return 0; let m = -1e9; for (let i = 1; i < qBase.length; i += 3) if (nBase[i] > .7 && qBase[i] > m) m = qBase[i]; return m - .04; })();
+  // BED (2026-11-24): the quilt mesh is merged with the UPPER bunk's quilt and its normals are not reliable there, so the old
+  // "top = highest up-facing vertex" gave -1e9: every vertex counted as the top, the hanging sides and hem rose with him and
+  // the quilt stood over a bare mattress in arches. Now from positions only: the lower quilt is everything within .3 m of its hem.
+  const qLowMax = (() => { if (!qBase) return 0; let m = -1e9; for (let i = 1; i < qBase.length; i += 3) if (qBase[i] < qBot + .3 && qBase[i] > m) m = qBase[i]; return m; })();
+  const qTop = qLowMax - .045;
   // bedPress(worldHip): a hollow where he sits or lies ON the quilt. bedCover(worldHip): he lies UNDER it: the quilt rises over a
   // body (head toward the pillow, +x in the bed), so his legs never show through. null releases either; both ease in and out.
   out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = false; };
@@ -1309,7 +1317,7 @@ export function buildProps(ctx) {
     bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
     const byName = {}; for (const bn of sk.bones) byName[bn.name.replace(/^.*[:_]/, '').replace(/^mixamorig/, '')] = bn;
     const list = []; for (const [a, b, r] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r }); return (coverBones = list.length >= 8 ? list : null); }
-  out._quiltDbg = () => ({ m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
+  out._quiltDbg = () => ({ qTop, qBot, m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V(), _cw = V();
   // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
   function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -1322,7 +1330,7 @@ export function buildProps(ctx) {
     if (press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones())) { coverT -= dt; if (coverT <= 0 || Math.abs(press.k - press.shown) >= .01) { coverT = .2; press.shown = press.k; bunk.updateMatrixWorld(true);
         if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } }
         const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, e = .02, k = press.k;
-        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2];
+        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
           const L0 = liftAt(x, z, y > qTop ? y : qTop) * (y >= qTop ? 1 : Math.max(0, (y - qBot) / (qTop - qBot))); if (L0 <= .002) continue;/* the hanging sides: the hem stays down, the cloth slopes from the lifted top edge to it (no box with a zigzag hem over a bare mattress) */ a[i + 1] = y + L0 * k;
           if (nBase[i + 1] > .4) { const gx = (liftAt(x + e, z, y) - liftAt(x - e, z, y)) / (2 * e) * k, gz = (liftAt(x, z + e, y) - liftAt(x, z - e, y)) / (2 * e) * k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; } }
         P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
