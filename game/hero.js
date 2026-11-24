@@ -1551,7 +1551,7 @@ export function createHero(ctx){
    const setLF=lf=>{LF=lf;TT=Tf(lf);want=Wf(lf);};
    const key=(lf,starts)=>{setLF(lf);Qh=mkQh(S.al,S.yw);PS=S.ps;let best=null;for(const st of starts){const e=run(30,false,st);if(!best||e<best.e-.002)best={e,t:tEnd.clone(),q:AB.map(b=>b.quaternion.clone())};}return best;};
    const shNow=bones.RightArm.getWorldPosition(V());
-   if(!S.K||S.K.n!==S.n||S.K.sh.distanceTo(shNow)>.03||window.__keyEvery){
+   if(!S.K||S.K.n!==S.n||S.K.sh.distanceTo(shNow)>(window.__keyTh??.015)&&!S.Ko||window.__keyEvery){
     setLF(0);
     if(PG&&PG.over&&!window.__noFit&&!window.__noSearch){
      const cost=(ca,cy,cp)=>{Qh=mkQh(ca,cy);PS=cp;const e=run(8,true);return PG.over(hb,hb.quaternion)+PG.over(fa,fa.quaternion)+e*300+(S.ps!=null?4*(Math.abs(ca-S.al)+Math.abs(cy-S.yw)+Math.abs(cp-S.ps)):0);};
@@ -1562,9 +1562,11 @@ export function createHero(ctx){
      S.al=bb[0];S.yw=bb[1];S.ps=bb[2];}
     else{if(S.al==null)S.al=al;if(S.yw==null)S.yw=0;if(S.ps==null)S.ps=0;}
     const k0=key(0,[Tf(0),...(S.K?[S.K.t0]:[])]);const km=key(.5,[k0.t.clone().add(Tf(.5)).sub(Tf(0)),Tf(.5)]);const k1=key(1,[km.t.clone().add(Tf(1)).sub(Tf(.5)),Tf(1),k0.t.clone().add(Tf(1)).sub(Tf(0))]);
+    /* mid-blow the new keys are blended in over 0.2 s (a fresh solve can land on a different elbow: no jump) */if(S.K&&S.K.n===S.n){S.Ko=S.K;S.kb=0;}else S.Ko=null;
     S.K={n:S.n,sh:shNow.clone(),q0:k0.q,qm:km.q,q1:k1.q,t0:k0.t,t1:k1.t,e0:k0.e};}
    /* this frame: between the two keys by the lift */
-   AB.forEach((b,i)=>{if(lift<=.5)b.quaternion.copy(S.K.q0[i]).slerp(S.K.qm[i],lift*2);else b.quaternion.copy(S.K.qm[i]).slerp(S.K.q1[i],lift*2-1);});bones.RightArm.updateMatrixWorld(true);hm.updateMatrixWorld(true);
+   const at=(K,i)=>lift<=.5?K.q0[i].clone().slerp(K.qm[i],lift*2):K.qm[i].clone().slerp(K.q1[i],lift*2-1);if(S.Ko){S.kb=Math.min(1,(S.kb||0)+dt/.2);if(S.kb>=1)S.Ko=null;}
+   AB.forEach((b,i)=>{b.quaternion.copy(S.Ko?at(S.Ko,i).slerp(at(S.K,i),smooth(0,1,S.kb)):at(S.K,i));});bones.RightArm.updateMatrixWorld(true);hm.updateMatrixWorld(true);
    /* near the nail the face is put back on it exactly (the body breathes and settles a little between blows): solved from this
       blow's own key, never from last frame, so it cannot flip between answers */
    if(lift<.25&&window.__near){const sl=AB.map(b=>b.quaternion.clone());setLF(lift);Qh=mkQh(S.al,S.yw);PS=S.ps;run(10,false,S.K.t0.clone().add(Tf(lift)).sub(Tf(0)));
