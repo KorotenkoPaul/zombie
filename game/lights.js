@@ -700,6 +700,9 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // turns the leftover blue night fill warm inside the rooms, same luminance (no brighter room); the moon stays outside.
     if (!inProbe) scene.traverse(o => { if (o.isLightProbe && o.name === 'envInteriorK') inProbe = o; });
     if (inProbe) inProbe.sh.coefficients[0].y = .85 * (1 - dayK);
+    // the bedroom by day: its walls read red-orange in daylight (blue ~10/255); half the kitchen's honey toward the photo's
+    // tone, by day only, so the approved cosy, dim night bedroom is exactly as before
+    if (window.__wearHy) window.__wearHy[1] = .5 * smooth(.3, .8, dayK);
     for (const w of windows) {
       // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
       // no warm self-glow (critic T14). The warm glow of a lit window lives outside: halo + spill light (room glow).
