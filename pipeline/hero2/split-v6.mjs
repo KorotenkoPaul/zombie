@@ -1,5 +1,4 @@
-// v6 variant of split.mjs: low shin non-green tris count as boots; socks are thin tubes (radius <= CAP, 0.6x) around the nearest leg/foot/toe bone, tapered only at the boot rim (BT), dark boot-crease wool colour so a deep crease reads as shadow.
-// usage: BT=.015 CAP=.03 CR=0 node split-v6.mjs in.glb out.glb
+// v6 variant of split.mjs (see header below); UMIN (default .3): the sweater layer under the vest is always inset at least 30% so it never z-fights the vest at notched edges.
 // Split the hero mesh into body / vest / boots (separate skinned meshes, same skin + material) and add the layer underneath
 // (sweater shell under the vest, wool socks inside the boots) to the body, so vest and boots can be taken off.
 // usage: node split.mjs in.glb out.glb [debug.png]
@@ -49,7 +48,7 @@ const edgeW=i=>{const g=gv[i];if(!touch[g*3])return 1;if(touch[g*3+2]&&P[i*3+1]<
 const seg=(n)=>{const ch={LeftLeg:'LeftFoot',RightLeg:'RightFoot',LeftFoot:'LeftToeBase',RightFoot:'RightToeBase',LeftToeBase:'LeftToe_End',RightToeBase:'RightToe_End'}[n];return ch?[jpos[J_(n)],jpos[J_(ch)]]:[jpos[J_(n)],jpos[J_(n)]];};
 function build(tris,mode){const map=new Map(),pos=[],nor=[],uv=[],jj=[],ww=[],idx=[];const v=new T.Vector3(),n=new T.Vector3(),cp=new T.Vector3();
  for(const t of tris)for(let k=0;k<3;k++){const i=I[t*3+k];if(!map.has(i)){map.set(i,pos.length/3);v.fromArray(P,i*3);n.fromArray(N,i*3);let U=[UV[i*2],UV[i*2+1]];
-   if(mode==='under'){const g=gv[i];const wn=new T.Vector3(gn[g*3],gn[g*3+1],gn[g*3+2]).normalize();v.addScaledVector(wn,-.011*1.25*edgeW(i));U=[au+(v.x)*.03,av+(v.y)*.01];}
+   if(mode==='under'){const g=gv[i];const wn=new T.Vector3(gn[g*3],gn[g*3+1],gn[g*3+2]).normalize();v.addScaledVector(wn,-.011*1.25*Math.max(+(process.env.UMIN||.3),edgeW(i)));U=[au+(v.x)*.03,av+(v.y)*.01];}
    if(mode==='sock'){const dn=dom(i);const side=dn.startsWith('Left')?'Left':'Right';let bd=1e9;const tmp=new T.Vector3();for(const sn of [side+'Leg',side+'Foot',side+'ToeBase']){const [a,b]=seg(sn);const ab=b.clone().sub(a),L=ab.lengthSq();const tt=L?Math.max(0,Math.min(1,v.clone().sub(a).dot(ab)/L)):0;tmp.copy(a).addScaledVector(ab,tt);const dd=tmp.distanceToSquared(v);if(dd<bd){bd=dd;cp.copy(tmp);}}{const ew=edgeW(i);const off=v.clone().sub(cp);const dd=off.length();const cap=+(process.env.CAP||.05);const nd=dd<(+(process.env.CR||.045))?0:Math.min(dd*.6,cap);const tgt=cp.clone().addScaledVector(off,dd?nd/dd:0);v.lerp(tgt,ew);}U=[su+(v.x)*.002,sv+(v.z)*.002];}
    pos.push(v.x,v.y,v.z);nor.push(n.x,n.y,n.z);uv.push(...U);for(let q=0;q<4;q++){jj.push(J[i*4+q]);ww.push(W[i*4+q]);}}
   idx.push(map.get(i));}

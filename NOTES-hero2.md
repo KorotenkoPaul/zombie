@@ -57,3 +57,9 @@ Now after split: `shrink.mjs 0.9 0.9` -> `headfit.mjs in out '[0.76,0.86,0.6]' '
 (x -0.131..0.132 vs -0.127..0.126, z -0.148..0.090 vs -0.160..0.112 (face pulled back: the first fit still had the face 2.5 cm into the hatch-ladder rungs), top 0.94 vs 1.0 in old-dq space) -> facescan (RES=.0006 XW=.1 Y0=.66 Y1=.9) ->
 lids '{"L":[-0.0454,0.7575,0.039,0.025],"R":[0.0386,0.7554,0.039,0.025],"skin":[-0.045,0.732],"lash":[-0.043,0.786],"off":0.0022,"ymin":0.68,"pow":0.4,"flat":1}' -> ktxtex -> quant -> optim.
 Measure heads in the transplant (old-dq) space, not after quant: quantize renormalises each mesh to its own box.
+
+v6 face v2 (2026-11-24, integrator: face not at concept quality: asymmetric, bumpy, orange, thin angry brows):
+new Meshy v6 image-to-3d with `symmetry_mode:"on"` and a texture_prompt (smooth light peachy skin, round cheeks, thick straight brows) -> same chain
+(rig, transplant, slim, rmlids, `UMIN=.3 BT=.015 CAP=.03 CR=0 split-v6.mjs`, shrink 0.9/0.9, headfit, lids '{"L":[-0.0466,0.759,0.042,0.026],"R":[0.0365,0.7566,0.042,0.026],"skin":[-0.0466,0.732],"lash":[-0.046,0.792],...}')
+-> `facesmooth.mjs in out 0 0.06` (face skin: smooth normals, flat normal map, softened and lightened base colour; position smoothing (iters>0) erased the nose, so 0) -> ktx/quant/optim.
+Comparisons: project files hero-v6/.
