@@ -2,6 +2,8 @@
 //   node tests/camera/k4_black.js
 // Runs the critic's two repros on the phone viewport at several night hours with the real game loop, and checks every
 // rendered frame for the first 40 frames after the request (read back from the canvas right after each frame)
+// DESKTOP=1 runs the desktop path (bloom on): that is where K4 showed (a NaN pixel blurred by bloom over the screen).
+// HOURS=23,0 and N=10 shorten the run; PRE="js" runs before (e.g. switch a pass off to bisect).
 // plus a settled page screenshot. Fails if any frame's mean brightness is under 4 (of 255) or the WebGL context is lost.
 const { chromium } = require('playwright');
 const { spawn } = require('child_process');
@@ -11,7 +13,7 @@ const PORT = 8137;
   const srv = spawn('python3', ['-m', 'http.server', String(PORT)], { cwd: path.join(__dirname, '../../game'), stdio: 'ignore' });
   await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist'] });
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+  const ctx = await b.newContext(process.env.DESKTOP ? { viewport: { width: 390, height: 844 } } : { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
   const p = await ctx.newPage();
   p.on('pageerror', e => console.log('[pageerror]', e.message));
   await p.addInitScript(() => {
@@ -33,17 +35,18 @@ const PORT = 8137;
     }
     return out;
   }, { n, setup });
-  await frames(5);
+  await frames(5, process.env.PRE || null);
   const V = 'new window.__dbg.THREE.Vector3';
   const cases = [
     ['bedroom', `window.__th.rig.set({target:${V}(-2.19,9.85,1.71),yaw:.6,pitch:.12,dist:2.6,snap:true})`],
     ['hollow', `window.__th.rig.set({target:${V}(0.8,2.6,2.5),yaw:.1,pitch:.12,dist:4})`],
   ];
   let bad = 0;
-  for (const h of [21, 22, 23, 23.83, 0, 1])
+  for (const h of (process.env.HOURS ? process.env.HOURS.split(',').map(Number) : [21, 22, 23, 23.83, 0, 1]))
     for (const [name, js] of cases) {
-      const f = await frames(40, `window.__th.setHour(${h});${js}`);
+      const f = await frames(+(process.env.N || 40), `window.__th.setHour(${h});${js}`);
       const dark = f.filter(x => x[0] < 4);
+      console.log('   ', JSON.stringify(f.map(x => x[0])));
       if (dark.length || await p.evaluate(() => window.__lost)) bad++;
       console.log(`${dark.length ? 'BLACK' : 'ok   '} ${name} ${h}h: min brightness ${Math.min(...f.map(x => x[0]))}, dist ${f[0][1]} -> ${f[f.length - 1][1]}${dark.length ? ' black frames ' + JSON.stringify(dark) : ''}`);
     }
