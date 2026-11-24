@@ -35,7 +35,11 @@ async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log
   for(const [t,h,opts,maxS] of EXTRA){const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
    // through the brain (the body alone does not route between floors); the brain may slip its own chore in first, so ask again until he takes it
    const ask=()=>p.evaluate(([t,o])=>{const B=window.__brain;if(B&&B.command)B.command(t,o||undefined);else __th.task(t);},[t,opts||null]);
-   await p.evaluate(h=>__th.setHour(h),h);await ask();let n=0,seen=false,idle=0;
+   if(gate){// isolated: every task starts from the same seeded state (reading at the table, hatch open, needs primed for that hour)
+    await p.evaluate(([t,h])=>{let x=2166136261;for(const c of t)x=Math.imul(x^c.charCodeAt(0),16777619)>>>0;__qa.reseed(x);__th.setHour(h);const B=window.__brain;if(B&&B.prime)B.prime(h);
+     __dbg.HH.spawn('read');const ht=window.__house&&window.__house.hatch;if(ht&&ht.open)ht.open();},[t,h]);await runFrames(30,'tour:'+t);}
+   else await p.evaluate(h=>__th.setHour(h),h);
+   await ask();let n=0,seen=false,idle=0;
    const cap=gate?60*(t==='sleep'?gate+35:gate):60*(maxS||90);
    while(n<cap){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>__dbg.hero.task);if(s===t)seen=true;if(seen&&s!==t){if(++idle>=3)break;}else if(!seen){if(n>=900)break;await ask();}}
    log('tour',t,seen?'ran':'never started','frames',n);}}

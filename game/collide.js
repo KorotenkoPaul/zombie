@@ -318,7 +318,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     // the body's own forward, never the root's yaw (during tasks the root yaw and the body can differ): a knee points where its toes
     // point, an elbow away from where the pelvis faces (the rig's pelvis faces its local -Z, HERO-RULES.md)
     { let fw = null; if (leg) { const toe = (C === bones.LeftFoot ? bones.LeftToeBase : bones.RightToeBase); if (toe) { fw = toe.getWorldPosition(V()).sub(c); fw.y = 0; } }
-      else if (bones.Hips) { fw = V(0, 0, -1).applyQuaternion(bones.Hips.getWorldQuaternion(_q2)); fw.y = 0; }
+      else if (bones.Hips) { fw = V(0, 0, 1).applyQuaternion(bones.Hips.getWorldQuaternion(_q2)); fw.y = 0; }
       if (fw && fw.lengthSq() > 1e-6) { fw.normalize(); pole.addScaledVector(fw, (leg ? .04 : -.04) * l1); } }
     const tv = target.clone().sub(a); const dd = clamp(tv.length(), Math.abs(l1 - l2) + .01, l1 + l2 - 1e-4); /* no forced knee bend on a straight leg (that pops) */ const dir = tv.normalize();
     const ca = clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1), sa = Math.sqrt(1 - ca * ca); let pp = pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pp.lengthSq() < 1e-8) pp = V(0, 0, 1); pp.normalize();
@@ -359,7 +359,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   let guardV = 0, guardT = 0, prevGap = 0;
   function floorGuard(dt) { if (window.__colOff && window.__colOff.floor) return; // the root never stands below the boards (hero.js only climbs back up from 12 cm)
     if (!hero.ground || hero.fit || hero.lad || hero.swing || hero.inBed || (hero.path[0] && hero.path[0].t === 'ladder')) return; const p = root.position; if (p.y < 1.5) return; /* house floors only: on the ground hero.js follows the terrain */ const top = boardTop(p.x, p.y, p.z); if (top == null) return;
-    const gap = top - p.y; if (gap <= .004) { guardV = 0; guardT = 0; prevGap = 0; return; }
+    const gap = top - (p.y + (hero.squat || 0)); /* a squat lowers the root on purpose (hero.js support slot): the feet stay on the boards */ if (gap <= .004) { guardV = 0; guardT = 0; prevGap = 0; return; }
     // hero.js climbs back onto the boards itself in most cases: step in only when he stays under them (0.4 s without rising)
     if (!guardV) { guardT = (prevGap - gap > .002) ? 0 : guardT + dt; prevGap = gap; if (guardT < .4) return; } guardV = Math.min(guardV + .004, .03); const k = Math.min(gap, guardV); p.y += k; hero.floorY = top; st.floorFix++; root.updateMatrixWorld(true);
   }
@@ -445,7 +445,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function finish(t0, it, worst) { const ms = performance.now() - t0; st.frames++; st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
   // wrap the hero's update: corrections go on after hero.js has posed the body, and come off before it runs again
   // HERO-RULES.md: the 'collide' slot of the pose pipeline (after contacts, before grab and the guard); the old wrap only without stages
-  if (HH.stage) HH.stage('collide', dt => post(dt)); else { const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); }; }
+  if (HH.stage) { if ((HH.SLOTS || []).includes('pre')) HH.stage('pre', () => pre()); HH.stage('collide', dt => post(dt)); } else { const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); }; }
 
   // ---------- nav: clearance of the walk graph for the body (a 0.2 m wide column from knee to head height) ----------
   function clearance(x, y, z, r = .2) { let worst = 0; const p = V(); for (const hy of [.35, .7, 1.0, 1.3]) for (let a = 0; a < 8; a++) { p.set(x + Math.cos(a * Math.PI / 4) * r, y + hy, z + Math.sin(a * Math.PI / 4) * r); const d = probe(p, 7, false); if (d > worst) worst = d; } return worst; }

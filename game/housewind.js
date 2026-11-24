@@ -17,6 +17,11 @@
 // uniform per window). Any other cloth: __housewind.addCloth(material, worldPos, {outside}).
 // createHouseWind({wind, scene, ladders: [{id, x, z, y0, y1}]}) -> {update(dt), addCloth}
 
+// a program cache key that stays unique per material after wrapping onBeforeCompile: three's default key is
+// onBeforeCompile.toString(), which after a wrap is the WRAPPER's source, the same for every wrapped material (so they
+// shared one program: the white boards on Pavel's phone). Capture the wrapped hook's source and any own key now.
+const wrapKey = (m, prev, tag) => { const own = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey : null, src = prev ? prev.toString() : '';
+  return () => (own ? own.call(m) : '') + '|' + src + '|' + tag; };
 export function createHouseWind({ wind, scene, ladders = [] }) {
   const swings = new Map();   // piv -> state
   let tele = null, teleT = 0;
@@ -27,14 +32,14 @@ export function createHouseWind({ wind, scene, ladders = [] }) {
   const curs = []; let curOn = false;
   function hookCurtain(c) {
     const m = c.mat; if (!m || m.userData.windCur) return; m.userData.windCur = true;
-    const u = { uCurK: { value: 0 }, uCurT: { value: 0 }, uCurS: { value: Math.random() * 10 } }; const prev = m.onBeforeCompile;
+    const u = { uCurK: { value: 0 }, uCurT: { value: 0 }, uCurS: { value: Math.random() * 10 } }; const prev = m.onBeforeCompile, wk = wrapKey(m, prev, 'windCurtain');
     m.onBeforeCompile = (sh, r) => { prev && prev.call(m, sh, r); Object.assign(sh.uniforms, u);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uCurK,uCurT,uCurS;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
 {float hw=clamp(.5-position.y,0.,1.);hw*=hw;   // the hem moves, the rod end stays
  float wv=sin(uCurT*2.1+position.x*5.+uCurS)*.6+sin(uCurT*3.3-position.x*8.+uCurS*2.)*.4;
  transformed.z+=uCurK*hw*(.04+.05*wv);transformed.x+=uCurK*hw*.02*sin(uCurT*1.7+uCurS);}`); };
-    m.customProgramCacheKey = () => 'windCurtain'; m.needsUpdate = true;
+    m.customProgramCacheKey = wk; m.needsUpdate = true;
     const pos = c.pos || (c.w && c.w.g ? c.w.g.getWorldPosition(c.w.g.position.clone()) : { x: 0, y: 0, z: 0 });
     curs.push({ u, k: 0, pos, outside: !!c.outside });
   }
