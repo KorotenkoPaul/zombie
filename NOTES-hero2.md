@@ -51,3 +51,9 @@ Meshy v6 image-to-3d (front only gave the better face than front+back; 30k, PBR)
 `shrink.mjs in out 0.9 0.9` (head and hands 10% smaller around their centres, weight-blended: the first gate run had the big hair 2.6 cm deeper into ceilings/frames and hands 1-2 cm deeper into props) -> `ktxtex.mjs 2048 1024` -> quant -> `optim.mjs 0.65`.
 Result `assets/models/hero-v6.glb` / `game/hero-v6-glb.txt`: body 19.3k tris (incl. sweater/sock layers), vest 2.7k, boots 2.0k, eyelids 200; KTX2 base colour 2048 + webp normal 1024; 2.99 MB.
 Gate: run with Q.old='?hero=v6' (a temp copy of gate.js) next to a plain run on the same master and compare regression counts.
+
+v6 head fit (2026-11-24, integrator's full gate: head P1 into ladder openings/beam/bunks 92 -> 140): the concept head + hair was 35% wider and 45% deeper than the previous hero's.
+Now after split: `shrink.mjs 0.9 0.9` -> `headfit.mjs in out '[0.76,0.86,0.7]' '[0,0.66,0.09]'` (x/y/z scale about the face front at skull base, weight-blended) so the head's 1-99% box is inside the previous hero's
+(x -0.131..0.132 vs -0.127..0.126, z -0.169..0.083 vs -0.160..0.112, top 0.94 vs 1.0 in old-dq space) -> facescan (RES=.0006 XW=.1 Y0=.66 Y1=.9) ->
+lids '{"L":[-0.0454,0.7575,0.039,0.025],"R":[0.0386,0.7554,0.039,0.025],"skin":[-0.045,0.732],"lash":[-0.043,0.786],"off":0.0022,"ymin":0.68,"pow":0.4,"flat":1}' -> ktxtex -> quant -> optim.
+Measure heads in the transplant (old-dq) space, not after quant: quantize renormalises each mesh to its own box.
