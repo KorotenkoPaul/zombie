@@ -376,7 +376,8 @@ export function createHero(ctx){
   else if(L.phase==='climb'&&climb&&!window.__noClimb&&(L.cl||(L.cl=climb.begin({up:L.up,x:L.x,lz:c.lz,side:c.side,cz,yBot:L.yBot,yTop:L.yTop,}))?1:(L.cl=-1,0))&&L.cl!==-1){
    turnTo(F,dt);if(L.hb)hatchBelow(L.hb,dt);const r=climb.tick(dt);
    if(r==='off'){done();H.v=.12;/* walks off from the slow last step of climbing over (no 0 -> walk jump) */}
-   else if(r==='bottom'){play(IDLE()||'0',{fade:.35});done();}}
+   else if(r==='bottom'){play(IDLE()||'0',{fade:.35});done();}
+   else if(r==='lost'){/* the climb lost its ladder (a task change rebuilt H.lad): at an end just finish there, else start the climb again from where he is */const py=root.position.y;if(Math.abs(py-(L.up?L.yTop:L.yBot))<.25||Math.abs(py-(L.up?L.yBot:L.yTop))<.25&&(L.lost=(L.lost||0)+1)>2){play(IDLE()||'0',{fade:.35});done();}else L.cl=null;}}
   else if(L.phase==='over'&&climb&&!window.__noClimb&&!L.start&&L.cl!==-1){// down: walk to the edge, turn the back to the hole, climb down over it (climb.js)
    const P=L.P||(L.P=climb.topStand({x:L.x,lz:c.lz,cz,yTop:L.yTop}));if(!P){L.cl=-1;}
    else{H.ground=true;const dP=Math.hypot(P.x-p.x,P.z-p.z);if(ladApproach(V(P.x,p.y,P.z),F,dt)||(dP<.1&&Math.abs(wrapA(F-root.rotation.y))<.9)){/* no stop at the edge: the descent starts while he finishes turning */if(climb.begin({up:false,fromTop:true,x:L.x,lz:c.lz,side:c.side,cz,yBot:L.yBot,yTop:L.yTop})){L.phase='climb';L.cl=true;}else L.cl=-1;}}}

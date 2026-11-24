@@ -132,7 +132,7 @@ export function createClimb() {
   // ---- one frame of climbing (root height, gait). Returns 'off' (standing on the floor above) | 'bottom' | null ----
   function tick(dt) {
     if (S.act && C.H.lad !== S.act.hl) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; }
-    const A = S.act; if (!A) return null;
+    const A = S.act; if (!A) return 'lost';// the hook re-begins or finishes (a frozen ladder is never ok)
     const p = C.root.position;
     A.t += dt;
     if (A.mode === 'over') { const r = overTick(A, dt, p); if (r === 'off') { S.act = null; S.wTarget = 0; S.fade = .35; } return r; }
@@ -286,6 +286,18 @@ export function createClimb() {
       const bq = b.getWorldQuaternion(_q1()), pq = b.parent.getWorldQuaternion(_q1());
       b.quaternion.copy(pq.invert().multiply(dq.multiply(bq))); b.updateMatrixWorld(true);
     }
+    headLimits(Math.min(1, w / .85));
+  }
+  // a human neck: the head stays within 65 deg of the pelvis in yaw and rolls at most ~5 deg (no owl, no ear on the shoulder)
+  function rotWorld(b, axis, ang) { const pq = b.parent.getWorldQuaternion(_q1()); const bq = b.getWorldQuaternion(_q1()); const r = _q1().setFromAxisAngle(axis, ang); b.quaternion.copy(pq.invert().multiply(r.multiply(bq))); b.updateMatrixWorld(true); }
+  function headLimits(w) {
+    const B = C.bones, Hd = B.Head; if (!Hd || !B.Hips) return; const Y = V(0, 1, 0);
+    const hq = Hd.getWorldQuaternion(_q1()); const f = V(0, 0, -1).applyQuaternion(hq); const pf = V(0, 0, -1).applyQuaternion(B.Hips.getWorldQuaternion(_q1()));
+    const fh = V(f.x, 0, f.z), ph = V(pf.x, 0, pf.z);
+    if (fh.lengthSq() > 1e-4 && ph.lengthSq() > 1e-4) { fh.normalize(); ph.normalize(); const a = Math.atan2(fh.x, fh.z) - Math.atan2(ph.x, ph.z); const d = Math.atan2(Math.sin(a), Math.cos(a)); const M = 1.13;
+      if (Math.abs(d) > M) { const ex = d - Math.sign(d) * M; if (B.Neck) rotWorld(B.Neck, Y, -ex * .5 * w); rotWorld(Hd, Y, -ex * .5 * w); } }
+    const q2 = Hd.getWorldQuaternion(_q1()); const f2 = V(0, 0, -1).applyQuaternion(q2), u = Y.clone().applyQuaternion(q2); const sd = f2.clone().cross(Y); if (sd.lengthSq() < 1e-4) return; sd.normalize();
+    const roll = Math.asin(Math.max(-1, Math.min(1, u.dot(sd)))); const RM = .09; const ex = roll > RM ? roll - RM : roll < -RM ? roll + RM : 0; if (Math.abs(ex) > 1e-3) rotWorld(Hd, f2.normalize(), -ex * w);
   }
 
   return { init, begin, tick, post, topStand, get active() { return !!S.act; }, get weight() { return S.W; }, state: S, M,
