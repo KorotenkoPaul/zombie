@@ -187,7 +187,7 @@ module.exports=function install(cfg){
    // the open door sways in the wind (props.js wind()): that is not the hero moving it. Count the door only when its open/bolt value changed
    const DR=window.__props&&window.__props.door;let doorStill=false;if(DR){const v=DR.open+DR.bolt*10;doorStill=v===lastDoor;lastDoor=v;}
    const inDoor=o=>{if(!DR||!DR.obj)return false;for(let x=o;x;x=x.parent)if(x===DR.obj)return true;return false;};
-   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;if(doorStill&&inDoor(o))continue;if(carried.has(o))continue;const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
+   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;if(doorStill&&inDoor(o))continue;if(carried.has(o))continue;{let ff=false;for(let x=o;x&&!ff;x=x.parent)if(x.userData&&x.userData.freeFall)ff=true;if(ff)continue;}/* dropped and falling under gravity (game sets userData.freeFall), like the hatch after letGo */const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
     BX.setFromObject(o);if(BX.isEmpty())continue;const dh=Math.min(BX.distanceToPoint(HP[0]),BX.distanceToPoint(HP[1]));pr.push([m.id,+(dh*100).toFixed(1)]);}
    if(pr.length)r.mv=pr;hipLast=(hipLast||V()).copy(hipNow);if(hatchFree)r.hfree=1;
    // held tools: anything hung under a hand bone (not a bone); distance from that palm to the tool's mesh
