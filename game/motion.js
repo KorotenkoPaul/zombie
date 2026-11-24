@@ -372,7 +372,7 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let s = 0; s < 2; s++) { const L = lock[s]; const inC = !!c.con[f*2+s]; const fb = HB[legs[s][2]]; const ap = fb.getWorldPosition(_a);
         // where the data puts this foot (no blending offsets): character root + the clip's foot, on the hero's floor
         const a0 = f*6 + s*3, lx = c.fl[a0], ly = c.fl[a0+1], lz = c.fl[a0+2]; _b.set(S.char.x + lx*cs + lz*sn, root.position.y + ly, S.char.z - lx*sn + lz*cs);
-        if (inC && !L.on && !L.hold && !(S.lockDelay > 0)) { L.on = true; if (L.w > .05) L.p.copy(L.shown); else L.p.copy(_b); }
+        if (inC && !L.on && !L.hold && !(S.lockDelay > 0)) { L.on = true; if (L.w > .05) L.p.copy(L.shown); else { L.p.copy(_b); L.p.y = ap.y; /* walk thread: the height where the foot is now (hero.js boardDy put it on its own board); the clip's height is over the root's floor, and planting there sank the standing foot 4 cm as the other stepped onto a higher board (kitchen hatch) */ } }
         // the lock holds the foot in place across the floor, not in height: it rides up and down with the root, and hero.js (boardDy)
         // puts each sole on its own board. A height fixed in the world was lifted again by boardDy as the root went down a step (10 cm)
         { const ry = root.position.y; if (L.ry != null && L.w > .001) L.p.y += ry - L.ry; L.ry = ry; }

@@ -40,6 +40,8 @@ async function open({seed=1,vp={width:640,height:640},log=false,query=''}={}){
   r.fulfill({body,contentType:ct});});
  await p.route('https://fonts.googleapis.com/**',r=>r.fulfill({body:'',contentType:'text/css'}));
  await p.goto(ORIGIN+'/index.html'+(query||''));try{await p.waitForLoadState('networkidle',{timeout:120000});}catch(e){}await p.waitForFunction(()=>window.__th&&window.__dbg&&window.__renderer,null,{timeout:600000});
+ // the shader warm-up shows every hidden object until compileAsync ends (or 15 s): start only after it hid them again (index.html sets __warmDone)
+ try{await p.waitForFunction(()=>window.__warmDone===true,null,{timeout:400000,polling:500});}catch(e){console.warn('anim: no __warmDone after 400 s, hidden objects may be visible');}
  await p.evaluate(()=>{const R=window.__renderer;const real=R.render;window.__realRender=real;
   window.__noRender=on=>{R.render=on?function(s){s&&s.updateMatrixWorld&&s.updateMatrixWorld();}:real;};__noRender(true);});
  return {b,p,errs};

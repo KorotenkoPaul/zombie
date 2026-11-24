@@ -3,8 +3,8 @@
 import fs from 'fs';import * as T from 'three';
 import {NodeIO} from '@gltf-transform/core';import {ALL_EXTENSIONS} from '@gltf-transform/extensions';
 const io=new NodeIO().registerExtensions(ALL_EXTENSIONS);const [,,inP,outP,cfgS]=process.argv;const C=JSON.parse(cfgS);
-const d=await io.read(inP);const root=d.getRoot();const mesh0=root.listMeshes()[0];const p=mesh0.listPrimitives()[0];
-const P=p.getAttribute('POSITION').getArray(),UV=p.getAttribute('TEXCOORD_0').getArray(),I=p.getIndices().getArray();
+const d=await io.read(inP);const root=d.getRoot();const mesh0=root.listMeshes()[0];const PL=(process.env.PRIM||'0').split(',').map(Number);const p=mesh0.listPrimitives()[PL[0]];
+let P=[],UV=[],I=[];for(const k of PL){const q=mesh0.listPrimitives()[k];const o=P.length/3;P.push(...q.getAttribute('POSITION').getArray());UV.push(...q.getAttribute('TEXCOORD_0').getArray());for(const i of q.getIndices().getArray())I.push(i+o);}
 const tris=[];for(let t=0;t<I.length;t+=3){if(P[I[t]*3+1]>(C.ymin??1.35)&&P[I[t]*3+2]>0)tris.push(t);}
 const va=new T.Vector3(),vb=new T.Vector3(),vc=new T.Vector3(),ray=new T.Ray(),tgt=new T.Vector3();
 function cast(x,y){ray.set(new T.Vector3(x,y,1),new T.Vector3(0,0,-1));let best=null;
