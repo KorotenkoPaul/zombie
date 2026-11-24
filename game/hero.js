@@ -807,7 +807,7 @@ export function createHero(ctx){
   if(!a.fs){a.fs=1;if(has(C))once(C,{fade:.3});H.face=Math.atan2(F.x-root.position.x,F.z-root.position.z);}
   const A=has(C)?actions[C]:null;
   if(A){if(t>=PF.down&&t<PF.down+PF.hold)A.timeScale=0;else if(t>=PF.down+PF.hold)A.timeScale=.62;/* full bucket: up slower than he went down */}
-  const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const p=root.position;{const tx=F.x-f.x*.36+r.x*.12,tz=F.z-f.z*.36+r.z*.12;const m=.45*dt;p.x+=clamp(tx-p.x,-m,m);p.z+=clamp(tz-p.z,-m,m);}
+  const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const p=root.position;{const tx=F.x-f.x*.18+r.x*.12,tz=F.z-f.z*.18+r.z*.12;/* the fist (0.36 m ahead in the squat) a little past the fill point: the bucket clear of the bank */const m=.45*dt;p.x+=clamp(tx-p.x,-m,m);p.z+=clamp(tz-p.z,-m,m);}
   root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*4);H.look=F.clone();H.lookW=.85*(1-smooth(PF.down+PF.hold,PF.down+PF.hold+.8,t));
   const lv=PD?PD.level:F.y;const end=PF.down+PF.hold+(A?(durOf(C)-PF.down)/.62:1.5);
   if(t>PF.down+.25&&!a.s1){a.s1=1;try{PD&&PD.splash&&PD.splash(F.x,F.z,1);}catch(e){}AU('bucket_fill',F);}
