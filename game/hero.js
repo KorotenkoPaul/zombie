@@ -1670,7 +1670,11 @@ export function createHero(ctx){
   const lat=V().crossVectors(V(0,1,0),f).normalize();const side=Math.atan2(up.dot(lat),up.y);const MAX=.25;if(Math.abs(side)<=MAX)return;
   const d=Math.abs(side)-MAX;// turning up about (up x Y) brings it toward vertical
   const t=V().crossVectors(up,V(0,1,0));if(t.lengthSq()<1e-8)return;const ax=f.clone().multiplyScalar(Math.sign(t.dot(f))||1);for(const n of ["Spine","Spine1","Spine2"])rotW(bones[n],ax,d/3);}
- function bseqTick(dt){bootTweenTick(dt);if(!BSEQ.a)return;seatLeanLimit();seatSideLimit();const t=BSEQ.a.time;
+ // pulling a boot off he brings the foot up, not his face down to it (gate HARD: foot next to the head, 55 cm): the chest straightens
+ // until the head is ~60 cm from either foot
+ function seatFootGap(){if(!bones.Head||!bones.Spine)return;root.updateMatrixWorld(true);const hd=wp(bones.Head);let d=9;for(const sd of ['Left','Right']){const f=bones[sd+'Foot'];if(f)d=Math.min(d,f.getWorldPosition(V()).distanceTo(hd));}
+  if(d>=.6)return;const f=fwd(root.rotation.y);const lat=V().crossVectors(V(0,1,0),f).normalize();const a=Math.min(.35,(.6-d)*2.2);for(const n of ['Spine','Spine1','Spine2'])rotW(bones[n],lat,-a/3);}
+ function bseqTick(dt){bootTweenTick(dt);if(!BSEQ.a)return;seatLeanLimit();seatSideLimit();seatFootGap();const t=BSEQ.a.time;
   // the hand really goes down to the boot's spot by the bed: it sets the boot down there / picks it up from there (no boot flying to the floor)
   const R=BSEQ.r;if(R){const w=smooth(R.at-.55,R.at-.04,t)*(1-smooth(R.at+.12,R.at+.55,t));if(w>.001){const sp=bootSpot(R.sd).p.clone();sp.y+=.09;reachTo(R.sd,sp,w);}}while(BSEQ.b.length&&t>=BSEQ.b[0][0]){const [,f]=BSEQ.b.shift();f();}}
  // clip times (s, after trimming) of the hand events, measured from the mocap keypoints
