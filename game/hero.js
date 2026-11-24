@@ -778,7 +778,7 @@ export function createHero(ctx){
  function repairHammer(a,dt,nail,nrm){const P=window.__props||P3;const hm=P&&P.tools&&P.tools.benchHammer;if(!hm||!nail||!bones.RightArm)return;a.nail=nail;
   const sh=bones.RightArm.getWorldPosition(V());const S=a.hm||(a.hm={ph:Math.random()*.3,w:0,n:0,T:rnd(.72,.9)});
   /* out of reach (hysteresis, so it never flickers): the IK fades out over half a second and the clip swings alone */
-  const dn=sh.distanceTo(nail);a.hmFar=a.hmFar?dn>armLen+.42:dn>armLen+.5;S.w=a.hmFar?Math.max(0,S.w-dt/.5):Math.min(1,S.w+dt/.6);if(S.w<=0)return;S.ph+=dt;if(S.ph>S.T){S.ph-=S.T;S.T=rnd(.72,.9);S.hit=0;S.n++;if(S.n%6===5)S.ph-=rnd(.6,1.1);}
+  const dn=sh.distanceTo(nail);a.hmFar=a.hmFar?dn>armLen+.42:dn>armLen+.5;const fade=a.endIn!=null&&a.endIn<.9;S.w=a.hmFar||fade?Math.max(0,S.w-dt/(fade?.7:.5)):Math.min(1,S.w+dt/.6);if(S.w<=0)return;S.ph+=dt;if(S.ph>S.T){S.ph-=S.T;S.T=rnd(.72,.9);S.hit=0;S.n++;if(S.n%6===5)S.ph-=rnd(.6,1.1);}
   H.noPop={side:'Right',until:performance.now()+150};/* motion.js: the blow is sharp on purpose */
   const u=S.ph/S.T;const lift=u<0?0:u<.5?smooth(0,.5,u):u<.6?1:u<.8?1-Math.pow((u-.6)/.2,2):0;
   const up=nrm.clone().normalize();const d=nail.clone().sub(sh);d.addScaledVector(up,-d.dot(up));if(d.lengthSq()<1e-4)d.set(0,0,1);d.normalize();
@@ -811,8 +811,9 @@ export function createHero(ctx){
   if(u>=.8&&!S.hit&&S.w>.9&&!a.hmFar){S.hit=1;AU('nails',nail);}}
  for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{if(has('hy_standhammer'))try{pickPart(k,o);}catch(e){}const pos=o.pos?V(...o.pos):(R.def?R.def():null);
   const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));const clip=typeof R.clip==='function'?R.clip(o.pos?pos:null):R.clip;
-  return job({pt:()=>pos,node:pos?null:R.node,get stand(){return R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[18,35],tools:R.tools||[],vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */
-   post:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{const n=a.nl||(a.nl=nailOf(R,pos));repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
+  const D=rnd(18,35);/* known here, so the blow's IK fades out before the job ends (no snap back to the clip) */
+  return job({pt:()=>pos,node:pos?null:R.node,get stand(){return R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */
+   post:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{const n=a.nl||(a.nl=nailOf(R,pos));a.endIn=D-a.T;repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
    tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;if(hamr&&a.hm&&!a.hmFar)return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});};
  // ===================== gear: a skinned coat that really follows the body, bow and quiver from the workshop wall =====================
  // the coat is cut from the body mesh itself (torso + arms, pushed out 1.5 cm along the normals) and shares the skeleton
