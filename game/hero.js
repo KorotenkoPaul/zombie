@@ -1277,10 +1277,15 @@ export function createHero(ctx){
     return !(blocked||blk2||out||y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02);};
     /* GRAB: blocked ahead: he turns (slowly, the head with the chest) the shorter way to the nearest free heading; with none free he sweeps on the spot
        instead of spinning round and round (watch: 20 s of turning in place between the table, the chair and the bunk) */
-    if(a.toY==null&&free(root.rotation.y,true)){const f=fwd(root.rotation.y);p.addScaledVector(f,.22*dt);}
-    else{if(a.toY==null){a.toY=false;for(let k=1;k<=8&&a.toY===false;k++)for(const sg of [1,-1]){const ry=root.rotation.y+sg*k*Math.PI/8;if(free(ry,false)){a.toY=ry;break;}}}
+    /* GRAB (gate: head jerks of 11-15 cm/frame² while sweeping): walking and turning start and stop eased, never at full speed at once;
+       the stooped head is ~.5 m from his axis, so a sudden turn whips it */
+    let vT=0,wT=0;
+    if(a.toY==null&&free(root.rotation.y,true))vT=.22;
+    else{if(a.toY==null&&Math.abs(a.v||0)<.03){a.toY=false;for(let k=1;k<=8&&a.toY===false;k++)for(const sg of [1,-1]){const ry=root.rotation.y+sg*k*Math.PI/8;if(free(ry,false)){a.toY=ry;break;}}}
      if(a.toY===false){a.reT=(a.reT||0)+dt;if(a.reT>2.5){a.reT=0;a.toY=null;}}
-     else{const dA=a.toY-root.rotation.y;root.rotation.y+=clamp(dA,-Math.PI*.5*dt,Math.PI*.5*dt);H.face=root.rotation.y;H.lookW=.25;if(Math.abs(dA)<.02)a.toY=null;}}
+     else if(a.toY!=null){const dA=a.toY-root.rotation.y;wT=Math.sign(dA)*Math.min(Math.PI*.5,Math.sqrt(2*2.5*Math.abs(dA)));if(Math.abs(dA)<.02&&Math.abs(a.w||0)<.15){a.toY=null;wT=0;}}}
+    a.v=(a.v||0)+clamp(vT-(a.v||0),-.6*dt,.5*dt);a.w=(a.w||0)+clamp(wT-(a.w||0),-3*dt,3*dt);
+    if(a.v>1e-4)p.addScaledVector(fwd(root.rotation.y),a.v*dt);if(Math.abs(a.w)>1e-4){root.rotation.y+=a.w*dt;H.face=root.rotation.y;H.lookW=.25;}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
   water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
   listen:(o)=>{
