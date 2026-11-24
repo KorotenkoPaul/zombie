@@ -1178,7 +1178,13 @@ export function createHero(ctx){
  function seatLeanLimit(){if(!bones.Neck||!bones.Spine)return;root.updateMatrixWorld(true);const hp=bones.Hips.getWorldPosition(V()),nk=bones.Neck.getWorldPosition(V());const up=nk.sub(hp).normalize();const f=fwd(root.rotation.y);
   const back=Math.atan2(-up.dot(f),up.y);const MAX=.14;if(back<=MAX)return;const lat=V().crossVectors(V(0,1,0),f).normalize();// rotating about lat by +a tips the top toward f
   const d=back-MAX;for(const n of ['Spine','Spine1','Spine2'])rotW(bones[n],lat,d/3);}
- function bseqTick(dt){bootTweenTick(dt);if(!BSEQ.a)return;seatLeanLimit();const t=BSEQ.a.time;while(BSEQ.b.length&&t>=BSEQ.b[0][0]){const [,f]=BSEQ.b.shift();f();}}
+ // and sideways: the boots-off mocap also sagged onto one elbow toward the pillow (head ~35 cm over the quilt, legs up); the chest
+ // stays within ~14 degrees of upright to either side, so he works on the boot sitting up
+ function seatSideLimit(){if(!bones.Neck||!bones.Spine)return;root.updateMatrixWorld(true);const hp=bones.Hips.getWorldPosition(V()),nk=bones.Neck.getWorldPosition(V());const up=nk.sub(hp).normalize();const f=fwd(root.rotation.y);
+  const lat=V().crossVectors(V(0,1,0),f).normalize();const side=Math.atan2(up.dot(lat),up.y);const MAX=.25;if(Math.abs(side)<=MAX)return;
+  const d=Math.abs(side)-MAX;// turning up about (up x Y) brings it toward vertical
+  const t=V().crossVectors(up,V(0,1,0));if(t.lengthSq()<1e-8)return;const ax=f.clone().multiplyScalar(Math.sign(t.dot(f))||1);for(const n of ["Spine","Spine1","Spine2"])rotW(bones[n],ax,d/3);}
+ function bseqTick(dt){bootTweenTick(dt);if(!BSEQ.a)return;seatLeanLimit();seatSideLimit();const t=BSEQ.a.time;while(BSEQ.b.length&&t>=BSEQ.b[0][0]){const [,f]=BSEQ.b.shift();f();}}
  // clip times (s, after trimming) of the hand events, measured from the mocap keypoints
  const BOOT_OFF={grab:2.05/1.25,down:4.1/1.25},BOOT_ON=BOOTREV.R?{pick:BOOTREV.R-4.1/1.25+.05,on:BOOTREV.R-2.05/1.25}:{pick:.55/1.25,on:2.1/1.25},VEST_OFF={off:2.0};
  function undressSeq(done){bootInit();const steps=[];
