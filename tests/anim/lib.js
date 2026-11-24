@@ -8,13 +8,20 @@ const {chromium}=require('playwright');const fs=require('fs');const path=require
 const GAME=path.resolve(__dirname,'../../game');const ORIGIN='http://zombie.qa';
 const INIT=seed=>{ // runs before any page script
  let s=seed>>>0;const rand=()=>{s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};
- Math.random=rand;
+ // While loading, assets arrive in a different order each time, so one shared random stream would hand out different numbers
+ // to the same code. Until start(), each call site (file:line:col) gets its own stream; from start() on, one seeded stream.
+ const sites=new Map();let perSite=true;
+ const siteRand=()=>{const st=new Error().stack.split('\n')[3]||'';let r=sites.get(st);if(!r){let h=2166136261>>>0;for(let i=0;i<st.length;i++){h^=st.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
+   let z=(h^seed)>>>0;r=()=>{z=(z+0x6D2B79F5)>>>0;let t=z;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};sites.set(st,r);}return r();};
+ Math.random=()=>perSite?siteRand():rand();
  // While the page loads, the game loop runs on real animation frames but the clock stands still (dt = 0), so the
  // load time cannot move the hero or the hour. From start() on, frames happen only inside __qa.step.
  const realRAF=window.requestAnimationFrame.bind(window);let vt=1000,manual=false,q=[];
- window.requestAnimationFrame=cb=>{if(manual){q.push(cb);return q.length;}return realRAF(cb);};
- performance.now=()=>vt;
- window.__qa={reseed(n){s=n>>>0;},start(){return new Promise(res=>{realRAF(()=>{manual=true;realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
+ // once the game has built itself (__th is set) its loop is held: frames run only inside __qa.step, so the number of frames the
+ // browser happened to show while loading cannot change the state
+ window.requestAnimationFrame=cb=>{if(manual||window.__th&&window.__dbg&&window.__renderer){q.push(cb);return q.length;}return realRAF(cb);};
+ performance.now=()=>vt;const D0=1.7e12;Date.now=()=>D0+vt;window.__fixedStart=true; // no wall clock, no random 'mid-activity' start
+ window.__qa={reseed(n){s=n>>>0;perSite=false;},start(){return new Promise(res=>{realRAF(()=>{manual=true;realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
   step(n,dt,each){for(let i=0;i<n;i++){vt+=dt*1000;const cb=q;q=[];for(const c of cb)c(vt);this.frame++;if(each)each(this.frame);}}};
 };
 async function open({seed=1,vp={width:640,height:640},log=false,query=''}={}){

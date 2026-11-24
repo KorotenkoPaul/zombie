@@ -256,6 +256,9 @@ export function createHero(ctx){
  /* which local axis of a bone points the way he faces: measured on the playing clips, -Z for pelvis and head (dot with the walk direction +1.00);
     never guess the sign from the root yaw, a pelvis mid-pivot would flip */
  const BFWD={Hips:V(0,0,-1),Head:V(0,0,-1),Spine2:V(0,0,-1)};
+ /* pelvis forward measured from the hip joints (left hip minus right hip, crossed with up), never from a bone axis: on walking frames
+    the Hips' local -Z points backwards (92 % of frames, with or without motion matching), so knee directions must not use it */
+ function pelvisFwdGeo(){const lh=bones.LeftUpLeg,rh=bones.RightUpLeg;if(lh&&rh){const g=lh.getWorldPosition(V()).sub(rh.getWorldPosition(V())).cross(V(0,1,0));g.y=0;if(g.lengthSq()>1e-4)return g.normalize();}return fwd(root.rotation.y);}
  function hipsFwd(){const q=bones.Hips.getWorldQuaternion(new THREE.Quaternion());const f=BFWD.Hips.clone().applyQuaternion(q);f.y=0;const r=fwd(root.rotation.y);if(f.lengthSq()<1e-3)return r;return f.normalize();}
  function legPlant(g,dt,pw=1){const M=window.__plantMode??2;if(M===0||pw<.01)return;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V()),k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
    const tgt=V(a.x,g+(POSE.ankle??.1),a.z);let pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole=fwd(root.rotation.y);pole.normalize().multiplyScalar(.35).add(hipsFwd());pole.normalize();
@@ -263,10 +266,13 @@ export function createHero(ctx){
    let S=plantS[s];if(!S||(pw>=.999&&S.t.distanceTo(tgt)>.3)||!S.on){S=plantS[s]={t:tgt.clone(),p:pole.clone(),on:true};}
    const kk=1-Math.exp(-(dt||1/60)*3);S.t.lerp(tgt,kk);S.p.lerp(pole,kk).normalize();ik2(U,L,F,S.t,S.p,pw,true);}toeGuard(g,dt,pw);}
  // a knee may never bend forward (a clip glitch or an IK pole flip): re-solve that leg with the knee pointing where the pelvis faces
- function kneeGuard(){const hf=hipsFwd();for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;
+ function kneeGuard(){const hf=pelvisFwdGeo();for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;
    const hp=U.getWorldPosition(V()),k=L.getWorldPosition(V()),a=F.getWorldPosition(V());const mid=hp.clone().add(a).multiplyScalar(.5);const off=k.clone().sub(mid);
    // the knee's forward is where that leg's toes point (the pelvis can be turned far from the root mid-turn; a flipped pelvis forward bent good knees backwards)
-   const T=bones[s+'ToeBase'];const tf=T?T.getWorldPosition(V()).sub(a):null;if(tf){tf.y=0;}const kf=tf&&tf.lengthSq()>1e-4?tf.normalize():hf;
+   const T=bones[s+'ToeBase'];const tf=T?T.getWorldPosition(V()).sub(a):null;if(tf){tf.y=0;}
+   /* a swing foot pointed down (toe-off) has a flat toe direction of a few mm that can point anywhere, even backwards: it flipped good
+      knees to 60 deg backwards mid-stride. Trust the toes in proportion to how flat they are, never against the pelvis */
+   const tl=tf?tf.length():0;const kf=hf.clone().multiplyScalar(.6);if(tl>1e-4){const tw=Math.min(1,tl/.06)*(tf.dot(hf)<0?.3:1);kf.addScaledVector(tf,tw/tl);}kf.y=0;if(kf.lengthSq()<1e-6)kf.copy(hf);kf.normalize();
    const leg=a.clone().sub(hp);if(leg.lengthSq()<1e-4)continue;const ld=leg.clone().normalize();const pf=kf.clone().sub(ld.clone().multiplyScalar(kf.dot(ld)));if(pf.lengthSq()<1e-4)continue;pf.normalize();
    const o=off.clone().sub(ld.clone().multiplyScalar(off.dot(ld)));if(o.length()<.02||o.dot(pf)>-.3*o.length())continue;
    ik2(U,L,F,a,pf.clone().add(o.normalize().multiplyScalar(.15)),1,true);}}
@@ -1091,11 +1097,11 @@ export function createHero(ctx){
  // turned on the pillow). Turning over blends from one pose to the next. Only breathing moves; the head rests still.
  const SLP={rest:null};const _sq=new THREE.Quaternion(),_sm=new THREE.Matrix4();
  function slpInit(){if(SLP.rest)return true;let sk=null;root.traverse(o=>{if(o.isSkinnedMesh&&!sk)sk=o;});if(!sk||!bones.Hips||!bones.Head)return false;const S=sk.skeleton;
-  const sq=S.bones.map(b=>b.quaternion.clone()),spp=S.bones.map(b=>b.position.clone());const rq=root.quaternion.clone();root.quaternion.identity();S.pose();root.updateMatrixWorld(true);
+  const sq=S.bones.map(b=>b.quaternion.clone()),spp=S.bones.map(b=>b.position.clone()),ssc=S.bones.map(b=>b.scale.clone());/* pose() also resets the bind SCALE (Hips 1.25): restore it or the legs grow 25% and fold on every step */const rq=root.quaternion.clone();root.quaternion.identity();S.pose();root.updateMatrixWorld(true);
   SLP.rest=POSEBONES.map(b=>b.quaternion.clone());SLP.hipsW=bones.Hips.getWorldQuaternion(new THREE.Quaternion());
   const w=n=>bones[n].getWorldPosition(V());SLP.headHips=w('Head').distanceTo(w('Hips'));SLP.l1=w('LeftUpLeg').distanceTo(w('LeftLeg'));SLP.l2=w('LeftLeg').distanceTo(w('LeftFoot'));
   SLP.toe=w('LeftFoot').distanceTo(w('LeftToeBase'));SLP.foot={};for(const sd of ['Left','Right']){const t=w(sd+'ToeBase').sub(w(sd+'Foot')).normalize();const u=V(0,1,0).addScaledVector(t,-t.y).normalize();SLP.foot[sd]={q:bones[sd+'Foot'].getWorldQuaternion(new THREE.Quaternion()),t,u};}SLP.hipW=w('LeftUpLeg').distanceTo(w('RightUpLeg'));
-  S.bones.forEach((b,i)=>{b.quaternion.copy(sq[i]);b.position.copy(spp[i]);});root.quaternion.copy(rq);root.updateMatrixWorld(true);return true;}
+  S.bones.forEach((b,i)=>{b.quaternion.copy(sq[i]);b.position.copy(spp[i]);b.scale.copy(ssc[i]);});root.quaternion.copy(rq);root.updateMatrixWorld(true);return true;}
  const SLEEP_SHAPE={back:{hip:.085,head:.2},sideL:{hip:.105,head:.215},sideR:{hip:.105,head:.215},bellyL:{hip:.09,head:.185},bellyR:{hip:.09,head:.185}};
  function sleepPose(name,out){const B=FIT.bed;const hd=B.headDir||1;const mat=B.mat;const bz=B.bz;const sh=SLEEP_SHAPE[name]||SLEEP_SHAPE.back;
   const Y=V(hd,0,0);const Z=name==='back'?V(0,1,0):name==='sideL'?V(0,0,hd):name==='sideR'?V(0,0,-hd):V(0,-1,0);const X=V().crossVectors(Y,Z);// X = body left
@@ -1189,15 +1195,14 @@ export function createHero(ctx){
  // HERO-RULES 3, live: ?inv in the URL (or HH.inv.on=true) checks the final pose every frame and counts what breaks, per task.
  // HH.inv.report() lists them; the first of each kind per task is logged with the frame so a thread can jump to it.
  const INV={on:/[?&]inv\b/.test(location.search),n:0,hits:{},prev:null,report(){return Object.entries(this.hits).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>k+' x'+v.n+' worst '+v.worst.toFixed(v.unit==='deg'?0:2)+v.unit+' first f'+v.f);},reset(){this.hits={};this.n=0;}};
- function invHit(kind,val,unit){const k=(H.task||H.state||'-')+' / '+kind;const h=INV.hits[k];if(!h){INV.hits[k]={n:1,worst:val,unit,f:INV.n};console.warn('[inv] f'+INV.n+' '+k+' '+val.toFixed(2)+unit);}else{h.n++;if(val>h.worst)h.worst=val;}}
+ function invHit(kind,val,unit){const k=(H.task||H.state||'-')+(H.lad?' (ladder)':H.trans?' (transition)':H.state==='walk'?' (walking)':'')+' / '+kind;const h=INV.hits[k];if(!h){INV.hits[k]={n:1,worst:val,unit,f:INV.n};console.warn('[inv] f'+INV.n+' '+k+' '+val.toFixed(2)+unit);}else{h.n++;if(val>h.worst)h.worst=val;}}
  function invCheck(dt){INV.n++;const p=root.position;const f=fwd(root.rotation.y);const busy=H.lad||H.trans||H.seated||H.inBed||H.fit||!root.visible;
   // 1 feet on a support while standing
   if(!busy&&H.ground&&H.floorY!=null){const lf=bones.LeftFoot.getWorldPosition(V()),rf=bones.RightFoot.getWorldPosition(V());const lo=Math.min(lf.y,rf.y)-H.floorY;if(lo>.16)invHit('feet in the air',lo,'m');}
-  // 5 knees never bend forward (the knee is behind the hip-ankle line, seen along the toes)
-  for(const s of ['Left','Right']){const hp=bones[s+'UpLeg'].getWorldPosition(V()),kn=bones[s+'Leg'].getWorldPosition(V()),an=bones[s+'Foot'].getWorldPosition(V());
-   const toe=bones[s+'ToeBase']?bones[s+'ToeBase'].getWorldPosition(V()).sub(an).setY(0):f.clone();if(toe.lengthSq()<1e-5)toe.copy(f);toe.normalize();
-   const mid=hp.clone().lerp(an,.5);const off=kn.clone().sub(mid).dot(toe);const ang=kn.clone().sub(hp).angleTo(an.clone().sub(kn));
-   if(off<-.02&&ang>.35)invHit(s+' knee backwards',ang*57.3,'deg');}
+  // 5 knees never bend forward: the bend plane's normal (thigh x shin) points to his left for a real knee; to his right = broken
+  {const lh=bones.LeftUpLeg.getWorldPosition(V()),rh=bones.RightUpLeg.getWorldPosition(V());const toR=rh.clone().sub(lh);
+   for(const s of ['Left','Right']){const hp=s==='Left'?lh:rh,kn=bones[s+'Leg'].getWorldPosition(V()),an=bones[s+'Foot'].getWorldPosition(V());const th=kn.clone().sub(hp),sh=an.clone().sub(kn);const ang=th.angleTo(sh);
+    if(ang>.35){const nrm=th.clone().cross(sh).normalize();if(nrm.dot(toR)/toR.length()>.5)invHit(s+' knee backwards',ang*57.3,'deg');}}}
   // 5 head within 70 deg of the pelvis, no roll past 10 deg
   {const hq=bones.Head.getWorldQuaternion(new THREE.Quaternion());const hf=BFWD.Head.clone().applyQuaternion(hq).setY(0);const pf=hipsFwd().setY(0);if(hf.lengthSq()>1e-4&&pf.lengthSq()>1e-4){const d=hf.angleTo(pf)*57.3;if(d>75)invHit('owl head',d,'deg');}
    const fw=BFWD.Head.clone().applyQuaternion(hq),up=V(0,1,0).applyQuaternion(hq),sd=fw.clone().cross(YAX);if(sd.lengthSq()>1e-4){const r=Math.abs(Math.asin(clamp(up.dot(sd.normalize()),-1,1)))*57.3;if(r>12&&!H.inBed)invHit('head roll',r,'deg');}}
@@ -1274,7 +1279,7 @@ export function createHero(ctx){
   if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);
   if(H.reach){const R=H.reach;R.t+=dt;const k=R.t/R.d;const w=smooth(0,.4,k)*(1-smooth(.62,1,k));if(w>.01)reachTo(R.side,R.pt,w);H.look=R.pt;H.lookW=.9;}
   if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */
-  runSlot('contacts',dt);
+  runSlot('contacts',dt);if(!H.inBed&&!H.bedB)headRoll();/* the head stays level whatever the hands and the ladder did to the chest */
   if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */
   if(act&&act.fr)fridgePost(act);/* GRAB HOOK */
   try{window.__grab&&window.__grab.tick&&window.__grab.tick(dt,H);}catch(e){}/* GRAB HOOK: hands close round what they hold */}
