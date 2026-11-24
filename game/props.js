@@ -219,7 +219,7 @@ function makeMaterials(renderer) {
   const qt = upgrade(texOf(quiltCanvas()), 'quilt.jpg'); const pg = texOf(pageCanvas()); pg.wrapS = pg.wrapT = THREE.ClampToEdgeWrapping;
   M = {
     env,
-    wood: std({ ...wt('#C98A4E', '#7A4826', '#EDB477', 2, 2), roughness: .72 }),          // honey furniture
+    wood: std({ ...wt('#C98A4E', '#7A4826', '#EDB477', 2, 2), roughness: .84 }),          /* oiled, not varnished: the bunk read as glossy plastic */          // honey furniture
     woodLight: std({ ...wt('#D9A066', '#8E5A30', '#F4C88E', 1, 2), roughness: .72 }),     // table tops, shelves
     woodDark: std({ ...wt('#7E4E2E', '#3E2414', '#A8703F', 2), roughness: .78 }),      // frames, legs
     // (wood, woodLight, woodDark get the photo scans once loaded: see scanWood below)
@@ -242,9 +242,9 @@ function makeMaterials(renderer) {
     glass: std({ color: 0xC8DCE6, roughness: .08, metalness: 0, transparent: true, opacity: .35, envMap: env, envMapIntensity: 1.2, depthWrite: false }),
     jarGlass: std({ color: 0xC88A3A, roughness: .15, transparent: true, opacity: .75, envMap: env, envMapIntensity: 1 }),
     rubber: std({ color: 0x24201E, roughness: .6 }),
-    gripRed: std({ color: 0xB0412E, roughness: .45 }),
-    gripYellow: std({ color: 0xD9A132, roughness: .45 }),
-    gripBlue: std({ color: 0x3F6E9A, roughness: .45 }),
+    gripRed: std({ color: 0x8E3226, roughness: .5 }), /* old cellulose handles: deeper, dirtier tones (were toy-bright) */
+    gripYellow: std({ color: 0xB0832E, roughness: .5 }),
+    gripBlue: std({ color: 0x34546E, roughness: .5 }),
     linen: std({ color: 0xF4EDE0, roughness: .92 }),
     mattress: std({ color: 0xE6DFCF, roughness: .9 }),
     quilt: std({ map: qt, roughness: .95, side: THREE.DoubleSide }),
@@ -270,7 +270,13 @@ function makeMaterials(renderer) {
       for (let i = 0; i < 5; i++) { const gr = g.createRadialGradient(0, 0, 0, 0, 0, 30); gr.addColorStop(0, 'rgba(150,120,70,.09)'); gr.addColorStop(1, 'rgba(150,120,70,0)'); g.save(); g.translate(Math.random() * w, Math.random() * h); g.scale(1, .6 + Math.random() * .6); g.fillStyle = gr; g.fillRect(-30, -30, 60, 60); g.restore(); }
     });
     M.linen.map = texOf(c, { rep: 5 }); M.linen.bumpMap = texOf(c, { srgb: false, rep: 5 }); M.linen.bumpScale = .8; M.linen.color.set(0xffffff); M.linen.needsUpdate = true; }
-  wearEnamel(M.fridge, 0xDAD4C4, 7, { grime: .16, chips: 9 }); /* a well-used old fridge: grime in the edges, chips, crazing */
+  wearEnamel(M.fridge, 0xDAD4C4, 7, { grime: .16, chips: 9 });
+  // realism sweep (tools and dishes up close): the glazed mugs and jars, and the dark enamel pot, get used glaze (grime in the
+  // rim and foot, chips, crazing) instead of a flat plastic colour; the mattress is striped ticking; vegetables and the whetstone
+  // get their own surfaces
+  /* no chips on these: on a lathe the texture's side edges meet at the seam, where two chips side by side read as a pair of eyes */
+  wearEnamel(M.glazeBlue, 0x7F9DB4, 21, { grime: .12, chips: 0 }); wearEnamel(M.glazeCream, 0xEADDBE, 22, { grime: .14, chips: 0 }); wearEnamel(M.enamelDark, 0x4A5058, 23, { grime: .1, chips: 0 });
+  tickingOf(M.mattress); /* a well-used old fridge: grime in the edges, chips, crazing */
   scanWood(M.wood, 'wood-floor.jpg', { color: 0xF2DCC4 }); scanWood(M.woodLight, 'wood-wall.jpg', { color: 0xE6C49C }); scanWood(M.woodDark, 'wood-dark.jpg', { w: 256, h: 512, color: 0xC49470, bump: 1.6 });
   varyWood(M.wood); workTops(varyWood(M.woodLight)); varyWood(M.woodDark, .7); // (Planks thread) every piece its own tone
   return M;
@@ -546,10 +552,27 @@ function pot() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.085, 0], [
 function pan(r = .11) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r, 0], [r + .012, .04], [r + .006, .042], [r - .004, .006], [0, .006]], 28), M.iron, 0, 0, 0, Math.PI / 2); // hangs flat against the wall, handle up
   add(g, rb(.026, .2, .012, .005), M.woodDark, 0, r + .11, .02); add(g, rb(.02, .05, .01, .004), M.iron, 0, r + .015, .02); add(g, new THREE.TorusGeometry(.008, .003, 6, 10), M.iron, 0, r + .205, .02); return g; }
 function ladle(len = .32) { const g = new THREE.Group(); add(g, new THREE.SphereGeometry(.04, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), M.steel, 0, -len / 2, 0); add(g, rb(.012, len, .004, .002), M.steel, 0, 0, -.01, -.06); add(g, new THREE.TorusGeometry(.01, .003, 6, 10), M.steel, 0, len / 2 + .008, -.012); return g; }
-function spatula(len = .3) { const g = new THREE.Group(); const bl = roundRect(.06, .085, .022); for (const x of [-.012, .012]) { const h = new THREE.Path(); h.absellipse(x, .005, .004, .025, 0, Math.PI * 2, true); bl.holes.push(h); } add(g, EX(bl, .004, .0015), M.woodLight, 0, -len / 2 + .04, 0); add(g, new THREE.CylinderGeometry(.007, .007, len - .08, 8), M.woodLight, 0, .04, 0); return g; }
+// carved wooden utensils (they were a flat slotted plate on a stick): one lofted solid each, an oval cross-section whose width
+// and thickness follow the carving along the length (y, tip at -len/2), so the bowl, neck and handle swell and taper with real
+// thickness, the spatula blade thins to a bevelled edge at the tip, and the spoon's bowl is dished (the section dips in the middle)
+function loftUtensil(len, wf, hf, df = () => 0, N = 14, Mn = 44) { const P = [], UV = [], I = [];
+  for (let i = 0; i <= Mn; i++) { const t = i / Mn, y = -len / 2 + t * len, w = Math.max(.0004, wf(t)), h = Math.max(.0003, hf(t)), d = df(t);
+    for (let j = 0; j <= N; j++) { const a = j / N * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a); P.push(w * c, y, h * sn - d * (1 - c * c)); UV.push(j / N, t); } }
+  for (let i = 0; i < Mn; i++) for (let j = 0; j < N; j++) { const a = i * (N + 1) + j, b = a + N + 1; I.push(a, b, a + 1, b, b + 1, a + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(I); g.computeVertexNormals(); return g; }
+const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function spatula(len = .3) { const g = new THREE.Group(); const B = .36; // blade | neck | handle; the blade end is squared with round corners
+  const wf = t => t < B ? .029 * Math.pow(Math.min(1, t / .035), .35) * (1 - .1 * sm(.2, B, t)) : t < B + .1 ? .026 - .018 * sm(B, B + .1, t) : .008 + .003 * sm(.6, .95, t) * (1 - sm(.97, 1, t) * .9) ;
+  const hf = t => t < B ? .0012 + .0028 * sm(0, B, t) : t < B + .1 ? .004 + .002 * sm(B, B + .1, t) : .0058 * (1 - .85 * sm(.97, 1, t));
+  add(g, loftUtensil(len, wf, hf), M.woodLight); return g; }
+function woodSpoon(len = .28) { const g = new THREE.Group(); const B = .3;
+  const wf = t => t < B ? .03 * Math.sqrt(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2), 2))) + (t > B / 2 ? .007 * sm(B / 2, B, t) : 0) : t < B + .08 ? .009 - .002 * sm(B, B + .08, t) : .0072 + .0028 * sm(.55, .95, t) * (1 - sm(.97, 1, t) * .9);
+  const hf = t => t < B ? .0026 * Math.min(1, Math.sqrt(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2), 2))) * 3) + .0004 : t < B + .08 ? .0045 + .0012 * sm(B, B + .08, t) : .0056 * (1 - .85 * sm(.97, 1, t));
+  const df = t => t < B ? .011 * Math.pow(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2 * .92), 2)), .8) : 0;
+  add(g, loftUtensil(len, wf, hf, df), M.woodLight); return g; }
 function utensilRail(w = .55) { const g = new THREE.Group(); add(g, new THREE.CylinderGeometry(.008, .008, w, 10), M.brass, 0, 0, .04, 0, 0, Math.PI / 2); for (const s of [-1, 1]) add(g, rb(.02, .03, .05, .006), M.brass, s * w / 2, 0, .02);
   const hook = (x) => add(g, new THREE.TorusGeometry(.012, .0025, 6, 12, Math.PI * 1.4), M.brass, x, -.012, .04, 0, Math.PI / 2, 0);
-  const items = [[-.17, spatula(.2), -.12], [-.03, ladle(.24), -.14], [.08, spatula(.22), -.13], [.18, ladle(.2), -.12]]; for (const [x, o, y] of items) { hook(x); o.position.set(x, y, .045); g.add(o); }
+  const items = [[-.17, spatula(.2), -.12], [-.03, ladle(.24), -.14], [.08, woodSpoon(.23), -.135], /* same reach as before: the spatula's tip stays clear of the kettle lid */ [.18, ladle(.2), -.12]]; for (const [x, o, y] of items) { hook(x); o.position.set(x, y, .045); g.add(o); }
   return bake(g); }
 function coatHooks() { const g = new THREE.Group(); W(g, .34, .07, .025, 0, 0, .0125, { mat: M.woodDark, r: .008 });
   for (const x of [-.11, 0, .11]) { add(g, new THREE.CylinderGeometry(.008, .008, .06, 8), M.woodDark, x, 0, .05, Math.PI / 2); add(g, new THREE.SphereGeometry(.013, 10, 8), M.woodDark, x, 0, .08); }
@@ -682,6 +705,23 @@ function switchPlate() { const g = new THREE.Group(); add(g, rb(.08, .12, .012, 
 // ------------- workshop -------------
 // used enamel (sink, fridge): box faces map 0..1 each, so a frame in the texture lands on every edge: grime worked into
 // the edges, chips knocked out of them (black iron with a grey rim), hairline crazing and water stains on the faces.
+// mattress ticking: cream cotton with narrow grey-blue stripes, slubs, a faint body stain and bump (was a bare white box)
+function tickingOf(mat) { let ls = 777; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#E9E1CE'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 16) { g.fillStyle = 'rgba(88,104,122,.75)'; g.fillRect(x + 2, 0, 3, h); g.fillStyle = 'rgba(88,104,122,.45)'; g.fillRect(x + 7, 0, 1, h); }
+    for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(${LR() < .5 ? '255,255,250' : '150,140,120'},${.05 + LR() * .06})`; g.fillRect(0, y, w, 1); } // weave
+    for (let k = 0; k < 6; k++) { const x = LR() * w, y = LR() * h, r = 20 + LR() * 50; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(160,130,80,.12)'); gr.addColorStop(1, 'rgba(160,130,80,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  mat.map = texOf(c); mat.map.repeat.set(3, 1); mat.bumpMap = texOf(c, { srgb: false }); mat.bumpMap.repeat.set(3, 1); mat.bumpScale = .6; mat.color.set(0xffffff); mat.needsUpdate = true; return mat; }
+// vegetable skins: carrot (fine rings and root hairs' dots), potato (earthy speckle, eyes, bumps)
+function vegSkin(kind) { let ls = kind === 'carrot' ? 41 : 43; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(128, 128, (g, w, h) => { if (kind === 'carrot') { g.fillStyle = '#E27A2C'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 3 + LR() * 5) { g.fillStyle = `rgba(150,70,20,${.25 + LR() * .3})`; g.fillRect(0, y, w, 1); } for (let k = 0; k < 40; k++) { g.fillStyle = 'rgba(120,60,20,.5)'; g.fillRect(LR() * w, LR() * h, 2, 1); } }
+    else { g.fillStyle = '#B28C5C'; g.fillRect(0, 0, w, h); for (let k = 0; k < 400; k++) { g.fillStyle = `rgba(${LR() < .5 ? '90,66,40' : '205,175,130'},${.2 + LR() * .3})`; g.fillRect(LR() * w, LR() * h, 1 + LR() * 2, 1 + LR() * 2); } for (let k = 0; k < 6; k++) { g.fillStyle = 'rgba(70,48,28,.8)'; g.beginPath(); g.ellipse(LR() * w, LR() * h, 2.5, 1.5, LR() * 3, 0, 7); g.fill(); } } });
+  return { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: kind === 'carrot' ? 1 : 2 }; }
+// sharpening stone: fine grit speckle, a darker oiled hollow worn down the middle, lighter edges
+function gritOf() { let ls = 99; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(128, 128, (g, w, h) => { g.fillStyle = '#9A968C'; g.fillRect(0, 0, w, h); for (let k = 0; k < 1600; k++) { g.fillStyle = `rgba(${LR() < .5 ? '40,38,36' : '170,166,156'},${.25 + LR() * .35})`; g.fillRect(LR() * w, LR() * h, 1, 1); }
+    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(20,18,16,0)'); gr.addColorStop(.5, 'rgba(20,18,16,.18)'); gr.addColorStop(1, 'rgba(20,18,16,0)'); g.fillStyle = gr; g.fillRect(w * .1, 0, w * .8, h); });
+  return { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 1.5 }; }
 function wearEnamel(mat, hex, seed = 1, { grime = .35, chips = 22 } = {}) {
   let ls = 9973 * seed; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
   const base = new THREE.Color(hex), b = `rgb(${base.r * 255 | 0},${base.g * 255 | 0},${base.b * 255 | 0})`;
@@ -873,7 +913,7 @@ function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStanda
     for (let i = 0; i < 45; i++) { const x = Math.random() * w, y = Math.random() < .5 ? Math.random() * h * .15 : h * (.85 + Math.random() * .15); g.fillStyle = 'rgba(160,165,160,.85)'; g.beginPath(); g.ellipse(x, y, 2 + Math.random() * 6, 1 + Math.random() * 3, Math.random() * 3, 0, 6.3); g.fill(); }
     for (let i = 0; i < 25; i++) { g.fillStyle = `rgba(120,60,30,${.2 + Math.random() * .35})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 5); } });
   MX = { terracotta: s(0xffffff, { roughness: 1, map: texOf(tc), bumpMap: texOf(tc, { srgb: false }), bumpScale: .8 }), soil: s(0x3A2A1E, { roughness: 1 }), leaf: s(0x557F3C, { roughness: .6, side: THREE.DoubleSide }), leafDark: s(0x36572A, { roughness: .65, side: THREE.DoubleSide }),
-    carrot: s(0xE07A2A, { roughness: .6 }), onion: s(0xC8964E, { roughness: .45 }), potato: s(0xB08A58, { roughness: .9 }), stone: s(0x8E908A, { roughness: .95 }), stoneDark: s(0x5A5650, { roughness: .85 }),
+    carrot: s(0xFFFFFF, { roughness: .6, ...vegSkin('carrot') }), onion: s(0xC8964E, { roughness: .45 }), potato: s(0xFFFFFF, { roughness: .9, ...vegSkin('potato') }), stone: s(0xF0EEE8, { ...gritOf(), roughness: .9 }), stoneDark: s(0xC8C4BC, { ...gritOf(), roughness: .85 }),
     straw: s(0xC9A45A, { roughness: 1 }), zinc: s(0xffffff, { metalness: .3, roughness: .62, envMap: M.env, envMapIntensity: .45, map: texOf(zc), bumpMap: texOf(zc, { srgb: false }), bumpScale: .6 }), bark: (() => { const c = canvas(256, 256, (g) => { g.fillStyle = '#4E3A2A'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 70; i++) { const x0 = Math.random() * 256; g.strokeStyle = Math.random() < .6 ? 'rgba(28,18,10,.8)' : 'rgba(120,96,70,.55)'; g.lineWidth = 1 + Math.random() * 3; g.beginPath(); let x = x0; g.moveTo(x, -5); for (let y = 0; y <= 260; y += 16) { x += (Math.random() - .5) * 6; g.lineTo(x, y); } g.stroke(); }
       for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${90 + Math.random() * 60},${70 + Math.random() * 40},${50 + Math.random() * 30},.35)`; g.fillRect(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 5, 6 + Math.random() * 14); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 3, roughness: 1, side: THREE.DoubleSide }); })(),
