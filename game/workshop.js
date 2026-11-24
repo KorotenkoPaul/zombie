@@ -21,6 +21,10 @@ export function createWorkshop(K) {
   // a fist onto a point with the arm only (no lean of the chest: he stands upright at the bench; the stance puts the work in reach)
   function handTo(side, t, w) { const g = G(); const sh = bones[side + 'Arm']; if (!g || !g.gripPoint || !sh || w <= .001) return; const pt = g.palmTarget(side, t);
     K.armIK(side, pt, K.sidePole(side), Math.min(1, w)); if (w > .98) for (let i = 0; i < 3; i++) { const e = t.clone().sub(g.gripPoint(side)); if (e.length() < .004) break; K.armIK(side, bones[side + 'Hand'].getWorldPosition(V()).add(e), K.sidePole(side), 1); } }
+  // a flat hand pressing on something: hand-bone +y (fingers) along fdir, the palm (hand-bone x, side sign PS) facing pdir
+  const PS = { Left: +(window.__wsPS || 1), Right: -(window.__wsPS || 1) };
+  function flatHand(side, fdir, pdir, w) { const hb = bones[side + 'Hand']; if (!hb || w <= .001) return; const y = fdir.clone().normalize(); const x = pdir.clone().multiplyScalar(-PS[side]).addScaledVector(y, -pdir.dot(y) * -PS[side]).normalize();
+    const z = x.clone().cross(y).normalize(); const m = new THREE.Matrix4().makeBasis(x, y, z); const qW = Q().setFromRotationMatrix(m); const qP = hb.parent.getWorldQuaternion(Q()); hb.quaternion.slerp(qP.invert().multiply(qW), Math.min(1, w)); hb.updateMatrixWorld(true); }
   const bench = () => { const P = PP(); return P && P.objects && P.objects.workbench; };
   const toW = (x, y, z) => { const b = bench(); b.updateMatrixWorld(); return b.localToWorld(V(x, y, z)); };
   const dirW = (x, y, z) => { const b = bench(); b.updateMatrixWorld(); return V(x, y, z).applyQuaternion(b.getWorldQuaternion(Q())); }; // keeps the length (transformDirection normalises)
@@ -200,13 +204,13 @@ export function createWorkshop(K) {
       const tilt = .26; const nrm = W.clone().cross(up).normalize(); // horizontal, perpendicular to the blade
       const B = up.clone().multiplyScalar(Math.sin(tilt)).addScaledVector(nrm, -Math.cos(tilt)).normalize(); if (B.dot(fw) > 0) B.addScaledVector(nrm, 2 * Math.cos(tilt)).normalize();
       const C = c.clone().add(dirW(s, 0, 0)).add(V(0, .001 + lift, 0)); const gp = C.clone().addScaledVector(W, -.13).addScaledVector(B, .013); return { gp, tip: gp.clone().add(W), B, C, W }; };
-    return job({ pt: () => { const c = ST(); return c ? c.clone().add(dirW(-RS() * .1, 0, .32)) : null; }, stand: .03, dur: [600, 600], vary: false, tools: [],
+    return job({ pt: () => { const c = ST(); return c ? c.clone().add(dirW(RS() * .04, 0, .3)) : null; }, stand: .03, dur: [600, 600], vary: false, tools: [],
       start: () => setup(), look: () => S.lookAt || ST(), lookW: .9, tick: () => { H.face = benchYaw(); },
       post: (a, dt) => { S.t += dt; const g = G();
         if (S.ph === 'take') { const r = homeGrip('benchKnife'); if (!r || take(a, 'benchKnife', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'onto'; S.t = 0; } return; }
         if (S.ph === 'onto') { const k = smooth(0, .6, S.t); const r0 = homeGrip('benchKnife'), r = geom(-.07, .03 * (1 - k)); hold('Right', 'benchKnife', r, g); if (k >= 1) { S.ph = 'stroke'; S.t = 0; S.u = .75; } return; }
         if (S.ph === 'stroke') { S.u += dt / 1.15; const s = .075 * Math.sin(S.u * Math.PI * 2); const r = geom(s); hold('Right', 'benchKnife', r, g); S.lookAt = r.C;
-          const lw = smooth(0, .5, S.t); handTo('Left', r.C.clone().addScaledVector(r.W, .035).add(V(0, .025, 0)), lw * .95);
+          const lw = smooth(0, .5, S.t); handTo('Left', r.C.clone().addScaledVector(r.W, .02).add(V(0, .025, 0)), lw * .95); flatHand('Left', r.W.clone().add(V(0, -.25, 0)), V(0, -1, 0), lw); handTo('Left', r.C.clone().addScaledVector(r.W, .02).add(V(0, .008, 0)), lw);
           const n = Math.floor(S.u); if (n !== S.lastN) { S.lastN = n; S.n++; AU('sharpen', r.C); if (S.n % 9 === 0) { S.ph = 'check'; S.t = 0; S.n2 = (S.n2 || 0) + 1; } } return; }
         if (S.ph === 'check') { // lift the knife, turn the edge to the light and look along it
           const k = smooth(0, .7, S.t) * (1 - smooth(2.3, 3, S.t)); const r = geom(0); const eye = bones.Head.getWorldPosition(V()); const fw = dirW(0, 0, -1);
