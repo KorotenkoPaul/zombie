@@ -545,7 +545,7 @@ export function createHero(ctx){
     const n=plate?plateN():null;
     if(n){/* PLATE: square to the wall (the hand straight in front of the right shoulder), turned to it while he steps, no squeeze past the door leaf or the frame */
      a.from=a.viaNode?p.clone():null;a.knob=sp.clone().addScaledVector(n,.035)/* the fingers on the rocker, the palm clear of the wall boards */;const st=sp.clone().addScaledVector(n,.36).add(V(-n.z,0,n.x).multiplyScalar(.17))/* the body left of the plate: it is in front of the right shoulder */;st.y=p.y;a.faceYaw=Math.atan2(-n.x,-n.z);let k=0;
-     const go=()=>{approachTo(a,st,0,()=>{if(Math.hypot(root.position.x-st.x,root.position.z-st.z)>.06&&++k<4)go();else{a.faceYaw=null;reach();}});};go();return;}
+     const go=()=>{if(Math.hypot(st.x-root.position.x,st.z-root.position.z)>.12)play('30',{fade:.3,speed:1})/* steps, not a glide in the idle clip */;approachTo(a,st,0,()=>{if(Math.hypot(root.position.x-st.x,root.position.z-st.z)>.06&&++k<4)go();else{a.faceYaw=null;reach();}});};go();return;}
     a.step='approach';a.t=0;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
     a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):sp.clone().add(V(0,-.15,0));
     const move=Math.max(0,Math.min(.9,d-(a.low?.45:.27)));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
@@ -553,14 +553,17 @@ export function createHero(ctx){
    {/* PLATE close by on the same floor (the reading chair is 60 cm from it): straight there, no loop out to the door node and back */const p=root.position;const near=plate&&Math.hypot(sp.x-p.x,sp.z-p.z)<1.8&&Math.abs(sp.y-1.15-p.y)<.15&&!H.path.length;if(near||!node)approach();else{a.viaNode=true;goTo(node,approach);}}
    a.update=dt=>{a.t+=dt;if(a.back)H.look=null;else{H.look=sp.clone();H.lookW=a.step==='reach'?1:.55;/* while he turns to it, the eyes lead and the head follows half way (gate owl-head 74 deg on orig) */}
     if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
-    if(a.step==='reach'){const clip=a.low&&has('hy_take');const tT=clip?durOf('hy_take')*.45:.42,tE=clip?durOf('hy_take'):1.15;
+    if(a.step==='reach'){const clip=a.low&&has('hy_take');const tT=clip?durOf('hy_take')*.45:.42,tE=clip?durOf('hy_take'):plate?1.5:1.15;
      /* the light changes when the fingers touch the switch (palm on it), not on a timer */
-     if(clip){if(a.t>tT)toggle();}else if(!a.done&&a.t>.2&&palmTo('Right',a.knob)<.05)toggle();
-     if(a.t>tE){if(!a.done&&palmTo('Right',a.knob)<.12)toggle();
+     if(clip||!plate){if(a.t>tT)toggle();}else if(!a.done&&a.t>.2&&palmTo('Right',a.knob)<.05)toggle();/* a lamp of its own (no plate) keeps the timed click */
+     if(a.t>tE){toggle()/* never leaves the light as it was: the brain came back for it again and again (full gate: extra walks) */;
+      /* PLATE: square to the wall he would set off sideways along it; he turns back to the room on the spot first (full gate: walks off
+         the goal line 95 deg and slow after every switch) */
+      if(plate&&!a.turned&&node&&N[node]){a.turned=true;const q=N[node].p;a.faceYaw=Math.atan2(q.x-root.position.x,q.z-root.position.z);a.noPush=true;a.back=true;approachTo(a,root.position.clone(),0,()=>{a.faceYaw=null;a.noPush=false;endTask();});return;}
       endTask();}}
     if(a.step==='ret'){if(a.t>=a.adur)a.next();}};
-   a.post=()=>{if(a.step!=='reach'||(a.low&&!plate))return;const w=smooth(0,.4,a.t)*(1-smooth(.75,1.1,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
-    const v=a.knob.clone().sub(from);const reach=armLen*.97+PALM;if(v.length()>reach)v.setLength(reach);reachGrip('Right',from.add(v),w);};
+   a.post=()=>{if(a.step!=='reach'||(a.low&&!plate))return;const w=plate?smooth(0,.55,a.t)*(1-smooth(.8,1.45,a.t))/* a slower press and let-go: the arm fell back 33 cm in .27 s (gate jitter 13 mm at 5 Hz) */:smooth(0,.4,a.t)*(1-smooth(.75,1.1,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
+    const v=a.knob.clone().sub(from);v.setLength(Math.max(0,v.length()-PALM))/* the wrist a palm short of the rocker along the arm (a target read back from the hand's own pose fed back on itself: 5 Hz shake) */;const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);ikList([['Right',from.add(v),w]])/* the arm alone (reachGrip's waist lean shook the hand at 5-8 Hz: gate jitter) */;};
    return a;},
   // open or close the floor hatch over the kitchen ladder: go to its top or bottom, reach for the ring, it moves at the touch
   hatch:(o={})=>{// GRAB: BY HAND. He stands at the side of the opening facing the ring, crouches (code squat, feet planted), takes the
