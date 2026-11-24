@@ -645,7 +645,7 @@ export function createHero(ctx){
      H.carry='hy_carrylogs';const wp=PT('woodpile');const nn=wp?nearNode(wp):'kmid';goTo(nn||'kmid',()=>{a.step='drop';if(wp)H.face=Math.atan2(wp.x-root.position.x,wp.z-root.position.z);once('hy_droplogs',{fade:.4,then:()=>{
       try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});endTask({ok:true,logs:3});}});});});});
    a.update=()=>{carryOv();};
-   a.leave=cb=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+   a.leave=cb=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};a.post=()=>odArmful();return a;},
  });
  // close (or open) the window shutters one window after another: walk up, reach for the shutter, it swings at the touch
  // opts: {close:true|false, windows:['bwin','kwin','wwin']}; house hook: window.__house.shutters.close(name)/open(name) when it exists
@@ -826,6 +826,14 @@ export function createHero(ctx){
   const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt,root.rotation.y,0,'YXZ'));const hs=(o.userData.home&&o.userData.home.scale)||1;
   const g=V(0,.35,0).multiplyScalar(hs).applyQuaternion(q);const pos=odPalm('Right').sub(g);
   const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
+ // OUTDOOR: an armful of logs is carried with both arms at the chest (not dangling from one hand at the hip), and over the
+ // ladder it rides across his back on its ropes, lying level (it stood up past his head)
+ function odArmful(){const P=PP();const o=P&&P.tools&&P.tools.logArmful;if(!o||!o.visible)return;const inHand=o.parent===bones.LeftHand,back=o.parent===bones.Spine2;if(!inHand&&!back)return;
+  const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const ch=bones.Spine2.getWorldPosition(V());let c;
+  if(inHand){c=ch.clone().addScaledVector(f,.27).add(V(0,-.16,0));const lo=V(0,-.08,0);reachGrip('Left',c.clone().addScaledVector(r,-.18).add(lo),1);reachGrip('Right',c.clone().addScaledVector(r,.18).add(lo),1);}
+  else c=ch.clone().addScaledVector(f,-.21).add(V(0,.03,0));
+  const up=V(0,1,0);const X=up.clone().cross(r).normalize();const q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,up,r));const hs=(o.userData.home&&o.userData.home.scale)||1;
+  const par=o.parent;par.updateWorldMatrix(true,false);const M=new THREE.Matrix4().compose(c,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
  // OUTDOOR: a full bucket is carried like real weight: real mocap of a heavy case in the right hand (body leans away), else the sack carry
  const BUCKET=()=>has('hy_carrybucket')?'hy_carrybucket':'hy_carrysack';
  // OUTDOOR: both hands free on a ladder. What he carries in a hand goes over his shoulder on its rope (sling) for the climb
@@ -855,7 +863,7 @@ export function createHero(ctx){
    // gear back on its pegs first, by hand (Pavel: worn only for the hunt). Out of sight in the forest he first comes back.
    a.leave=cb=>{a.leaving=true;root.visible=true;if(a.step==='away')a.step='home';
     const off=()=>{if(GEAR.bow||GEAR.lantern||GEAR.coat)gearOff(a,()=>{play(IDLE(),{fade:.4});cb();});else cb();};
-    if(a.haul&&a.unload){const u=a.unload;a.unload=null;u(off);}else{if(a.haul){try{PP().release(a.haul);window.__audio.carry(false);}catch(e){}H.carry=null;a.haul=null;}off();}};return a;},
+    if(a.haul&&a.unload){const u=a.unload;a.unload=null;u(off);}else{if(a.haul){try{PP().release(a.haul);window.__audio.carry(false);}catch(e){}H.carry=null;a.haul=null;}off();}};a.post=()=>{if(a.haul==='logArmful')odArmful();};return a;},
   store:(o={})=>{const a={step:'go',t:0};const P=PP();try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}H.carry='hy_carrysack';
    visit(a,PT('fridge'),.5,'hy_fridgein',[[.15,()=>{try{P.fridge.openTo(1,.5);}catch(e){}}],[.55,()=>{try{P.release('meatBag');}catch(e){}H.carry=null;}],[.85,()=>{try{P.fridge.openTo(0,.5);}catch(e){}}]],()=>endTask({ok:true}));
    a.update=dt=>{if(!stepTick(a,dt))carryOv();};a.leave=cb=>{try{P.release('meatBag');P.fridge.openTo(0,.4);}catch(e){}H.carry=null;cb();};return a;},
