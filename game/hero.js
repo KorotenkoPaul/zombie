@@ -582,15 +582,47 @@ export function createHero(ctx){
      a.ik=[['Right',pp.clone().add(V(Math.cos(a.t*3)*.045,.12,Math.sin(a.t*3)*.045)),.75]];}};
    a.post=()=>ikList(a.ik);
    a.leave=cb=>{a.ik=null;const ov=oven();ov&&ov.setOpen&&ov.setOpen(0);if(H.hold.Right){release('Right');spoon.visible=false;}pot.visible=false;cb();};return a;},
-  tea:()=>{const a={step:'go',t:0};const hand=POSE.drinkHand||'Right';goTo('sink',()=>{a.step='take';a.t=0;play(IDLE(),{fade:.4});});
-   a.update=dt=>{a.t+=dt;if(a.step==='take'){H.face=N.sink.face;H.look=rest.mug.clone();H.lookW=1;a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)),smooth(.1,.8,a.t)-smooth(.9,1.4,a.t)]];
-     if(a.t>.85&&!H.hold[hand]){grab(mug,hand,[0,.07,.035],[0,0,hand==='Right'?-Math.PI/2:Math.PI/2]);}if(a.t>1.4){a.step='drink';a.t=0;a.ik=null;a.turn=rnd(-1.1,-.5);}}
-    else if(a.step==='drink'){// turn toward the window, sip slowly, rest between sips
-     H.face=wrapA(N.sink.face+a.turn);H.look=N.kwin.p.clone().add(V(0,1.5,2));H.lookW=.5;
-     if(!a.sip||a.t>a.sip){a.sip=a.t+durOf('hy_drink')+rnd(2,5);once('hy_drink',{fade:.7,then:()=>play(IDLE(),{fade:.8})});}}};
-   a.post=()=>ikList(a.ik);
-   a.leave=cb=>{if(!H.hold[hand]){cb();return;}a.t=0;a.update=dt=>{a.t+=dt;H.face=N.sink.face;play(IDLE(),{fade:.5});a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)),smooth(0,.7,a.t)-smooth(.9,1.4,a.t)]];
-     if(a.t>.75&&H.hold[hand]){release(hand);park(mug,rest.mug);}if(a.t>1.4){a.ik=null;cb();}};};return a;},
+  tea:()=>{// KITCHEN: a real cup of tea. The mug from the sink rest in the drinking hand, over to the stove, the kettle by its handle in the
+   // other hand, poured: the spout over the mug, tipped, then the kettle back on its ring; sip by the window; the mug back to the sink.
+   const a={step:'go',t:0};const hand=POSE.drinkHand||'Right',oth=hand==='Right'?'Left':'Right';const P=window.__props||P3;
+   const ket=()=>P&&P.tools&&P.tools.kettle;const kHandle=()=>{const k=ket();k.updateMatrixWorld(true);return k.localToWorld(V(0,.21,0));};
+   const kSpout=()=>ket().localToWorld(V(.17,.155,0));const rgt=()=>{const f=fwd(root.rotation.y);return V(-f.z,0,f.x);};
+   const cupAt=()=>{const hp=bones.Spine1.getWorldPosition(V());return hp.addScaledVector(fwd(root.rotation.y),.32).addScaledVector(rgt(),hand==='Right'?.04:-.04).add(V(0,-.12,0));};// mug held in front of the belly
+   goTo('sink',()=>{a.step='take';a.t=0;play(IDLE(),{fade:.4});});
+   a.ik=null;
+   a.update=dt=>{a.t+=dt;
+    if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
+    if(a.step==='take'){H.face=N.sink.face;H.look=rest.mug.clone();H.lookW=1;a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)),smooth(.1,.8,a.t)-smooth(.9,1.4,a.t)]];
+     if(a.t>.85&&!H.hold[hand]){grab(mug,hand,[0,.07,.035],[0,0,hand==='Right'?-Math.PI/2:Math.PI/2]);}
+     if(a.t>1.4){a.ik=null;if(!ket()){a.step='drink';a.t=0;a.turn=rnd(-1.1,-.5);return;}a.step='tostove';const kp=ket().getWorldPosition(V());const nn=nearNode(kp)||'stove';goTo(nn,()=>approachTo(a,kp,.42,()=>{a.step='kreach';a.t=0;}));}return;}
+    if(a.step==='tostove'||a.step==='go')return;
+    if(a.step==='kreach'){const h=kHandle();H.look=h;H.lookW=1;a.ik=[[oth,h,smooth(0,.6,a.t)],[hand,cupAt(),smooth(0,.6,a.t)]];
+     if((a.t>.6&&palmTo(oth,h)<.03)||a.t>1.3){try{P.grab('kettle',bones[oth+'Hand']);a.kh=1;AU('cloth');}catch(e){}a.step='pour';a.t=0;}return;}
+    if(a.step==='pour'){// lift, bring the spout over the mug, tip it for ~2 s, level it again
+     const m=mug.getWorldPosition(V()).add(V(0,.13,0));H.look=m;H.lookW=1;a.tip=.75*(smooth(.7,1.2,a.t)-smooth(3.0,3.5,a.t));
+     a.ik=[[hand,cupAt(),1],['pour',m,smooth(0,.6,a.t)]];if(a.t>1.2&&!a.snd){a.snd=1;AU('pour',m);}
+     if(a.t>3.7){a.step='kback';a.t=0;a.tip=0;}return;}
+    if(a.step==='kback'){const hm=toolHome('kettle');H.look=hm;H.lookW=1;const t=gripHome('kettle')||hm;a.ik=[[hand,cupAt(),1],[oth,t,1]];
+     if(!a.rel&&((a.t>.5&&palmTo(oth,t)<.03)||a.t>1.3)){a.rel=1;a.tr=a.t;try{P.release('kettle',{blend:.14});}catch(e){}}
+     if(a.rel){a.ik=[[hand,cupAt(),1],[oth,t,1-smooth(a.tr+.15,a.tr+.55,a.t)]];if(a.t>a.tr+.6){a.step='drink';a.t=0;a.turn=rnd(-.8,.8);a.ik=null;}}return;}
+    if(a.step==='drink'){// turn toward the window, sip slowly, rest between sips
+     const w=N.kwin?N.kwin.p:root.position;H.face=Math.atan2(w.x-root.position.x,w.z-root.position.z)+a.turn*.3;H.look=w.clone().add(V(0,1.5,2));H.lookW=.5;
+     // a sip: the mug up to the lips by the arm (no clip miming it at the hip), a moment, down to the belly, a pause
+     if(a.sip===undefined){a.sip=.8;a.sd=rnd(1.1,1.6);play(IDLE(),{fade:.6});}const u=a.t-a.sip;const k=u<0?0:smooth(0,.6,u)*(1-smooth(.6+a.sd,1.2+a.sd,u));
+     if(u>1.2+a.sd){a.sip=a.t+rnd(2.5,5);a.sd=rnd(1.1,1.6);}
+     const hd=bones.Head.getWorldPosition(V());const lip=hd.addScaledVector(fwd(root.rotation.y),.12).add(V(0,.0,0));const c=cupAt();a.ik=[[hand,c.lerp(lip,k),1]];if(k>.6){H.look=null;}}};
+   a.post=dt=>{if(!a.ik)return;for(const [sd,t,w] of a.ik){if(w<.01||!t)continue;
+     if(sd==='pour'){// the kettle hand: put the spout above the mug (a few corrections), then tip it round the axis across the spout
+      const k=ket();if(!k||k.parent!==bones[oth+'Hand'])continue;let tgt=t.clone().addScaledVector(rgt(),oth==='Left'?-.12:.12).add(V(0,.08,0));
+      for(let i=0;i<3;i++){reachGrip(oth,tgt,w);k.updateMatrixWorld(true);const e=t.clone().sub(kSpout());e.y=0;if(e.length()<.01)break;tgt.add(e.multiplyScalar(.8));}
+      if(a.tip>.01){const hb=bones[oth+'Hand'];const sp=kSpout().sub(hb.getWorldPosition(V())).setY(0).normalize();const ax=sp.clone().cross(V(0,1,0)).normalize();
+       const q=new THREE.Quaternion().setFromAxisAngle(ax,-a.tip*w);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cq=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(q.multiply(cq)));hb.updateMatrixWorld(true);}
+      continue;}
+     reachGrip(sd,t,w);}};
+   a.leave=cb=>{try{if(ket()&&ket().parent!==ket().userData.home.parent)P.release('kettle');}catch(e){}if(!H.hold[hand]){cb();return;}a.t=0;a.ik=null;
+    const back=()=>{a.step='putmug';a.t=0;a.update=dt=>{a.t+=dt;H.face=N.sink.face;a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)),smooth(0,.7,a.t)-smooth(.9,1.4,a.t)]];
+     if(a.t>.75&&H.hold[hand]){release(hand);park(mug,rest.mug);}if(a.t>1.4){a.ik=null;cb();}};};
+    if(root.position.distanceTo(N.sink.p)>.8){a.update=()=>{};play(IDLE(),{fade:.4});goTo('sink',back);}else back();};return a;},
   wash:()=>{const a={step:'go'};goTo('sink',()=>{a.step='wash';a.t=0;grab(plate,'Left',[0,.05,.06],[Math.PI/2,0,0]);play('hy_wash',{fade:.7});});
    a.update=dt=>{if(a.step!=='wash')return;a.t+=dt;H.face=N.sink.face;const s=root.position.clone().add(fwd(H.face).multiplyScalar(.45));s.y=kTop-.05;H.look=s;H.lookW=1;};
    a.leave=cb=>{if(H.hold.Left){release('Left');plate.visible=false;}cb();};return a;},
