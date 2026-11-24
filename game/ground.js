@@ -183,7 +183,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
      // ---- autumn leaf litter (Environment): oak leaves blown into drifts against the roots, along the path edges and around the
      // pond, a thin scatter everywhere else. Procedural (no texture taps): leaf specks per 14 cm cell up close, and their average
      // colour further out where a speck would be under a pixel, so it reads from the home view without shimmering.
-     {vec2 pd=(vGW-vec2(${POND.x.toFixed(2)},${POND.z.toFixed(2)}))/vec2(${POND.rx.toFixed(2)},${POND.rz.toFixed(2)});float pr=length(pd);litA+=smoothstep(1.,1.25,pr)*(1.-smoothstep(1.6,2.6,pr))*.7;
+     {vec2 pd=(vGW-vec2(${POND.x.toFixed(2)},${POND.z.toFixed(2)}))/vec2(${POND.rx.toFixed(2)},${POND.rz.toFixed(2)});float pr=length(pd);/* [ENV] the bank: dark wet mud at the waterline, its outer edge frayed into the moss (no drawn ring) */pathK*=mix(smoothstep(.3,.62,fbm(vGW*3.7)+(1.45-pr)*1.1),1.,step(2.2,pr));pathC*=mix(.55,1.,smoothstep(1.,1.32,pr+(fbm(vGW*5.)-.5)*.18))*mix(vec3(.9,.95,1.),vec3(1.),smoothstep(1.,1.3,pr));litA+=smoothstep(1.,1.25,pr)*(1.-smoothstep(1.6,2.6,pr))*.7;
       litA*=.5+1.1*fbm(vGW*.45+11.);litA=clamp(litA,0.,.95);
       vec2 lq=vGW*7.;vec2 lw=fwidth(lq);float far=smoothstep(.25,.7,max(lw.x,lw.y));
       vec2 li=floor(lq),lf=fract(lq)-.5;float lh=fract(sin(dot(li,vec2(12.9898,78.233)))*43758.5453);float la=lh*6.283;
@@ -488,7 +488,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     // night: darker open water inside a thin moonlit waterline, so its shape still reads through the blue mist
     c*=1.-.35*uNight*smoothstep(-.1,-.5,vD);
     // night: the open water catches the bright blue night sky above the clearing (a soft silver sheen), lighter than the mist around it
-    c+=vec3(.16,.26,.34)*uNight*(.35+.65*fr)*smoothstep(-.05,-.4,vD);c+=uSky*vec3(.9,1.,1.1)*.9*uNight*smoothstep(-.16,-.05,vD)*smoothstep(.03,-.03,vD);
+    {float lane=.45+.9*vn(vec2(vW.x*.7+vW.z*.25,vW.z*2.6)+uT*.03);c+=vec3(.16,.26,.34)*uNight*(.12+.88*fr)*lane*.8*smoothstep(-.05,-.4,vD);}/* [ENV] broken by wind lanes: not a flat silver sheet */c+=uSky*vec3(.9,1.,1.1)*.9*uNight*smoothstep(-.16,-.05,vD)*smoothstep(.03,-.03,vD);
     // shallow at the rim: you see the mud bottom through it, then it fades into the bank
     float sh=smoothstep(0.,-.7,vD);c=mix(c*vec3(.75,.7,.6)+vec3(.02,.016,.01),c,sh);float a=mix(.0,.95,smoothstep(.04,-.25,vD));
     gl_FragColor=vec4(c,a);
@@ -520,6 +520,30 @@ export function createGround(C){const __before=new Set(C.scene.children);
    if(pondD(x,z)>-.35||x>POND.x+1||padPos.some(q=>Math.hypot(q[0]-x,q[1]-z)<.38))continue;const sz=rr(.26,.42);padPos.push([x,z,sz]);
    M.compose(V(x,level+.006+np*.0004,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz,1,sz));pads.setMatrixAt(np,M);Col.setHSL(rr(.24,.3),rr(.3,.45),rr(.75,.95));pads.setColorAt(np,Col);np++;}
   pads.count=np;pads.receiveShadow=true;scene.add(pads);G.pads=pads;
+  // [ENV] autumn oak leaves afloat on the pond: a dozen, one draw call; they drift slowly round the open water, turn and bob on the
+  // ripple, and slip under the lily pads' edge rather than through them. Slightly curled (a bent strip), so they catch light, not stickers.
+  const floatL=(()=>{const cv=document.createElement('canvas');cv.width=64;cv.height=96;const x=cv.getContext('2d');x.translate(32,48);
+   x.fillStyle='#fff';x.beginPath();x.moveTo(0,-46);for(let k=0;k<=8;k++){const t=k/8,y=-46+t*86,w=(Math.sin(t*Math.PI)*.85+.15)*24*(1+.22*Math.sin(t*Math.PI*7));x.lineTo(w,y);}
+   x.lineTo(2,40);x.lineTo(2,48);x.lineTo(-2,48);x.lineTo(-2,40);for(let k=8;k>=0;k--){const t=k/8,y=-46+t*86,w=(Math.sin(t*Math.PI)*.85+.15)*24*(1+.22*Math.sin(t*Math.PI*7+.6));x.lineTo(-w,y);}x.closePath();x.fill();
+   x.globalCompositeOperation='source-atop';x.strokeStyle='rgba(90,50,20,.55)';x.lineWidth=2;x.beginPath();x.moveTo(0,44);x.lineTo(0,-40);x.stroke();x.lineWidth=1;
+   for(let k=0;k<5;k++){const y=-30+k*14;x.beginPath();x.moveTo(0,y+6);x.lineTo(15,y-2);x.moveTo(0,y+6);x.lineTo(-15,y-2);x.stroke();}
+   const g=x.createRadialGradient(0,0,4,0,0,46);g.addColorStop(0,'rgba(255,255,255,0)');g.addColorStop(1,'rgba(60,30,10,.35)');x.fillStyle=g;x.fillRect(-32,-48,64,96);
+   const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
+  const lg=new THREE.PlaneGeometry(.1,.15,2,1).rotateX(-Math.PI/2);{const p=lg.attributes.position;for(let i=0;i<p.count;i++){const x=p.getX(i);p.setY(i,Math.abs(x)*.25);}lg.computeVertexNormals();}
+  const NL=MOBILE?9:14;const fls=new THREE.InstancedMesh(lg,new THREE.MeshStandardMaterial({map:floatL,alphaTest:.5,roughness:.5,side:THREE.DoubleSide}),NL);fls.name='pondLeaves';
+  // own seeded random: the shared R() stream must stay as it was, or every reed and stone after this would move
+  let fs=917;const rl=(a,b)=>{fs=(fs*16807)%2147483647;return a+(b-a)*(fs/2147483647);};
+  const FL=[];for(let t=0;t<300&&FL.length<NL;t++){const x=POND.x+rl(-1.6,1.6),z=POND.z+rl(-1.1,1.1);if(pondD(x,z)>-.18||padPos.some(q=>Math.hypot(q[0]-x,q[1]-z)<q[2]*.55+.06))continue;
+   FL.push({x,z,y:rl(0,6.28),s:rl(.8,1.25),ph:rl(0,6.28),w:rl(.4,1),vx:0,vz:0});const h=rl(0,1);Col.setRGB(...(h<.45?[1,.5,.16]:h<.8?[1,.74,.24]:[.66,.32,.14])).multiplyScalar(rl(.75,1));fls.setColorAt(FL.length-1,Col);}
+  fls.count=FL.length;fls.receiveShadow=true;fls.frustumCulled=false;scene.add(fls);G.pondLeaves=fls;
+  const flP=V(POND.x,level,POND.z),flE=new THREE.Euler();let flT=0;const upLeaves=(dt)=>{flT+=dt;const wv=C.wind&&C.wind.sample?C.wind.sample(flP):null;const wx=wv?wv.x:.3,wz=wv?wv.z:.1;
+   for(let i=0;i<FL.length;i++){const L=FL[i];// a lazy wander downwind plus a slow eddy; the bank and the pads push back
+    const ex=Math.sin(flT*.07*L.w+L.ph)*.012,ez=Math.cos(flT*.05*L.w+L.ph*1.7)*.012;L.vx+=(wx*.004*L.w+ex-L.vx)*dt*.5;L.vz+=(wz*.004*L.w+ez-L.vz)*dt*.5;
+    let nx=L.x+L.vx*dt,nz=L.z+L.vz*dt;const d=pondD(nx,nz);if(d>-.2){const gx=pondD(nx+.05,nz)-pondD(nx-.05,nz),gz=pondD(nx,nz+.05)-pondD(nx,nz-.05);const gl=Math.hypot(gx,gz)||1;nx-=gx/gl*.004;nz-=gz/gl*.004;L.vx*=.5;L.vz*=.5;}
+    for(const q of padPos){const dx=nx-q[0],dz=nz-q[1],r=Math.hypot(dx,dz),m=q[2]*.55+.05;if(r<m&&r>1e-4){nx=q[0]+dx/r*m;nz=q[1]+dz/r*m;}}
+    L.x=nx;L.z=nz;L.y+=Math.sin(flT*.11+L.ph)*dt*.06;const bob=Math.sin(flT*1.3+L.ph)*.003;
+    M.compose(V(L.x,level+.008+bob,L.z),Q.setFromEuler(flE.set(Math.sin(flT*.9+L.ph)*.06,L.y,Math.cos(flT*.8+L.ph)*.06,'YXZ')),Sc.set(L.s,L.s,L.s));fls.setMatrixAt(i,M);}
+   fls.instanceMatrix.needsUpdate=true;};upLeaves(0);
   {// water lily: two rings of pointed, slightly cupped petals (cream at the base, a blush of pink at the tips) round a golden heart
    const petal=(L,W,open,a)=>{const g=new THREE.BufferGeometry();const v=[0,0,0, -W,.004,L*.45, 0,.012,L, W,.004,L*.45, 0,-.004,L*.5];
     g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));g.setIndex([0,1,4, 1,2,4, 2,3,4, 3,0,4]);
@@ -567,7 +591,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   // also emits __ground.on('pond', e) with {act:'splash', pos:[x,y,z], k} for Sound
   let spI=0;G.pond.splash=(x,z,k=1)=>{const u=water.material.uniforms[spI?'uSp1':'uSp0'];spI^=1;u.value.set(x,z,WU.uT.value,Math.min(2,k));
    const L=LST.pond;if(L)for(const f of L){try{f({act:'splash',pos:[x,level,z],k});}catch(e){console.error(e);}}};
-  G._pond=(dt,cam)=>{WU.uT.value+=dt;const E2=window.__env;if(E2&&E2.moonRim){WU.uMoon.value.copy(E2.moonRim.dir.value);WU.uNight.value=E2.moonRim.strength.value;}
+  G._pond=(dt,cam)=>{WU.uT.value+=dt;upLeaves(dt);const E2=window.__env;if(E2&&E2.moonRim){WU.uMoon.value.copy(E2.moonRim.dir.value);WU.uNight.value=E2.moonRim.strength.value;}
    const fc=scene.fog&&scene.fog.color;if(fc){WU.uSky.value.copy(fc);WU.uDeep.value.copy(fc).multiplyScalar(.12).add(Col.setRGB(.01,.018,.016));}};}
 
  // ================= footprints in the mud =================
@@ -667,6 +691,11 @@ export function createGround(C){const __before=new Set(C.scene.children);
     q.setAttribute('color',new THREE.BufferAttribute(col,3));parts.push(q);}
    return mergeGeometries(parts);};
   const mat=swayMat(new THREE.MeshStandardMaterial({map:leafT,alphaTest:.5,side:THREE.DoubleSide,roughness:.85,vertexColors:true}),U,.025,'clamp(position.y,0.,1.5)');
+  // [ENV] a card seen edge-on thins out and goes instead of smearing into a dark striped fin (its texture minified to a streak).
+  // Geometric normal from screen derivatives of the view position (no texture reads involved).
+  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);s.fragmentShader=s.fragmentShader.replace('#include <alphatest_fragment>',
+   '{vec3 gnE=normalize(cross(dFdx(vViewPosition),dFdy(vViewPosition)));diffuseColor.a*=smoothstep(.05,.28,abs(dot(gnE,normalize(vViewPosition))));}\n#include <alphatest_fragment>');};
+   mat.customProgramCacheKey=()=>'groundBush-edgeFade1';}
   const NB=MOBILE?24:40;(MOBILE?[mkBush(1,14)]:[mkBush(1,22),mkBush(2,16)]).forEach((bg,vi)=>{const im=new THREE.InstancedMesh(bg,mat,NB);im.name='groundBushes';/* [CAMERA] name used to fade them like oak leaves when they hide the hero */let n=0;
    const NS=MOBILE?3:5;// the first few frame the clearing on the left and right edges of the main view, like the photo
    for(let b=0;b<NB*40&&n<NB;b++){let x,z,r;
