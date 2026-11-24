@@ -249,14 +249,14 @@ export function createMotion({ hero, db, opts = {} }) {
     const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : '';
     const key = cn + '|' + (S.on ? 1 : 0) + (H.lad ? 1 : 0) + (H.fit ? 1 : 0) + (H.seated ? 1 : 0) + (H.inBed ? 1 : 0) + (H.swing ? 1 : 0) + (H.once ? 1 : 0) + '|' + (H.state || '');
     if (key !== FP.key) { FP.hot = .6; FP.key = key; } else FP.hot = Math.max(0, FP.hot - dt);
-    const off = !FP.on || window.__noPops;
+    const off = !FP.on || window.__noPops; const climbIK = !!(window.__climb && window.__climb.active && window.__climb.weight > .99); // climb IK: every limb is solved each frame from eased targets on the rungs; new pops are not taken (they dragged the hands 20-50 cm off the rungs), running offsets still ease out (zeroing them snapped a foot 30 cm)
     // a blow is meant to be sharp (hero.js repairs hammer, H.noPop = {side, until}): that arm is left out of the pop filter while it lasts
     const np = H.noPop && H.noPop.until > T0() ? H.noPop.side : null;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
     let any = false, hit = 0;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const i3 = b*3;
       const offB = off || (np && names[b] && new RegExp('^' + np + '(Arm|ForeArm|Hand)$').test(names[b]));
-      if (!offB && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
+      if (!offB && !climbIK && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
         if (dv > (FP.hot > 0 ? FP.thrHot : FP.thr)) { // start from what was on screen last frame
           const t = [0, 0, 0, 0]; qmul(fShown, b*4, [-fRaw[b*4], -fRaw[b*4+1], -fRaw[b*4+2], fRaw[b*4+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], fX, i3); fV[i3] = fV[i3+1] = fV[i3+2] = 0; hit++; } }
       if (offB) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; }
@@ -268,7 +268,10 @@ export function createMotion({ hero, db, opts = {} }) {
     if (any) root.updateMatrixWorld(true); }
   // hook the final pass after everything else in the hero's update (collide.js wraps HH.update too, possibly later: stay outermost)
   let fWrap = null;
-  function ensureFinal() { if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
+  // hero.js slots (HERO-RULES.md): the pop filter runs in 'pops', before the anatomical guard, instead of wrapping hero.update
+  let fStage = false;
+  function ensureFinal() { if (fStage) return; if (typeof hero.stage === 'function') { hero.stage('pops', dt => final(dt)); fStage = true; return; }
+    if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
     fWrap = dt => { inner(dt); if (g === FP.gen) final(dt); }; hero.update = fWrap; }
   function stepOffsets(dt) {
     for (let i = 0; i < NB * 3; i++) { const y = yB[(i / 3) | 0], e = Math.exp(-y * dt); const j1 = offV[i] + offX[i] * y; offX[i] = e * (offX[i] + j1 * dt); offV[i] = e * (offV[i] - j1 * y * dt); }
