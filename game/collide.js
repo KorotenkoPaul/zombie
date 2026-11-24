@@ -434,7 +434,9 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         // that is released later: nothing surges while he walks freely); never while seated, lying or on a ladder
         const pr = push[0].clone(); pr.y = 0; const hl = Math.hypot(pr.x, pr.z);
         if (!fit && !lying && hl > .25 * pd[0]) { take(0, pr); if (pr.lengthSq() > 1e-10) { root.position.add(pr); root.updateMatrixWorld(true); for (let c = 2; c < 6; c++) anim[c].add(pr); } }
-        else if (pd[1] < pd[0]) { pd[1] = pd[0]; push[1].copy(push[0]); }
+        // seated / lying the thighs and hips rest on the seat by design: never turn that contact into a head push (a vertical
+        // head push bent down the spine folded the neck backwards at the kitchen stool)
+        else if (!fit && !lying && pd[1] < pd[0]) { pd[1] = pd[0]; push[1].copy(push[0]); }
       }
       if (pd[1] > 0) {
         // the head bends at most 12 cm in total; at that limit it stays put (bending first and capping after snapped back every frame)

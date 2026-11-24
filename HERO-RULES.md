@@ -25,6 +25,10 @@ small, and sends the integrator branch + sha + its own before/after frames. Only
   New generations only when truly needed, and only through the clip supplier thread.
 - Never stop. When a thread thinks its tasks are done, it keeps re-checking and polishing them (watch real frames, run
   `?inv` and the gate, look for the next flaw) until Pavel says it is all good.
+- FRAME BY FRAME (Pavel, 2026-11-24 00:53): every thread watches its own animations frame by frame from several sides
+  (storyboards of real renders, not only numbers) and looks at everything: objects passing through the body (the bucket!),
+  feet and legs, back and posture, stretched or unnatural reaching, odd standing or walking, strange behaviour. Fix what you see,
+  then look again. No rest.
 - Live checks: open the game with `?inv` (or `HH.inv.on=true`) and read `HH.inv.report()`: feet in the air, knees
   backwards, owl head, head roll, snaps, counted per task and tagged (ladder) / (walking) / (transition).
 
