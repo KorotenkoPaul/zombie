@@ -270,6 +270,7 @@ function makeMaterials(renderer) {
       for (let i = 0; i < 5; i++) { const gr = g.createRadialGradient(0, 0, 0, 0, 0, 30); gr.addColorStop(0, 'rgba(150,120,70,.09)'); gr.addColorStop(1, 'rgba(150,120,70,0)'); g.save(); g.translate(Math.random() * w, Math.random() * h); g.scale(1, .6 + Math.random() * .6); g.fillStyle = gr; g.fillRect(-30, -30, 60, 60); g.restore(); }
     });
     M.linen.map = texOf(c, { rep: 5 }); M.linen.bumpMap = texOf(c, { srgb: false, rep: 5 }); M.linen.bumpScale = .8; M.linen.color.set(0xffffff); M.linen.needsUpdate = true; }
+  wearEnamel(M.fridge, 0xDAD4C4, 7, { grime: .16, chips: 9 }); /* a well-used old fridge: grime in the edges, chips, crazing */
   scanWood(M.wood, 'wood-floor.jpg', { color: 0xF2DCC4 }); scanWood(M.woodLight, 'wood-wall.jpg', { color: 0xE6C49C }); scanWood(M.woodDark, 'wood-dark.jpg', { w: 256, h: 512, color: 0xC49470, bump: 1.6 });
   varyWood(M.wood); workTops(varyWood(M.woodLight)); varyWood(M.woodDark, .7); // (Planks thread) every piece its own tone
   return M;
@@ -536,7 +537,7 @@ function sinkCounter() {
   // farmhouse basin
   const bx = (sx0 + sx1) / 2, bw = sx1 - sx0, bd = D - .1, bz = .04;
   // deep enamel basin: bottom, four inner walls, a rounded rim on the counter, a drain with a strainer
-  const en = new THREE.MeshStandardMaterial({ color: 0xEDE8DE, roughness: .25, metalness: .05, envMap: M.env, envMapIntensity: .8 });
+  const en = wearEnamel(new THREE.MeshStandardMaterial({ roughness: .3, metalness: .05, envMap: M.env, envMapIntensity: .6 }), 0xEDE8DE, 3, { grime: .22, chips: 7 }); /* used enamel, not new plastic */
   add(g, rb(bw - .01, .02, bd - .01, .008), en, bx, H - .21, bz); for (const s of [-1, 1]) add(g, rb(.018, .22, bd, .008), en, bx + s * (bw / 2 - .009), H - .11, bz); add(g, rb(bw, .22, .018, .008), en, bx, H - .11, bz - bd / 2 + .009);
   add(g, rb(bw + .02, .24, .04, .016, 3), en, bx, H - .12, bz + bd / 2 - .005); // farmhouse apron (front wall)
   for (const s of [-1, 1]) { add(g, rb(.026, .014, bd + .03, .006), en, bx + s * (bw / 2 + .002), H + .004, bz); add(g, rb(bw + .03, .014, .026, .006), en, bx, H + .004, bz + s * (bd / 2 + .002)); }
@@ -618,6 +619,20 @@ function plankDoor(h = 1.9, w = .77) { const g = new THREE.Group(); const fr = n
 function switchPlate() { const g = new THREE.Group(); add(g, rb(.08, .12, .012, .006), M.ceramic, 0, 0, .006); add(g, rb(.018, .035, .02, .004), M.ceramic, 0, 0, .014); return g; }
 
 // ------------- workshop -------------
+// used enamel (sink, fridge): box faces map 0..1 each, so a frame in the texture lands on every edge: grime worked into
+// the edges, chips knocked out of them (black iron with a grey rim), hairline crazing and water stains on the faces.
+function wearEnamel(mat, hex, seed = 1, { grime = .35, chips = 22 } = {}) {
+  let ls = 9973 * seed; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const base = new THREE.Color(hex), b = `rgb(${base.r * 255 | 0},${base.g * 255 | 0},${base.b * 255 | 0})`;
+  const c = canvas(512, 512, (g, w, h) => { g.fillStyle = b; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(${LR() < .5 ? '255,255,250' : '170,165,150'},${.012 + LR() * .022})`; const r = 4 + LR() * 30; g.beginPath(); g.arc(LR() * w, LR() * h, r, 0, 6.3); g.fill(); } /* uneven glaze */
+    const E = 22; for (const [x0, y0, x1, y1] of [[0, 0, 0, E], [0, h, 0, h - E], [0, 0, E, 0], [w, 0, w - E, 0]]) { const gr = g.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, `rgba(105,95,78,${grime})`); gr.addColorStop(1, 'rgba(105,95,78,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }
+    for (let i = 0; i < 18; i++) { g.fillStyle = `rgba(140,120,80,${.02 + LR() * .035})`; const x = LR() * w, y = LR() * h; g.beginPath(); g.ellipse(x, y, 8 + LR() * 30, 3 + LR() * 10, LR() * 3, 0, 6.3); g.fill(); } /* water marks */
+    g.strokeStyle = 'rgba(110,100,85,.1)'; g.lineWidth = 1; for (let i = 0; i < 14; i++) { let x = LR() * w, y = LR() * h; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 5; k++) { x += (LR() - .5) * 40; y += (LR() - .5) * 40; g.lineTo(x, y); } g.stroke(); } /* crazing */
+    for (let i = 0; i < chips; i++) { const side = LR() * 4 | 0, t = LR(), d = 2 + LR() * 9, x = side === 0 ? d : side === 1 ? w - d : t * w, y = side === 2 ? d : side === 3 ? h - d : t * h, r = 1.5 + LR() * 3.5;
+      g.fillStyle = 'rgba(205,205,200,.9)'; g.beginPath(); g.ellipse(x, y, r * 1.5, r * 1.1, LR() * 3, 0, 6.3); g.fill(); g.fillStyle = 'rgba(28,26,28,.95)'; g.beginPath(); g.ellipse(x, y, r, r * .7, LR() * 3, 0, 6.3); g.fill();
+      if (LR() < .5) { g.fillStyle = 'rgba(120,60,28,.35)'; g.fillRect(x - 1, y, 2 + LR() * 2, 6 + LR() * 18); } } /* chips, some weeping rust */ });
+  mat.map = texOf(c); mat.bumpMap = texOf(c, { srgb: false }); mat.bumpScale = .5; mat.color.set(0xffffff); mat.roughness = Math.max(mat.roughness, .42); mat.needsUpdate = true; return mat; }
 // an old nail tin (Critic P10): worn painted tinplate with a paper label, rolled beads and a loose lid with a wire bail.
 // Matte, rusty and only faintly reflective, so the night env map does not light it up like plastic.
 let _tinMats = null;
