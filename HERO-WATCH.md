@@ -86,6 +86,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R10-6 | ok | firewood (19ccd8d) | whole errand natural: down the rope ladder hands on the ropes, walk along the track to the woodpile, picks logs (hy_picklog), carries them in both arms, slings the bundle on his back for the rope ladder and climbs with hands on the ropes | f3840–f7656 | r10-19ccd8d/firewood_ok.jpg | — |
 | R10-7 | ok | trip (19ccd8d) | ladders with hands on the ropes, walks the forest track to the edge (21 m out) and disappears into the forest by design (hero.js trip: root.visible=false while away) | f8040–f11232 | r10-19ccd8d/trip_ok.jpg | — |
 | R11-1 | ok | craft (6a6ff43) | B6/B18/R6-4/R10-1 fixed: the hammer swing stays in front of the chest, the head rises to shoulder height away from the face and comes down on the nail; left hand holds the board | f2808–f3576 | r11-6a6ff43/craft_hammer_clear_of_face_ok.jpg | — |
+| R11-2 | ? | sweep (6a6ff43) | this run he sweeps in the tight gap between the bunk and the desk; my camera is cramped so contact is unclear: the left wrist may dip into the desk top (f6264–6444). Not the door/post case of R9-13/R10-2 this time. To re-film with a wider view | f5736–f7236 | — | (verify) |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
