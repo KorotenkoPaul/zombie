@@ -991,7 +991,7 @@ const rig=createCameraRig({camera,dom:cv,scene,rooms:()=>ROOMS,limb:LIMB,
  onFollow:on=>{$('bF').classList.toggle('on',on);},
  onTap:(x,y)=>{const z=pickZombie(x,y);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}});
 // only the oak's leaf cards fade (near the camera, and in front of the focus when zoomed in); the house, bark, grass and ferns never do
-{const nf=()=>{rig.nearFade(TREE.group,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);/* [CAMERA] the forest's understory bushes too: on the forest trip they stood between the ◎ view and the hero */for(const n of ['forestUnderstory'])scene.traverse(o=>{if(o.name===n)rig.nearFade(o,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);});};nf();setTimeout(nf,8000);}
+{const nf=()=>{rig.nearFade(TREE.group,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);/* [CAMERA] the forest's understory bushes too: on the forest trip they stood between the ◎ view and the hero */for(const n of ['forestUnderstory','groundBushes'])scene.traverse(o=>{if(o.name===n)rig.nearFade(o,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);});};nf();setTimeout(nf,8000);}
 $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
