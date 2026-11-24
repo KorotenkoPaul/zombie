@@ -835,16 +835,16 @@ export function createHero(ctx){
  const REPAIR={
   /* a slate at the eave (Brain picks one within reach of a landing): he walks out only as far as the boards carry him (a hand's width
      short of the edge), stands and hammers it; chest-high slates with the bent-over bench hammer, head-high ones with the arms up */
-  fix_shingle:{clip:pos=>!pos||!has('hy_standhammer')?'hy_shingle':pos.y-root.position.y>1.12&&has('hy_reachup')?'hy_reachup':'hy_standhammer',tools:[['benchHammer','Right']],stand:.55,
+  fix_shingle:{clip:pos=>{if(!pos||!has('hy_standhammer'))return 'hy_shingle';const nn=nearNode(pos);const fy=nn&&N[nn]?N[nn].p.y:root.position.y;return pos.y-fy>1.1&&has('hy_hammerhigh')?'hy_hammerhigh':'hy_standhammer';},tools:[['benchHammer','Right']],stand:.55,
    standFn:pos=>pos&&has('hy_standhammer')?safeStand(pos,.45):.55,roofNail:true,floorNail:!has('hy_standhammer'),def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
   /* one knee down (real kneel + hammer mocap, spine bent ~60 deg over the board in the clip data): the nail is the board Brain picked, on the boards
      ~0.55 m in front of his hips, where the bent-over shoulder reaches it; hammerPost puts the face on it */
   fix_board:{clip:has('hy_kneelfloor')?'hy_kneelfloor':'hy_nailboard',tools:[['benchHammer','Right']],stand:has('hy_kneelfloor')?.55:.5,floorNail:true,kneel:has('hy_kneelfloor'),def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
-  fix_wall:{clip:'hy_patchwall',tools:[['benchHammer','Right']],stand:.45,wall:true,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
+  fix_wall:{clip:pos=>hamClip(pos,'hy_patchwall'),tools:[['benchHammer','Right']],stand:.45,wall:true,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
   fix_rope:{clip:'hy_ropeknot',node:'gate',stand:.45,def:()=>N.gate&&N.gate.p.clone().add(V(0,.3,.6))},
   fix_hinge:{clip:'hy_oilhinge',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
   fix_window:{clip:'hy_window',stand:.4,def:()=>{const w=pick(WINDOWS);return N[w].p.clone().addScaledVector(fwd(N[w].face??0),.5).add(V(0,1.3,0));}},
-  fix_railing:{clip:'hy_railing',tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
+  fix_railing:{clip:pos=>hamClip(pos,'hy_railing'),tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
   clear_roof:{clip:'hy_clearleaves',stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
   fix_chimney:{clip:'hy_chimney',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.chimneyTop?P.chimneyTop.clone().setY(Math.min(P.chimneyTop.y,root.position.y+1.6)):null;}}};
  // the nail of a floor repair: the picked board, on its top, if he can reach it from where he knelt (else null: the old chest-relative spot)
@@ -853,6 +853,10 @@ export function createHero(ctx){
   const d=V(q.x-hp.x,0,q.z-hp.z);const ahead=d.dot(f),side=d.length()**2-ahead*ahead;H.dbgNail=[ahead,Math.sqrt(Math.max(0,side)),q.y-root.position.y,H.face,Math.atan2(q.x-root.position.x,q.z-root.position.z),root.rotation.x,root.rotation.y,Math.hypot(q.x-root.position.x,q.z-root.position.z)];if(Math.abs(q.y-root.position.y)>.12||ahead<.3||ahead>.8||side>.3*.3)return null;return q;}
  // how close he can stand to a work point out over the edge: walk the line from where he is toward it, keep only boards at his own level
  // (and a hand's width more beyond his toes), never inside a wall or under a beam; returns the stand-off for approachTo
+ // hammering at a height: the body goes to the work, not the arm. Below the knee-high mark he kneels on one knee (upright kneel, hands ~0.6 m),
+ // waist to chest he stands bent over it, above the chest he straightens up; the swing itself is hammerPost's
+ function hamClip(pos,old){if(!pos||!has('hy_standhammer'))return old;const nn=nearNode(pos);const fy=nn&&N[nn]?N[nn].p.y:root.position.y;const dy=pos.y-fy;
+  return dy<.72&&has('hy_kneelhammer')?'hy_kneelhammer':dy>1.1&&has('hy_hammerhigh')?'hy_hammerhigh':'hy_standhammer';}
  function safeStand(pt,min,from){const p=from||root.position;const dx=pt.x-p.x,dz=pt.z-p.z,d=Math.hypot(dx,dz);if(d<1e-3)return min;const ux=dx/d,uz=dz/d;const C=window.__collide;
   let ok=0;for(let t=0;t<=d-min+1e-6;t+=.05){let good=true;for(const e of [0,.22]){const x=p.x+ux*(t+e),z=p.z+uz*(t+e);const g=floorAt(x,p.y+.3,z,.45,.5);if(g==null||Math.abs(g-p.y)>.12){good=false;break;}}
    if(good&&C&&C.depthAt){const x=p.x+ux*t,z=p.z+uz*t;for(const hy of [.4,1,1.5])if(C.depthAt(x,p.y+hy,z)>.01){good=false;break;}}if(!good)break;ok=t;}
@@ -860,7 +864,7 @@ export function createHero(ctx){
  // a slate he can really hammer: from the landing next to it, standing where the boards end, it must lie within an arm and a hammer
  // (stand-off <= 0.6 m) between chest and head height. Brain's pick is kept when it qualifies, else the most worn one nearby that does.
  function pickSlate(o){const P=window.__planks;if(!P||!P.list||!o.pos)return;const want=V(...o.pos);
-  const ok=c=>{const q=V(...c.pos);const nn=nearNode(q);if(!nn||!N[nn])return null;const f=N[nn].p;const dy=q.y-f.y;if(dy<.75||dy>1.45)return null;const st=safeStand(q,.4,f);return st<=.6?st:null;};
+  const ok=c=>{const q=V(...c.pos);const nn=nearNode(q);if(!nn||!N[nn])return null;const f=N[nn].p;const dy=q.y-f.y;if(dy<.75||dy>1.4)return null;const st=safeStand(q,.4,f);return st<=.55?st:null;};
   if(ok({pos:o.pos})!=null)return;let best=null,bs=1e9;for(const c of P.list('shingle')){const d=Math.hypot(c.pos[0]-want.x,c.pos[1]-want.y,c.pos[2]-want.z);if(d>4)continue;if(ok(c)==null)continue;const sc=d*.3+(c.fresh||0)*2;if(sc<bs){bs=sc;best=c;}}
   if(best){o.pos=best.pos.slice();o.target=best.id;}}
  for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{if(k==='fix_shingle'&&has('hy_standhammer'))try{pickSlate(o);}catch(e){}const pos=o.pos?V(...o.pos):(R.def?R.def():null);
