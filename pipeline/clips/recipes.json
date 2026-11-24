@@ -346,5 +346,50 @@
  "listen_window": {
   "src": "137_32",
   "note": "Procedural on idle_stand_b (listen.mjs): over 1.3 s he leans in ~6 deg, turns his head ~13 deg toward the glass and tilts it ~16 deg (ear to the window), holds with the base breathing/weight shifts and a slow head drift, eases out over 1.3 s. 7.8 s, root still. Face the window with the RIGHT side of the head slightly forward; a hand on the sill comes from grab. Built with node listen.mjs hero.glb out/idle_stand_b.json out/listen_window.json 9."
+ },
+ "bootsoff_sit_R": {
+  "src": "hyboots5",
+  "note": "Fal Hunyuan (bought, seed 5). Sitting on the bed edge: lifts the RIGHT foot only to knee height, leans forward and pulls the boot off with both hands (~1.2-3.4 s), then reaches down to the right side to set it on the floor outside the right foot (~4.0 s), sits back up. 5 s. Arms pushed out of torso/thighs by fixpen."
+ },
+ "bootsoff_sit_L": {
+  "src": "hyboots5",
+  "mirror": true,
+  "note": "Mirror of bootsoff_sit_R: LEFT boot, set down on the left side."
+ },
+ "kneel_fill": {
+  "src": "hykneel23",
+  "note": "Fal Hunyuan (bought, seed 23). Walks in, kneels on one knee, the right hand reaches forward and down to ~0.1 m (water edge ~0.5 m in front of the knees), holds, stands up. 5 s. For filling the bucket at the pond."
+ },
+ "bucket_dump": {
+  "src": "hydump11",
+  "note": "Fal Hunyuan (bought, seed 11). Standing two-hand dump: bucket held at the waist in front, tipped forward and down (over a rail), lowered. 4 s; hands ~0.7-1.0 m high."
+ },
+ "bucket_dump_b": {
+  "src": "hydump23",
+  "note": "Second dump take (seed 23), deeper forward tip (trunk lean up to ~47 deg)."
+ },
+ "rail_lean": {
+  "src": "hyrail11",
+  "note": "Fal Hunyuan (bought, seed 11). Forearms on a rail at ~1.0 m, weight on one leg, slowly looks left and right. 8 s, root still (loop with close 1.0)."
+ },
+ "rail_lean_b": {
+  "src": "hyrail23",
+  "note": "Second rail-lean take (seed 23)."
+ },
+ "floor_pickup": {
+  "src": "hy2 floor_pickup-23",
+  "note": "Fal Hunyuan (bought, seed 23) floor pickup: bends at the waist and squats, both hands to ~0.2 m in front of the feet, stands up holding the load at the waist. Knees opened to >=40 deg interior by kneeopen.mjs (raw clip folded them to 23 deg = calf through thigh), hips raised up to 12 cm, trunk bent a bit more. 4 s. Replacement for hy_pickground."
+ },
+ "clear_leaves": {
+  "src": "master hy_clearleaves",
+  "note": "hy_clearleaves from master (36 fps, 150 frames) with the loop seam smoothed circularly (knee jerk at the seam 8.8 -> 0.4 cm/frame^2) and planted feet flattened (heel lowered up to 7 cm, footflat.mjs). Loop."
+ },
+ "squat_work_flat": {
+  "src": "squat_work",
+  "note": "squat_work with heels down on the boards (footflat.mjs), knees >=40 deg interior (kneeopen.mjs) and a smoothed loop seam. Hands in front of the knees at board level. Replacement for hy_squatwork (fix_rope)."
+ },
+ "seated_listen": {
+  "src": "sit_tired",
+  "note": "Procedural on sit_tired (listen.mjs + headlevel): sitting, hands resting on the thighs/knees, leans in ~6 deg, head turned ~13 deg and tilted ~16 deg as if listening (radio), slow head drift. 5.8 s, loop with close 0.8."
  }
 }
