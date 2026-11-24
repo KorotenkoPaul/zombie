@@ -260,5 +260,17 @@
   "t0": 17.6,
   "t1": 23.4,
   "note": "Bed P5 / evening. Real mocap seated on a low seat, forearms on the knees, hands together in front of the chest, small fidgets, calm. 5.8 s, loop close 0.8."
+ },
+ "telescope_look": {
+  "src": "77_02",
+  "t0": 0,
+  "t1": 15.0,
+  "base": "pingpong",
+  "upper": {
+   "src": "80_07",
+   "t0": 4.0,
+   "t1": 11.8
+  },
+  "note": "Deck telescope (replaces hy_telescope, whose right knee bent back). Calm standing legs (77_02) + both hands held up in front of the face (80_07, holding something at head height), small natural sway. 7.8 s loop close 0.8. Snap the hands to the tube and the eye to the eyepiece with IK; root still."
  }
 }
