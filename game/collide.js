@@ -447,7 +447,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function finish(t0, it, worst) { const ms = performance.now() - t0; st.frames++; st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
   // wrap the hero's update: corrections go on after hero.js has posed the body, and come off before it runs again
   // HERO-RULES.md: the 'collide' slot of the pose pipeline (after contacts, before grab and the guard); the old wrap only without stages
-  if (HH.stage) HH.stage('collide', dt => post(dt)); else { const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); }; }
+  if (HH.stage) { if ((HH.SLOTS || []).includes('pre')) HH.stage('pre', () => pre()); HH.stage('collide', dt => post(dt)); } else { const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); }; }
 
   // ---------- nav: clearance of the walk graph for the body (a 0.2 m wide column from knee to head height) ----------
   function clearance(x, y, z, r = .2) { let worst = 0; const p = V(); for (const hy of [.35, .7, 1.0, 1.3]) for (let a = 0; a < 8; a++) { p.set(x + Math.cos(a * Math.PI / 4) * r, y + hy, z + Math.sin(a * Math.PI / 4) * r); const d = probe(p, 7, false); if (d > worst) worst = d; } return worst; }
