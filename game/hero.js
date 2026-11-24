@@ -818,7 +818,8 @@ export function createHero(ctx){
   sweep:(o)=>job({pt:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),1).add(V(0,.1,0)),stand:.9,clip:'hy_sweep',loop:true,dur:[15,28],tools:[['broom','Right']],
    tick:(a,dt)=>{// shuffles slowly across the floor while sweeping, turning back at walls
     if(a.pause)return;const p=root.position;const f=fwd(root.rotation.y);const q=p.clone().addScaledVector(f,.25);pushOut(q);const y=floorAt(q.x,p.y+.2,q.z,.3,.5);
-    if(y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02){root.rotation.y+=Math.PI*.6*dt;H.face=root.rotation.y;}else{p.addScaledVector(f,.22*dt);}
+    /* GRAB: he stoops over the broom, so his head and the bristles are ~0.7 m ahead of his feet: keep that much clear of furniture too */const blocked=[.35,.55,.75].some(k=>{const x=p.x+f.x*k,z=p.z+f.z*k;return OBST.some(o=>Math.abs(o.y-p.y)<.6&&x>o.x0-.12&&x<o.x1+.12&&z>o.z0-.12&&z<o.z1+.12);});/* beds and seats too (pushOut lets him sit on those) */
+    if(blocked||y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02){root.rotation.y+=Math.PI*.6*dt;H.face=root.rotation.y;}else{p.addScaledVector(f,.22*dt);}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
   water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
   listen:(o)=>{const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<1.5))||pick(WINDOWS);return job({node:wn,slide:false,clip:'hy_listen',dur:[12,22],reps:2,look:a=>root.position.clone().add(V(Math.sin(a.T*.35)*2.5,1.55,0)).addScaledVector(fwd(N[wn].face??0),5)});},

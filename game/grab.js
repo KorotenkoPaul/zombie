@@ -134,8 +134,12 @@ export function createGrab({ THREE, bones }) {
   function sweepDrive(dt) { const P = PROPS || window.__props; const b = P && P.tools && P.tools.broom; const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero);
     const on = !!(b && b.parent === bones.RightHand && H && H.task === 'sweep' && !window.__noSweepDrive); SW.w = Math.max(0, Math.min(1, SW.w + (on ? dt : -dt) / .5)); if (SW.w < .01 || !b || b.parent !== bones.RightHand) return false;
     const hips = bones.Hips; const hp = hips.getWorldPosition(V()); const fw = V(0, 0, 1).applyQuaternion(hips.getWorldQuaternion(new THREE.Quaternion())); fw.y = 0; fw.normalize(); const rt = V(0, 1, 0).cross(fw).normalize().negate();
-    const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6; const sx = Math.sin(SW.ph) * .22;
-    const Bp = hp.clone().addScaledVector(fw, .62).addScaledVector(rt, .1 + sx).setY(fy + .02); // bristles on the boards
+    // the clip folds him nearly double over the broom: the chest is held to at most ~35 deg forward (a sweeper's stoop)
+    { const sp2 = bones.Spine2; if (sp2 && SW.w > .01) { const up = V(0, 1, 0).applyQuaternion(sp2.getWorldQuaternion(new THREE.Quaternion())); const pitch = Math.atan2(up.dot(fw), up.y); const tg = Math.max(0, pitch - .6) * SW.w; SW.ex = (SW.ex || 0) + Math.max(-1.2 * dt, Math.min(1.2 * dt, tg - (SW.ex || 0))); const ex = SW.ex; // eased: no jerk
+      if (ex > .005) { const ax = rt.clone().negate(); rotW(bones.Spine, ax, -ex * .4); rotW(bones.Spine1, ax, -ex * .35); rotW(sp2, ax, -ex * .25); } } }
+    const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6; const sx = Math.sin(SW.ph) * .18;
+    const Bp = hp.clone().addScaledVector(fw, .7).addScaledVector(rt, .08 + sx).setY(fy + .02); // bristles on the boards, ahead of his feet
+    for (const ft of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) { const b = bones[ft]; if (!b) continue; const fp = b.getWorldPosition(V()); const d = Bp.clone().sub(fp).setY(0); const ah = d.dot(fw); if (Math.abs(d.dot(rt)) < .22 && ah < .2) Bp.addScaledVector(fw, .2 - ah); }
     const top = hp.clone().addScaledVector(fw, .2).addScaledVector(rt, .16 + sx * .25).add(V(0, .42, 0)); const dir = top.sub(Bp).normalize();
     const sp = GRIP.broom; const Gp = Bp.clone().addScaledVector(dir, sp.g[1] * b.getWorldScale(V()).x); const Lp = Bp.clone().addScaledVector(dir, sp.two[1] * b.getWorldScale(V()).x);
     // tool orientation: local +y along the handle (bristles -> top), local +z (the bristle face) toward his front
