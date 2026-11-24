@@ -1282,7 +1282,11 @@ export function buildProps(ctx) {
   const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null, nBase = quiltMesh ? quiltMesh.geometry.attributes.normal.array.slice() : null;
   const press = { at: null, k: 0, shown: -1, cover: false };
   const qBot = (() => { if (!qBase) return 0; let m = 1e9; for (let i = 1; i < qBase.length; i += 3) if (qBase[i] < m) m = qBase[i]; return m; })();
-  const qTop = (() => { if (!qBase) return 0; let m = -1e9; for (let i = 1; i < qBase.length; i += 3) if (nBase[i] > .7 && qBase[i] > m) m = qBase[i]; return m - .04; })();
+  // BED (2026-11-24): the quilt mesh is merged with the UPPER bunk's quilt and its normals are not reliable there, so the old
+  // "top = highest up-facing vertex" gave -1e9: every vertex counted as the top, the hanging sides and hem rose with him and
+  // the quilt stood over a bare mattress in arches. Now from positions only: the lower quilt is everything within .3 m of its hem.
+  const qLowMax = (() => { if (!qBase) return 0; let m = -1e9; for (let i = 1; i < qBase.length; i += 3) if (qBase[i] < qBot + .3 && qBase[i] > m) m = qBase[i]; return m; })();
+  const qTop = qLowMax - .045;
   // bedPress(worldHip): a hollow where he sits or lies ON the quilt. bedCover(worldHip): he lies UNDER it: the quilt rises over a
   // body (head toward the pillow, +x in the bed), so his legs never show through. null releases either; both ease in and out.
   out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = false; };
@@ -1309,7 +1313,7 @@ export function buildProps(ctx) {
     bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
     const byName = {}; for (const bn of sk.bones) byName[bn.name.replace(/^.*[:_]/, '').replace(/^mixamorig/, '')] = bn;
     const list = []; for (const [a, b, r] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r }); return (coverBones = list.length >= 8 ? list : null); }
-  out._quiltDbg = () => ({ m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
+  out._quiltDbg = () => ({ qTop, qBot, m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V(), _cw = V();
   // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
   function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -1322,7 +1326,7 @@ export function buildProps(ctx) {
     if (press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones())) { coverT -= dt; if (coverT <= 0 || Math.abs(press.k - press.shown) >= .01) { coverT = .2; press.shown = press.k; bunk.updateMatrixWorld(true);
         if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } }
         const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, e = .02, k = press.k;
-        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2];
+        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
           const L0 = liftAt(x, z, y > qTop ? y : qTop) * (y >= qTop ? 1 : Math.max(0, (y - qBot) / (qTop - qBot))); if (L0 <= .002) continue;/* the hanging sides: the hem stays down, the cloth slopes from the lifted top edge to it (no box with a zigzag hem over a bare mattress) */ a[i + 1] = y + L0 * k;
           if (nBase[i + 1] > .4) { const gx = (liftAt(x + e, z, y) - liftAt(x - e, z, y)) / (2 * e) * k, gz = (liftAt(x, z + e, y) - liftAt(x, z - e, y)) / (2 * e) * k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; } }
         P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
