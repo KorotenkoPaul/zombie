@@ -85,6 +85,13 @@ coded inside one task: ask in the Character thread.
 
 ## 4. Deploy gate
 
+**Freeze since 2026-11-23 23:52 UTC (Pavel: "every animation broke").** No thread pushes hero files to master
+(hero.js, motion.js, climb.js, grab.js, collide.js, pose.js, hero-moves.txt, hero parts of index.html).
+Push your work to your own branch and tell the integrator (Character thread) the branch and sha. The integrator merges it into
+the integration branch `claude/project-thread-tyhjsl`, runs the deterministic gate (`node tests/anim/gate.js`) and a side-by-side
+render against master, and promotes to master only when it is clearly better on every action it touches.
+
+
 QA runs every action × both heroes (default and detailed) against section 3 before a push to master.
 A P1 failure blocks the push. Results go to `ANIM-QA.md`.
 
