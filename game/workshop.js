@@ -212,7 +212,7 @@ export function createWorkshop(K) {
         if (S.ph === 'take') { const r = homeGrip('benchKnife'); if (!r || take(a, 'benchKnife', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'onto'; S.t = 0; } return; }
         if (S.ph === 'onto') { const k = smooth(0, .6, S.t); const r0 = homeGrip('benchKnife'), r = geom(-.07, .03 * (1 - k)); hold('Right', 'benchKnife', r, g); if (k >= 1) { S.ph = 'stroke'; S.t = 0; S.u = .75; } return; }
         if (S.ph === 'stroke') { S.u += dt / 1.15; const s = .075 * Math.sin(S.u * Math.PI * 2); const r = geom(s); hold('Right', 'benchKnife', r, g); S.lookAt = r.C;
-          const lw = smooth(0, .5, S.t); handTo('Left', r.C.clone().addScaledVector(r.W, .02).add(V(0, .025, 0)), lw * .95); flatHand('Left', r.W.clone().add(V(0, -.25, 0)), V(0, -1, 0), lw); handTo('Left', r.C.clone().addScaledVector(r.W, .02).add(V(0, .008, 0)), lw);
+          const lw = smooth(0, .5, S.t); handTo('Left', r.C.clone().addScaledVector(r.W, .02).add(V(0, .025, 0)), lw * .95); flatHand('Left', r.W.clone().add(V(0, -.25, 0)), V(0, -1, 0), lw); handTo('Left', r.C.clone().addScaledVector(r.W, .02).add(V(0, .025, 0)), lw);
           const n = Math.floor(S.u); if (n !== S.lastN) { S.lastN = n; S.n++; AU('sharpen', r.C); if (S.n % 9 === 0) { S.ph = 'check'; S.t = 0; S.n2 = (S.n2 || 0) + 1; } } return; }
         if (S.ph === 'check') { // lift the knife, turn the edge to the light and look along it
           const k = smooth(0, .7, S.t) * (1 - smooth(2.3, 3, S.t)); const r = geom(0); const eye = bones.Head.getWorldPosition(V()); const fw = dirW(0, 0, -1);
@@ -321,7 +321,7 @@ export function createWorkshop(K) {
       start: () => setup(), look: () => S.lookAt || (CR && nailHead(0)), lookW: .9, tick: () => { H.face = benchYaw(); },
       post: (a, dt) => { S.t += dt; const g = G(); if (!CR) { a.T = 1e9; return; }
         const n = CR.nails[S.ni]; const N = n ? nailHead(S.ni) : null; S.lookAt = N || S.lookAt;
-        const leftOn = (w, onNail) => { const p = onNail && N ? N.clone().add(V(0, -.03, 0)).addScaledVector(dirW(0, 0, 1), .025) : toWC(.53, .92 + .02, .28); handTo('Left', p, w); if (g) g.hold('Left', CR.g, null); };
+        const leftOn = (w, onNail) => { const p = onNail && N ? N.clone().add(V(0, -.03, 0)).addScaledVector(dirW(0, 0, 1), .025) : toWC(.53, .92 + .03, .28); handTo('Left', p, w); if (g) g.hold('Left', CR.g, null); };
         if (S.ph === 'take') { const r = homeGrip('benchHammer'); if (!r || take(a, 'benchHammer', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'set'; S.t = 0; } leftOn(smooth(.3, 1, S.t), false); return; }
         if (S.ph === 'set') { // a nail from the plank's edge is stood on its point; the hammer waits low
           if (!n) { S.ph = 'put'; S.t = 0; return; } if (S.t > .4 && !n.o.visible) { n.o.visible = true; n.sunk = 0; }
