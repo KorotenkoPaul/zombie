@@ -36,7 +36,8 @@ export function createCameraRig(o) {
   // Safety stays (never inside the trunk, walls or limbs, no auto-movement). The free camera is kept behind ?cam=free.
   const CLASSIC = o.classic !== undefined ? !!o.classic : !/[?&]cam=free\b/.test(typeof location !== 'undefined' ? location.search : '');
   const ZMIN = 0.32, ZMAX = 1.2;     // Pavel 22:16: zoom out a little further than the home view (+20%)
-  let awayK = 0, zoomEff = 1;
+  let snapNext = false;   // tests: set({snap}) lands at once (framing, cut), as a phone settles after a second
+  let awayK = 0, zoomEff = 1, nfHero = null; const nfHeroV = new THREE.Vector3();
   let zoomK = 1;
   const look = new THREE.Vector3(0, 7.4, 2.4), lookT = new THREE.Vector3();
   function classicZoom(f) { zoomK = clamp(zoomK * f, ZMIN, ZMAX); atHome = Math.abs(zoomK - 1) < 0.001; }
@@ -534,6 +535,9 @@ export function createCameraRig(o) {
     // never below ground; beyond the soft bounds: spring back once the fingers are off
     target.y = Math.max(target.y, groundY(target.x, target.z) + BOUND.yMin);
     // never behind the trunk as seen from the camera (a focus there puts the trunk between the camera and it)
+    // classic camera zoomed in on the hero: the focus is him wherever he is (the forest lies outside the soft bounds and
+    // to the side of the trunk; pulling the focus back left him at the screen edge behind the bushes, critic pass 11 K5)
+    if (CLASSIC && nfHero) { outOfTrunk(target); return; }
     if (yaw !== undefined) outOfLimb(target, yaw, goal.pitch);
     if (yaw !== undefined) { toLocal(target, yaw, fL); if (fL.z < 0.7) { fL.z = 0.7; fromLocal(fL, yaw, target); } }
     outOfTrunk(target);
@@ -553,7 +557,7 @@ export function createCameraRig(o) {
       // the hero is away (outdoor trips hide him): ease back to the house view and return to him when he reappears
       const f = follow(); awayK += ((f ? 0 : 1) - awayK) * damp(1.5, dt);
       const zk = zoomK + (Math.max(1, zoomK) - zoomK) * awayK; zoomEff = zk;
-      const k = clamp(1 - (zk - ZMIN) / (1 - ZMIN), 0, 1);
+      const k = clamp(1 - (zk - ZMIN) / (1 - ZMIN), 0, 1); nfHero = f && k > 0 ? nfHeroV.copy(f) : null;
       lookT.copy(home.target); if (f) lookT.lerp(f, k);
       // zoomed in on him: keep him a little left of centre, clear of the button column on the right, and track a bit
       // quicker so a walking hero does not drift to the screen edge (phone watch: firewood trip, ladders)
@@ -562,8 +566,9 @@ export function createCameraRig(o) {
         const off = 0.16 * halfW * k;
         lookT.x += Math.cos(cur.yaw) * off; lookT.z -= Math.sin(cur.yaw) * off;
       }
-      look.lerp(lookT, Math.min(1, dt * (2.5 + 2.5 * k)));
+      look.lerp(lookT, snapNext ? 1 : Math.min(1, dt * (2.5 + 2.5 * k)));
       goal.target.copy(look); goal.dist = home.dist * zk;
+      if (snapNext) { cur.target.copy(goal.target); cur.dist = goal.dist; }
     }
     const dragging = ptrs.size > 0 || inert.on;
     keepOut(goal.target, dt, dragging, goal.yaw);
@@ -644,11 +649,13 @@ export function createCameraRig(o) {
     limbOff.lerp(limbWant, damp(28, dt));
     camPos.add(limbOff);
     if (extra.shake) camPos.add(extra.shake);
-    focusU.value = camPos.distanceTo(cur.target);
+    // zoomed in on the hero, the cut reaches him (the framing keeps him off the centre, so the target can be metres nearer)
+    focusU.value = camPos.distanceTo(nfHero || cur.target);
+    focusPU.value.copy(nfHero || cur.target);
     // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar
     // (classic camera: zoomed in on the hero, every leaf card between him and the camera clears, at any distance)
     const cutWant = Math.max(1 - THREE.MathUtils.smoothstep(focusU.value, 9, 15), CLASSIC ? THREE.MathUtils.smoothstep(1 - (zoomEff - ZMIN) / (1 - ZMIN), 0.4, 0.85) : 0);
-    cutU.value += (cutWant - cutU.value) * damp(4, dt);
+    cutU.value += (cutWant - cutU.value) * (snapNext ? 1 : damp(4, dt)); snapNext = false;
     camera.position.copy(camPos);
     camera.lookAt(cur.target);
   }
@@ -668,7 +675,7 @@ export function createCameraRig(o) {
     if (v.dist !== undefined) goal.dist = v.dist;
     if (CLASSIC) { if (v.dist !== undefined) zoomK = clamp(v.dist / home.dist, ZMIN, ZMAX); if (v.target) look.copy(v.target); }
     atHome = !!v.home; stopFollow();
-    if (v.snap) snap();
+    if (v.snap) { snap(); snapNext = true; }
   }
 
   // Foliage fade (tree leaves only: the house, bark, grass and ferns never fade).
@@ -677,7 +684,7 @@ export function createCameraRig(o) {
   //   near:  cards within r of the camera (r = clamp(dist*k, min, max)) fade,
   //   cut:   when zoomed in, every card in front of the focus fades (zooming through the crown clears the view).
   const fadeU = [];
-  const focusU = { value: 10 }, cutU = { value: 0 };
+  const focusU = { value: 10 }, cutU = { value: 0 }, focusPU = { value: new THREE.Vector3() };
   function nearFade(root, r = 2.2, test = mt => mt.alphaTest > 0, k = 0.7, rMin = 0.35) {
     let U = fadeU.find(u => u.max === r && u.k === k);
     if (!U) { U = { max: r, k, min: rMin, u: { value: r } }; fadeU.push(U); }
@@ -691,14 +698,22 @@ export function createCameraRig(o) {
         const prev = mt.onBeforeCompile, key = prev ? prev.toString() : '';
         mt.onBeforeCompile = (sh, rd) => {
           if (prev) prev.call(mt, sh, rd);
-          sh.uniforms[name] = uni; sh.uniforms.uNFFocus = focusU; sh.uniforms.uNFCut = cutU;
-          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;')
+          sh.uniforms[name] = uni; sh.uniforms.uNFFocus = focusU; sh.uniforms.uNFCut = cutU; sh.uniforms.uNFF = focusPU;
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;varying float vNFCut;varying float vNFW;uniform vec3 uNFF;')
             // at the end of main(): works also when a material replaced the project_vertex chunk with its own
             // billboard code (the forest impostors), as long as it leaves an mvPosition in main's scope
-            .replace(/}\s*$/, '\nvCamDNF=length(mvPosition.xyz);\n#ifdef USE_INSTANCING\nvec3 nfp=instanceMatrix[3].xyz;\n#else\nvec3 nfp=floor(position*3.0);\n#endif\nvRndNF=fract(sin(dot(nfp,vec3(12.9898,78.233,37.719)))*43758.5453);\n}');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;uniform float ' + name + ';uniform float uNFFocus,uNFCut;')
+            // instanced cards fade by their centre's distance, as one piece: a per-vertex distance cut the big forest
+            // impostors (up to 11 m wide) along a straight line and left dark half cards in the frame (critic pass 11 K5)
+            .replace(/}\s*$/, '\n#ifdef USE_INSTANCING\nvCamDNF=length((modelViewMatrix*vec4(instanceMatrix[3].xyz,1.0)).xyz);\nvec3 nfp=instanceMatrix[3].xyz;' +
+              /* the cut of a card: by its centre's distance; a card that covers the camera->hero line on screen also goes when its
+                 middle stands up to 1.5 m behind him (a bush's clumps reach forward and hid him whole) */
+              '\n{vec3 nfc=(modelMatrix*vec4(nfp,1.0)).xyz-cameraPosition;vec3 nfd=normalize(uNFF-cameraPosition);float nft=dot(nfc,nfd);' +
+              'float nfr=0.5*max(length((modelMatrix*vec4(instanceMatrix[0].xyz,0.0)).xyz),length((modelMatrix*vec4(instanceMatrix[1].xyz,0.0)).xyz));' +
+              'vNFW=1.0;vNFCut=mix(vCamDNF,min(vCamDNF,nft-1.5),1.0-smoothstep(nfr+1.0,nfr+2.5,length(nfc-nfd*nft)));}' +
+              '\n#else\nvCamDNF=length(mvPosition.xyz);vNFCut=vCamDNF;vNFW=1.0;\nvec3 nfp=floor(position*3.0);\n#endif\nvRndNF=fract(sin(dot(nfp,vec3(12.9898,78.233,37.719)))*43758.5453);\n}');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;uniform float ' + name + ';uniform float uNFFocus,uNFCut;varying float vNFCut;varying float vNFW;')
             .replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n{float nf=smoothstep(' + name + '*0.6,' + name + ',vCamDNF);' +
-              'nf=min(nf,mix(1.0,smoothstep(uNFFocus-2.6,uNFFocus-0.9,vCamDNF),uNFCut));' +
+              'nf=min(nf,mix(1.0,smoothstep(uNFFocus-2.6,uNFFocus-0.9,vNFCut),uNFCut*vNFW));' +
               /* each card melts within a short stretch, then is gone completely: a half-melted card at the lens read as a glowing haze once bloom blurred it (critic K6) */'float gone=clamp((1.0-nf)*2.5-vRndNF*1.5,0.0,1.0);' +
               'if(gone>0.97||(gone>0.0&&diffuseColor.a<mix(alphaTest,1.001,gone)))discard;}');
         };
