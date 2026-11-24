@@ -306,6 +306,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     let { s, top } = value(effOf(n));
     s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
     s += weatherBonus(n, h);
+    // a house that is in good shape needs no repairs: he waits until wear has built up (a full-day watch: 6 repairs at wear ~0)
+    if (/^fix_/.test(n) && need.wear < .15) s -= 2.5 * (1 - need.wear / .15);
     // autumn litter on the roofs and deck (wind.js): he sweeps when it is leafy, skips it when clean
     if (n === 'clear_roof') { try { const L = window.__wind && window.__wind.litter; if (L && L.level) s += 1.5 * (L.level() - .4); } catch (e) {} }
     if (locked) { const l = lockScore(n); if (l <= -20) return null; s += l; }
