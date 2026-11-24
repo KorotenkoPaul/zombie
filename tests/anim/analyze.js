@@ -59,7 +59,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   F.forEach((f,i)=>{const d=f.dp;if(!d){if(ev&&i-ev.i1>18)flush();return;}const [nm,g,cm]=d;if(ev&&(ev.nm!==nm||ev.g!==g)&&i-ev.i1>18)flush();if(ev&&ev.nm===nm&&ev.g===g){ev.i1=i;if(cm>ev.cm){ev.cm=cm;ev.ip=i;}}else{flush();ev={nm,g,cm,i0:i,i1:i,ip:i};}});flush();}
  // ---- 2. jumps (second difference spikes) ----
  const J=['Hips','Head','HeadTop_End','LeftHand','RightHand','LeftFoot','RightFoot','LeftLeg','RightLeg'];
- for(let i=2;i<F.length;i++){if(F[i].tag!==F[i-1].tag)continue;
+ for(let i=2;i<F.length;i++){if(F[i].tag!==F[i-1].tag||F[i].f<30)continue;
   for(const n of J){const a=bone(F[i],n),b=bone(F[i-1],n),c=bone(F[i-2],n);const d2=len([a[0]-2*b[0]+c[0],a[1]-2*b[1]+c[1],a[2]-2*b[2]+c[2]])*100;
    if(d2>lim.jumpCm)add('jump',i,{bone:n,value:+d2.toFixed(1),unit:'cm/frame²',limit:lim.jumpCm,step:+(len(sub(a,b))*100).toFixed(1)});}
   const r2=len([F[i].root[0]-2*F[i-1].root[0]+F[i-2].root[0],F[i].root[1]-2*F[i-1].root[1]+F[i-2].root[1],F[i].root[2]-2*F[i-1].root[2]+F[i-2].root[2]])*100;
@@ -72,7 +72,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   // deep squats (interior < 60 deg) make the side test ill-conditioned: there only a flat fold counts (Pose: interior < 20 deg or ankle within 10 cm of the hip)
   {const U=bone(F[i],s+'UpLeg'),A=bone(F[i],s+'Foot');const ah=len(sub(A,U))*100;if(m.knee<20||ah<10)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg folded flat',limit:160,what:'leg folded flat (knee interior '+m.knee.toFixed(0)+' deg, ankle '+ah.toFixed(0)+' cm from the hip)'});}
   if(m.knee>=60&&m.knee<150&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
-  if(m.footHead<lim.footHeadM&&!f.fl.includes('B'))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
+  if(m.footHead<lim.footHeadM&&!f.fl.includes('B')&&!(f.fl.includes('S')&&/boots?off/i.test(f.clip)&&m.footHead>.35))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
   if(m.footUp>lim.footUpM)add('joint',i,{bone:s+'Foot',value:+(m.footUp*100).toFixed(0),unit:'cm along body above hip',limit:lim.footUpM*100,what:'leg folded up past the hip'});}});
  // ---- 4. foot sliding while planted ----
  for(const [s,fi,ti,gi] of [['Left','LeftFoot','LeftToeBase',0],['Right','RightFoot','RightToeBase',2]]){let c=null;

@@ -264,8 +264,6 @@
 "old|joint|LeftLeg||splitwood":161,
 "old|prop-through-body|hips|held|eat":3,
 "old|prop-through-body|hips|tools.waterBucket|fetchwater":3,
-"old|joint|RightFoot||sleep":55,
-"old|joint|LeftFoot||sleep":55,
 "new|jump|RightHand||read":50.7,
 "new|jump|HeadTop_End||read":40.9,
 "new|jump|LeftHand||read":40.8,
@@ -521,6 +519,4 @@
 "new|prop-through-body|head|held|tea":3.5,
 "new|joint|RightLeg||splitwood":166,
 "new|joint|LeftLeg||splitwood":161,
-"new|prop-through-body|shins|objects.fridge/1|store":3,
-"new|joint|RightFoot||sleep":55,
-"new|joint|LeftFoot||sleep":55}
+"new|prop-through-body|shins|objects.fridge/1|store":3}
