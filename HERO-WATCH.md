@@ -55,6 +55,9 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R7-5 | ok/P2 | ledge (071a2cf) | B7 fixed: he sits on the open deck edge, both hands on the edge, no railing in the legs, legs swing slowly. P2: the legs stay almost straight and stick out forward near horizontal (feet at knee height or above) instead of the shins hanging down over the drop | f8544–f10680 | r7-071a2cf/ledge_sit_ok_legs_stiff_horizontal.jpg | leisure |
 | R7-6 | — | stoke (071a2cf) | not judged: my camera ended up inside a post / his head; to be re-filmed | f11508–f11964 | — | watch tooling |
 | R7-7 | P1 | fetchwater (071a2cf) | R6-5 still there: root (0.11, 7.57) during hy_pickground, normalised pond-ellipse distance 0.87 (<1 = inside the water); he squats ON the water with a knee among the lily pads, then stands with both boots on the water | f3960–f4392 | r7-071a2cf/pond_squats_and_stands_on_water_f4056-4392.jpg | outdoor |
+| R7-8 | ok | sleep (071a2cf) | B5 fixed: sits on the lower bunk edge, pulls each boot off by hand (hy_bootsoffR/L), boots stand on the rug, socks on; lies down and the quilt covers the body, head on the pillow; stays still for 2+ game hours | f1740–f10254 | r7-071a2cf/sleep_under_quilt.jpg | — |
+| R7-9 | P2 | sleep (071a2cf) | the vest stays ON (Pavel: vest and boots off before sleep) — still worn while sitting, lying down and under the quilt | f2280–f2532 | r7-071a2cf/sleep_bootsoff_ok_vest_stays_arm_to_floor.jpg | bed |
+| R7-10 | P2 | sleep lie-down (071a2cf) | during hy_bedlie his left arm drapes off the mattress and the open hand lies on the floor rug | f2406 | same | bed |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
