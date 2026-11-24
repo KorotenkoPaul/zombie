@@ -47,14 +47,23 @@ export function createClimb() {
 
   // ---- start a climb: called once when ladderStep enters its 'climb' phase ----
   // o = {up, x, lz, side, cz, yBot, yTop, fromTop}
+  // the palm's own normal and the head's and chest's own 'up', measured once while he stands or walks with the arms hanging (palms toward the
+  // thighs). Before, only at the first climb from the bottom: a day that began by going down never had it, and on the way onto the ladder the
+  // palms stayed up in the air (watch: R20-2 at the hatch, the inner ladder and the deck). Also tried every frame off the ladder until it works
+  function calib() {
+    const B = C.bones, wp = b => b.getWorldPosition(V()); if (M.pn && M.uH) return; if (!B.Hips || !B.LeftHand || !B.RightHand) return;
+    const hp = wp(B.Hips), l = wp(B.LeftHand), r = wp(B.RightHand);
+    const la = B.LeftArm ? wp(B.LeftArm).y : hp.y + .5, ra = B.RightArm ? wp(B.RightArm).y : hp.y + .5; if (!(l.y < hp.y + .12 && r.y < hp.y + .12 && l.y < la - .35 && r.y < ra - .35 && Math.hypot(l.x - hp.x, l.z - hp.z) < .35 && Math.hypot(r.x - hp.x, r.z - hp.z) < .35 && (!B.Head || wp(B.Head).y > hp.y + .45))) return;
+    if (!M.pn) { M.pn = {}; for (const s of ['Left', 'Right']) { const h = B[s + 'Hand']; const d = hp.clone().sub(wp(h)).setY(0); if (d.lengthSq() < 1e-6) continue; M.pn[s[0] + 'H'] = d.normalize().applyQuaternion(h.getWorldQuaternion(new THREE.Quaternion()).invert()); } }
+    if (!M.uH && B.Head && B.Spine2) { M.uH = V(0, 1, 0).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()).invert()); M.uC = V(0, 1, 0).applyQuaternion(B.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert()); }
+  }
   function begin(o) {
     const lad = findLadder(o.x, o.lz); if (!lad || !lad.rungs.length) return false;
     const B = C.bones, p = C.root.position, wp = b => b.getWorldPosition(V());
     C.root.updateMatrixWorld(true);
     // the head's and chest's own 'up' measured once while he stands upright (the rig's local axes are not the world up)
     // the palm's own normal, measured once while he stands with the arms hanging (palms toward the thighs)
-    if (!M.pn && !o.fromTop && B.Hips) { M.pn = {}; const hp = wp(B.Hips); for (const s of ['Left', 'Right']) { const h = B[s + 'Hand']; if (!h) continue; const d = hp.clone().sub(wp(h)).setY(0); if (d.lengthSq() < 1e-6) continue; M.pn[s[0] + 'H'] = d.normalize().applyQuaternion(h.getWorldQuaternion(new THREE.Quaternion()).invert()); } }
-    if (!M.uH && !o.fromTop && B.Head && B.Spine2) { M.uH = V(0, 1, 0).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()).invert()); M.uC = V(0, 1, 0).applyQuaternion(B.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert()); }
+    calib();
     if (!M.arm && B.LeftArm && B.LeftForeArm && B.LeftHand) M.arm = wp(B.LeftArm).distanceTo(wp(B.LeftForeArm)) + wp(B.LeftForeArm).distanceTo(wp(B.LeftHand));
     if (!M.shH && B.LeftArm && B.Hips && M.leg) M.shH = Math.max(.2, wp(B.LeftArm).distanceTo(wp(B.Hips))) + M.leg; // shoulder over the sole with the leg straight
     const zDir = Math.sign(o.cz - o.lz) || 1;
@@ -275,8 +284,8 @@ export function createClimb() {
   // ---- after the clip pose: hips to the ladder, limbs onto the rungs ----
   function post(dt) {
     // the body was reset (spawn / freeze guard / random start) while on a ladder: drop the climb at once
-    if (S.act && C.H.lad !== S.act.hl) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; S.resid = null; }
-    const A = S.act;
+    if (S.act && C.H.lad !== S.act.hl) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; S.resid = null; S.hk = S.hk1 = 0; }
+    const A = S.act; if (!A && !(M.pn && M.uH) && !C.H.lad && !C.H.inBed) calib();
     // fade the IK weight (also after the climb ended, while the next clip takes over)
     const fadeT = A ? .3 : (S.fade || .3);
     S.W += Math.sign(S.wTarget - S.W) * Math.min(Math.abs(S.wTarget - S.W), dt / fadeT);
@@ -371,10 +380,12 @@ export function createClimb() {
     if (A && A.lookPt) aimHead(A.lookPt, W * .85);
     // the face off the rungs (after the look, which would turn it back): the climb clip leans the head ~35 deg to the ladder and the brow went 2-3 cm into the top rung at the hatch.
     // A climber keeps the head up: the middle of the skull (9 cm on from the neck; the face and brow ~11 cm round it) stays 20 cm off the rung plane, 4-6 cm off the rung, by tipping the head back (eased)
-    if (A && A.planeZ != null && B.Head && B.Neck) { let hk = 0; const h = wp(B.Head), c = h.clone().add(h.clone().sub(wp(B.Neck)).setLength(.09));
-      if (A.mode !== 'over' && c.y < A.R[A.R.length - 1].y + .12) { const big = !B.HeadTop_End; /* the original hero's head is bigger (brow ~17 cm above the head bone) */ hk = Math.min(.09, Math.max(0, (big ? .235 : .2) - (c.z - A.planeZ) * A.zDir)); }
-      A.hk = (A.hk || 0) + (hk - (A.hk || 0)) * Math.min(1, dt * (hk > A.hk ? 30 : 6)); /* in fast (a brow already in the rung), out slowly */
-      if (A.hk > 1e-3) { /* a pure nod back about the head's own ear-to-ear axis, kept level (a free turn, or a turn about the ladder's axis on a head turned to a hand, rolled it 19 deg) */ const ex = V(1, 0, 0).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion())); ex.y = 0; if (ex.lengthSq() > .1) { ex.normalize(); const v = c.clone().sub(h), dz = ex.clone().cross(v).z; if (Math.abs(dz) > .02) rotWorld(B.Head, ex, Math.max(-.6, Math.min(.6, A.zDir * A.hk / dz))); } } }
+    if (B.Head && B.Neck && (A && A.planeZ != null || S.hk > 1e-3)) { let hk = 0; const h = wp(B.Head), c = h.clone().add(h.clone().sub(wp(B.Neck)).setLength(.09));
+      if (A && A.planeZ != null && A.mode !== 'over' && c.y < A.R[A.R.length - 1].y + .12) { const big = !B.HeadTop_End; /* the original hero's head is bigger (brow ~17 cm above the head bone) */ hk = Math.min(.09, Math.max(0, (big ? .235 : .2) - (c.z - A.planeZ) * A.zDir)); }
+      if (A) S.hkZ = A.zDir;
+      // two eased stages, kept on after the climb ends and eased out there (dropped with the climb, the head top jumped 15 cm in a frame: gate)
+      S.hk1 = (S.hk1 || 0) + (hk - (S.hk1 || 0)) * Math.min(1, dt * 12); S.hk = (S.hk || 0) + (S.hk1 - (S.hk || 0)) * Math.min(1, dt * 12);
+      if (S.hk > 1e-3) { /* a pure nod back about the head's own ear-to-ear axis, kept level (a free turn, or a turn about the ladder's axis on a head turned to a hand, rolled it 19 deg) */ const ex = V(1, 0, 0).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion())); ex.y = 0; if (ex.lengthSq() > .1) { ex.normalize(); const v = c.clone().sub(h), dz = ex.clone().cross(v).z; if (Math.abs(dz) > .02) rotWorld(B.Head, ex, Math.max(-.6, Math.min(.6, (S.hkZ || 1) * S.hk / dz))); } } }
   }
 
   // the head looks where he climbs (the climb clip throws it back to the ceiling): Neck 40 % / Head 60 %, kept within a
