@@ -122,8 +122,10 @@ export function createWorkshop(K) {
   // put the tool down exactly on its rest pose, let go, then the hand leaves
   function put(a, name, side, dt, T = .6) { const P = PP(); const o = P.tools[name]; const h = o && o.userData.home; const k = a.pk || (a.pk = { t: 0 }); k.t += dt; const sp = G().GRIP[name];
     if (!h) return true; const gp = V(...sp.g).multiplyScalar(h.scale || 1).applyQuaternion(h.quat).add(h.pos); const tip = gp.clone().add(V(...sp.a).applyQuaternion(h.quat)); const B = V(...sp.b).applyQuaternion(h.quat);
-    if (!k.rel) { holdToolAt(side, name, gp, tip, 1, B); const g = G(); if (g && g.late) g.late(() => holdToolAt(side, name, gp, tip, 1, B));
-      if (k.t > .05) { k.rel = true; k.t = 0; k.gp = gp; relTool(side, name, .06); } return false; }
+    // GRAB (frame check: the hammer was let go 40 cm short of its spot and jumped 32 cm there): the hand carries the tool to its spot over
+    // ~0.5 s (eased IK, not snapped), and lets go only once the fist's grip point is on the spot (or after 1.6 s, the release eases the rest)
+    if (!k.rel) { const w = smooth(0, .5, k.t); holdToolAt(side, name, gp, tip, w, B); const g = G(); if (g && g.late) g.late(() => holdToolAt(side, name, gp, tip, w, B));
+      const gd = g && g.gripPoint ? g.gripPoint(side).distanceTo(gp) : 0; if (k.t > .5 && (gd < .04 || k.t > 1.6)) { k.rel = true; k.t = 0; k.gp = gp; relTool(side, name, gd < .04 ? .06 : .35); } return false; }
     const w = 1 - smooth(0, T, k.t); if (w > .01) reachGrip(side, k.gp.clone().add(V(0, .04 * (1 - w), 0)), w); if (k.t >= T) { a.pk = null; snapHome(name); return true; } return false; }
   // a released tool lies exactly where it was taken from (the release blend and the settle tick left it 6 cm up, hanging in the air)
   function snapHome(name) { const P = PP(); const o = P && P.tools && P.tools[name]; const h = o && o.userData.home; if (!h || o.parent !== h.parent) return; o.position.copy(h.pos); o.quaternion.copy(h.quat); o.updateMatrixWorld(true); }
