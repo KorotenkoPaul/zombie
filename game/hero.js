@@ -505,12 +505,47 @@ export function createHero(ctx){
     const v=a.knob.clone().sub(from);const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);if(!a.low)ikList([['Right',from.add(v),w]]);};
    return a;},
   // open or close the floor hatch over the kitchen ladder: go to its top or bottom, reach for the ring, it moves at the touch
-  hatch:(o={})=>{const a={step:'go',t:0};const hc=window.__house&&window.__house.hatch;if(!hc){a.update=()=>endTask();return a;}
-   const want=o.open!=null?!!o.open:!hc.isOpen();const L=hc.ladder||{top:'bl_t',bottom:'kl_b'};const up=o.side==='top'?true:o.side==='bottom'?false:root.position.y>(lv.KT+lv.BD)/2-.3;const node=up?L.top:L.bottom;
-   goTo(node,()=>{a.step='reach';a.t=0;const g=hc.grab;const p=root.position;H.face=Math.atan2(g.x-p.x,g.z-p.z);a.low=g.y-p.y<.8;if(a.low&&has('hy_take'))once('hy_take',{fade:.35,then:()=>play(IDLE(),{fade:.4})});});
-   a.update=dt=>{if(a.step!=='reach')return;a.t+=dt;const g=hc.grab;H.look=g.clone();H.lookW=1;const tT=a.low&&has('hy_take')?durOf('hy_take')*.45:.45;
-    if(a.t>tT&&!a.done){a.done=true;try{want?hc.open():hc.close();}catch(e){}}if(a.t>(a.low&&has('hy_take')?durOf('hy_take'):1.0))endTask();};
-   a.post=()=>{if(a.step!=='reach'||a.low)return;const w=smooth(0,.4,a.t)*(1-smooth(.65,1,a.t));const from=bones.RightArm.getWorldPosition(V());const v=hc.grab.clone().sub(from);if(v.length()>armLen*.97)v.setLength(armLen*.97);ikList([['Right',from.add(v),w]]);};
+  hatch:(o={})=>{// GRAB: BY HAND. He stands at the side of the opening facing the ring, crouches (code squat, feet planted), takes the
+   // ring and the lid rises only as far as his palm carries it; past upright it tips over onto its rest. Closing: the palm on the
+   // standing lid's ring pulls it toward him past upright, then lets go and it drops shut. Never a lid moving away from the hand.
+   const a={step:'go',t:0,w:0,held:false};const hc=window.__house&&window.__house.hatch;if(!hc){a.update=()=>endTask();return a;}
+   const want=o.open!=null?!!o.open:!hc.isOpen();
+   if(want===hc.isOpen()&&Math.abs(hc.angle-(want?hc.OPEN:0))<.05){a.update=()=>endTask({ok:true,open:want});return a;}
+   if(!hc.drive||!hc.ringAt){a.update=dt=>{a.t+=dt;if(a.t>.5){try{want?hc.open():hc.close();}catch(e){}endTask();}};return a;}
+   const [,x1,,,z0,z1]=hc.box;/* beside the hole the near foot (~10 cm off his centre) stays on the boards; past its end he stands closer */
+   const footX=(g,z)=>z>z1+.18?Math.max(g.x+.36,x1+.02):x1+.11;
+   const tmp=V();const [hx0,hx1]=[hc.box[0],hc.box[1]];
+   // opening: the palm under the lid's near side edge, 0.6 m out from the hinge (the ring lies too far in for a hand from the side);
+   // closing: the palm on the standing lid's ring
+   const EDGE=V(.29,.035,-.6);/* fingers over the edge of the top board */const edgeAt=(ang,out)=>{const L=hc.lid;const k=L.rotation.x;L.rotation.x=ang;L.updateMatrixWorld(true);out.copy(EDGE);L.localToWorld(out);L.rotation.x=k;L.updateMatrixWorld(true);return out;};
+   const P=(ang,out)=>want?edgeAt(ang,out):hc.ringAt(ang,out);const ring=()=>P(hc.angle,V());
+   const standZ=g=>clamp(g.z+.1,z0+.12,z1+.5);/* right shoulder in line with the ring */
+   const sqFor=t=>{/* from the standing shoulder (measured as he arrives), not the leaning one */const p=root.position;const SH=a.SH||1.12;const hz=Math.max(0,Math.hypot(p.x-t.x,p.z-t.z)-.08);const R0=armLen*.9+PALM;const h=Math.min(hz,R0*.8);const dy=p.y+(H.squat||0)+SH-t.y;return clamp(dy-Math.sqrt(Math.max(0,R0*R0-h*h))+.02,0,.45);};/* .45 is the deepest the leg IK keeps the soles on the boards */
+   const sqTo=(v,dt,rate=1.6)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);};
+   const L=hc.ladder||{top:'bl_t',bottom:'kl_b'};const start=N.bl_m?'bl_m':L.top;
+   goTo(start,()=>{a.step='app';const g=ring();approachTo(a,V(footX(g,standZ(g)),root.position.y,standZ(g)),0,()=>{a.step='reach';a.t=0;a.SH=bones.RightArm.getWorldPosition(V()).y-root.position.y-(H.squat||0);});});
+   const grip=()=>{const G=window.__grab;return G&&G.gripPoint?G.gripPoint('Right'):bones.RightHand.getWorldPosition(V());};
+   a.update=dt=>{if(a.step==='approach'){a.t+=dt;if(a.t>=a.adur)a.next();return;}if(a.step==='go'||a.step==='app')return;a.t+=dt;
+    const p=root.position,g=ring();H.look=g;H.lookW=1;
+    {const fy=Math.atan2(g.x-p.x,g.z-p.z);root.rotation.y+=wrapA(fy-root.rotation.y)*Math.min(1,dt*4);H.face=root.rotation.y;}
+    {/* small shuffles along the edge, the right shoulder stays level with the ring as it swings */const m=.35*dt;const tz=standZ(g);p.z+=clamp(tz-p.z,-m,m);const fx=footX(g,p.z);p.x+=clamp(fx-p.x,-m,m);}
+    if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.6);sqTo(sqFor(g),dt,.8);const gd=a.gd!=null?a.gd:grip().distanceTo(g);
+     const tip=want&&hc.angle<.3?.07:0;/* a flush lid edge is lifted by the fingertips, which reach ~5 cm past the grip point */
+     if(a.w>.95&&gd<.04+tip){a.held=true;a.step='move';a.t=0;AU(want?'hatch_open':'hatch_close',g);}else if(a.t>4){a.step='after';a.t=0;}return;}
+    if(a.step==='move'){const gd=a.gd!=null?a.gd:grip().distanceTo(g);if(gd>.05+(want&&hc.angle<.3?.07:0)){a.lost=(a.lost||0)+dt;if(a.lost>2.5){hc.letGo(hc.angle>1.57);a.held=false;a.step='after';a.t=0;}return;}a.lost=0;
+     // the next lid angle the palm can follow this frame (palm within reach of the shoulder after the knees straighten a little)
+     const sh=bones.RightArm.getWorldPosition(V());const R=armLen*.92+PALM+.06;/* + the small lean reachTo adds */const rate=want?1.1:.9;let nx=want?Math.min(hc.OPEN,hc.angle+rate*dt):Math.max(0,hc.angle-rate*dt);
+     if(!want&&sh.distanceTo(P(nx,tmp))>R+.02){/* opening: the palm-distance gate above is the limit (the lid waits for the hand) */let lo=hc.angle,hi=nx;for(let k=0;k<8;k++){const m=(lo+hi)/2;if(sh.distanceTo(P(m,tmp))<=R+.02)lo=m;else hi=m;}nx=lo;}
+     if(Math.abs(nx-hc.angle)>1e-4){hc.drive(nx);a.st=0;}else a.st=(a.st||0)+dt;
+     sqTo(sqFor(P(nx,tmp)),dt,.9);
+     if(want&&hc.angle>=1.68){/* past upright: it tips over onto its rest under its own weight */hc.letGo(true);a.held=false;a.step='after';a.t=0;}
+     else if(!want&&hc.angle<=1.3){/* pulled past upright toward the hole: let go, it drops shut */hc.letGo(false);a.held=false;a.step='after';a.t=0;}
+     else if(a.st>1.2){/* the hand cannot carry it further: put it back down the way it was */hc.letGo(!want);a.held=false;a.step='after';a.t=0;}
+     return;}
+    if(a.step==='after'){a.w=Math.max(0,a.w-dt/.4);sqTo(0,dt,.9);if(a.t>.8&&(H.squat||0)<.01){H.squat=0;play(IDLE(),{fade:.4});endTask({ok:hc.isOpen()===want,open:hc.isOpen()});}}};
+   a.post=()=>{const G=window.__grab;if(a.w>.01){const g=ring();if(G&&G.palmTarget&&G.gripPoint){/* the grip point turns with the forearm: aim, measure, re-aim (3 passes) */let t=G.palmTarget('Right',g);REACH_LEAN=want?1.1:.6;/* down to the floor boards he bends at the waist too */for(let k=0;k<4;k++){if(k===1)REACH_LEAN=want?.5:0;if(k===2)REACH_LEAN=0;/* lean once; the re-aims move the arm only */reachTo('Right',t,a.w);root.updateMatrixWorld(true);const e=g.clone().sub(G.gripPoint('Right'));if(e.length()<.01)break;t=t.add(e.multiplyScalar(a.w));}a.gd=G.gripPoint('Right').distanceTo(g);REACH_LEAN=.6;}else reachTo('Right',g,a.w);}{/* crouched, the free hand rests on the left knee (not pushed up by the thigh) */const sq=clamp(((H.squat||0)-.1)/.2,0,1)*a.w;if(sq>.01&&bones.LeftLeg){const kn=bones.LeftLeg.getWorldPosition(V());const f=fwd(root.rotation.y);const t=kn.add(V(0,.07,0)).addScaledVector(f,.03);const RL=REACH_LEAN;REACH_LEAN=0;reachTo('Left',G&&G.palmTarget?G.palmTarget('Left',t):t,sq);REACH_LEAN=RL;}}
+    if(G){if(a.held||(a.step==='reach'&&a.w>.5))G.hold('Right',hc.lid,ring);else G.free(hc.lid);}};/* the palm on the ring is a grip: collide leaves it there */
+   a.leave=cb=>{try{window.__grab&&window.__grab.free(hc.lid);}catch(e){}if(a.held){try{hc.letGo(hc.angle>1.57);}catch(e){}}H.squat=0;cb();};
    return a;},
   // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
   micro:(o={})=>{const a={step:'do',t:0};const c=o.clip&&has(o.clip)?o.clip:IDLE();const one=['hy_stretch','hy_inspect','hy_take','hy_drink'].includes(c);
@@ -903,6 +938,12 @@ export function createHero(ctx){
   a.step='approach';a.t=0;a.adur=dur;a.next=()=>{play(IDLE(),{fade:.35});then();};}
  // KITCHEN: crouched, slow only the idle clip (its weight shifts slide planted feet); always restored, never left on a cached action.
  function kSlow(on){try{const c=H.cur;if(on&&c&&c.getClip&&c.getClip().name===IDLE()){if(H.kTSa&&H.kTSa!==c)H.kTSa.setEffectiveTimeScale(1);c.setEffectiveTimeScale(.12);H.kTSa=c;}else if(H.kTSa){H.kTSa.setEffectiveTimeScale(1);H.kTSa=null;}}catch(e){}}
+ // GRAB: the broom starts in open floor. A stooped sweeper's head and bristles reach ~0.55 m round him at 0.9-1.3 m up, so beside the
+ // bunk he first steps to a spot on the same boards with that much room (his head went into the bunk as he turned in place there).
+ function roomy(x,y,z){const CL=window.__collide;if(!CL||!CL.depthAt)return true;for(const r of [.3,.45,.58])for(let k=0;k<16;k++){const an=k*Math.PI/8;for(const h of [.95,1.15,1.3])if(CL.depthAt(x+Math.sin(an)*r,y+h,z+Math.cos(an)*r)>.003)return false;}return true;}
+ function sweepSpot(){const p=root.position.clone();if(roomy(p.x,p.y,p.z))return p;
+  for(let r=.2;r<=1.2;r+=.1)for(let k=0;k<16;k++){const an=k*Math.PI/8,x=p.x+Math.sin(an)*r,z=p.z+Math.cos(an)*r;const y=floorAt(x,p.y,z,.25,.25);if(y==null||Math.abs(y-p.y)>.04)continue;if(roomy(x,y,z))return V(x,y,z);}
+  return p;}
  function job(o){const a={step:'go',t:0,T:0,held:[],faceYaw:o.faceYaw??null};const sp0=typeof o.pt==='function'?o.pt():o.pt;
   if(!sp0&&!o.node){a.update=()=>endTask(false);return a;}
   const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
@@ -1169,9 +1210,15 @@ export function createHero(ctx){
     a.step='back';H.then=null;toTable(()=>{a.step='put';a.t=0;play(IDLE(),{fade:.4});});};return a;},
   sweep:(o)=>job({pt:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),1).add(V(0,.1,0)),stand:.9,clip:'hy_sweep',loop:true,dur:[15,28],tools:[['broom','Right']],
    tick:(a,dt)=>{// shuffles slowly across the floor while sweeping, turning back at walls
-    if(a.pause)return;const p=root.position;const f=fwd(root.rotation.y);const q=p.clone().addScaledVector(f,.25);pushOut(q);const y=floorAt(q.x,p.y+.2,q.z,.3,.5);
-    /* GRAB: he stoops over the broom, so his head and the bristles are ~0.7 m ahead of his feet: keep that much clear of furniture too */const blocked=[.35,.55,.75].some(k=>{const x=p.x+f.x*k,z=p.z+f.z*k;return OBST.some(o=>Math.abs(o.y-p.y)<.6&&x>o.x0-.12&&x<o.x1+.12&&z>o.z0-.12&&z<o.z1+.12);});/* beds and seats too (pushOut lets him sit on those) */
-    if(blocked||y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02){root.rotation.y+=Math.PI*.6*dt;H.face=root.rotation.y;}else{p.addScaledVector(f,.22*dt);}
+    if(a.pause)return;
+    if(!a.spotDone){/* GRAB: with the broom in hand, first out into open floor (roomy), facing the way he goes, away from the furniture */const p=root.position;if(!a.spot)a.spot=sweepSpot();const d=V(a.spot.x-p.x,0,a.spot.z-p.z);const l=d.length();
+     if(l<.04||(a.spT=(a.spT||0)+dt)>6){a.spotDone=true;}else{const yT=Math.atan2(d.x,d.z);root.rotation.y+=clamp(wrapA(yT-root.rotation.y),-2.2*dt,2.2*dt);H.face=root.rotation.y;if(Math.abs(wrapA(yT-root.rotation.y))<.6)p.addScaledVector(d.normalize(),Math.min(l,.3*dt));return;}}
+    const p=root.position;const f=fwd(root.rotation.y);const q=p.clone().addScaledVector(f,.25);pushOut(q);const y=floorAt(q.x,p.y+.2,q.z,.3,.5);
+    /* GRAB: he stoops over the broom, so his head and the bristles are ~0.7 m ahead of his feet: keep that much clear of furniture too */const blocked=[.35,.55,.75].some(k=>{const x=p.x+f.x*k,z=p.z+f.z*k;return OBST.some(o=>Math.abs(o.y-p.y)<.6&&x>o.x0-.12&&x<o.x1+.12&&z>o.z0-.12&&z<o.z1+.12);});
+    /* GRAB: and by the real furniture/wall shapes (collide.js): shoulders and hips 25 cm round the next step, the stooped head ~0.5 m ahead
+       (corner post by the door, the bunk's rails); only a step that gets him deeper in is refused, so a tight spot never locks him */
+    const CL=window.__collide;let blk2=false;if(CL&&CL.clearance){const c0=CL.clearance(p.x,p.y,p.z,.25),c1=CL.clearance(p.x+f.x*.15,p.y,p.z+f.z*.15,.25),c2=CL.clearance(p.x+f.x*.5,p.y,p.z+f.z*.5,.12);blk2=c1>Math.max(.01,c0+.003)||c2>.02;if(!blk2&&CL.depthAt&&bones.Head){/* the stooped head itself, a hand ahead (the bunk's upper rail) */const hd=bones.Head.getWorldPosition(V());for(const k of [.08,.16])if(CL.depthAt(hd.x+f.x*k,hd.y,hd.z+f.z*k)>.005){blk2=true;break;}}}/* beds and seats too (pushOut lets him sit on those) */
+    if(blocked||blk2||y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02){root.rotation.y+=Math.PI*.6*dt;H.face=root.rotation.y;}else{p.addScaledVector(f,.22*dt);}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
   water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
   listen:(o)=>{const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<1.5))||pick(WINDOWS);
