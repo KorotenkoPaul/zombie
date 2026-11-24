@@ -1405,15 +1405,21 @@ export function createHero(ctx){
  // right fist pushes the bucket under (it tips, fills, a splash and the ripples), then a slow, heavy rise with the full bucket.
  // The bucket hangs from the real fist all the time; he shuffles so the fist comes over the water, not the bank.
  const PF={down:.7,hold:2.6};/* held part-way down: a bent-knee crouch with a straight back reaching forward, not a ball curled over the bucket (watcher) */
- function pondFill(a,dt){const PD=window.__ground&&window.__ground.pond;const F=(PD&&PD.fill)||root.position;a.ft+=dt;const t=a.ft;const C='hy_pickground';
-  if(!a.fs){a.fs=1;if(has(C))once(C,{fade:.3});H.face=Math.atan2(F.x-root.position.x,F.z-root.position.z);}
+ function pondFill(a,dt){const PD=window.__ground&&window.__ground.pond;let F=(PD&&PD.fill)||root.position;a.ft+=dt;const t=a.ft;const C='hy_pickground';
+  // OUTDOOR: he faces the pond itself (its centre), crouches on the bank with the knees 0.1 m outside the drawn water
+  // ellipse (POND in ground.js) and reaches the bucket out at arm's length into the water's edge
+  if(!a.fs){a.fs=1;if(has(C))once(C,{fade:.3});const er=(x,z)=>{const dx=x+1.4,dz=z-7.6,c=Math.cos(-.12),sn=Math.sin(-.12);return Math.hypot((dx*c+dz*sn)/1.75,(-dx*sn+dz*c)/1.15);};
+   const d=V(-1.4-root.position.x,0,7.6-root.position.z).normalize();H.face=Math.atan2(d.x,d.z);
+   // the water starts where the bank dips under the surface (the water plane is drawn where the ground is below it)
+   const G=window.__ground,lv=PD?PD.level:0;const p0=root.position.clone();let tW=1;for(let t=0;t<3.5;t+=.03){let h=lv+1;try{h=G.heightAt(p0.x+d.x*t,p0.z+d.z*t);}catch(e){}if(h<lv-.005){tW=t;break;}}
+   const st=p0.clone().addScaledVector(d,tW-.42);/* knees (0.45 ahead in the crouch) 0.1 m short of the water */
+   a.stand=st;a.tgt=p0.clone().addScaledVector(d,tW+.16);a.tgt.y=PD?PD.level:a.tgt.y;}
+  if(a.tgt)F=a.tgt;
   const A=has(C)?actions[C]:null;
   if(A){if(t>=PF.down&&t<PF.down+PF.hold)A.timeScale=0;else if(t>=PF.down+PF.hold)A.timeScale=.62;/* full bucket: up slower than he went down */}
   const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const p=root.position;{/* boots on the bank, never in the water (watcher: he stood 1.5 m from the centre among the lilies): the root stays a good
    0.3 m back from the waterline and outside the pond by 0.25 m; the arm and the squat reach the water */
-   if(!a.stand){const G=window.__ground;const lv0=PD?PD.level:F.y;const dry=(x,z)=>{try{return G.heightAt(x,z)>lv0+.012;}catch(e){return true;}};
-    // the bank slopes gently into the water: find where it is still dry under the toes (0.17 m ahead of the root)
-    const st=F.clone().addScaledVector(f,-.3).addScaledVector(r,.04);for(let k=0;k<40&&!dry(st.x+f.x*.17,st.z+f.z*.17);k++)st.addScaledVector(f,-.03);a.stand=st;}
+
    const tx=a.stand.x,tz=a.stand.z;const m=.45*dt;p.x+=clamp(tx-p.x,-m,m);p.z+=clamp(tz-p.z,-m,m);}
   root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*4);H.look=F.clone();H.lookW=.85*(1-smooth(PF.down+PF.hold,PF.down+PF.hold+.8,t));
   const lv=PD?PD.level:F.y;const end=PF.down+PF.hold+(A?(durOf(C)-PF.down)/.62:1.5);
@@ -1428,10 +1434,10 @@ export function createHero(ctx){
   {const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const d=R.clone().sub(bones.Hips.getWorldPosition(V()));const k=Math.min(1,a.dip*2);want.addScaledVector(r,(.08-d.dot(r))*k).addScaledVector(f,Math.max(0,.5*k-d.dot(f)));}/* ahead of both knees, which splay in the squat */
   // ...and at the bottom out over the water at the fill point (he squats on the bank; the arm and a forward lean reach it),
   // never sunk into the bank: over ground the bucket's bottom stays on top of it
-  const PD=window.__ground&&window.__ground.pond;const F0=PD&&PD.fill;if(F0){const fw=fwd(root.rotation.y);const F=F0.clone().addScaledVector(fw,.28);/* a little out where it is deeper */const u=smooth(.25,1,a.dip);want.x=lerp(want.x,F.x,u);want.z=lerp(want.z,F.z,u);}
+  const PD=window.__ground&&window.__ground.pond;const F0=a.tgt||(PD&&PD.fill);if(F0){const F=F0;const u=smooth(.25,1,a.dip);want.x=lerp(want.x,F.x,u);want.z=lerp(want.z,F.z,u);}
   if(R.y>yFist)want.y=lerp(R.y,yFist,a.dip);
   // the pond is shallow at the edge: the bucket lies over on its side to scoop, its bottom never in the mud of the bed
-  {let g=want.y-1;try{g=window.__ground.heightAt(want.x,want.z);}catch(e){}want.y=Math.max(want.y,g+.2);}
+  {let g=want.y-1;try{g=window.__ground.heightAt(want.x,want.z);}catch(e){}want.y=Math.max(want.y,g+.12);}
   if(want.distanceTo(R)>.005)odReach('Right',want,1);
   const L=odPalm('Left');odReach('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too */
   odHang('waterBucket',1.0*a.dip);}
