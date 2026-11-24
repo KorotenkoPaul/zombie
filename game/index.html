@@ -251,7 +251,7 @@ const BOARD_ROWS=8;
 const [woodWallT,woodDarkT]=await Promise.all([tex('wood-wall.jpg'),tex('wood-dark.jpg')]);
 // wear map for the floors (round 3): 7 levels side by side, each 12 x 8 m of the house at ~9 cm, 0..1 = how worn by feet
 const WEAR={W:896,H:96,lv:[LG_,2.45,3.4+HY,3.6+HY,5.0+HY,7.4+HY,9.0+HY],ra:[0,1,2].map(()=>new THREE.Vector4(0,0,0,-99)),rb:[0,1,2].map(()=>new THREE.Vector4(-99,-99,0,0))};
-/* [LIGHTS] honey interior walls, per room (kitchen, bedroom, workshop), 0..1 */WEAR.hy=[1,0,1];
+/* [LIGHTS] honey interior walls, per room (kitchen, bedroom, workshop), 0..1 */WEAR.hy=[1,0,1];window.__wearHy=WEAR.hy;/* lights.js gives the bedroom honey by day only (night stays the approved cosy dim) */
 WEAR.f=new Float32Array(WEAR.W*WEAR.H);WEAR.u8=new Uint8Array(WEAR.W*WEAR.H);
 WEAR.tex=new THREE.DataTexture(WEAR.u8,WEAR.W,WEAR.H,THREE.RedFormat,THREE.UnsignedByteType);WEAR.tex.magFilter=WEAR.tex.minFilter=THREE.LinearFilter;WEAR.tex.needsUpdate=true;
 WEAR.stamp=(x,y,z,amt,rad=.25)=>{let li=0,bd=9;WEAR.lv.forEach((l,i)=>{const d=Math.abs(y-l);if(d<bd){bd=d;li=i;}});if(bd>.3)return false;
@@ -755,6 +755,14 @@ const SHUT=(()=>{const RN={kwin:'kitchen',bwin:'bedroom',wwin:'workshop'};const 
   pull(room,palm){const r=R[rn(room)];if(!r||!palm)return false;const t=r.cord.toggle(V());if(Math.hypot(palm.x-t.x,palm.z-t.z)>.08||Math.abs(palm.y-t.y)>.1)return false;const k=Math.min(1,Math.max(0,(r.top-palm.y)/CORD));r.k+=Math.max(-.04,Math.min(.04,k-r.k));api.k[r.name]=r.k;return true;}};
  for(const [name,[x0,x1,y0,y1,z]] of Object.entries(rooms)){
   const mat=boardMat.clone();plankShader(mat);const bat=boardMat.clone();plankShader(bat);bat.color.setScalar(.62);
+  /* [LIGHTS] camera cutaway like the leaves' near fade (camera.js nearFade): each board column melts away whole, it is never
+     half see-through. The old per-material opacity stacked the panels and battens into ghost layers (a board wall with ghost
+     windows at the normal camera). uShutGone 0 = all there .. 1 = the front is gone and you look into the room */
+  const gone={value:0};for(const m of [mat,bat]){const prev=m.onBeforeCompile,own=Object.prototype.hasOwnProperty.call(m,'customProgramCacheKey')?m.customProgramCacheKey.bind(m):null,src=prev?prev.toString():'';
+   m.onBeforeCompile=(sh,r)=>{prev&&prev.call(m,sh,r);sh.uniforms.uShutGone=gone;
+    sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 vShL;').replace('#include <project_vertex>','vShL=position.xy;\n#include <project_vertex>');
+    sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vShL;uniform float uShutGone;').replace('#include <clipping_planes_fragment>','#include <clipping_planes_fragment>\nif(uShutGone>0.){float shh=fract(sin(floor(vShL.x/.3+.5)*91.7+floor(vShL.y/.55)*13.13)*43758.5453);if(uShutGone>.985||shh<uShutGone)discard;}');};
+   m.customProgramCacheKey=()=>(own?own():src)+'|shutGone';}
   const H=y1-y0,h1=H*.5,np=Math.max(1,Math.round((x1-x0)/2.3)),PW=(x1-x0)/np,ups=[],los=[];
   const panel=(g,w,h,flip)=>{for(let x=-w/2+.15;x<w/2-.05;x+=.3){const m=new THREE.Mesh(new THREE.BoxGeometry(rnd(.275,.29),h-.01,.04),mat);m.position.set(x+rnd(-.004,.004),-h/2,rnd(-.004,.004));g.add(m);}
    for(const yy of [-.16,-h+.16]){const m=new THREE.Mesh(new THREE.BoxGeometry(w-.14,.11,.03),bat);m.position.set(0,yy,flip*.035);g.add(m);}
@@ -769,15 +777,14 @@ const SHUT=(()=>{const RN={kwin:'kitchen',bwin:'bedroom',wwin:'workshop'};const 
   const tog=new THREE.Group();scene.add(tog);{const m=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.1,10),cm);m.rotation.z=Math.PI/2;tog.add(m);}for(const m of [line,...tog.children])m.geometry.type='ShutterShapeGeometry';/* moving: not furniture for collide.js */
   const top=y0+TOG;const cord={obj:tog,toggleAt:(k,v=V())=>v.set(wx,top-CORD*Math.min(1,Math.max(0,k)),z-.15),toggle:(v=V())=>cord.toggleAt(R[name].k,v),
    edge:(v=V())=>{const lo=los[pi];lo.updateWorldMatrix(true,false);return lo.localToWorld(v.set(wx-(x0+PW*(pi+.5)),-(H-h1)+.02,.04));}};
-  R[name]={name,ups,los,mat,bat,k:0,want:0,c:V((x0+x1)/2,(y0+y1)/2,z),cord,line,tog,top};api.k[name]=0;}
+  R[name]={name,ups,los,mat,bat,gone,k:0,want:0,c:V((x0+x1)/2,(y0+y1)/2,z),cord,line,tog,top};api.k[name]=0;}
  api.update=(dt)=>{
   for(const [name,r] of Object.entries(R)){/* GRAB: k only changes in pull(), under his palm */const k0=r.k0??r.k;r.k0=r.k;api.k[name]=r.k;
    if(k0<1&&r.k>=1){try{window.__audio&&window.__audio.play&&window.__audio.play('board_up',r.c);}catch(e){}}
    const e=t=>t*t*(3-2*t),a=e(Math.min(1,r.k/.55)),b=e(Math.max(0,(r.k-.4)/.6));
    for(const up of r.ups){up.rotation.x=-1.42*(1-a);up.visible=r.k>.002;}/* open: stowed out of sight (Pavel saw the raised awnings as black slabs over the leaves) */for(const lo of r.los)lo.rotation.x=-(Math.PI-.06)*(1-b);
    // close to the camera a closed front turns see-through (the hero inside stays visible); from afar the house reads sealed
-   const d=camera.position.distanceTo(r.c),f=Math.min(1,Math.max(0,(13-d)/6))*b,op=1-.75*f*f*(3-2*f);
-   for(const m of [r.mat,r.bat]){m.opacity=op;m.transparent=op<.98;m.depthWrite=op>.98;}
+   const d=camera.position.distanceTo(r.c),f=Math.min(1,Math.max(0,(13.5-d)/2.2))*b;r.gone.value=f*f*(3-2*f);/* melts within a short stretch of zoom, then is gone (as the leaves): no half-open front at a resting camera */
    {const t=r.cord.toggle(V());r.tog.position.copy(t);const e=r.cord.edge(V());const d=t.clone().sub(e);const L=d.length();r.line.position.copy(e);r.line.scale.set(1,Math.max(.01,L),1);r.line.quaternion.setFromUnitVectors(V(0,1,0),d.normalize());}}};
  api._R=R;return api;})();
 window.__house=Object.assign(window.__house||{},{shutters:SHUT});
