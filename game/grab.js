@@ -88,7 +88,13 @@ export function createGrab({ THREE, bones }) {
     const at = c.c.clone(); if (G0.fwd) at.y += .01; if (G0.pinch) at.add(V(c.ps * .012, .045, 0));
     return { q, at, g }; }
   // props.js grab(): a tool put on a hand bone goes into the fist by its spec (any offset / rot the caller passes is for an open hand)
-  function wrapProps(P) { PROPS = P; if (!P || !P.grab || P.grab.__grab) return; const orig = P.grab;
+  // GRAB (frame check of the moving parts): the oven door moves only while a palm or fist is on its handle (the fridge door: pulled to .6 by the hand, then it swings on; a hand-led full swing ran the leaf through his toes in the narrow kitchen)
+  // (within 7 cm: the fist round the handle); a setOpen or a swing without a hand there is held back. Off switch: window.__noHandGate
+  function onHandle(p, r = .07) { if (!p) return true; for (const s of ['Left', 'Right']) { const a = palm(s), b = gripPoint(s); if ((a && a.distanceTo(p) < r) || (b && b.distanceTo(p) < r)) return true; } return false; }
+  function gateParts(P) { for (const k of ['oven']) { const o = P[k]; if (!o || !o.setOpen || o.__gated || !o.handle) continue; o.__gated = true;
+      const so = o.setOpen.bind(o); o.setOpenRaw = so; o.setOpen = v => { if (window.__noHandGate || Math.abs(v - o.open) < 1e-6 || onHandle(o.handle(V()))) so(v); };
+      if (o.update) { const up = o.update.bind(o); o.update = dt => { if (window.__noHandGate || onHandle(o.handle(V()))) up(dt); }; } } }
+  function wrapProps(P) { PROPS = P; try { if (P) gateParts(P); } catch (e) { console.error('grab gate', e); } if (!P || !P.grab || P.grab.__grab) return; const orig = P.grab;
     const g2 = (name, bone, o = {}) => { const side = bone && /LeftHand$/.test(bone.name) ? 'Left' : bone && /RightHand$/.test(bone.name) ? 'Right' : null;
       const ob0 = P.tools && P.tools[name]; let w0 = null; if (ob0 && ob0.parent && ob0.parent !== bone) { ob0.updateMatrixWorld(true); w0 = ob0.matrixWorld.clone(); }
       const r = orig(name, bone, o); if (!r || !side || window.__noGripFix) return r; const tp = toolPose(name, side, r); if (!tp) return r;
@@ -148,19 +154,27 @@ export function createGrab({ THREE, bones }) {
     // the clip folds him nearly double over the broom: the chest is held to at most ~35 deg forward (a sweeper's stoop)
     { const sp2 = bones.Spine2; if (sp2 && SW.w > .01) { const up = V(0, 1, 0).applyQuaternion(sp2.getWorldQuaternion(new THREE.Quaternion())); const pitch = Math.atan2(up.dot(fw), up.y); const tg = Math.max(0, pitch - .6) * SW.w; SW.ex = (SW.ex || 0) + Math.max(-1.2 * dt, Math.min(1.2 * dt, tg - (SW.ex || 0))); const ex = SW.ex; // eased: no jerk
       if (ex > .005) { const ax = rt.clone().negate(); rotW(bones.Spine, ax, -ex * .4); rotW(bones.Spine1, ax, -ex * .35); rotW(sp2, ax, -ex * .25); } } }
-    const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6; const sx = Math.sin(SW.ph) * .18;
-    const Bp = hp.clone().addScaledVector(fw, .7).addScaledVector(rt, .08 + sx).setY(fy + .02); // bristles on the boards, ahead of his feet
-    for (const ft of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) { const b = bones[ft]; if (!b) continue; const fp = b.getWorldPosition(V()); const d = Bp.clone().sub(fp).setY(0); const ah = d.dot(fw); if (Math.abs(d.dot(rt)) < .22 && ah < .2) Bp.addScaledVector(fw, .2 - ah); }
-    const top = hp.clone().addScaledVector(fw, .28).addScaledVector(rt, .07 + sx * .25).add(V(0, .42, 0)); const dir = top.sub(Bp).normalize();
-    const sp = GRIP.broom; const Gp = Bp.clone().addScaledVector(dir, sp.g[1] * b.getWorldScale(V()).x); const Lp = Bp.clone().addScaledVector(dir, sp.two[1] * b.getWorldScale(V()).x);
+    const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6;
+    const sp = GRIP.broom; const bs = b.getWorldScale(V()).x;
+    const line = sx => { const Bp = hp.clone().addScaledVector(fw, .7).addScaledVector(rt, .08 + sx).setY(fy + .02); // bristles on the boards, ahead of his feet
+      for (const ft of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) { const b = bones[ft]; if (!b) continue; const fp = b.getWorldPosition(V()); const d = Bp.clone().sub(fp).setY(0); const ah = d.dot(fw); if (Math.abs(d.dot(rt)) < .22 && ah < .2) Bp.addScaledVector(fw, .2 - ah); }
+      const top = hp.clone().addScaledVector(fw, .28).addScaledVector(rt, .07 + sx * .25).add(V(0, .42, 0)); const dir = top.sub(Bp).normalize();
+      return { Bp, dir, Lp: Bp.clone().addScaledVector(dir, sp.two[1] * bs) }; };
+    /* GRAB (watch R21-4: on the far part of each stroke the handle's top went out of the left hand's reach, the left fist came off it
+       and flew up open): the stroke is only as wide as the left hand can follow on the handle's top; its width eased, no jerk */
+    const ls = bones.LeftArm.getWorldPosition(V()), lf = bones.LeftForeArm.getWorldPosition(V()), lh = bones.LeftHand.getWorldPosition(V());
+    const lmax = ls.distanceTo(lf) + lf.distanceTo(lh) + .07 - .03; const s0 = Math.sin(SW.ph) * .18; let kf = 1;
+    for (const k of [1, .8, .6, .4, .2, 0]) { kf = k; if (line(s0 * k).Lp.distanceTo(ls) <= lmax) break; }
+    SW.kf = SW.kf == null ? kf : SW.kf + Math.max(-2 * dt, Math.min(2 * dt, kf - SW.kf)); const sx = s0 * Math.min(SW.kf, kf + .1);
+    const { Bp, dir, Lp } = line(sx); const Gp = Bp.clone().addScaledVector(dir, sp.g[1] * bs);
     // tool orientation: local +y along the handle (bristles -> top), local +z (the bristle face) toward his front
     const z = fw.clone().addScaledVector(dir, -fw.dot(dir)).normalize(); const x = dir.clone().cross(z).normalize(); const Qt = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, dir, z));
     const Qh = Qt.clone().multiply(b.quaternion.clone().invert()); const hs = bones.RightHand.getWorldScale(V()).x;
     const gl = V(...sp.g).multiplyScalar(b.scale.x).applyQuaternion(b.quaternion).add(b.position).multiplyScalar(hs); const wrist = Gp.clone().sub(gl.applyQuaternion(Qh));
     ik2('Right', wrist, SW.w); setHandQ('Right', Qh, SW.w);
     /* the left fist on the handle's top end; its target eased (when he takes the broom up the handle still swings: the hand followed it
-       frame by frame, gate jitter) */ if (!SW.lp || SW.w < .05) SW.lp = Lp.clone(); else SW.lp.lerp(Lp, Math.min(1, dt * 14));
-    const pa = palm('Left'), wr = bones.LeftHand.getWorldPosition(V()); ik2('Left', SW.lp.clone().sub(pa.sub(wr)), SW.w); fistK.Left = Math.max(fistK.Left, SW.w); return true; }
+       frame by frame, gate jitter) */ if (!SW.lp || SW.w < .05) SW.lp = Lp.clone(); else SW.lp.lerp(Lp, Math.min(1, dt * 28));
+    for (let it = 0; it < 3; it++) { const pa = palm('Left'), wr = bones.LeftHand.getWorldPosition(V()); if (pa.distanceTo(SW.lp) < .008) break; ik2('Left', SW.lp.clone().sub(pa.sub(wr)), SW.w); } /* the palm offset re-measured after each pass (it turns with the forearm) */ api_dbg.swGap = palm('Left').distanceTo(SW.lp); api_dbg.swLp = SW.lp; fistK.Left = Math.max(fistK.Left, SW.w); return true; }
   // ---- the bedroom door and its bolt move only under a palm (Pavel: nothing by magic wand) ----
   // props' door.openTo / boltTo only set a goal; door.hand(kind) (set here) lets the door move ('open') or the bolt slide
   // ('bolt') only on frames when a palm is on the leaf / on the bolt knob. The nearer free hand reaches there by the arm-only
@@ -192,7 +206,7 @@ export function createGrab({ THREE, bones }) {
     if (want) { if (!DR.tp) DR.tp = palm(side); const d = want.clone().sub(DR.tp); const mx = 1.4 * dt; DR.tp.add(d.length() > mx ? d.setLength(mx) : d); }
     if (DR.w < .01) { if (!mode) { DR.side = null; DR.tp = null; DR.mode = null; } return; }
     const w = DR.w * DR.w * (3 - 2 * DR.w); const hb = bones[side + 'Hand']; for (let it = 0; it < 3; it++) { const pa = palm(side), wr = hb.getWorldPosition(V()); ik2(side, DR.tp.clone().sub(pa.sub(wr)), it ? 1 : w); if (w < .99) break; } // the palm sits past the wrist along the forearm, which turns with the IK: a few passes
-    if (mode && want && DR.w > .97 && palm(side).distanceTo(want) < .06) DR.on[mode] = true; }
+    if (mode && want && DR.w > .97 && palm(side).distanceTo(want) < .03) DR.on[mode] = true; } // GRAB: 3 cm (was 6: the bolt began to slide with the palm 5.5 cm off the knob)
   // ---- a bucket in a fist hangs plumb with its bail right under the fist. hero.js (odHang) hangs it before collide.js, which
   // can then swing the arm out and drag the rigid bucket sideways into the leg: put it back under the fist after collide.
   // A tip about his right axis (pouring) is kept. ----
