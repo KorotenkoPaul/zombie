@@ -1094,17 +1094,20 @@ export function createHero(ctx){
      if(o.open>=1){a.step='let';a.t=0;if(G())G().free(o.door);}return;}
     if(a.step==='let'){const h=o.handle(V());a.ik=[['Right',h,1-smooth(0,.3,a.t)]];if(a.t>.3){a.step='log';a.t=0;a.li=0;}return;}
     if(a.step==='log'){// one log: from the left arm into the fire
-     const L=logs[a.li];if(!L){a.step='shut';a.t=0;return;}const src=L.parent===bones.RightHand?null:L.getWorldPosition(V());const m=mouth();H.look=m;H.lookW=1;
-     if(!a.lt){a.ik=[['Right',src||m,smooth(0,.45,a.t)]];if(a.t>.5){bones.RightHand.attach(L);a.lt=1;a.t=0;}}
-     else{a.ik=[['Right',m,1]];if(a.t>.55&&a.lt===1){a.lt=2;L.visible=false;AU('stoke',m);}if(a.t>.8){a.lt=0;a.t=0;a.li++;}}
+     const L=logs[a.li];if(!L){a.step='shut';a.t=0;a.ik=[['Right',(a.pf||mouth()).clone(),1]];/* no frame without the hand's target (it fell to the clip pose for one frame: 24 cm) */return;}const src=L.parent===bones.RightHand?null:L.getWorldPosition(V());const m=mouth();H.look=m;H.lookW=1;
+     /* the hand travels: log -> fire -> next log, the target carried along a path (a full-weight target switch threw the hand 25 cm and his head 16 cm in one frame) */
+     if(!a.lt){const tg=src||m;a.ik=a.li>0&&a.pf?[['Right',a.pf.clone().lerp(tg,smooth(0,.45,a.t)),1]]:[['Right',tg,smooth(0,.45,a.t)]];if(a.t>.5){a.p0=tg.clone();bones.RightHand.attach(L);a.lt=1;a.t=0;}}
+     else{const tg=(a.p0||m).clone().lerp(m,smooth(0,.4,a.t));a.ik=[['Right',tg,1]];if(a.t>.55&&a.lt===1){a.lt=2;L.visible=false;AU('stoke',m);}if(a.t>.8){a.pf=m.clone();a.lt=0;a.t=0;a.li++;}}
      return;}
-    if(a.step==='shut'){const h=o.handle(V());H.look=h;H.lookW=1;if(!a.sh){a.ik=[['Right',h,smooth(0,.4,a.t)]];if(a.t>.45){a.sh=1;a.t=0;}return;}
+    if(a.step==='shut'){const h=o.handle(V());H.look=h;H.lookW=1;if(!a.sh){a.ik=[['Right',a.pf?a.pf.clone().lerp(h,smooth(0,.4,a.t)):h,a.pf?1:smooth(0,.4,a.t)]];if(a.t>.45){a.sh=1;a.t=0;}return;}
      o.setOpen(Math.max(0,o.open-dt/.7));a.ik=[['Right',o.handle(V()),1]];if(G())G().hold('Right',o.door,()=>o.handle(V()));
      if(o.open<=0){if(G())G().free(o.door);a.step='up';a.t=0;AU('ovenDoor',h);}return;}
     if(a.step==='up'){const h=o.handle(V());a.ik=[['Right',h,1-smooth(0,.35,a.t)]];sqTo(0,dt,.9);if(a.t>.4&&(H.squat||0)<.01){cleanup();play(IDLE(),{fade:.5});endTask({ok:true});a.step='done';}return;}};
    // while squatting at the oven the armful rests on his left thigh (the left forearm across it), never dangling to the floor
    const lap=()=>{const hp=bones.Hips.getWorldPosition(V());const f=fwd(root.rotation.y);return hp.addScaledVector(f,.34).addScaledVector(rightOf(),-.14).add(V(0,-.02,0));};
-   a.post=()=>{const ik=(a.ik||[]).slice();if(/^(ovsq|open|let|log|shut)$/.test(a.step)&&a.got&&logs.some(l=>l.visible&&l.parent!==bones.RightHand)){ik.unshift(['Left',lap(),a.step==='ovsq'?smooth(0,.6,a.t):1]);}
+   a.post=()=>{/* the gaze glides between the handle, the fire and the logs (a new look target turned head and spine at once: the head jumped 16 cm and the arms with it) */if(H.look){a.lk=a.lk?a.lk.lerp(H.look,1-Math.exp(-6/60)):H.look.clone();H.look=a.lk.clone();}
+    const ik=(a.ik||[]).slice();if(/^(ovsq|open|let|log|shut)$/.test(a.step)&&a.got&&logs.some(l=>l.visible&&l.parent!==bones.RightHand)){ik.unshift(['Left',lap(),a.step==='ovsq'?smooth(0,.6,a.t):1]);a.lapW=1;}
+    else if((a.lapW||0)>0){/* the last log gone: the left arm leaves his lap slowly (it dropped 7-15 cm at once) */a.lapW=Math.max(0,a.lapW-1/60/.5);ik.unshift(['Left',lap(),smooth(0,1,a.lapW)]);}
     for(const [sd,t,w] of ik)if(t&&w>.01)reachGrip(sd,t,Math.min(1,w));};
    function cleanup(){const ar=arm();try{logs.forEach((l,i)=>{if(ar&&l.parent!==ar)ar.attach(l);if(home[i]){l.position.copy(home[i].p);l.quaternion.copy(home[i].q);l.visible=home[i].v;}});P.release('logArmful');}catch(e){}
     try{window.__audio&&window.__audio.carry&&window.__audio.carry(false);}catch(e){}H.carry=null;H.squat=0;H.kSquat=0;kSlow(false);a.ik=[];}
