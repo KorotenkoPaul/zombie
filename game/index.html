@@ -1102,7 +1102,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  // --- physics ---
  /* [PERF] the physics world only steps while something can move (arrows, splinters, zombies, loose boards) or just changed;
    the house is fixed bodies and the hero's ray queries read the static query structure from the last step */
-  if(physWake>0)physWake--;if(!(arrows.length||spl.length||zombies.length||physWake>0||B.some(b=>b.loose)))acc=0;
+  if(physWake>0&&dt>0)physWake--;if(!(arrows.length||spl.length||zombies.length||physWake>0||B.some(b=>b.loose)))acc=0;
   acc+=dt*TS;while(acc>=world.timestep){world.step(eq);acc-=world.timestep;
   eq.drainCollisionEvents((h1,h2,started)=>{if(!started)return;for(const a of arrows){if(a.stuck)continue;const ah=a.col.handle;if(ah!==h1&&ah!==h2)continue;const other=world.getCollider(ah===h1?h2:h1);const lv=a.rb.linvel();const sp=Math.hypot(lv.x,lv.y,lv.z);
    const zz=other&&other.userData&&other.userData.zombie;
