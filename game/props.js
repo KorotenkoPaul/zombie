@@ -1207,7 +1207,7 @@ export function buildProps(ctx) {
     out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
   tool('broom', broom(), scene, -1.075, floorAt(-1.075, BD, 1.06), 1.06, [0, Math.PI / 2, .1]);
   const plantO = place('plant', plant(), -.88, BD, 1.36); /* in front of the crate nightstand, off the kitchen hatch and the oak limb */ PT.plant = [plantO, V(0, .3, 0)];
-  tool('wateringCan', wateringCan(), scene, -.6, floorAt(-.6, BD, 1.56), 1.56, [0, -1.2, 0]);
+  tool('wateringCan', wateringCan(), scene, -.52, floorAt(-.52, BD, 1.42), 1.42, [0, -1.2, 0]); /* GRAB: off his path from the reading chair (it stood where his feet go past chair_side) */
   tool('diary', diary(), scene, -.37 + TX, tTop, 1.31 + TZ, [0, .22, 0]); tool('pencil', pencil(), scene, -.22 + TX, tTop, 1.3 + TZ, [0, .5, 0]);
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
   // --- workshop: whetstone and a lantern to repair on the bench; jacket on a peg by the open side; bow and quiver on the left wall

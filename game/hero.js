@@ -898,9 +898,11 @@ export function createHero(ctx){
     const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=gripHome(n)||toolHome(n)||s;H.look=h;H.lookW=1;
     if(!a.st){a.st=1;a.pk=0;stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
     const low=h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.gotIt);/* low down: he bends his knees to it (feet stay on the boards) */
-    a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.gotIt?1-smooth(0,.35,a.t-a.tg):1)];
+    if(a.gotIt&&low){/* GRAB: taken off the floor, the tool rises with him in front of his shins (it used to swing back through them) */if(a.sq0==null)a.sq0=H.squat||0;const up=Math.max(0,a.sq0-(H.squat||0));if(H.squat>.02)a.tsU=a.t;
+     a.rg=[hand,h.clone().add(V(0,up+.06*smooth(0,.3,a.t-a.tg),0)),1-smooth(0,.35,a.t-(a.tsU??a.t))];}
+    else a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.gotIt?1-smooth(0,.35,a.t-a.tg):1)];
     if(!a.gotIt&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.06||a.t>(low?1.5:1.6))){a.gotIt=true;a.tg=a.t;grabTool(n,hand);AU('cloth');}
-    if(a.gotIt&&a.t-a.tg>.4&&!(H.squat>0)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else work();}}return;}
+    if(a.gotIt&&a.t-a.tg>.4&&!(H.squat>0)&&(!low||a.t-(a.tsU??0)>.35)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;a.sq0=null;a.tsU=null;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else work();}}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
     // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
     if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
