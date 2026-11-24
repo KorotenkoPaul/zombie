@@ -1367,7 +1367,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     a.v=(a.v||0)+clamp(vT-(a.v||0),-.6*dt,.5*dt);a.w=(a.w||0)+clamp(wT-(a.w||0),-3*dt,3*dt);
     if(a.v>1e-4)p.addScaledVector(fwd(root.rotation.y),a.v*dt);if(Math.abs(a.w)>1e-4){root.rotation.y+=a.w*dt;H.face=root.rotation.y;H.lookW=.25;}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
-  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
+  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',reps:Math.random()<.5?1:2,/* the job lasts the pour(s): with dur 5-6 s the 3 s clip ended and he stood 2-3 s frozen, can in hand, before putting it back (frames) */tools:[['wateringCan','Right']]}),
   listen:(o)=>{
    // LEISURE (phone watch 2e3a58e: he stood 50 s in the middle of the workshop facing the viewer with the window at his back, and the
    // cupped hand read as a wave): he goes to a real glazed window of the room he is in (index.html win(): centre, inward normal),
