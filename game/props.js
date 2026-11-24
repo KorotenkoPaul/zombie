@@ -999,7 +999,7 @@ export function buildProps(ctx) {
   const kbar = place('kbarrel', barrel(.78), -4.02, KT, 3.33);
   { const tp = new THREE.Group(); for (let i = -1; i <= 1; i++) W(tp, .2, .03, .6, i * .205, .015, 0, { mat: M.woodLight, r: .008, grain: 2 }); for (const x of [-.14, .14]) W(tp, .5, .025, .05, 0, -.0125, x, { mat: M.woodDark, r: .006, grain: 0 }); tp.rotation.y = .12;
     tp.position.set(0, .785, 0); kbar.add(tp); bake(tp); }
-  const kst = place('kstool', stool(), -3.40, KT, 3.33, { seat: true }); /* 62 cm from the barrel: he sits half turned (face +.87 rad), legs past the barrel's left, chest turned to the plate */ out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 + .87 };
+  const kst = place('kstool', stool(), -3.526, KT, 3.705, { seat: true }); /* 62 cm from the barrel, swung .65 rad round it toward the back wall (was -3.40, 3.33): there it stood right behind his crouch at the oven and the home view showed him squatting inside it. He sits half turned (face +.87 rad from the barrel), legs past the barrel's left, chest turned to the plate */ out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 + .87 - .65 };
   place('kbucket', bucket(.34), -4.22, KT, 3.86); /* corner behind the barrel (was under the stool) */
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
