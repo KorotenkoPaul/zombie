@@ -1951,7 +1951,11 @@ export function createHero(ctx){
  function hangPlace(n,tilt,free){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o||o.parent!==bones.RightHand)return;const hb=bones.RightHand;
   hb.updateWorldMatrix(true,false);
   // carried, the wide pail rests against the outside of his thigh and hangs tipped a little out from it (the arm is no stiff wing)
-  const roll=(!tilt&&!free)?-.2:0;const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt,root.rotation.y,roll,'YXZ'));const hs=(o.userData.home&&o.userData.home.scale)||1;
+  const roll=(!tilt&&!free)?-.2:0;const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt,root.rotation.y,roll,'YXZ'));
+  /* the hand up above the elbow (taking it off the high shelf): the forearm comes up from below, so the pail, hanging from the bail,
+     is pushed out off the forearm and swings about the fist, away from his arm (gate, adult hero: forearm 10 cm inside it) */
+  if(!tilt&&n==='waterBucket'){const E=bones.RightForeArm.getWorldPosition(V()),Hh=bones.RightHand.getWorldPosition(V());const fa=Hh.clone().sub(E);const L=fa.length();const up=L>1e-3?fa.y/L:0;
+   const d=V(fa.x,0,fa.z);if(up>.05&&d.lengthSq()>1e-5){d.normalize();const ax=V(0,-1,0).cross(d).normalize();const th=Math.min(.6,(up-.05)*1.3);q.premultiply(new THREE.Quaternion().setFromAxisAngle(ax,th));}}const hs=(o.userData.home&&o.userData.home.scale)||1;
   const g=V(0,.35,0).multiplyScalar(hs).applyQuaternion(q);const pos=odPalm('Right').sub(g);
   /* tipped over, the fist holds the rim from above: the pail hangs below the forearm, never round it (gate: forearm 13 cm inside while pouring) */if(tilt>.4&&n==='drainBucket'){const ax=V(0,1,0).applyQuaternion(q);const dn=V(0,-1,0).addScaledVector(ax,ax.y).normalize();pos.addScaledVector(dn,.2*hs*smooth(.4,1.2,tilt));}
   const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
