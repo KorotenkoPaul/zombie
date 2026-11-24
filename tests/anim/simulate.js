@@ -34,14 +34,21 @@ async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log
    ['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11]]);
   for(const [t,h,opts,maxS] of EXTRA){const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
    // through the brain (the body alone does not route between floors); the brain may slip its own chore in first, so ask again until he takes it
-   const ask=()=>p.evaluate(([t,o])=>{const B=window.__brain;if(B&&B.command)B.command(t,o||undefined);else __th.task(t);},[t,opts||null]);
+   const ask=()=>p.evaluate(([t,o,g])=>{const B=window.__brain;const MR=Math.random;
+    // gate: bed straight away. The bedtime chores (bolt, hatch) are planned by dice and are their own gate tasks; without this sleep came and went as a block
+    if(g&&t==='sleep')Math.random=()=>.995;try{if(B&&B.command)B.command(t,o||undefined);else __th.task(t);}finally{Math.random=MR;}},[t,opts||null,!!gate]);
    if(gate){// isolated: every task starts from the same seeded state (reading at the table, hatch open, needs primed for that hour)
     await p.evaluate(([t,h])=>{let x=2166136261;for(const c of t)x=Math.imul(x^c.charCodeAt(0),16777619)>>>0;__qa.reseed(x);__th.setHour(h);const B=window.__brain;if(B&&B.prime)B.prime(h);
      __dbg.HH.spawn('read');const ht=window.__house&&window.__house.hatch;if(ht&&ht.open)ht.open();},[t,h]);await runFrames(30,'tour:'+t);}
    else await p.evaluate(h=>__th.setHour(h),h);
    await ask();let n=0,seen=false,idle=0;
    const cap=gate?60*(t==='sleep'?gate+35:gate):60*(maxS||90);
-   while(n<cap){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>__dbg.hero.task);if(s===t)seen=true;if(seen&&s!==t){if(++idle>=3)break;}else if(!seen){if(n>=900)break;await ask();}}
+   // gate: the clock (cap) starts only once he is actually at it (state work/sleep on this task), so the long walks and ladders
+   // on the way do not eat the whole window and the action itself is always measured; at most 75 s to get there
+   let atWork=!gate,lead=0;
+   while(n<cap+lead){await runFrames(60,'tour:'+t);n+=60;const [s,st]=await p.evaluate(()=>[__dbg.hero.task,__dbg.hero.state]);if(s===t)seen=true;
+    if(!atWork){if(s===t&&st!=='walk'&&st!=='path'&&st!=='climb'){atWork=true;lead=n;}else if(n<4500)lead=n;}
+    if(seen&&s!==t){if(++idle>=3)break;}else if(!seen){if(n>=900)break;await ask();}}
    log('tour',t,seen?'ran':'never started','frames',n);}}
  return {info,total};
 }
