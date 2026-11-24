@@ -8,6 +8,15 @@ ladders, brain.js) follows these rules. A change that breaks one of them does no
 **Everything he does is one person moving in one world: one pose pipeline, one action executor, one set of
 invariants, checked live and before every deploy.** No task gets its own special-case body code.
 
+## 0. Pavel's standing rules for every hero thread
+
+- Don't waste his money: reuse the Fal clips and the mocap already bought (hero-moves.txt, CMU via the clip supplier thread).
+  New generations only when truly needed, and only through the clip supplier thread.
+- Never stop. When a thread thinks its tasks are done, it keeps re-checking and polishing them (watch real frames, run
+  `?inv` and the gate, look for the next flaw) until Pavel says it is all good.
+- Live checks: open the game with `?inv` (or `HH.inv.on=true`) and read `HH.inv.report()`: feet in the air, knees
+  backwards, owl head, head roll, snaps, counted per task and tagged (ladder) / (walking) / (transition).
+
 ## 1. One pose pipeline, fixed order, every frame
 
 `HH.update(dt)` runs these slots in this order and nothing else writes bones:
@@ -75,6 +84,13 @@ coded inside one task: ask in the Character thread.
 7. No go-and-leave: every visit has a believable stay (Pavel: 40–90 s at a place, several activities).
 
 ## 4. Deploy gate
+
+**Freeze since 2026-11-23 23:52 UTC (Pavel: "every animation broke").** No thread pushes hero files to master
+(hero.js, motion.js, climb.js, grab.js, collide.js, pose.js, hero-moves.txt, hero parts of index.html).
+Push your work to your own branch and tell the integrator (Character thread) the branch and sha. The integrator merges it into
+the integration branch `claude/project-thread-tyhjsl`, runs the deterministic gate (`node tests/anim/gate.js`) and a side-by-side
+render against master, and promotes to master only when it is clearly better on every action it touches.
+
 
 QA runs every action × both heroes (default and detailed) against section 3 before a push to master.
 A P1 failure blocks the push. Results go to `ANIM-QA.md`.

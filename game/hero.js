@@ -1126,11 +1126,11 @@ export function createHero(ctx){
  // turned on the pillow). Turning over blends from one pose to the next. Only breathing moves; the head rests still.
  const SLP={rest:null};const _sq=new THREE.Quaternion(),_sm=new THREE.Matrix4();
  function slpInit(){if(SLP.rest)return true;let sk=null;root.traverse(o=>{if(o.isSkinnedMesh&&!sk)sk=o;});if(!sk||!bones.Hips||!bones.Head)return false;const S=sk.skeleton;
-  const sq=S.bones.map(b=>b.quaternion.clone()),spp=S.bones.map(b=>b.position.clone());const rq=root.rotation.clone();/* the Euler, not the quaternion: restoring a quaternion re-derives the Euler as (pi, pi-y, pi) for |yaw|>90 deg, and every later rotation.y turn then MIRRORS him (body facing away from the stove / fridge) */root.rotation.set(0,0,0);S.pose();root.updateMatrixWorld(true);
+  const sq=S.bones.map(b=>b.quaternion.clone()),spp=S.bones.map(b=>b.position.clone()),ssc=S.bones.map(b=>b.scale.clone());/* pose() also resets the bind SCALE (Hips 1.25): restore it or the legs grow 25% and fold on every step */const rq=root.rotation.clone();/* the Euler, not the quaternion: restoring a quaternion re-derives the Euler as (pi, pi-y, pi) for |yaw|>90 deg, and every later rotation.y turn then MIRRORS him (body facing away from the stove / fridge) */root.rotation.set(0,0,0);S.pose();root.updateMatrixWorld(true);
   SLP.rest=POSEBONES.map(b=>b.quaternion.clone());SLP.hipsW=bones.Hips.getWorldQuaternion(new THREE.Quaternion());
   const w=n=>bones[n].getWorldPosition(V());SLP.headHips=w('Head').distanceTo(w('Hips'));SLP.l1=w('LeftUpLeg').distanceTo(w('LeftLeg'));SLP.l2=w('LeftLeg').distanceTo(w('LeftFoot'));
   SLP.toe=w('LeftFoot').distanceTo(w('LeftToeBase'));SLP.foot={};for(const sd of ['Left','Right']){const t=w(sd+'ToeBase').sub(w(sd+'Foot')).normalize();const u=V(0,1,0).addScaledVector(t,-t.y).normalize();SLP.foot[sd]={q:bones[sd+'Foot'].getWorldQuaternion(new THREE.Quaternion()),t,u};}SLP.hipW=w('LeftUpLeg').distanceTo(w('RightUpLeg'));
-  S.bones.forEach((b,i)=>{b.quaternion.copy(sq[i]);b.position.copy(spp[i]);});root.rotation.copy(rq);root.updateMatrixWorld(true);return true;}
+  S.bones.forEach((b,i)=>{b.quaternion.copy(sq[i]);b.position.copy(spp[i]);b.scale.copy(ssc[i]);});root.rotation.copy(rq);root.updateMatrixWorld(true);return true;}
  const SLEEP_SHAPE={back:{hip:.085,head:.2},sideL:{hip:.105,head:.215},sideR:{hip:.105,head:.215},bellyL:{hip:.09,head:.185},bellyR:{hip:.09,head:.185}};
  function sleepPose(name,out){const B=FIT.bed;const hd=B.headDir||1;const mat=B.mat;const bz=B.bz;const sh=SLEEP_SHAPE[name]||SLEEP_SHAPE.back;
   const Y=V(hd,0,0);const Z=name==='back'?V(0,1,0):name==='sideL'?V(0,0,hd):name==='sideR'?V(0,0,-hd):V(0,-1,0);const X=V().crossVectors(Y,Z);// X = body left
@@ -1219,7 +1219,24 @@ export function createHero(ctx){
  const SLOTS=['clip','motion','support','look','contacts','collide','grab','guard'];const STAGES={};for(const k of SLOTS)STAGES[k]=[];
  function stage(slot,fn){if(!STAGES[slot])throw new Error('unknown slot '+slot);STAGES[slot].push(fn);return ()=>{const i=STAGES[slot].indexOf(fn);if(i>=0)STAGES[slot].splice(i,1);};}
  function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt,H);}catch(e){console.error('stage '+slot,e);L.splice(i--,1);}}}
- function update(dt){if(dt<=0)return;const r=updateCore(dt);if(!window.__heroFast){runSlot('collide',dt);runSlot('grab',dt);runSlot('guard',dt);}return r;}
+ function update(dt){if(dt<=0)return;const r=updateCore(dt);if(!window.__heroFast){runSlot('collide',dt);runSlot('grab',dt);runSlot('guard',dt);if(INV.on)invCheck(dt);}return r;}
+ // HERO-RULES 3, live: ?inv in the URL (or HH.inv.on=true) checks the final pose every frame and counts what breaks, per task.
+ // HH.inv.report() lists them; the first of each kind per task is logged with the frame so a thread can jump to it.
+ const INV={on:/[?&]inv\b/.test(location.search),n:0,hits:{},prev:null,report(){return Object.entries(this.hits).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>k+' x'+v.n+' worst '+v.worst.toFixed(v.unit==='deg'?0:2)+v.unit+' first f'+v.f);},reset(){this.hits={};this.n=0;}};
+ function invHit(kind,val,unit){const k=(H.task||H.state||'-')+(H.lad?' (ladder)':H.trans?' (transition)':H.state==='walk'?' (walking)':'')+' / '+kind;const h=INV.hits[k];if(!h){INV.hits[k]={n:1,worst:val,unit,f:INV.n};console.warn('[inv] f'+INV.n+' '+k+' '+val.toFixed(2)+unit);}else{h.n++;if(val>h.worst)h.worst=val;}}
+ function invCheck(dt){INV.n++;const p=root.position;const f=fwd(root.rotation.y);const busy=H.lad||H.trans||H.seated||H.inBed||H.fit||!root.visible;
+  // 1 feet on a support while standing
+  if(!busy&&H.ground&&H.floorY!=null){const lf=bones.LeftFoot.getWorldPosition(V()),rf=bones.RightFoot.getWorldPosition(V());const lo=Math.min(lf.y,rf.y)-H.floorY;if(lo>.16)invHit('feet in the air',lo,'m');}
+  // 5 knees never bend forward: the bend plane's normal (thigh x shin) points to his left for a real knee; to his right = broken
+  {const lh=bones.LeftUpLeg.getWorldPosition(V()),rh=bones.RightUpLeg.getWorldPosition(V());const toR=rh.clone().sub(lh);
+   for(const s of ['Left','Right']){const hp=s==='Left'?lh:rh,kn=bones[s+'Leg'].getWorldPosition(V()),an=bones[s+'Foot'].getWorldPosition(V());const th=kn.clone().sub(hp),sh=an.clone().sub(kn);const ang=th.angleTo(sh);
+    if(ang>.35){const nrm=th.clone().cross(sh).normalize();if(nrm.dot(toR)/toR.length()>.5)invHit(s+' knee backwards',ang*57.3,'deg');}}}
+  // 5 head within 70 deg of the pelvis, no roll past 10 deg
+  {const hq=bones.Head.getWorldQuaternion(new THREE.Quaternion());const hf=BFWD.Head.clone().applyQuaternion(hq).setY(0);const pf=hipsFwd().setY(0);if(hf.lengthSq()>1e-4&&pf.lengthSq()>1e-4){const d=hf.angleTo(pf)*57.3;if(d>75)invHit('owl head',d,'deg');}
+   const fw=BFWD.Head.clone().applyQuaternion(hq),up=V(0,1,0).applyQuaternion(hq),sd=fw.clone().cross(YAX);if(sd.lengthSq()>1e-4){const r=Math.abs(Math.asin(clamp(up.dot(sd.normalize()),-1,1)))*57.3;if(r>12&&!H.inBed)invHit('head roll',r,'deg');}}
+  // 6 no snaps: root and hips per-frame jumps
+  const hp=bones.Hips.getWorldPosition(V());if(INV.prev&&dt>0){const v=hp.distanceTo(INV.prev.h)/dt;if(v>4&&!H.lad)invHit('hips snap',v,'m/s');const yv=Math.abs(wrapA(root.rotation.y-INV.prev.y))/dt;if(yv>9)invHit('turn snap',yv*57.3,'deg/s');}
+  INV.prev={h:hp,y:root.rotation.y};}
  function updateCore(dt){if(dt<=0)return;H._dt=dt;/* the root is yaw only: anything that left a pitch/roll of pi in its Euler (a quaternion copy) would mirror every later turn; fold it back to the same facing */if(Math.abs(root.rotation.x)>1e-4||Math.abs(root.rotation.z)>1e-4){const z=V(0,0,1).applyQuaternion(root.quaternion);root.rotation.set(0,Math.atan2(z.x,z.z),0);}freezeGuard(dt);if(SPL.length)splashTick(dt);
   // ===== BRAIN HOOK: an attached brain (game/brain.js) decides what to do; the body below only carries it out =====
   if(brain){if(H.wait){H.wait.t-=dt;if(H.wait.t<=0){const f=H.wait.then;H.wait=null;f&&f();}}
@@ -1290,7 +1307,7 @@ export function createHero(ctx){
   if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);
   if(H.reach){const R=H.reach;R.t+=dt;const k=R.t/R.d;const w=smooth(0,.4,k)*(1-smooth(.62,1,k));if(w>.01)reachTo(R.side,R.pt,w);H.look=R.pt;H.lookW=.9;}
   if(act&&act.post)act.post(dt);/* hands last: nothing after this moves the chest, so a hand on a handle stays on it */
-  runSlot('contacts',dt);
+  runSlot('contacts',dt);if(!H.inBed&&!H.bedB)headRoll();/* the head stays level whatever the hands and the ladder did to the chest */
   if(H.lad&&H.lad.hb)hatchBelowPost();/* GRAB HOOK */
   if(act&&act.fr)fridgePost(act);/* GRAB HOOK */
   try{window.__grab&&window.__grab.tick&&window.__grab.tick(dt,H);}catch(e){}/* GRAB HOOK: hands close round what they hold */}
@@ -1329,7 +1346,7 @@ export function createHero(ctx){
  spawn('read');
 
  return {spawn,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,openEdge,
-  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,get act(){return act;},get gear(){return GEAR;},BFWD,setMotion:m=>{motion=m||null;},setClimb:m=>{climb=m||null;if(climb){climb.init({THREE,bones,ik2,turnBone,root,H,actions,play,floorAt,idle:()=>IDLE()||'0'});if(!climb._staged)climb._staged=stage('contacts',dt=>{if(climb&&!window.__noClimb)climb.post(dt);});}},/* CLIMB HOOK: ladders in the contacts slot */root,onTaskEnd:cb=>{endCbs.push(cb);},
+  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,inv:INV,get act(){return act;},get gear(){return GEAR;},BFWD,setMotion:m=>{motion=m||null;},setClimb:m=>{climb=m||null;if(climb){climb.init({THREE,bones,ik2,turnBone,root,H,actions,play,floorAt,idle:()=>IDLE()||'0'});if(!climb._staged)climb._staged=stage('contacts',dt=>{if(climb&&!window.__noClimb)climb.post(dt);});}},/* CLIMB HOOK: ladders in the contacts slot */root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }
