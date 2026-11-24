@@ -1507,12 +1507,31 @@ export function createHero(ctx){
    a.update=dt=>{if(stepTick(a,dt))return;carryOv();};
    a.leave=cb=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};a.post=()=>odArmful();return a;},
  });
- // close (or open) the window shutters one window after another: walk up, reach for the shutter, it swings at the touch
- // opts: {close:true|false, windows:['bwin','kwin','wwin']}; house hook: window.__house.shutters.close(name)/open(name) when it exists
- MAKE.shutters=(o={})=>{const a={step:'go',t:0};const close=o.close!==false;const list=(o.windows||WINDOWS).filter(w=>N[w]);
-  const go=()=>{const w=list.shift();if(!w){play(IDLE(),{fade:.4});endTask({ok:true,close});return;}const n=N[w];const pt=n.p.clone().addScaledVector(fwd(n.face??0),.5).add(V(0,1.3,0));pt.hand=true;
-   visit(a,pt,.4,has('hy_window')?'hy_window':'hy_take',[[.45,()=>{try{const S=window.__house&&window.__house.shutters;S&&(close?S.close(w):S.open(w));}catch(e){}AU(close?'shutter_close':'shutter_open',pt);}]],go);};
-  go();a.update=dt=>{stepTick(a,dt);};return a;};
+ // close (or open) the window shutters one window after another (opts: {close:true|false, windows:['bwin','kwin','wwin']}).
+ // GRAB: each room's shutter hangs on a pull cord (index.html SHUT): he walks to the window, his right palm takes the toggle and
+ // pulls it down (or lets it up), and the shutter follows his palm on the cord (S.pull). It never moves at a touch by itself.
+ MAKE.shutters=(o={})=>{const a={step:'go',t:0,w:0};const close=o.close!==false;const list=(o.windows||WINDOWS).filter(w=>N[w]);
+  const S=()=>window.__house&&window.__house.shutters;const ROOM={bwin:'bedroom',kwin:'kitchen',wwin:'workshop'};let room=null,cd=null;
+  const want=close?1:0;const kNow=()=>{const s=S();return s&&s.k?s.k[room]??0:0;};
+  const next=()=>{a.step='go';a.t=0;a.kt=null;const w=list.shift();const s=S();if(!w||!s||!s.cord){play(IDLE(),{fade:.4});endTask({ok:true,close});return;}
+   room=ROOM[w]||w;cd=s.cord(room);if(!cd||Math.abs(kNow()-want)<.01){next();return;}
+   const yf=N[w].face??0;const fw=fwd(yf);const sp=cd.toggle(V()).addScaledVector(V(fw.z,0,-fw.x),-.17).addScaledVector(fw,-.34);sp.y=root.position.y;/* he stands 0.34 m behind the toggle, with it in front of his right shoulder (low down the right hand cannot cross to his middle) */
+   const go=()=>{const p=root.position;const q=sp.clone();pushOut(q);H.face=yf;const d=Math.hypot(q.x-p.x,q.z-p.z);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:wrapA(yf-root.rotation.y),k:0,d:Math.max(.4,d/.5,Math.abs(wrapA(yf-root.rotation.y))/2.4)};/* the last short step onto the spot (back or forth), turned to the window */
+    a.step='approach';a.t=0;a.adur=H.slide.d;a.next=()=>{play(IDLE(),{fade:.5});a.step='reach';a.t=0;};};goTo(w,go);};
+  const done=()=>{if(a.lvCb){const c=a.lvCb;a.lvCb=null;a.step='done';c();return;}next();};
+  a.update=dt=>{a.t+=dt;
+   if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
+   if(a.step==='reach'){a.w=Math.min(1,a.w+dt/.4);if(a.w>=1&&cd&&palmTo('Right',cd.toggle(V()))<.04){a.step='pull';a.t=0;a.st=0;AU(close?'shutter_close':'shutter_open',cd.toggle(V()));}else if(a.t>2.2){a.step='let';a.t=0;/* out of reach: he lets it be, it does not move */}return;}
+   if(a.step==='let'){a.w=Math.max(0,a.w-dt/.35);if(a.w<=0)done();return;}};
+  a.post=dt=>{const G=window.__grab;const s=S();if(!s||!cd)return;
+   if(a.w<=.01){if(G)G.free(cd.obj);return;}
+   let kt=kNow();if(a.step==='pull'){if(a.kt==null)a.kt=kt;if((want-a.kt)*(kt-a.kt)>-.12*Math.abs(want-a.kt))a.kt+=Math.sign(want-a.kt)*Math.min(Math.abs(want-a.kt),dt*.5);kt=a.kt;}/* the hand leads the cord by a hair; the shutter follows the hand */
+   const t=cd.toggleAt(kt,V());REACH_LEAN=.3;try{reachGrip('Right',t,a.w);}finally{REACH_LEAN=.6;}H.look=t;H.lookW=.6;
+   if(a.step==='pull'){const g=G&&G.gripPoint?G.gripPoint('Right'):t;const k0=kNow();s.pull(room,g);a.st=Math.abs(kNow()-k0)>1e-4?0:(a.st||0)+dt;
+    if(Math.abs(kNow()-want)<.008||a.st>1.5){a.step='let';a.t=0;}}
+   if(G){if(a.step==='pull'||(a.step==='reach'&&a.w>.6&&palmTo('Right',cd.toggle(V()))<.05))G.hold('Right',cd.obj,()=>cd.toggle(V()));else G.free(cd.obj);}};
+  a.leave=cb=>{if((a.step==='pull'||a.step==='reach')&&!a.lvCb){a.lvCb=cb;a.step='let';a.t=0;return;}/* GRAB: called away mid-pull: the hand lets go of the toggle first; the shutter stays where his hand left it */const G=window.__grab;if(G&&cd)G.free(cd.obj);cb();};
+  next();return a;};
  // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
  const REPAIR={
   /* a slate at the eave (Brain picks one; pickSlate keeps it only if he can reach it): he walks out only as far as the boards carry him
