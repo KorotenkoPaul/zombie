@@ -883,11 +883,11 @@ export function createHero(ctx){
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
    visit(a,PT('drainBay'),.5,'hy_picklog',[[.55,()=>{try{P.grab('drainBucket',bones.RightHand,{offset:V(0,.06,.02)});window.__audio.carry(true);}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
-    goTo('gate',()=>{H.face=N.gate.face??0;a.step='pour';a.t=0;once('hy_water',{fade:.4,then:()=>{play(IDLE(),{fade:.4});try{P.water.pour('drainBucket',false);}catch(e){}
-      a.step='back';visit(a,PT('drainBay'),.5,'hy_picklog',[[.5,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}});});});
-   a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='pour'){a.t+=dt;if(a.t>.8&&!a.p){a.p=1;try{P.water.pour('drainBucket',true);}catch(e){}AU('bucket_dump',root.position);}}};
+    goTo('gate',()=>{H.face=N.gate.face??0;a.step='pour';a.t=0;play(IDLE(),{fade:.4});/* hy_water (a watering clip) twisted him 90 deg off the edge: the pour is the arms' own work */H.wait={t:2.8,then:()=>{try{P.water.pour('drainBucket',false);}catch(e){}
+      a.step='back';visit(a,PT('drainBay'),.5,'hy_picklog',[[.5,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};});});
+   a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='pour'){if(a.t>.8&&!a.p){a.p=1;try{P.water.pour('drainBucket',true);}catch(e){}AU('bucket_dump',root.position);}}};
    // OUTDOOR: the pour: the fist lifts the bucket out over the edge, the other hand under its bottom tips it right over, then back
-   a.post=()=>{if(a.step!=='pour'){odHang('drainBucket',0);return;}const D=has('hy_water')?durOf('hy_water'):2.5;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
+   a.post=()=>{if(a.step!=='pour'){odHang('drainBucket',0);return;}const D=2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
     if(w>.01)reachGrip('Right',root.position.clone().addScaledVector(f,.42).add(V(0,1.02,0)),w);const tilt=1.9*smooth(.45,.95,t)*(1-smooth(D-.8,D-.25,t));odHang('drainBucket',tilt);
     const bk=PP().tools.drainBucket;if(bk&&w>.01){const bt=bk.localToWorld(V(0,.02,0));reachGrip('Left',bt,.85*w*smooth(.3,.6,t));odHang('drainBucket',tilt);}};
    a.leave=cb=>{try{P.water.pour('drainBucket',false);P.release('drainBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
