@@ -11,13 +11,14 @@ const wp = n => new T.Vector3().setFromMatrixPosition(O[n].matrixWorld);
 const setFrame = f => { for (const b of Object.keys(C.tracks)) if (O[b]) O[b].quaternion.fromArray(C.tracks[b], f * 4); O.Hips.position.fromArray(C.hips, f * 3); root.updateMatrixWorld(true); };
 const BASE = 0.045; let fixedMax = 0;
 if (SEAM) { // circular gaussian smoothing of all tracks and hips within +-10 frames of the seam
-  const W = 10, sig = 3;
+  const W = +(process.env.SEAMW || 10), sig = +(process.env.SEAMS || 3);
   for (const b of Object.keys(C.tracks)) { const a = C.tracks[b], src = a.slice(); const q = i => { const j = ((i % F) + F) % F; return [src[j*4], src[j*4+1], src[j*4+2], src[j*4+3]]; };
     for (let d = -W; d < W; d++) { const f = ((d % F) + F) % F; const ref = q(f); const acc = [0,0,0,0]; let sw = 0;
       for (let k = -8; k <= 8; k++) { let v = q(f + k); if (v[0]*ref[0]+v[1]*ref[1]+v[2]*ref[2]+v[3]*ref[3] < 0) v = v.map(x => -x); const w = Math.exp(-k*k/(2*sig*sig)) * (1 - Math.abs(d + .5) / W); const w0 = Math.exp(-k*k/(2*sig*sig)); for (let c = 0; c < 4; c++) acc[c] += v[c]*w0; sw += w0; }
       const s = acc.map(x => x / sw); const l = Math.hypot(...s); const t = 1 - Math.abs(d + .5) / W; for (let c = 0; c < 4; c++) a[f*4+c] = ref[c] * (1 - t) + s[c] / l * t; const l2 = Math.hypot(a[f*4], a[f*4+1], a[f*4+2], a[f*4+3]); for (let c = 0; c < 4; c++) a[f*4+c] /= l2; } }
   const h = C.hips, hs = h.slice(); for (let d = -W; d < W; d++) { const f = ((d % F) + F) % F; const t = 1 - Math.abs(d + .5) / W; for (let c = 0; c < 3; c++) { let s = 0, sw = 0; for (let k = -8; k <= 8; k++) { const j = (((f + k) % F) + F) % F; const w = Math.exp(-k*k/18); s += hs[j*3+c]*w; sw += w; } h[f*3+c] = hs[f*3+c]*(1-t) + s/sw*t; } }
 }
+if (flags.includes("--noflat")) { for (const k of Object.keys(C.tracks)) C.tracks[k] = C.tracks[k].map(v => +(+v).toFixed(5)); C.hips = C.hips.map(v => +(+v).toFixed(4)); fs.writeFileSync(outp, JSON.stringify(C)); console.log("seam only"); process.exit(0); }
 const floorY = {}; for (const s of ['Left','Right']) { let m = 9; for (let f = 0; f < F; f++) { setFrame(f); m = Math.min(m, wp(s+'ToeBase').y); } floorY[s] = m; }
 const corr = { Left: [], Right: [] };
 for (let f = 0; f < F; f++) { setFrame(f); for (const s of ['Left','Right']) { const heel = wp(s+'Foot'), ball = wp(s+'ToeBase'); const planted = ball.y < floorY[s] + 0.05;
