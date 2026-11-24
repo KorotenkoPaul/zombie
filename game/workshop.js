@@ -255,5 +255,36 @@ export function createWorkshop(K) {
       result: () => ({ ok: true }) });
   }
 
-  return { saw, sharpen, fixlamp, tick: tickOffcuts, setupSaw, layoutDbg: () => WB, sawGeom: (d, s) => sawGeom(d, s) };
+  // ================= CHOP: slicing a carrot on the kitchen board =================
+  // he takes the kitchen knife from beside the board, the left hand holds the carrot in a claw just behind the cut,
+  // the knife rocks on its tip: handle up, edge down through the carrot onto the board; slice after slice the cut and the
+  // claw creep along the carrot; then the knife goes back where it lay
+  function chop(o) {
+    const BO = () => { const P = PP(); const b = P && P.tools && P.tools.board; if (b) b.updateMatrixWorld(true); return b; };
+    const S = { ph: 'take', t: 0, u: 0, cut: 0, n: 0 };
+    const frame = () => { const b = BO(); const c = b.localToWorld(V(-.025, .028, .045)); const ax = V(1, 0, 0).applyQuaternion(b.getWorldQuaternion(Q())).setY(0).normalize();
+      const p = root.position; const fw = V(c.x - p.x, 0, c.z - p.z).normalize(); const r = bones.RightArm.getWorldPosition(V()).sub(bones.LeftArm.getWorldPosition(V())).setY(0).normalize();
+      if (ax.dot(r) < 0) ax.negate(); return { c, ax, fw }; }; // ax: along the carrot toward his right hand
+    const geom = th => { const F = frame(); const C = F.c.clone().addScaledVector(F.ax, .05 - S.cut); const up = V(0, 1, 0);
+      const W = F.fw.clone().multiplyScalar(Math.cos(th)).addScaledVector(up, -Math.sin(th)).normalize(); const U = up.clone().multiplyScalar(Math.cos(th)).addScaledVector(F.fw, Math.sin(th)).normalize();
+      const T = C.clone().addScaledVector(F.fw, .07); const gp = T.clone().addScaledVector(W, -.19).addScaledVector(U, .015 + .002); return { gp, tip: gp.clone().add(W), B: U.clone().negate(), C, F }; };
+    return job({ pt: () => { const P = PP(); return P && P.point ? P.point('board') : null; }, stand: .36, dur: [600, 600], vary: false, tools: [],
+      look: () => S.lookAt || (BO() && BO().getWorldPosition(V())), lookW: .9,
+      post: (a, dt) => { S.t += dt; const g = G(); if (!BO()) { a.T = 1e9; return; }
+        const claw = w => { const r = geom(0); handTo('Left', r.C.clone().addScaledVector(r.F.ax, -.05).add(V(0, .045, 0)).addScaledVector(r.F.fw, .01), w); if (g) g.hold('Left', BO(), null); };
+        if (S.ph === 'take') { const r = homeGrip('knife'); if (!r || take(a, 'knife', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'to'; S.t = 0; } claw(smooth(.3, 1, S.t)); return; }
+        if (S.ph === 'to') { const k = smooth(0, .5, S.t); const r = geom(.35 * k + .0); hold('Right', 'knife', r, g); claw(1); if (k >= 1) { S.ph = 'chop'; S.t = 0; S.u = 0; } return; }
+        if (S.ph === 'chop') { // one slice every ~0.45 s: the edge comes down fast and lifts slower
+          S.u += dt / .45; const ph = S.u % 1; const th = ph < .35 ? .35 * (1 - smooth(0, .35, ph)) : .35 * smooth(.45, 1, ph); const r = geom(th); hold('Right', 'knife', r, g); claw(1); S.lookAt = r.C;
+          const n = Math.floor(S.u); if (n !== S.n && ph > .3) { S.n = n; S.cut += .006; AU('chop', r.C); if (S.cut > .075) { S.ph = 'push'; S.t = 0; } } return; }
+        if (S.ph === 'push') { // the slices are pushed aside with the flat of the blade, the claw goes back to the start of the carrot
+          const k = smooth(0, .8, S.t); const th = .35 * (1 - Math.sin(Math.PI * k) * .5); const r = geom(th); r.gp.addScaledVector(r.F.ax, -.06 * Math.sin(Math.PI * k)); r.tip.addScaledVector(r.F.ax, -.06 * Math.sin(Math.PI * k)); hold('Right', 'knife', r, g);
+          if (k >= 1) { S.cut = 0; S.rounds = (S.rounds || 0) + 1; S.ph = S.rounds >= 3 ? 'put' : 'chop'; S.t = 0; S.u = 0; } claw(1); return; }
+        if (S.ph === 'put') { claw(1 - smooth(0, .5, S.t)); if (put(a, 'knife', 'Right', dt)) { S.ph = 'done'; a.T = 1e9; } return; }
+      },
+      end: a => { const g = G(); if (g) { g.free('Left'); g.free('Right'); } if (H.hold.Right && H.hold.Right.tool === 'knife') relTool('Right', 'knife', .3); a.held.length = 0; },
+      result: () => ({ ok: true }) });
+  }
+
+  return { saw, sharpen, fixlamp, chop, tick: tickOffcuts, setupSaw, layoutDbg: () => WB, sawGeom: (d, s) => sawGeom(d, s) };
 }
