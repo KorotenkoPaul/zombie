@@ -626,7 +626,7 @@ export function createHero(ctx){
  // round, scratch, stretch, sigh), put the tools back, end by itself. Props / lights / audio hooks are all optional.
  const PT=(n)=>{try{const P=window.__props||P3;return P&&P.point?P.point(n):null;}catch(e){return null;}};
  const AU=(n,pos)=>{try{window.__audio&&window.__audio.play&&window.__audio.play(n,pos);}catch(e){}};
- const toolHome=n=>{try{const P=window.__props||P3;return P&&P.toolHome?P.toolHome(n,V()):null;}catch(e){return null;}};
+ const toolHome=n=>{try{const P=window.__props||P3;const o=P&&P.tools&&P.tools[n];if(o&&o.parent===bones.Hips)return o.getWorldPosition(V());/* GRAB: on his belt */return P&&P.toolHome?P.toolHome(n,V()):null;}catch(e){return null;}};
  const hasTool=n=>{const P=window.__props||P3;return !!(P&&P.tools&&P.tools[n]);};
  // slide the last bit up to a work point and face it
  // the spot must leave room for his head (a low eave, a roof edge, a beam): step back from the work until it does
@@ -669,8 +669,9 @@ export function createHero(ctx){
     if(a.T>=dur){a.step='put';a.t=0;o.end&&o.end(a);play(IDLE(),{fade:.5});}return;}
    if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=toolHome(n)||s;H.look=h;H.lookW=1;
     // GRAB HOOK: carried to the hook in the hand, let go only once the palm is there (a short settle, no flying home), then the hand leaves
-    const h2=gripHome(n)||h;const pd=palmTo(hand,h2);a.hp=h2;if(!a.rel){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h2,a.rw];if((a.rw>=1&&pd<.03)||a.t>1.6){a.rel=true;a.trel=a.t;relTool(hand,n,.14);}}
-    else if(a.t-a.trel>.16){a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h2,a.rw]:null;if(a.rw<=0){a.held.pop();a.rel=false;a.t=0;a.reach=null;a.rw=0;}}}};
+    if(a.belt==null)a.belt=bones[hand+'Arm'].getWorldPosition(V()).distanceTo(gripHome(n)||h)>armLen+.35;
+    const h2=a.belt?beltPt():(gripHome(n)||h);const pd=palmTo(hand,h2);a.hp=h2;if(!a.rel){a.rw=Math.min(1,(a.rw||0)+dt/.4);a.reach=[hand,h2,a.rw];if((a.rw>=1&&pd<.04)||a.t>1.6){a.rel=true;a.trel=a.t;if(a.belt)toBelt(n);else relTool(hand,n,.14);}}
+    else if(a.t-a.trel>.16){a.rw=Math.max(0,a.rw-dt/.4);a.reach=a.rw>0?[hand,h2,a.rw]:null;if(a.rw<=0){a.held.pop();a.rel=false;a.t=0;a.reach=null;a.rw=0;a.belt=null;}}}};
   const finish=()=>{a.ik=null;H.squat=0;if(a.seated&&!a.rising){a.rising=true;standUp(a.seated,()=>{a.seated=null;finish();});return;}if(a.rising&&a.seated)return;
    if(a.leaveCb){const c=a.leaveCb;a.leaveCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
   a.post=dt=>{if(a.stirHold&&a.step!=='work'){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}if(a.step==='work'&&o.post)o.post(a,dt);
@@ -683,7 +684,10 @@ export function createHero(ctx){
   return a;}
  // GRAB HOOK: how far the palm is from a point (m)
  function palmTo(side,t){const G=window.__grab;const p=G&&G.gripPoint?G.gripPoint(side):bones[side+'Hand'].getWorldPosition(V());return p&&t?p.distanceTo(t):9;}
- const gripHome=n=>{const G=window.__grab;return G&&G.toolGripHome?G.toolGripHome(n):toolHome(n);};
+ const gripHome=n=>{const P=PP();const o=P&&P.tools&&P.tools[n];if(o&&o.parent===bones.Hips){const G=window.__grab;const sp=G&&G.GRIP&&G.GRIP[n];return sp&&sp.g?o.localToWorld(V(...sp.g)):o.getWorldPosition(V());}const G=window.__grab;return G&&G.toolGripHome?G.toolGripHome(n):toolHome(n);};
+ // GRAB: a tool whose hook is out of reach (the job was cut short far from it) goes into his belt, by hand, instead of flying home
+ const BELT_OFF=V(.16,-.1,.03);function beltPt(){bones.Hips.updateMatrixWorld(true);return bones.Hips.localToWorld(BELT_OFF.clone());}
+ function toBelt(n){try{const P=PP();const o=P.tools[n];if(!o)return;bones.Hips.attach(o);o.position.copy(BELT_OFF);o.quaternion.identity();/* head up on the loop, handle hanging */for(const h of ['Left','Right'])if(H.hold[h]&&H.hold[h].tool===n)H.hold[h]=null;}catch(e){}}
  function reachGrip(side,t,w){const G=window.__grab;if(!G||!G.gripPoint){reachTo(side,t,w);return;}reachTo(side,G.palmTarget(side,t),w);
   /* the fist's grip point, not the wrist, onto the point: a few corrections of the wrist target */if(w>.98)for(let i=0;i<3;i++){const e=t.clone().sub(G.gripPoint(side));if(e.length()<.004)break;armIK(side,bones[side+'Hand'].getWorldPosition(V()).add(e),sidePole(side),1);}}
  // GRAB HOOK: aim a held tool: turn the hand round the fist so the tool's working end points at tip (the grip stays put)
