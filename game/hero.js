@@ -1636,9 +1636,9 @@ export function createHero(ctx){
   if(a.ph==='place'){const u=a.pt/T.place;let rd=a.rd;if(!rd){rd=a.rd=S.stack.pop()||(()=>{const m=roundMesh();m.position.copy(c).addScaledVector(r,.5);m.position.y-=.42;scene.add(m);return m;})();a.r0=rd.position.clone();}
    // the body: real mocap squat-and-lift (hy_pickground, CMU: hips lowest 0.9-1.3 s); without it a code squat
    const t=a.pt;if(!a.pk){a.pk=1;if(has('hy_pickground'))once('hy_pickground',{fade:.3});}const PK=has('hy_pickground');
-   H.squat=PK?0:.42*smooth(.15,.8,t)*(1-smooth(1.3,1.9,t));const tp=rd.getWorldPosition(V()).add(V(0,SPL_RH+.01,0));
+   H.squat=(PK?0:.42*smooth(.15,.8,t)*(1-smooth(1.3,1.9,t)))+.2*smooth(2.0,2.5,t)*(1-smooth(2.95,3.35,t));/* knees bend to set the round down on the block (standing, the palm stayed 14 cm high and the round dropped) */const tp=rd.getWorldPosition(V()).add(V(0,SPL_RH+.01,0));
    const w=smooth(.35,.85,t)*(1-smooth(2.75,3.05,t));
-   if(rd.parent===bones.LeftHand&&(t>2.75||(t>2.45&&rd.getWorldPosition(V()).distanceTo(c)<.04))){scene.attach(rd);a.settle={p:rd.position.clone(),q:rd.quaternion.clone(),t:0};a.placed=1;}
+   if(rd.parent===bones.LeftHand&&(t>2.75||(t>2.45&&rd.getWorldPosition(V()).distanceTo(c)<.04))){scene.attach(rd);if(a.rW){rd.position.copy(a.rW);rd.quaternion.copy(a.rQ);}/* from where it was last frame (the hand has already moved on this frame) */a.settle={p:rd.position.clone(),q:rd.quaternion.clone(),t:0};a.placed=1;}
    if(a.settle){/* set down: the last few cm with the palm still on it, then the knock of wood on wood */const S2=a.settle;S2.t=Math.min(1,S2.t+dt/.18);rd.position.lerpVectors(S2.p,c,smooth(0,1,S2.t));rd.quaternion.slerpQuaternions(S2.q,new THREE.Quaternion().setFromEuler(new THREE.Euler(0,S2.yaw??(S2.yaw=Math.random()*6),0)),S2.t);if(S2.t>=1){a.settle=null;AU('wood',c);}}
    let at=tp;if(rd.parent===bones.LeftHand){/* carried up with the rising body, then over to the block top */const k=smooth(1.35,2.6,t);const to=c.clone().add(V(0,SPL_RH+.01,0));at=a.r0.clone().add(V(0,SPL_RH+.01,0)).lerp(to,k);at.y+=.3*Math.sin(Math.PI*k);
     /* the round, not the palm, has to land on the block: the hand goes where the round's offset from the palm puts it there */if(k>.3){const want=a.r0.clone().lerp(c,k);want.y=lerp(a.r0.y,c.y,k)+.3*Math.sin(Math.PI*k);const pm=odPalm('Left');const off=pm.sub(rd.getWorldPosition(V()));at=want.add(off);}}
@@ -1646,17 +1646,19 @@ export function createHero(ctx){
    if(w>.01)odReach('Left',at,w);a.lk=at;axeRest(a,d,1);
    // a step in to set the round on the block (it is out of reach from where he swings), and a step back out after
    const step=(dist,back)=>{const q=c.clone().addScaledVector(d,-dist);const sx=q.x-rp.x,sz=q.z-rp.z;H.slide={x:sx,z:sz,yaw:0,k:0,d:Math.max(.45,Math.hypot(sx,sz)/(back?.55:.75))};play('30',{fade:.25});if(actions['30'])actions['30'].timeScale=back?-.8:1;};
-   if(t>1.85&&!a.st1){a.st1=1;step(.6,false);}if(t>2.5&&!a.st1b){a.st1b=1;play(IDLE(),{fade:.3});}
+   if(t>1.85&&!a.st1){a.st1=1;step(.45,false);}if(t>2.5&&!a.st1b){a.st1b=1;play(IDLE(),{fade:.3});}
    if(t>2.85&&!a.st2){a.st2=1;step(1.05,true);}if(t>3.5&&!a.st2b){a.st2b=1;if(actions['30'])actions['30'].timeScale=1;play(IDLE(),{fade:.3});}
-   /* the palm is on its top now (after the reach this frame): it comes up with the hand */if(t>1.02&&rd.parent!==bones.LeftHand&&!a.placed&&odPalmTo('Left',tp)<.08){bones.LeftHand.updateWorldMatrix(true,false);bones.LeftHand.attach(rd);AU('wood',tp);}
-   if(t>=T.place){a.ph='swing';a.pt=0;a.hit=0;a.lk=null;a.pk=0;a.placed=0;a.settle=null;a.st1=a.st1b=a.st2=a.st2b=0;}return;}
+   /* the palm is on its top now (after the reach this frame): it comes up with the hand */if(t>1.02&&rd.parent!==bones.LeftHand&&!a.placed&&odPalmTo('Left',tp)<.08){bones.LeftHand.updateWorldMatrix(true,false);bones.LeftHand.attach(rd);AU('wood',tp);a.rOff=odPalm('Left').sub(rd.getWorldPosition(V()));a.rQ=rd.getWorldQuaternion(new THREE.Quaternion());}
+   /* fingers round its top rim: the round stays upright under the palm, it never swings tilted beside the hand (film: it hung 30 deg off at his side) */
+   if(rd.parent===bones.LeftHand&&a.rOff){const hb=bones.LeftHand;hb.updateWorldMatrix(true,false);const wp=odPalm('Left').sub(a.rOff);const M=new THREE.Matrix4().compose(wp,a.rQ,rd.getWorldScale(V()));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(rd.position,rd.quaternion,rd.scale);rd.updateMatrixWorld(true);a.rW=wp.clone();}
+   if(t>=T.place){a.rOff=null;a.rW=null;a.ph='swing';a.pt=0;a.hit=0;a.lk=null;a.pk=0;a.placed=0;a.settle=null;a.st1=a.st1b=a.st2=a.st2b=0;}return;}
   // 2. the swing: angle th round a pivot just in front of the shoulders, in the vertical plane through the round
   const Ls=bones.LeftArm.getWorldPosition(V()),Rs=bones.RightArm.getWorldPosition(V());const piv=Ls.clone().add(Rs).multiplyScalar(.5).addScaledVector(d,.06).add(V(0,-.04,0));
   const tgt=c.clone().add(V(0,SPL_RH-.015,0));const q=tgt.clone().sub(piv);const qh=V(q.x,0,q.z).length();const rH=q.length();const thS=Math.atan2(q.y,qh);
   if(a.ph==='swing'){// the body is real mocap (hy_axechop, CMU: slow lift 1.2 s, fast drop 0.35 s, hit at 1.57 s of 1.9 s); the axe angle follows its phase
    const C='hy_axechop',cd=has(C)?durOf(C):1.9;if(!a.clipOn&&has(C)){a.clipOn=1;play(C,{fade:.3});const A=actions[C];if(A)A.time=0;}
    const A=has(C)?actions[C]:null;const u=A?(A.time%cd)/cd:a.pt/T.swing;if(a.lu!=null&&u<a.lu-.5){a.struck=0;a.cyc=(a.cyc||0)+1;}a.lu=u;
-   const last=a.hit+1>=hits;const thT=1.95,UT=.63,US=.82;let th;
+   const last=a.hit+1>=hits;const thT=1.68,UT=.63,US=.82;/* top of the backswing just past vertical: further back the hands went behind his head and the body guard pulled them off the handle (film) */let th;
    if(u<UT)th=thS+(thT-thS)*smooth(0,UT,u);else if(u<US){const k=(u-UT)/(US-UT);th=thT+(thS-.05-thT)*k*k;}else th=thS-.05;
    if(u>=US&&!a.struck){a.struck=1;a.hit++;try{window.__audio&&window.__audio.contact?window.__audio.contact({tool:'axe',kind:'hit',pos:tgt.toArray(),strength:rnd(.8,1)}):AU('chop',tgt);}catch(e){AU('chop',tgt);}
     if(a.hit>=hits)splitRound(a,S,d,r);}
@@ -1673,9 +1675,15 @@ export function createHero(ctx){
  // both hands on the axe handle: right hand at the tool's grip, left hand at the handle's end; the blade faces the way it swings
  function holdAxe(a,piv,d,r,th,rH,w){const dir=d.clone().multiplyScalar(Math.cos(th)).add(V(0,Math.sin(th),0));const tan=d.clone().multiplyScalar(-Math.sin(th)).add(V(0,Math.cos(th),0));
   const gR=piv.clone().addScaledVector(dir,rH-AXE_G);const gL=piv.clone().addScaledVector(dir,Math.max(.22,rH-.67)).addScaledVector(r,.01);
-  odReach('Left',gL,w*.95);odReach('Right',gR,w);
+  odReach('Right',gR,w);odReach('Left',gL,w*.95);/* right first: its trunk lean moved the left shoulder and slid the left hand off the handle */
   // the axe goes where the right fist really is (contact first); while blending out it hangs from the fist
-  const pR=odPalm('Right');const hang=V(0,-1,0).addScaledVector(d,.22).normalize();const dd=hang.lerp(dir,w).normalize();axeWorld(pR.clone().addScaledVector(dd,AXE_G),dd,tan.clone().negate().lerp(d,1-w));a.dbg=[gR,gL];}
+  const pR=odPalm('Right');const hang=V(0,-1,0).addScaledVector(d,.22).normalize();const dd=hang.lerp(dir,w).normalize();axeWorld(pR.clone().addScaledVector(dd,AXE_G),dd,tan.clone().negate().lerp(d,1-w));a.dbg=[gR,gL];a.axeLate={w,blade:tan.clone().negate().lerp(d,1-w)};
+  // the guard (last pose step) can still pull the arms back a few cm at the top of the swing: the axe is set again from where
+  // both fists really ended up, the handle through both of them (film: hands off the handle above his head)
+  if(!axeLateOn){axeLateOn=1;stage('guard',()=>{const A=act;const L=A&&A.axeLate;if(!L)return;A.axeLate=null;const ax=PP().tools.axe;if(!ax||ax.parent!==scene)return;
+   const pR=odPalm('Right'),pL=odPalm('Left');const v=pR.clone().sub(pL);const l=v.length();if(L.w<.9||l<.12||l>.55)return;v.divideScalar(l);
+   axeWorld(pR.clone().addScaledVector(v,AXE_G),v,L.blade);});}}
+ let axeLateOn=0;
  // the round comes apart: two halves tip outwards off the block and drop onto the ground on both sides
  function splitRound(a,S,d,r){const rd=a.rd;if(!rd)return;a.rd=null;a.split++;const p=rd.position.clone();const yaw=Math.atan2(d.x,d.z);scene.remove(rd);
   AU('chop',p);for(const s of [-1,1]){const h=halfMesh();h.position.copy(p);h.rotation.set(0,yaw+(s<0?Math.PI:0)+Math.PI/2,0);scene.add(h);S.halves.push(h);
