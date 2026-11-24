@@ -113,7 +113,7 @@ const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ASSET=window.__ASSET||'';
 const V=(x,y,z)=>new THREE.Vector3(x,y,z);
-let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
+let loaded=0;const TOTAL=13;/* [PERF] 13 tex() loads; downloads fill 85%, shader prep the rest (the bar went to 144%) */function prog(t){loaded++;$('loadBar').style.width=(Math.min(loaded/TOTAL,1)*85)+'%';if(t)$('loadTx').textContent=t;}
 
 await RAPIER.init();prog();
 // ================= renderer =================
@@ -1201,7 +1201,7 @@ const PERFX=/[?&]perfx/.test(location.search);
 // shadow uniforms on the CPU.
 if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
  renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
-{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
+{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';$('loadBar').style.width='95%';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,15000))]);}catch(e){}
   // one real draw of everything (hidden things shown, nothing culled) into the frame's own target: a compiled program is only
