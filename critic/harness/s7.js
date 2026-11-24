@@ -14,7 +14,7 @@ const S=[
  ['deck',[2.6,DK+.7,1.5],.3,.25,3.5],['ladder_ground',[0,1.8,4],.3,.1,4.5],['ladder_top',[0,LC+.5,3.8],-.3,.2,3.5],['ladder_deck',[1.35,BD+.9,3.1],.5,.15,3.2],
  ['trunk_door',[.8,2.6,2.5],.1,.12,4],['roots',[-1,1,3],-.5,.12,6],['ground_low',[2,.6,5],.6,.04,5],
  ['leaves_close',[3,13,1],.4,.1,4],['crown_side',[-4,12,1],-.7,.15,7],
- ['pond',[-2.3,.4,9],.05,.18,6],['hatch_below',[-3.9,KT+1.6,2.4],.35,.05,2.2],['hatch_above',[-3.9,BD+.2,2.6],.3,.55,2.6],
+ ['pond',[-1.4,.3,7.6],.05,.25,6],['hatch_below',[-3.9,KT+1.6,2.4],.35,.05,2.2],['hatch_above',[-3.9,BD+.2,2.6],.3,.55,2.6],
  ['ext_back',[0,7.4,1],3.1,.15,22],['ext_side_left',[0,7.4,1],1.6,.15,22],
 ];
 (async()=>{const {b,p,errs}=await open({});await p.evaluate(h=>{window.__H0=h;__th.setHour(h);__th.cam();},HOUR);await p.waitForTimeout(3000);

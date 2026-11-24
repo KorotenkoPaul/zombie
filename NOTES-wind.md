@@ -141,3 +141,7 @@ One global wind for the whole scene. Cheap: a few floats per frame on the CPU, a
 - These stay in real seconds because they are physical, not calendar: wind spells (calm 50–140 s, breeze 60–180,
   windy 35–90), gusts, lightning, leaf fall and the litter (Brain weights clear_roof by litter.level(), so the
   sweeping keeps pace). The calm evening, the morning fog bank and the day's weather were already hour-based.
+- Round 24 update: the readback is now async (WebGL2). readPixels goes into a PIXEL_PACK_BUFFER with a fenceSync,
+  clientWaitSync(…, 0) is polled once per frame, and getBufferSubData runs only once the fence has signalled (1.9 ms
+  headless, no GPU stall). A sync readRenderTargetPixels froze the phone for seconds (Camera's profiler). Without
+  WebGL2 or on any error, the rays are used. A fence that hasn't signalled after 600 frames is read anyway.
