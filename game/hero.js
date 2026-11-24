@@ -2272,7 +2272,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function huntStart(a,res,goOut){a.step='hunt';a.hp='draw';a.ht=0;a.hres=res;a.goOut=goOut;const f=fwd(N.g_out.face??H.face);H.face=N.g_out.face??H.face;
   const e=root.position;const hp=e.clone().addScaledVector(f,2.6).addScaledVector(V(f.z,0,-f.x),rnd(-.15,.15));/* on the path out, not in the bushes beside it */hp.y=gH(hp.x,hp.z,e.y);a.hareAt=hp;
   hareObj=hareObj||hareMesh();hareTidy();hareObj.position.copy(hp);hareObj.rotation.set(0,Math.atan2(-f.x,-f.z)+rnd(-.8,.8),0);hareObj.visible=true;scene.add(hareObj);
-  play(IDLE(),{fade:.4});H.look=hp.clone().add(V(0,.2,0));H.lookW=.5;const p0=a.post;a.post=dt=>{p0&&p0(dt);if(a.step==='hunt'&&(a.hp==='draw'||a.hp==='stow')&&a.rk!=null)bowReach(a,a.rk,a.hp==='draw');if(a.step==='hunt'&&a.hp==='pick'){if(a.ph2)hareCarry(a);else if(hareObj&&hareObj.parent===scene){hareObj.updateMatrixWorld(true);const g=hareObj.localToWorld(V(0,.06,-.14));a.hg0=g;const w=smooth(.3,.75,a.ht);if(w>.01)odReach('Right',g,w);}}};}
+  play(IDLE(),{fade:.4});H.look=hp.clone().add(V(0,.2,0));H.lookW=.5;const p0=a.post;a.post=dt=>{p0&&p0(dt);if(a.step==='hunt'&&a.hp==='shoot')shotPost(a);if(a.step==='hunt'&&(a.hp==='draw'||a.hp==='stow')&&a.rk!=null)bowReach(a,a.rk,a.hp==='draw');if(a.step==='hunt'&&a.hp==='pick'){if(a.ph2)hareCarry(a);else if(hareObj&&hareObj.parent===scene){hareObj.updateMatrixWorld(true);const g=hareObj.localToWorld(V(0,.06,-.14));a.hg0=g;const w=smooth(.3,.75,a.ht);if(w>.01)odReach('Right',g,w);}}};}
  /* the hare never stays in his hand after the hunt is over, however the task ended */
  let hareGuard=0;function hareTidy(){if(!hareGuard){hareGuard=1;stage('pre',()=>{if(hareObj&&hareObj.parent&&hareObj.parent!==scene&&!(act&&act.step==='hunt')){hareObj.parent.remove(hareObj);}});}}
  /* up from the ground the hare is carried out in front and round the outside of his right thigh into the sack, never back
@@ -2280,7 +2280,31 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function hareCarry(a){const t=a.ht;const L=(x,y,z)=>root.localToWorld(V(x,y,z));
   const P1=L(-.14,.62,.36),P2=L(-.34,.82,.06);const t0=a.pkT||(a.pkT=t);const at=t<t0+.65?a.hg0.clone().lerp(P1,smooth(t0,t0+.65,t)):P1.clone().lerp(P2,smooth(1.55,2.15,t));
   const w=1-smooth(2.25,2.7,t);if(w>.01)odReach('Right',at,w);}
- function huntEnd(a){if(hareObj&&hareObj.parent)hareObj.parent.remove(hareObj);if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);
+ /* HUNT: a real shot, by hand. The right hand goes back over the shoulder into the quiver and draws an arrow, brings it to the bow,
+    nocks it on the string and pulls the string back to the cheek (the string bends to the fingers); on the release that same arrow
+    leaves from where it lay. (It used to appear out of nothing at the bow hand at the release, the string never moved: watch, v6 at night) */
+ let bowStr=null,handArrow=null,shotOn=0,shotA=null;
+ function bowString(nock){const bw=PP().tools&&PP().tools.bow;if(!bw)return;
+  if(bw.userData.strMesh===undefined){bw.userData.strMesh=null;bw.traverse(o=>{if(o.isMesh&&o.material&&o.material.color&&o.material.color.getHex()===0xE8E2D0)bw.userData.strMesh=o;});}
+  const base=bw.userData.strMesh;
+  if(!bowStr){const m=new THREE.MeshStandardMaterial({color:0xE8E2D0,roughness:.6});bowStr=[0,1].map(()=>{const c=new THREE.Mesh(new THREE.CylinderGeometry(.0025,.0025,1,4),m);c.castShadow=true;c.frustumCulled=false;c.visible=false;c.name='bowString';scene.add(c);return c;});}
+  if(!nock||!bw.visible||!base){if(base)base.visible=true;for(const c of bowStr)c.visible=false;return;}
+  base.visible=false;bw.updateMatrixWorld(true);const tips=[bw.localToWorld(V(0,.56,.002)),bw.localToWorld(V(0,-.56,.002))];
+  tips.forEach((t,i)=>{const c=bowStr[i];const d=nock.clone().sub(t);const L=d.length();c.position.copy(t).addScaledVector(d,.5);c.quaternion.setFromUnitVectors(V(0,1,0),d.normalize());c.scale.set(1,L,1);c.visible=true;});}
+ const SHOT={reach0:.55,reach1:.95,take:1.3,back0:1.4,back1:1.8,nock:1.95,rel:3.95};
+ function shotPost(a){const t=a.ht;const Q=PP().tools&&PP().tools.quiver;if(!Q||Q.parent!==bones.Spine2)return;
+  /* into the quiver: the fingers to the fletchings at its mouth */const w=smooth(SHOT.reach0,SHOT.reach1,t)*(1-smooth(SHOT.back0,SHOT.back1,t));if(w>.01&&!a.rel)odReach('Right',Q.localToWorld(V(0,.1,0)),w);
+  shotA=a;if(!shotOn){shotOn=1;lateFn(()=>{const A=shotA;shotA=null;if(A&&act===A&&A.step==='hunt'&&A.hp==='shoot')shotLate(A);else if(handArrow&&handArrow.visible&&!(act&&act.ar)){handArrow.visible=false;bowString(null);}});}}
+ function shotLate(a){const t=a.ht;const Q=PP().tools.quiver,bw=PP().tools.bow;if(a.rel){bowString(null);return;}
+  if(t<SHOT.take){if(handArrow)handArrow.visible=false;bowString(null);return;}
+  if(!handArrow){handArrow=arrowMesh();handArrow.name='handArrow';scene.add(handArrow);}if(!handArrow.visible){handArrow.visible=true;AU('cloth');}
+  const palm=odPalm('Right');const grip=bw?bw.localToWorld(V(0,.03,.02)):odPalm('Left');
+  const up=Q.localToWorld(V(0,1,0)).sub(Q.localToWorld(V(0,0,0))).normalize();const toBow=grip.clone().sub(palm).normalize();
+  const k=smooth(SHOT.take,SHOT.nock,t);const dir=up.clone().lerp(toBow,k).normalize();
+  /* held at the nock end between the fingers; once on the string the shaft runs from the fingers over the bow hand */
+  const pos=palm.clone().addScaledVector(dir,.31);handArrow.position.copy(pos);handArrow.lookAt(pos.clone().add(dir));handArrow.updateMatrixWorld(true);
+  bowString(t>=SHOT.nock?palm.clone().lerp(grip,1-smooth(SHOT.nock,SHOT.nock+.4,t)):null);}
+ function huntEnd(a){if(hareObj&&hareObj.parent)hareObj.parent.remove(hareObj);if(handArrow&&handArrow.parent)handArrow.parent.remove(handArrow);handArrow=null;try{bowString(null);}catch(e){}if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);
   try{const bw=PP().tools.bow;if(bw&&bw.parent===bones.LeftHand)onBack('bow',V(-.02,.03,-.18),[0,0,.55]);}catch(e){}H.look=null;H.lookW=0;H.slide=null;}
  /* the bow changes parent (back <-> fist) without a jump: from where it was it eases into its new place over 0.35 s */
  function bowMove(a,fn){const bw=PP().tools&&PP().tools.bow;if(!bw)return;bw.updateMatrixWorld(true);const M0=bw.matrixWorld.clone();try{fn();}catch(e){}a.bt={M0,tp:bw.position.clone(),tq:bw.quaternion.clone(),ts:bw.scale.clone(),k:0};}
@@ -2290,7 +2314,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(a.hp==='draw'){a.rk=t/1.6;if(t>.6&&!a.bg){a.bg=1;bowMove(a,()=>PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)}));AU('cloth');}
    if(t>1.6){a.hp='shoot';a.ht=0;once('hy_bowshoot',{fade:.35});AU('arrow');}return;}
   if(a.hp==='shoot'){if(t>1.8&&!a.dr){a.dr=1;AU('bow_draw',root.position);}
-   if(t>3.95&&!a.rel){a.rel=1;AU('bow_release',root.position);arrowObj=arrowObj||arrowMesh();const from=bones.LeftHand.getWorldPosition(V());arrowObj.position.copy(from);scene.add(arrowObj);arrowObj.visible=true;
+   if(t>SHOT.rel&&!a.rel){a.rel=1;AU('bow_release',root.position);if(handArrow&&handArrow.visible){if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);arrowObj=handArrow;handArrow=null;}/* the nocked arrow itself flies */else{arrowObj=arrowObj||arrowMesh();arrowObj.position.copy(bones.LeftHand.getWorldPosition(V()));}const from=arrowObj.position.clone();scene.add(arrowObj);arrowObj.visible=true;bowString(null);
     const to=a.hareAt.clone().add(V(0,.1,0));if(!ok)to.addScaledVector(V(fwd(H.face).z,0,-fwd(H.face).x),.5).addScaledVector(fwd(H.face),2.5);arrowObj.lookAt(to);a.ar={from,to,t:0};}
    if(a.ar){const A=a.ar;A.t+=dt/(ok?.18:.3);const k=Math.min(1,A.t);arrowObj.position.lerpVectors(A.from,A.to,k);if(k>=1){a.ar=null;if(ok){hareObj.attach(arrowObj);a.fall=0;}else arrowObj.visible=false;}}
    if(ok&&a.fall!=null&&a.fall<1){a.fall=Math.min(1,a.fall+dt/.25);hareObj.rotation.z=smooth(0,1,a.fall)*Math.PI/2*.95;hareObj.position.y=a.hareAt.y+.0;}
