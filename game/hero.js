@@ -1065,12 +1065,11 @@ export function createHero(ctx){
   return a;}
  // GRAB: knees bent just enough that the shoulder is within arm's reach of a low grip, then up again (the code squat keeps the feet planted)
  function jobSquat(a,dt,h,hand,down){const sh=bones[hand+'Arm'].getWorldPosition(V());const hz=Math.hypot(sh.x-h.x,sh.z-h.z);const R0=armLen*.9+PALM-.03;
-  const want=down&&h.y<root.position.y+.7&&hz<R0*.95?clamp(sh.y+(H.squat||0)-h.y-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,.4):0;/* only for a grip low down and within reach sideways (it squatted at the counter for an out-of-reach knife) */const c=H.squat||0;if(onTerrain(root.position)){/* OUTDOOR: down and up with an easy start and stop (the hard 1.1/s ramp jerked his feet 8 cm/frame² at the axe) */const vt=clamp((want-c)*5,-.9,.9);H.sqV=(H.sqV||0)+clamp(vt-(H.sqV||0),-4*dt,4*dt);H.squat=Math.max(0,c+H.sqV*dt);}else{H.sqV=0;H.squat=c+clamp(want-c,-1.1*dt,1.1*dt);}if(!want&&H.squat<.012){H.squat=0;H.sqV=0;}H.sqJob=H.squat>0;}
+  const want=down&&h.y<root.position.y+.7&&hz<R0*.95?clamp(sh.y+(H.squat||0)-h.y-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,.4):0;/* only for a grip low down and within reach sideways (it squatted at the counter for an out-of-reach knife) */const c=H.squat||0;H.squat=c+clamp(want-c,-1.1*dt,1.1*dt);if(!want&&H.squat<.012)H.squat=0;H.sqJob=H.squat>0;}
  // GRAB: a small step so the shoulder ends within ~0.36 m (level) of p: a reach, not a lean or a stretch
- const onTerrain=p=>{try{const G=window.__ground;return !!(G&&G.heightAt&&Math.abs(G.heightAt(p.x,p.z)-p.y)<.06);}catch(e){return false;}};
  function stepNear(p,hand){const sh=bones[hand+'Arm'];if(!sh||!p)return;const s0=sh.getWorldPosition(V());const d=V(p.x-s0.x,0,p.z-s0.z);const L=d.length();if(L<=.4)return;
   const q=root.position.clone().addScaledVector(d.normalize(),Math.min(.6,L-.34));pushOut(q);const mv=Math.hypot(q.x-root.position.x,q.z-root.position.z);if(mv<.04)return;
-  if(!onTerrain(root.position)){const p=root.position;for(const k of [.5,1]){const x=p.x+(q.x-p.x)*k,z=p.z+(q.z-p.z)*k;const y=floorAt(x,p.y+.2,z,.3,.5);if(y==null||Math.abs(y-p.y)>.04)return;}}/* OUTDOOR: on the ground there are no floor boards to test (the check always failed there: he reached 43 cm short for the axe and it flew into his fist) *//* only on the same floor: never a step off an edge or onto a ledge */
+  {const p=root.position;for(const k of [.5,1]){const x=p.x+(q.x-p.x)*k,z=p.z+(q.z-p.z)*k;const y=floorAt(x,p.y+.2,z,.3,.5);if(y==null||Math.abs(y-p.y)>.04)return;}}/* only on the same floor: never a step off an edge or onto a ledge */
   H.slide={x:q.x-root.position.x,z:q.z-root.position.z,yaw:0,k:0,d:Math.max(.4,mv/.6)};if(mv>.12)play('30',{fade:.25,speed:.9});}
  function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
  function teleParts(){const P=window.__props||P3;let t=P&&P.placed&&P.placed.telescope;if(!t){t=null;scene.traverse(o=>{if(!t&&o.name==='telescope'&&o.userData&&o.userData.tube)t=o;});if(!t)scene.traverse(o=>{if(!t&&o.userData&&o.userData.tube&&o.userData.tube.parent)t=o;});}const tube=t&&t.userData&&t.userData.tube;if(!tube||!tube.parent)return null;
@@ -1748,6 +1747,13 @@ export function createHero(ctx){
   const run=()=>{const fy=a.faceYaw;a.faceYaw=yaw;approachTo(a,S,0,()=>{a.faceYaw=fy;a.step='clip';a.t=0;a.hits=hits.slice();a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
    if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const x of a.hits)x[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const x of hits)x[1]();then();}});};
   const nn=nearNode(S);if(nn)goTo(nn,run);else run();}
+ // the bow peg (workshop wall): always from the same spot on the boards beside it (from the other side the adult hero's foot was
+ // 20 cm out over the edge of the deck for half a second, full gate)
+ function bowVisit(a,clip,hits,then){const pt=peg('bowPeg');const P=PP();const h=P&&P.toolHome?P.toolHome('bow'):null;if(!pt||!h){visit(a,pt,.45,clip,hits,then);return;}
+  const S=h.clone().add(V(.07,0,.44));{const fy=floorAt(S.x,h.y-1.2,S.z,.3,.6);S.y=fy!=null?fy:h.y-1.42;}const yaw=Math.atan2(h.x-S.x,h.z-S.z);
+  const run=()=>{const fy=a.faceYaw;a.faceYaw=yaw;approachTo(a,S,0,()=>{a.faceYaw=fy;a.step='clip';a.t=0;a.hits=hits.slice();a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
+   if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const x of a.hits)x[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const x of hits)x[1]();then();}});};
+  const nn=nearNode(S);if(nn)goTo(nn,run);else run();}
  function visit(a,pt,stand,clip,hits,then){if(!pt){then();return;}const nn=nearNode(pt);const run=()=>approachTo(a,pt,stand,()=>{a.step='clip';a.t=0;a.hits=hits.slice();a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
    if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const h of a.hits)h[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const h of hits)h[1]();then();}});
   if(nn)goTo(nn,run);else run();}
@@ -1793,12 +1799,12 @@ export function createHero(ctx){
  const peg=n=>{const p=PT(n);if(!p)return null;const q=p.clone();q.hand=true;/* hand height: stand on the floor below it, not on a floor level with it */return q;};
  function gearOn(a,o,then){const seq=[];
   if(o.jacket&&!GEAR.coat&&COAT)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketon',[[.14,()=>{try{PP().setHere&&PP().setHere('jacket',false);}catch(e){}COAT.on=true;GEAR.coat=true;}],[.55,()=>AU('zip')]]/* no rigid jacket in the hand: it leaves the peg at the touch and settles on the body (skinned coat fades in) */,next));
-  if(o.bow&&!GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',V(.06,.22,-.17),[0,0,-.18]);onBack('bow',V(-.02,.06,-.15),[0,0,.55]);/* OUTDOOR: slung across the back, both hands free for the ladder (Pavel: bow on the back) */GEAR.bow=true;}]],next));
+  if(o.bow&&!GEAR.bow)seq.push(next=>bowVisit(a,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',V(.06,.2,-.21),[0,0,-.18]);onBack('bow',V(-.02,.06,-.15),[0,0,.55]);/* OUTDOOR: slung across the back, both hands free for the ladder (Pavel: bow on the back) */GEAR.bow=true;}]],next));
   if(o.lantern&&!GEAR.lantern&&hasTool('lantern'))seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{PP().grab('lantern',bones.RightHand,{offset:V(0,.06,.03)});window.__lights&&window.__lights.attachHand&&window.__lights.attachHand(bones.RightHand);window.__lights.set('hand',true);}catch(e){}GEAR.lantern=true;}]],next));
   const run=i=>{if(a.leaving)return;if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  function gearOff(a,then){const seq=[];
   if(GEAR.lantern)seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{window.__lights.set('hand',false);window.__lights.detachHand();PP().release('lantern',{blend:.3});}catch(e){}GEAR.lantern=false;}]],next));
-  if(GEAR.bow)seq.push(next=>visit(a,peg('bowPeg'),.45,'hy_bowhang',[[.2,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}/* off the back into the hand first */}],[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.4});}catch(e){}GEAR.bow=false;}]],next));
+  if(GEAR.bow)seq.push(next=>bowVisit(a,'hy_bowhang',[[.2,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}/* off the back into the hand first */}],[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.4});}catch(e){}GEAR.bow=false;}]],next));
   if(GEAR.coat)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],next));
   const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  function gearSync(){try{const T=PP().tools||{};const on=o=>{for(let p=o&&o.parent;p;p=p.parent)if(p===root)return true;return false;};if(on(T.bow)||on(T.quiver))GEAR.bow=true;if(on(T.lantern))GEAR.lantern=true;}catch(e){}}
@@ -1860,7 +1866,7 @@ export function createHero(ctx){
   if(a.ph==='place'){a.cTop=c;const u=a.pt/T.place;let rd=a.rd;if(!rd){rd=a.rd=S.stack.pop()||(()=>{const m=roundMesh();m.position.copy(c).addScaledVector(r,.5);m.position.y-=.42;scene.add(m);return m;})();a.r0=rd.position.clone();}
    // the body: real mocap squat-and-lift (hy_pickground, CMU: hips lowest 0.9-1.3 s); without it a code squat
    const t=a.pt/(PICKC()==='hy_floorpick'?durOf('hy_floorpick')/2.333:1);/* the knee-safe pickup runs 3 s (sped up to 2.33 s it jerked the head 26): the place timings stretch with it */if(!a.pk){a.pk=1;if(has(PICKC()))once(PICKC(),{fade:.3});}const PK=has(PICKC());
-   H.squat=(PK?0:.42*smooth(.15,.8,t)*(1-smooth(1.3,1.9,t)))+.16*smooth(2.25,2.65,t)*(1-smooth(2.95,3.35,t));/* bends only once the step in has landed: squatting mid-stride bent the ankle up 53 deg (gate foot-bend) *//* knees bend to set the round down on the block (standing, the palm stayed 14 cm high and the round dropped) */const tp=rd.getWorldPosition(V()).add(V(0,SPL_RH+.01,0));
+   H.squat=(PK?0:.42*smooth(.15,.8,t)*(1-smooth(1.3,1.9,t)))+.11*smooth(2.25,2.7,t)*(1-smooth(2.95,3.4,t));/* bends only once the step in has landed: squatting mid-stride bent the ankle up 53 deg (gate foot-bend) *//* knees bend to set the round down on the block (standing, the palm stayed 14 cm high and the round dropped) */const tp=rd.getWorldPosition(V()).add(V(0,SPL_RH+.01,0));
    const w=smooth(.35,.85,t)*(1-smooth(2.75,3.05,t));
    if(rd.parent===bones.LeftHand&&(t>2.75||(t>2.45&&rd.getWorldPosition(V()).distanceTo(c)<.04))){scene.attach(rd);if(a.rW){rd.position.copy(a.rW);rd.quaternion.copy(a.rQ);}/* from where it was last frame (the hand has already moved on this frame) */a.settle={p:rd.position.clone(),q:rd.quaternion.clone(),t:0};a.placed=1;}
    if(a.settle){/* set down: the last few cm with the palm still on it, then the knock of wood on wood */const S2=a.settle;S2.t=Math.min(1,S2.t+dt/.4)/* pushed the last bit across the block top */;rd.position.lerpVectors(S2.p,c,smooth(0,1,S2.t));rd.quaternion.slerpQuaternions(S2.q,new THREE.Quaternion().setFromEuler(new THREE.Euler(0,S2.yaw??(S2.yaw=Math.random()*6),0)),S2.t);if(S2.t>=1){a.settle=null;AU('wood',c);}}
@@ -1885,7 +1891,7 @@ export function createHero(ctx){
    const C='hy_axechop',cd=has(C)?durOf(C):1.9;if(!a.clipOn&&has(C)){a.clipOn=1;play(C,{fade:.3});const A=actions[C];if(A)A.time=0;}
    const A=has(C)?actions[C]:null;const u=A?(A.time%cd)/cd:a.pt/T.swing;if(a.lu!=null&&u<a.lu-.5){a.struck=0;a.cyc=(a.cyc||0)+1;}a.lu=u;
    const last=a.hit+1>=hits;const thT=1.68,UT=.63,US=.82;/* top of the backswing just past vertical: further back the hands went behind his head and the body guard pulled them off the handle (film) */let th;
-   if(u<UT)th=thS+(thT-thS)*smooth(0,UT,u);else if(u<US){const k=(u-UT)/(US-UT);th=thT+(thS-.05-thT)*k*k;}else th=thS-.05;
+   if(u<UT)th=thS+(thT-thS)*smooth(0,UT,u);else if(u<US){const k=(u-UT)/(US-UT);th=thT+(thS-.05-thT)*k*k*(2.2-1.2*k);/* fast through the drop, a touch less at the very end: it slammed from full speed to a dead stop in one frame (gate: fist 11 cm/frame²) */}else th=thS-.05;
    if(u>=US&&!a.struck){a.struck=1;a.hit++;try{window.__audio&&window.__audio.contact?window.__audio.contact({tool:'axe',kind:'hit',pos:tgt.toArray(),strength:rnd(.8,1)}):AU('chop',tgt);}catch(e){AU('chop',tgt);}
     if(a.hit>=hits)splitRound(a,S,d,r);}
    if(u>US&&a.rd&&u<.95)th+=Math.sin((u-US)*60)*.025;/* stuck: rock the handle to free it */
@@ -2049,14 +2055,24 @@ export function createHero(ctx){
  // fist, fist -> the axe driven in the world) it never jumps: it starts from where it was and eases into its new place
  // (Grab: the pail 35-60 cm and the axe 50-107 cm in the frame it changed parents)
  const LATE=[];let lateOn=0;function lateFn(f){LATE.push(f);lateReg();}
- function lateReg(){if(lateOn)return;lateOn=1;stage('guard',()=>{for(const f of LATE){try{f();}catch(e){console.error(e);}}toolEase();});}
+ function lateReg(){if(lateOn)return;lateOn=1;stage('guard',()=>{for(const f of LATE){try{f();}catch(e){console.error(e);}}try{quiverClear();}catch(e){}toolEase();});}
+ // the quiver on his back: the arrows clear his head whatever the body does (adult hero, walking out: fletching 7.7 cm in the head).
+ // Each frame from its strap place on Spine2, pushed back (and a little down) by just what the head needs, eased
+ const QV={base:null,par:null,x:0};
+ function quiverClear(){const P=PP();const Q=P&&P.tools&&P.tools.quiver;if(!Q)return;if(Q.parent!==bones.Spine2){QV.base=null;QV.par=Q.parent;QV.x=0;return;}
+  if(!QV.base||QV.par!==Q.parent){QV.base={p:Q.position.clone(),q:Q.quaternion.clone()};QV.par=Q.parent;}else{Q.position.copy(QV.base.p);Q.quaternion.copy(QV.base.q);}Q.updateMatrixWorld(true);
+  const hd=bones.Head.getWorldPosition(V()),ht=(bones.HeadTop_End||bones.Head).getWorldPosition(V());const c=hd.clone().lerp(ht,.5);const R=hd.distanceTo(ht)*.62+.03;
+  let pen=-9,wp0=null;for(const y of [-.15,0,.06,.12,.17])for(const x of [-.03,0,.03]){const w=Q.localToWorld(V(x,y,0));const pn=R-w.distanceTo(c);if(pn>pen){pen=pn;wp0=w;}}
+  const away=wp0?wp0.clone().sub(c):V();away.y=Math.min(away.y,0);if(away.lengthSq()<1e-6)away.copy(fwd(root.rotation.y).negate());away.normalize();QV.d=QV.d?QV.d.lerp(away,.2).normalize():away;
+  const want=Math.max(0,pen)*1.6;QV.x+=want>QV.x?Math.min(want-QV.x,.05):-Math.min(QV.x-want,.004);if(QV.x<1e-4)return;
+  /* mostly lower down the back (it rides lower on a taller man), a little out from it */const sd=bones.Spine.getWorldPosition(V()).sub(bones.Spine2.getWorldPosition(V())).normalize();const dir=sd.multiplyScalar(.85).addScaledVector(QV.d||fwd(root.rotation.y).negate(),.35);const wp=Q.getWorldPosition(V()).addScaledVector(dir,QV.x);Q.parent.updateWorldMatrix(true,false);Q.position.copy(Q.parent.worldToLocal(wp));Q.updateMatrixWorld(true);}
  const EASE_T=['waterBucket','drainBucket','axe','logArmful'],easeSt={};
  function toolEase(){const P=PP();if(!P||!P.tools)return;const dt=1/60;
   for(const n of EASE_T){const o=P.tools[n];if(!o)continue;const S=easeSt[n];
    /* set once (a grab): nothing re-placed it since our blend last frame, so its real place is the one under the blend */if(S&&S.e&&S.tl&&S.par===o.parent&&o.position.equals(S.lp)&&o.quaternion.equals(S.lq)){o.position.copy(S.tl.p);o.quaternion.copy(S.tl.q);o.scale.copy(S.tl.s);}
    o.updateMatrixWorld(true);const wp=o.getWorldPosition(V()),wq=o.getWorldQuaternion(new THREE.Quaternion());
-   if(S&&S.par!==o.parent&&o.visible&&S.vis&&S.w.distanceTo(wp)<1.2&&(o.parent===scene||S.par===scene||isHeroPart(o.parent)||isHeroPart(S.par))){S.e={p:S.w.clone(),q:S.q.clone(),t:0};}
-   const tl={p:o.position.clone(),q:o.quaternion.clone(),s:o.scale.clone()};const E=S&&S.e;if(E&&o.parent){E.t+=dt/.32;if(E.t>=1)S.e=null;else{const k=E.t*E.t*(3-2*E.t);/* about its grip (the handle in the fist), not its origin: a turning axe swung its handle 18 cm out of the hand */const g=(o.userData.grip||V()).clone(),sc=o.getWorldScale(V()).x;const gW=(pp,qq)=>g.clone().multiplyScalar(sc).applyQuaternion(qq).add(pp);
+   if(S&&S.par!==o.parent&&o.visible&&S.vis&&S.w.distanceTo(wp)<1.2&&(o.parent===scene||S.par===scene||isHeroPart(o.parent)||isHeroPart(S.par))){S.e={p:S.w.clone(),q:S.q.clone(),t:0,d:(!isHeroPart(S.par)&&S.par!==scene)?.14:.32};}/* off its rest spot into the fist: quick, the hand is lifting it */
+   const tl={p:o.position.clone(),q:o.quaternion.clone(),s:o.scale.clone()};const E=S&&S.e;if(E&&o.parent){E.t+=dt/(E.d||.32);if(E.t>=1)S.e=null;else{const k=E.t*E.t*(3-2*E.t);/* about its grip (the handle in the fist), not its origin: a turning axe swung its handle 18 cm out of the hand */const g=(o.userData.grip||V()).clone(),sc=o.getWorldScale(V()).x;const gW=(pp,qq)=>g.clone().multiplyScalar(sc).applyQuaternion(qq).add(pp);
      const q=E.q.clone().slerp(wq,k);const p=gW(E.p,E.q).lerp(gW(wp,wq),k).sub(g.clone().multiplyScalar(sc).applyQuaternion(q));
      const M=new THREE.Matrix4().compose(p,q,o.getWorldScale(V()));o.parent.updateWorldMatrix(true,false);M.premultiply(o.parent.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);wp.copy(p);wq.copy(q);}}
    easeSt[n]={par:o.parent,w:wp,q:wq,vis:o.visible,e:S&&S.e||null,tl,lp:o.position.clone(),lq:o.quaternion.clone()};}}
