@@ -400,7 +400,7 @@ export function createHero(ctx){
   // CLIMB HOOK: both hands free on a ladder: a tool still in a hand goes over the back for the climb and back into the hand after
   if(!H.lad&&climb&&!window.__noClimb){H.stowed=[];for(const h of ['Left','Right']){const t=H.hold[h]&&H.hold[h].tool;if(t){try{onBack(t,V(h==='Left'?-.06:.06,.1,-.16),[0,0,h==='Left'?.5:-.5]);}catch(e){}H.hold[h]=null;H.stowed.push([h,t]);}}
    /* anything else in a hand (the bow back from the hunt, a bucket...): onto the back too, and back into that hand in the same grip after */
-   try{const T=PP().tools||{};for(const n in T){const o=T[n];for(const h of ['Left','Right'])if(o&&o.parent===bones[h+'Hand']){H.stowed.push([h,n,o.position.clone(),o.quaternion.clone(),o.scale.x]);if(/Bucket|meat|log|plate/i.test(n)){onBack(n,V(h==='Left'?-.04:.04,-.06,-.3),[0,0,0]);if(SLUNG_AT[n]){scene.attach(o);slung[n]=1;}/* OUTDOOR: hung on its rope by slungPost (hip bandolier) */}/* bulky: hung clear behind the back (phone watch: hips inside the bucket) */else onBack(n,V(h==='Left'?-.05:.05,.08,-.15),[0,0,h==='Left'?.55:-.55]);}}}catch(e){}}
+   try{const T=PP().tools||{};for(const n in T){const o=T[n];for(const h of ['Left','Right'])if(o&&o.parent===bones[h+'Hand']){H.stowed.push([h,n,o.position.clone(),o.quaternion.clone(),o.scale.x]);if(/Bucket|meat|log|plate/i.test(n)){onBack(n,V(h==='Left'?-.04:.04,-.06,-.3),[0,0,0]);if(SLUNG_AT[n]){scene.attach(o);slung[n]=1;try{slungPost();}catch(e){}}/* OUTDOOR: hung on its rope by slungPost (hip bandolier) at once: not one frame up at the shoulder blades, through his head (QA 14.5 cm) */}/* bulky: hung clear behind the back (phone watch: hips inside the bucket) */else onBack(n,V(h==='Left'?-.05:.05,.08,-.15),[0,0,h==='Left'?.55:-.55]);}}}catch(e){}}
   if(!H.lad){const a=N[step.from].p;const up=target.y>a.y+.01;H.lad={up,phase:up?'mount':'over',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};}
   const L=H.lad;const cz=c.lz+(.32+(c.rope?.05:0))*c.side;const F=c.side>0?Math.PI:0;H.state='walk';H.ground=false;
   const done=()=>{if(H.stowed&&H.stowed.length){for(const [h,t,pp,pq,ps] of H.stowed){try{slung[t]=0;if(pp){const o=PP().tools[t];const b=bones[h+'Hand'];if(o&&b){b.add(o);o.position.copy(pp);o.quaternion.copy(pq);o.scale.setScalar(ps);}}else grabTool(t,h);}catch(e){}}H.stowed=null;}/* CLIMB HOOK: tools back into the hands */H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.ladOff=root.position.clone();H.v=L.up?.45:0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
@@ -944,6 +944,11 @@ export function createHero(ctx){
  function sweepSpot(){const p=root.position.clone();if(roomy(p.x,p.y,p.z))return p;
   for(let r=.2;r<=1.2;r+=.1)for(let k=0;k<16;k++){const an=k*Math.PI/8,x=p.x+Math.sin(an)*r,z=p.z+Math.cos(an)*r;const y=floorAt(x,p.y,z,.25,.25);if(y==null||Math.abs(y-p.y)>.04)continue;if(roomy(x,y,z))return V(x,y,z);}
   return p;}
+ // squatting at a block or crate the knees go forward: he stays back so shins and feet never enter it (gate: shins 6.6 cm and
+ // feet in the chopblock while the axe went back into it). job({clear:obj}) runs it in take/put too.
+ function kneesClear(obj,dt){if(!obj||(H.squat||0)<.05)return;const bb=new THREE.Box3().setFromObject(obj);const bc=bb.getCenter(V());const R=Math.min(bb.max.x-bb.min.x,bb.max.z-bb.min.z)/2;let need=0;
+  for(const n of ['LeftLeg','RightLeg','LeftFoot','RightFoot','LeftToeBase','RightToeBase']){const b=bones[n];if(!b)continue;const q=b.getWorldPosition(V());if(q.y>bb.max.y+.05)continue;need=Math.max(need,R+.075-Math.hypot(q.x-bc.x,q.z-bc.z));}
+  if(need>0){const p=root.position;const v=V(p.x-bc.x,0,p.z-bc.z).normalize();const m=Math.min(need,.6*dt+need*.5);p.x+=v.x*m;p.z+=v.z*m;}}
  function job(o){const a={step:'go',t:0,T:0,held:[],faceYaw:o.faceYaw??null};const sp0=typeof o.pt==='function'?o.pt():o.pt;
   if(!sp0&&!o.node){a.update=()=>endTask(false);return a;}
   const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
@@ -964,7 +969,7 @@ export function createHero(ctx){
    if(a.step==='take'){// GRAB: step in until the tool's grip is within arm's reach, the fist onto the grip (not the tool's origin), close the hand only there
     const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=gripHome(n)||toolHome(n)||s;H.look=h;H.lookW=1;
     if(!a.st){a.st=1;a.pk=0;stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
-    const low=h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.gotIt);/* low down: he bends his knees to it (feet stay on the boards) */
+    const low=h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.gotIt);if(o.clear)kneesClear(o.clear,dt);/* low down: he bends his knees to it (feet stay on the boards) */
     a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.gotIt?1-smooth(0,.35,a.t-a.tg):1)];
     if(!a.gotIt&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.06||a.t>(low?1.5:1.6))){a.gotIt=true;a.tg=a.t;grabTool(n,hand);AU('cloth');}
     if(a.gotIt&&a.t-a.tg>.4&&!(H.squat>0)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else work();}}return;}
@@ -979,7 +984,7 @@ export function createHero(ctx){
    if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=gripHome(n)||toolHome(n)||s;H.look=h;H.lookW=1;
     // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
     if(!a.st){a.st=1;a.pk=0;stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
-    const low=h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.rel);
+    const low=h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.rel);if(o.clear)kneesClear(o.clear,dt);
     a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
     if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;relTool(hand,n);}
     if(a.rel&&a.t-a.tr>.4&&!(H.squat>0)){a.held.pop();a.rel=false;a.t=0;a.rg=null;a.st=0;}}};
@@ -1794,6 +1799,15 @@ export function createHero(ctx){
    const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);if(!any){any=true;strapTo(o,f,hs,S[2],n!=='meatBag');}}
   if(!any&&strap)strap.visible=false;}
 
+ // OUTDOOR: the supply bucket on its shelf above the sink is higher than his head: taken down it comes straight down off the
+ // shelf, in front of his chest, then to his side (QA: plumb from the fist it came down through his head and arms); put back the same way up
+ function shelfPath(a){const P=PP();const o=P&&P.tools&&P.tools.waterBucket;if(a.step!=='clip'||!o||o.parent!==bones.RightHand)return false;
+  const k=a.t/Math.max(.3,a.clipDur);const hs=(o.userData.home&&o.userData.home.scale)||1;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+  const P3=P.toolHome('waterBucket').add(V(0,.35*hs,0)),P2=P3.clone().add(V(0,-.3,0)).addScaledVector(f,-.04);const fl=root.position.y;
+  const P1=root.position.clone().addScaledVector(f,.42).addScaledVector(r,.06);P1.y=fl+1.18;
+  const P0=bones.Hips.getWorldPosition(V()).addScaledVector(r,.28).addScaledVector(f,.06).add(V(0,-.12,0));
+  const u=a.put?smooth(.08,.47,k):1-smooth(.47,.95,k);/* 1 = at the shelf */const seg=(A,B,x)=>A.clone().lerp(B,smooth(0,1,x));
+  const at=u>.75?seg(P2,P3,(u-.75)/.25):u>.4?seg(P1,P2,(u-.4)/.35):seg(P0,P1,u/.4);odReach('Right',at,1);odHang('waterBucket',0,true);return true;}
  const carryOv=()=>{slingTick();if(H.carry&&H.path.length&&!H.lad&&has(H.carry)&&!H.ov)overlay(H.carry,{fade:.3,until:.98,weight:.85});};
  Object.assign(MAKE,{
   // out to the forest for meat or wood; gear from the workshop, out of sight for a while, back with the haul, gear off again
@@ -1822,13 +1836,13 @@ export function createHero(ctx){
    visit(a,PT('waterShelf'),.45,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
     const spot=pond?pond.clone?pond.clone():V(pond.x,pond.y,pond.z):(N.g_exit1?N.g_exit1.p.clone().add(V(.6,0,.6)):null);
     const fill=()=>{a.step='fill';a.ft=0;a.fdone=()=>{try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.4});H.look=root.position.clone().addScaledVector(fwd(H.face),2.5);H.lookW=.6;/* a breath at the water before carrying it home */
-      H.wait={t:rnd(1.5,2.5),then:()=>{a.step='back';H.look=null;H.lookW=0;/* no stale gaze up the ladder (he walked off it staring at the sky) */visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};};};
+      H.wait={t:rnd(1.5,2.5),then:()=>{a.step='back';a.put=1;H.look=null;H.lookW=0;/* no stale gaze up the ladder (he walked off it staring at the sky) */visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};};};
     if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
    a.update=dt=>{if(a.step==='fill'){pondFill(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
-   a.post=()=>{if(a.step==='fill'&&a.dip){H.bucketTilt=true;pondFillPost(a);}else odHang('waterBucket',0);};
+   a.post=()=>{if(a.step==='fill'&&a.dip){H.bucketTilt=true;pondFillPost(a);}else if(!shelfPath(a))odHang('waterBucket',0);};
    a.leave=cb=>{try{P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
-  setbucket:(o={})=>{const a={step:'go',t:0,post:()=>odHang('waterBucket',0)};const P=PP();visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
+  setbucket:(o={})=>{const a={step:'go',t:0,put:1,post:()=>{if(!shelfPath(a))odHang('waterBucket',0);}};const P=PP();visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
    visit(a,PT('drainBay'),.22,'hy_pickground',[[.45,()=>{try{P.grab('drainBucket',bones.RightHand,{offset:V(0,.06,.02)});window.__audio.carry(true);}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
@@ -1860,7 +1874,7 @@ export function createHero(ctx){
    return job({pt:()=>top().add(V(0,SPL_RH,0)),node:N.g_block?'g_block':undefined,slide:false,stand:1.05,tools:[['axe','Right']],dur:[tot,tot],vary:false,
     start:a=>{a.plan=plan;a.ri=0;a.ph='lead';a.pt=0;a.split=0;splitStock(S,n);},
     look:a=>a.lk||top().add(V(0,SPL_RH,0)),lookW:.9,
-    tick:(a,dt)=>{if(SPLF.length)splitFall(dt);},
+    tick:(a,dt)=>{if(SPLF.length)splitFall(dt);kneesClear(blk,dt);},clear:blk,
     post:(a,dt)=>{if(!a.axeOn){const ax=PP().tools.axe;if(ax&&ax.parent===bones.RightHand)a.axeOn=1;}splitPost(a,dt,S);},
     end:a=>{H.squat=0;a.w=0;a.axeOn=0;if(a.rd&&a.rd.parent!==scene){scene.attach(a.rd);}try{grabTool('axe','Right');}catch(e){}/* back into the fist to carry it to the block */},
     result:a=>({ok:true,split:a.split})});},
