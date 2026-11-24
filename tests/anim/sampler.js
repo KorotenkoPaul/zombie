@@ -148,7 +148,7 @@ module.exports=function install(cfg){
  // the hatch lid swings or falls on its own after letGo (real gravity): mark those frames so the no-touch check skips them
  const HT=window.__house&&window.__house.hatch;let hatchFree=false;
  if(HT&&HT.letGo&&!HT.__qa){HT.__qa=1;const lg=HT.letGo.bind(HT),dr=HT.drive.bind(HT);HT.letGo=o=>{hatchFree=true;return lg(o);};HT.drive=a=>{hatchFree=false;return dr(a);};}
- const HAND=[heroBones.LeftHand,heroBones.RightHand];let lastDoor=null;const DYN=new Set(),DV=V(),DL=V(),DS=V(),DI=new THREE.Matrix4();const BODYP=VS.map(()=>[V(),0]);
+ const HAND=[heroBones.LeftHand,heroBones.RightHand];let lastDoor=null,hipLast=null;const hipNow=V();const DYN=new Set(),DV=V(),DL=V(),DS=V(),DI=new THREE.Matrix4();const BODYP=VS.map(()=>[V(),0]);
  const QB=['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase'].map(n=>heroBones[n]);
  const out={frames:[],GN,BN,nColl:C.length,skipped,verts:VS.length,rungs:RUNGS,QN:['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase']};
  const vp=V(),q=new THREE.Quaternion();
@@ -174,18 +174,22 @@ module.exports=function install(cfg){
   // which objects moved this frame (topmost moved one only), and how far the nearer palm is from it
   {const pr=[];heroBones.LeftHand.getWorldPosition(HP[0]);heroBones.LeftForeArm.getWorldPosition(FA);HP[0].add(HP[0].clone().sub(FA).setLength(.07));
    heroBones.RightHand.getWorldPosition(HP[1]);heroBones.RightForeArm.getWorldPosition(FA);HP[1].add(HP[1].clone().sub(FA).setLength(.07));const hp=H.root.position;
-   const moved=new Set();const DD=new Map();for(const m of MOV){const e=m.o.matrixWorld.elements;let d=0,dOther=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-m.last[k]);if(x>d)d=x;if(k!==0&&k!==5&&k!==10&&k!==13&&x>dOther)dOther=x;}DD.set(m,[d,dOther]);}
+   const moved=new Set(),carried=new Set();heroBones.Hips.getWorldPosition(hipNow);const DD=new Map();for(const m of MOV){const e=m.o.matrixWorld.elements;let d=0,dOther=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-m.last[k]);if(x>d)d=x;if(k!==0&&k!==5&&k!==10&&k!==13&&x>dOther)dOther=x;}DD.set(m,[d,dOther]);}
    for(const m of MOV){const e=m.o.matrixWorld.elements;const [d,dOther]=DD.get(m);
     // a child that only rises/falls or scales on its own (water level in a bucket or sink while the tap runs) is not something he moves
     const pm=m.o.parent&&MI.get(m.o.parent);const levelOnly=dOther<2e-4&&pm&&DD.get(pm)[0]<=2e-4;
     if(d>2e-4&&levelOnly){for(let k=0;k<16;k++)m.last[k]=e[k];continue;}
-    if(d>2e-4){moved.add(m.o);for(let k=0;k<16;k++)m.last[k]=e[k];}}
+    if(d>2e-4){moved.add(m.o);
+     // carried on the body (slung bucket/bag on a rope at the hip, parked to the skeleton every frame): it moves with the hips, not by magic.
+     // Same step as the hips (within 3 cm) and close to them -> carried, not counted by no-touch
+     const pl=V(m.last[12],m.last[13],m.last[14]),pn=V(e[12],e[13],e[14]);if(hipLast&&pn.distanceTo(hipNow)<.9&&pn.clone().sub(pl).distanceTo(hipNow.clone().sub(hipLast))<.03)carried.add(m.o);
+     for(let k=0;k<16;k++)m.last[k]=e[k];}}
    // the open door sways in the wind (props.js wind()): that is not the hero moving it. Count the door only when its open/bolt value changed
    const DR=window.__props&&window.__props.door;let doorStill=false;if(DR){const v=DR.open+DR.bolt*10;doorStill=v===lastDoor;lastDoor=v;}
    const inDoor=o=>{if(!DR||!DR.obj)return false;for(let x=o;x;x=x.parent)if(x===DR.obj)return true;return false;};
-   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;if(doorStill&&inDoor(o))continue;const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
+   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;if(doorStill&&inDoor(o))continue;if(carried.has(o))continue;const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
     BX.setFromObject(o);if(BX.isEmpty())continue;const dh=Math.min(BX.distanceToPoint(HP[0]),BX.distanceToPoint(HP[1]));pr.push([m.id,+(dh*100).toFixed(1)]);}
-   if(pr.length)r.mv=pr;if(hatchFree)r.hfree=1;
+   if(pr.length)r.mv=pr;hipLast=(hipLast||V()).copy(hipNow);if(hatchFree)r.hfree=1;
    // held tools: anything hung under a hand bone (not a bone); distance from that palm to the tool's mesh
    const gr=[];HAND.forEach((hb,k)=>{for(const ch of hb.children){if(ch.isBone||!ch.visible||ch.isLight)continue;BX.setFromObject(ch);if(BX.isEmpty()||BX.getSize(vp).length()>1.5)continue;gr.push([propName(ch)||ch.name||(ch.children[0]&&ch.children[0].name)||'tool',k,+(BX.distanceToPoint(HP[k])*100).toFixed(1)]);}});
    if(gr.length)r.grip=gr;
