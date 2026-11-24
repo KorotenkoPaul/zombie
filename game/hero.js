@@ -952,8 +952,14 @@ export function createHero(ctx){
  // bunk he first steps to a spot on the same boards with that much room (his head went into the bunk as he turned in place there).
  /* GRAB: the bunk bed and the bedroom door leaf (open or shut) are not in collide.js's shapes (depthAt 0 there), so the sweep checks them itself:
     how deep a body of radius r standing at (x,z) sits in the bunk's box or the leaf's own box (the leaf turns with its hinge) */
- let BKB=null;function hardPen(x,y,z,r){let d=0;if(!BKB&&ctx.bunk)BKB=new THREE.Box3().setFromObject(ctx.bunk);const B=BKB;
-  if(B&&y+1.7>B.min.y&&y<B.max.y)d=Math.max(d,Math.min(x+r-B.min.x,B.max.x+r-x,z+r-B.min.z,B.max.z+r-z));
+ /* GRAB (watch r12: he swept standing inside the desk chair, the broom over the table top): all furniture boxes count, not only the bunk;
+    the boxes are re-read once a frame, the chair moves */
+ let HPB=[],HPF=-1;function hardBoxes(){const fr=Math.floor(performance.now()/16);if(fr===HPF)return HPB;HPF=fr;HPB=[];
+  /* the solid props' boxes (props.js place(): table, chest, stove...; a merged table has no meshes of its own to measure), the chair live, the bunk */
+  for(const o of OBST)if(o.n!=='chair'&&o.x1!=null)HPB.push(new THREE.Box3(V(o.x0,o.y,o.z0),V(o.x1,o.y+1,o.z1)));
+  for(const o of [ctx.chair,ctx.bunk])if(o){const b=new THREE.Box3().setFromObject(o);if(!b.isEmpty())HPB.push(b);}return HPB;}
+ function hardPen(x,y,z,r){let d=0;
+  for(const B of hardBoxes())if(y+1.7>B.min.y&&y<B.max.y)d=Math.max(d,Math.min(x+r-B.min.x,B.max.x+r-x,z+r-B.min.z,B.max.z+r-z));
   const P=window.__props||P3,D=P&&P.door;if(D&&D.leaf){const L=D.leaf();L.updateMatrixWorld(true);const w=(D.width||.77)/2;for(const h of [.5,1.2]){const q=L.worldToLocal(V(x,y+h,z));if(q.y>-.2&&q.y<2.1)d=Math.max(d,Math.min(q.x+w+r,w+r-q.x,q.z+.09+r,.15+r-q.z));}}
   return Math.max(0,d);}
  function roomy(x,y,z){const CL=window.__collide;if(hardPen(x,y,z,.45)>0)return false;if(!CL||!CL.depthAt)return true;for(const r of [.3,.45,.58])for(let k=0;k<16;k++){const an=k*Math.PI/8;for(const h of [.95,1.15,1.3])if(CL.depthAt(x+Math.sin(an)*r,y+h,z+Math.cos(an)*r)>.003)return false;}return true;}
@@ -961,7 +967,7 @@ export function createHero(ctx){
  function bedOver(p,x,z,m=0){if(!(Math.abs(p.y-lv.BD)<.3&&p.x<.4))return 0;return Math.max(0,x-(.4-.32-m),(-4.2+.3+m)-x,(.5+.3+m)-z,z-(3.95-.3-m));}
  function bedOut(p,x,z,m=0){return bedOver(p,x,z,m)>0;}
  function sweepSpot(){const p=root.position.clone();if(roomy(p.x,p.y,p.z))return p;
-  for(let r=.2;r<=1.2;r+=.1)for(let k=0;k<16;k++){const an=k*Math.PI/8,x=p.x+Math.sin(an)*r,z=p.z+Math.cos(an)*r;const y=floorAt(x,p.y,z,.25,.25);if(y==null||Math.abs(y-p.y)>.04)continue;if(bedOut(p,x,z,.12))continue;if(roomy(x,y,z))return V(x,y,z);}
+  for(let r=.2;r<=2.6;r+=.1)for(let k=0;k<16;k++)/* GRAB: the bedroom is tight (bunk, chair, table, door): look as far as the open floor before the door */{const an=k*Math.PI/8,x=p.x+Math.sin(an)*r,z=p.z+Math.cos(an)*r;const y=floorAt(x,p.y,z,.25,.25);if(y==null||Math.abs(y-p.y)>.04)continue;if(bedOut(p,x,z,.12))continue;if(roomy(x,y,z))return V(x,y,z);}
   return p;}
  /* the belt: a tool fetched from far away is hung on his right hip when the work is done (it used to ease home across the house by
     itself); the next job that needs it takes it from there, by hand. H.belt names the tool on the belt */
