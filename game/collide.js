@@ -317,12 +317,17 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     // and fades in continuously as the limb straightens.
     // the body's own forward, never the root's yaw (during tasks the root yaw and the body can differ): a knee points where its toes
     // point, an elbow away from where the pelvis faces (the rig's pelvis faces its local -Z, HERO-RULES.md)
-    { let fw = null; if (leg) { const toe = (C === bones.LeftFoot ? bones.LeftToeBase : bones.RightToeBase); if (toe) { fw = toe.getWorldPosition(V()).sub(c); fw.y = 0; } }
-      else if (bones.Hips) { fw = V(0, 0, 1).applyQuaternion(bones.Hips.getWorldQuaternion(_q2)); fw.y = 0; }
-      if (fw && fw.lengthSq() > 1e-6) { fw.normalize(); pole.addScaledVector(fw, (leg ? .04 : -.04) * l1); } }
+    { let fw = null; if (leg) { const toe = (C === bones.LeftFoot ? bones.LeftToeBase : bones.RightToeBase); if (toe) { fw = toe.getWorldPosition(V()).sub(c); } }
+      else if (bones.Hips) { fw = V(0, 0, 1).applyQuaternion(bones.Hips.getWorldQuaternion(_q2)); }
+      // lying / bent far over, the pelvis forward is nearly vertical: its flattened remainder is a random direction, and normalising it
+      // flipped a resting arm up over the head (bed get-up); the bias then fades out instead
+      if (fw && fw.lengthSq() > 1e-8) { fw.normalize(); fw.y = 0; const h = fw.length(); if (h > .35) pole.addScaledVector(fw.multiplyScalar(1 / h), (leg ? .04 : -.04) * l1 * Math.min(1, (h - .35) / .3)); } }
     const tv = target.clone().sub(a); const dd = clamp(tv.length(), Math.abs(l1 - l2) + .01, l1 + l2 - 1e-4); /* no forced knee bend on a straight leg (that pops) */ const dir = tv.normalize();
     const ca = clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1), sa = Math.sqrt(1 - ca * ca); let pp = pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pp.lengthSq() < 1e-8) pp = V(0, 0, 1); pp.normalize();
-    const knee = a.clone().addScaledVector(dir, ca * l1).addScaledVector(pp, sa * l1); turnBone(A, b, knee); turnBone(Bb, C.getWorldPosition(V()), a.clone().addScaledVector(dir, dd));
+    const knee = a.clone().addScaledVector(dir, ca * l1).addScaledVector(pp, sa * l1);
+    // a correction of a few cm never swings the elbow / knee far: if the bend plane would jump (a pole flip), the limb is left as animated
+    if (knee.distanceTo(b) > Math.max(.15, 2.5 * target.distanceTo(c))) return;
+    turnBone(A, b, knee); turnBone(Bb, C.getWorldPosition(V()), a.clone().addScaledVector(dir, dd));
     C.parent.getWorldQuaternion(_pq); C.quaternion.copy(_pq.invert().multiply(endQ)); C.updateMatrixWorld(true);
   }
   const LIMB = [null, null,
@@ -376,7 +381,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     for (let c = 0; c < 6; c++) { const b = CB[c]; nearTrunk[c] = !!trunk && Math.hypot(Math.max(b[0].x - trunk.TAX[0], trunk.TAX[0] - b[1].x, 0), Math.max(b[0].z - trunk.TAX[1], trunk.TAX[1] - b[1].z, 0)) < 2.4; }
   }
   const _hp = V(), lastHip = V(1e9, 0, 0), lastEnd = [null, null, V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0)]; let lastTouch = -100;
-  const kneel = [false, false, false, false, false, false], _kp = V(), _fp = V();
+  const kneel = [false, false, false, false, false, false], _kp = V(), _fp = V(), _kn = V();
   function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++;
@@ -390,7 +395,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     root.position.add(off.root); applied.copy(off.root); root.updateMatrixWorld(true);
     if (off.head.lengthSq() > 1e-8) bendHead(off.head);
     for (let c = 2; c < 6; c++) { const L = LIMB[c]; if (!L.C) continue; L.C.getWorldPosition(anim[c]); if (off.limb[c].lengthSq() > 1e-8) ik2(L.A, L.B, L.C, anim[c].clone().add(off.limb[c]), c >= 4); }
-    skin(1 | 16 | 32); heldVsBody(dt); // the carrying arm first (against the legs and body), so the checks below see it where it is
+    skin(1 | 16 | 32); if (!(window.__colX && window.__colX.noHeld)) heldVsBody(dt); // the carrying arm first (against the legs and body), so the checks below see it where it is
     let it = 0, worst = 0, liveMask = 0;
     // kneeling / squatting (shin far from upright): the shin and foot rest on the boards by design; an IK lift of such a leg
     // swings the knee the wrong way (fix_board), so those legs are left alone
@@ -413,15 +418,17 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         if (tc <= 1) { sumN[tc].addScaledVector(OUT.n, ex); sumW[tc] += ex; if (ex > pd[tc]) pd[tc] = ex; }
         // legs: only lift a foot / shin out of what is under it; a sideways nudge of a planted foot is a visible slide
         // (seated / sitting on an edge / lying the feet are not planted: a leg through a rail or a bed post is pushed out sideways too)
-        if (P.chain >= 4 && kneel[P.chain]) continue;
+        // a kneeling leg is never IK-lifted (knee flips), but a shin / knee inside furniture (stool, barrel, bunk) moves the whole
+        // body back out of it, sideways only and slowly (the floor under a kneeling shin is fine)
+        if (P.chain >= 4 && kneel[P.chain]) { if (!fit && !lying && !hero.lad && OUT.n.y < .5 && ex > .01) { _kn.set(OUT.n.x, 0, OUT.n.z); if (_kn.lengthSq() > .04) { _kn.normalize(); sumN[0].addScaledVector(_kn, ex); sumW[0] += ex; if (ex > pd[0]) pd[0] = ex; } } continue; }
         // seated the hands rest on things (book, armrest): a graze under 2 cm is left alone, so the arm is
         // not nudged on and off every frame (that was hand jitter while reading); a real dip into the bunk still is pushed out
-        if (hero.seated && (P.chain === 2 || P.chain === 3) && ex < .02) continue;
+        if (hero.seated && !(window.__colX && window.__colX.oldLad) && (P.chain === 2 || P.chain === 3) && ex < .02) continue;
         if (P.chain >= 4 && OUT.n.y < .5 && !fit && !lying) continue;
         if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4 && OUT.n.y >= .5 && !fit && !lying) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
-      // on a ladder the climb (climb.js) owns hands and feet on the rungs: collide stays out (its pushes were hand jumps on the pull-up)
-      if (hero.lad) { pd.fill(0); anyP = false; }
+      // on a ladder the climb (climb.js) owns the hands on the rails (collide's hand pushes were jumps on the pull-up); a foot is still lifted out of a rung
+      if (hero.lad) { pd[0] = pd[1] = 0; if (!(window.__colX && window.__colX.oldLad)) pd[2] = pd[3] = 0; anyP = pd.some(v => v > 0); }
       for (const c of [0, 1]) if (sumW[c] > 0) push[c].copy(sumN[c]).multiplyScalar(1 / sumW[c]).multiplyScalar(pd[c] + .001);
       // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall); a sole is
       // only lifted straight up out of a board (never moved sideways); arms and head give way. Walking into things is the walk graph's job.
@@ -460,14 +467,15 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // the carrying arm's sideways clearance (m), in the body's frame (a world offset pointed the wrong way once he turned)
   const heldAmt = [0, 0, 0, 0, 0, 0];
   function heldVsBody(dt) { const GR = window.__grab;
-    // at a task the tool works close to the body by design (hammer and board at the bunk): only a thing carried on the way is moved
-    const busy = !!(hero.fit || hero.seated || hero.inBed || hero.swing || hero.state === 'work');
+    // seated / lying the hands are the pose's; at a standing task the tool works close to the body by design (hammer and board at
+    // the bunk), so there only a load swinging through the shins / feet is moved, and by less (watering can at the plant)
+    const busy = !!(hero.fit || hero.seated || hero.inBed || hero.swing), task = hero.state === 'work', lowY = root.position.y + .45;
     for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const gripped = GR && GR.grip && GR.grip[c === 2 ? 'Left' : 'Right'];
       const HBs = gripped || busy ? [] : heldBoxes(L.C); if (!HBs.length) { heldAmt[c] *= Math.exp(-dt * (busy && !gripped ? 1 : 3)); /* at a task: eased back over ~1 s, not dropped and regrown at every stop */ if (heldAmt[c] < .002) { heldAmt[c] = 0; continue; } }
       L.A.getWorldPosition(_hc); bones.Hips.getWorldPosition(_hp2); const out = V(_hc.x - _hp2.x, 0, _hc.z - _hp2.z); if (out.lengthSq() < 1e-6) continue; out.normalize();
-      if (HBs.length) { let worst = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > worst) worst = d; } }
+      if (HBs.length) { let worst = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; if (task && (P.chain < 4 || P.p.y > lowY)) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > worst) worst = d; } }
         // grows quickly while the load is in the leg, never shrinks while he still carries it
-        if (worst > .005) { heldAmt[c] = Math.min(.15, heldAmt[c] + Math.min(worst + .01, .006)); st.held = (st.held || 0) + 1; } }
+        if (worst > .005) { heldAmt[c] = Math.min(task ? .09 : .15, heldAmt[c] + Math.min(worst + .01, .006)); st.held = (st.held || 0) + 1; } }
       if (heldAmt[c] > 0) { const t = L.C.getWorldPosition(V()).addScaledVector(out, heldAmt[c]); ik2(L.A, L.B, L.C, t, false); } }
   }
 
