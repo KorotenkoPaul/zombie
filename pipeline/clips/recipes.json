@@ -131,8 +131,8 @@
  "sweep": {
   "src": "13_23",
   "t0": 3.0,
-  "t1": 30.0,
-  "note": "Real mocap. Sweeping the floor with a broom, small steps."
+  "t1": 21.4,
+  "note": "Real mocap. Sweeping the floor with a broom, small steps; right hand on top of the handle (near the chin), left hand low. Trimmed to 18.4 s so the hand switch is gone. Attach the broom to both hands (top = RightHand)."
  },
  "squat_pickup": {
   "src": "69_70",
@@ -312,5 +312,11 @@
   "t0": 2.75,
   "t1": 4.2,
   "note": "Second 90 deg right turn take (69_18)."
+ },
+ "sweep_L": {
+  "src": "13_23",
+  "t0": 23.0,
+  "t1": 27.3,
+  "note": "Same actor sweeping with the hands swapped: LEFT hand on top of the handle, right hand low. 4.3 s (the turn-away at the end is cut)."
  }
 }
