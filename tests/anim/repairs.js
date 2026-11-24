@@ -8,7 +8,7 @@ const TASKS=arg('tasks','fix_board,fix_shingle,fix_wall,fix_railing,fix_rope,fix
 const OUT=path.resolve(arg('out','/tmp/repairs'));const HERO=arg('hero','old');const SHOTS=+arg('shots',1);const WORK=+arg('work',8);
 fs.mkdirSync(OUT,{recursive:true});
 const install=()=>{const T=__dbg.THREE,HH=__dbg.HH,B=HH.bones,V=(x,y,z)=>new T.Vector3(x,y,z);
- window.__TR={};for(const sl of HH.SLOTS)HH.stage(sl,()=>{const hp=B.Hips.getWorldPosition(V());const hf=B.Head.getWorldPosition(V()).sub(hp).setY(0);const an=B.LeftUpLeg.getWorldPosition(V()).sub(B.RightUpLeg.getWorldPosition(V())).cross(V(0,1,0));const f=HH.H.face;const A=x=>+(((Math.atan2(x.x,x.z)-f+9*Math.PI)%(2*Math.PI))-Math.PI).toFixed(2);const lu=HH.root.worldToLocal(B.LeftUpLeg.getWorldPosition(V())),ru=HH.root.worldToLocal(B.RightUpLeg.getWorldPosition(V()));const la=lu.sub(ru).cross(V(0,1,0));const rf=HH.root.localToWorld(V(0,0,1)).sub(HH.root.position);window.__TR[sl]=[A(hf),A(an),+Math.atan2(la.x,la.z).toFixed(2),A(rf)];});
+ window.__TR={};if(HH.SLOTS)for(const sl of HH.SLOTS)HH.stage(sl,()=>{const hp=B.Hips.getWorldPosition(V());const hf=B.Head.getWorldPosition(V()).sub(hp).setY(0);const an=B.LeftUpLeg.getWorldPosition(V()).sub(B.RightUpLeg.getWorldPosition(V())).cross(V(0,1,0));const f=HH.H.face;const A=x=>+(((Math.atan2(x.x,x.z)-f+9*Math.PI)%(2*Math.PI))-Math.PI).toFixed(2);const lu=HH.root.worldToLocal(B.LeftUpLeg.getWorldPosition(V())),ru=HH.root.worldToLocal(B.RightUpLeg.getWorldPosition(V()));const la=lu.sub(ru).cross(V(0,1,0));const rf=HH.root.localToWorld(V(0,0,1)).sub(HH.root.position);window.__TR[sl]=[A(hf),A(an),+Math.atan2(la.x,la.z).toFixed(2),A(rf)];});
  window.__R={frame(){const w=b=>B[b]?B[b].getWorldPosition(V()):null;const hq=B.Hips.getWorldQuaternion(new T.Quaternion());
   const fw=w('LeftUpLeg').sub(w('RightUpLeg')).cross(V(0,1,0)).setY(0).normalize();/* pelvis forward from anatomy (left hip minus right hip x up), axis-free */const o={};
   for(const s of ['Left','Right']){const U=w(s+'UpLeg'),K=w(s+'Leg'),A=w(s+'Foot');const th=K.clone().sub(U),sh=A.clone().sub(K);
@@ -17,7 +17,7 @@ const install=()=>{const T=__dbg.THREE,HH=__dbg.HH,B=HH.bones,V=(x,y,z)=>new T.V
   const a=HH.act;const P=window.__props;const hm=P&&P.tools&&P.tools.benchHammer;let face=null;
   if(hm&&hm.parent===B.RightHand){const sc=hm.getWorldScale(V()).x;face=hm.localToWorld(V(.102,.146,0));}
   const nail=a&&a.nail?a.nail.clone():null;const sh=w('RightArm');let nr=null,hdAng=null;if(nail){const hp=w('Hips');const hf=w('Head').sub(hp).setY(0);const nd=nail.clone().sub(hp).setY(0);hdAng=+(Math.atan2(hf.clone().cross(nd).y,hf.dot(nd))*180/Math.PI).toFixed(0);const d=nail.clone().sub(hp);nr=[+d.dot(fw).toFixed(2),+(d.clone().setY(0).cross(fw).y).toFixed(2),+(nail.y-HH.root.position.y).toFixed(2)];}
-  const acts=Object.entries(HH.actions).filter(([k,x])=>x.isRunning()&&x.getEffectiveWeight()>.05).map(([k,x])=>k+':'+x.getEffectiveWeight().toFixed(2));return {tr:JSON.parse(JSON.stringify(window.__TR)),acts,hdAng,dbg:HH.H.dbgNail,nr,shY:+(sh.y-HH.root.position.y).toFixed(2),task:__dbg.hero.task,step:a&&a.step,clip:HH.H&&HH.H.clip,hipY:+(w('Hips').y-HH.root.position.y).toFixed(3),legs:o,far:!!(a&&a.hmFar),
+  const acts=Object.entries(HH.actions).filter(([k,x])=>x.isRunning()&&x.getEffectiveWeight()>.05).map(([k,x])=>k+':'+x.getEffectiveWeight().toFixed(2));return {rx:+HH.root.rotation.x.toFixed(2),hm:HH.act&&HH.act.hm?+HH.act.hm.ph.toFixed(2):null,se:HH.act&&HH.act.hm?+(HH.act.hm.e||0).toFixed(3):null,tr:JSON.parse(JSON.stringify(window.__TR)),acts,hdAng,dbg:HH.H.dbgNail,nr,shY:+(sh.y-HH.root.position.y).toFixed(2),task:__dbg.hero.task,step:a&&a.step,clip:HH.H&&HH.H.clip,hipY:+(w('Hips').y-HH.root.position.y).toFixed(3),legs:o,far:!!(a&&a.hmFar),
    nailSh:nail?+sh.distanceTo(nail).toFixed(3):null,faceNail:nail&&face?+face.distanceTo(nail).toFixed(3):null,hit:a&&a.hm?a.hm.hit:0,
    root:HH.root.position.toArray().map(v=>+v.toFixed(3)),yaw:+HH.root.rotation.y.toFixed(3),face:+HH.H.face.toFixed(3)};}};};
 (async()=>{const o=await open({seed:1,query:(HERO==='new'?'?hero=new&':HERO==='detail'?'?hero=detail&':'?')+'cam=free'});const p=o.p;
@@ -32,10 +32,10 @@ const install=()=>{const T=__dbg.THREE,HH=__dbg.HH,B=HH.bones,V=(x,y,z)=>new T.V
   await p.evaluate(()=>__qa.step(60,1/60));// blend in
   const fr=await p.evaluate(n=>{const r=[];for(let i=0;i<n;i++){__qa.step(1,1/60);r.push(__R.frame());}return r;},60*WORK);
   const knees=fr.flatMap(f=>['Left','Right'].map(s=>f.legs[s]));const wrong=knees.filter(k=>k.knee<150&&k.kf<-2).length;
-  const hits=[];for(let i=1;i<fr.length;i++)if(fr[i].hit&&!fr[i-1].hit&&fr[i].faceNail!=null)hits.push(fr[i].faceNail);
+  const hits=[],ses=[];for(let i=1;i<fr.length;i++)if(fr[i].hit&&!fr[i-1].hit&&fr[i].faceNail!=null){hits.push(fr[i].faceNail);ses.push(fr[i].se);}
   const S={frames:fr.length,far:fr.filter(f=>f.far).length,minKnee:Math.min(...knees.map(k=>k.knee)),wrongKnee:wrong,worstKf:Math.min(...knees.map(k=>k.kf)),
-   hipY:[Math.min(...fr.map(f=>f.hipY)),Math.max(...fr.map(f=>f.hipY))],nailSh:fr[0].nailSh,hits:hits.length,hitErr:hits.length?+Math.max(...hits).toFixed(3):null,
-   tr:fr.at(-1).tr,acts:fr.at(-1).acts,hdAng:fr[0].hdAng,dbg:fr[0].dbg,nr:fr[0].nr,shY:fr[0].shY,minFaceNail:Math.min(...fr.map(f=>f.faceNail??9)),clip:fr[0].clip,root:fr[0].root,step:fr.at(-1).step,task:fr.at(-1).task};
+   hipY:[Math.min(...fr.map(f=>f.hipY)),Math.max(...fr.map(f=>f.hipY))],nailSh:fr[0].nailSh,ses,hitsAll:hits,hits:hits.length,hitErr:hits.length?+Math.max(...hits).toFixed(3):null,
+   rx:fr.map(f=>f.rx).filter((v,i)=>i%60==0),tr:fr.at(-1).tr,acts:fr.at(-1).acts,hdAng:fr[0].hdAng,dbg:fr[0].dbg,nr:fr[0].nr,shY:fr[0].shY,minFaceNail:Math.min(...fr.map(f=>f.faceNail??9)),clip:fr[0].clip,root:fr[0].root,step:fr.at(-1).step,task:fr.at(-1).task};
   res[t]=S;console.log(t,JSON.stringify(S));console.log("legs",JSON.stringify(fr[0].legs),JSON.stringify(fr[150]&&fr[150].legs));
   if(SHOTS){for(let k=0;k<4;k++){const yaw=fr[0].face+k*Math.PI/2;
     await p.evaluate(([yaw,dist])=>{const scene0=()=>{let s=__dbg.HH.root;while(s.parent)s=s.parent;return s;};const T=__dbg.THREE,HH=__dbg.HH,B=HH.bones;const cam=__qaCamera;const hip=B.Hips.getWorldPosition(new T.Vector3());const tg=hip.clone().add(new T.Vector3(0,.15,0));
