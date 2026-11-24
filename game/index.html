@@ -1167,7 +1167,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  let moved=false;for(const b of B){if(b.loose){syncBoard(b);moved=true;}}if(moved){boards.instanceMatrix.needsUpdate=true;}
  // splinters
  for(let i=spl.length-1;i>=0;i--){const s=spl[i];s.age+=dt;if(s.age>s.life){world.removeRigidBody(s.rb);spl.splice(i,1);}}
- for(let i=0;i<spl.length;i++){const s=spl[i];const t=s.rb.translation(),q=s.rb.rotation();tM.compose(tP.set(t.x,t.y,t.z),tQ.set(q.x,q.y,q.z,q.w),s.s);SPL.setMatrixAt(i,tM);}SPL.count=spl.length;SPL.instanceMatrix.needsUpdate=true;
+ for(let i=0;i<spl.length;i++){const s=spl[i];const t=s.rb.translation(),q=s.rb.rotation();tM.compose(tP.set(t.x,t.y,t.z),tQ.set(q.x,q.y,q.z,q.w),s.s);SPL.setMatrixAt(i,tM);}SPL.count=spl.length;/* [PERF] hidden while empty: an empty InstancedMesh still went through setProgram and switched boardMat's program twice a frame, and its 16 KB matrix buffer was re-uploaded every frame */SPL.visible=spl.length>0;if(spl.length)SPL.instanceMatrix.needsUpdate=true;
  for(let i=puffs.length-1;i>=0;i--){const q=puffs[i];q.age+=dt;const k=q.age/q.life;if(k>=1){scene.remove(q.s);q.s.material.dispose();puffs.splice(i,1);continue;}q.s.position.addScaledVector(q.v,dt);q.s.scale.setScalar(q.s0+(q.s1-q.s0)*Math.sqrt(k));q.s.material.opacity=(k<.15?k/.15:1)*(1-k)*.55;}
  // arrows: fly nose-first, stick where they land
  for(let i=arrows.length-1;i>=0;i--){const a=arrows[i];a.age+=dt;if(a.rb){const t=a.rb.translation();a.g.position.set(t.x,t.y,t.z);if(!a.stuck){const v=a.rb.linvel();const dir=V(v.x,v.y,v.z);if(dir.lengthSq()>.01)a.g.quaternion.setFromUnitVectors(V(1,0,0),dir.normalize());}}
