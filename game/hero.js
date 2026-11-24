@@ -46,6 +46,11 @@ export function createHero(ctx){
  const P3=ctx.props||window.__props||null;
  const root=gltf.scene;scene.add(root);
  root.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;if(o.material){o.material.roughness=Math.max(.55,o.material.roughness??.8);o.material.metalness=0;}}});
+ /* [PERF] shadow proxy: a hero glb may carry 'heroShadow' (body+head decimated to ~4.6k tris, same skin). It alone casts the body's
+    shadow, on layer 6, which only the shadow cameras see (index.html sun, lights.js lamps); Mesh_0 stops casting (32k tris less per
+    shadow pass). vest and boots keep their own shadows, so taking them off still shows. */
+ {const HSH=root.getObjectByName('heroShadow');if(HSH){HSH.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=false;o.layers.set(6);}});
+  const M0=root.getObjectByName('Mesh_0');if(M0)M0.traverse(o=>{if(o.isMesh)o.castShadow=false;});}}
  const bones={};root.traverse(o=>{if(o.isBone)bones[o.name.replace('mixamorig','').replace(':','')]=o;});
  for(const c of movesToClips(ctx.moves))if(!gltf.animations.some(a=>a.name===c.name))gltf.animations.push(c);
  // ---------- eyelids: the eyes are painted into the texture, so closed eyes are two skin-coloured lids on the Head bone ----------
