@@ -995,8 +995,8 @@ export function buildProps(ctx) {
   const kbar = place('kbarrel', barrel(.78), -4.02, KT, 3.33);
   { const tp = new THREE.Group(); for (let i = -1; i <= 1; i++) W(tp, .2, .03, .6, i * .205, .015, 0, { mat: M.woodLight, r: .008, grain: 2 }); for (const x of [-.14, .14]) W(tp, .5, .025, .05, 0, -.0125, x, { mat: M.woodDark, r: .006, grain: 0 }); tp.rotation.y = .12;
     tp.position.set(0, .785, 0); kbar.add(tp); bake(tp); }
-  const kst = place('kstool', stool(), -3.53, KT, 3.3, { seat: true }); out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 };
-  place('kbucket', bucket(.34), -3.55, KT, 3.28);
+  const kst = place('kstool', stool(), -3.40, KT, 3.33, { seat: true }); /* 62 cm from the barrel: he sits half turned (face +.87 rad), legs past the barrel's left, chest turned to the plate */ out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 + .87 };
+  place('kbucket', bucket(.34), -4.22, KT, 3.86); /* corner behind the barrel (was under the stool) */
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
 
@@ -1020,17 +1020,28 @@ export function buildProps(ctx) {
       setOpen(k) { ds.open = ds.toO = clamp01(k); if (ds.open > .02) ds.bolt = ds.toB = 0; apply(); },
       setBolt(k) { ds.bolt = ds.toB = ds.open > .02 ? 0 : clamp01(k); apply(); },
       openTo(k) { ds.toO = clamp01(k); }, boltTo(k) { ds.toB = clamp01(k); },
+      get target() { return ds.toO; }, get boltTarget() { return ds.toB; },
+      // the leaf (for a palm pushing on it) and its width; hand(kind) is set by grab.js: openTo/boltTo then only move the door
+      // ('open') or the bolt ('bolt') while a palm is on it (Pavel: nothing moves by itself). Without grab.js the old timed swing.
+      leaf() { return D.piv.children[0]; }, width: D.w, hand: null,
       // world points for the hand: the knob on the latch edge, and the bolt knob
       handle(t = V()) { D.piv.updateMatrixWorld(true); return D.piv.children[0].localToWorld(t.set(-D.w / 2 + .1, D.h * .46, .07)); },
       boltKnob(t = V()) { D.bar.updateMatrixWorld(true); return D.bar.localToWorld(t.set(.02, .034, .01)); },
-      update(dt) { let ch = false; for (const [k, t, r] of [['open', 'toO', .9], ['bolt', 'toB', 3]]) { if (ds[k] !== ds[t]) { const d = ds[t] - ds[k]; ds[k] = Math.abs(d) < r * dt ? ds[t] : ds[k] + Math.sign(d) * r * dt; ch = true; } } if (ch) { if (ds.open > .02) ds.bolt = ds.toB = 0; apply(); }
+      update(dt) { let ch = false; const hd = out.door.hand;
+        for (const [k, t, r] of [['open', 'toO', .9], ['bolt', 'toB', 3]]) { if (ds[k] === ds[t]) continue;
+          if (k === 'bolt' && ds.open > .02) continue; // the bolt waits until the door is shut
+          if (hd && !hd(k)) continue; // no palm on it: it stays where it is
+          const rr = hd && k === 'open' ? .42 : r; /* by hand: a steady pull, about 0.7 rad/s */ const d = ds[t] - ds[k]; ds[k] = Math.abs(d) < rr * dt ? ds[t] : ds[k] + Math.sign(d) * rr * dt; ch = true; }
+        if (ch) { if (ds.open > .02) { ds.bolt = 0; if (ds.toO > .02) ds.toB = 0; } apply(); }
         wind(dt); } };
     // wind: an open, unattended door swings on a spring toward the wind; in a strong gust (s > ~1) it slams shut-ish and bangs.
     // Not while someone moves it (open != toO) and never when bolted shut.
     const sw = { a: 0, v: 0, cd: 0 }; const wp = V();
-    function wind(dt) { const Wd = window.__wind; if (!Wd || !Wd.sample || ds.open !== ds.toO || ds.open < .05) { if (sw.a) { sw.a = 0; sw.v = 0; apply(); } return; }
+    function wind(dt) { const Wd = window.__wind; if (!Wd || !Wd.sample || ds.open !== ds.toO || ds.open < .05) { if (sw.a) { if (ds.open !== ds.toO) ds.open = clamp01(ds.open + sw.a / 1.66); /* the hand takes it from where the wind left it, no jump */ sw.a = 0; sw.v = 0; apply(); } return; }
       dg.getWorldPosition(wp); wp.y += 1; let f = 0; try { const w = Wd.sample(wp); const s = w.s || 0; // push toward closing when the wind blows into the room through the doorway (-x), open when it blows out
         f = (-(w.x || 0)) * (s > 1 ? 2.2 : .6) + Math.sin(performance.now() * .0013) * .05 * s; } catch (e) { f = 0; }
+      // hinge friction: a door resting still stays put in ordinary wind; only a strong gust (s > ~1) gets it swinging
+      if (Math.abs(f) < .45 && Math.abs(sw.v) < .02) { sw.v = 0; return; }
       sw.v += (f - sw.a * 9 - sw.v * 2.2) * dt; sw.a += sw.v * dt; sw.cd -= dt;
       const lo = -ds.open * 1.66 + .02, hi = .06; // can't open past the wall stop, can close all the way
       if (sw.a < lo || sw.a > hi) { const hit = Math.abs(sw.v); sw.a = Math.max(lo, Math.min(hi, sw.a)); sw.v *= -.3;
@@ -1081,7 +1092,7 @@ export function buildProps(ctx) {
   PT.pantry = [pantry, V(0, .6, .3)];
   const cn = placed.counter, cTop = cn.userData.floorY + .9;
   tool('board', choppingBoard(), scene, -2.62, cTop, 1.4, [0, .05, 0]); tool('knife', knife(), scene, -2.6, cTop + .023, 1.33, [0, -.15, 0]);
-  const plateO = tool('plate', bake(plateOfFood()), st, .2, .915, -.12); /* serving plate waits by the pan on the stove */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
+  const plateO = tool('plate', bake(plateOfFood()), st, .21, .915, .13); /* serving plate waits by the pan on the stove, front right (in reach; at the back he folded over the hot pan) */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
   // food on the plate: setFood(1) full, (.5) half eaten, (0) empty. (Meshes are merged per material, so we scale the food meshes down.)
   out.plate = { obj: plateO, setFood(k) { k = clamp01(k); for (const m of food) { m.visible = k > .02; m.scale.setScalar(.35 + .65 * k); } } }; out.plate.setFood(0);
   PT.board = [out.tools.board, V(0, .03, 0)]; PT.sink = [cn, V(.23, .76, .04)];
@@ -1105,7 +1116,7 @@ export function buildProps(ctx) {
     // the shelf over the window: plates stacked, the cup in the bowl
     const ksh = placed.kshelf; const onShelf = [[-.02, .018, .12, [0, 0, 0]], [-.02, .034, .12, [0, 0, 0]], [.14, .018, .12, [0, 0, 0]], [.14, .028, .12, [0, 0, 0]]];
     const objs = KIND.map((k, i) => { const o = { dirty: mk(k, true), rack: mk(k, false), shelf: mk(k, false) };
-      for (const [where, parent, slot] of [['dirty', cn, inSink[i]], ['rack', rack, inRack[i]], ['shelf', ksh, onShelf[i]]]) { const ob = o[where]; ob.position.set(slot[0], slot[1], slot[2]); ob.rotation.set(...slot[3]); parent.add(ob); ob.visible = false; } return o; });
+      for (const [where, parent, slot] of [['dirty', cn, inSink[i]], ['rack', rack, inRack[i]], ['shelf', ksh, onShelf[i]]]) { const ob = o[where]; ob.position.set(slot[0], slot[1], slot[2]); ob.rotation.set(...slot[3]); parent.add(ob); ob.visible = false; ob.userData.slot = { parent, pos: ob.position.clone(), rot: ob.rotation.clone() }; } return o; });
     const loc = ['dirty', 'shelf', 'shelf', 'dirty'];
     const show = () => objs.forEach((o, i) => { for (const w of ['dirty', 'rack', 'shelf']) o[w].visible = loc[i] === w; });
     const count = w => loc.filter(l => l === w).length;
@@ -1113,6 +1124,13 @@ export function buildProps(ctx) {
       setDirty(n) { n = Math.max(0, Math.min(4, Math.round(n))); while (count('dirty') < n) { const i = loc.indexOf('shelf') >= 0 ? loc.indexOf('shelf') : loc.indexOf('rack'); if (i < 0) break; loc[i] = 'dirty'; } while (count('dirty') > n) loc[loc.indexOf('dirty')] = 'shelf'; show(); return count('dirty'); },
       wash() { const i = loc.indexOf('dirty'); if (i < 0) return -1; loc[i] = 'rack'; show(); return i; },
       putAway() { const i = loc.indexOf('rack'); if (i < 0) return -1; loc[i] = 'shelf'; show(); return i; },
+      // by hand (Character / dishes): take(from) lifts one piece out of the basin ('dirty') or the rack ('rack'): {i, kind, obj: dirty look,
+      // clean: clean look}; the hero carries obj / clean in world space; settle(i, where) puts piece i back into its slot there.
+      // slot(i, where) -> {pos, quat} in world space (where the hand has to bring it).
+      take(from = 'dirty') { const i = loc.indexOf(from); if (i < 0) return null; loc[i] = 'hand'; show(); return { i, kind: KIND[i], obj: objs[i].dirty, clean: objs[i].rack }; },
+      settle(i, where) { for (const w of ['dirty', 'rack', 'shelf']) { const ob = objs[i][w], sl = ob.userData.slot; if (ob.parent !== sl.parent) sl.parent.add(ob); ob.position.copy(sl.pos); ob.rotation.copy(sl.rot); ob.scale.setScalar(1); } loc[i] = where; show(); },
+      slot(i, where) { const ob = objs[i][where], sl = ob.userData.slot; sl.parent.updateMatrixWorld(true); const m = new THREE.Matrix4().compose(sl.pos, new THREE.Quaternion().setFromEuler(sl.rot), V(1, 1, 1)).premultiply(sl.parent.matrixWorld); const pos = V(), quat = new THREE.Quaternion(); m.decompose(pos, quat, V()); return { pos, quat }; },
+      where: i => loc[i],
       setState({ dirty = 0, rack: r = 0 } = {}) { for (let i = 0; i < 4; i++) loc[i] = i < dirty ? 'dirty' : i < dirty + r ? 'rack' : 'shelf'; show(); } };
     show(); PT.rack = [rack, V(0, .1, 0)]; PT.dishShelf = [ksh, V(.06, .1, .12)]; PT.sink = [cn, V(BX, .78, BZ)]; }
 
