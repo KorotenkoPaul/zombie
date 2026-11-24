@@ -1020,17 +1020,28 @@ export function buildProps(ctx) {
       setOpen(k) { ds.open = ds.toO = clamp01(k); if (ds.open > .02) ds.bolt = ds.toB = 0; apply(); },
       setBolt(k) { ds.bolt = ds.toB = ds.open > .02 ? 0 : clamp01(k); apply(); },
       openTo(k) { ds.toO = clamp01(k); }, boltTo(k) { ds.toB = clamp01(k); },
+      get target() { return ds.toO; }, get boltTarget() { return ds.toB; },
+      // the leaf (for a palm pushing on it) and its width; hand(kind) is set by grab.js: openTo/boltTo then only move the door
+      // ('open') or the bolt ('bolt') while a palm is on it (Pavel: nothing moves by itself). Without grab.js the old timed swing.
+      leaf() { return D.piv.children[0]; }, width: D.w, hand: null,
       // world points for the hand: the knob on the latch edge, and the bolt knob
       handle(t = V()) { D.piv.updateMatrixWorld(true); return D.piv.children[0].localToWorld(t.set(-D.w / 2 + .1, D.h * .46, .07)); },
       boltKnob(t = V()) { D.bar.updateMatrixWorld(true); return D.bar.localToWorld(t.set(.02, .034, .01)); },
-      update(dt) { let ch = false; for (const [k, t, r] of [['open', 'toO', .9], ['bolt', 'toB', 3]]) { if (ds[k] !== ds[t]) { const d = ds[t] - ds[k]; ds[k] = Math.abs(d) < r * dt ? ds[t] : ds[k] + Math.sign(d) * r * dt; ch = true; } } if (ch) { if (ds.open > .02) ds.bolt = ds.toB = 0; apply(); }
+      update(dt) { let ch = false; const hd = out.door.hand;
+        for (const [k, t, r] of [['open', 'toO', .9], ['bolt', 'toB', 3]]) { if (ds[k] === ds[t]) continue;
+          if (k === 'bolt' && ds.open > .02) continue; // the bolt waits until the door is shut
+          if (hd && !hd(k)) continue; // no palm on it: it stays where it is
+          const rr = hd && k === 'open' ? .42 : r; /* by hand: a steady pull, about 0.7 rad/s */ const d = ds[t] - ds[k]; ds[k] = Math.abs(d) < rr * dt ? ds[t] : ds[k] + Math.sign(d) * rr * dt; ch = true; }
+        if (ch) { if (ds.open > .02) { ds.bolt = 0; if (ds.toO > .02) ds.toB = 0; } apply(); }
         wind(dt); } };
     // wind: an open, unattended door swings on a spring toward the wind; in a strong gust (s > ~1) it slams shut-ish and bangs.
     // Not while someone moves it (open != toO) and never when bolted shut.
     const sw = { a: 0, v: 0, cd: 0 }; const wp = V();
-    function wind(dt) { const Wd = window.__wind; if (!Wd || !Wd.sample || ds.open !== ds.toO || ds.open < .05) { if (sw.a) { sw.a = 0; sw.v = 0; apply(); } return; }
+    function wind(dt) { const Wd = window.__wind; if (!Wd || !Wd.sample || ds.open !== ds.toO || ds.open < .05) { if (sw.a) { if (ds.open !== ds.toO) ds.open = clamp01(ds.open + sw.a / 1.66); /* the hand takes it from where the wind left it, no jump */ sw.a = 0; sw.v = 0; apply(); } return; }
       dg.getWorldPosition(wp); wp.y += 1; let f = 0; try { const w = Wd.sample(wp); const s = w.s || 0; // push toward closing when the wind blows into the room through the doorway (-x), open when it blows out
         f = (-(w.x || 0)) * (s > 1 ? 2.2 : .6) + Math.sin(performance.now() * .0013) * .05 * s; } catch (e) { f = 0; }
+      // hinge friction: a door resting still stays put in ordinary wind; only a strong gust (s > ~1) gets it swinging
+      if (Math.abs(f) < .45 && Math.abs(sw.v) < .02) { sw.v = 0; return; }
       sw.v += (f - sw.a * 9 - sw.v * 2.2) * dt; sw.a += sw.v * dt; sw.cd -= dt;
       const lo = -ds.open * 1.66 + .02, hi = .06; // can't open past the wall stop, can close all the way
       if (sw.a < lo || sw.a > hi) { const hit = Math.abs(sw.v); sw.a = Math.max(lo, Math.min(hi, sw.a)); sw.v *= -.3;
