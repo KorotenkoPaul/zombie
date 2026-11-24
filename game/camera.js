@@ -551,7 +551,14 @@ export function createCameraRig(o) {
       // focus: the whole house when zoomed out, the hero when zoomed in (as the original camera did)
       const k = clamp(1 - (zoomK - ZMIN) / (1 - ZMIN), 0, 1), f = follow();
       lookT.copy(home.target); if (f) lookT.lerp(f, k);
-      look.lerp(lookT, Math.min(1, dt * 2.5));
+      // zoomed in on him: keep him a little left of centre, clear of the button column on the right, and track a bit
+      // quicker so a walking hero does not drift to the screen edge (phone watch: firewood trip, ladders)
+      if (k > 0) {
+        const halfW = goal.dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect;
+        const off = 0.16 * halfW * k;
+        lookT.x += Math.cos(cur.yaw) * off; lookT.z -= Math.sin(cur.yaw) * off;
+      }
+      look.lerp(lookT, Math.min(1, dt * (2.5 + 2.5 * k)));
       goal.target.copy(look); goal.dist = home.dist * zoomK;
     }
     const dragging = ptrs.size > 0 || inert.on;
