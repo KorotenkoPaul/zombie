@@ -198,7 +198,7 @@ export function createGrab({ THREE, bones }) {
     if (want) { if (!DR.tp) DR.tp = palm(side); const d = want.clone().sub(DR.tp); const mx = 1.4 * dt; DR.tp.add(d.length() > mx ? d.setLength(mx) : d); }
     if (DR.w < .01) { if (!mode) { DR.side = null; DR.tp = null; DR.mode = null; } return; }
     const w = DR.w * DR.w * (3 - 2 * DR.w); const hb = bones[side + 'Hand']; for (let it = 0; it < 3; it++) { const pa = palm(side), wr = hb.getWorldPosition(V()); ik2(side, DR.tp.clone().sub(pa.sub(wr)), it ? 1 : w); if (w < .99) break; } // the palm sits past the wrist along the forearm, which turns with the IK: a few passes
-    if (mode && want && DR.w > .97 && palm(side).distanceTo(want) < .06) DR.on[mode] = true; }
+    if (mode && want && DR.w > .97 && palm(side).distanceTo(want) < .03) DR.on[mode] = true; } // GRAB: 3 cm (was 6: the bolt began to slide with the palm 5.5 cm off the knob)
   // ---- a bucket in a fist hangs plumb with its bail right under the fist. hero.js (odHang) hangs it before collide.js, which
   // can then swing the arm out and drag the rigid bucket sideways into the leg: put it back under the fist after collide.
   // A tip about his right axis (pouring) is kept. ----
