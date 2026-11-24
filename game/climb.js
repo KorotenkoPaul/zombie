@@ -283,7 +283,9 @@ export function createClimb() {
     }
     // arms: elbows down and out, wrist under and behind the rung, fingers over it (or the palm flat on the floor above)
     for (const s of ['Left', 'Right']) {
-      const k = s[0] + 'H'; const t = tg[k]; const sx = (s === 'Left' ? -1 : 1) * zDir; const w = W * (hw ? hw[k] : 1); if (w < .002) continue;
+      const k = s[0] + 'H'; let t = tg[k];
+      // never into a beam or a board (collide: hand 4-6 cm into the ledge beam at the top of the rope ladder): lift the wrist until it and the palm are clear
+      const CD = window.__collide; if (t && CD && CD.depthAt) { t = t.clone(); for (let n = 0; n < 12; n++) { let dd = 0; try { const pc = t.clone().add(V(0, 0, -zDir * .06)); const d1 = CD.depthAt(t.x, t.y, t.z), d2 = CD.depthAt(pc.x, pc.y, pc.z); dd = Math.max(typeof d1 === 'number' ? d1 : (d1 && d1.depth) || 0, typeof d2 === 'number' ? d2 : (d2 && d2.depth) || 0); } catch (e) { break; } if (dd <= .002) break; t.y += Math.min(.03, dd + .005); } } const sx = (s === 'Left' ? -1 : 1) * zDir; const w = W * (hw ? hw[k] : 1); if (w < .002) continue;
       C.ik2(B[s + 'Arm'], B[s + 'ForeArm'], B[s + 'Hand'], t, V(sx * .7, -1, zDir * .45), w, false);
       const Hd = B[s + 'Hand']; if (Hd) { const a = wp(Hd); const dir = V(0, 1, 0).applyQuaternion(Hd.getWorldQuaternion(new THREE.Quaternion())); const tip = a.clone().addScaledVector(dir, .09);
         const flat = S.last.flat && S.last.flat[k];
