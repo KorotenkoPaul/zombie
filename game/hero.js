@@ -575,6 +575,33 @@ export function createHero(ctx){
   a.leave=cb=>{for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
  function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
+ function teleParts(){const P=window.__props||P3;let t=P&&P.placed&&P.placed.telescope;if(!t){t=null;scene.traverse(o=>{if(!t&&o.name==='telescope'&&o.userData&&o.userData.tube)t=o;});if(!t)scene.traverse(o=>{if(!t&&o.userData&&o.userData.tube&&o.userData.tube.parent)t=o;});}const tube=t&&t.userData&&t.userData.tube;if(!tube||!tube.parent)return null;
+  const W=(x,y,z)=>{tube.updateMatrixWorld(true);return tube.localToWorld(V(x,y,z));};
+  return {t,tube,yoke:tube.parent,eye:()=>W(-.5,0,0),dir:()=>W(1,0,0).sub(W(0,0,0)).normalize(),gripR:()=>W(-.12,.05,0)/* LEISURE: on top of the tube a hand-width ahead of the left one, not at arm's full stretch */,gripL:()=>W(-.3,-.045,0),floor:t.position.y};}
+ function teleStand(T){const E=T.eye(),d=T.dir();const dh=V(d.x,0,d.z).normalize();return E.clone().addScaledVector(dh,-.24).setY(T.floor);}
+ // a hand onto a point by the arm alone (no leaning the body toward it): for holds while the body has its own pose to keep
+ const PALM=.06;/* palm centre to wrist */
+ function gripNoLean(side,t,w){const G=window.__grab;const p=G&&G.palmTarget?G.palmTarget(side,t):t;const s1=bones[side+'Arm'].getWorldPosition(V());const tw=p.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):p;armIK(side,wt,sidePole(side),clamp(w,0,1));}
+ function telePost(a,dt,T){window.__tele=T;const E=T.eye(),d=T.dir();const dh=V(d.x,0,d.z).normalize();a.tw=Math.min(1,(a.tw||0)+dt/.9);const w=smooth(0,1,a.tw);
+  H.face=Math.atan2(dh.x,dh.z);
+  {/* step in until his eye is at the eyepiece (a small shuffle, not a glide: only while the hands settle) */const hp=bones.Head.getWorldPosition(V()).addScaledVector(dh,.09);const ev=E.clone().addScaledVector(d,-.04).sub(hp);ev.y=0;const el=ev.length();{const want=el>.015&&(a.pt||0)<5?Math.min(.35,el*3):0;a.sv=(a.sv||0)+(want-(a.sv||0))*Math.min(1,dt*5);if(a.sv>.002&&el>1e-4)root.position.addScaledVector(ev,Math.min(el,a.sv*dt)/el);}root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*3);}
+  // stoop: bend the spine about his left-right axis until the eye comes down to the eyepiece
+  const ax=V(0,1,0).cross(dh).normalize();const Hd=bones.Head;/* measured: positive angles about up x dh bend him toward dh (the negated axis leaned him back) */
+  for(let it=0;it<3;it++){const hp=Hd.getWorldPosition(V());const eyeP=hp.clone().add(V(0,.06,0)).addScaledVector(dh,.09);const want=E.clone().addScaledVector(d,-.05);const dy=eyeP.y-want.y;if(Math.abs(dy)<.01)break;
+   const hip=bones.Spine.getWorldPosition(V());const r=Math.max(.3,eyeP.distanceTo(hip));const ang=clamp(dy/r,-.15,.4)*w*.8;rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);root.updateMatrixWorld(true);}
+  // LEISURE: lean the chest in about the hips until the eye is on the eyepiece: collide keeps his feet ~20 cm off the tripod,
+  // so the last bit is a lean (people lean into an eyepiece, they don't stand with their nose 20 cm away from it)
+  for(let it=0;it<3;it++){const hip=bones.Spine.getWorldPosition(V());const eyeP=Hd.getWorldPosition(V()).add(V(0,.06,0)).addScaledVector(dh,.09);const want=E.clone().addScaledVector(d,-.04);
+   const v=eyeP.clone().sub(hip),u=want.clone().sub(hip);const a1=Math.atan2(v.dot(dh),v.y),a2=Math.atan2(u.dot(dh),u.y);const ang=clamp(a2-a1,-.2,.45)*w;if(Math.abs(ang)<.004)break;
+   rotW(bones.Spine,ax,ang*.4);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.25);root.updateMatrixWorld(true);}
+
+  // panning: hands on, the yoke turns a little, then rests
+  a.pt=(a.pt||0)+dt;if(!a.pn||a.pt>a.pn.end+rnd(6,12)){a.pn={from:T.yoke.rotation.y,to:a.pan0+rnd(-.35,.35),st:a.pt+rnd(4,8),end:0};a.pn.end=a.pn.st+1.6;}
+  const G=window.__grab;const gR=T.gripR(),gL=T.gripL();gripNoLean('Left',gL,w*.95);gripNoLean('Right',gR,w);
+  const dR=G&&G.gripPoint?G.gripPoint('Right').distanceTo(gR):0;
+  if(a.pt>a.pn.st&&a.pt<a.pn.end&&dR<.05){const k=smooth(a.pn.st,a.pn.end,a.pt);T.yoke.rotation.y=a.pn.from+(a.pn.to-a.pn.from)*k;T.yoke.updateMatrixWorld(true);}
+  if(G&&w>.5){G.hold('Right',T.tube,()=>T.gripR());G.hold('Left',T.tube,()=>T.gripL());}
+  if(G&&G.late)G.late(()=>{gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);});}
  const telePt=()=>{const P=window.__props||P3;const t=P&&P.placed&&P.placed.telescope;if(t&&t.position)return t.position.clone().add(V(0,1.35,0));return V(3.5,DK+1.35,1.3);};
  // the edge of the platform in front of a node: step forward until the boards end
  function edgeFrom(node){const n=N[node];if(!n)return null;const f=fwd(n.face??0);const p=n.p.clone();let last=null;
@@ -644,7 +671,13 @@ export function createHero(ctx){
    start:()=>{try{D.openTo&&D.openTo(0,.8);}catch(e){}},tick:a=>{if(a.T>1.6&&!a.done){a.done=1;try{D.boltTo&&D.boltTo(o&&o.lock===false?0:1,.3);}catch(e){}AU('bolt',D.boltKnob(V()));}}});},
   radio:(o)=>{const P=window.__props||P3;const R=P&&P.radio;return job({pt:()=>PT('radio'),stand:.45,clip:'hy_radio',loop:true,dur:[30,60],
    start:()=>{try{R.setOn(1);}catch(e){}},tick:(a,dt)=>{try{if(a.T<6)R.setTune(.3+.4*smooth(0,6,a.T));}catch(e){}},end:()=>{try{if(!(o&&o.keepOn))R.setOn(0);}catch(e){}}});},
-  telescope:(o)=>job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')}),
+  telescope:(o)=>{const T=teleParts();if(!T)return job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')});
+   // LEISURE + GRAB: at the real telescope, not mimed in the air a metre away: he stands behind the eyepiece facing along the tube,
+   // the calm standing mocap (cm_tele, CMU 77_02 legs + hands held up at the face) is the base, the spine stoops until his eye is
+   // at the eyepiece, the left hand cups the tube under the eyepiece, the right rests on top of the tube; now and then he swings it a little
+   return job({pt:()=>teleStand(T),stand:.05,clip:has('cm_tele')?'cm_tele':null,loop:true,dur:[40,90],vary:false,start:a=>{AU('sigh');a.pan0=T.yoke.rotation.y;},
+    look:a=>{const E=T.eye();const d=T.dir();return E.addScaledVector(d,6);},lookW:1,
+    post:(a,dt)=>telePost(a,dt,T),end:()=>{play(IDLE(),{fade:.6});try{window.__grab.free(T.tube);}catch(e){}}});},
   look:(o)=>job({node:'deck',slide:false,clip:has('hy_listen')?null:null,dur:[40,80],look:a=>root.position.clone().add(V(Math.sin(a.T*.22)*6,1.2+Math.sin(a.T*.13)*.6,8))}),
   ledge:(o)=>{// sit on an OPEN edge (no railing, a free drop under it) with the legs hanging over it: the round landing by the gate
    // ladder (the deck has railings all round and its one gap is cramped under the bedroom eave and by the rope ladder)
