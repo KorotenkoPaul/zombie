@@ -14,7 +14,7 @@ const ROUTE=(arg('route','cook,wash,craft,look,window,read')).split(',');
   while(n<60*40){await step(30,t);n+=30;const s=await p.evaluate(()=>{const h=__dbg.hero;return {path:h.path.length,tr:!!h.trans||!!h.swing||!!h.lad,state:h.state}});
    if(s.path===0&&!s.tr&&s.state==='work'){if(++settled>=6)break;}else settled=0;}
   console.log(t,'frames',n);}
- const D=await p.evaluate(()=>({...__A.out,names:__A.collNames()}));const st=await p.evaluate(()=>window.__motion?{...window.__motion.stats,pops:window.__motion.pops?window.__motion.pops():null,leg:window.__motion.leg?window.__motion.leg():null}:null);await b.close();
+ const D=await p.evaluate(()=>({...__A.out,names:__A.collNames()}));const st=await p.evaluate(()=>window.__motion?{...window.__motion.stats,pops:window.__motion.pops?window.__motion.pops():null}:null);await b.close();
  fs.writeFileSync(OUT+'/frames.json.gz',zlib.gzipSync(JSON.stringify(D)));
  const R=analyze(D);const F=D.frames;const B=n=>['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].indexOf(n);
  const pos=(f,n)=>{const i=B(n)*3;return [f.b[i],f.b[i+1],f.b[i+2]];};
@@ -31,5 +31,5 @@ const ROUTE=(arg('route','cook,wash,craft,look,window,read')).split(',');
  const robot=R0=>R0.issues.filter(q=>q.type==='robot').map(q=>({P:q.P,t:q.t,v:q.value,unit:q.unit,what:q.what}));
  const cnt={};for(const q of R.issues){const k='P'+q.P+' '+q.type;cnt[k]=(cnt[k]||0)+1;}
  const rep={off:OFF,robotRoot:robot(R),robotVisible:robot(Rv),frames:F.length,secs:+(F.length/60).toFixed(1),issues:cnt,tempo:R.tempo.walks,walkFrames:walkF,frozenWhileWalking:frozen,maxAccWalk:+maxAcc.toFixed(2),acc99:+(acc[Math.floor(acc.length*.99)]||0).toFixed(2),plantedAnkleSpeedAvg:+(slideSum/Math.max(1,slideN)).toFixed(3),plantedSamples:slideN,
-  mm:st&&{pops:st.pops,leg:st.leg,searches:st.searches,jumps:F.length?F[F.length-1].mm&&F[F.length-1].mm[2]:0},list:R.issues.filter(q=>/slide|jump|turn|crab|slow|snap/.test(q.type)).slice(0,40).map(q=>`P${q.P} ${q.type} t=${q.t} ${q.act} [${q.clip}] ${q.bone} ${q.value} ${q.unit}`),errs,wall:((Date.now()-t0)/1000).toFixed(0)};
+  mm:st&&{pops:st.pops,searches:st.searches,jumps:F.length?F[F.length-1].mm&&F[F.length-1].mm[2]:0},list:R.issues.filter(q=>/slide|jump|turn|crab|slow|snap/.test(q.type)).slice(0,40).map(q=>`P${q.P} ${q.type} t=${q.t} ${q.act} [${q.clip}] ${q.bone} ${q.value} ${q.unit}`),errs,wall:((Date.now()-t0)/1000).toFixed(0)};
  fs.writeFileSync(OUT+'/report.json',JSON.stringify(rep,null,1));console.log(JSON.stringify(rep,null,1));})().catch(e=>{console.error(e);process.exit(2);});

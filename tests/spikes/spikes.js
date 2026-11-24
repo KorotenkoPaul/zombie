@@ -18,7 +18,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
   const srv = spawn('python3', ['-m', 'http.server', String(PORT)], { cwd: path.join(__dirname, '../../game'), stdio: 'ignore' });
   await new Promise(r => setTimeout(r, 800));
   const b = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist', '--enable-precise-memory-info'] });
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1,
+  const ctx = await b.newContext({ viewport: { width: +(process.env.W || 390), height: +(process.env.H || 844) }, isMobile: true, hasTouch: true, deviceScaleFactor: 1,
     userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' });
   const p = await ctx.newPage();
   p.on('pageerror', e => console.log('[pageerror]', e.message));
@@ -75,7 +75,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
     pw(THREE.Raycaster.prototype, 'intersectObjects', 'raycast (three)'); pw(THREE.Raycaster.prototype, 'intersectObject', 'raycast (three)');
     // who calls slow raycasts / compiles: keep the stack of any call over 30 ms
     window.__slow = [];
-    for (const name of ['intersectObjects', 'intersectObject']) { const f = THREE.Raycaster.prototype[name]; THREE.Raycaster.prototype[name] = function () { const t = window.__realNow(); try { return f.apply(this, arguments); } finally { const el = window.__realNow() - t; if (el > 30) window.__slow.push(['raycast ' + el.toFixed(0) + ' ms', new Error().stack.split('\n').slice(2, 9).map(s => s.trim().replace(/https?:\/\/[^/]+\//, '')).join(' < ')]); } }; }
+    for (const name of ['intersectObjects', 'intersectObject']) { const f = THREE.Raycaster.prototype[name]; THREE.Raycaster.prototype[name] = function () { const t = window.__realNow(); try { return f.apply(this, arguments); } finally { const el = window.__realNow() - t; if (el > 0.3) { const st = new Error().stack.split('\n'), site = (st[2] || '').trim().replace(/https?:\/\/[^/]+\//, '').replace(/^at /, ''); const RC = window.__rcSites = window.__rcSites || {}; RC[site] = (RC[site] || 0) + el; } if (el > 30) window.__slow.push(['raycast ' + el.toFixed(0) + ' ms', new Error().stack.split('\n').slice(2, 9).map(s => s.trim().replace(/https?:\/\/[^/]+\//, '')).join(' < ')]); } }; }
     pw(THREE.AnimationMixer.prototype, 'update', 'animation mixers');
     pw(THREE.Object3D.prototype, 'updateMatrixWorld', 'matrix updates');
     pw(THREE.Skeleton.prototype, 'update', 'skinning (skeleton)');
@@ -99,7 +99,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
           if (f % 2 === 0) rig.orbit(Math.sin(u * Math.PI * 6) * 26, Math.cos(u * Math.PI * 4) * 10);
           if (f === 120) rig.setFollow(true); if (f === 240) rig.goHome();
         }
-        T.acc = {}; T.stack.length = 0;
+        T.acc = {}; T.stack.length = 0; window.__rcSites = {};
         window.__VT.add(1000 / fps);
         const cb = window.__rafCb; window.__rafCb = null;
         const m0 = mem(), t = window.__realNow();
@@ -108,6 +108,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
         const acc = T.acc; let sum = 0; for (const k in acc) sum += acc[k];
         acc['render + index.html (rest)'] = ms - sum;
         if (m0 - m1 > 1e6) acc['GC (heap dropped ' + ((m0 - m1) / 1e6).toFixed(1) + ' MB)'] = 0;
+        for (const k in window.__rcSites) if (window.__rcSites[k] > 5) acc['  (of which raycast from ' + k + ')'] = window.__rcSites[k];
         out.push({ f, ms, acc });
       }
       const slow = window.__slow.splice(0); return { out, st: window.__th.state(), slow };
@@ -117,8 +118,9 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
       times.push(fr.ms); hist.push(fr.ms); if (hist.length > 121) hist.shift();
       const med = [...hist].sort((a, b) => a - b)[hist.length >> 1];
       if (fr.ms - med < SPIKE && fr.ms < SPIKE) continue;
-      spikes.push({ frame: fr.f, gameSec: +(fr.f / FPS).toFixed(1), phase: fr.f < 360 ? 'first swipe' : 'idle play', ms: +fr.ms.toFixed(1), median: +med.toFixed(1), hour: r.st.hour, task: r.st.task,
-        top: Object.entries(fr.acc).sort((a, b) => b[1] - a[1]).filter(([k, v]) => v > 1 || k.startsWith('GC')).slice(0, 6).map(([k, v]) => [k, +v.toFixed(1)]) });
+      const rec = { frame: fr.f, gameSec: +(fr.f / FPS).toFixed(1), phase: fr.f < 360 ? 'first swipe' : 'idle play', ms: +fr.ms.toFixed(1), median: +med.toFixed(1), hour: r.st.hour, task: r.st.task,
+        top: Object.entries(fr.acc).sort((a, b) => b[1] - a[1]).filter(([k, v]) => v > 1 || k.startsWith('GC')).slice(0, 6).map(([k, v]) => [k, +v.toFixed(1)]) };
+      spikes.push(rec); console.log('  [spike]', JSON.stringify(rec));     // printed as found: a cut-off run still has them
     }
     console.log(`  ${f0 + r.out.length}/${total} frames (${((f0 + r.out.length) / FPS / 60).toFixed(1)} game min), ${((Date.now() - t0) / 1000).toFixed(0)} s, spikes ${spikes.length}, hour ${r.st.hour} task ${r.st.task}`);
   }

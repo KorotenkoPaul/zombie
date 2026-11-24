@@ -8,6 +8,17 @@ ladders, brain.js) follows these rules. A change that breaks one of them does no
 **Everything he does is one person moving in one world: one pose pipeline, one action executor, one set of
 invariants, checked live and before every deploy.** No task gets its own special-case body code.
 
+## ROLLBACK 2026-11-24 00:20 UTC (Pavel)
+
+The hero's motion code on master is back to 9aa01f4 (21:33 UTC): hero.js, motion.js, motion-db.txt, hero-moves.txt.
+Everything below (slots, `job()`, `?inv`) describes the target design and comes back step by step; it is NOT on master now.
+Rebuild order, one family at a time, each one gated (`node tests/anim/gate.js`) and filmed side by side against 7ca7a48:
+1. integrator: slots (`HH.stage`) + `job()` executor + `?inv`, with the two root fixes (bind scale, root Euler / BFWD +Z) if slpInit returns;
+2. brain; 3. kitchen + eating/dishes; 4. sleep and bed (Pose); 5. ladders; 6. workshop; 7. repairs; 8. leisure; 9. outdoor (pond, trip, jacket);
+10. walk polish (motion matching).
+A thread rebuilds its family ON TOP OF the rolled-back hero.js (rebase, do not paste old hero.js over it), keeps the diff
+small, and sends the integrator branch + sha + its own before/after frames. Only the integrator pushes hero files to master.
+
 ## 0. Pavel's standing rules for every hero thread
 
 - Don't waste his money: reuse the Fal clips and the mocap already bought (hero-moves.txt, CMU via the clip supplier thread).
@@ -30,7 +41,6 @@ invariants, checked live and before every deploy.** No task gets its own special
 | 5 | `contacts` | hero.js + ladders | hands on declared contacts (reachTo, act.post): last of the body passes, so nothing moves the chest after a hand is placed |
 | 6 | `collide` | collide.js | skin pushed out of walls, furniture, the trunk |
 | 7 | `grab` | grab.js | exact hand holds re-applied after collide |
-| 7b | `pops` | motion.js | velocity limiter: a bone that breaks from its own motion is inertialized (no snaps); before the guard |
 | 8 | `guard` | pose module | ANATOMICAL GUARD, last: joint limits, knee direction, velocity limits (no snaps), balance |
 
 Modules register with `HH.stage(slot, fn)` and run in slot order (wrapping `HH.update` is the old way and is removed module by module).
@@ -85,6 +95,13 @@ coded inside one task: ask in the Character thread.
 7. No go-and-leave: every visit has a believable stay (Pavel: 40–90 s at a place, several activities).
 
 ## 4. Deploy gate
+
+**Freeze since 2026-11-23 23:52 UTC (Pavel: "every animation broke").** No thread pushes hero files to master
+(hero.js, motion.js, climb.js, grab.js, collide.js, pose.js, hero-moves.txt, hero parts of index.html).
+Push your work to your own branch and tell the integrator (Character thread) the branch and sha. The integrator merges it into
+the integration branch `claude/project-thread-tyhjsl`, runs the deterministic gate (`node tests/anim/gate.js`) and a side-by-side
+render against master, and promotes to master only when it is clearly better on every action it touches.
+
 
 QA runs every action × both heroes (default and detailed) against section 3 before a push to master.
 A P1 failure blocks the push. Results go to `ANIM-QA.md`.
