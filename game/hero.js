@@ -921,7 +921,7 @@ export function createHero(ctx){
    if(a.step==='lift'){if(a.t>1.1){say('shelf');}return;}
    if(a.step==='shelf'){if(a.t>1.0){D.settle(a.piece.i,'shelf');AU('plate',shelfP);a.piece=null;say('back');}return;}
    if(a.step==='back'){if(a.t>.35)next();return;}
-   if(a.step==='end'){if(a.t>.5)endTask({ok:true});return;}};
+   if(a.step==="end"){if(a.t>1.7||a.t>.5&&a.wL<.03&&a.wR<.03)endTask({ok:true});return;}};
   a.post=dt=>{const st=a.step;const f=face2(),r=V(-f.z,0,f.x),up=V(0,1,0);const hp=bones.Hips.getWorldPosition(V());
    let look=sinkP;let tR=null,tL=null;
    if(st==='reachR'){const from=a.kind==='shelf'?'rack':'dirty';const st2=D.state();const i=Array.from({length:4},(_,k)=>k).find(k=>D.where(k)===from);if(i!=null){const s=D.slot(i,from).pos;tR=s.clone().add(V(0,from==='dirty'?.05:.03,0));look=s;}
@@ -931,9 +931,13 @@ export function createHero(ctx){
     else if(st==='scrub'){const c=holdC();const w=Math.sin(a.t*1.3)*.15;const q=holdQ().multiply(new THREE.Quaternion().setFromAxisAngle(V(0,0,1),w));pieceAt(c,q);
      const n=V(0,1,0).applyQuaternion(q);const ph=a.t*2*Math.PI*1.6;const e1=V(1,0,0).applyQuaternion(q),e2=V(0,0,1).applyQuaternion(q);
      tR=c.clone().addScaledVector(n,.03).addScaledVector(e1,Math.cos(ph)*.035).addScaledVector(e2,Math.sin(ph)*.035);tL=c.clone().addScaledVector(r,-.08);look=c;}
-    else if(st==='torack'){const sl=D.slot(a.piece.i,'rack');const k=smooth(0,.85,a.t);const c=holdC().lerp(sl.pos,k);c.y+=Math.sin(k*Math.PI)*.05;pieceAt(c,holdQ().slerp(sl.quat,k));const top=a.piece.kind==='cup'?.05:.085;/* the fingers on the edge: the side rim while it is flat, the top rim once it stands in the rack */tL=c.clone().addScaledVector(r,-.06*(1-k)).add(V(0,.02+(top-.02)*k,0));a.relL=tL.clone();look=sl.pos;}
+    else if(st==='torack'){const sl=D.slot(a.piece.i,'rack');const k=smooth(0,.85,a.t);const c=holdC().lerp(sl.pos,k);c.y+=Math.sin(k*Math.PI)*.05;pieceAt(c,holdQ().slerp(sl.quat,k));const top=a.piece.kind==='cup'?.05:.085;/* the fingers on the edge: the side rim while it is flat, the top rim once it stands in the rack */tL=c.clone().addScaledVector(r,-.06*(1-k)).add(V(0,.02+(top-.02)*k,0));a.relL=tL.clone();look=c;/* the eyes ride with the plate: on the slot itself the head turned 73 deg past the chest */}
     else if(st==='lift'||st==='shelf'){const sl=D.slot(a.piece.i,'shelf');const k=st==='lift'?smooth(0,1.1,a.t)*.6:.6+.4*smooth(0,.9,a.t);
      const mid=a.p0.clone().lerp(sl.pos,.5).add(V(0,.15,0)).addScaledVector(f,-.12);const c=k<.6?a.p0.clone().lerp(mid,smooth(0,.6,k)):mid.clone().lerp(sl.pos,smooth(.6,1,k));a.shelfC=c;a.shelfQ=a.q0.clone().slerp(sl.quat,k);a.shelfK=k;tR=c.clone().add(V(0,-.01,0));look=c;}}
+   /* the counter front is a hand's breadth from his thighs: the left hand comes up in front of his belly before it goes over the counter, and goes back there before it drops to his side (the straight blend to the clip ran it through the cabinet front) */
+   const tuck=hp.clone().addScaledVector(f,.2).addScaledVector(r,-.2);tuck.y=hp.y+.12;
+   if(st==='reachR'&&a.kind==='wash'&&a.t<.5&&a.n===0&&tL)tL=tuck.clone().lerp(tL,smooth(.12,.5,a.t));
+   if(st==='end'){const side=hp.clone().addScaledVector(f,.03).addScaledVector(r,-.22);side.y=hp.y-.1;tL=a.t<.35?tuck:a.t<.85?tuck.lerp(side,smooth(.35,.85,a.t)):null;/* then down his side, and only there back to the clip */}
    if(st==='back'&&a.relL&&a.t<.3)tL=a.relL.clone().add(V(0,.1*smooth(0,.3,a.t),0)).addScaledVector(f,-.05*smooth(0,.3,a.t));/* let go off the top edge: up and back, never down through the plate */
    else if(st==='back'&&a.kind==='wash'){a.relL=null;tL=holdC().addScaledVector(r,-.08);}
    /* a hand with nothing to do goes back to the clip (weights ramp, the hand glides) */a.wR+=((tR?1:0)-a.wR)*Math.min(1,dt*3.5);a.wL+=((tL?1:0)-a.wL)*Math.min(1,dt*3.5);
