@@ -391,5 +391,17 @@
  "seated_listen": {
   "src": "sit_tired",
   "note": "Procedural on sit_tired (listen.mjs + headlevel): sitting, hands resting on the thighs/knees, leans in ~6 deg, head turned ~13 deg and tilted ~16 deg as if listening (radio), slow head drift. 5.8 s, loop with close 0.8."
+ },
+ "stairs_up3": {
+  "src": "13_36",
+  "t0": 1.5,
+  "t1": 5.3,
+  "note": "Real mocap: walks forward up 3 steps of ~0.16 m (hero scale; risers at about z=+0.45, +0.6, +0.75 from the start), stops on top. Root rises 0.48 m. For Motion (step-up / stairs), not for flat walking."
+ },
+ "stairs_down3": {
+  "src": "13_36",
+  "t0": 7.8,
+  "t1": 11.0,
+  "note": "Real mocap: walks forward down 3 steps of ~0.16 m and stops on the floor. Root drops 0.48 m."
  }
 }
