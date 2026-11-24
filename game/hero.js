@@ -1135,18 +1135,109 @@ export function createHero(ctx){
    visit(a,pt,.4,has('hy_window')?'hy_window':'hy_take',[[.45,()=>{try{const S=window.__house&&window.__house.shutters;S&&(close?S.close(w):S.open(w));}catch(e){}AU(close?'shutter_close':'shutter_open',pt);}]],go);};
   go();a.update=dt=>{stepTick(a,dt);};return a;};
  // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
- const REPAIR={fix_shingle:{clip:'hy_shingle',tools:[['benchHammer','Right']],stand:.55,def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
-  fix_board:{clip:'hy_nailboard',tools:[['benchHammer','Right']],stand:.5,def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
-  fix_wall:{clip:'hy_patchwall',tools:[['benchHammer','Right']],stand:.45,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
+ const REPAIR={
+  /* a slate at the eave (Brain picks one; pickSlate keeps it only if he can reach it): he walks out only as far as the boards carry him
+     and hammers it standing, bent over a chest-high one, straight up for a head-high one */
+  fix_shingle:{clip:pos=>hamClip(pos,'hy_shingle'),tools:[['benchHammer','Right']],stand:.55,standFn:pos=>has('hy_standhammer')?safeStand(pos,.38,null,[1.15,1.4]):.55,nail:'roof',def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
+  /* one knee down on the boards, bent ~70 deg over the board Brain picked (kneel + hammer mocap, lean baked into the clip data) */
+  fix_board:{clip:has('hy_kneelfloor')?'hy_kneelfloor':'hy_nailboard',tools:[['benchHammer','Right']],stand:has('hy_kneelfloor')?.45:.5,nail:'floor',def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
+  fix_wall:{nail:'wall',clip:pos=>hamClip(pos,'hy_patchwall'),tools:[['benchHammer','Right']],stand:.45,standFn:pos=>has('hy_standhammer')?safeStand(pos,.36):.45,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
   fix_rope:{clip:'hy_ropeknot',node:'gate',stand:.45,def:()=>N.gate&&N.gate.p.clone().add(V(0,.3,.6))},
   fix_hinge:{clip:'hy_oilhinge',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
   fix_window:{clip:'hy_window',stand:.4,def:()=>{const w=pick(WINDOWS);return N[w].p.clone().addScaledVector(fwd(N[w].face??0),.5).add(V(0,1.3,0));}},
-  fix_railing:{clip:'hy_railing',tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
+  fix_railing:{nail:'rail',clip:pos=>hamClip(pos,'hy_railing'),standFn:pos=>has('hy_standhammer')?safeStand(pos,.38):.45,tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
   clear_roof:{clip:'hy_clearleaves',stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
   fix_chimney:{clip:'hy_chimney',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.chimneyTop?P.chimneyTop.clone().setY(Math.min(P.chimneyTop.y,root.position.y+1.6)):null;}}};
- for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{const pos=o.pos?V(...o.pos):(R.def?R.def():null);
-  return job({pt:()=>pos,node:pos?null:R.node,stand:R.stand,clip:R.clip,loop:true,dur:[18,35],tools:R.tools||[],
-   tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});};
+ // ---- the body goes to the work, not the arm ----
+ // hammering at a height: below ~0.72 m he kneels on one knee (upright kneel, hands ~0.6 m), waist to chest he stands bent over it,
+ // above the chest he straightens up (clips in hero-moves-repair.txt: real CMU kneel / hammer mocap)
+ function floorOf(pos){const nn=nearNode(pos);if(!nn||!N[nn])return root.position.y;const f=N[nn].p;const g=floorAt(f.x,f.y+.3,f.z,.45,.9);return g!=null?g:f.y;}
+ function hamClip(pos,old){if(!pos||!has('hy_standhammer'))return old;const dy=pos.y-floorOf(pos);
+  return dy<.72&&has('hy_kneelhammer')?'hy_kneelhammer':dy>1.1&&has('hy_hammerhigh')?'hy_hammerhigh':'hy_standhammer';}
+ // how close he can stand to a work point out over the edge: walk the line toward it, keep only boards at his own level (and a hand's
+ // width beyond his toes), never inside a wall or under a beam; returns the stand-off for approachTo
+ function safeStand(pt,min,from,hs){const p0=from||root.position;const g0=floorAt(p0.x,p0.y+.3,p0.z,.45,.9);const p=V(p0.x,g0!=null?g0:p0.y,p0.z);/* a graph node may sit above the boards (a ladder top) */const dx=pt.x-p.x,dz=pt.z-p.z,d=Math.hypot(dx,dz);if(d<1e-3)return min;const ux=dx/d,uz=dz/d;const C=window.__collide;
+  let ok=0;for(let t=0;t<=d-min+1e-6;t+=.05){let good=true;for(const e of [0,.22]){const x=p.x+ux*(t+e),z=p.z+uz*(t+e);const g=floorAt(x,p.y+.3,z,.45,.5);if(g==null||Math.abs(g-p.y)>.12){good=false;break;}}
+   if(good&&C&&C.depthAt){const x=p.x+ux*t,z=p.z+uz*t;for(const hy of hs||[.2,.5,.75,1,1.25])if(C.depthAt(x,p.y+hy,z)>.01){good=false;break;}}if(!good)break;ok=t;}
+  return Math.max(min,d-ok);}
+ // a part he can really reach (Pavel: the body goes to the work): from the walkable spot next to it, standing where the boards end, the
+ // nail must be within an arm and a hammer, at a height one of the work poses serves, with room for his body. Brain's pick stays when it
+ // qualifies, else the most worn one nearby that does (o.pos / o.target updated, so Brain marks the part he really fixed).
+ const PART={shingle:{lo:.75,hi:1.3,st:.88,hs:[1.15,1.4]}/* over a railing: only the head and chest need room */,beam:{lo:.6,hi:1.3,st:.45},wall:{lo:.35,hi:1.4,st:.42},floor:{floor:true}};
+ function reachOK(kind,pos){const L=PART[kind];const q=V(...pos);const nn=nearNode(q);if(!nn||!N[nn])return false;const f=N[nn].p;const C=window.__collide;
+  if(L.floor){if(Math.abs(q.y-f.y)>.15)return false;const u=V(f.x-q.x,0,f.z-q.z);if(u.lengthSq()<1e-4)u.set(1,0,0);u.normalize();
+   for(const t of [.35,.55,.8]){const x=q.x+u.x*t,z=q.z+u.z*t;const g=floorAt(x,f.y+.3,z,.45,.5);if(g==null||Math.abs(g-f.y)>.1)return false;if(C&&C.depthAt)for(const hy of [.15,.5,.9])if(C.depthAt(x,f.y+hy,z)>.01)return false;}
+   if(C&&C.depthAt&&C.depthAt(q.x,f.y+.25,q.z)>.01)return false;return true;}
+  const g=floorAt(f.x,f.y+.3,f.z,.45,.9);const dy=q.y-(g!=null?g:f.y);if(dy<L.lo||dy>L.hi)return false;const st=safeStand(q,.38,f,L.hs);/* approachTo walks at most 1.2 m off the node */return st<=L.st&&Math.hypot(q.x-f.x,q.z-f.z)-st<=1.19;}
+
+ const PKIND={fix_shingle:'shingle',fix_railing:'beam',fix_wall:'wall',fix_board:'floor'};
+ function pickPart(k,o){const kind=PKIND[k];const P=window.__planks;if(!kind||!P||!P.list||!o.pos)return;if(reachOK(kind,o.pos))return;const want=V(...o.pos);
+  let best=null,bs=1e9;for(const c of P.list(kind)){const d=Math.hypot(c.pos[0]-want.x,c.pos[1]-want.y,c.pos[2]-want.z);const sc=d*.3+(c.fresh||0)*2;if(sc>=bs||!reachOK(kind,c.pos))continue;bs=sc;best=c;}
+  if(best){o.pos=best.pos.slice();o.target=best.id;}}
+ // where the hammer face lands: the floor board's top, the wall / rail / slate point itself; and the surface normal the blow comes down along
+ function nailOf(R,pos){if(!pos)return null;let q=pos.clone();if(R.nail==='roof'){/* the slate's lower edge, the side toward him */const h=V(root.position.x-q.x,0,root.position.z-q.z);if(h.lengthSq()>1e-4){h.normalize();q.addScaledVector(h,.1).y-=.06;}
+   /* the first roof surface on the way from his shoulder (the eave edge is nearer than a slate's middle) */
+   const sh=bones.RightArm.getWorldPosition(V());const v=q.clone().sub(sh);const L=v.length();if(L>.05){v.normalize();const r=new RAPIER.Ray({x:sh.x,y:sh.y,z:sh.z},{x:v.x,y:v.y,z:v.z});
+    const hh=world.castRay(r,L+.05,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});const t=hh?(hh.toi??hh.timeOfImpact):null;if(t!=null&&t>.25&&t<L)q=sh.clone().addScaledVector(v,t-.005);}}if(R.nail==='floor'){const hp=bones.Hips.getWorldPosition(V());
+   const f=bones.LeftUpLeg.getWorldPosition(V()).sub(bones.RightUpLeg.getWorldPosition(V())).cross(V(0,1,0)).setY(0).normalize();/* the way the pelvis faces */
+   const d=V(q.x-hp.x,0,q.z-hp.z);const ah=d.dot(f),sd=Math.sqrt(Math.max(0,d.lengthSq()-ah*ah));if(ah<.3||ah>.6||sd>.2)q=hp.clone().addScaledVector(f,.46).add(V(-f.z*.08,0,f.x*.08));
+   const g=floorAt(q.x,root.position.y+.2,q.z,.5,.6);q.y=(g!=null?g:root.position.y)+.005;}
+  else if(R.nail==='wall'&&bones.RightArm.getWorldPosition(V()).distanceTo(q)>armLen+.3){/* the picked board is out of reach (a desk, a bunk in the way): the wall right in front of him */
+   const f=bones.LeftUpLeg.getWorldPosition(V()).sub(bones.RightUpLeg.getWorldPosition(V())).cross(V(0,1,0)).setY(0).normalize();const hp=bones.Hips.getWorldPosition(V());
+   const y=clamp(q.y,root.position.y+.5,root.position.y+1.25);const r=new RAPIER.Ray({x:hp.x,y,z:hp.z},{x:f.x,y:0,z:f.z});const h=world.castRay(r,.9,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});
+   const t=h?(h.toi??h.timeOfImpact):null;if(t!=null&&t>.2)q=V(hp.x+f.x*(t-.005),y,hp.z+f.z*(t-.005));}
+  return q;}
+ function nrmOf(R,pos){const h=V(root.position.x-pos.x,0,root.position.z-pos.z);if(h.lengthSq()<1e-6)return V(0,1,0);h.normalize();
+  return R.nail==='wall'?h:R.nail==='roof'?h.multiplyScalar(.6).add(V(0,1,0)).normalize():V(0,1,0);}
+ // the blow: the clip gives the body and the rhythm, this puts the fist so the hammer FACE lands on the nail. Lift (0-50 %), hold, drop
+ // (60-70 %), rest. The wrist target is corrected by the face's measured miss (the hammer hangs off the fist), the left hand steadies the work.
+ const HFACE=[.102,.146,0];
+ function repairHammer(a,dt,nail,nrm){const P=window.__props||P3;const hm=P&&P.tools&&P.tools.benchHammer;if(!hm||!nail||!bones.RightArm)return;a.nail=nail;
+  const sh=bones.RightArm.getWorldPosition(V());const S=a.hm||(a.hm={ph:Math.random()*.3,w:0,n:0,T:rnd(.72,.9)});
+  /* out of reach (hysteresis, so it never flickers): the IK fades out over half a second and the clip swings alone */
+  const dn=sh.distanceTo(nail);a.hmFar=a.hmFar?dn>armLen+.42:dn>armLen+.5;const fade=a.endIn!=null&&a.endIn<.9;S.w=a.hmFar||fade?Math.max(0,S.w-dt/(S.fastOut?.33:fade?.7:.5)):Math.min(1,S.w+dt/.6);if(S.w<=0)return;S.ph+=dt;if(S.ph>S.T){S.ph-=S.T;S.T=rnd(.72,.9);S.hit=0;S.n++;if(S.n%6===5)S.ph-=rnd(.6,1.1);}
+  H.noPop={side:'Right',until:performance.now()+150};/* motion.js: the blow is sharp on purpose */
+  const u=S.ph/S.T;const lift=u<0?0:u<.5?smooth(0,.5,u):u<.6?1:u<.8?1-Math.pow((u-.6)/.2,2):0;
+  const up=nrm.clone().normalize();const d=nail.clone().sub(sh);d.addScaledVector(up,-d.dot(up));if(d.lengthSq()<1e-4)d.set(0,0,1);d.normalize();
+  // fist at impact: a handle's length back toward him and a little up; lifted: up and back round the elbow
+  const hit=nail.clone().addScaledVector(d,-.24).addScaledVector(up,.06);const T=hit.clone().addScaledVector(up,.15*lift).addScaledVector(d,-.07*lift);
+  const pole=V(0,-1,0).addScaledVector(d,-.3);
+  const w=S.w;const solve=()=>{root.updateMatrixWorld(true);
+   /* still out of reach: he leans in from the hips (spine bent toward the nail, eased, at most ~30 deg), never the arm stretching */
+   {const hp=bones.Hips.getWorldPosition(V());const dir=V(nail.x-hp.x,0,nail.z-hp.z);const s0=bones.RightArm.getWorldPosition(V());const need=s0.distanceTo(nail)-(armLen+.17);
+    S.lean=(S.lean||0)+(clamp(need/.5,0,.55)-(S.lean||0))*(1-Math.exp(-dt*4));if(S.lean>.005&&dir.lengthSq()>1e-4){const ax=V(0,1,0).cross(dir.normalize()).normalize();
+     for(const n of ['Spine','Spine1','Spine2']){const b=bones[n];if(!b)continue;const qw=new THREE.Quaternion().setFromAxisAngle(ax,S.lean/3);const bw=b.getWorldQuaternion(new THREE.Quaternion());const pq=b.parent.getWorldQuaternion(new THREE.Quaternion());
+      b.quaternion.copy(pq.invert().multiply(qw.multiply(bw)));b.updateMatrixWorld(true);}}}
+   {const ls=bones.LeftArm.getWorldPosition(V());const k=d.clone().cross(up).normalize();const lp=nail.clone().addScaledVector(k,-.13).addScaledVector(d,-.05).addScaledVector(up,.015);if(ls.distanceTo(lp)<armLen*.95)armIK('Left',lp,V(0,-1,0),w*.9);}
+   /* the face, not the fist, goes onto the nail: the hammer is turned whole (handle along the blow, face toward the surface, raised
+      back round the wrist while lifting), the hand follows it, and the wrist target is corrected by the face's measured miss */
+   const k=d.clone().cross(up).normalize();
+   /* a low nail (floor, a kneeling blow): the handle comes down steeper at impact so the fist stays within the arm's reach */
+   let al=0;for(let t=0;t<=1.1;t+=.05){al=t;const q=new THREE.Quaternion().setFromAxisAngle(k,-t);const y=d.clone().applyQuaternion(q),x=up.clone().negate().applyQuaternion(q);
+    const g=nail.clone().addScaledVector(y,-.23).addScaledVector(x,-.1);if(g.distanceTo(sh)<=armLen*.97)break;}
+   S.al=S.al==null?al:S.al+(al-S.al)*(1-Math.exp(-dt*(al>S.al?25:4)));/* the steepness eases, never flips between frames */
+   const R=new THREE.Quaternion().setFromAxisAngle(k,-.75*lift-S.al);
+   const Y=d.clone().applyQuaternion(R),X=up.clone().negate().applyQuaternion(R);const Z=X.clone().cross(Y);
+   const Qt=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,Y,Z));const Qh=Qt.clone().multiply(hm.quaternion.clone().invert());
+   const hb=bones.RightHand;const want=nail.clone().addScaledVector(up,.2*lift).addScaledVector(d,-.07*lift);
+   /* solved at full weight, then blended from the clip's arm by w (iterating at weight w compounded to ~1-(1-w)^8: a 20+ cm snap on the first frame) */
+   const AB=[bones.RightArm,bones.RightForeArm,hb],q0=AB.map(b=>b.quaternion.clone());
+   let tgt=T.clone();for(let i=0;i<8;i++){armIK('Right',tgt,pole,1);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());
+    hb.quaternion.copy(pq.invert().multiply(Qh));hb.updateMatrixWorld(true);hm.updateMatrixWorld(true);
+    const f=hm.localToWorld(V(...HFACE));const e=want.clone().sub(f);S.e=e.length();if(e.length()<.006)break;tgt.add(e);const off=tgt.clone().sub(T);if(off.length()>.45)tgt.copy(T).add(off.setLength(.45));/* out of reach: no runaway target (the elbow would flip) */}
+   if(w<.999){AB.forEach((b,i)=>{const q=b.quaternion.clone();b.quaternion.copy(q0[i]).slerp(q,w);});bones.RightArm.updateMatrixWorld(true);hm.updateMatrixWorld(true);}};
+  /* after look / collide have moved the chest (grab.js late slot), else right here */
+  const G=window.__grab;if(G&&G.late)G.late(solve);else solve();
+  if(u>=.8&&!S.hit&&S.w>.9&&!a.hmFar){S.hit=1;AU('nails',nail);}}
+ for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{if(has('hy_standhammer'))try{pickPart(k,o);}catch(e){}const pos=o.pos?V(...o.pos):(R.def?R.def():null);
+  const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));const clip=typeof R.clip==='function'?R.clip(o.pos?pos:null):R.clip;
+  const D=rnd(18,35);/* known here, so the blow's IK fades out before the job ends (no snap back to the clip) */
+  const J=job({pt:()=>pos,node:pos?null:R.node,get stand(){return R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */
+   post:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{const n=a.nl||(a.nl=nailOf(R,pos));a.endIn=D-a.T;repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
+   tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;if(hamr&&a.hm&&!a.hmFar)return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});
+  /* called away mid-blow (Brain, the tour): the arm eases back to the clip over a third of a second instead of snapping */
+  if(J.post){const p0=J.post;J.post=dt=>{p0(dt);if(J.step!=='work'&&J.hm&&J.hm.w>0&&J.nl){J.endIn=0;J.hm.fastOut=1;repairHammer(J,dt,J.nl,nrmOf(R,J.nl));}};}
+  return J;};
  // ===================== gear: a skinned coat that really follows the body, bow and quiver from the workshop wall =====================
  // the coat is cut from the body mesh itself (torso + arms, pushed out 1.5 cm along the normals) and shares the skeleton
  const COAT=(()=>{let sk=null;root.traverse(o=>{if(o.isSkinnedMesh&&!sk)sk=o;});if(!sk)return null;const g0=sk.geometry;const S=sk.skeleton;
