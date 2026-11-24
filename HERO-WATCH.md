@@ -104,6 +104,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R15-1 | P1 | sweep (b783bd1) | R14-2 still open: after sweep the broom snaps to his hip (stick up past his head) and he walks off to fix_shingle with it | f3216–f3432 | r15-b783bd1/broom_on_belt_still.jpg | Grab |
 | R15-2 | P2 | sweep (b783bd1) | Mostly one-handed: right hand on the stick, the left arm hangs loose at his side for long stretches (should be both hands, left high and right low) | f1836–f2076, f2952–f3096 | r15-b783bd1/sweep_one_hand.jpg | Grab |
 | R15-3 | ok | pot (b783bd1) | Ladle held at the handle end, bowl in the pot, left hand at the rim, steady stance; only flaw is the broom still on his hip from sweep (R15-1) | f4152–f5952 | r15-b783bd1/pot_ok_broom_on_hip.jpg | — |
+| R15-4 | P1 | saw→craft (b783bd1) | Same belt bug for the plank saw: after saw it is stuck at his hip, blade out sideways, through craft (the saw work itself was hidden behind a post; to re-film) | f8664–f8832 | r15-b783bd1/saw_on_belt_after.jpg | Grab (168fe2f should cover it; verify) |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
