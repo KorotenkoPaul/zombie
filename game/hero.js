@@ -377,18 +377,32 @@ export function createHero(ctx){
  // turn on the spot with inertia (angular speed ramps up and down, no snap)
  function turnTo(F,dt){const da=wrapA(F-root.rotation.y);const wav=clamp(da*3.5,-2.6,2.6);H.av=(H.av||0)+clamp(wav-(H.av||0),-7*dt,7*dt);if(Math.abs(da)<.004&&Math.abs(H.av)<.05)H.av=0;root.rotation.y+=H.av*dt;}
  // walk up to the ladder at a normal pace (no creeping), turning to face it on the way; true when in place
- function ladApproach(goal,F,dt){const p=root.position;const dx=goal.x-p.x,dz=goal.z-p.z,d=Math.hypot(dx,dz);turnTo(F,dt);const da=Math.abs(wrapA(F-root.rotation.y));
+ function ladApproach(goal,F,dt){const p=root.position;const dx=goal.x-p.x,dz=goal.z-p.z,d=Math.hypot(dx,dz);turnTo(d>.35&&climb&&!window.__noClimb?Math.atan2(dx,dz):F,dt);/* CLIMB HOOK: walk facing the way, turn at the spot */const da=Math.abs(wrapA(F-root.rotation.y));
   if(d>.02){const vt=Math.min(Math.max(H.v||0,.35),H.walkV||1)*clamp(d/.25,.4,1);const v=Math.min(vt,(H.v||0)+2.6*dt);H.v=v;const m=Math.min(d,v*dt);p.x+=dx/d*m;p.z+=dz/d*m;play('30',{fade:.25});actions['30'].timeScale=clamp(v/walkSpeed,.6,1.6);}
   else{H.v=0;if(da>.15){play('30',{fade:.25});actions['30'].timeScale=.7;}}
   if(d<.04&&da<.15){p.x=goal.x;p.z=goal.z;return true;}return false;}
  function ladderStep(dt){const step=H.path[0];const key=step.from+'>'+step.node,rkey=step.node+'>'+step.from;const c=LAD[key]||LAD[rkey];const target=N[step.node].p;const p=root.position;
   if(!H.lad&&edgeShut(step.from,step.node)){try{window.__house.hatch.open();window.__audio&&window.__audio.play('hatch_open');}catch(e){}}// a closed hatch on the way: he pushes it open as he gets there
+  // CLIMB HOOK: both hands free on a ladder: a tool still in a hand goes over the back for the climb and back into the hand after
+  if(!H.lad&&climb&&!window.__noClimb){H.stowed=[];for(const h of ['Left','Right']){const t=H.hold[h]&&H.hold[h].tool;if(t){try{onBack(t,V(h==='Left'?-.06:.06,.1,-.16),[0,0,h==='Left'?.5:-.5]);}catch(e){}H.hold[h]=null;H.stowed.push([h,t]);}}
+   /* anything else in a hand (the bow back from the hunt, a bucket...): onto the back too, and back into that hand in the same grip after */
+   try{const T=PP().tools||{};for(const n in T){const o=T[n];for(const h of ['Left','Right'])if(o&&o.parent===bones[h+'Hand']){H.stowed.push([h,n,o.position.clone(),o.quaternion.clone(),o.scale.x]);if(/Bucket|meat|log|plate/i.test(n))onBack(n,V(h==='Left'?-.04:.04,-.06,-.3),[0,0,0]);/* bulky: hung clear behind the back (phone watch: hips inside the bucket) */else onBack(n,V(h==='Left'?-.05:.05,.08,-.15),[0,0,h==='Left'?.55:-.55]);}}}catch(e){}}
   if(!H.lad){const a=N[step.from].p;const up=target.y>a.y+.01;H.lad={up,phase:up?'mount':'over',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};}
   const L=H.lad;const cz=c.lz+(.32+(c.rope?.05:0))*c.side;const F=c.side>0?Math.PI:0;H.state='walk';H.ground=false;
-  const done=()=>{H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.ladOff=root.position.clone();H.v=L.up?.45:0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
+  const done=()=>{if(H.stowed&&H.stowed.length){for(const [h,t,pp,pq,ps] of H.stowed){try{if(pp){const o=PP().tools[t];const b=bones[h+'Hand'];if(o&&b){b.add(o);o.position.copy(pp);o.quaternion.copy(pq);o.scale.setScalar(ps);}}else grabTool(t,h);}catch(e){}}H.stowed=null;}/* CLIMB HOOK: tools back into the hands */H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.ladOff=root.position.clone();H.v=L.up?.45:0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
   // watchdog (QA P0: froze on the rope ladder for minutes): a ladder never takes longer than a slow climb; past that, land on the target
   L.age=(L.age||0)+dt;if(L.age>14+(L.yTop-L.yBot)/.3){p.copy(target);const f0=floorAt(p.x,p.y+.3,p.z,.4);if(f0!=null)p.y=f0;play(IDLE()||'0',{fade:.3});done();return;}
   if(L.phase==='mount'){H.ground=true;if(ladApproach(V(L.x,p.y,cz),F,dt)){L.phase='climb';}}
+  // ===== CLIMB HOOK (game/climb.js, ladder thread): hands and feet on the real rungs; window.__noClimb=true = the old clip =====
+  else if(L.phase==='climb'&&climb&&!window.__noClimb&&(L.cl||(L.cl=climb.begin({up:L.up,x:L.x,lz:c.lz,side:c.side,cz,yBot:L.yBot,yTop:L.yTop}))?1:(L.cl=-1,0))&&L.cl!==-1){
+   turnTo(F,dt);const r=climb.tick(dt);
+   if(r==='off'){done();H.v=.12;}
+   else if(r==='bottom'){play(IDLE()||'0',{fade:.35});done();}
+   else if(r==='lost'){const py=p.y;if(Math.abs(py-(L.up?L.yTop:L.yBot))<.25||Math.abs(py-(L.up?L.yBot:L.yTop))<.25&&(L.lost=(L.lost||0)+1)>2){play(IDLE()||'0',{fade:.35});done();}else L.cl=null;}}
+  else if(L.phase==='over'&&climb&&!window.__noClimb&&!L.start&&L.cl!==-1){// down: walk to the edge, back to the hole, climb down over it
+   const P=L.P||(L.P=climb.topStand({x:L.x,lz:c.lz,cz,yTop:L.yTop}));if(!P){L.cl=-1;}
+   else{H.ground=true;const dP=Math.hypot(P.x-p.x,P.z-p.z);if(ladApproach(V(P.x,p.y,P.z),F,dt)||(dP<.12&&Math.abs(wrapA(F-root.rotation.y))<1.3)){if(climb.begin({up:false,fromTop:true,x:L.x,lz:c.lz,side:c.side,cz,yBot:L.yBot,yTop:L.yTop})){L.phase='climb';L.cl=true;}else L.cl=-1;}}}
+  // ===== /CLIMB HOOK =====
   else if(L.phase==='climb'){turnTo(F,dt);p.x=L.x;p.z=cz;play('437',{speed:1.3,fade:.3});const v=.31*1.3*dt;const pull=rmCurve['435']?rmAt('435',99).y:1.4;
    if(L.up){p.y+=v;if(p.y>=L.yTop-pull){p.y=L.yTop-pull;L.phase='finish';once('435',{fade:.3,until:.86,then:()=>{L.phase='stand';}});/* the last ~0.45 s of the pull-up is standing still: step off instead */}}
    else{p.y-=v;if(p.y<=L.yBot){p.y=L.yBot;play('0',{fade:.35});done();}}}
@@ -445,7 +459,7 @@ export function createHero(ctx){
   act=null;H.task=name;actT=0;const A=ACT[name]||{};actDur=A.dur?rnd(A.dur[0],A.dur[1]):8;lastAct.unshift(name);lastAct.length=3;H.look=null;H.lookW=0;
   const mk=MAKE[name];if(!mk)return;act=mk(opts||{});act.name=name;}
  // ===== BRAIN HOOK state: setBrain / gait / onTaskEnd =====
- let brain=null;let motion=null;/* MOTION HOOK: game/motion.js, see setMotion */const gait={speed:1,turn:1};const endCbs=[];
+ let brain=null;let motion=null;let climb=null;/* CLIMB HOOK: game/climb.js, see setClimb *//* MOTION HOOK: game/motion.js, see setMotion */const gait={speed:1,turn:1};const endCbs=[];
  function endTask(res){const n=H.task;act=null;H.task=null;H.look=null;H.lookW=0;for(const cb of endCbs){try{cb(n,res);}catch(e){console.error(e);}}}
  // lamps with a wall switch (props.js switchPlate): the hand goes to the plate, not to the lamp
  const SWITCH_AT=(ctx.props&&ctx.props.switches)?Object.fromEntries(Object.entries(ctx.props.switches).map(([k,v])=>[k,v.clone()])):{bedroom:V(.372,lv.BD+1.15,3.5)};// wall switch positions come from props.js
@@ -2055,7 +2069,7 @@ export function createHero(ctx){
  spawn('read');
 
  return {spawn,openEdge,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
-  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,inv:INV,get act(){return act;},setMotion:m=>{motion=m||null;},root,onTaskEnd:cb=>{endCbs.push(cb);},
+  setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,inv:INV,get act(){return act;},setMotion:m=>{motion=m||null;},setClimb:m=>{climb=m||null;if(climb){climb.init({THREE,bones,ik2,turnBone,root,H,actions,play,floorAt,idle:()=>IDLE()||'0'});if(!climb._staged)climb._staged=stage('contacts',dt=>{if(climb&&!window.__noClimb)climb.post(dt);});}},/* CLIMB HOOK: ladders in the contacts slot */root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
 }
