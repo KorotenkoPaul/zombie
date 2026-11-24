@@ -383,7 +383,17 @@ const beams=new THREE.InstancedMesh(darkGeo,darkBoard,900);beams.castShadow=true
    shown while three draws the shadow maps: that runs after the main render list is built, so the camera never draws it
    (three tests shadow casters against the main camera's layers, so a layer can't do this). Its count follows the real mesh. */
 const shProxy=[];for(const src of [boards,beams]){const p=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({colorWrite:false}),src.instanceMatrix.count);p.instanceMatrix=src.instanceMatrix;p.count=0;p.castShadow=true;p.frustumCulled=false;p.visible=false;p.userData.shSrc=src;src.castShadow=false;scene.add(p);shProxy.push(p);}window.__shProxy=shProxy;
-{const sm=renderer.shadowMap,r0=sm.render.bind(sm);sm.render=(L,sc,cam)=>{for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{r0(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;}};}
+/* [PERF] the merged house props (props.js 'propsStatic', ~32k shadow triangles) leave the SUN's shadow pass: inside the
+   house the walls, floors and roof already shade them, and A/B shots at 7, 9, 15 and 18 h show no change. The lamps'
+   shadow maps still get them (the bunk's shadow at night). ?psSun (or __psSun=true) turns it back on. */
+let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
+{const sm=renderer.shadowMap,r0=sm.render.bind(sm);const draw=(L,sc,cam)=>{
+  if(!PSG&&--psT<=0){psT=60;PSG=scene.getObjectByName('propsStatic')||null;}
+  const ps=[];if(PSG&&!window.__psSun&&L.includes(sun))PSG.traverse(m=>{if(m.isMesh&&m.castShadow)ps.push(m);});
+  if(!ps.length){r0(L,sc,cam);return;}
+  const nu=sm.needsUpdate,rest=L.filter(l=>l!==sun);for(const m of ps)m.castShadow=false;try{r0([sun],sc,cam);}finally{for(const m of ps)m.castShadow=true;}
+  if(rest.length){sm.needsUpdate=nu;r0(rest,sc,cam);}};
+ sm.render=(L,sc,cam)=>{for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{draw(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;}};}
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
 // `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
