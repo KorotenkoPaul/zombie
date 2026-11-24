@@ -1083,9 +1083,13 @@ export function createHero(ctx){
     if(!a.st){a.st=1;a.pk=0;if(!bt)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
     const low=!bt&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.rel);if(o.clear)kneesClear(o.clear,dt);
     a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
-    if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else relTool(hand,n);}
+    if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else{relTool(hand,n);a.putAt=h.clone();}}
     if(a.rel&&a.t-a.tr>.4&&!(H.squat>0)){a.held.pop();a.rel=false;a.toBelt=null;a.t=0;a.rg=null;a.st=0;}}};
-  const finish=()=>{a.ik=null;H.squat=0;endTask(o.result?o.result(a):undefined);};
+  const finish0=()=>{a.ik=null;H.squat=0;endTask(o.result?o.result(a):undefined);};
+  /* o.stepBack: a tool put down on the floor is stepped away from first (gate: the watering can on the boards went through his feet
+     as his first steps to the next task crossed it); he backs off to ~.65 m from it, then leaves from there */
+  const finish=()=>{const q=a.putAt;if(!o.stepBack||!q||a.backed){finish0();return;}a.backed=true;const p=root.position;let dx=p.x-q.x,dz=p.z-q.z,d=Math.hypot(dx,dz);if(d>.6){finish0();return;}if(d<1e-3){const f=fwd(root.rotation.y);dx=-f.x;dz=-f.z;d=1;}
+   const t=V(q.x+dx/d*.65,p.y,q.z+dz/d*.65);a.ik=null;H.squat=0;a.faceYaw=root.rotation.y;/* backing off still facing it: a turn on the spot right beside it swung his toes through it */a.noPush=false;approachTo(a,t,0,()=>{a.faceYaw=null;finish0();});};
   a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
   a.leave=cb=>{H.squat=0;for(const n of a.held){const t=tools.find(x=>x[0]===n);const hd=t?t[1]:'Right';if(farHome(n))toBelt(n,hd);else if(awayHome(n))standDown(n,hd);else relTool(hd,n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
@@ -1367,7 +1371,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     a.v=(a.v||0)+clamp(vT-(a.v||0),-.6*dt,.5*dt);a.w=(a.w||0)+clamp(wT-(a.w||0),-3*dt,3*dt);
     if(a.v>1e-4)p.addScaledVector(fwd(root.rotation.y),a.v*dt);if(Math.abs(a.w)>1e-4){root.rotation.y+=a.w*dt;H.face=root.rotation.y;H.lookW=.25;}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
-  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',reps:Math.random()<.5?1:2,/* the job lasts the pour(s): with dur 5-6 s the 3 s clip ended and he stood 2-3 s frozen, can in hand, before putting it back (frames) */tools:[['wateringCan','Right']]}),
+  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',stepBack:true,reps:Math.random()<.5?1:2,/* the job lasts the pour(s): with dur 5-6 s the 3 s clip ended and he stood 2-3 s frozen, can in hand, before putting it back (frames) */tools:[['wateringCan','Right']]}),
   listen:(o)=>{
    // LEISURE (phone watch 2e3a58e: he stood 50 s in the middle of the workshop facing the viewer with the window at his back, and the
    // cupped hand read as a wave): he goes to a real glazed window of the room he is in (index.html win(): centre, inward normal),
