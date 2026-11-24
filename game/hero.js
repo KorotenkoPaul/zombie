@@ -957,7 +957,10 @@ export function createHero(ctx){
  let HPB=[],HPF=-1;function hardBoxes(){const fr=Math.floor(performance.now()/16);if(fr===HPF)return HPB;HPF=fr;HPB=[];
   /* the solid props' boxes (props.js place(): table, chest, stove...; a merged table has no meshes of its own to measure), the chair live, the bunk */
   for(const o of OBST)if(o.n!=='chair'&&o.x1!=null)HPB.push(new THREE.Box3(V(o.x0,o.y,o.z0),V(o.x1,o.y+1,o.z1)));
-  for(const o of [ctx.chair,ctx.bunk])if(o){const b=new THREE.Box3().setFromObject(o);if(!b.isEmpty())HPB.push(b);}return HPB;}
+  for(const o of [ctx.chair,ctx.bunk])if(o){const b=new THREE.Box3().setFromObject(o);if(!b.isEmpty())HPB.push(b);}
+  /* the floor hatch: its hole (the broom went over and into it, watch r16) and the raised lid */
+  {const hc=window.__house&&window.__house.hatch;if(hc&&hc.box){const b=hc.box;HPB.push(new THREE.Box3(V(b[0],b[2]-.5,b[4]),V(b[1],b[3]+1,b[5])));if(hc.lid&&hc.angle>.05){const lb=new THREE.Box3().setFromObject(hc.lid);if(!lb.isEmpty())HPB.push(lb);}}}
+  return HPB;}
  function hardPen(x,y,z,r){let d=0;
   for(const B of hardBoxes())if(y+1.7>B.min.y&&y<B.max.y)d=Math.max(d,Math.min(x+r-B.min.x,B.max.x+r-x,z+r-B.min.z,B.max.z+r-z));
   const P=window.__props||P3,D=P&&P.door;if(D&&D.leaf){const L=D.leaf();L.updateMatrixWorld(true);const w=(D.width||.77)/2;for(const h of [.5,1.2]){const q=L.worldToLocal(V(x,y+h,z));if(q.y>-.2&&q.y<2.1)d=Math.max(d,Math.min(q.x+w+r,w+r-q.x,q.z+.09+r,.15+r-q.z));}}
