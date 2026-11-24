@@ -45,6 +45,7 @@ export function createHero(ctx){
  const {scene,gltf,world,RAPIER,lv,sfx}=ctx;
  const P3=ctx.props||window.__props||null;
  const root=gltf.scene;scene.add(root);
+ {const seenM=new Set();root.traverse(o=>{if((o.isMesh||o.isSkinnedMesh)&&o.material&&!Array.isArray(o.material)){if(seenM.has(o.material))o.material=o.material.clone();seenM.add(o.material);}});}/* PERF: one material per mesh. Material_0/head were shared by meshes with different morph-target counts (eyelids, coat): three.js switched their program twice a frame (~0.2 ms, ~35 KB garbage) */
  root.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;if(o.material){o.material.roughness=Math.max(.55,o.material.roughness??.8);o.material.metalness=0;}}});
  const bones={};root.traverse(o=>{if(o.isBone)bones[o.name.replace('mixamorig','').replace(':','')]=o;});
  for(const c of movesToClips(ctx.moves))if(!gltf.animations.some(a=>a.name===c.name))gltf.animations.push(c);
