@@ -531,7 +531,7 @@ export function createHero(ctx){
    // KITCHEN: a look at the fire first, by hand (the hy_oven clip stooped bow-legged with the hand hovering while the door dropped by
    // itself): squat at the oven, the right palm on the handle lowers the door, a look at the embers, the hand lifts it shut, stand up
    const OVP=()=>{const P=window.__props||P3;return P&&P.oven&&P.oven.handle?P.oven:null;};const ovp=PT('oven');
-   const sqTo=(v,dt,rate=2.2)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);H.kSquat=H.squat>.001;};
+   const sqTo=(v,dt,rate=2.2)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);H.kSquat=H.squat>.001;H.kSqA=act;};
    const sqFor=t=>{const sh=bones.RightArm.getWorldPosition(V());const hz=Math.hypot(sh.x-t.x,sh.z-t.z);const R0=armLen*.9+PALM-.03;const dy=sh.y+(H.squat||0)-t.y;return clamp(dy-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,.45);};
    const afterOven=()=>{/* GRAB: no spoon out of thin air and no clip stirring the air beside the stove: he steps up to the
      pot, takes the ladle out of it with his hand, then stirs in it (stirPost) */const PO=PP();const pp=PO&&PO.tools&&PO.tools.pot;
@@ -1008,7 +1008,7 @@ export function createHero(ctx){
    const a={step:'go',t:0};const wp=PT('woodpile'),ovp=PT('oven');const P=window.__props||P3;const OV=()=>P&&P.oven;if(!wp||!ovp||!OV()||!OV().handle){a.update=()=>endTask(false);return a;}
    const G=()=>window.__grab;const rightOf=()=>{const f=fwd(root.rotation.y);return V(-f.z,0,f.x);};
    const arm=()=>P.tools&&P.tools.logArmful;let logs=[],home=[];
-   const sqTo=(v,dt,rate=2.2)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);H.kSquat=H.squat>.001;};
+   const sqTo=(v,dt,rate=2.2)=>{const c=H.squat||0;H.squat=c+clamp(v-c,-rate*dt,rate*dt);H.kSquat=H.squat>.001;H.kSqA=act;};
    // how far the hips must go down for the palm to reach t from the shoulder (feet stay put), +3 cm to spare
    const sqFor=(t,side='Right',mx=.45)=>{const sh=bones[side+'Arm'].getWorldPosition(V());const hz=Math.hypot(sh.x-t.x,sh.z-t.z);const R0=armLen*.9+PALM-.03;const dy=sh.y+(H.squat||0)-t.y;return clamp(dy-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,mx);};
    const mouth=()=>{const o=OV();const h=o.handle(V());const c=ovp.clone();return c.add(V(h.x-c.x,0,h.z-c.z).multiplyScalar(-.15)).setY(ovp.y+.02);};// inside the opening, above the embers
@@ -1294,7 +1294,7 @@ export function createHero(ctx){
   const keep=()=>{const sh=bones.RightArm.getWorldPosition(V());const v=V(hk.x-sh.x,0,hk.z-sh.z);const dy=hk.y-sh.y;const want=Math.sqrt(Math.max(0,R0*R0-dy*dy));const l=v.length();
    if(l>want){const m=Math.min(l-want,.6*dt);const q=p.clone().addScaledVector(v.normalize(),m);pushOut(q);p.x=q.x;p.z=q.z;}H.face=Math.atan2(hk.x-p.x,hk.z-p.z);};
   // KITCHEN: the meat shelf is low (~0.6 m): he bends his knees to bring the shoulder down to it (feet stay planted), only while the hand is in
-  {if(R.st==='in'&&R.sq0===undefined){const sh=bones.RightArm.getWorldPosition(V());const hz=Math.hypot(sh.x-R.ins.x,sh.z-R.ins.z);const dy=sh.y+(H.squat||0)-R.ins.y;R.sq0=clamp(dy-Math.sqrt(Math.max(0,(R0*.9)**2-hz*hz))+.04,0,.42);}const want=R.st==='in'&&R.sq0?R.sq0*smooth(0,1,R.w):0;R.sq=(R.sq||0)+(want-(R.sq||0))*(1-Math.exp(-dt*6));H.squat=R.sq;H.kSquat=R.sq>.001;}
+  {if(R.st==='in'&&R.sq0===undefined){const sh=bones.RightArm.getWorldPosition(V());const hz=Math.hypot(sh.x-R.ins.x,sh.z-R.ins.z);const dy=sh.y+(H.squat||0)-R.ins.y;R.sq0=clamp(dy-Math.sqrt(Math.max(0,(R0*.9)**2-hz*hz))+.04,0,.42);}const want=R.st==='in'&&R.sq0?R.sq0*smooth(0,1,R.w):0;R.sq=(R.sq||0)+(want-(R.sq||0))*(1-Math.exp(-dt*6));H.squat=R.sq;H.kSquat=R.sq>.001;H.kSqA=act;}
   if(R.st==='move'){if(R.t>=R.md){play(IDLE(),{fade:.35});R.st=R.nx;R.t=0;}return;}
   if(R.st==='reachO'||R.st==='reachC'){R.w=Math.min(1,R.w+dt/.35);R.tgt='h';if((R.w>=1&&grip().distanceTo(hk)<.03)||R.t>1.2){R.st=R.st==='reachO'?'open':'close';R.t=0;}}
   else if(R.st==='open'){keep();F.setOpen(Math.min(.6,F.open+1.0*dt));if(F.open>=.6){F.openTo(.92);/* a last pull and it swings wide */R.w=Math.max(.0,R.w);R.st='letgo';R.t=0;}}
@@ -1886,6 +1886,8 @@ export function createHero(ctx){
   if(H.once){const o=H.once;const a=o.a;if(a.time>=o.end-1e-3||!a.isRunning()){H.once=null;o.then&&o.then();}}
   edgeTick(dt);bedTick(dt);overlayTick(dt);bseqTick(dt);gtTick(dt);bedClipTick(dt);
   // height: stand on the real floor, or put the hips on the seat / mattress
+  /* KITCHEN: a crouch whose task is gone (cut off mid-squat) eases back up instead of staying on for the next task */
+  if(H.kSquat){if(!act||act!==H.kSqA){H.squat=Math.max(0,(H.squat||0)-1.2*dt);if(H.squat<=.001){H.squat=0;H.kSquat=0;kSlow(false);}}}
   if(H.fit){const f=H.fit;const hy=bones.Hips.position.y;let w=1;
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
    p.y=lerp(f.base,f.y-hy,w);}
@@ -1924,7 +1926,7 @@ export function createHero(ctx){
   if(left<=0){H.ov=null;ov.then&&ov.then();return;}
   const tt=Math.min(ov.t,ov.T.dur);for(const k of ov.T.tracks){const v=k.it.evaluate(tt);_ovq.fromArray(v);k.b.quaternion.slerp(_ovq,ov.w*(k.spine&&H.path.length?.6:1));}}
  // ---------- start anywhere: drop him into the middle of any activity (used for a random start, any time of day) ----------
- function resetBody(){try{undress(false,true);}catch(e){}H.lad=null;H.path=[];H.stk=null;try{dropGearNow();}catch(e){}root.visible=true;for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
+ function resetBody(){H.squat=0;H.kSquat=0;kSlow(false);try{undress(false,true);}catch(e){}H.lad=null;H.path=[];H.stk=null;try{dropGearNow();}catch(e){}root.visible=true;for(const h of ['Left','Right']){if(H.hold[h]&&H.hold[h].tool)releaseTool(h);else release(h);}
   if(bookObj&&bookHome&&bookObj.parent!==bookHome.parent){bookHome.parent.add(bookObj);bookObj.position.copy(bookHome.pos);bookObj.quaternion.copy(bookHome.quat);}
   if(H.inBed)bedPress(false);
   Object.assign(H,{path:[],then:null,wait:null,swing:null,bedB:null,edgeHold:null,lad:null,slide:null,once:null,trans:false,seated:null,inBed:false,fit:null,ground:true,v:0,av:0,look:null,lookW:0,pending:null,linger:0,turnStep:false});
