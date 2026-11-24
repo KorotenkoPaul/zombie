@@ -302,9 +302,9 @@ export function createWorkshop(K) {
     let map = null; b.traverse(o => { if (!map && o.isMesh && o.material && o.material.map) map = o.material.map; });
     const wood = new THREE.MeshStandardMaterial({ color: map ? 0xE8C9A0 : 0xC89A63, roughness: .8, map }); const iron = new THREE.MeshStandardMaterial({ color: 0x8E9196, metalness: .4, roughness: .45 });
     const g = new THREE.Group(); g.name = 'wsCraft'; b.add(g); if (rs < 0) { g.scale.x = -1; } // built for his right hand at +x
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(.07, .035, .26), wood); bar.position.set(.67, .9 + .0175, .2); bar.visible = false; const pl = new THREE.Mesh(new THREE.BoxGeometry(.34, .02, .1), wood); pl.position.set(.66, .9 + .01, .245); // flat on the top: he is small (shoulder 26 cm over the bench), a raised piece put his fist above the shoulder
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(.07, .035, .26), wood); bar.position.set(.67, .9 + .0175, .2); bar.visible = false; const pl = new THREE.Mesh(new THREE.BoxGeometry(.34, .02, .1), wood); pl.position.set(.66, .9 + .01, .28); // flat on the top: he is small (shoulder 26 cm over the bench), a raised piece put his fist above the shoulder
     for (const m of [bar, pl]) { m.castShadow = true; m.receiveShadow = true; g.add(m); }
-    const nails = []; for (const x of [.645, .69, .62, .71]) { const n = new THREE.Group(); const sh = new THREE.Mesh(new THREE.CylinderGeometry(.0018, .0018, .05, 6), iron); sh.position.y = .025; const hd = new THREE.Mesh(new THREE.CylinderGeometry(.0045, .0045, .0015, 10), iron); hd.position.y = .05; n.add(sh, hd); n.position.set(x, .9, .245 + (nails.length % 2 ? -.02 : .02)); n.visible = false; g.add(n); nails.push({ o: n, sunk: 0 }); }
+    const nails = []; for (const x of [.645, .69, .62, .71]) { const n = new THREE.Group(); const sh = new THREE.Mesh(new THREE.CylinderGeometry(.0018, .0018, .05, 6), iron); sh.position.y = .025; const hd = new THREE.Mesh(new THREE.CylinderGeometry(.0045, .0045, .0015, 10), iron); hd.position.y = .05; n.add(sh, hd); n.position.set(x, .9, .28 + (nails.length % 2 ? -.018 : .012)); n.visible = false; g.add(n); nails.push({ o: n, sunk: 0 }); }
     CR = { g, nails, top: .92 }; return CR; }
   const toWC = (x, y, z) => { const sx = CR && CR.g.scale.x < 0 ? -1 : 1; return toW(x * sx, y, z); };
   function craft(o) {
@@ -321,7 +321,7 @@ export function createWorkshop(K) {
       start: () => setup(), look: () => S.lookAt || (CR && nailHead(0)), lookW: .9, tick: () => { H.face = benchYaw(); },
       post: (a, dt) => { S.t += dt; const g = G(); if (!CR) { a.T = 1e9; return; }
         const n = CR.nails[S.ni]; const N = n ? nailHead(S.ni) : null; S.lookAt = N || S.lookAt;
-        const leftOn = (w, onNail) => { const p = onNail && N ? N.clone().add(V(0, -.03, 0)).addScaledVector(dirW(0, 0, 1), .025) : toWC(.53, .92 + .02, .245); handTo('Left', p, w); if (g) g.hold('Left', CR.g, null); };
+        const leftOn = (w, onNail) => { const p = onNail && N ? N.clone().add(V(0, -.03, 0)).addScaledVector(dirW(0, 0, 1), .025) : toWC(.53, .92 + .02, .28); handTo('Left', p, w); if (g) g.hold('Left', CR.g, null); };
         if (S.ph === 'take') { const r = homeGrip('benchHammer'); if (!r || take(a, 'benchHammer', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'set'; S.t = 0; } leftOn(smooth(.3, 1, S.t), false); return; }
         if (S.ph === 'set') { // a nail from the plank's edge is stood on its point; the hammer waits low
           if (!n) { S.ph = 'put'; S.t = 0; return; } if (S.t > .4 && !n.o.visible) { n.o.visible = true; n.sunk = 0; }
