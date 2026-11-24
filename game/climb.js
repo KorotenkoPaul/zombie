@@ -292,7 +292,8 @@ export function createClimb() {
     if (!tg) return;
     const W = S.W; const zDir = S.last.zDir;
     // legs: knees forward between the rungs and a little out, then the ball of the foot onto the rung
-    for (const s of ['Left', 'Right']) {
+    // once the climb has ended the walk owns the legs at once (frozen foot targets while he walked off bent the ankles: gate foot-bend near the ladders)
+    if (A) for (const s of ['Left', 'Right']) {
       const t = tg[s[0] + 'F']; const sx = (s === 'Left' ? -1 : 1) * zDir;
       C.ik2(B[s + 'UpLeg'], B[s + 'Leg'], B[s + 'Foot'], t, V(sx * .3, .55, -zDir), W, false);
       const F = B[s + 'Foot'], Tb = B[s + 'ToeBase'];
