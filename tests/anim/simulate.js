@@ -1,18 +1,20 @@
 // Runs the hero's life at a fixed timestep and samples every frame. Shared by run.js (measure) and shots.js (replay + render).
 const install=require('./sampler.js');
 const TASKS=['read','cook','wash','tea','craft','look','sleep'];
-async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log=console.log,gate=0}={}){
+async function simulate(p,{drain=null,only=null,start=6.5,hours=25,dt=1/60,tour=true,capture=null,log=console.log,gate=0}={}){
  const info=await p.evaluate(`(${install})({})`);
  await p.evaluate(()=>__qa.start());
  await p.evaluate(h=>{__qa.reseed(12345);__th.setHour(h);},start);
- const CH=600;let total=0;const plan=[];
+ const CH=600;let total=0,lastDrain=0;const plan=[];
  // phase 1: natural day, the hero chooses for himself
  // capture: optional {frames:Set of frame numbers, fn:async frame=>{}} called right after that frame was simulated
  const cap=capture?[...capture.frames].sort((a,b)=>a-b):[];let ci=0;
  const runFrames=async(n,tag)=>{let done=0;while(done<n){let k=Math.min(CH,n-done);
    while(ci<cap.length&&cap[ci]<=total)ci++;if(ci<cap.length&&cap[ci]<=total+k)k=cap[ci]-total;
    await p.evaluate(([k,dt,tag])=>__qa.step(k,dt,f=>__A.sample(f,dt,__th.state().hour,tag)),[k,dt,tag]);done+=k;total+=k;
-   if(ci<cap.length&&cap[ci]===total){await capture.fn(total);ci++;}}};
+   if(ci<cap.length&&cap[ci]===total){await capture.fn(total);ci++;}
+   // drain: move sampled frames out of the page every few thousand, so a long gate never holds ~90k frames in the renderer
+   if(drain&&total-lastDrain>=4000){lastDrain=total;await drain(await p.evaluate(()=>__A.out.frames.splice(0)));}}};
  // a game day: 14 h of day in 110 s and 10 h of night in 70 s -> frames per in-game hour differ; step until the clock has run `hours`
  let ran=0;let prevH=start;
  while(!gate&&ran<hours){await runFrames(CH,'day');const h=await p.evaluate(()=>__th.state().hour);let d=h-prevH;if(d<0)d+=24;ran+=d;prevH=h;}
@@ -32,7 +34,7 @@ async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log
    ['trip',15,{kind:'wood',jacket:false},240],['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
    ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],['splitwood',10],
    ['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11]]);
-  for(const [t,h,opts,maxS] of EXTRA){const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
+  for(const [t,h,opts,maxS] of EXTRA){if(only&&!only.test(t))continue;const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
    // through the brain (the body alone does not route between floors); the brain may slip its own chore in first, so ask again until he takes it
    const ask=()=>p.evaluate(([t,o,g])=>{const B=window.__brain;const MR=Math.random;
     // gate: bed straight away. The bedtime chores (bolt, hatch) are planned by dice and are their own gate tasks; without this sleep came and went as a block
