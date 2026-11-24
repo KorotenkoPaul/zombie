@@ -559,7 +559,7 @@ export function createHero(ctx){
      if(a.t>tE){toggle()/* never leaves the light as it was: the brain came back for it again and again (full gate: extra walks) */;
       /* PLATE: square to the wall he would set off sideways along it; he turns back to the room on the spot first (full gate: walks off
          the goal line 95 deg and slow after every switch) */
-      if(plate&&!a.turned&&node&&N[node]){a.turned=true;const q=N[node].p;a.faceYaw=Math.atan2(q.x-root.position.x,q.z-root.position.z);a.noPush=true;a.back=true;approachTo(a,root.position.clone(),0,()=>{a.faceYaw=null;a.noPush=false;endTask();});return;}
+      if(plate&&!a.turned&&node&&N[node]){a.turned=true;const q=N[node].p,p=root.position;const dx=q.x-p.x,dz=q.z-p.z,d=Math.hypot(dx,dz)||1;/* a real step off the wall toward the room: approachTo's turn, step, turn (a turn on the spot shuffled the feet: gate jitter) */const t=p.clone().add(V(dx/d*.45,0,dz/d*.45));a.faceYaw=null;a.back=true;play('30',{fade:.3,speed:1});approachTo(a,t,0,()=>endTask());return;}
       endTask();}}
     if(a.step==='ret'){if(a.t>=a.adur)a.next();}};
    a.post=()=>{if(a.step!=='reach'||(a.low&&!plate))return;const w=plate?smooth(0,.55,a.t)*(1-smooth(.8,1.45,a.t))/* a slower press and let-go: the arm fell back 33 cm in .27 s (gate jitter 13 mm at 5 Hz) */:smooth(0,.4,a.t)*(1-smooth(.75,1.1,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
