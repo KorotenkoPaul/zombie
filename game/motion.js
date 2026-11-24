@@ -323,7 +323,7 @@ export function createMotion({ hero, db, opts = {} }) {
       const fi = Math.floor(t0); const dx = c.dr[fi*3] * adv, dz = c.dr[fi*3+1] * adv, dy = c.dr[fi*3+2] * adv; const cs = Math.cos(S.cyaw), sn = Math.sin(S.cyaw);
       S.char.x += dx*cs + dz*sn; S.char.z += -dx*sn + dz*cs; S.cyaw += dy;
       // pull toward the simulation (short half-life), never further than a hand's width away
-      const kp = 1 - Math.exp(-dt * Math.LN2 / (simSpd > .1 ? .12 : .18)) /* faster only while moving */, ky = 1 - Math.exp(-dt * Math.LN2 / .14);
+      const kp = 1 - Math.exp(-dt * Math.LN2 / .18), ky = 1 - Math.exp(-dt * Math.LN2 / .14);
       S.char.x += (p.x - S.char.x) * kp; S.char.z += (p.z - S.char.z) * kp; S.cyaw += wrapA(yaw - S.cyaw) * ky;
       const ex = S.char.x - p.x, ez = S.char.z - p.z, el = Math.hypot(ex, ez), MAXD = .12; if (el > MAXD) { S.char.x = p.x + ex / el * MAXD; S.char.z = p.z + ez / el * MAXD; }
       const ea = wrapA(S.cyaw - yaw); if (Math.abs(ea) > .5) S.cyaw = yaw + Math.sign(ea) * .5;
