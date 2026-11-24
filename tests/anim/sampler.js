@@ -148,7 +148,7 @@ module.exports=function install(cfg){
  // the hatch lid swings or falls on its own after letGo (real gravity): mark those frames so the no-touch check skips them
  const HT=window.__house&&window.__house.hatch;let hatchFree=false;
  if(HT&&HT.letGo&&!HT.__qa){HT.__qa=1;const lg=HT.letGo.bind(HT),dr=HT.drive.bind(HT);HT.letGo=o=>{hatchFree=true;return lg(o);};HT.drive=a=>{hatchFree=false;return dr(a);};}
- const HAND=[heroBones.LeftHand,heroBones.RightHand];const DYN=new Set(),DV=V(),DL=V(),DS=V(),DI=new THREE.Matrix4();const BODYP=VS.map(()=>[V(),0]);
+ const HAND=[heroBones.LeftHand,heroBones.RightHand];let lastDoor=null;const DYN=new Set(),DV=V(),DL=V(),DS=V(),DI=new THREE.Matrix4();const BODYP=VS.map(()=>[V(),0]);
  const QB=['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase'].map(n=>heroBones[n]);
  const out={frames:[],GN,BN,nColl:C.length,skipped,verts:VS.length,rungs:RUNGS,QN:['Spine2','Neck','Head','LeftFoot','RightFoot','LeftToeBase','RightToeBase']};
  const vp=V(),q=new THREE.Quaternion();
@@ -175,7 +175,10 @@ module.exports=function install(cfg){
   {const pr=[];heroBones.LeftHand.getWorldPosition(HP[0]);heroBones.LeftForeArm.getWorldPosition(FA);HP[0].add(HP[0].clone().sub(FA).setLength(.07));
    heroBones.RightHand.getWorldPosition(HP[1]);heroBones.RightForeArm.getWorldPosition(FA);HP[1].add(HP[1].clone().sub(FA).setLength(.07));const hp=H.root.position;
    const moved=new Set();for(const m of MOV){const e=m.o.matrixWorld.elements;let d=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-m.last[k]);if(x>d)d=x;}if(d>2e-4){moved.add(m.o);for(let k=0;k<16;k++)m.last[k]=e[k];}}
-   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
+   // the open door sways in the wind (props.js wind()): that is not the hero moving it. Count the door only when its open/bolt value changed
+   const DR=window.__props&&window.__props.door;let doorStill=false;if(DR){const v=DR.open+DR.bolt*10;doorStill=v===lastDoor;lastDoor=v;}
+   const inDoor=o=>{if(!DR||!DR.obj)return false;for(let x=o;x;x=x.parent)if(x===DR.obj)return true;return false;};
+   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;if(doorStill&&inDoor(o))continue;const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
     BX.setFromObject(o);if(BX.isEmpty())continue;const dh=Math.min(BX.distanceToPoint(HP[0]),BX.distanceToPoint(HP[1]));pr.push([m.id,+(dh*100).toFixed(1)]);}
    if(pr.length)r.mv=pr;if(hatchFree)r.hfree=1;
    // held tools: anything hung under a hand bone (not a bone); distance from that palm to the tool's mesh
