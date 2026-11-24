@@ -849,7 +849,9 @@ export function createHero(ctx){
   if(a.ph==='after'){const u=a.pt/T.after;a.w=Math.max(0,1-smooth(0,.6,u));H.squat=.04*(1-u);axeRest(a,d,1);if(a.w>.01)holdAxe(a,piv,d,r,thS-.05+.3*smooth(0,.6,u),rH,a.w);
    if(u>=1){a.ri++;a.ph=a.plan[a.ri]!=null?'place':'done';a.pt=0;a.hit=0;}}}
  // the axe at rest in the right hand: hanging head down along the leg, the blade forward (never sticking out sideways)
- function axeRest(a,d,w){const gp=odPalm('Right');const dn=V(0,-1,0).addScaledVector(d,.22).normalize();axeWorld(gp.clone().addScaledVector(dn,AXE_G),dn,d.clone());}
+ function axeRest(a,d,w){const gp=odPalm('Right');let dn=V(0,-1,0).addScaledVector(d,.22).normalize();
+  // squatting, the head is never in the ground: the handle leans forward until the head just rests on the earth
+  let gy=0;try{gy=window.__ground.heightAt(gp.x,gp.z);}catch(e){}const room=gp.y-(gy+.07);if(AXE_G*-dn.y>room){const v=clamp(room/AXE_G,-.2,1);dn=d.clone().setY(0).normalize().multiplyScalar(Math.sqrt(1-v*v)).add(V(0,-v,0)).normalize();}axeWorld(gp.clone().addScaledVector(dn,AXE_G),dn,d.clone());}
  // both hands on the axe handle: right hand at the tool's grip, left hand at the handle's end; the blade faces the way it swings
  function holdAxe(a,piv,d,r,th,rH,w){const dir=d.clone().multiplyScalar(Math.cos(th)).add(V(0,Math.sin(th),0));const tan=d.clone().multiplyScalar(-Math.sin(th)).add(V(0,Math.cos(th),0));
   const gR=piv.clone().addScaledVector(dir,rH-AXE_G);const gL=piv.clone().addScaledVector(dir,Math.max(.22,rH-.67)).addScaledVector(r,.01);
@@ -1184,6 +1186,9 @@ export function createHero(ctx){
   if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>.3){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   bedHand();bedLegClear(dt);
   if(act&&act.post)act.post(dt);try{slungPost();}catch(e){}
+  // GRAB tick (lost in the 00:20 rollback): eases released tools onto their hooks and closes the fists round what they hold;
+  // without it every blended release left the tool hanging in the air where the hand let go (the axe over the chopping block)
+  try{const G=window.__grab;if(G&&G.tick)G.tick(dt,H);}catch(e){}
   if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);runSlot('contacts',dt);}
 
  // ---------- overlay: an upper-body clip layered over whatever the legs do (stretch while walking off, scratch the head, sip...) ----------
