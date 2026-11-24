@@ -15,7 +15,10 @@ const GATE=new Set(['joint','owl-head','foot-bend','unsupported','penetration','
 const Q={old:'',new:'?hero=new'};
 const FROM=arg('from',null);// re-check recorded frames (DIR/<hero>/frames.json.gz) with the current analyze.js, no browser
 async function one(h){let D,errs=[];if(FROM){D=JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(FROM,h,'frames.json.gz'))));}else{const o=await open({seed:1,query:Q[h]??''});errs=o.errs;
- await simulate(o.p,{gate:CAP,log:()=>{},only:arg('only',null)?new RegExp('^('+arg('only')+')$'):null});D=await o.p.evaluate(()=>({...__A.out,names:__A.collNames(),mov:__A.movNames()}));await o.b.close();}
+ const got=[];await simulate(o.p,{gate:CAP,log:()=>{},only:arg('only',null)?new RegExp('^('+arg('only')+')$'):null,drain:async fr=>{for(const f of fr)got.push(f);}});
+  // the rest in chunks: one evaluate with ~90k frames can kill the page ("Execution context was destroyed")
+  D=await o.p.evaluate(()=>{const {frames,...rest}=__A.out;return {...rest,names:__A.collNames(),mov:__A.movNames(),nF:frames.length};});
+  const nF=D.nF;delete D.nF;for(let a=0;a<nF;a+=4000){const part=await o.p.evaluate(([a,b])=>__A.out.frames.slice(a,b),[a,a+4000]);for(const f of part)got.push(f);}D.frames=got;await o.b.close();}
  const R=analyze(D);fs.mkdirSync(OUT+'/'+h,{recursive:true});fs.writeFileSync(OUT+'/'+h+'/frames.json.gz',zlib.gzipSync(JSON.stringify({...D,meta:{seed:1,query:Q[h]??'',gate:CAP}})));
  fs.writeFileSync(OUT+'/'+h+'/issues.json',JSON.stringify(R));const byF=new Map(D.frames.map(f=>[f.f,f]));
  const worst={};for(const q of R.issues){if(q.P!==1||!GATE.has(q.type))continue;if(q.type==='jump'&&q.value<10)continue;
