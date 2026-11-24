@@ -150,14 +150,14 @@ export function createTreeDress(C) {
       sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);vTdJ=tdJ;vB1=tdB1;vB2=tdB2;');
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute float tdGr;varying float vTdGr;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*vec4(transformed,1.)).xyz;tdN=normalize(mat3(modelMatrix)*objectNormal);vTdJ=tdJ;vTdGr=tdGr;vB1=tdB1;vB2=tdB2;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
 ${MOBILE ? '#define TD_LITE' : ''}
 #define TDRS .68
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
-varying vec3 vTdJ;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
+varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
 varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
@@ -255,6 +255,7 @@ uniform float tdCool;` + NOISE)
             diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
             diffuseColor.rgb*=mix(vec3(1.),mix(vec3(.82,.8,1.05),vec3(1.),smoothstep(.15,.6,tdH)),tdCool); }
           // ---- junctions (tdJ from the mesh): crotches, the collar round each limb, and the house's beams biting into the bark ----
+          diffuseColor.rgb*=mix(1.,.42,vTdGr); // carved grooves in the roots and the trunk's cuts: deep shade, reads from the normal view
           tdCr=vTdJ.x; tdCo=vTdJ.y;
           // crotch / crease: the bark squeezed into tight folds and deep shade where the limb meets the trunk
           diffuseColor.rgb*=mix(1.,.5,tdCr*tdCr)*mix(1.,.7+.3*cav,tdCr);
