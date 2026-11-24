@@ -1,0 +1,45 @@
+<!doctype html><html><head><script type="importmap">{"imports":{"three":"/nm/three/build/three.module.js","three/addons/":"/nm/three/examples/jsm/"}}</script></head><body>
+<script type="module">
+import * as T from 'three'; import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js'; import {FBXLoader} from 'three/addons/loaders/FBXLoader.js'; import {MeshoptDecoder} from 'three/addons/libs/meshopt_decoder.module.js';
+// hero bone, hero child (direction), aliases of the matching source bone (lowercase, prefix stripped), source child aliases
+const MAP=[['Hips','Spine'],['Spine','Spine1'],['Spine1','Spine2'],['Spine2','Neck'],['Neck','Head'],['Head','HeadTop_End'],
+ ['LeftShoulder','LeftArm'],['LeftArm','LeftForeArm'],['LeftForeArm','LeftHand'],['LeftHand','LeftHandMiddle4','LeftHandMiddle1'],
+ ['RightShoulder','RightArm'],['RightArm','RightForeArm'],['RightForeArm','RightHand'],['RightHand','RightHandMiddle4','RightHandMiddle1'],
+ ['LeftUpLeg','LeftLeg'],['LeftLeg','LeftFoot'],['LeftFoot','LeftToeBase'],['RightUpLeg','RightLeg'],['RightLeg','RightFoot'],['RightFoot','RightToeBase']];
+const ALIAS={hips:['hips','pelvis','root'],spine:['spine','spine01','spine_01'],spine1:['spine1','spine02','spine_02','chest'],spine2:['spine2','spine03','spine_03','spine4','upperchest','chest'],
+ neck:['neck','neck1','neck01','neck_01'],head:['head'],headtop_end:['headtop_end','head_end','headend','headtop'],
+ leftshoulder:['leftshoulder','clavicle_l','leftcollar','l_clavicle'],leftarm:['leftarm','upperarm_l','leftupperarm'],leftforearm:['leftforearm','lowerarm_l','leftlowerarm'],lefthand:['lefthand','hand_l'],lefthandmiddle1:['lefthandmiddle1','middle_01_l','leftfingerbase','lefthandindex1'],
+ rightshoulder:['rightshoulder','clavicle_r','rightcollar','r_clavicle'],rightarm:['rightarm','upperarm_r','rightupperarm'],rightforearm:['rightforearm','lowerarm_r','rightlowerarm'],righthand:['righthand','hand_r'],righthandmiddle1:['righthandmiddle1','middle_01_r','rightfingerbase','righthandindex1'],
+ leftupleg:['leftupleg','thigh_l','leftupperleg','leftthigh'],leftleg:['leftleg','calf_l','leftlowerleg','leftshin'],leftfoot:['leftfoot','foot_l'],lefttoebase:['lefttoebase','ball_l','lefttoe','lefttoes'],
+ rightupleg:['rightupleg','thigh_r','rightupperleg','rightthigh'],rightleg:['rightleg','calf_r','rightlowerleg','rightshin'],rightfoot:['rightfoot','foot_r'],righttoebase:['righttoebase','ball_r','righttoe','righttoes']};
+const clean=n=>n.replace(/^.*[:|]/,'').replace(/^mixamorig\d*/i,'').toLowerCase();
+const H={}; const gl=await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync('/hero.glb'); gl.scene.updateMatrixWorld(true);
+gl.scene.traverse(o=>{H[o.name.replace(/^mixamorig:?/,'')]=o;});
+const hq=b=>H[b].getWorldQuaternion(new T.Quaternion()), hp=b=>H[b].getWorldPosition(new T.Vector3());
+const heroLeg=hp('LeftUpLeg').distanceTo(hp('LeftLeg'))+hp('LeftLeg').distanceTo(hp('LeftFoot'));
+window.convert=async(url,opt=window.OPT||{})=>{
+ const fbx=await new FBXLoader().loadAsync(url); const S={}; fbx.traverse(o=>{ if(o.isBone||o.type==='Object3D'||o.isGroup){ const c=clean(o.name); if(!S[c])S[c]=o; }});
+ const RK={hips:'hips',spine:'spine1',spine1:'spine2',spine2:'spine4',neck:'neck',head:'head',headtop_end:'headtip',lefthandmiddle1:'leftfinger3proximal',righthandmiddle1:'rightfinger3proximal',
+ leftupleg:'leftthigh',leftleg:'leftshin',leftfoot:'leftfoot',lefttoebase:'lefttoe',rightupleg:'rightthigh',rightleg:'rightshin',rightfoot:'rightfoot',righttoebase:'righttoe'};
+ const rok=!!S['spine4']&&!!S['leftshin'];
+ const find=h=>{ const k=h.toLowerCase(); if(rok&&RK[k]) return S[RK[k]]||null; for(const a of (ALIAS[k]||[k])) if(S[a]) return S[a]; return null; };
+ const miss=[]; const pairs=[]; for(const [hb,hc,sc0] of MAP){ const sb=find(hb), sc=find(sc0||hc); if(!sb||!sc){miss.push(hb);continue;} pairs.push({hb,hc,sb,sc}); }
+ const clip=fbx.animations[opt.anim||0]; if(!clip||opt.names) return {err:'names', names:Object.keys(S)};
+ fbx.updateMatrixWorld(true);
+ const wq=o=>o.getWorldQuaternion(new T.Quaternion()), wp=o=>o.getWorldPosition(new T.Vector3());
+ const mixer=new T.AnimationMixer(fbx); const act=mixer.clipAction(clip); act.play(); if(rok){ mixer.setTime(0); fbx.updateMatrixWorld(true); }
+ // rest = the file's node pose before the mixer touches it (T-pose for Mixamo/Rokoko exports)
+ for(const p of pairs){ const dh=hp(p.hc).sub(hp(p.hb)).normalize(); const ds=wp(p.sc).sub(wp(p.sb)).normalize(); p.Wt=new T.Quaternion().setFromUnitVectors(dh,ds).multiply(hq(p.hb)); p.Ri=wq(p.sb).invert(); }
+ const sl=find('LeftUpLeg'),sk=find('LeftLeg'),sf=find('LeftFoot'); const srcLeg=wp(sl).distanceTo(wp(sk))+wp(sk).distanceTo(wp(sf)); const K=heroLeg/srcLeg;
+
+ const fps=30, n=Math.max(2,Math.floor(clip.duration*fps)+1); const out={fps,frames:n,src:url.split('/').pop(),K,missing:miss,tracks:{},hips:[]}; for(const p of pairs)out.tracks[p.hb]=[];
+ const order=pairs.map(p=>p.hb); const W={}; let floor=1e9; const hipsW=[];
+ for(let i=0;i<n;i++){ mixer.setTime(Math.min(clip.duration,i/fps)); fbx.updateMatrixWorld(true);
+  for(const p of pairs){ W[p.hb]=wq(p.sb).multiply(p.Ri).multiply(p.Wt); }
+  for(const p of pairs){ const par=H[p.hb].parent.name.replace(/^mixamorig:?/,''); const pw=W[par]||hq(par); const l=pw.clone().invert().multiply(W[p.hb]); out.tracks[p.hb].push(+l.x.toFixed(5),+l.y.toFixed(5),+l.z.toFixed(5),+l.w.toFixed(5)); }
+  hipsW.push(wp(find('Hips')).multiplyScalar(K)); for(const f of ['LeftFoot','RightFoot','LeftToeBase','RightToeBase']){const o=find(f); if(o) floor=Math.min(floor,wp(o).y*K);} }
+ const footY=hp('LeftFoot').y; // hero ankle height at rest
+ for(const h of hipsW) out.hips.push(+h.x.toFixed(4),+(h.y-floor+Math.min(footY,0.1)*0).toFixed(4),+h.z.toFixed(4));
+ out.floorAdj=floor; return out; };
+window.ready=true;
+</script></body></html>
