@@ -635,7 +635,9 @@ export function createCameraRig(o) {
     if (extra.shake) camPos.add(extra.shake);
     focusU.value = camPos.distanceTo(cur.target);
     // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar
-    cutU.value += ((1 - THREE.MathUtils.smoothstep(focusU.value, 9, 15)) - cutU.value) * damp(4, dt);
+    // (classic camera: zoomed in on the hero, every leaf card between him and the camera clears, at any distance)
+    const cutWant = Math.max(1 - THREE.MathUtils.smoothstep(focusU.value, 9, 15), CLASSIC ? THREE.MathUtils.smoothstep(1 - (zoomK - ZMIN) / (1 - ZMIN), 0.4, 0.85) : 0);
+    cutU.value += (cutWant - cutU.value) * damp(4, dt);
     camera.position.copy(camPos);
     camera.lookAt(cur.target);
   }
@@ -684,10 +686,10 @@ export function createCameraRig(o) {
             // billboard code (the forest impostors), as long as it leaves an mvPosition in main's scope
             .replace(/}\s*$/, '\nvCamDNF=length(mvPosition.xyz);\n#ifdef USE_INSTANCING\nvec3 nfp=instanceMatrix[3].xyz;\n#else\nvec3 nfp=floor(position*3.0);\n#endif\nvRndNF=fract(sin(dot(nfp,vec3(12.9898,78.233,37.719)))*43758.5453);\n}');
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vCamDNF;varying float vRndNF;uniform float ' + name + ';uniform float uNFFocus,uNFCut;')
-            .replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n{float nf=smoothstep(' + name + '*0.25,' + name + ',vCamDNF);' +
+            .replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n{float nf=smoothstep(' + name + '*0.6,' + name + ',vCamDNF);' +
               'nf=min(nf,mix(1.0,smoothstep(uNFFocus-2.6,uNFFocus-0.9,vCamDNF),uNFCut));' +
-              'float gone=clamp((1.0-nf)*1.7-vRndNF*0.7,0.0,1.0);' +
-              'if(gone>0.0&&diffuseColor.a<mix(alphaTest,1.001,gone))discard;}');
+              /* each card melts within a short stretch, then is gone completely: a half-melted card at the lens read as a glowing haze once bloom blurred it (critic K6) */'float gone=clamp((1.0-nf)*2.5-vRndNF*1.5,0.0,1.0);' +
+              'if(gone>0.97||(gone>0.0&&diffuseColor.a<mix(alphaTest,1.001,gone)))discard;}');
         };
         mt.customProgramCacheKey = () => key + '|' + name;
         mt.needsUpdate = true;
