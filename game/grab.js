@@ -144,7 +144,26 @@ export function createGrab({ THREE, bones }) {
     const gl = V(...sp.g).multiplyScalar(b.scale.x).applyQuaternion(b.quaternion).add(b.position).multiplyScalar(hs); const wrist = Gp.clone().sub(gl.applyQuaternion(Qh));
     ik2('Right', wrist, SW.w); setHandQ('Right', Qh, SW.w);
     const pa = palm('Left'), wr = bones.LeftHand.getWorldPosition(V()); ik2('Left', Lp.clone().sub(pa.sub(wr)), SW.w); fistK.Left = Math.max(fistK.Left, SW.w); return true; }
-  function twoHands(dt) { const P = PROPS || window.__props; if (!P || !P.tools) return; if (sweepDrive(dt)) return;
+  // ---- a bucket in a fist hangs plumb with its bail right under the fist. hero.js (odHang) hangs it before collide.js, which
+  // can then swing the arm out and drag the rigid bucket sideways into the leg: put it back under the fist after collide.
+  // A tip about his right axis (pouring) is kept. ----
+  const _bq = new THREE.Quaternion();
+  function hangBuckets() { const P = PROPS || window.__props; if (!P || !P.tools || window.__noBucketHang) return;
+    const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero); if (!H || !H.root) return; const act = HHref && HHref.act;
+    for (const nm of ['waterBucket', 'drainBucket']) { const o = P.tools[nm]; if (!o || !o.visible) continue; const side = o.parent === bones.RightHand ? 'Right' : o.parent === bones.LeftHand ? 'Left' : null; if (!side) continue;
+      const hb = bones[side + 'Hand'], fa = bones[side + 'ForeArm']; const tipping = !!(act && /^(pour|fill)$/.test(act.step || ''));
+      // clear of his legs first (the arm takes the fist out): the bucket's side (radius ~0.17) plus a thigh (~0.08) from its axis
+      if (!tipping) { const f = V(Math.sin(H.root.rotation.y), 0, Math.cos(H.root.rotation.y)), r = V(-f.z, 0, f.x).multiplyScalar(side === 'Right' ? 1 : -1);
+        const c = palm(side).add(V(0, -.2, 0)); let need = 0; for (const [a, b] of [['UpLeg', 'Leg'], ['Leg', 'Foot']]) for (const L of ['Left', 'Right']) { const A = bones[L + a].getWorldPosition(V()), B = bones[L + b].getWorldPosition(V());
+          const ab = B.clone().sub(A); const t = Math.max(0, Math.min(1, c.clone().sub(A).dot(ab) / ab.lengthSq())); const q = A.addScaledVector(ab, t); const lat = c.clone().sub(q).setY(0).dot(r);
+          if (Math.abs(c.y - q.y) < .25) need = Math.max(need, .26 - lat); }
+        if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), 1); } }
+      // then hang it: plumb (his pouring tip about his right axis kept), the bail's middle at the fist
+      o.updateMatrixWorld(true); o.getWorldQuaternion(_bq); { const e = new THREE.Euler().setFromQuaternion(_bq, 'YXZ'); _bq.setFromEuler(new THREE.Euler(tipping ? e.x : 0, H.root.rotation.y, 0, 'YXZ')); }
+      hb.updateMatrixWorld(true); const h = hb.getWorldPosition(V()), fp = fa.getWorldPosition(V()); const pm = h.add(h.clone().sub(fp).normalize().multiplyScalar(.07)); // = hero.js odPalm
+      const g = o.userData.grip ? o.userData.grip.clone() : V(0, .35, 0); const ws = o.getWorldScale(V()).x; const pos = pm.sub(g.multiplyScalar(ws).applyQuaternion(_bq));
+      const M = new THREE.Matrix4().compose(pos, _bq, V(ws, ws, ws)); M.premultiply(hb.matrixWorld.clone().invert()); M.decompose(o.position, o.quaternion, o.scale); o.updateMatrixWorld(true); } }
+  function twoHands(dt) { try { hangBuckets(); } catch (e) { console.error('grab bucket', e); } const P = PROPS || window.__props; if (!P || !P.tools) return; if (sweepDrive(dt)) return;
     for (const side of ['Left', 'Right']) { const other = side === 'Left' ? 'Right' : 'Left'; const ho = bones[other + 'Hand'], hs = bones[side + 'Hand']; let tool = null, nm = null;
       for (const k in P.tools) { const o = P.tools[k]; if (o && o.parent === ho && o.visible !== false && GRIP[k] && GRIP[k].two) { tool = o; nm = k; break; } }
       let busy = false; for (const ch of hs.children) if (ch.isObject3D && !ch.isBone && ch.visible && !/mixamorig/.test(ch.name)) busy = true; if (grip[side]) busy = true;

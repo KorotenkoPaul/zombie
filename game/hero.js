@@ -600,9 +600,13 @@ export function createHero(ctx){
   go();
   a.update=dt=>{a.t+=dt;const s=sp();
    if(a.step==='approach'){H.look=s;H.lookW=.6;if(a.t>=a.adur){a.next();}return;}
-   if(a.step==='take'){// reach each tool's home and close the hand on it
-    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=toolHome(n)||s;H.look=h;H.lookW=1;a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];
-    if(a.t>.5&&!a.gotIt){a.gotIt=true;grabTool(n,hand);AU('cloth');}if(a.t>.95){a.held.push(n);a.gotIt=false;a.t=0;a.ik=null;if(a.held.length>=tools.length)work();}return;}
+   if(a.step==='take'){// GRAB: step in until the tool's grip is within arm's reach, the fist onto the grip (not the tool's origin), close the hand only there
+    const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=gripHome(n)||toolHome(n)||s;H.look=h;H.lookW=1;
+    if(!a.st){a.st=1;a.pk=0;stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
+    const low=h.y<root.position.y+.7&&has('hy_pickground');if(low&&!a.pk){a.pk=1;once('hy_pickground',{fade:.3});}/* on the floor: a real squat down to it */
+    a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.gotIt?1-smooth(0,.35,a.t-a.tg):1)];
+    if(!a.gotIt&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.04||a.t>(low?1.5:1.6))){a.gotIt=true;a.tg=a.t;grabTool(n,hand);AU('cloth');}
+    if(a.gotIt&&a.t-a.tg>.4&&(!low||a.t>1.9)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;if(a.held.length>=tools.length)work();}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
     // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
     if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
@@ -611,12 +615,22 @@ export function createHero(ctx){
      if(a.pause){a.pause-=dt;H.look=a.pl;H.lookW=.7;if(a.pause<=0){a.pause=0;if(o.clip&&o.loop&&has(o.clip))play(o.clip,{fade:.6,speed:o.speed||1});else if(o.clip&&has(o.clip))once(o.clip,{fade:.45,speed:o.speed||1});}}}
     if(!o.loop&&o.clip&&o.reps&&!H.once&&!a.pause&&a.T<dur-1)once(o.clip,{fade:.4,speed:o.speed||1});
     if(a.T>=dur){a.step='put';a.t=0;o.end&&o.end(a);play(IDLE(),{fade:.5});}return;}
-   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=toolHome(n)||s;H.look=h;H.lookW=1;
-    a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];if(a.t>.5&&!a.rel){a.rel=true;relTool(hand,n);}if(a.t>.95){a.held.pop();a.rel=false;a.t=0;a.ik=null;}}};
+   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=gripHome(n)||toolHome(n)||s;H.look=h;H.lookW=1;
+    // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
+    if(!a.st){a.st=1;a.pk=0;stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
+    const low=h.y<root.position.y+.7&&has('hy_pickground');if(low&&!a.pk){a.pk=1;once('hy_pickground',{fade:.3});}
+    a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
+    if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.07||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;relTool(hand,n);}
+    if(a.rel&&a.t-a.tr>.4&&(!low||a.t>1.9)){a.held.pop();a.rel=false;a.t=0;a.rg=null;a.st=0;}}};
   const finish=()=>{a.ik=null;endTask(o.result?o.result(a):undefined);};
-  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);};
+  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
   a.leave=cb=>{for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
+ // GRAB: a small step so the shoulder ends within ~0.36 m (level) of p: a reach, not a lean or a stretch
+ function stepNear(p,hand){const sh=bones[hand+'Arm'];if(!sh||!p)return;const s0=sh.getWorldPosition(V());const d=V(p.x-s0.x,0,p.z-s0.z);const L=d.length();if(L<=.4)return;
+  const q=root.position.clone().addScaledVector(d.normalize(),Math.min(.6,L-.34));pushOut(q);const mv=Math.hypot(q.x-root.position.x,q.z-root.position.z);if(mv<.04)return;
+  {const p=root.position;for(const k of [.5,1]){const x=p.x+(q.x-p.x)*k,z=p.z+(q.z-p.z)*k;const y=floorAt(x,p.y+.2,z,.3,.5);if(y==null||Math.abs(y-p.y)>.04)return;}}/* only on the same floor: never a step off an edge or onto a ledge */
+  H.slide={x:q.x-root.position.x,z:q.z-root.position.z,yaw:0,k:0,d:Math.max(.4,mv/.6)};if(mv>.12)play('30',{fade:.25,speed:.9});}
  function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
  function teleParts(){const P=window.__props||P3;let t=P&&P.placed&&P.placed.telescope;if(!t){t=null;scene.traverse(o=>{if(!t&&o.name==='telescope'&&o.userData&&o.userData.tube)t=o;});if(!t)scene.traverse(o=>{if(!t&&o.userData&&o.userData.tube&&o.userData.tube.parent)t=o;});}const tube=t&&t.userData&&t.userData.tube;if(!tube||!tube.parent)return null;
   const W=(x,y,z)=>{tube.updateMatrixWorld(true);return tube.localToWorld(V(x,y,z));};
