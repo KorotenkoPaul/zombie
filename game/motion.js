@@ -223,7 +223,18 @@ export function createMotion({ hero, db, opts = {} }) {
   function legIK(s, target, w) { const [ui, li, fi] = legs[s]; const U = HB[ui], L = HB[li], Fb = HB[fi]; const endQ = Fb.getWorldQuaternion(new THREE.Quaternion());
     const a = U.getWorldPosition(new THREE.Vector3()), b = L.getWorldPosition(new THREE.Vector3()), c = Fb.getWorldPosition(new THREE.Vector3()); const l1 = a.distanceTo(b), l2 = b.distanceTo(c);
     const goal = c.clone().lerp(target, w); const tv = goal.clone().sub(a); const dd = clamp(tv.length(), Math.abs(l1 - l2) + .01, l1 + l2 - .002); const dir = tv.normalize();
-    let pole = b.clone().sub(a.clone().add(c).multiplyScalar(.5)); pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pole.lengthSq() < 1e-8) pole.set(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)); pole.normalize();
+    // knee direction: the knee's own offset from the hip-ankle line, biased toward where the toes point. On a nearly straight leg
+    // that offset is a few mm and can flip behind the line, and the solve then bends the knee backwards (66 deg "broken leg" on
+    // the swing leg as a lock lets go); the toes always say which way the knee may bend.
+    const toe = HB[legs[s][2] + 1] && /ToeBase$/.test(names[legs[s][2] + 1]) ? HB[legs[s][2] + 1].getWorldPosition(new THREE.Vector3()) : null;
+    // a swing foot pointing down (toe-off) has almost no flat toe direction: then the pelvis forward decides
+    const hf = HB[LU].getWorldPosition(new THREE.Vector3()).sub(HB[RU].getWorldPosition(new THREE.Vector3())).cross(new THREE.Vector3(0, 1, 0)).setY(0); // pelvis forward from the hip joints
+    if (hf.lengthSq() < 1e-6) hf.set(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)); hf.normalize();
+    const ff = toe ? toe.sub(c).setY(0) : new THREE.Vector3(); const tl = ff.length(); ff.multiplyScalar(tl > 1e-6 ? clamp(tl / .06, 0, 1) / tl : 0);
+    if (ff.dot(hf) < 0) ff.multiplyScalar(.3); ff.add(hf.multiplyScalar(.6)); ff.normalize();
+    let pole = b.clone().sub(a.clone().add(c).multiplyScalar(.5)); const ffp = ff.clone().sub(dir.clone().multiplyScalar(ff.dot(dir)));
+    pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pole.dot(ffp) < 0) pole.multiplyScalar(-.25); pole.addScaledVector(ffp, .04);
+    if (pole.lengthSq() < 1e-8) pole.copy(ffp); pole.normalize();
     const ca = clamp((l1*l1 + dd*dd - l2*l2) / (2*l1*dd), -1, 1), sa = Math.sqrt(1 - ca*ca); const knee = a.clone().addScaledVector(dir, ca*l1).addScaledVector(pole, sa*l1);
     turnBone(U, b, knee, 1); turnBone(L, Fb.getWorldPosition(new THREE.Vector3()), a.clone().addScaledVector(dir, dd), 1);
     Fb.parent.getWorldQuaternion(_pq); Fb.quaternion.copy(_pq.invert().multiply(endQ)); Fb.updateMatrixWorld(true); }
