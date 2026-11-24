@@ -88,7 +88,13 @@ export function createGrab({ THREE, bones }) {
     const at = c.c.clone(); if (G0.fwd) at.y += .01; if (G0.pinch) at.add(V(c.ps * .012, .045, 0));
     return { q, at, g }; }
   // props.js grab(): a tool put on a hand bone goes into the fist by its spec (any offset / rot the caller passes is for an open hand)
-  function wrapProps(P) { PROPS = P; if (!P || !P.grab || P.grab.__grab) return; const orig = P.grab;
+  // GRAB (frame check of the moving parts): the oven door and the fridge door move only while a palm or fist is on their handle
+  // (within 7 cm: the fist round the handle); a setOpen or a swing without a hand there is held back. Off switch: window.__noHandGate
+  function onHandle(p, r = .07) { if (!p) return true; for (const s of ['Left', 'Right']) { const a = palm(s), b = gripPoint(s); if ((a && a.distanceTo(p) < r) || (b && b.distanceTo(p) < r)) return true; } return false; }
+  function gateParts(P) { for (const k of ['oven', 'fridge']) { const o = P[k]; if (!o || !o.setOpen || o.__gated || !o.handle) continue; o.__gated = true;
+      const so = o.setOpen.bind(o); o.setOpenRaw = so; o.setOpen = v => { if (window.__noHandGate || Math.abs(v - o.open) < 1e-6 || onHandle(o.handle(V()))) so(v); };
+      if (o.update) { const up = o.update.bind(o); o.update = dt => { if (window.__noHandGate || onHandle(o.handle(V()))) up(dt); }; } } }
+  function wrapProps(P) { PROPS = P; try { if (P) gateParts(P); } catch (e) { console.error('grab gate', e); } if (!P || !P.grab || P.grab.__grab) return; const orig = P.grab;
     const g2 = (name, bone, o = {}) => { const side = bone && /LeftHand$/.test(bone.name) ? 'Left' : bone && /RightHand$/.test(bone.name) ? 'Right' : null;
       const ob0 = P.tools && P.tools[name]; let w0 = null; if (ob0 && ob0.parent && ob0.parent !== bone) { ob0.updateMatrixWorld(true); w0 = ob0.matrixWorld.clone(); }
       const r = orig(name, bone, o); if (!r || !side || window.__noGripFix) return r; const tp = toolPose(name, side, r); if (!tp) return r;
