@@ -912,6 +912,12 @@ export function createHero(ctx){
    if(a.wL>.01){const t=gl('gL',tL,palmPt('Left'));reachGrip('Left',t,a.wL);}else a.gL=null;REACH_LEAN=.6;};
   a.leave=cb=>{if(a.piece){D.settle(a.piece.i,a.piece.from==='dirty'&&a.piece.show!==a.piece.clean?'dirty':a.piece.from==='rack'?'rack':'rack');a.piece=null;}if(a.tapOn){try{P.water.tap(false);}catch(e){}}a.post=null;cb();};
   return a;}
+ // GRAB: the broom starts in open floor. A stooped sweeper's head and bristles reach ~0.55 m round him at 0.9-1.3 m up, so beside the
+ // bunk he first steps to a spot on the same boards with that much room (his head went into the bunk as he turned in place there).
+ function roomy(x,y,z){const CL=window.__collide;if(!CL||!CL.depthAt)return true;for(const r of [.3,.45,.58])for(let k=0;k<16;k++){const an=k*Math.PI/8;for(const h of [.95,1.15,1.3])if(CL.depthAt(x+Math.sin(an)*r,y+h,z+Math.cos(an)*r)>.003)return false;}return true;}
+ function sweepSpot(){const p=root.position.clone();if(roomy(p.x,p.y,p.z))return p;
+  for(let r=.2;r<=1.2;r+=.1)for(let k=0;k<16;k++){const an=k*Math.PI/8,x=p.x+Math.sin(an)*r,z=p.z+Math.cos(an)*r;const y=floorAt(x,p.y,z,.25,.25);if(y==null||Math.abs(y-p.y)>.04)continue;if(roomy(x,y,z))return V(x,y,z);}
+  return p;}
  function job(o){const a={step:'go',t:0,T:0,held:[],faceYaw:o.faceYaw??null};const sp0=typeof o.pt==='function'?o.pt():o.pt;
   if(!sp0&&!o.node){a.update=()=>endTask(false);return a;}
   const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
@@ -1168,7 +1174,10 @@ export function createHero(ctx){
    a.leave=cb=>{if(a.got){relTool('Right','pencil');a.got=0;}if(a.dh){a.dh=0;try{P.release('diary');}catch(e){}}if(H.seated||a.step==='open'||a.step==='write'||a.step==='think'||a.step==='close'){standUp(N.chair,cb);return;}cb();};return a;},
   sweep:(o)=>job({pt:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),1).add(V(0,.1,0)),stand:.9,clip:'hy_sweep',loop:true,dur:[15,28],tools:[['broom','Right']],
    tick:(a,dt)=>{// shuffles slowly across the floor while sweeping, turning back at walls
-    if(a.pause)return;const p=root.position;const f=fwd(root.rotation.y);const q=p.clone().addScaledVector(f,.25);pushOut(q);const y=floorAt(q.x,p.y+.2,q.z,.3,.5);
+    if(a.pause)return;
+    if(!a.spotDone){/* GRAB: with the broom in hand, first out into open floor (roomy), facing the way he goes, away from the furniture */const p=root.position;if(!a.spot)a.spot=sweepSpot();const d=V(a.spot.x-p.x,0,a.spot.z-p.z);const l=d.length();
+     if(l<.04||(a.spT=(a.spT||0)+dt)>6){a.spotDone=true;}else{const yT=Math.atan2(d.x,d.z);root.rotation.y+=clamp(wrapA(yT-root.rotation.y),-2.2*dt,2.2*dt);H.face=root.rotation.y;if(Math.abs(wrapA(yT-root.rotation.y))<.6)p.addScaledVector(d.normalize(),Math.min(l,.3*dt));return;}}
+    const p=root.position;const f=fwd(root.rotation.y);const q=p.clone().addScaledVector(f,.25);pushOut(q);const y=floorAt(q.x,p.y+.2,q.z,.3,.5);
     /* GRAB: he stoops over the broom, so his head and the bristles are ~0.7 m ahead of his feet: keep that much clear of furniture too */const blocked=[.35,.55,.75].some(k=>{const x=p.x+f.x*k,z=p.z+f.z*k;return OBST.some(o=>Math.abs(o.y-p.y)<.6&&x>o.x0-.12&&x<o.x1+.12&&z>o.z0-.12&&z<o.z1+.12);});
     /* GRAB: and by the real furniture/wall shapes (collide.js): shoulders and hips 25 cm round the next step, the stooped head ~0.5 m ahead
        (corner post by the door, the bunk's rails); only a step that gets him deeper in is refused, so a tight spot never locks him */
