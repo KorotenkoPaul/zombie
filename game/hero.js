@@ -2167,12 +2167,12 @@ export function createHero(ctx){
    // BED (Pavel: the vest comes off before sleep, on this hero too): the vest is painted into the one body texture, so the torso's
    // brown leather texels become the mustard shirt under it while the vest is off, and a folded copy of the vest's own triangles
    // lies on the quilt. The mask: torso-weighted vertices whose texel is the vest's brown (not the shirt, skin or trousers).
-   const vm=new Float32Array(P.count);let nv=0;const mat0=Array.isArray(body.material)?body.material[0]:body.material;
+   const vm=new Float32Array(P.count);let nv=0;const SH=[0,0,0,0,0],VL=[0,0];const mat0=Array.isArray(body.material)?body.material[0]:body.material;
    try{const img=mat0.map&&mat0.map.image;if(img&&UV){const W_=img.width,H_=img.height;const cv=document.createElement('canvas');cv.width=W_;cv.height=H_;const cx=cv.getContext('2d',{willReadFrequently:true});cx.drawImage(img,0,0);const px=cx.getImageData(0,0,W_,H_).data;
      const tor=new Set(['Spine','Spine1','Spine2','LeftShoulder','RightShoulder'].map(bi).filter(x=>x>=0)),hip=new Set([bi('Hips')]);
      for(let i=0;i<P.count;i++){if(wOf(i,tor)<.5||wOf(i,hip)>.35)continue;const u=Math.min(W_-1,Math.max(0,UV.getX(i)*W_|0)),v=Math.min(H_-1,Math.max(0,UV.getY(i)*H_|0));const o=(v*W_+u)*4;const r=px[o]/255,gg=px[o+1]/255,b=px[o+2]/255;
-      const mx=Math.max(r,gg,b),mn=Math.min(r,gg,b),sat=mx>0?(mx-mn)/mx:0;if(gg>=r||(mx>.7&&sat<.45)||(gg/r>.72&&sat>.45)||mx<.12)continue;vm[i]=1;nv++;}}}catch(e){console.warn('vest mask',e);}
-   if(nv>200){g.setAttribute('vest',new THREE.BufferAttribute(vm,1));BT.vestU={value:0};
+      const mx=Math.max(r,gg,b),mn=Math.min(r,gg,b),sat=mx>0?(mx-mn)/mx:0;const lm=.3*r+.59*gg+.11*b;if(gg>=r||(mx>.7&&sat<.45)||(gg/r>.72&&sat>.45)||mx<.12){/* the shirt's own colour (mustard: red over green over blue, saturated, light) */if(r>gg&&gg>b&&sat>.45&&gg/r>.6&&mx>.35){SH[0]+=r;SH[1]+=gg;SH[2]+=b;SH[3]+=lm;SH[4]++;}continue;}vm[i]=1;nv++;VL[0]+=lm;VL[1]++;}}}catch(e){console.warn('vest mask',e);}
+   if(nv>200){g.setAttribute('vest',new THREE.BufferAttribute(vm,1));BT.vestU={value:0};/* the shirt colour per unit of brightness, and the vest's mean brightness: the vest texels become shirt, keeping their shading */BT.shirt=SH[4]>20?new THREE.Vector3(SH[0],SH[1],SH[2]).divideScalar(SH[4]):new THREE.Vector3(.72,.52,.2);BT.vestL=VL[1]?VL[0]/VL[1]:.25;BT.shirtL=SH[4]>20?SH[3]/SH[4]:.55;
     const keep=[];for(let t=0;t<nTri;t++){const a=vi(t,0),b=vi(t,1),c=vi(t,2);if(vm[a]&&vm[b]&&vm[c])keep.push(a,b,c);}
     const used=[...new Set(keep)];const remap=new Map(used.map((v,i)=>[v,i]));const pos=new Float32Array(used.length*3),uv=new Float32Array(used.length*2);const bb=new THREE.Box3();
     used.forEach((v,i)=>{const q=bp(v);pos.set([q.x,q.y,q.z],i*3);bb.expandByPoint(q);uv.set([UV.getX(v),UV.getY(v)],i*2);});
@@ -2181,7 +2181,7 @@ export function createHero(ctx){
    const mats=Array.isArray(body.material)?body.material:[body.material];body.material=mats.map(m0=>{const m=m0.clone();m.onBeforeCompile=sh=>{sh.uniforms.sockK=BT.sockU;sh.uniforms.vestK=BT.vestU||{value:0};const hv=!!BT.vestU;
      sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float sock;varying float vSock;'+(hv?'attribute float vest;varying float vVest;':'')).replace('#include <begin_vertex>','#include <begin_vertex>\nvSock=sock;'+(hv?'vVest=vest;':''));
      sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float sockK;varying float vSock;'+(hv?'uniform float vestK;varying float vVest;':'')).replace('#include <map_fragment>','#include <map_fragment>\n{float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.27,.25,.23)*(.8+.5*l),vSock*sockK);}'+
-      (hv?'\n{diffuseColor.rgb=mix(diffuseColor.rgb,min(diffuseColor.rgb*vec3(1.34,1.54,1.32),vec3(1.)),smoothstep(.3,.7,vVest)*vestK);}':''));};
+      (hv?'\n{float lv=dot(diffuseColor.rgb,vec3(.3,.59,.11));vec3 sh=vec3('+[BT.shirt.x,BT.shirt.y,BT.shirt.z].map(x=>Math.pow(x,2.2).toFixed(4)).join(',')+')*clamp(lv/'+Math.pow(BT.vestL,2.2).toFixed(4)+',.5,1.6);/* canvas texels are sRGB, the shader works in linear */diffuseColor.rgb=mix(diffuseColor.rgb,min(sh,vec3(1.)),smoothstep(.3,.7,vVest)*vestK);}':''));};
      m.customProgramCacheKey=()=>BT.vestU?'hero-sock-vest':'hero-sock';return m;});if(body.material.length===1)body.material=body.material[0];}
   return BT.ok=true;}catch(e){console.error('boots',e);return BT.ok=false;}}
  // world matrix the static boot needs to sit exactly where the skinned boot is drawn right now
@@ -2286,6 +2286,13 @@ export function createHero(ctx){
   const y0=dir>0?ed.seat+SEAT_CLEAR:li.seat+LIE_CLEAR,y1=dir>0?li.seat+LIE_CLEAR:ed.seat+SEAT_CLEAR;
   const tr=actions[name].getClip().tracks.find(t=>/Hips\.position$/.test(t.name));H.bedC={dir,t:0,dur:durOf(name)/BEDC_SPEED,from,to,y0,y1,u:0,plant:dir>0?1:0,then,name,hx0:tr?tr.values[0]:null,hz0:tr?tr.values[2]:null};
   once(name,{fade:dir>0?.45:.6,speed:BEDC_SPEED});}
+ // sitting on the bed edge the knees stay about hip width apart (the get-up and boot clips spread them wide: 'a wide squat', watcher f1320-1800).
+ // The thigh turns in at the hip; the foot comes with it and legPlant sets it down there.
+ const KN={w:0};function kneeNarrow(dt){const B=FIT.bed;const on=!!(B&&H.fit&&H.fit.mode==='hold'&&!H.inBed&&(BSEQ.a||!H.bedC||(H.bedC.dir<0&&H.bedC.u>.55)||(H.bedC.dir>0&&H.bedC.u<.3))&&N.bededge&&root.position.distanceTo(N.bededge.p)<.9);
+  KN.w=on?Math.min(1,KN.w+dt*2.5):Math.max(0,KN.w-dt*2.5);if(KN.w<.01)return;root.updateMatrixWorld(true);
+  const hp=wp(bones.Hips),f=fwd(root.rotation.y),right=V().crossVectors(V(0,1,0),f).normalize();
+  for(const sd of ['Left','Right']){const U=bones[sd+'UpLeg'],L=bones[sd+'Leg'];if(!U||!L)continue;const k=wp(L);const off=k.clone().sub(hp).dot(right);const lim=.19;if(Math.abs(off)<=lim)continue;
+   const k2=k.clone().addScaledVector(right,-(Math.abs(off)-lim)*Math.sign(off));turnBone(U,k,k2,KN.w);}}
  function bedClipTick(dt){const c=H.bedC;if(!c)return;c.t=Math.min(c.dur,c.t+dt);const u=c.u=c.t/c.dur;
   // across the bed: first along the edge toward the pillow, then in under the upper bunk (getting up: out first)
   if(c.hx0!=null){bones.Hips.position.x=c.hx0;bones.Hips.position.z=c.hz0;}
@@ -2411,7 +2418,7 @@ export function createHero(ctx){
   for(const [n,a,t0] of pre){const t1=a.time;if(t1===t0)continue;const w=a.getEffectiveWeight();if(w<=0)continue;const d=rmAt(n,t1).sub(rmAt(n,t0));p.add(rotY(V(d.x,0,d.z),root.rotation.y).multiplyScalar(w));if(RM[n].y)p.y+=d.y*w;}
   if(H.slide){const sl=H.slide;const pa=sl.a!=null?sl.a*.6:0,pb=sl.b!=null?Math.max(pa+.05,Math.min(1,sl.b+(1-sl.b)*.4)):1;/* WALK: he moves while stepping, not while turning on the spot (a little overlap) */const k1=smooth(pa,pb,Math.min(1,sl.k+dt/sl.d)),k0=smooth(pa,pb,sl.k);sl.k=Math.min(1,sl.k+dt/sl.d);p.x+=sl.x*(k1-k0);p.z+=sl.z*(k1-k0);if(sl.yT!=null){const r=sl.k,A=sl.a??.3,B=Math.min(sl.b??.7,.999);root.rotation.y=r<A?lerp(sl.y0,sl.yT,smooth(0,A,r)):r<B?sl.yT:lerp(sl.yT,sl.yF,smooth(B,1,r));}else root.rotation.y+=sl.yaw*(k1-k0);if(sl.k>=1)H.slide=null;}
   if(H.once){const o=H.once;const a=o.a;if(a.time>=o.end-1e-3||!a.isRunning()){H.once=null;o.then&&o.then();}}
-  edgeTick(dt);bedTick(dt);overlayTick(dt);bseqTick(dt);gtTick(dt);bedClipTick(dt);
+  edgeTick(dt);bedTick(dt);overlayTick(dt);bseqTick(dt);gtTick(dt);bedClipTick(dt);kneeNarrow(dt);
   // height: stand on the real floor, or put the hips on the seat / mattress
   /* KITCHEN: a crouch whose task is gone (cut off mid-squat) eases back up instead of staying on for the next task */
   /* the root settles for a moment after a crouch: the soles stay locked meanwhile (soleLock took the last few mm of rise for walking and let the feet jump 11-14 cm) */if(H.kSquat)H.kSqG=.6;else if((H.kSqG||0)>0)H.kSqG-=dt;
