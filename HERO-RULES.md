@@ -8,6 +8,17 @@ ladders, brain.js) follows these rules. A change that breaks one of them does no
 **Everything he does is one person moving in one world: one pose pipeline, one action executor, one set of
 invariants, checked live and before every deploy.** No task gets its own special-case body code.
 
+## ROLLBACK 2026-11-24 00:20 UTC (Pavel)
+
+The hero's motion code on master is back to 9aa01f4 (21:33 UTC): hero.js, motion.js, motion-db.txt, hero-moves.txt.
+Everything below (slots, `job()`, `?inv`) describes the target design and comes back step by step; it is NOT on master now.
+Rebuild order, one family at a time, each one gated (`node tests/anim/gate.js`) and filmed side by side against 7ca7a48:
+1. integrator: slots (`HH.stage`) + `job()` executor + `?inv`, with the two root fixes (bind scale, root Euler / BFWD +Z) if slpInit returns;
+2. brain; 3. kitchen + eating/dishes; 4. sleep and bed (Pose); 5. ladders; 6. workshop; 7. repairs; 8. leisure; 9. outdoor (pond, trip, jacket);
+10. walk polish (motion matching).
+A thread rebuilds its family ON TOP OF the rolled-back hero.js (rebase, do not paste old hero.js over it), keeps the diff
+small, and sends the integrator branch + sha + its own before/after frames. Only the integrator pushes hero files to master.
+
 ## 0. Pavel's standing rules for every hero thread
 
 - Don't waste his money: reuse the Fal clips and the mocap already bought (hero-moves.txt, CMU via the clip supplier thread).
