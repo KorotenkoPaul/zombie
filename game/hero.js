@@ -396,7 +396,7 @@ export function createHero(ctx){
  function ladApproach(goal,F,dt){const p=root.position;const dx=goal.x-p.x,dz=goal.z-p.z,d=Math.hypot(dx,dz);turnTo(d>.35&&climb&&!window.__noClimb?Math.atan2(dx,dz):F,dt);/* CLIMB HOOK: walk facing the way, turn at the spot */const da=Math.abs(wrapA(F-root.rotation.y));
   if(d>.02){const vt=Math.min(Math.max(H.v||0,.35),H.walkV||1)*clamp(d/.25,.4,1);const v=Math.min(vt,(H.v||0)+2.6*dt);H.v=v;const m=Math.min(d,v*dt);p.x+=dx/d*m;p.z+=dz/d*m;play('30',{fade:.25});actions['30'].timeScale=clamp(v/walkSpeed,.6,1.6);}
   else{H.v=0;if(da>.15){play('30',{fade:.25});actions['30'].timeScale=.7;}}
-  if(d<.04&&da<.15){p.x=goal.x;p.z=goal.z;return true;}return false;}
+  if(d<.04&&da<.15){if(!(climb&&!window.__noClimb)){p.x=goal.x;p.z=goal.z;}/* CLIMB HOOK: climb.js eases the last few cm onto the ladder's line (the snap was a 4 cm root jump at every mount) */return true;}return false;}
  function ladderStep(dt){const step=H.path[0];const key=step.from+'>'+step.node,rkey=step.node+'>'+step.from;const c=LAD[key]||LAD[rkey];const target=N[step.node].p;const p=root.position;
   if(!H.lad&&edgeShut(step.from,step.node)){try{window.__house.hatch.open();window.__audio&&window.__audio.play('hatch_open');}catch(e){}}// a closed hatch on the way: he pushes it open as he gets there
   // CLIMB HOOK: both hands free on a ladder: a tool still in a hand goes over the back for the climb and back into the hand after
