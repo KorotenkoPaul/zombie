@@ -134,7 +134,10 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
    const oct=new THREE.CircleGeometry(.5/Math.cos(Math.PI/8),8);{const op=oct.attributes.position,ou=oct.attributes.uv;for(let i=0;i<op.count;i++)ou.setXY(i,op.getX(i)+.5,op.getY(i)+.5);}
    const mkImp=(list,name)=>{const iq=new THREE.InstancedMesh(oct,imat,list.length);list.forEach((o,j)=>{m.compose(o.p,q.identity(),V(o.w,o.h,1));iq.setMatrixAt(j,m);iq.setColorAt(j,c.setRGB(o.c[0],o.c[1],o.c[2]));});
     iq.frustumCulled=false;iq.name=name;scene.add(iq);return iq;};
-   const tint=(d,k)=>{const far=smooth(FR0,FR0+22,d);return [(.8-far*.2)*k,(.9-far*.2)*k,(.84-far*.08)*k];};
+   // autumn (the reference season): about half the crowns stay green, the rest turn gold, orange-rust or ochre (multipliers on
+   // the green leaf clump: red up, blue down); deeper in the fog they fade toward the cool blue-green
+   const ra=rng(33),AUT=[[1,1,1],[1,1,1],[1,1,1],[1.85,1.12,.5],[1.85,1.12,.5],[1.95,.86,.42],[1.5,1.02,.55]];
+   const tint=(d,k)=>{const far=smooth(FR0,FR0+22,d);const a=AUT[Math.floor(ra()*AUT.length)],f=1-far*.45;return [(.8-far*.2)*k*(1+(a[0]-1)*f),(.9-far*.2)*k*(1+(a[1]-1)*f),(.84-far*.08)*k*(1+(a[2]-1)*f)];};
    // crowns: fuller than the cards were (x1.6 wide), so neighbouring crowns merge into one canopy
    // phones (GPU cost): one crown per tree, sized to the spread of its branch tips, instead of one per tip (the tips' crowns
    // overlapped ~7 deep). Desktop keeps a crown per tip.
@@ -313,6 +316,8 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     x.g+=(x.r-x.g)*.14*wk*night;x+=vec3(.045,.035,0.)*wk*hi0(l)*night;x=mix(x,x*vec3(.9,.98,1.2),ck*.4*night);x=mix(x,vec3(l)*vec3(.92,1.,1.1),ck*.25*night);/* cold darks less saturated (the photo's night blues are muted, not deep teal) */
     // night greens (oak leaves, grass, moss) muted toward the photo's dark blue-teal instead of bright leaf green
     float gk=clamp((x.g-max(x.r,x.b))*4.,0.,1.);x=mix(x,vec3(l)*vec3(.8,1.02,1.12),gk*.3*night);
+    // autumn daylight: leaf greens lean a little to yellow-olive (night keeps the blue-teal above)
+    x.r+=(x.g-x.r)*.24*gk*(1.-night);x.b*=1.-.15*gk*(1.-night);
     x=(x-.5)*con+.5;
     // split toning: cold teal shadows, warm highlights (lamp light pops against the blue night)
     float sh=1.-smoothstep(0.,.45,l),hi=smoothstep(.45,1.,l);x+=lift*sh*(.6+.6*night);x=mix(x,x*warm*1.15,hi*.45*night);
