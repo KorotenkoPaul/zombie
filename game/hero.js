@@ -843,10 +843,14 @@ export function createHero(ctx){
    a.leave=cb=>{if(a.step==='sit'||a.step==='work'){a.step='up';a.t=0;const wait=()=>{if(H.fit&&a.step==='up'&&a.t<UP+.4){setTimeout(wait,100);}else{a.ik=null;H.fit=null;H.ground=true;cb();}};wait();}else cb();};
    return a;},
   firewood:(o)=>{const X=window.__ground&&window.__ground.exits&&window.__ground.exits.forest;if(!X||!N.g_wood)return job({pt:()=>PT('woodpile'),stand:.5,clip:'hy_picklog',dur:[2,3]});
-   const a={step:'go'};goTo('g_wood',()=>{H.face=N.g_wood.face;a.step='pick';reps('hy_picklog',4+(Math.random()<.5?1:0),()=>{try{(window.__props||P3).grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}
-     H.carry='hy_carrylogs';const wp=PT('woodpile');const nn=wp?nearNode(wp):'kmid';goTo(nn||'kmid',()=>{a.step='drop';if(wp)H.face=Math.atan2(wp.x-root.position.x,wp.z-root.position.z);once('hy_droplogs',{fade:.4,then:()=>{
-      try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});endTask({ok:true,logs:3});}});});});});
-   a.update=()=>{carryOv();};
+   const a={step:'go',t:0};goTo('g_wood',()=>{H.face=N.g_wood.face;a.step='pick';reps('hy_picklog',4+(Math.random()<.5?1:0),()=>{try{(window.__props||P3).grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}
+     H.carry='hy_carrylogs';const wp=PT('woodpile');
+     // OUTDOOR: the logs go onto the woodpile itself: he walks right up to it and faces it (frame by frame he dropped them at the
+     // foot of the kitchen ladder, 1.3 m from the pile, side-on to it)
+     const done=()=>{play(IDLE(),{fade:.4});endTask({ok:true,logs:3});};
+     if(wp){a.step='drop';visit(a,wp,.5,'hy_droplogs',[[.6,()=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],done);}
+     else goTo('kmid',()=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;done();});});});
+   a.update=dt=>{if(stepTick(a,dt))return;carryOv();};
    a.leave=cb=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};a.post=()=>odArmful();return a;},
  });
  // close (or open) the window shutters one window after another: walk up, reach for the shutter, it swings at the touch
