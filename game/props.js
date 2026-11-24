@@ -1014,7 +1014,7 @@ export function buildProps(ctx) {
 
   // ---------- kitchen (back wall z≈1.05, open front +z) ----------
   const st = place('stove', stove(), -3.25, KT, 1.4); out.oven = st.userData.oven;
-  const ket = bake(kettle()); ket.position.set(-.19, .91, -.12); st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
+  const ket = bake(kettle()); ket.position.set(-.19, .91, .13); /* the front-left ring (kitchen thread): on the back ring the handle was 66 cm from the shorter hero's shoulder, out of reach over the stove */ st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
   { const pt = bake(pot()); pt.position.set(.19, .93, .13); st.add(pt); }
   place('krail', utensilRail(.5), -3.25, KT + 1.37, 1.56, { solid: false, wall: true }); // hangs from the front edge of the hood, over the stove
   place('hood', hood(Math.max(.2, (BD - .2) - (KT + 1.42) - .3)), -3.25, KT + 1.42, 1.32, { solid: false, wall: true });
