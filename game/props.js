@@ -219,7 +219,7 @@ function makeMaterials(renderer) {
   const qt = upgrade(texOf(quiltCanvas()), 'quilt.jpg'); const pg = texOf(pageCanvas()); pg.wrapS = pg.wrapT = THREE.ClampToEdgeWrapping;
   M = {
     env,
-    wood: std({ ...wt('#C98A4E', '#7A4826', '#EDB477', 2, 2), roughness: .72 }),          // honey furniture
+    wood: std({ ...wt('#C98A4E', '#7A4826', '#EDB477', 2, 2), roughness: .84 }),          /* oiled, not varnished: the bunk read as glossy plastic */          // honey furniture
     woodLight: std({ ...wt('#D9A066', '#8E5A30', '#F4C88E', 1, 2), roughness: .72 }),     // table tops, shelves
     woodDark: std({ ...wt('#7E4E2E', '#3E2414', '#A8703F', 2), roughness: .78 }),      // frames, legs
     // (wood, woodLight, woodDark get the photo scans once loaded: see scanWood below)
@@ -242,9 +242,9 @@ function makeMaterials(renderer) {
     glass: std({ color: 0xC8DCE6, roughness: .08, metalness: 0, transparent: true, opacity: .35, envMap: env, envMapIntensity: 1.2, depthWrite: false }),
     jarGlass: std({ color: 0xC88A3A, roughness: .15, transparent: true, opacity: .75, envMap: env, envMapIntensity: 1 }),
     rubber: std({ color: 0x24201E, roughness: .6 }),
-    gripRed: std({ color: 0xB0412E, roughness: .45 }),
-    gripYellow: std({ color: 0xD9A132, roughness: .45 }),
-    gripBlue: std({ color: 0x3F6E9A, roughness: .45 }),
+    gripRed: std({ color: 0x8E3226, roughness: .5 }), /* old cellulose handles: deeper, dirtier tones (were toy-bright) */
+    gripYellow: std({ color: 0xB0832E, roughness: .5 }),
+    gripBlue: std({ color: 0x34546E, roughness: .5 }),
     linen: std({ color: 0xF4EDE0, roughness: .92 }),
     mattress: std({ color: 0xE6DFCF, roughness: .9 }),
     quilt: std({ map: qt, roughness: .95, side: THREE.DoubleSide }),
@@ -270,7 +270,13 @@ function makeMaterials(renderer) {
       for (let i = 0; i < 5; i++) { const gr = g.createRadialGradient(0, 0, 0, 0, 0, 30); gr.addColorStop(0, 'rgba(150,120,70,.09)'); gr.addColorStop(1, 'rgba(150,120,70,0)'); g.save(); g.translate(Math.random() * w, Math.random() * h); g.scale(1, .6 + Math.random() * .6); g.fillStyle = gr; g.fillRect(-30, -30, 60, 60); g.restore(); }
     });
     M.linen.map = texOf(c, { rep: 5 }); M.linen.bumpMap = texOf(c, { srgb: false, rep: 5 }); M.linen.bumpScale = .8; M.linen.color.set(0xffffff); M.linen.needsUpdate = true; }
-  wearEnamel(M.fridge, 0xDAD4C4, 7, { grime: .16, chips: 9 }); /* a well-used old fridge: grime in the edges, chips, crazing */
+  wearEnamel(M.fridge, 0xDAD4C4, 7, { grime: .16, chips: 9 });
+  // realism sweep (tools and dishes up close): the glazed mugs and jars, and the dark enamel pot, get used glaze (grime in the
+  // rim and foot, chips, crazing) instead of a flat plastic colour; the mattress is striped ticking; vegetables and the whetstone
+  // get their own surfaces
+  /* no chips on these: on a lathe the texture's side edges meet at the seam, where two chips side by side read as a pair of eyes */
+  wearEnamel(M.glazeBlue, 0x7F9DB4, 21, { grime: .12, chips: 0 }); wearEnamel(M.glazeCream, 0xEADDBE, 22, { grime: .14, chips: 0 }); wearEnamel(M.enamelDark, 0x4A5058, 23, { grime: .1, chips: 0 });
+  tickingOf(M.mattress); /* a well-used old fridge: grime in the edges, chips, crazing */
   scanWood(M.wood, 'wood-floor.jpg', { color: 0xF2DCC4 }); scanWood(M.woodLight, 'wood-wall.jpg', { color: 0xE6C49C }); scanWood(M.woodDark, 'wood-dark.jpg', { w: 256, h: 512, color: 0xC49470, bump: 1.6 });
   varyWood(M.wood); workTops(varyWood(M.woodLight)); varyWood(M.woodDark, .7); // (Planks thread) every piece its own tone
   return M;
@@ -287,14 +293,15 @@ const STD2 = new Map(); const std2 = (c) => { if (!STD2.has(c)) STD2.set(c, new 
 // the vertex attributes exactly as in plainV (same shader trick), so they all merge into one mesh. A texture that a
 // Fal image replaces later (upgrade()) is redrawn into its tile when it arrives (poll).
 const ATL = (() => {
+  const NOATL = typeof location !== 'undefined' && /[?&]noatlas/.test(location.search); /* debug: A/B against the separate textures */
   const src = new Map(); /* texture -> { t, gs: [{g, uv0}], u0, u1, v0, v1 } */ let mat = null, cv = null, tex = null; const PAD = 6;
-  const ok = m => m && m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial && m.map && m.map.image && !m.bumpMap && !m.normalMap && !m.roughnessMap && !m.metalnessMap && !m.alphaMap && !m.aoMap && !m.emissiveMap && !m.lightMap && !m.transparent && !m.alphaTest && !m.polygonOffset && !m.vertexColors && !m.userData.keep && m.userData.env0 === undefined && m.emissive.getHex() === 0 && m.side !== THREE.BackSide && m.map.rotation === 0 && !NIGHT_METALS.includes(m) && (m.metalness < .5 || Math.abs((m.envMapIntensity ?? 1) - .9) < .35);
+  const ok = m => m && m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial && m.map && m.map.image && !m.bumpMap && !m.normalMap && !m.roughnessMap && !m.metalnessMap && !m.alphaMap && !m.aoMap && !m.emissiveMap && !m.lightMap && !m.transparent && !m.alphaTest && !m.polygonOffset && !m.vertexColors && !m.userData.keep && m.userData.env0 === undefined && m.emissive.getHex() === 0 && m.side !== THREE.BackSide && m.map.rotation === 0 && !NIGHT_METALS.includes(m) && !m.envMap && m.metalness < .3; /* no env map: an env-lit atlas made the rugs and barrels glow orange at night (the room's IBL never dims) */
   const api = {
-    take(m, g) { if (!ok(m) || !g.attributes.uv) return false; const t = m.map; t.updateMatrix(); const uv = g.attributes.uv, e = t.matrix.elements; let s = src.get(t);
+    take(m, g) { if (NOATL || !ok(m) || !g.attributes.uv) return false; const t = m.map; t.updateMatrix(); const uv = g.attributes.uv, e = t.matrix.elements; let s = src.get(t);
       if (!s) src.set(t, s = { t, gs: [], u0: 1e9, u1: -1e9, v0: 1e9, v1: -1e9, img: null });
       const a = new Float32Array(uv.count * 2); for (let i = 0; i < uv.count; i++) { const u = uv.getX(i), v = uv.getY(i); const x = e[0] * u + e[3] * v + e[6], y = e[1] * u + e[4] * v + e[7]; a[i * 2] = x; a[i * 2 + 1] = y; s.u0 = Math.min(s.u0, x); s.u1 = Math.max(s.u1, x); s.v0 = Math.min(s.v0, y); s.v1 = Math.max(s.v1, y); }
       if (s.u1 - s.u0 > 6 || s.v1 - s.v0 > 6) return false; /* a long repeated strip stays on its own texture */ s.gs.push({ g, a }); return true; },
-    mat() { if (!mat) { mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMap: ENV0 || null, envMapIntensity: .9, side: THREE.DoubleSide }); mat.userData.atlas = true;
+    mat() { if (!mat) { mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, side: THREE.DoubleSide }); mat.userData.atlas = true;
         mat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float vmet; varying float vMet;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMet = vmet;');
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;'); };
         mat.customProgramCacheKey = () => 'atlasV'; } return mat; },
@@ -434,7 +441,13 @@ function slippers() { const g = new THREE.Group();
     add(s, new THREE.TorusGeometry(.045, .006, 6, 20, Math.PI), M.felt, 0, .022, -.02, -Math.PI / 2, 0, 0).scale.set(1, 1.15, 1); }
   return bake(g); }
 function basket() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.17, 0], [.2, .05], [.22, .3], [.215, .34], [.2, .34], [.19, .06], [0, .06]], 28), M.weave); add(g, new THREE.TorusGeometry(.218, .018, 8, 32), M.weave, 0, .34, 0, Math.PI / 2);
-  const c = add(g, new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI * .55), M.clothBlue, .02, .3, 0, .1, 0, .15); c.scale.set(.24, .14, .2); return bake(g); }
+  // a checked cloth thrown over the contents: humped over what is inside, sagging over the rim in soft folds (was a smooth white dome)
+  { const cg = new THREE.PlaneGeometry(.52, .52, 26, 26); cg.rotateX(-Math.PI / 2); const P = cg.attributes.position;
+    for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), a = Math.atan2(z, x); let y;
+      if (r < .2) y = .345 + .07 * (1 - Math.pow(r / .2, 2)) + .01 * Math.sin(x * 40) * Math.sin(z * 33);
+      else { const o = r - .2; y = .345 - Math.min(.13, o * 1.4) + .012 * Math.sin(a * 7 + 1) * Math.min(1, o / .05); const k = (.226 + o * .3) / r; /* a short skirt over the rim, never down to the floor */ P.setX(i, x * k); P.setZ(i, z * k); } P.setY(i, y); }
+    cg.computeVertexNormals(); const tm = new THREE.MeshStandardMaterial({ map: texOf(towelCanvas()), roughness: .95, side: THREE.DoubleSide, color: 0xD6CCBC }); /* a washed, sun-faded check */ tm.map.repeat.set(2, 2); add(g, cg, tm, 0, 0, 0, 0, .4, 0); }
+  return bake(g); }
 function chair() {
   const g = new THREE.Group(); const S = .46, w = .44, d = .42;
   for (const sx of [-1, 1]) { W(g, .045, S - .04, .045, sx * .18, (S - .04) / 2, d / 2 - .04, { grain: 1, mat: M.woodDark }); W(g, .045, .95, .045, sx * .18, .475, -d / 2 + .04, { grain: 1, mat: M.woodDark, rx: -.05 }); }
@@ -546,10 +559,27 @@ function pot() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.085, 0], [
 function pan(r = .11) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r, 0], [r + .012, .04], [r + .006, .042], [r - .004, .006], [0, .006]], 28), M.iron, 0, 0, 0, Math.PI / 2); // hangs flat against the wall, handle up
   add(g, rb(.026, .2, .012, .005), M.woodDark, 0, r + .11, .02); add(g, rb(.02, .05, .01, .004), M.iron, 0, r + .015, .02); add(g, new THREE.TorusGeometry(.008, .003, 6, 10), M.iron, 0, r + .205, .02); return g; }
 function ladle(len = .32) { const g = new THREE.Group(); add(g, new THREE.SphereGeometry(.04, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), M.steel, 0, -len / 2, 0); add(g, rb(.012, len, .004, .002), M.steel, 0, 0, -.01, -.06); add(g, new THREE.TorusGeometry(.01, .003, 6, 10), M.steel, 0, len / 2 + .008, -.012); return g; }
-function spatula(len = .3) { const g = new THREE.Group(); const bl = roundRect(.06, .085, .022); for (const x of [-.012, .012]) { const h = new THREE.Path(); h.absellipse(x, .005, .004, .025, 0, Math.PI * 2, true); bl.holes.push(h); } add(g, EX(bl, .004, .0015), M.woodLight, 0, -len / 2 + .04, 0); add(g, new THREE.CylinderGeometry(.007, .007, len - .08, 8), M.woodLight, 0, .04, 0); return g; }
+// carved wooden utensils (they were a flat slotted plate on a stick): one lofted solid each, an oval cross-section whose width
+// and thickness follow the carving along the length (y, tip at -len/2), so the bowl, neck and handle swell and taper with real
+// thickness, the spatula blade thins to a bevelled edge at the tip, and the spoon's bowl is dished (the section dips in the middle)
+function loftUtensil(len, wf, hf, df = () => 0, N = 14, Mn = 44) { const P = [], UV = [], I = [];
+  for (let i = 0; i <= Mn; i++) { const t = i / Mn, y = -len / 2 + t * len, w = Math.max(.0004, wf(t)), h = Math.max(.0003, hf(t)), d = df(t);
+    for (let j = 0; j <= N; j++) { const a = j / N * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a); P.push(w * c, y, h * sn - d * (1 - c * c)); UV.push(j / N, t); } }
+  for (let i = 0; i < Mn; i++) for (let j = 0; j < N; j++) { const a = i * (N + 1) + j, b = a + N + 1; I.push(a, b, a + 1, b, b + 1, a + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(I); g.computeVertexNormals(); return g; }
+const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function spatula(len = .3) { const g = new THREE.Group(); const B = .36; // blade | neck | handle; the blade end is squared with round corners
+  const wf = t => t < B ? .029 * Math.pow(Math.min(1, t / .035), .35) * (1 - .1 * sm(.2, B, t)) : t < B + .1 ? .026 - .018 * sm(B, B + .1, t) : .008 + .003 * sm(.6, .95, t) * (1 - sm(.97, 1, t) * .9) ;
+  const hf = t => t < B ? .0012 + .0028 * sm(0, B, t) : t < B + .1 ? .004 + .002 * sm(B, B + .1, t) : .0058 * (1 - .85 * sm(.97, 1, t));
+  add(g, loftUtensil(len, wf, hf), M.woodLight); return g; }
+function woodSpoon(len = .28) { const g = new THREE.Group(); const B = .3;
+  const wf = t => t < B ? .03 * Math.sqrt(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2), 2))) + (t > B / 2 ? .007 * sm(B / 2, B, t) : 0) : t < B + .08 ? .009 - .002 * sm(B, B + .08, t) : .0072 + .0028 * sm(.55, .95, t) * (1 - sm(.97, 1, t) * .9);
+  const hf = t => t < B ? .0026 * Math.min(1, Math.sqrt(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2), 2))) * 3) + .0004 : t < B + .08 ? .0045 + .0012 * sm(B, B + .08, t) : .0056 * (1 - .85 * sm(.97, 1, t));
+  const df = t => t < B ? .011 * Math.pow(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2 * .92), 2)), .8) : 0;
+  add(g, loftUtensil(len, wf, hf, df), M.woodLight); return g; }
 function utensilRail(w = .55) { const g = new THREE.Group(); add(g, new THREE.CylinderGeometry(.008, .008, w, 10), M.brass, 0, 0, .04, 0, 0, Math.PI / 2); for (const s of [-1, 1]) add(g, rb(.02, .03, .05, .006), M.brass, s * w / 2, 0, .02);
   const hook = (x) => add(g, new THREE.TorusGeometry(.012, .0025, 6, 12, Math.PI * 1.4), M.brass, x, -.012, .04, 0, Math.PI / 2, 0);
-  const items = [[-.17, spatula(.2), -.12], [-.03, ladle(.24), -.14], [.08, spatula(.22), -.13], [.18, ladle(.2), -.12]]; for (const [x, o, y] of items) { hook(x); o.position.set(x, y, .045); g.add(o); }
+  const items = [[-.17, spatula(.2), -.12], [-.03, ladle(.24), -.14], [.08, woodSpoon(.23), -.135], /* same reach as before: the spatula's tip stays clear of the kettle lid */ [.18, ladle(.2), -.12]]; for (const [x, o, y] of items) { hook(x); o.position.set(x, y, .045); g.add(o); }
   return bake(g); }
 function coatHooks() { const g = new THREE.Group(); W(g, .34, .07, .025, 0, 0, .0125, { mat: M.woodDark, r: .008 });
   for (const x of [-.11, 0, .11]) { add(g, new THREE.CylinderGeometry(.008, .008, .06, 8), M.woodDark, x, 0, .05, Math.PI / 2); add(g, new THREE.SphereGeometry(.013, 10, 8), M.woodDark, x, 0, .08); }
@@ -618,7 +648,15 @@ function sinkCounter() {
 function barrel(h = .78, mat) { const g = new THREE.Group(); const r0 = h * .3, b = h * .055; const pts = []; for (let i = 0; i <= 12; i++) { const y = i / 12 * h; pts.push([r0 + b * Math.sin(Math.PI * i / 12), y]); } pts.push([r0 - .02, h], [r0 - .02, h - .03], [0, h - .03]);
   add(g, lathe([[0, 0], ...pts], 32), mat || M.stave); add(g, new THREE.CylinderGeometry(r0 - .02, r0 - .02, .01, 32), M.staveDark, 0, h - .03, 0);
   for (const t of [.1, .3, .7, .9]) { const y = t * h, r = r0 + b * Math.sin(Math.PI * t) + .006; const tor = add(g, new THREE.TorusGeometry(r, .012, 6, 40), M.iron, 0, y, 0, Math.PI / 2); tor.scale.z = 1.8; } return bake(g); }
-function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 = h * .5, r1 = h * .62; add(g, lathe([[0, 0], [r0, 0], [r1, h], [r1 - .012, h], [r0 - .012, .015], [0, .015]], 28), metal ? M.steel : M.stave);
+// galvanised steel: zinc spangle (crystal flakes of slightly different grey), dull water lines, a rusty rim at the foot
+let _galv = null;
+function galvMat() { if (_galv) return _galv; let ls = 2468; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#9EA2A2'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 260; k++) { const x = LR() * w, y = LR() * h, r = 4 + LR() * 12, v = 130 + LR() * 70 | 0; g.fillStyle = `rgba(${v},${v + 2},${v + 3},.45)`; g.beginPath(); for (let q = 0; q < 6; q++) { const t = q / 6 * 6.283 + LR() * .6, rr = r * (.6 + LR() * .5); g.lineTo(x + Math.cos(t) * rr, y + Math.sin(t) * rr); } g.fill(); }
+    for (let k = 0; k < 10; k++) { const y = h * (.2 + LR() * .6); g.fillStyle = `rgba(90,86,76,${.08 + LR() * .1})`; g.fillRect(0, y, w, 2 + LR() * 5); }
+    const gr = g.createLinearGradient(0, 0, 0, h * .14); gr.addColorStop(0, 'rgba(120,62,30,.6)'); gr.addColorStop(1, 'rgba(120,62,30,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h * .14); });
+  const t = texOf(c); t.flipY = false; const b = texOf(c, { srgb: false }); b.flipY = false; _galv = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: .4, metalness: .6, roughness: .55, envMap: M.env, envMapIntensity: .5 }); return _galv; }
+function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 = h * .5, r1 = h * .62; add(g, lathe([[0, 0], [r0, 0], [r1, h], [r1 - .012, h], [r0 - .012, .015], [0, .015]], 28), metal ? galvMat() : M.stave);
   for (const t of metal ? [.97] : [.15, .8]) { const r = r0 + (r1 - r0) * t + .004; const tor = add(g, new THREE.TorusGeometry(r, metal ? .008 : .01, 6, 32), metal ? M.steel : M.iron, 0, h * t, 0, Math.PI / 2); if (!metal) tor.scale.z = 1.6; }
   /* the bail: from two ears at the rim up to 7 cm over its middle, where the fist holds it (a full half-circle rose 19 cm over the rim and the
      fist, at the grip point, held it low by one side: the thin wire ran down into the water, watcher R20-3) */
@@ -682,6 +720,23 @@ function switchPlate() { const g = new THREE.Group(); add(g, rb(.08, .12, .012, 
 // ------------- workshop -------------
 // used enamel (sink, fridge): box faces map 0..1 each, so a frame in the texture lands on every edge: grime worked into
 // the edges, chips knocked out of them (black iron with a grey rim), hairline crazing and water stains on the faces.
+// mattress ticking: cream cotton with narrow grey-blue stripes, slubs, a faint body stain and bump (was a bare white box)
+function tickingOf(mat) { let ls = 777; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#E9E1CE'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 16) { g.fillStyle = 'rgba(88,104,122,.75)'; g.fillRect(x + 2, 0, 3, h); g.fillStyle = 'rgba(88,104,122,.45)'; g.fillRect(x + 7, 0, 1, h); }
+    for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(${LR() < .5 ? '255,255,250' : '150,140,120'},${.05 + LR() * .06})`; g.fillRect(0, y, w, 1); } // weave
+    for (let k = 0; k < 6; k++) { const x = LR() * w, y = LR() * h, r = 20 + LR() * 50; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(160,130,80,.12)'); gr.addColorStop(1, 'rgba(160,130,80,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  mat.map = texOf(c); mat.map.repeat.set(3, 1); mat.bumpMap = texOf(c, { srgb: false }); mat.bumpMap.repeat.set(3, 1); mat.bumpScale = .6; mat.color.set(0xffffff); mat.needsUpdate = true; return mat; }
+// vegetable skins: carrot (fine rings and root hairs' dots), potato (earthy speckle, eyes, bumps)
+function vegSkin(kind) { let ls = kind === 'carrot' ? 41 : 43; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(128, 128, (g, w, h) => { if (kind === 'carrot') { g.fillStyle = '#E27A2C'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 3 + LR() * 5) { g.fillStyle = `rgba(150,70,20,${.25 + LR() * .3})`; g.fillRect(0, y, w, 1); } for (let k = 0; k < 40; k++) { g.fillStyle = 'rgba(120,60,20,.5)'; g.fillRect(LR() * w, LR() * h, 2, 1); } }
+    else { g.fillStyle = '#B28C5C'; g.fillRect(0, 0, w, h); for (let k = 0; k < 400; k++) { g.fillStyle = `rgba(${LR() < .5 ? '90,66,40' : '205,175,130'},${.2 + LR() * .3})`; g.fillRect(LR() * w, LR() * h, 1 + LR() * 2, 1 + LR() * 2); } for (let k = 0; k < 6; k++) { g.fillStyle = 'rgba(70,48,28,.8)'; g.beginPath(); g.ellipse(LR() * w, LR() * h, 2.5, 1.5, LR() * 3, 0, 7); g.fill(); } } });
+  return { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: kind === 'carrot' ? 1 : 2 }; }
+// sharpening stone: fine grit speckle, a darker oiled hollow worn down the middle, lighter edges
+function gritOf() { let ls = 99; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(128, 128, (g, w, h) => { g.fillStyle = '#9A968C'; g.fillRect(0, 0, w, h); for (let k = 0; k < 1600; k++) { g.fillStyle = `rgba(${LR() < .5 ? '40,38,36' : '170,166,156'},${.25 + LR() * .35})`; g.fillRect(LR() * w, LR() * h, 1, 1); }
+    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(20,18,16,0)'); gr.addColorStop(.5, 'rgba(20,18,16,.18)'); gr.addColorStop(1, 'rgba(20,18,16,0)'); g.fillStyle = gr; g.fillRect(w * .1, 0, w * .8, h); });
+  return { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 1.5 }; }
 function wearEnamel(mat, hex, seed = 1, { grime = .35, chips = 22 } = {}) {
   let ls = 9973 * seed; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
   const base = new THREE.Color(hex), b = `rgb(${base.r * 255 | 0},${base.g * 255 | 0},${base.b * 255 | 0})`;
@@ -853,6 +908,13 @@ function telescope() {
 
 // ================= round 6: things the hero handles (food, wood, gear, chores) =================
 let MX = null;
+// canvas twill for the coat: diagonal ribs, slubs, rubbed-pale wear and grime (map near white so the material colour rules)
+let _twill = null;
+function twillOf() { if (_twill) return _twill; let ls = 3131; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(128, 128, (g, w, h) => { g.fillStyle = '#F2F2F2'; g.fillRect(0, 0, w, h);
+    for (let k = -h; k < w; k += 3) { g.strokeStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.15 + LR() * .2})`; g.lineWidth = 1; g.beginPath(); g.moveTo(k, 0); g.lineTo(k + h, h); g.stroke(); }
+    for (let k = 0; k < 25; k++) { const x = LR() * w, y = LR() * h, r = 6 + LR() * 16; const gr = g.createRadialGradient(x, y, 0, x, y, r); const pale = LR() < .5; gr.addColorStop(0, pale ? 'rgba(255,250,235,.25)' : 'rgba(40,36,28,.14)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  const t = texOf(c); t.repeat.set(9, 9); const b = texOf(c, { srgb: false }); b.repeat.set(9, 9); _twill = { map: t, bumpMap: b, bumpScale: 1.2 }; return _twill; }
 function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, ...o });
   /* terracotta: fired-clay mottling, white salt bloom up by the rim, a darker damp band at the foot, scuffs (was a flat orange) */
   const tc = canvas(256, 128, (g, w, h) => { g.fillStyle = '#B5623C'; g.fillRect(0, 0, w, h);
@@ -866,14 +928,14 @@ function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStanda
     for (let i = 0; i < 45; i++) { const x = Math.random() * w, y = Math.random() < .5 ? Math.random() * h * .15 : h * (.85 + Math.random() * .15); g.fillStyle = 'rgba(160,165,160,.85)'; g.beginPath(); g.ellipse(x, y, 2 + Math.random() * 6, 1 + Math.random() * 3, Math.random() * 3, 0, 6.3); g.fill(); }
     for (let i = 0; i < 25; i++) { g.fillStyle = `rgba(120,60,30,${.2 + Math.random() * .35})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 5); } });
   MX = { terracotta: s(0xffffff, { roughness: 1, map: texOf(tc), bumpMap: texOf(tc, { srgb: false }), bumpScale: .8 }), soil: s(0x3A2A1E, { roughness: 1 }), leaf: s(0x557F3C, { roughness: .6, side: THREE.DoubleSide }), leafDark: s(0x36572A, { roughness: .65, side: THREE.DoubleSide }),
-    carrot: s(0xE07A2A, { roughness: .6 }), onion: s(0xC8964E, { roughness: .45 }), potato: s(0xB08A58, { roughness: .9 }), stone: s(0x8E908A, { roughness: .95 }), stoneDark: s(0x5A5650, { roughness: .85 }),
+    carrot: s(0xFFFFFF, { roughness: .6, ...vegSkin('carrot') }), onion: s(0xC8964E, { roughness: .45 }), potato: s(0xFFFFFF, { roughness: .9, ...vegSkin('potato') }), stone: s(0xF0EEE8, { ...gritOf(), roughness: .9 }), stoneDark: s(0xC8C4BC, { ...gritOf(), roughness: .85 }),
     straw: s(0xC9A45A, { roughness: 1 }), zinc: s(0xffffff, { metalness: .3, roughness: .62, envMap: M.env, envMapIntensity: .45, map: texOf(zc), bumpMap: texOf(zc, { srgb: false }), bumpScale: .6 }), bark: (() => { const c = canvas(256, 256, (g) => { g.fillStyle = '#4E3A2A'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 70; i++) { const x0 = Math.random() * 256; g.strokeStyle = Math.random() < .6 ? 'rgba(28,18,10,.8)' : 'rgba(120,96,70,.55)'; g.lineWidth = 1 + Math.random() * 3; g.beginPath(); let x = x0; g.moveTo(x, -5); for (let y = 0; y <= 260; y += 16) { x += (Math.random() - .5) * 6; g.lineTo(x, y); } g.stroke(); }
       for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${90 + Math.random() * 60},${70 + Math.random() * 40},${50 + Math.random() * 30},.35)`; g.fillRect(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 5, 6 + Math.random() * 14); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 3, roughness: 1, side: THREE.DoubleSide }); })(),
     splitwood: (() => { const c = canvas(128, 256, (g) => { g.fillStyle = '#C8955E'; g.fillRect(0, 0, 128, 256); for (let i = 0; i < 40; i++) { g.strokeStyle = Math.random() < .5 ? 'rgba(120,70,35,.35)' : 'rgba(240,200,150,.35)'; g.lineWidth = .5 + Math.random() * 2; g.beginPath(); let x = Math.random() * 128; g.moveTo(x, 0); for (let y = 0; y <= 256; y += 32) { x += (Math.random() - .5) * 5; g.lineTo(x, y); } g.stroke(); } });
-      return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 2, roughness: .9 }); })(), endgrain: new THREE.MeshStandardMaterial({ map: texOf(canvas(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 4, 64, 64, 64); r.addColorStop(0, '#B8834F'); r.addColorStop(.85, '#D9AE78'); r.addColorStop(.93, '#8A5A34'); r.addColorStop(1, '#4A3020'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); g.strokeStyle = 'rgba(120,75,40,.45)'; for (let i = 6; i < 56; i += 4 + Math.random() * 4) { g.lineWidth = .8 + Math.random(); g.beginPath(); g.ellipse(64 + Math.random() * 2, 64 + Math.random() * 2, i, i * (.94 + Math.random() * .06), Math.random(), 0, Math.PI * 2); g.stroke(); } g.strokeStyle = 'rgba(60,35,20,.7)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + 50 * Math.cos(1), 64 + 50 * Math.sin(1)); g.stroke(); })), roughness: .9 }),
+      return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 2, roughness: .9 }); })(), endgrain: endGrainMat(11, false),
     grille: s(0x8A7350, { roughness: 1 }), meat: s(0xA2343A, { roughness: .5 }), fat: s(0xEEDCCB, { roughness: .6 }), paper: s(0xD8C7A0, { roughness: .95 }), sack: s(0xB59B6E, { roughness: 1 }),
-    jacket: s(0x4F5A3C, { roughness: .95 }), jacketDark: s(0x3A4230, { roughness: .95 }), patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x6A4128, { roughness: .7 }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
+    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x6A4128, { roughness: .7 }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
     rope: s(0xB09A6A, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
   return MX; }
 // a box between two points (legs, struts) and a tapered rod between two points
@@ -932,6 +994,32 @@ function logGeo(vi, lo = false) {
   for (const g of parts) { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.normal) g.computeVertexNormals(); }
   const geo = mergeGeometries(parts, true); geo.groups.forEach((gr, i) => { gr.materialIndex = mats[i]; }); geo.computeBoundingSphere(); _logGeos[ck] = geo; return geo;
 }
+// sawn end grain of a log left outdoors (realism sweep: the old one was a clean cartoon target with one painted line):
+// wobbly growth rings that crowd toward the bark, a pale sapwood band, the heart off-centre, radial drying checks that
+// open toward the rim, faint saw-kerf arcs, grey weathering in blotches, a dark bark rim. Bump from the same canvas.
+// chop = the chopping block's top: also axe scars (thin dark gouges in every direction) and a dirty, trampled-dark rim.
+function endGrainMat(sd, chop) { let ls = sd * 7919 + 13; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const N = 256, C = N / 2; const c = canvas(N, N, (g) => {
+    const hx = C + (LR() - .5) * 14, hy = C + (LR() - .5) * 14;
+    const r = g.createRadialGradient(hx, hy, 2, C, C, C); r.addColorStop(0, '#8E6A46'); r.addColorStop(.55, '#A9835A'); r.addColorStop(.8, '#B8956A'); r.addColorStop(.88, '#C9AA7E'); r.addColorStop(.93, '#6E4A2C'); r.addColorStop(1, '#2E1E12'); g.fillStyle = r; g.fillRect(0, 0, N, N);
+    // growth rings: wobbly closed curves, tighter outward, alternating dark latewood
+    const ph = [LR() * 6, LR() * 6, LR() * 6]; for (let k = 0, rad = 4; rad < C * .9; k++) { rad += 3.2 * (1 - rad / C * .55) + LR() * 2.2;
+      g.strokeStyle = `rgba(${70 + LR() * 20},${45 + LR() * 12},${25},${.22 + LR() * .25})`; g.lineWidth = .6 + LR() * 1.3; g.beginPath();
+      for (let a = 0; a <= 64; a++) { const t = a / 64 * Math.PI * 2; const w = rad * (1 + .035 * Math.sin(t * 2 + ph[0]) + .02 * Math.sin(t * 5 + ph[1] + k * .1) + .012 * Math.sin(t * 11 + ph[2])); const x = hx + (C - hx) * rad / C + Math.cos(t) * w, y = hy + (C - hy) * rad / C + Math.sin(t) * w; if (a) g.lineTo(x, y); else g.moveTo(x, y); } g.stroke(); }
+    // saw-kerf arcs across the face
+    g.globalAlpha = .1; for (let k = 0; k < 18; k++) { g.strokeStyle = LR() < .5 ? '#3A2616' : '#E8D2AE'; g.lineWidth = 1 + LR() * 2; g.beginPath(); g.arc(C - 260, C + (k - 9) * 14 + LR() * 6, 300, -.35, .35); g.stroke(); } g.globalAlpha = 1;
+    // weathering: grey blotches, stronger toward the rim
+    for (let k = 0; k < 120; k++) { const a = LR() * Math.PI * 2, d = Math.sqrt(LR()) * C * .88, x = C + Math.cos(a) * d, y = C + Math.sin(a) * d, rr2 = 4 + LR() * 16; const gr = g.createRadialGradient(x, y, 0, x, y, rr2); gr.addColorStop(0, `rgba(120,116,108,${.08 + .16 * d / C})`); gr.addColorStop(1, 'rgba(120,116,108,0)'); g.fillStyle = gr; g.fillRect(x - rr2, y - rr2, rr2 * 2, rr2 * 2); }
+    // drying checks: thin dark wedges from near the heart out to the bark, wider outside
+    const nc = 3 + Math.floor(LR() * 3); for (let k = 0; k < nc; k++) { let a = LR() * Math.PI * 2; const r0 = C * (.08 + LR() * .25), r1 = C * (.7 + LR() * .22); g.fillStyle = 'rgba(28,16,8,.85)'; g.beginPath(); const pts = []; for (let t = 0; t <= 1.0001; t += .1) { const rr = r0 + (r1 - r0) * t; a += (LR() - .5) * .06; pts.push([hx + Math.cos(a) * rr, hy + Math.sin(a) * rr, .3 + t * 1.8, -Math.sin(a), Math.cos(a)]); }
+      pts.forEach(([x, y, w, nx, ny], i) => { if (i) g.lineTo(x + nx * w, y + ny * w); else g.moveTo(x + nx * w, y + ny * w); }); for (let i = pts.length - 1; i >= 0; i--) { const [x, y, w, nx, ny] = pts[i]; g.lineTo(x - nx * w, y - ny * w); } g.fill(); }
+    if (chop) { // axe scars and grime
+      for (let k = 0; k < 70; k++) { const a = LR() * Math.PI * 2, d = Math.sqrt(LR()) * C * .75, x = C + Math.cos(a) * d, y = C + Math.sin(a) * d, b = LR() * Math.PI, L = 8 + LR() * 26;
+        g.strokeStyle = `rgba(40,24,12,${.35 + LR() * .4})`; g.lineWidth = .8 + LR() * 1.4; g.beginPath(); g.moveTo(x - Math.cos(b) * L / 2, y - Math.sin(b) * L / 2); g.lineTo(x + Math.cos(b) * L / 2, y + Math.sin(b) * L / 2); g.stroke();
+        g.strokeStyle = 'rgba(225,200,160,.35)'; g.lineWidth = .6; g.beginPath(); g.moveTo(x - Math.cos(b) * L / 2 + 1, y - Math.sin(b) * L / 2 + 1); g.lineTo(x + Math.cos(b) * L / 2 + 1, y + Math.sin(b) * L / 2 + 1); g.stroke(); }
+      const gr = g.createRadialGradient(C, C, C * .3, C, C, C * .92); gr.addColorStop(0, 'rgba(60,45,30,0)'); gr.addColorStop(1, 'rgba(60,45,30,.45)'); g.fillStyle = gr; g.fillRect(0, 0, N, N); }
+  });
+  return new THREE.MeshStandardMaterial({ map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 1.6, roughness: .93, color: 0xD2C6B6 }); }
 function logMats() { const X = mx(); return [X.bark, X.endgrain, X.splitwood]; }
 // vertex mask: parts whose float attribute `attr` is >= uniform `u` collapse out of view (main pass and shadow passes alike)
 function maskMat(m, attr, u, cmp = '>') { const pm = m.clone(); const ob = m.onBeforeCompile, ck = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
@@ -1085,8 +1173,26 @@ function quiver() { const X = mx(), g = new THREE.Group(); // origin at the stra
   add(g, new THREE.TorusGeometry(.057, .005, 5, 16), std2(0x3E2618), 0, -.25, 0, Math.PI / 2);
   for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025; add(g, new THREE.CylinderGeometry(.003, .003, .2, 4), std2(0xC9A875), x, .05, z); add(g, new THREE.PlaneGeometry(.025, .06), X.fletch, x, .12, z, 0, a, 0); }
   return bake(g); }
-function meatBag() { const X = mx(), g = new THREE.Group(); const s = add(g, lathe([[0, 0], [.09, 0], [.13, .05], [.14, .14], [.1, .22], [.04, .26], [.05, .3], [0, .3]], 16), X.sack, 0, -.3, 0); s.scale.set(1, 1, .8);
-  add(g, new THREE.TorusGeometry(.04, .008, 5, 12), X.rope, 0, -.04, 0, Math.PI / 2); add(g, rb(.08, .04, .06, .012), X.meat, .05, -.06, .05, .4, 0, .3); g.userData.grip = V(0, 0, 0); return bake(g); }
+// the meat sack (realism sweep: it was a smooth yellow blob with a red box stuck on it): coarse burlap with a visible weave,
+// lumpy where the cuts inside press out, gathered at the neck under a twine tie, and a dark blood-soaked patch at the bottom
+let _burlap = null;
+function burlapMat() { if (_burlap) return _burlap; let ls = 5151; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#8E7550'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 4) for (let x = 0; x < w; x += 4) { const o = ((x + y) / 4) % 2; g.fillStyle = `rgba(${o ? '196,168,118' : '70,54,34'},${.1 + LR() * .14})`; g.fillRect(x, y + (o ? 0 : 2), 3, 2); g.fillRect(x + (o ? 2 : 0), y, 2, 3); }
+    for (let k = 0; k < 14; k++) { g.strokeStyle = `rgba(60,45,28,${.2 + LR() * .2})`; g.lineWidth = 1 + LR(); g.beginPath(); const y = LR() * h; g.moveTo(0, y); g.lineTo(w, y + (LR() - .5) * 8); g.stroke(); } // slubs
+    for (let k = 0; k < 40; k++) { const x = LR() * w, y = LR() * h, r = 4 + LR() * 18; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(50,38,24,${.12 + LR() * .15})`); gr.addColorStop(1, 'rgba(50,38,24,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } // grime
+    for (let k = 0; k < 9; k++) { const x = LR() * w, y = h * (.05 + LR() * .22), r = 14 + LR() * 30; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(78,18,16,.75)'); gr.addColorStop(.7, 'rgba(70,22,18,.35)'); gr.addColorStop(1, 'rgba(70,22,18,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } // blood soaked through at the bottom (v = 0 is the bottom of the lathe)
+  });
+  const t = texOf(c); t.repeat.set(4, 1); const b = texOf(c, { srgb: false }); b.repeat.set(4, 1); t.flipY = b.flipY = false;
+  _burlap = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 1.4, roughness: 1 }); return _burlap; }
+function meatBag() { const X = mx(), g = new THREE.Group(); const lg = lathe([[0, 0], [.09, 0], [.13, .05], [.14, .14], [.11, .21], [.045, .255], [.04, .27], [.06, .3], [.05, .315], [0, .3]], 20);
+  { const P = lg.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), a = Math.atan2(z, x), r = Math.hypot(x, z); const body = Math.max(0, Math.sin(Math.min(1, y / .24) * Math.PI));
+      const k = 1 + body * (.09 * Math.sin(a * 3 + y * 20) + .06 * Math.sin(a * 5 - y * 31) + .04 * Math.cos(a * 2 + 1.3)) + (y > .255 ? .18 * Math.sin(a * 9) : 0); /* lumps of meat inside; the gathered neck frills */
+      P.setX(i, x * k); P.setZ(i, z * k); P.setY(i, y - (y < .03 ? .0 : .012 * Math.sin(a * 2) * body)); void r; } lg.computeVertexNormals(); }
+  const s = add(g, lg, burlapMat(), 0, -.3, 0); s.scale.set(1, 1, .8);
+  add(g, new THREE.TorusGeometry(.043, .006, 5, 14), X.rope, 0, -.042, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .005, 5, 14), X.rope, 0, -.05, 0, Math.PI / 2 + .12);
+  { const c = new THREE.CatmullRomCurve3([V(.04, -.045, .02), V(.07, -.07, .045), V(.075, -.12, .05)]); add(g, new THREE.TubeGeometry(c, 8, .004, 5), X.rope); } // the twine's loose end
+  g.userData.grip = V(0, 0, 0); return bake(g); }
 function logArmful() { const X = mx(), g = new THREE.Group(); for (const [x, y, v] of [[-.06, 0, 3], [.06, 0, 4], [0, .1, 5]]) { const l = logPiece(.5, .065, v); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
   for (const z of [-.14, .14]) add(g, new THREE.TorusGeometry(.12, .007, 5, 18), X.rope, 0, .04, z).scale.set(1.05, .95, 1); g.userData.grip = V(0, .05, 0); return bake(g); }
 function sawhorse() { const X = mx(), g = new THREE.Group(); const L = .95, H = .62;
@@ -1096,10 +1202,21 @@ function sawhorse() { const X = mx(), g = new THREE.Group(); const L = .95, H = 
   W(g, .22, .035, .2, .62, .02, .12, { mat: M.woodLight, ry: .6, rz: .05 }); // an off-cut on the ground
   add(g, new THREE.CircleGeometry(.22, 14), X.sawdust, .5, .004, .02, -Math.PI / 2).scale.set(1, .7, 1);
   return bake(g); }
+// the axe head: forged iron gone dark, rust blooming round the eye and along the top and bottom, hammer marks, and a
+// bright honed bevel with fine scratches along the bit (it was flat black). Extrude UVs are in metres: repeat maps the head.
+let _axeMat = null;
+function axeHeadMat() { if (_axeMat) return _axeMat; let ls = 9091; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(128, 128, (g, w, h) => { g.fillStyle = '#3B3C3F'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 60; k++) { const x = LR() * w, y = LR() * h, r = 2 + LR() * 6; g.fillStyle = `rgba(${LR() < .5 ? '20,20,22' : '90,92,96'},${.12 + LR() * .2})`; g.beginPath(); g.ellipse(x, y, r, r * (.6 + LR() * .4), LR() * 3, 0, 7); g.fill(); } // hammer marks
+    for (let k = 0; k < 55; k++) { const u = LR(), x = u < .5 ? LR() * w * .45 : LR() * w * .75, y = u < .5 ? LR() * h : (LR() < .5 ? LR() * h * .18 : h - LR() * h * .18), r = 2 + LR() * 7; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${120 + LR() * 30},${55 + LR() * 20},25,${.5 + LR() * .3})`); gr.addColorStop(1, 'rgba(110,50,20,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
+    const eg = g.createLinearGradient(w * .7, 0, w * .9, 0); eg.addColorStop(0, 'rgba(160,165,170,0)'); eg.addColorStop(1, 'rgba(170,175,180,.95)'); g.fillStyle = eg; g.fillRect(w * .7, 0, w * .3, h);
+    g.strokeStyle = 'rgba(230,232,235,.35)'; g.lineWidth = .5; for (let k = 0; k < 30; k++) { const y = LR() * h; g.beginPath(); g.moveTo(w * (.76 + LR() * .06), y); g.lineTo(w * .95, y + (LR() - .5) * 6); g.stroke(); } });
+  const t = texOf(c); t.repeat.set(5, 5); t.offset.set(.2, .5); const b = texOf(c, { srgb: false }); b.repeat.set(5, 5); b.offset.set(.2, .5);
+  _axeMat = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 1.2, metalness: .7, roughness: .55, envMap: M.env, envMapIntensity: .5 }); return _axeMat; }
 function axe() { const g = new THREE.Group(); // origin at the head; the handle runs down -y
-  const c = new THREE.CatmullRomCurve3([V(0, .02, 0), V(.01, -.25, 0), V(-.005, -.5, 0), V(.012, -.68, 0)]); add(g, new THREE.TubeGeometry(c, 16, .016, 8), M.woodLight); add(g, new THREE.SphereGeometry(.022, 10, 8), M.woodLight, .012, -.69, 0).scale.set(1, .7, 1);
+  const c = new THREE.CatmullRomCurve3([V(0, .02, 0), V(.01, -.25, 0), V(-.005, -.5, 0), V(.012, -.68, 0)]); add(g, new THREE.TubeGeometry(c, 16, .016, 8), M.woodDark); add(g, new THREE.SphereGeometry(.022, 10, 8), M.woodDark, .012, -.69, 0).scale.set(1, .7, 1); /* a worn, dark oiled handle (was pale and plain) */
   const sh = new THREE.Shape(); sh.moveTo(-.035, .03); sh.lineTo(.03, .028); sh.quadraticCurveTo(.09, .05, .13, .075); sh.quadraticCurveTo(.145, 0, .13, -.075); sh.quadraticCurveTo(.09, -.04, .03, -.028); sh.lineTo(-.035, -.03); sh.lineTo(-.035, .03);
-  add(g, EX(sh, .022, .004), M.iron, 0, 0, 0); add(g, rb(.012, .15, .026, .002), M.steel, .132, 0, 0); // honed edge
+  add(g, EX(sh, .022, .004), axeHeadMat(), 0, 0, 0); add(g, rb(.012, .15, .026, .002), M.steel, .132, 0, 0); // honed edge
   g.userData.grip = V(.01, -.55, 0); return bake(g); }
 function handSaw() { const g = new THREE.Group(); const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.5, 0); sh.lineTo(.5, .06); sh.lineTo(0, .12); sh.lineTo(0, 0); add(g, EX(sh, .0015, .0005), M.steel);
   const hs = new THREE.Shape(); hs.moveTo(-.02, -.01); hs.lineTo(-.15, .0); hs.quadraticCurveTo(-.17, .08, -.13, .15); hs.lineTo(-.02, .14); hs.lineTo(-.02, -.01); const hole = new THREE.Path(); hole.absellipse(-.09, .07, .028, .045, 0, Math.PI * 2, true); hs.holes.push(hole);
@@ -1379,7 +1496,7 @@ export function buildProps(ctx) {
   { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01, z); lp.rotation.y = .5; scene.add(lp); lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(lp); lp.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'logpile' }); PT.logpile = [lp, V(0, .9, .2)]; }
   { // chopping block (a sawn round standing on end) with the axe bitten into its top, beside the log pile
-    const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
+    const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.traverse(o => { if (o.isMesh && Array.isArray(o.material)) o.material = o.material.map(m => m === mx().endgrain ? endGrainMat(5, true) : m); }); /* the block's top: axe scars */ cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(cb); cb.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: y0, n: 'chopblock' });
     const ax = axe(); tool('axe', ax, scene, x + .05, y0 + .42 + .03, z, [0, .8, -2.25]); PT.chopblock = [cb, V(0, 0, .21)];
     const ch = new THREE.Group(); for (let i = 0; i < 7; i++) { const w = W(ch, rr(.04, .08), .012, rr(.02, .04), rr(-.35, .35), .006, rr(-.35, .35), { mat: mx().splitwood, ry: rr(0, 3), r: .004 }); void w; } ch.position.set(x, y0, z); scene.add(ch); } // wood chips around it
@@ -1560,7 +1677,7 @@ export function buildProps(ctx) {
     for (const [k, e] of [...by]) { if (!e.cast) continue; let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; const kn = k.slice(0, -1) + 'n'; if (n > 400) continue;
       if (by.has(kn)) { by.get(kn).gs.push(...e.gs); by.delete(k); } else e.cast = false; }
     // and a small non-casting remainder of a material that also casts joins the casting mesh (one draw instead of two; a few extra shadow triangles)
-    for (const [k, e] of [...by]) { if (e.cast) continue; const ks = k.slice(0, -1) + 's'; if (!by.has(ks)) continue; let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; if (n > 1500) continue; by.get(ks).gs.push(...e.gs); by.delete(k); }
+    for (const [k, e] of [...by]) { if (e.cast) continue; const ks = k.slice(0, -1) + 's'; if (ks === k || !by.has(ks)) continue; /* ks === k: a small casting group just demoted above is its own 's' key; merging it into itself deleted it (the galvanised workshop bucket vanished) */ let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; if (n > 1500) continue; by.get(ks).gs.push(...e.gs); by.delete(k); }
     const sg = new THREE.Group(); sg.name = 'propsStatic'; for (const { mat, cast, gs } of by.values()) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = cast; m.receiveShadow = true; sg.add(m); gs.forEach(x => x.dispose()); } scene.add(sg); out.staticGroup = sg; }
   { const ws = V(); for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup) continue; r.updateMatrixWorld(true);
       r.traverse(o => { if (!o.isMesh || !o.castShadow || o.isInstancedMesh) return; if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); o.getWorldScale(ws); if (o.geometry.boundingSphere.radius * Math.max(ws.x, ws.y, ws.z) < CAST_R) o.castShadow = false; }); } }
