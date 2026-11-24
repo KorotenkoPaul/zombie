@@ -15,7 +15,11 @@ const rr = (a, b) => a + R() * (b - a);
 function canvas(w, h, f) { const c = document.createElement('canvas'); c.width = w; c.height = h; f(c.getContext('2d'), w, h); return c; }
 function texOf(c, { srgb = true, rep = 1 } = {}) { const t = new THREE.CanvasTexture(c); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); t.anisotropy = 8; return t; }
 // painted Fal AI textures (game/*.jpg): start with the canvas version, swap in the image when it loads
-function upgrade(t, url) { const img = new Image(); img.onload = () => { t.image = img; t.dispose(); t.needsUpdate = true; }; /* dispose: GPU storage is immutable and the size changes */ img.src = url; return t; }
+// shared images: index.html's tex() loads ASSET + name; take that very image when it is already loaded (window.__tex[name].image),
+// else load the same URL (ASSET prefix included) so the browser serves it from its cache instead of a second download (Optimization)
+function sharedImg(url, cb) { const t = window.__tex && window.__tex[url], im = t && t.image; if (im && (im.complete || im.close || im.getContext) && im.width) { cb(im); return; }
+  const img = new Image(); img.crossOrigin = 'anonymous'; /* as THREE.TextureLoader: same request mode, so the cache entry is shared */ img.onload = () => cb(img); img.src = (window.__ASSET || '') + url; }
+function upgrade(t, url) { sharedImg(url, img => { t.image = img; t.dispose(); t.needsUpdate = true; }); /* dispose: GPU storage is immutable and the size changes */ return t; }
 // swap a material's procedural grain for a photo-scanned wood (the boards' scans, see NOTES-planks): the scans run their grain
 // along u, ours along v, so the image is drawn turned 90° into a canvas (downsized: furniture needs less than floors).
 // boxUV gives 1.11 u and 0.56 v per metre; the scan covers ~1 m across the grain and ~2.4 m along it.
@@ -114,10 +118,10 @@ if(wtOn>0.){vec3 sx=dFdx(-vViewPosition),sy=dFdy(-vViewPosition);vec3 R1=cross(s
  vec3 gr=sign(det)*(wtDH.x*R1+wtDH.y*R2);normal=normalize(abs(det)*normal-gr);}`); };
   mat.customProgramCacheKey = () => 'varyWood1wt'; mat.needsUpdate = true; return mat; }
 function scanWood(mat, url, { w = 512, h = 1024, color = 0xffffff, bump = 1.2 } = {}) {
-  const img = new Image(); img.onload = () => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.translate(w, 0); g.rotate(Math.PI / 2); g.drawImage(img, 0, 0, h, w);
+  sharedImg(url, img => { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.translate(w, 0); g.rotate(Math.PI / 2); g.drawImage(img, 0, 0, h, w);
     for (const [k, srgb] of [['map', true], ['bumpMap', false]]) { const t = mat[k]; if (!t) continue; t.image = c; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.repeat.set(.9, .75); t.dispose(); t.needsUpdate = true; }
-    mat.color.set(color); mat.bumpScale = bump; mat.needsUpdate = true; };
-  img.src = url; return mat; }
+    mat.color.set(color); mat.bumpScale = bump; mat.needsUpdate = true; });
+  return mat; }
 function hexA(hex, a) { const c = new THREE.Color(hex); return `rgba(${c.r * 255 | 0},${c.g * 255 | 0},${c.b * 255 | 0},${a})`; }
 // wood grain runs along canvas y (= texture v)
 function woodCanvas(base, dark, light, { knots = 2, w = 256, h = 512, s = 1 } = {}) {
