@@ -6,6 +6,11 @@
 // A height map of everything solid under the sky (roofs, decks, landings, rails) is built once after load, a few
 // rays per frame, so drops stop on the roofs instead of falling into the rooms, and splashes/drips know where to be.
 
+// a program cache key that stays unique per material after wrapping onBeforeCompile: three's default key is
+// onBeforeCompile.toString(), which after a wrap is the WRAPPER's source, the same for every wrapped material (so they
+// shared one program: the white boards on Pavel's phone). Capture the wrapped hook's source and any own key now.
+const wrapKey = (m, prev, tag) => { const own = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey : null, src = prev ? prev.toString() : '';
+  return () => (own ? own.call(m) : '') + '|' + src + '|' + tag; };
 export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], crown = null, MOBILE = false, renderer = null }) {
   const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -130,7 +135,12 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
   // into RGBA8 (three's packDepthToRGBA); depth test keeps the topmost. SUB texels per cell, so the roof-edge search and
   // the leaf-tip drips can still look between cell centres. Same targets as the rays (everything else hidden for it).
   const SUB = 8, HX = NX * SUB, HZ = NZ * SUB, YLO = -2, YSPAN = 40; let hi = null;
-  function renderTop() {
+  // The readback is ASYNC (WebGL2): readPixels into a pixel-pack buffer + a fence, polled over the next frames; only
+  // when the GPU is done are the bytes copied out (getBufferSubData, no stall). A plain readRenderTargetPixels here
+  // stalled the GPU for seconds on the phone right after load (Camera's profiler). No WebGL2: the rays.
+  let pend = null;
+  function startTop() {
+    const gl = renderer.getContext(); if (!(typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext)) throw new Error('no webgl2');
     const rt = new THREE.WebGLRenderTarget(HX, HZ, { type: THREE.UnsignedByteType, depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
     const cam = new THREE.OrthographicCamera(X0, X0 + W, -Z0, -(Z0 + D), 0.1, 80);   // looking down -y: screen x = world x, screen up = world -z
     cam.position.set(0, 60, 0); cam.up.set(0, 0, -1); cam.lookAt(0, 0, 0); cam.layers.enableAll(); cam.updateMatrixWorld(true);
@@ -146,19 +156,33 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
     scene.traverse(o => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible && !keep.has(o)) { o.visible = false; hid.push(o); } });
     const prevRT = renderer.getRenderTarget(), ov = scene.overrideMaterial, bg = scene.background, fog = scene.fog, su = renderer.shadowMap.autoUpdate, ac = renderer.autoClear;
     const cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha(), mwa = scene.matrixWorldAutoUpdate;
+    let pbo = null, fence = null;
     try {
       scene.overrideMaterial = mat; scene.background = null; scene.fog = null; renderer.shadowMap.autoUpdate = false; renderer.autoClear = true; scene.matrixWorldAutoUpdate = false;
       renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, cam);
-      const px = new Uint8Array(HX * HZ * 4); renderer.readRenderTargetPixels(rt, 0, 0, HX, HZ, px);
-      hi = new Float32Array(HX * HZ);
-      const UD = 255 / 256 / 255;   // three's UnpackDownscale over the byte range
-      for (let i = 0; i < HX * HZ; i++) { const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2], a = px[i * 4 + 3];
-        if (!(r | g | b | a)) { hi[i] = -99; continue; }
-        const v = (r / 16777216 + g / 65536 + b / 256 + a) * UD; hi[i] = YLO + v * YSPAN; }
+      // still bound to rt's framebuffer: queue the copy into a buffer on the GPU side and a fence behind it
+      pbo = gl.createBuffer(); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo); gl.bufferData(gl.PIXEL_PACK_BUFFER, HX * HZ * 4, gl.STREAM_READ);
+      gl.readPixels(0, 0, HX, HZ, gl.RGBA, gl.UNSIGNED_BYTE, 0); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
     } finally {
       renderer.setRenderTarget(prevRT); scene.overrideMaterial = ov; scene.background = bg; scene.fog = fog; renderer.shadowMap.autoUpdate = su; renderer.autoClear = ac;
-      renderer.setClearColor(cc, ca); scene.matrixWorldAutoUpdate = mwa; for (const o of hid) o.visible = true; rt.dispose(); mat.dispose();
+      renderer.setClearColor(cc, ca); scene.matrixWorldAutoUpdate = mwa; for (const o of hid) o.visible = true; mat.dispose();
     }
+    pend = { gl, rt, pbo, fence, frames: 0 };
+  }
+  // true once the map is in `hi`
+  function pollTop(force) {
+    const P = pend, gl = P.gl; P.frames++;
+    const st = gl.clientWaitSync(P.fence, 0, 0);
+    if (st !== gl.ALREADY_SIGNALED && st !== gl.CONDITION_SATISFIED) { if (st === gl.WAIT_FAILED) throw new Error('fence wait failed'); if (!force && P.frames < 600) return false; }
+    const px = new Uint8Array(HX * HZ * 4); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, P.pbo); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, px); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.deleteSync(P.fence); gl.deleteBuffer(P.pbo); P.rt.dispose(); pend = null;
+    const h = new Float32Array(HX * HZ);
+    const UD = 255 / 256 / 255;   // three's UnpackDownscale over the byte range
+    for (let i = 0; i < HX * HZ; i++) { const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2], a = px[i * 4 + 3];
+      if (!(r | g | b | a)) { h[i] = -99; continue; }
+      const v = (r / 16777216 + g / 65536 + b / 256 + a) * UD; h[i] = YLO + v * YSPAN; }
+    hi = h;
     // the materials of whatever is the top surface somewhere (they get wet): a target whose own height range holds the
     // map's height at a few points inside its footprint
     for (const [m, b] of targets) {
@@ -168,6 +192,7 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
         const y = hiAt(x, z); if (y != null && y >= b.min.y - 0.02 && y <= b.max.y + 0.02 && y > groundH(x, z) + 0.05) hit = true; }
       if (hit) for (const x of mats) topMats.add(x);
     }
+    return true;
   }
   // world -> texel: screen x = world x, screen y (row 0 at the bottom) = from z = Z0 + D down to Z0
   function hiAt(x, z) { const ix = Math.floor((x - X0) / W * HX), iz = Math.floor((Z0 + D - z) / D * HZ); if (ix < 0 || iz < 0 || ix >= HX || iz >= HZ) return null; const y = hi[iz * HX + ix]; return y > -50 ? y : null; }
@@ -185,7 +210,7 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
   // long rain. Dries as __wind.wet() falls. Planks' own onBeforeCompile is kept (chained).
   const wetU = { uWetB: wind && wind.U ? wind.U.uWet : { value: 0 }, uHB: U.uH, uBoxB: U.uBox };   // own names: Ground's materials declare uWet
   function wetBoards(mats) {
-    for (const m of mats) { if (m.userData.wetBoards) continue; m.userData.wetBoards = true; const prev = m.onBeforeCompile, key = m.customProgramCacheKey;
+    for (const m of mats) { if (m.userData.wetBoards) continue; m.userData.wetBoards = true; const prev = m.onBeforeCompile, wk = wrapKey(m, prev, 'wetBoards');
       m.onBeforeCompile = (sh, r) => { prev && prev.call(m, sh, r); Object.assign(sh.uniforms, wetU);
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWW;')
           .replace('#include <project_vertex>', `#include <project_vertex>
@@ -210,7 +235,7 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
  float wet=uWetB*ex*(.3+.7*up);float film=up*ex*smoothstep(.55,.72,wbN(vWW.xz*1.6))*smoothstep(.55,.95,uWetB);
  diffuseColor.rgb*=1.-.34*wet-.12*film;roughnessFactor=mix(roughnessFactor,.22,wet*.9);roughnessFactor=mix(roughnessFactor,.04,film);}`);   /* after Planks' own roughness (theirs is set right after roughnessmap) */
       };
-      m.customProgramCacheKey = () => (key ? key.call(m) : '') + '|wetBoards'; m.needsUpdate = true; }
+      m.customProgramCacheKey = wk; m.needsUpdate = true; }
     R.wetMats = [...mats];
   }
   // quality steps fade instead of popping: a mesh is thinned out one instance at a time over ~2 s (uKeep), and only then
@@ -229,9 +254,12 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
       tickThin(dt); if (glassK !== glassWant) { glassK += Math.sign(glassWant - glassK) * Math.min(Math.abs(glassWant - glassK), dt * 0.4); GK.value = glassK; }
       // build the map in the background, starting a little after load
       if (!R.ready) {
+        if (dt === 0) wait = 0;   // index's loading screen starts the map (dt 0, e8d327f): no warm-up wait; the bytes arrive a few frames later
         if (wait-- > 0) return;
         if (!targets) { collect(); return; }                       // one frame: the target list; the next: the map
-        if (renderer && !hi && !R._noFast) { try { renderTop(); } catch (e) { hi = null; R._noFast = true; console.warn('rain: top-down map failed, using rays', e); } }
+        if (renderer && !hi && !R._noFast) {
+          try { if (!pend) { startTop(); return; } if (!pollTop()) return; }   /* never force the read, even on the loading screen: that waited ~4 s for the whole GPU queue */   // render this frame, pick the bytes up when the GPU is done
+          catch (e) { hi = null; pend = null; R._noFast = true; console.warn('rain: top-down map failed, using rays', e); } }
         // rays (fallback only): a few ms per frame at most, so building the map never shows as a hitch
         const t0 = performance.now(), budget = hi ? 1e9 : (MOBILE ? 3 : 5);
         for (; scan < NX * NZ && performance.now() - t0 < budget; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
@@ -260,7 +288,7 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
     // drops running down window glass while it rains (and a while after): beads that slide down in fits, leave a thin
     // wet trail, plus small still droplets. Hooks into the glass materials (keeps their own onBeforeCompile).
     wetGlass(mats) {
-      for (const m of mats) { if (!m || m.userData.wetGlass) continue; m.userData.wetGlass = true; const prev = m.onBeforeCompile;
+      for (const m of mats) { if (!m || m.userData.wetGlass) continue; m.userData.wetGlass = true; const prev = m.onBeforeCompile, wk = wrapKey(m, prev, 'wetGlass');
         m.onBeforeCompile = (sh, r) => { prev && prev.call(m, sh, r); if (wind) wind.hook(sh); sh.uniforms.uGlassK = GK;
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vGp;')
             .replace('#include <project_vertex>', `#include <project_vertex>
@@ -280,7 +308,7 @@ float wetDrops(vec2 p){float acc=0.;
             .replace('#include <dithering_fragment>', `#include <dithering_fragment>
 if(uWet*uGlassK>.003){float wd=wetDrops(vGp)*uWet;gl_FragColor.rgb+=vec3(.55,.62,.7)*wd*.55;gl_FragColor.a=max(gl_FragColor.a,min(.6,wd*.5));}`);
         };
-        m.needsUpdate = true; }
+        m.customProgramCacheKey = wk; m.needsUpdate = true; }
     },
     // quality steps for the perf governor (perf.js): cheapest visual loss first
     addPerfSteps(PERF) {
