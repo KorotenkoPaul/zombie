@@ -561,6 +561,13 @@ function sinkCounter() {
   const fz = -D / 2 + .07; add(g, new THREE.CylinderGeometry(.022, .026, .03, 14), M.chrome, bx, H + .015, fz);
   add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(0, 0, 0), V(0, .2, 0), V(0, .27, .05), V(0, .25, .13), V(0, .2, .15)]), 24, .012, 10), M.chrome, bx, H + .02, fz);
   for (const s of [-1, 1]) { add(g, new THREE.CylinderGeometry(.008, .01, .05, 10), M.chrome, bx + s * .08, H + .025, fz); for (const a of [0, Math.PI / 2]) add(g, rb(.05, .008, .008, .003), M.chrome, bx + s * .08, H + .05, fz, 0, a); add(g, new THREE.SphereGeometry(.009, 10, 8), M.ceramic, bx + s * .08, H + .056, fz); }
+  // GRAB: the tap's lever on the front rim of the basin, right of centre, where his right hand gets to it at the sink (the old
+  // cross-handles at the back stay as decoration, 65 cm from where he stands). A live stick with a ball that tips forward = water on.
+  const lev = new THREE.Group(); lev.position.set(.31, H + .01, .285); lev.userData.live = true; g.add(lev);
+  add(lev, new THREE.CylinderGeometry(.016, .02, .02, 14), M.chrome, 0, .01, 0);
+  const lst = new THREE.Group(); lst.position.set(0, .02, 0); lst.rotation.x = -.35; lev.add(lst);
+  add(lst, new THREE.CylinderGeometry(.006, .008, .07, 10), M.chrome, 0, .035, 0); add(lst, new THREE.SphereGeometry(.014, 12, 10), M.ceramic, 0, .074, 0);
+  g.userData.lever = lst;
   // on the counter: cutting board with bread, jar, canister
   add(g, lathe([[0, 0], [.06, 0], [.075, .05], [.07, .13], [.045, .17], [.04, .19], [0, .19]], 22), M.glazeCream, -.38, H, -.2); add(g, lathe([[0, 0], [.048, 0], [.05, .01], [.03, .03], [0, .034]], 16), M.glazeCream, -.38, H + .19, -.2);
   add(g, lathe([[0, 0], [.045, 0], [.047, .11], [.035, .12], [0, .12]], 18), M.glazeBlue, -.12, H, -.2);
@@ -1148,9 +1155,11 @@ export function buildProps(ctx) {
     apply(); }
   place('hooks', bake(coatHooks()), .17, BD + 1.6, .97, { solid: false, wall: true });
   { const b = closedBook(.035, .2, .15, M.covers[4]); b.rotation.set(0, .6, Math.PI / 2); b.position.set(.25, 1.07 + .045 + .15 + .03, .12); bunk.add(b); }
-  // light switch: flush on the solid wall just inside the room, right of the door opening (the opening is z 2.3..3.25),
+  // light switch: flush on the solid wall just inside the room, beside the door opening (the opening is z 2.3..3.25),
   // ~15 cm past the frame at 1.15 m (Pavel: it used to float in the opening). hero.js reads out.switches for the 'switch' task.
-  { const s = switchPlate(); s.position.set(.372, BD + 1.15, 3.5); s.rotation.y = -Math.PI / 2; scene.add(s); out.switches = { bedroom: s.position.clone() }; }
+  // On the latch side (z 2.15): the door is hinged at z 3.25 and its open leaf stands into the room at z ~3.2, so a plate at z 3.5
+  // was behind the open door (gate: he squeezed into the leaf and the frame, 3-5 cm, to reach it).
+  { const s = switchPlate(); s.position.set(.372, BD + 1.15, 2.15); s.rotation.y = -Math.PI / 2; scene.add(s); out.switches = { bedroom: s.position.clone() }; out.switchN = { bedroom: new THREE.Vector3(0, 0, 1).applyQuaternion(s.quaternion).setY(0).normalize() }; }
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const b = closedBook(bw, rr(.16, .22), .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12); s.add(b); x += bw + .003; } const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
 
@@ -1266,9 +1275,13 @@ export function buildProps(ctx) {
     out.water = {
       get clean() { return ws.clean; }, get dirty() { return ws.dirty; },
       setClean(k) { ws.clean = clamp01(k); setLvl(wb, ws.clean); if (ws.clean <= 0) out.water.tap(false); }, setDirty(k) { ws.dirty = clamp01(k); setLvl(db, ws.dirty); },
-      tap(on) { ws.tap = !!on && ws.clean > 0 && wb.parent === wb.userData.home.parent; stream.visible = ws.tap; if (ws.tap) { const top = cn.localToWorld(V(.23, .9 + .22, -.08)), bot = cn.localToWorld(V(.23, .9 - .19, -.08)); stream.position.copy(top).add(bot).multiplyScalar(.5); stream.scale.set(1, top.y - bot.y, 1); } return ws.tap; },
+      // the lever's ball (world): the hand pushes it forward to run the water, back to stop it (hero.js only calls tap() at the touch)
+      get leverObj() { return cn.userData.lever || null; },
+      lever(t = V()) { const L = cn.userData.lever; if (!L) return null; L.updateMatrixWorld(true); return L.localToWorld(t.set(0, .074, 0)); },
+      tap(on) { { const L = cn.userData.lever; if (L) L.userData.to = on ? .45 : -.35; } ws.tap = !!on && ws.clean > 0 && wb.parent === wb.userData.home.parent; stream.visible = ws.tap; if (ws.tap) { const top = cn.localToWorld(V(.23, .9 + .22, -.08)), bot = cn.localToWorld(V(.23, .9 - .19, -.08)); stream.position.copy(top).add(bot).multiplyScalar(.5); stream.scale.set(1, top.y - bot.y, 1); } return ws.tap; },
       pour(name, on) { ws.pour = on ? (name === 'drainBucket' ? db : wb) : null; if (!on) pourS.visible = false; },
-      update(dt) { // tap drains the supply bucket (a full bucket ~90 s of running water) into the drain bucket
+      update(dt) { { const L = cn.userData.lever; if (L && L.userData.to != null) { const d = L.userData.to - L.rotation.x; L.rotation.x += Math.sign(d) * Math.min(Math.abs(d), dt * 7); } } // the lever tips under the hand (0.1 s)
+        // tap drains the supply bucket (a full bucket ~90 s of running water) into the drain bucket
         if (ws.tap) { if (wb.parent !== wb.userData.home.parent) out.water.tap(false); else { out.water.setClean(ws.clean - dt / 90); if (db.parent === db.userData.home.parent) out.water.setDirty(ws.dirty + dt / 100); ws.drainT = 6; } }
         ws.drainT -= dt; drip.visible = false; if (ws.drainT > 0 && db.parent === db.userData.home.parent) { ws.dripT = (ws.dripT + dt) % .55; const t = ws.dripT / .35; if (t < 1) { drip.visible = true; drip.position.set(.23, .49 - t * t * (.49 - (.08 + .015 + (H0 - .03) * ws.dirty)), .04); } }
         for (const b of [wb, db]) if (b.parent !== b.userData.home.parent || ws.pour === b) slosh(b, dt); else if (sl.has(b)) { sl.delete(b); b.userData.water.disc.quaternion.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)); }
@@ -1305,7 +1318,7 @@ export function buildProps(ctx) {
     out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
   tool('broom', broom(), scene, -1.02, floorAt(-1.02, BD, 1.0), 1.0, [0, Math.PI / 2, .1]); /* GRAB: 6 cm further off the bunk's corner post (his fist brushed it taking the broom) */
   const plantO = place('plant', plant(), -.88, BD, 1.36); /* in front of the crate nightstand, off the kitchen hatch and the oak limb */ PT.plant = [plantO, V(0, .3, 0)];
-  tool('wateringCan', wateringCan(), scene, -.65, floorAt(-.65, BD, 1.33), 1.33, [0, -1.2, 0]); /* GRAB: off his path from the reading chair, 55 cm from the walk lines (Collision measured; at 45 cm his shins still clipped it) */
+  tool('wateringCan', wateringCan(), scene, -.65, floorAt(-.65, BD, 1.33), 1.33, [0, -1.2 + Math.PI, 0]); /* the spout to the wall, not toward the room: it stuck out 29 cm at toe height toward where he stands and walks (gate: toes in it 7 cm) */ /* GRAB: off his path from the reading chair, 55 cm from the walk lines (Collision measured; at 45 cm his shins still clipped it) */
   // diary + pencil sit beside the reading book, a forearm in from the edge (they used to lie 42 cm deep, past an arm's reach from the chair side)
   tool('diary', diary(), scene, -.16 + TX, tTop, 1.5 + TZ, [0, .22, 0]); tool('pencil', pencil(), scene, -.05 + TX, tTop, 1.53 + TZ, [0, .5, 0]);
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
@@ -1415,26 +1428,41 @@ export function buildProps(ctx) {
       // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
       const top = yc + q.r + .03; const o = Math.max(0, d - q.r * .4); const dr = o < .08 ? 4 * o * o : .0256 + .64 * (o - .08) + 6 * (o - .08) * (o - .08);
       const h = top - dr - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
+  // ---- BED (2026-11-24, Pavel: "the quilt just appears on top of him, he never covers himself"): the quilt's head flap folds over a
+  // hinge across the bed. fold 0 = flat (a made bed), 1 = turned down onto the lower half. Character moves it with his hand on the
+  // flap's free edge (quiltFold / quiltEdge), so it only ever moves where his hand takes it; quiltLive(s) refreshes it every frame.
+  let qxMax = -1e9; if (qBase) for (let i = 0; i < qBase.length; i += 3) if (qBase[i + 1] <= qLowMax + .1 && qBase[i] > qxMax) qxMax = qBase[i];
+  const FL = .3, FR = .1, qFlat = qLowMax - .034, qHinge = qxMax - FL; const fold = { a: 0, shown: 0 }; const _fp = [0, 0];
+  // a point of the flap: x along the quilt, yo its height over the flat top (negative on the hanging sides), a the fold angle 0..PI.
+  // The cloth bends round the hinge on a radius (no crease through itself), then runs straight; it keeps its thickness on the turn.
+  function foldPt(x, yo, a, o) { const s = x - qHinge; if (s <= 0 || a < 1e-4) { o[0] = x; o[1] = qFlat + yo; return o; }
+    if (yo < 0) yo *= 1 - .85 * a / Math.PI;/* its hanging sides fold flat with it */ const rho = FR / a; let px, py, th;
+    if (s <= FR) { th = s / rho; px = qHinge + rho * Math.sin(th); py = qFlat + rho * (1 - Math.cos(th)); }
+    else { th = a; px = qHinge + rho * Math.sin(a) + (s - FR) * Math.cos(a); py = qFlat + rho * (1 - Math.cos(a)) + (s - FR) * Math.sin(a); }
+    o[0] = px - yo * Math.sin(th); o[1] = py + yo * Math.cos(th); return o; }
+  out.quiltFold = (v) => { if (v == null) return fold.a / Math.PI; fold.a = clamp01(v) * Math.PI; };
+  out.quiltLive = (t) => { press.fast = Math.max(press.fast || 0, t); };
+  // the flap's free edge in the world, at the z of the given world point (kept off the corners): where his fingers hold it
+  out.quiltEdge = (pw, sf = 1, zm = .33) => { if (!quiltMesh) return null; bunk.updateMatrixWorld(true); const pl = bunk.worldToLocal(pw.clone()); const zl = Math.max(-zm, Math.min(zm, pl.z));/* zm: up to its side hem */
+    foldPt(qHinge + FL * sf, .012, fold.a, _fp);/* sf: how far along the flap the hand holds it (1 = its free edge) */ let X = _fp[0], Y = _fp[1]; if (press.cover && press.k > .001 && cb.length) Y += liftAt(X, zl, Y) * press.k; return bunk.localToWorld(V(X, Y, zl)); };
+  out._quiltFoldDbg = () => ({ qxMax, qHinge, qFlat, a: fold.a });
   function pressQuilt(dt) {
-    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5);
-    if (press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones())) { coverT -= dt; if (coverT <= 0 || Math.abs(press.k - press.shown) >= .01) { coverT = .2; press.shown = press.k; bunk.updateMatrixWorld(true);
-        if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } }
-        const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, e = .02, k = press.k;
-        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
-          const L0 = liftAt(x, z, y > qTop ? y : qTop) * (y >= qTop ? 1 : Math.max(0, (y - qBot) / (qTop - qBot))); if (L0 <= .002) continue;/* the hanging sides: the hem stays down, the cloth slopes from the lifted top edge to it (no box with a zigzag hem over a bare mattress) */ a[i + 1] = y + L0 * k;
-          if (nBase[i + 1] > .4) { const gx = (liftAt(x + e, z, y) - liftAt(x - e, z, y)) / (2 * e) * k, gz = (liftAt(x, z + e, y) - liftAt(x, z - e, y)) / (2 * e) * k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; } }
-        P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
-      return; }
-    if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
-    const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, c = press.at, e = .01;
-    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (Math.abs(y - c.y) > .3) continue;
-      if (press.cover) { const L0 = bodyLift(x, z, c); if (L0 <= 0) continue; a[i + 1] = y + L0 * press.k;
-        if (nBase[i + 1] > .4) { const gx = (bodyLift(x + e, z, c) - bodyLift(x - e, z, c)) / (2 * e) * press.k, gz = (bodyLift(x, z + e, c) - bodyLift(x, z - e, c)) / (2 * e) * press.k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; }
-        continue; }
-      // an elongated hollow along the bed (body length on x), deepest under the hips, with a slight rim of bunched cloth
-      const dx = (x - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d > 1.35) continue;
-      const sink = d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008; a[i + 1] = y - sink * press.k; }
-    P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
+    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5); if (press.fast > 0) press.fast -= dt;
+    const cover = press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones()); coverT -= dt;
+    const folded = Math.abs(fold.a - fold.shown) > 1e-3;
+    if (cover) { if (!(coverT <= 0 || press.fast > 0 || folded || Math.abs(press.k - press.shown) >= .01)) return; }
+    else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
+    press.shown = press.k; fold.shown = fold.a;
+    if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } } }
+    const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
+    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
+      let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }
+      if (cover && k > .001) { /* the hanging sides: the hem stays down, the cloth slopes from the lifted top edge to it */let L0 = liftAt(X, z, Y > qTop ? Y : qTop); if (Y < qTop) L0 *= Math.max(0, (Y - qBot) / (qTop - qBot)); Y += L0 * k; }
+      else if (!cover && c && k > .001 && Math.abs(y - c.y) <= .3) { // an elongated hollow along the bed where he sits or lies on it, deepest under the hips
+        const dx = (X - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d <= 1.35) Y -= (d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008) * k; }
+      a[i] = X; a[i + 1] = Y; }
+    P.needsUpdate = true; quiltMesh.geometry.computeVertexNormals(); quiltMesh.geometry.computeBoundingSphere(); }
   out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
