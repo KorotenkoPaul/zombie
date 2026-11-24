@@ -248,7 +248,9 @@ export function createHero(ctx){
   const elbow=a.clone().addScaledVector(dir,ca*l1).addScaledVector(pp,sa*l1);turnBone(A,b,elbow,w);const b2=Bb.getWorldPosition(V()),c2=C.getWorldPosition(V());turnBone(Bb,c2,a.clone().addScaledVector(dir,dd),w);
   if(endQ){C.parent.getWorldQuaternion(_pq);const want=_pq.clone().invert().multiply(endQ);C.quaternion.slerp(want,w);C.updateMatrixWorld(true);}}
  function legIK(dy,w){for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
-   const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));ik2(U,L,F,a.clone().add(V(0,dy,0)),pole,w,true);}}
+   /* WALK: a straight leg has no knee direction (knee - hip/ankle midpoint ~ 0): the pole then pointed anywhere and a 1 cm floor step
+      swung the trailing foot 9-22 cm (gate: RightFoot jump in the bedroom); fall back to the body's forward, blended in as the leg straightens */
+   const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));const pl=pole.length(),fb=fwd(root.rotation.y);pole.multiplyScalar(1/Math.max(pl,1e-6)).lerp(fb,1-smooth(.01,.04,pl));ik2(U,L,F,a.clone().add(V(0,dy,0)),pole,w,true);}}
  // seated / perched: put each ankle at its standing height above the boards, then lift the toes out of the floor
  // targets and knee direction are low-passed so clip noise and IK flips never reach the feet
  const plantS={};
@@ -1166,7 +1168,9 @@ export function createHero(ctx){
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
    p.y=lerp(f.base,f.y-hy,w);}
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
-   const f=floorAt(p.x,p.y,p.z,.32);if(f!=null&&f-p.y<.3&&p.y-f<.3){H.floorY=f;const d=f-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
+   let f=floorAt(p.x,p.y,p.z,.32);/* WALK: one ray between two planks hit the joist below: the root dipped 2 cm for a few frames. A drop is real only if the boards around agree */
+   if(f!=null&&H.floorY!=null&&f<H.floorY-.006){for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y,p.z+oz,.32);if(g2!=null&&g2>f&&g2<=H.floorY+.01)f=g2;}}
+   if(f!=null&&f-p.y<.3&&p.y-f<.3){H.floorY=f;const d=f-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
   runSlot('motion',dt);
