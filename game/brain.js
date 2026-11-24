@@ -68,7 +68,9 @@ const JOBS = {
 // small self-ending chores and habits (hero.js tasks; each is used only when HH.hasTask(task) says the body can do it).
 // give = what one go does to the needs; when(h, ctx) = habit bonus for the hour / situation.
 const EXTRA = {
-  chop:      { room: 'outside',  give: { fun: -.15, comfort: -.05 }, label: 'колет дрова',          when: (h, c) => (h >= 9 && h < 17 ? .2 : -1) + (c.logs <= 2 ? .3 : 0) },
+  chop:      { room: 'kitchen',  give: { hunger: -.03, fun: -.1 }, label: 'режет на доске',      when: h => (h >= 11 && h < 13) || (h >= 17 && h < 19) ? .2 : -.3 },
+  // OUTDOOR: splitting rounds with the axe at the chopping block by the oak (hero.js MAKE.splitwood)
+  splitwood: { room: 'outside',  give: { fun: -.15, comfort: -.05 }, label: 'колет дрова',          when: (h, c) => (h >= 9 && h < 17 ? .2 : -1) + (c.logs <= 2 ? .3 : 0) },
   pot:       { room: 'kitchen',  give: { hunger: -.05, comfort: -.12 }, label: 'помешивает в котелке', when: h => (h >= 17 && h < 20 ? .25 : 0) },
   stoke:     { room: 'kitchen',  give: { comfort: -.3 }, label: 'подкладывает дрова в печь', when: (h, c) => (c.ovenLow ? .6 : -.5) + (isN(h) ? .2 : 0), needLogs: true },
   dishes:    { room: 'kitchen',  give: { tidy: -.4 }, label: 'моет посуду',               when: (h, c) => (c.dirty >= 2 ? .8 : c.dirty === 1 ? (c.justAte ? .3 : -.2) : c.dirty === 0 ? -1.5 : (c.justAte ? .7 : 0)) },
@@ -141,7 +143,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   let lingerCool = 0, roomNow = null, roomT = 0;
   // a visit: when he arrives somewhere he means to do 2-4 things there before moving on (Pavel: never up and straight back down)
   const DECK = ['look', 'telescope', 'ledge', 'fix_railing', 'clear_roof', 'fix_shingle', 'fix_chimney'];
-  const area = n => DECK.includes(n) ? 'deck' : (JOBS[n] || ['chop', 'firewood', 'fix_rope'].includes(n)) ? 'ground' : ((ACTS[n] || EXTRA[n] || {}).room || null);
+  const area = n => DECK.includes(n) ? 'deck' : (JOBS[n] || ['splitwood', 'firewood', 'fix_rope'].includes(n)) ? 'ground' : ((ACTS[n] || EXTRA[n] || {}).room || null);
   const visit = { area: null, left: 0, since: 0 }; let nowT = 0;   // nowT: real seconds the brain has run
   const MIN_VISIT = 40;   // HERO-RULES 3.7: a believable stay at a place, 40-90 s
   function visitBonus(n) {
@@ -306,6 +308,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     let { s, top } = value(effOf(n));
     s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
     s += weatherBonus(n, h);
+    // a house that is in good shape needs no repairs: he waits until wear has built up (a full-day watch: 6 repairs at wear ~0)
+    if (/^fix_/.test(n) && need.wear < .15) s -= 2.5 * (1 - need.wear / .15);
     // autumn litter on the roofs and deck (wind.js): he sweeps when it is leafy, skips it when clean
     if (n === 'clear_roof') { try { const L = window.__wind && window.__wind.litter; if (L && L.level) s += 1.5 * (L.level() - .4); } catch (e) {} }
     if (locked) { const l = lockScore(n); if (l <= -20) return null; s += l; }
@@ -465,7 +469,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   let lockAsk = (() => { try { return /[?&]lockdown\b/.test(location.search); } catch (e) { return false; } })();   // ?lockdown: debug
   // lockdown inside: quiet things, keep an ear on the windows; nothing loud, no lamps but one, nobody goes out
   const QUIET = { read: .5, diary: .5, listen: .9, window: .8, sharpen: .4, supplies: .5, fixlamp: .3, tea: .3, fix_window: .4, bolt: .2, stretch: .2, fix_hinge: .2 };
-  const LOUD = ['saw', 'hammer', 'chop', 'radio', 'sweep', 'fix_board', 'fix_wall', 'craft'];
+  const LOUD = ['saw', 'hammer', 'chop', 'splitwood', 'radio', 'sweep', 'fix_board', 'fix_wall', 'craft'];
   const hatchShut = () => { const H8 = house(); return !!(H8 && H8.hatch && H8.hatch.isOpen && !H8.hatch.isOpen()); };
   const sideOf = r => r === 'bedroom' ? 'up' : 'down';
   function lockScore(n) {
