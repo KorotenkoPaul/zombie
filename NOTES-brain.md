@@ -85,3 +85,4 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - Fine: 20-25 picks a day, area stays 48-210 s, hunger .0-.5, no turn-backs, no errors, the watchdog caught the endless hammer once or twice a day.
 - Fixed: repairs at a house in good shape (6 repairs a day at wear ~0). Now fix_* get -2.5 × (1 - wear/.15) below wear .15, so he fixes when wear has built up (.3-.5).
 - Process: brain.js goes to the brain branch; the integrator merges it into claude/project-thread-tyhjsl (HERO-RULES freeze).
+- Critic B1 (pass 9): no trips in the dark. Hunt sets off only 7:00-14:30, wood 7:00-15:00, no emergency exception (a hungry night is sat out at home). A trip still out at 18:30 (clock jump, long route) is cut: 'dusk:home' and he picks something at home. Commanded trips are left alone. 48 h runs: trips at 10.6-12.9.
