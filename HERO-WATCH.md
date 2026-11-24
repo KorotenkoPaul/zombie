@@ -54,6 +54,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R7-4 | — | hammer (071a2cf) | unchanged from R6-8 (hammer head at face height on the backswing) | f5304, f5592, f5880, f6312 | — | workshop |
 | R7-5 | ok/P2 | ledge (071a2cf) | B7 fixed: he sits on the open deck edge, both hands on the edge, no railing in the legs, legs swing slowly. P2: the legs stay almost straight and stick out forward near horizontal (feet at knee height or above) instead of the shins hanging down over the drop | f8544–f10680 | r7-071a2cf/ledge_sit_ok_legs_stiff_horizontal.jpg | leisure |
 | R7-6 | — | stoke (071a2cf) | not judged: my camera ended up inside a post / his head; to be re-filmed | f11508–f11964 | — | watch tooling |
+| R7-7 | P1 | fetchwater (071a2cf) | R6-5 still there: root (0.11, 7.57) during hy_pickground, normalised pond-ellipse distance 0.87 (<1 = inside the water); he squats ON the water with a knee among the lily pads, then stands with both boots on the water | f3960–f4392 | r7-071a2cf/pond_squats_and_stands_on_water_f4056-4392.jpg | outdoor |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
