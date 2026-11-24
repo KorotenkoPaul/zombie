@@ -298,6 +298,46 @@ export function createHero(ctx){
    /* once a frame from the pose as the clip and the legs left it; a later pass (the planted crouch re-solves the legs) only re-applies it */
    const first=KOT.f[s]!==FRN;if(first){KOT.f[s]=FRN;KOT.b[s]=KOT[s];KOT.w[s]=want;}else KOT.w[s]=Math.max(KOT.w[s],want);KOT[s]=KOT.b[s]+clamp(KOT.w[s]-KOT.b[s],-dt*4,dt*4);if(KOT[s]<.01||(!first&&want<.01))continue;
    ik2(U,L,F,a,pf.clone().addScaledVector(inw,-.15).normalize(),KOT[s],true);}}
+ // WALK + carry: a load hanging from a fist (the meat sack, a bucket, the lantern) never passes through the legs: when a stepping leg
+ // reaches it, it swings aside about the fist the least that clears the legs' own skin, and swings back to hanging straight after
+ // (gate store: the sack went 4.6-10.4 cm into the shins, depending on when he arrived). Measured on the final pose, every frame.
+ const LOADS=['meatBag','waterBucket','drainBucket'];/* loads that hang from the fist by a neck or a bail (a ladle, a hammer or the watering can is aimed on purpose) */const _lb=new THREE.Box3();
+ // the legs' skin as the gate samples it: every 10th vertex of the body whose main bone is a thigh or a shin (the bone line missed the knee and trouser leg by 5-9 cm)
+ const GCMP=(a,i,k)=>[a.getX,a.getY,a.getZ,a.getW][k].call(a,i);let LSK=null;function legSkin(){if(!LSK){LSK={m:null,ix:[]};root.traverse(o=>{if(o.isSkinnedMesh&&!LSK.m)LSK.m=o;});const M=LSK.m;if(M){const si=M.geometry.attributes.skinIndex,sw=M.geometry.attributes.skinWeight,n=M.geometry.attributes.position.count;
+   for(let i=0;i<n;i+=10){let bi=0,bw=-1;for(let k=0;k<4;k++){const w=GCMP(sw,i,k);if(w>bw){bw=w;bi=GCMP(si,i,k);}}const nm=M.skeleton.bones[bi].name;if(/(Up)?Leg$/.test(nm))LSK.ix.push(i);}}}
+  const M=LSK.m;if(!M)return [];if(LSK.f===FRN)return LSK.p;/* once a frame: the swing search measures up to 21 poses of the load against the same legs */const out=[];for(const i of LSK.ix){const v=M.getVertexPosition(i,new THREE.Vector3());out.push(v.applyMatrix4(M.matrixWorld));}LSK.f=FRN;LSK.p=out;return out;}
+ // how deep the legs' skin is in a load (m, inside > 0), each mesh of the load in its own frame as the gate sees it: a round one as a cylinder, the rest as its box
+ function loadPen(load){const P=legSkin();let need=-1;
+     load.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(V());if(sz.length()<.03)return;
+      const I=m.matrixWorld.clone().invert();const sc=new THREE.Vector3().setFromMatrixScale(m.matrixWorld);const k=Math.min(sc.x,sc.y,sc.z)||1;const cx=(bb.min.x+bb.max.x)/2,cz=(bb.min.z+bb.max.z)/2;const round=Math.abs(sz.x-sz.z)<.15*Math.max(sz.x,sz.z);const L=V();
+      for(const q of P){L.copy(q).applyMatrix4(I);if(L.y<bb.min.y||L.y>bb.max.y)continue;let sd;
+       if(round)sd=Math.min(sz.x,sz.z)/2-Math.hypot(L.x-cx,L.z-cz);else{const ox=Math.max(bb.min.x-L.x,0,L.x-bb.max.x),oz=Math.max(bb.min.z-L.z,0,L.z-bb.max.z);const out=Math.hypot(ox,oz);sd=out>0?-out:Math.min(L.x-bb.min.x,bb.max.x-L.x,L.z-bb.min.z,bb.max.z-L.z);}
+       need=Math.max(need,sd*k);}});return need;}
+ function loadClear(dt){if(window.__noLoadClear)return;const T=PP()&&PP().tools;if(!T)return;const moving=H.path.length>0||H.v>.1;
+  for(const k of LOADS){const o=T[k];if(!o)continue;const U=o.userData;const S=U.lsw;
+   /* last frame's swing is taken off first, unless something else has posed the load since */
+   if(S&&S.set&&o.position.equals(S.set.p)&&o.quaternion.equals(S.set.q)){o.position.copy(S.base.p);o.quaternion.copy(S.base.q);}
+   const hand=o.parent;const inHand=hand===bones.LeftHand||hand===bones.RightHand;
+   if(!inHand||o.visible===false){if(S)U.lsw=null;continue;}
+   const W=U.lsw||(U.lsw={a:0,b:0});W.base={p:o.position.clone(),q:o.quaternion.clone()};W.set=null;
+   let ta=0,tb=0;root.updateMatrixWorld(true);_lb.setFromObject(o);
+   if(moving&&!H.lad&&!_lb.isEmpty()&&_lb.min.y<hand.getWorldPosition(V()).y-.12){
+    /* the pivot: the top of the load, where the fist holds its neck or bail */const pv=_lb.getCenter(V());pv.y=_lb.max.y;
+    const fw=V(Math.sin(root.rotation.y),0,Math.cos(root.rotation.y)),lf=V(Math.cos(root.rotation.y),0,-Math.sin(root.rotation.y));
+    const M0=o.matrixWorld.clone(),Hi=hand.matrixWorld.clone().invert();
+    const pose=(a,b)=>{const R=new THREE.Matrix4().makeRotationAxis(fw,a).multiply(new THREE.Matrix4().makeRotationAxis(lf,b));const Mw=new THREE.Matrix4().makeTranslation(pv.x,pv.y,pv.z).multiply(R).multiply(new THREE.Matrix4().makeTranslation(-pv.x,-pv.y,-pv.z)).multiply(M0);
+     Hi.clone().multiply(Mw).decompose(o.position,o.quaternion,new THREE.Vector3());o.updateMatrixWorld(true);};
+    const p0=loadPen(o);
+    if(p0>-.01||Math.abs(W.a)+Math.abs(W.b)>.01){/* touching, or still swung out: find the smallest swing that clears the legs (a leg knocks a hanging sack aside; it does not pass through it) */
+     let best=null;const C=[[0,0]];for(const m of [.12,.24,.36,.5,.65])for(const [x,y] of [[1,0],[-1,0],[0,1],[0,-1]])C.push([x*m,y*m]);
+     for(const [a,b] of C){pose(a,b);const pe=loadPen(o);const cost=Math.hypot(a-W.a,b-W.b)*.08+Math.hypot(a,b)*.04;if(pe<=-.025){if(!best||!best.ok||cost<best.c)best={a,b,c:cost,ok:true};}else if(!best||(!best.ok&&pe<best.pe))best={a,b,pe,c:cost,ok:false};}
+     ta=best.a;tb=best.b;}
+    const r=dt*12;/* a kicked sack swings fast */W.a+=clamp(ta-W.a,-r,r);W.b+=clamp(tb-W.b,-r,r);
+    if(Math.abs(W.a)+Math.abs(W.b)>1e-4){pose(W.a,W.b);W.set={p:o.position.clone(),q:o.quaternion.clone()};}else{o.position.copy(W.base.p);o.quaternion.copy(W.base.q);}}
+   else if(Math.abs(W.a)+Math.abs(W.b)>1e-4){/* swing back to hanging straight */const r=dt*3;W.a+=clamp(-W.a,-r,r);W.b+=clamp(-W.b,-r,r);const pv=_lb.getCenter(V());pv.y=_lb.max.y;
+    const fw=V(Math.sin(root.rotation.y),0,Math.cos(root.rotation.y)),lf=V(Math.cos(root.rotation.y),0,-Math.sin(root.rotation.y));const R=new THREE.Matrix4().makeRotationAxis(fw,W.a).multiply(new THREE.Matrix4().makeRotationAxis(lf,W.b));
+    const Mw=new THREE.Matrix4().makeTranslation(pv.x,pv.y,pv.z).multiply(R).multiply(new THREE.Matrix4().makeTranslation(-pv.x,-pv.y,-pv.z)).multiply(o.matrixWorld);hand.matrixWorld.clone().invert().multiply(Mw).decompose(o.position,o.quaternion,new THREE.Vector3());o.updateMatrixWorld(true);W.set={p:o.position.clone(),q:o.quaternion.clone()};}
+   }}
  function legPlantOff(){for(const k in plantS)plantS[k].on=false;}
  // POSE: standing still, the soles stay where they were put down: idle clips sway the legs about a fixed pelvis, which slid the
  // feet 9-15 cm sideways over the boards (workshop). Each ankle is held in the world (two-bone IK) and the hips carry the sway; a
@@ -597,9 +637,10 @@ export function createHero(ctx){
    const dur=o.dur||(one?durOf(c):3);if(H.seated){a.update=()=>endTask();return a;}
    const go0=(cl=c)=>{a.on=1;a.t=0;a.step='do';if(cl!==c)play(cl,{fade:.5});else if(one)once(c,{fade:.5});else play(c,{fade:.5});};
    /* STRETCH (gate: a hand 7.8 cm into the shelf beside him): arms out and up need room; next to furniture he first steps to a free spot */
-   const go=()=>{if(STRETCHES.includes(c)&&!armsFree(root.position,root.rotation.y,c)){const y=armsYaw(root.position,root.rotation.y,c);if(y!=null){a.faceYaw=y;a.noPush=true;approachTo(a,root.position.clone(),0,()=>go0(armsFree(root.position,root.rotation.y,c)?c:IDLE()));return;}/* turning on the spot is enough */
+   const go=()=>{if(STRETCHES.includes(c)&&!armsFree(root.position,root.rotation.y,c)){const y=armsYaw(root.position,root.rotation.y,c);if(y!=null){a.faceYaw=y;a.noPush=true;approachTo(a,root.position.clone(),0,()=>go0(armsFree(root.position,root.rotation.y,c)?c:alt()));return;}/* turning on the spot is enough */
     a.step='seek';a.gen=stretchSpot(c);play(IDLE(),{fade:.4});return;}go0();};
-   const seek=()=>{for(let i=0;i<2;i++){const r=a.gen.next();if(!r.done)continue;const v=r.value;if(v){a.noPush=true;a.faceYaw=v.yaw;approachTo(a,v.q,0,()=>go0(armsFree(root.position,root.rotation.y,c)?c:IDLE()));}else go0(IDLE());/* no room anywhere near: no stretch this time */return;}};
+   const alt=()=>{const L=['hy_scratch','336'].filter(has);return L.length?pick(L):IDLE();};/* no room for the arms: another small gesture, never 3 s of standing (visual watch R25-3) */
+   const seek=()=>{for(let i=0;i<14;i++){const r=a.gen.next();if(!r.done)continue;const v=r.value;if(v){a.noPush=true;a.faceYaw=v.yaw;approachTo(a,v.q,0,()=>go0(armsFree(root.position,root.rotation.y,c)?c:alt()));}else go0(alt());/* no room anywhere near: no stretch this time */return;}};/* 14 probes a frame: the search ends in a few frames, not 6 s of IDLE at the desk chair */
    if(H.path.length){H.then=go;}else go();/* finish the step to the next spot first: a stretch is done standing, not mid-stride */
    a.update=dt=>{if(a.step==='seek'){seek();return;}if(a.step==='approach'){a.t+=dt;if(a.t>=a.adur)a.next();return;}if(!a.on)return;a.t+=dt;if(o.look){H.look=o.look.clone?o.look.clone():V(o.look.x,o.look.y,o.look.z);H.lookW=.8;}else if(c==='stretch_yawn'){/* the yawn clip swings the head ~60-90 deg to the left of the pelvis at its end (gate owl-head on v6, seen side-on in frames): keep the gaze ahead, a little up while the arms are up */const f=fwd(root.rotation.y);H.look=root.position.clone().addScaledVector(f,3).add(V(0,1.55+.5*Math.max(0,Math.sin(Math.min(1,a.t/dur)*Math.PI)),0));H.lookW=.75;}if(a.t>=dur){play(IDLE(),{fade:.6});endTask();}};
    return a;},
@@ -787,6 +828,7 @@ export function createHero(ctx){
  // one framework: walk to the spot (graph node, then a short slide up to the work point), optionally take tools from their
  // home (hand IK to the hook / shelf, real attach to the hand bone), work for a while with small variations (pause, look
  // round, scratch, stretch, sigh), put the tools back, end by itself. Props / lights / audio hooks are all optional.
+ function pantryFront(){try{let s=root;while(s.parent)s=s.parent;const o=s.getObjectByName('pantry');if(!o)return null;const q=o.getWorldQuaternion(new THREE.Quaternion());const f=V(0,0,1).applyQuaternion(q);f.y=0;return f.lengthSq()>1e-4?f.normalize():null;}catch(e){return null;}}/* the pantry shelf's open side, world */
  const PT=(n)=>{try{const P=window.__props||P3;return P&&P.point?P.point(n):null;}catch(e){return null;}};
  const AU=(n,pos)=>{try{window.__audio&&window.__audio.play&&window.__audio.play(n,pos);}catch(e){}};
  const toolHome=n=>{try{const P=window.__props||P3;return P&&P.toolHome?P.toolHome(n,V()):null;}catch(e){return null;}};
@@ -806,10 +848,10 @@ export function createHero(ctx){
  // a generator: one candidate's arms check (~4000 probes) per step, so the search runs over a few frames instead of one hitch
  function* stretchSpot(clip){const C=window.__collide;const p=root.position;const lvl=(x,z)=>{const g=floorAt(x,p.y+.3,z,.45,.5);return g!=null&&Math.abs(g-p.y)<.06;};
   const inObst=(x,z)=>{for(const o of OBST){if(o.x1==null||Math.abs(o.y-p.y)>.5)continue;const r=.22;if(p.x>o.x0-r&&p.x<o.x1+r&&p.z>o.z0-r&&p.z<o.z1+r)continue;if(x>o.x0-r&&x<o.x1+r&&z>o.z0-r&&z<o.z1+r)return true;}return false;};
-  let tries=0,cheap=0;for(let r=.2;r<=1.01;r+=.1)for(let k=0;k<16;k++){if(++cheap%6===0)yield null;const an=k*Math.PI/8+(r*7%1),ux=Math.cos(an),uz=Math.sin(an),x=p.x+ux*r,z=p.z+uz*r;
+  let tries=0,cheap=0;for(let r=.2;r<=1.51;r+=.1)/* 1-2 steps, up to 1.5 m */for(let k=0;k<16;k++){if(++cheap%6===0)yield null;const an=k*Math.PI/8+(r*7%1),ux=Math.cos(an),uz=Math.sin(an),x=p.x+ux*r,z=p.z+uz*r;
    let ok=lvl(x,z)&&[[.15,0],[-.15,0],[0,.15],[0,-.15]].every(([u,v])=>lvl(x+u,z+v))&&!inObst(x,z)&&(!C||!C.room||C.room(x,p.y,z)<=.004);
    for(let t=.08;ok&&t<r;t+=.08){const xx=p.x+ux*t,zz=p.z+uz*t;if(!lvl(xx,zz)||inObst(xx,zz)||(C&&C.room&&C.room(xx,p.y,zz)>.004))ok=false;}/* room: legs and the swinging arms of the walk */
-   if(!ok)continue;if(++tries>30)return null;const q=V(x,p.y,z);const y=armsYaw(q,Math.atan2(ux,uz),clip);if(y!=null)return {q,yaw:y};yield null;}
+   if(!ok)continue;if(++tries>45)return null;const q=V(x,p.y,z);const y=armsYaw(q,Math.atan2(ux,uz),clip);if(y!=null)return {q,yaw:y};yield null;}
   return null;}
  function approachTo(a,sp,stand,then){const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz)||1e-3;H.face=a.faceYaw!=null?a.faceYaw:Math.atan2(dx,dz);/* faceYaw: the job's own facing (a window pane), turned to during the slide, not on the spot after it */
   const move=Math.max(0,Math.min(1.2,d-stand));const q=p.clone().add(V(dx/d*move,0,dz/d*move));if(!a.noPush)pushOut(q,a.pushR);headroom(q,dx/d,dz/d);const dur=Math.max(.3,move/.8,Math.abs(wrapA(H.face-root.rotation.y))/2.4);/* never faster than ~140 deg/s */
@@ -1337,7 +1379,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     try{window.__audio&&window.__audio.carry&&window.__audio.carry(false);}catch(e){}H.carry=null;H.squat=0;H.kSquat=0;kSlow(false);a.ik=[];}
    a.leave=cb=>{cleanup();try{const o=OV();if(o&&o.open>0){if(G())G().free(o.door);o.setOpen(0);}}catch(e){}cb();};return a;},
   dishes:(o)=>dishesAction(o),
-  supplies:(o)=>job({pt:()=>PT('pantry'),stand:.5,clip:'hy_count',loop:true,dur:[15,28]}),
+  supplies:(o)=>{const pf=pantryFront();return job({pt:()=>PT('pantry'),stand:.5,clip:'hy_count',loop:true,dur:[15,28],faceYaw:pf?Math.atan2(-pf.x,-pf.z):null,via:pf?(s=>s.clone().addScaledVector(pf,.75)):null});},/* WATCH R27-3: in front of the shelf facing it (he came at it from the side and counted the jars at his left hip) */
   tea:MAKE.tea,
   // workshop
   saw:(o)=>job({pt:()=>PT('bench'),stand:.45,clip:'hy_saw',loop:true,dur:[20,40],tools:[['plankSaw','Right']],tick:(a,dt)=>{a.ct=(a.ct||0)+dt;if(a.ct>.8){a.ct=0;AU('saw',PT('bench'));}}}),
@@ -2272,7 +2314,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function huntStart(a,res,goOut){a.step='hunt';a.hp='draw';a.ht=0;a.hres=res;a.goOut=goOut;const f=fwd(N.g_out.face??H.face);H.face=N.g_out.face??H.face;
   const e=root.position;const hp=e.clone().addScaledVector(f,2.6).addScaledVector(V(f.z,0,-f.x),rnd(-.15,.15));/* on the path out, not in the bushes beside it */hp.y=gH(hp.x,hp.z,e.y);a.hareAt=hp;
   hareObj=hareObj||hareMesh();hareTidy();hareObj.position.copy(hp);hareObj.rotation.set(0,Math.atan2(-f.x,-f.z)+rnd(-.8,.8),0);hareObj.visible=true;scene.add(hareObj);
-  play(IDLE(),{fade:.4});H.look=hp.clone().add(V(0,.2,0));H.lookW=.5;const p0=a.post;a.post=dt=>{p0&&p0(dt);if(a.step==='hunt'&&(a.hp==='draw'||a.hp==='stow')&&a.rk!=null)bowReach(a,a.rk,a.hp==='draw');if(a.step==='hunt'&&a.hp==='pick'){if(a.ph2)hareCarry(a);else if(hareObj&&hareObj.parent===scene){hareObj.updateMatrixWorld(true);const g=hareObj.localToWorld(V(0,.06,-.14));a.hg0=g;const w=smooth(.3,.75,a.ht);if(w>.01)odReach('Right',g,w);}}};}
+  play(IDLE(),{fade:.4});H.look=hp.clone().add(V(0,.2,0));H.lookW=.5;const p0=a.post;a.post=dt=>{p0&&p0(dt);if(a.step==='hunt'&&a.hp==='shoot')shotPost(a);if(a.step==='hunt'&&(a.hp==='draw'||a.hp==='stow')&&a.rk!=null)bowReach(a,a.rk,a.hp==='draw');if(a.step==='hunt'&&a.hp==='pick'){if(a.ph2)hareCarry(a);else if(hareObj&&hareObj.parent===scene){hareObj.updateMatrixWorld(true);const g=hareObj.localToWorld(V(0,.06,-.14));a.hg0=g;const w=smooth(.3,.75,a.ht);if(w>.01)odReach('Right',g,w);}}};}
  /* the hare never stays in his hand after the hunt is over, however the task ended */
  let hareGuard=0;function hareTidy(){if(!hareGuard){hareGuard=1;stage('pre',()=>{if(hareObj&&hareObj.parent&&hareObj.parent!==scene&&!(act&&act.step==='hunt')){hareObj.parent.remove(hareObj);}});}}
  /* up from the ground the hare is carried out in front and round the outside of his right thigh into the sack, never back
@@ -2280,7 +2322,31 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function hareCarry(a){const t=a.ht;const L=(x,y,z)=>root.localToWorld(V(x,y,z));
   const P1=L(-.14,.62,.36),P2=L(-.34,.82,.06);const t0=a.pkT||(a.pkT=t);const at=t<t0+.65?a.hg0.clone().lerp(P1,smooth(t0,t0+.65,t)):P1.clone().lerp(P2,smooth(1.55,2.15,t));
   const w=1-smooth(2.25,2.7,t);if(w>.01)odReach('Right',at,w);}
- function huntEnd(a){if(hareObj&&hareObj.parent)hareObj.parent.remove(hareObj);if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);
+ /* HUNT: a real shot, by hand. The right hand goes back over the shoulder into the quiver and draws an arrow, brings it to the bow,
+    nocks it on the string and pulls the string back to the cheek (the string bends to the fingers); on the release that same arrow
+    leaves from where it lay. (It used to appear out of nothing at the bow hand at the release, the string never moved: watch, v6 at night) */
+ let bowStr=null,handArrow=null,shotOn=0,shotA=null;
+ function bowString(nock){const bw=PP().tools&&PP().tools.bow;if(!bw)return;
+  if(bw.userData.strMesh===undefined){bw.userData.strMesh=null;bw.traverse(o=>{if(o.isMesh&&o.material&&o.material.color&&o.material.color.getHex()===0xE8E2D0)bw.userData.strMesh=o;});}
+  const base=bw.userData.strMesh;
+  if(!bowStr){const m=new THREE.MeshStandardMaterial({color:0xE8E2D0,roughness:.6});bowStr=[0,1].map(()=>{const c=new THREE.Mesh(new THREE.CylinderGeometry(.0025,.0025,1,4),m);c.castShadow=true;c.frustumCulled=false;c.visible=false;c.name='bowString';scene.add(c);return c;});}
+  if(!nock||!bw.visible||!base){if(base)base.visible=true;for(const c of bowStr)c.visible=false;return;}
+  base.visible=false;bw.updateMatrixWorld(true);const tips=[bw.localToWorld(V(0,.56,.002)),bw.localToWorld(V(0,-.56,.002))];
+  tips.forEach((t,i)=>{const c=bowStr[i];const d=nock.clone().sub(t);const L=d.length();c.position.copy(t).addScaledVector(d,.5);c.quaternion.setFromUnitVectors(V(0,1,0),d.normalize());c.scale.set(1,L,1);c.visible=true;});}
+ const SHOT={reach0:.55,reach1:.95,take:1.3,back0:1.4,back1:1.8,nock:1.95,rel:3.95};
+ function shotPost(a){const t=a.ht;const Q=PP().tools&&PP().tools.quiver;if(!Q||Q.parent!==bones.Spine2)return;
+  /* into the quiver: the fingers to the fletchings at its mouth */const w=smooth(SHOT.reach0,SHOT.reach1,t)*(1-smooth(SHOT.back0,SHOT.back1,t));if(w>.01&&!a.rel)odReach('Right',Q.localToWorld(V(0,.1,0)),w);
+  shotA=a;if(!shotOn){shotOn=1;lateFn(()=>{const A=shotA;shotA=null;if(A&&act===A&&A.step==='hunt'&&A.hp==='shoot')shotLate(A);else if(handArrow&&handArrow.visible&&!(act&&act.ar)){handArrow.visible=false;bowString(null);}});}}
+ function shotLate(a){const t=a.ht;const Q=PP().tools.quiver,bw=PP().tools.bow;if(a.rel){bowString(null);return;}
+  if(t<SHOT.take){if(handArrow)handArrow.visible=false;bowString(null);return;}
+  if(!handArrow){handArrow=arrowMesh();handArrow.name='handArrow';scene.add(handArrow);}if(!handArrow.visible){handArrow.visible=true;AU('cloth');}
+  const palm=odPalm('Right');const grip=bw?bw.localToWorld(V(0,.03,.02)):odPalm('Left');
+  const up=Q.localToWorld(V(0,1,0)).sub(Q.localToWorld(V(0,0,0))).normalize();const toBow=grip.clone().sub(palm).normalize();
+  const k=smooth(SHOT.take,SHOT.nock,t);const dir=up.clone().lerp(toBow,k).normalize();
+  /* held at the nock end between the fingers; once on the string the shaft runs from the fingers over the bow hand */
+  const pos=palm.clone().addScaledVector(dir,.31);handArrow.position.copy(pos);handArrow.lookAt(pos.clone().add(dir));handArrow.updateMatrixWorld(true);
+  bowString(t>=SHOT.nock?palm.clone().lerp(grip,1-smooth(SHOT.nock,SHOT.nock+.4,t)):null);}
+ function huntEnd(a){if(hareObj&&hareObj.parent)hareObj.parent.remove(hareObj);if(handArrow&&handArrow.parent)handArrow.parent.remove(handArrow);handArrow=null;try{bowString(null);}catch(e){}if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);
   try{const bw=PP().tools.bow;if(bw&&bw.parent===bones.LeftHand)onBack('bow',V(-.02,.03,-.18),[0,0,.55]);}catch(e){}H.look=null;H.lookW=0;H.slide=null;}
  /* the bow changes parent (back <-> fist) without a jump: from where it was it eases into its new place over 0.35 s */
  function bowMove(a,fn){const bw=PP().tools&&PP().tools.bow;if(!bw)return;bw.updateMatrixWorld(true);const M0=bw.matrixWorld.clone();try{fn();}catch(e){}a.bt={M0,tp:bw.position.clone(),tq:bw.quaternion.clone(),ts:bw.scale.clone(),k:0};}
@@ -2290,7 +2356,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(a.hp==='draw'){a.rk=t/1.6;if(t>.6&&!a.bg){a.bg=1;bowMove(a,()=>PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)}));AU('cloth');}
    if(t>1.6){a.hp='shoot';a.ht=0;once('hy_bowshoot',{fade:.35});AU('arrow');}return;}
   if(a.hp==='shoot'){if(t>1.8&&!a.dr){a.dr=1;AU('bow_draw',root.position);}
-   if(t>3.95&&!a.rel){a.rel=1;AU('bow_release',root.position);arrowObj=arrowObj||arrowMesh();const from=bones.LeftHand.getWorldPosition(V());arrowObj.position.copy(from);scene.add(arrowObj);arrowObj.visible=true;
+   if(t>SHOT.rel&&!a.rel){a.rel=1;AU('bow_release',root.position);if(handArrow&&handArrow.visible){if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);arrowObj=handArrow;handArrow=null;}/* the nocked arrow itself flies */else{arrowObj=arrowObj||arrowMesh();arrowObj.position.copy(bones.LeftHand.getWorldPosition(V()));}const from=arrowObj.position.clone();scene.add(arrowObj);arrowObj.visible=true;bowString(null);
     const to=a.hareAt.clone().add(V(0,.1,0));if(!ok)to.addScaledVector(V(fwd(H.face).z,0,-fwd(H.face).x),.5).addScaledVector(fwd(H.face),2.5);arrowObj.lookAt(to);a.ar={from,to,t:0};}
    if(a.ar){const A=a.ar;A.t+=dt/(ok?.18:.3);const k=Math.min(1,A.t);arrowObj.position.lerpVectors(A.from,A.to,k);if(k>=1){a.ar=null;if(ok){hareObj.attach(arrowObj);a.fall=0;}else arrowObj.visible=false;}}
    if(ok&&a.fall!=null&&a.fall<1){a.fall=Math.min(1,a.fall+dt/.25);hareObj.rotation.z=smooth(0,1,a.fall)*Math.PI/2*.95;hareObj.position.y=a.hareAt.y+.0;}
@@ -2889,7 +2955,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  SOLE.seen=0;if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(H.ground&&!H.fit&&!H.squat&&(p.y>2?!window.__noBoardStep:!window.__noRootStep))legIK(boardDy(g,dt),1);else{TF.Left=TF.Right=null;if(Math.abs(dy)>.004)legIK(dy,1);}if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);toeGuard(g,dt);}if(!H.inBed&&!H.bedB&&!H.bedC)kneeGuard();/* BED: lying down the pelvis faces up, so its flat forward is meaningless and the guard flipped the knees (3 rad leg twist) */}
+  SOLE.seen=0;if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(H.ground&&!H.fit&&!H.squat&&(p.y>2?!window.__noBoardStep:!window.__noRootStep))legIK(boardDy(g,dt),1);else{TF.Left=TF.Right=null;if(Math.abs(dy)>.004)legIK(dy,1);}if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);toeGuard(g,dt);}if(!H.inBed&&!H.bedB&&!H.bedC){kneeGuard();if(!loadClear.reg){loadClear.reg=1;lateFn(()=>loadClear(1/60));}/* in the guard stage, on the final pose */}/* BED: lying down the pelvis faces up, so its flat forward is meaningless and the guard flipped the knees (3 rad leg twist) */}
   /* WALK: a sole lock that was not run this frame (seated, perched, on a ladder) is dropped, not kept at its old weight: standing up from the chair both feet jumped 11-13 cm to a stale lock spot */if(!SOLE.seen){for(const k of ['Left','Right']){SOLE[k].w=0;SOLE[k].on=false;}}bedHand();bedLegClear(dt);
   H.bucketTilt=false;/* OUTDOOR: set again by a task that tips a bucket on purpose this frame (grab.js leaves it unplumbed) */
   if(act&&act.post)act.post(dt);if(act&&act.fr)fridgePost(act);/* KITCHEN: the hand on the fridge handle / shelf */slungPost();{const G=window.__grab;const f=()=>{try{stowPost(dt);}catch(e){console.error('stow',e);STW=null;}};if(STW&&G&&G.late)G.late(f);else f();}/* GRAB: after collide.js, like the other hand holds */
