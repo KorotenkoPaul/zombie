@@ -40,3 +40,13 @@ Vest and boots are separate skinned meshes (`split.mjs`, after slim, before lids
 The body underneath has a knitted sweater layer (vest triangles inset 1.4 cm along welded normals, sweater texels) and wool socks (boot triangles pulled 36% toward the foot bones); both taper to zero where they meet the body, so no cracks.
 Classification: per-triangle texel colour + dominant bone (torso & not sweater/skin/green -> vest; feet, or shin & leather -> boots), majority smoothing over welded adjacency.
 Tris: body 18k (incl. layers), vest 2.8k, boots 3.1k.
+
+## Concept 6 hero (?hero=v6, 2026-11-24)
+Pavel picked concept 6 ("нынешний, обновлённый": same palette as the original hero, more charming stylised proportions and richer clothes) from project files `hero-concepts/`.
+Only the look changes: same skeleton, rest pose, IBMs and clips (transplanted onto the pre-optim default, git 39ba715), so hero.js, moves, IK, collide and the gate work unchanged.
+Pipeline (same as ?hero=detail): concept sheet -> nano-banana-pro/edit clean A-pose front (no quiver/strap; the bow lives on the wall) + back view (`assets/refs/hero-v6-ref.jpg`) ->
+Meshy v6 image-to-3d (front only gave the better face than front+back; 30k, PBR) -> Meshy rigging -> `KEEP_NORMAL=1 ROUGH=.65 transplant.mjs old-dq.glb rig.glb` ->
+`slim.mjs 0.62` -> remove the old eyelids node -> `split.mjs` (vest, boots) -> facescan (RES=.0008 XW=.13 Y0=.68 Y1=1.0) ->
+`lids.mjs '{"L":[-0.064,0.769,0.062,0.034],"R":[0.062,0.768,0.06,0.033],"skin":[-0.064,0.744],"lash":[-0.07,0.808],"off":0.0028,"ymin":0.7,"pow":0.4,"flat":1}'` ->
+`ktxtex.mjs 2048 1024` -> quant -> `optim.mjs 0.65`.
+Result `assets/models/hero-v6.glb` / `game/hero-v6-glb.txt`: body 19.3k tris (incl. sweater/sock layers), vest 2.7k, boots 2.0k, eyelids 200; KTX2 base colour 2048 + webp normal 1024; 2.99 MB.
