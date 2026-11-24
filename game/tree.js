@@ -275,7 +275,7 @@ export function buildTree(THREE, o) {
   // (length + where its midpoint is), so neighbours always agree: no cracks, UV seams included. Phones: coarser.
   let GR = null;
   if (o.model && o.rootDetail !== false) {
-    const MOBI = MOB(o), Lmax = MOBI ? 0.42 : 0.28, LmaxT = MOBI ? 0.3 : 0.2, passes = 2;
+    const MOBI = MOB(o), Lmax = MOBI ? 0.5 : 0.28, LmaxT = MOBI ? 0.38 : 0.2, passes = 2; /* phones: coarser (day budget) */
     const rootW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (d - 2.3) / 0.8)) * Math.min(1, Math.max(0, (2.0 - y) / 0.8)) * Math.min(1, Math.max(0, (y + 0.6) / 0.4)) * Math.min(1, Math.max(0, (11 - d) / 2)); };
     // the trunk itself (Pavel: too smooth from the normal view): long irregular cuts and bark plates, carved inwards only
     // (the house's beams and landings sit against it), never round the hollow's mouth
