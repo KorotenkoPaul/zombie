@@ -36,11 +36,11 @@
   "speed": 1.05
  },
  "hy_sitdown": {
-  "src": "rk1_sit_step_lift_turn",
+  "src": "rk1_sit_step_lift",
   "rm": true,
   "smooth": 1,
   "speed": 1.7,
-  "dir": "project files clips/rk: Rokoko mocap rk1_sit 5.5-8.8 s: steps in and turns, then sits with both feet planted (legplant), hips +6 cm; the turn while stepping is 21 deg further so he ends square to the table (head look stays inside a human neck); kept out of the public repo"
+  "dir": "project files clips/rk: Rokoko mocap rk1_sit 5.5-8.8 s: steps in and turns, then sits with both feet planted (legplant), hips +6 cm; kept out of the public repo"
  },
  "hy_standup": {
   "src": "standup-11",
