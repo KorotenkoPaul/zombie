@@ -669,8 +669,22 @@ export function createHero(ctx){
   listen:(o)=>{const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<1.5))||pick(WINDOWS);return job({node:wn,slide:false,clip:'hy_listen',dur:[12,22],reps:2,look:a=>root.position.clone().add(V(Math.sin(a.T*.35)*2.5,1.55,0)).addScaledVector(fwd(N[wn].face??0),5)});},
   bolt:(o)=>{const P=window.__props||P3;const D=P&&P.door;return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.42,clip:'hy_bolt',dur:[3.2,3.6],
    start:()=>{try{D.openTo&&D.openTo(0,.8);}catch(e){}},tick:a=>{if(a.T>1.6&&!a.done){a.done=1;try{D.boltTo&&D.boltTo(o&&o.lock===false?0:1,.3);}catch(e){}AU('bolt',D.boltKnob(V()));}}});},
-  radio:(o)=>{const P=window.__props||P3;const R=P&&P.radio;return job({pt:()=>PT('radio'),stand:.45,clip:'hy_radio',loop:true,dur:[30,60],
-   start:()=>{try{R.setOn(1);}catch(e){}},tick:(a,dt)=>{try{if(a.T<6)R.setTune(.3+.4*smooth(0,6,a.T));}catch(e){}},end:()=>{try{if(!(o&&o.keepOn))R.setOn(0);}catch(e){}}});},
+  radio:(o)=>{const P=window.__props||P3;const R=P&&P.radio;if(!R||!R.knob)return job({pt:()=>PT('radio'),stand:.45,clip:'hy_radio',loop:true,dur:[30,60]});
+   // LEISURE: the radio sits low on the crate by the bed. He bends his knees to it, switches it on and turns the dial with his
+   // right hand ON the knob (it only turns while the fingers are there), straightens up and listens, now and then bends again
+   // to retune, and switches it off by hand before he goes (QA: the dial turned while his palms were 60-100 cm away)
+   const D=rnd(30,60);const kn=()=>R.knob(V());
+   const reachK=(a,dt,on)=>{a.kw=clamp((a.kw||0)+(on?dt/.6:-dt/.5),0,1);const k=kn();const kh=k.y-root.position.y;if(on&&!a.sq&&kh<.8&&has('cm_squat')){a.sq=1;play('cm_squat',{fade:.55});}else if(!on&&a.sq&&a.kw<.35){a.sq=0;play(IDLE(),{fade:.6});}/* a real crouch (CMU squat) to the low crate, not a stoop */
+    a.ik=a.kw>.01?[['Right',k.clone().add(V(0,.015,0)),smooth(0,1,a.kw)]]:null;const G=window.__grab;return G&&G.gripPoint?G.gripPoint('Right').distanceTo(k)<.07:a.kw>.95;};
+   return job({pt:()=>PT('radio'),stand:.34,loop:true,dur:[D,D],vary:false,look:a=>kn(),lookW:.9,
+    tick:(a,dt)=>{const T=a.T;let want=T<6.5;// tune on arrival
+     if(!want&&!(o&&o.keepOn)&&T>D-3)want=true;// switch off before leaving
+     if(!want){a.rt=(a.rt??rnd(14,24))-dt;if(a.rt<0){a.rr=(a.rr||0)+dt;want=true;if(a.rr>3.2){a.rt=rnd(14,24);a.rr=0;a.t0=null;}}}
+     const touch=reachK(a,dt,want);
+     if(touch){if(T<6.5){if(!R.on)R.setOn(1);a.tn=.3+.4*smooth(1,6,T);R.setTune(a.tn);}
+      else if(T>D-3){if(R.on&&!(o&&o.keepOn))R.setOn(0);}
+      else if(a.rr>.5){a.t0=a.t0??(a.tn??.7);R.setTune(clamp(a.t0+Math.sin((a.rr-.5)*1.4)*.05,0,1));}}},
+    end:a=>{a.ik=null;if(a.sq){a.sq=0;play(IDLE(),{fade:.5});}}});},
   telescope:(o)=>{const T=teleParts();if(!T)return job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')});
    // LEISURE + GRAB: at the real telescope, not mimed in the air a metre away: he stands behind the eyepiece facing along the tube,
    // the calm standing mocap (cm_tele, CMU 77_02 legs + hands held up at the face) is the base, the spine stoops until his eye is
