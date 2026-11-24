@@ -51,6 +51,8 @@ export function createClimb() {
     const B = C.bones, p = C.root.position, wp = b => b.getWorldPosition(V());
     C.root.updateMatrixWorld(true);
     // the head's and chest's own 'up' measured once while he stands upright (the rig's local axes are not the world up)
+    // the palm's own normal, measured once while he stands with the arms hanging (palms toward the thighs)
+    if (!M.pn && !o.fromTop && B.Hips) { M.pn = {}; const hp = wp(B.Hips); for (const s of ['Left', 'Right']) { const h = B[s + 'Hand']; if (!h) continue; const d = hp.clone().sub(wp(h)).setY(0); if (d.lengthSq() < 1e-6) continue; M.pn[s[0] + 'H'] = d.normalize().applyQuaternion(h.getWorldQuaternion(new THREE.Quaternion()).invert()); } }
     if (!M.uH && !o.fromTop && B.Head && B.Spine2) { M.uH = V(0, 1, 0).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()).invert()); M.uC = V(0, 1, 0).applyQuaternion(B.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert()); }
     const zDir = Math.sign(o.cz - o.lz) || 1;
     const A = { o, lad, zDir, R: lad.rungs, up: o.up, K: 4, steps: 0, step: null, t: 0, mode: 'climb',
@@ -93,7 +95,7 @@ export function createClimb() {
     const side = s * zD; // the hero faces -zDir; his left is +x when he faces -z
     if (k[1] === 'H') {
       if (i >= A.R.length) return V(A.lad.x + side * .24, A.o.yTop + .04, A.edge - zD * .1); // palm flat on the floor above
-      const c = rungP(A, i); return c.add(V(side * A.hx, -.045, zD * .07)); }
+      const c = rungP(A, i); return c.add(V(side * A.hx, .015, zD * .065)); }// wrist just behind the rung at its height: the palm lies over the rung, fingers hooked over the front (no finger bones in this rig)
     if (i < 0) { const f = A.limb[k].floor; if (f && A.up) return f.clone(); return V(A.lad.x + side * A.fx, A.floorY + M.footUp, A.o.cz - zD * .02); }
     const c = rungP(A, i); const R = A.R[Math.min(i, A.R.length - 1)];
     return c.add(V(side * A.fx, R.r + .05 + M.footUp, zD * (M.footH - .02)));
@@ -118,14 +120,20 @@ export function createClimb() {
     const wantIdle = s > .42; if (wantIdle !== c.idle) { c.idle = wantIdle; if (wantIdle) C.play(C.idle(), { fade: .5 }); else C.play('437', { speed: 0, fade: .5 }); }
     A.phase = 0;
     // hands leave the floor as he gets up
-    A.limb.LH.w = A.limb.RH.w = 1 - sstep(.36, .66, s);
+    A.limb.LH.w = A.limb.RH.w = 1 - sstep(.78, 1, s);
     if (c.dir > 0 && s >= 1) return 'off';
     if (c.dir < 0 && s <= 0) { A.mode = 'climb'; A.y = c.ys; A.C = null; A.limb.LH.w = A.limb.RH.w = 1; return null; }
     return null;
   }
   function overLimb(A, k) {
     const c = A.C, s = c.s, L = A.limb[k];
-    if (k[1] === 'H') return restTarget(A, k, A.R.length);
+    if (k[1] === 'H') { // palms on the boards, then (as he stands up) the hands come down beside the thighs under IK: the climb clip's raised
+      // arms never blend through 'arms straight out in front' on their way to the idle pose (frame review: zombie arms at the top)
+      const f = restTarget(A, k, A.R.length); const e = sstep(.36, .72, s); if (e <= 0) return f;
+      const sh = C.bones[(k[0] === 'L' ? 'Left' : 'Right') + 'Arm'].getWorldPosition(V()); const hp = C.bones.Hips.getWorldPosition(V());
+      const out = sh.clone().sub(hp).setY(0); if (out.lengthSq() > 1e-6) out.normalize();
+      const hang = sh.clone().add(V(0, -.55, 0)).addScaledVector(out, .05); hang.z -= A.zDir * .03;
+      const q = f.lerp(hang, e); q.addScaledVector(out, Math.sin(Math.PI * e) * .06); return q; }
     const [a, b, lift] = k === c.h ? [.04, .46, .16] : [.5, .92, .2];
     const e = sstep(a, b, s); const from = restTarget(A, k, L.r), to = c.FF[k];
     // up first, then over the edge, then down onto the boards (a straight line clipped the floor's edge beam: gate, feet 5 cm into it)
@@ -247,7 +255,7 @@ export function createClimb() {
         if (A.gz > 1e-4) { root.position.z += A.zDir * A.gz; root.updateMatrixWorld(true); } }
       tg = {}; for (const k of LIMBS) { tg[k] = limbPos(A, k); A.limb[k].cur = tg[k].clone(); }
       hw = { LH: A.limb.LH.w, RH: A.limb.RH.w };
-      S.last = { tg, zDir: A.zDir, hw, flat: { LH: A.limb.LH.r >= A.R.length, RH: A.limb.RH.r >= A.R.length } };
+      S.last = { tg, zDir: A.zDir, hw, hangE: A.mode === 'over' ? sstep(.36, .72, A.C.s) : 0, flat: { LH: A.limb.LH.r >= A.R.length, RH: A.limb.RH.r >= A.R.length } };
       // look at the hand that moves next (or between the hands); over the edge: ahead
       const nh = A.step && A.step.move.find(m => m.k[1] === 'H');
       { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
@@ -275,7 +283,12 @@ export function createClimb() {
       C.ik2(B[s + 'Arm'], B[s + 'ForeArm'], B[s + 'Hand'], t, V(sx * .7, -1, zDir * .45), w, false);
       const Hd = B[s + 'Hand']; if (Hd) { const a = wp(Hd); const dir = V(0, 1, 0).applyQuaternion(Hd.getWorldQuaternion(new THREE.Quaternion())); const tip = a.clone().addScaledVector(dir, .09);
         const flat = S.last.flat && S.last.flat[k];
-        C.turnBone(Hd, tip, a.clone().add(flat ? V(0, -.015, -zDir * .09) : V(0, .075, -zDir * .06)), w); }
+        const he = S.last.hangE || 0; const aim = flat ? V(0, -.015, -zDir * .09).lerp(V(0, -.09, -zDir * .015), he) : V(0, -.02, -zDir * .09);
+        C.turnBone(Hd, tip, a.clone().add(aim), w);
+        // palm onto the rung (facing the ladder and a little down) or flat on the boards (facing down), not turned out to the side
+        if (M.pn && M.pn[k]) { const hq = Hd.getWorldQuaternion(new THREE.Quaternion()); const fa = V(0, 1, 0).applyQuaternion(hq).normalize(); const n = M.pn[k].clone().applyQuaternion(hq);
+          const want = flat ? V(0, -1, 0).lerp(V(-sx * zDir, 0, 0), he) : V(0, -1, -zDir * .25); n.addScaledVector(fa, -n.dot(fa)); want.addScaledVector(fa, -want.dot(fa));
+          if (n.lengthSq() > 1e-6 && want.lengthSq() > 1e-6) { n.normalize(); want.normalize(); const ang = Math.atan2(n.clone().cross(want).dot(fa), n.dot(want)); rotWorld(Hd, fa, ang * w); } } }
     }
     if (A && A.lookPt) aimHead(A.lookPt, W * .85);
   }
