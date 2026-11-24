@@ -171,10 +171,10 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
     pend = { gl, rt, pbo, fence, frames: 0 };
   }
   // true once the map is in `hi`
-  function pollTop() {
+  function pollTop(force) {
     const P = pend, gl = P.gl; P.frames++;
     const st = gl.clientWaitSync(P.fence, 0, 0);
-    if (st !== gl.ALREADY_SIGNALED && st !== gl.CONDITION_SATISFIED) { if (st === gl.WAIT_FAILED) throw new Error('fence wait failed'); if (P.frames < 600) return false; }
+    if (st !== gl.ALREADY_SIGNALED && st !== gl.CONDITION_SATISFIED) { if (st === gl.WAIT_FAILED) throw new Error('fence wait failed'); if (!force && P.frames < 600) return false; }
     const px = new Uint8Array(HX * HZ * 4); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, P.pbo); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, px); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
     gl.deleteSync(P.fence); gl.deleteBuffer(P.pbo); P.rt.dispose(); pend = null;
     const h = new Float32Array(HX * HZ);
@@ -254,10 +254,11 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
       tickThin(dt); if (glassK !== glassWant) { glassK += Math.sign(glassWant - glassK) * Math.min(Math.abs(glassWant - glassK), dt * 0.4); GK.value = glassK; }
       // build the map in the background, starting a little after load
       if (!R.ready) {
+        if (dt === 0) wait = 0;   // index's loading screen starts the map (dt 0, e8d327f): no warm-up wait; the bytes arrive a few frames later
         if (wait-- > 0) return;
         if (!targets) { collect(); return; }                       // one frame: the target list; the next: the map
         if (renderer && !hi && !R._noFast) {
-          try { if (!pend) { startTop(); return; } if (!pollTop()) return; }   // render this frame, pick the bytes up when the GPU is done
+          try { if (!pend) { startTop(); return; } if (!pollTop()) return; }   /* never force the read, even on the loading screen: that waited ~4 s for the whole GPU queue */   // render this frame, pick the bytes up when the GPU is done
           catch (e) { hi = null; pend = null; R._noFast = true; console.warn('rain: top-down map failed, using rays', e); } }
         // rays (fallback only): a few ms per frame at most, so building the map never shows as a hitch
         const t0 = performance.now(), budget = hi ? 1e9 : (MOBILE ? 3 : 5);
