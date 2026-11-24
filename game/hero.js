@@ -611,14 +611,16 @@ export function createHero(ctx){
      if(a.t>1.4){a.ik=null;if(!ket()){a.step='drink';a.t=0;a.turn=rnd(-1.1,-.5);return;}a.step='tostove';const kp=ket().getWorldPosition(V());const nn=nearNode(kp)||'stove';goTo(nn,()=>approachTo(a,kp,.42,()=>{a.step='kreach';a.t=0;}));}return;}
     if(a.step==='tostove'||a.step==='go')return;
     if(a.step==='kreach'){const h=kHandle();H.look=h;H.lookW=1;a.ik=[[oth,h,smooth(0,.6,a.t)],[hand,cupAt(),smooth(0,.6,a.t)]];
-     if((a.t>.6&&palmTo(oth,h)<.03)||a.t>1.3){try{a.k0=(window.__grab&&window.__grab.gripPoint?window.__grab.gripPoint(oth):bones[oth+'Hand'].getWorldPosition(V())).clone().add(V(0,.04,0));a.w0=bones[oth+'Hand'].getWorldPosition(V());a.d0=a.k0.clone().sub(a.w0);bones[oth+'Hand'].attach(ket());/* as it stands, upright, the palm on its handle: no re-seat (a spec seat swung it, then the wrist snapped it level) */a.kh=1;AU('cloth');}catch(e){}a.step='pour';a.t=0;}return;}
+     if((a.t>.6&&palmTo(oth,h)<.03)||a.t>1.3){try{a.k0=(window.__grab&&window.__grab.gripPoint?window.__grab.gripPoint(oth):bones[oth+'Hand'].getWorldPosition(V())).clone().add(V(0,.04,0));a.w0=bones[oth+'Hand'].getWorldPosition(V());a.d0=a.k0.clone().sub(a.w0);bones[oth+'Hand'].attach(ket());/* as it stands, upright, the palm on its handle: no re-seat (a spec seat swung it, then the wrist snapped it level) */a.kh=1;AU('cloth');
+      /* holding it, the grip point is the kettle's own (its GRIP spec), not the empty fist's: measure it again, or the fist was pulled 8-14 cm down onto the old point (a 27 cm pop after the pops filter) */{const G=window.__grab;if(G&&G.palmTarget){const g0=G.gripPoint(oth).clone();a.pa0=G.palmTarget(oth,g0).clone();a.k0=g0.add(V(0,.04,0));a.ik=[['palm',a.pa0.clone(),1],[hand,cupAt(),1]];a.lk0=h.clone();}H.noPop={side:oth,until:performance.now()+250};/* motion.js: the palm stays put while the arm's IK solution changes (the pop filter turned that into an 11 cm jerk) */}}catch(e){}a.step='pour';a.t=0;}return;}
     if(a.step==='pour'){// lift, bring the spout over the mug, tip it for ~2 s, level it again
-     const m=mug.getWorldPosition(V()).add(V(0,.13,0));H.look=a.k0?a.k0.clone().lerp(m,smooth(0,.7,a.t)):m;/* the gaze follows the kettle up from the ring (a jump of the look target popped the chest up) */H.lookW=1;a.tip=.75*(smooth(.7,1.2,a.t)-smooth(3.0,3.5,a.t));
-     a.ik=[[hand,cupAt(),1],['pour',m,smooth(0,.6,a.t)]];if(a.t>1.2&&!a.snd){a.snd=1;AU('pour',m);}
+     const m=mug.getWorldPosition(V()).add(V(0,.13,0));H.look=(a.lk0||a.k0)?(a.lk0||a.k0).clone().lerp(m,smooth(0,.7,a.t)):m;/* the gaze follows the kettle up from the ring (a jump of the look target popped the chest up) */H.lookW=1;a.tip=.75*(smooth(.7,1.2,a.t)-smooth(3.0,3.5,a.t));
+     a.ik=[[hand,cupAt(),1],['pour',m,smooth(0,.6,a.t)]];H.noPop={side:oth,until:performance.now()+120};/* the kettle arm is IK'd smoothly every frame: the pop filter only added jerks to it (6-11 cm) */if(a.t>1.2&&!a.snd){a.snd=1;AU('pour',m);}
      if(a.t>3.7){a.step='kback';a.t=0;a.tip=0;}return;}
-    if(a.step==='kback'){const hm=toolHome('kettle');H.look=hm;H.lookW=1;const t=gripHome('kettle')||hm;a.ik=[[hand,cupAt(),1],[oth,t,1]];
+    if(a.step==='kback'){const hm=toolHome('kettle');if(!a.kbL){a.kbL=(H.look||hm).clone();}H.look=a.kbL.clone().lerp(hm,smooth(0,.5,a.t));H.lookW=1;const t=gripHome('kettle')||hm;a.ik=[[hand,cupAt(),1],[oth,t,1]];
+     /* back to the ring by the palm, from where the pour left it (the grip target with full weight at once dropped the fist 5 cm, 20 after the pops filter) */{const G=window.__grab;if(!a.rel&&G&&G.palmTarget&&ket()&&ket().parent===bones[oth+'Hand']){if(!a.pk)a.pk=G.palmTarget(oth,G.gripPoint(oth)).clone();a.ik=[[hand,cupAt(),1],['palm',a.pk.clone().lerp(G.palmTarget(oth,t.clone()),smooth(0,.7,a.t)),1]];}}
      if(!a.rel&&((a.t>.5&&palmTo(oth,t)<.03)||a.t>1.3)){a.rel=1;a.tr=a.t;try{P.release('kettle',{blend:.14});}catch(e){}}
-     if(a.rel){a.ik=[[hand,cupAt(),1],[oth,t,1-smooth(a.tr+.15,a.tr+.55,a.t)]];if(a.t>a.tr+.6){a.step='drink';a.t=0;a.turn=rnd(-.8,.8);a.ik=null;}}return;}
+     if(a.rel){a.ik=[[hand,cupAt(),1],[oth,t,1-smooth(a.tr+.1,a.tr+.9,a.t)]];if(a.t>a.tr+.95){a.step='drink';a.t=0;a.turn=rnd(-.8,.8);a.ik=null;}}return;}
     if(a.step==='drink'){// turn toward the window, sip slowly, rest between sips
      const w=N.kwin?N.kwin.p:root.position;H.face=Math.atan2(w.x-root.position.x,w.z-root.position.z)+a.turn*.3;H.look=w.clone().add(V(0,1.5,2));H.lookW=.5;
      // a sip: the mug up to the lips by the arm (no clip miming it at the hip), a moment, down to the belly, a pause
@@ -639,9 +641,13 @@ export function createHero(ctx){
      const hp=V(),hq=new THREE.Quaternion(),hs=V();Hw.decompose(hp,hq,hs);armIK(hand,hp,sidePole(hand),k);hb.updateMatrixWorld(true);
      const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cq=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(cq.slerp(hq,k)));hb.updateMatrixWorld(true);}};
    // the kettle hangs upright from the fist by its arched handle (the grip spec swung it up level with his face when the hand reached forward)
+   /* the kettle hand is steered by its PALM: once it holds the kettle its grip point is the kettle's own (GRIP spec), so a target measured
+      on the empty fist pulled the fist 8-16 cm down the frame it lifted it (27 cm after the pops filter) */
+   const kPalm=pT=>{const G=window.__grab;reachTo(oth,pT,1);if(!G||!G.palmTarget)return;for(let i=0;i<3;i++){const pa=G.palmTarget(oth,G.gripPoint(oth));const e=pT.clone().sub(pa);if(e.length()<.004)break;armIK(oth,bones[oth+'Hand'].getWorldPosition(V()).add(e),sidePole(oth),1);}};
    const levelK=()=>{const k=ket();if(!k||k.parent!==bones[oth+'Hand'])return;const hb=bones[oth+'Hand'];k.updateMatrixWorld(true);const u=V(0,1,0).applyQuaternion(k.getWorldQuaternion(new THREE.Quaternion()));
     const q=new THREE.Quaternion().setFromUnitVectors(u,V(0,1,0));const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cq=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(q.multiply(cq)));hb.updateMatrixWorld(true);};
    a.post2=()=>{levelK();/* from the very frame it leaves the stove */{const G=window.__grab;const k=ket();if(G&&k){if(k.parent===bones[oth+'Hand'])G.hold(oth,k,null);else G.free&&G.free(oth);}}/* collide.js leaves the hand holding it where it is (it shoved the fist and kettle up past his face) */if(!a.ik)return;for(const [sd,t,w] of a.ik){if(!t||(w<.01&&sd!=='pour'))continue;
+     if(sd==='palm'){kPalm(t);levelK();continue;}
      if(sd==='pour'){// the kettle hand: put the spout above the mug (a few corrections), then tip it round the axis across the spout
       const k=ket();if(!k||k.parent!==bones[oth+'Hand'])continue;let tgt=t.clone().addScaledVector(rgt(),oth==='Left'?-.12:.12).add(V(0,.08,0));
       const tipNow=()=>{if(a.tip<=.01)return;const hb=bones[oth+'Hand'];const sp=kSpout().sub(hb.getWorldPosition(V())).setY(0).normalize();const ax=sp.clone().cross(V(0,1,0)).normalize();
@@ -650,7 +656,7 @@ export function createHero(ctx){
       /* the fist carried from where it lifted the kettle off the ring, low, over to the mug; the spout error is folded into a target kept
        from frame to frame (one gentle correction a frame: steady, no pop, no jitter) */
       const k0=a.k0||tgt;const base=k0.clone().lerp(tgt,w);a.pe=a.pe||V();
-      {const pt=base.clone().add(a.pe);reachTo(oth,k0,1-w);/* the stoop he reached the ring with straightens as the kettle comes in (no snap upright) */reachGrip(oth,pt,1);levelK();tipNow();k.updateMatrixWorld(true);const e=t.clone().sub(kSpout());if(e.length()>.3)e.setLength(.3);a.pe.addScaledVector(e,.35*w);if(a.pe.length()>.5)a.pe.setLength(.5);}
+      {const pt=base.clone().add(a.pe);reachTo(oth,k0,1-w);/* the stoop he reached the ring with straightens as the kettle comes in (no snap upright) */if(a.pa0)kPalm(a.pa0.clone().add(pt.clone().sub(a.k0)));else reachGrip(oth,pt,1);levelK();tipNow();k.updateMatrixWorld(true);const e=t.clone().sub(kSpout());if(e.length()>.3)e.setLength(.3);a.pe.addScaledVector(e,.35*w);if(a.pe.length()>.5)a.pe.setLength(.5);}
       continue;}
      reachGrip(sd,t,w);if(sd===oth)levelK();}};
    a.leave=cb=>{try{window.__grab&&window.__grab.free(oth);}catch(e){}try{if(ket()&&ket().parent!==ket().userData.home.parent)P.release('kettle');}catch(e){}if(!H.hold[hand]){cb();return;}a.t=0;a.ik=null;
