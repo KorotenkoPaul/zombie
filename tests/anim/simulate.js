@@ -1,18 +1,20 @@
 // Runs the hero's life at a fixed timestep and samples every frame. Shared by run.js (measure) and shots.js (replay + render).
 const install=require('./sampler.js');
 const TASKS=['read','cook','wash','tea','craft','look','sleep'];
-async function simulate(p,{only=null,start=6.5,hours=25,dt=1/60,tour=true,capture=null,log=console.log,gate=0}={}){
+async function simulate(p,{drain=null,only=null,start=6.5,hours=25,dt=1/60,tour=true,capture=null,log=console.log,gate=0}={}){
  const info=await p.evaluate(`(${install})({})`);
  await p.evaluate(()=>__qa.start());
  await p.evaluate(h=>{__qa.reseed(12345);__th.setHour(h);},start);
- const CH=600;let total=0;const plan=[];
+ const CH=600;let total=0,lastDrain=0;const plan=[];
  // phase 1: natural day, the hero chooses for himself
  // capture: optional {frames:Set of frame numbers, fn:async frame=>{}} called right after that frame was simulated
  const cap=capture?[...capture.frames].sort((a,b)=>a-b):[];let ci=0;
  const runFrames=async(n,tag)=>{let done=0;while(done<n){let k=Math.min(CH,n-done);
    while(ci<cap.length&&cap[ci]<=total)ci++;if(ci<cap.length&&cap[ci]<=total+k)k=cap[ci]-total;
    await p.evaluate(([k,dt,tag])=>__qa.step(k,dt,f=>__A.sample(f,dt,__th.state().hour,tag)),[k,dt,tag]);done+=k;total+=k;
-   if(ci<cap.length&&cap[ci]===total){await capture.fn(total);ci++;}}};
+   if(ci<cap.length&&cap[ci]===total){await capture.fn(total);ci++;}
+   // drain: move sampled frames out of the page every few thousand, so a long gate never holds ~90k frames in the renderer
+   if(drain&&total-lastDrain>=4000){lastDrain=total;await drain(await p.evaluate(()=>__A.out.frames.splice(0)));}}};
  // a game day: 14 h of day in 110 s and 10 h of night in 70 s -> frames per in-game hour differ; step until the clock has run `hours`
  let ran=0;let prevH=start;
  while(!gate&&ran<hours){await runFrames(CH,'day');const h=await p.evaluate(()=>__th.state().hour);let d=h-prevH;if(d<0)d+=24;ran+=d;prevH=h;}
