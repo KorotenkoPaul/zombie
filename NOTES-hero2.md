@@ -46,7 +46,8 @@ Pavel picked concept 6 ("нынешний, обновлённый": same palette
 Only the look changes: same skeleton, rest pose, IBMs and clips (transplanted onto the pre-optim default, git 39ba715), so hero.js, moves, IK, collide and the gate work unchanged.
 Pipeline (same as ?hero=detail): concept sheet -> nano-banana-pro/edit clean A-pose front (no quiver/strap; the bow lives on the wall) + back view (`assets/refs/hero-v6-ref.jpg`) ->
 Meshy v6 image-to-3d (front only gave the better face than front+back; 30k, PBR) -> Meshy rigging -> `KEEP_NORMAL=1 ROUGH=.65 transplant.mjs old-dq.glb rig.glb` ->
-`slim.mjs 0.62` -> remove the old eyelids node -> `split.mjs` (vest, boots) -> facescan (RES=.0008 XW=.13 Y0=.68 Y1=1.0) ->
+`slim.mjs 0.62` -> remove the old eyelids node -> `BT=.015 CAP=.03 CR=0 split-v6.mjs` (vest, boots; thin dark wool socks: the boots have deep creases down to the bone, so the old inset socks showed through as yellow patches) -> facescan (RES=.0008 XW=.13 Y0=.68 Y1=1.0) ->
 `lids.mjs '{"L":[-0.064,0.769,0.062,0.034],"R":[0.062,0.768,0.06,0.033],"skin":[-0.064,0.744],"lash":[-0.07,0.808],"off":0.0028,"ymin":0.7,"pow":0.4,"flat":1}'` ->
-`ktxtex.mjs 2048 1024` -> quant -> `optim.mjs 0.65`.
+`shrink.mjs in out 0.9 0.9` (head and hands 10% smaller around their centres, weight-blended: the first gate run had the big hair 2.6 cm deeper into ceilings/frames and hands 1-2 cm deeper into props) -> `ktxtex.mjs 2048 1024` -> quant -> `optim.mjs 0.65`.
 Result `assets/models/hero-v6.glb` / `game/hero-v6-glb.txt`: body 19.3k tris (incl. sweater/sock layers), vest 2.7k, boots 2.0k, eyelids 200; KTX2 base colour 2048 + webp normal 1024; 2.99 MB.
+Gate: run with Q.old='?hero=v6' (a temp copy of gate.js) next to a plain run on the same master and compare regression counts.
