@@ -297,13 +297,13 @@ export function createClimb() {
       // upper body close to the ladder (the climb clip leans back ~16 cm: hands could not reach the rungs): pitch the spine
       // so the neck is ~24 cm from the rungs, split between the lower and the middle spine
       // with the palms on the floor above he leans over the edge (neck over the top of the ladder)
-      { const flat = (A.limb.LH.r >= A.R.length || A.limb.RH.r >= A.R.length) && (A.mode === 'over' || wp(B.Neck).y > A.o.yTop + .06); const want = flat ? .06 : .17; /* leaning over the edge only with the neck above it (below it the chest hit the rungs and the body was pushed back into a crouch) */ A.nd = A.nd == null ? want : A.nd + Math.sign(want - A.nd) * Math.min(Math.abs(want - A.nd), dt * (want > A.nd ? 1.1 : .5)); /* back from the edge quicker than over it: going down the head dropped into the floor's edge board */ }
+      { const flat = (A.limb.LH.r >= A.R.length || A.limb.RH.r >= A.R.length) && (A.mode === 'over' || wp(B.Neck).y > A.o.yTop - .05); const want = flat ? .06 : .17; /* leaning over the edge only with the neck above it (below it the chest hit the rungs and the body was pushed back into a crouch) */ A.nd = A.nd == null ? want : A.nd + Math.sign(want - A.nd) * Math.min(Math.abs(want - A.nd), dt * .5); }
       if (A.mode !== 'over' || A.C.s < .85) { const kk = S.W * ease(A.grab) * (A.mode === 'over' ? 1 - sstep(.45, .85, A.C.s) : A.mode === 'land' ? 1 - sstep(0, .6, A.lt) : 1); /* stands up straight while stepping back (gate: 44 deg forward lean walking off) */
         for (const [bn, part] of [['Spine', .5], ['Spine1', 1]]) { const nk = wp(B.Neck); const dz = (nk.z - planeZ) * A.zDir - A.nd; if (Math.abs(dz) < .005) break;
           const goal = nk.clone(); goal.z -= A.zDir * dz * part; C.turnBone(B[bn], nk, goal, kk); } }
       // keep the chest and head off the rungs: the body leans back from the ladder if they come too close
       // (only below the top of the ladder: above it there is nothing to hit; eased, and handed over smoothly at the edge)
-      { let need = 0; const topY = A.R[A.R.length - 1].y + .1; if (A.mode !== 'over') for (const [bn, minD] of [['Spine2', .2], ['Head', .19]]) { const q = wp(B[bn]); if (q.y > (bn === 'Head' ? Math.max(topY, A.o.yTop + .1) : topY)) continue; /* the head also clear of the floor edge above the top rung (gate: head 3.6 cm into the bedroom floor's edge board at the top of the kitchen ladder) */ const dz = (q.z - planeZ) * A.zDir; need = Math.max(need, minD - dz); }
+      { let need = 0; const topY = A.R[A.R.length - 1].y + .1; if (A.mode !== 'over') for (const [bn, minD] of [['Spine2', .2], ['Head', .19]]) { const q = wp(B[bn]); if (q.y > topY) continue; const dz = (q.z - planeZ) * A.zDir; need = Math.max(need, minD - dz); }
         A.gn = (A.gn || 0) + (need - (A.gn || 0)) * Math.min(1, dt * 5); A.gz = (A.gz || 0) + (A.gn - (A.gz || 0)) * Math.min(1, dt * 4); // two eased stages: the lean-back had no velocity ease (root z jerked 2 cm/frame²)
         if (A.gz > 1e-4) { root.position.z += A.zDir * A.gz; root.updateMatrixWorld(true); } }
       // the real shoulder height over the supporting rung (the plan used a standing estimate: hands were left 40-75 cm out of reach going down)
@@ -317,8 +317,7 @@ export function createClimb() {
       { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
         let L = A.mode === 'over' ? V(A.P.x, hd.y - .35, A.P.z - A.zDir * 1.6) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
         if (A.mode !== 'over') { L.y = Math.min(L.y, hd.y + .2); L.z = planeZ; }
-        // the look DIRECTION is eased, not the point: a point a hand's width from the face swung the head 3-5 cm in a frame when it changed (next hand, climb -> over); the neck jumped 30-50 deg when it switched hands
-        { const u = L.clone().sub(hd); if (u.lengthSq() < 1e-8) u.set(0, 0, -A.zDir); u.normalize(); if (A.lookU) A.lookU.lerp(u, 1 - Math.exp(-dt * 5)).normalize(); else A.lookU = u; A.lookS = hd.clone().addScaledVector(A.lookU, .9); } C.H.look = A.lookS.clone(); C.H.lookW = .35; A.lookPt = A.lookS.clone(); }
+        if (A.lookS) A.lookS.lerp(L, 1 - Math.exp(-dt * 5)); else A.lookS = L.clone(); /* eased: the look point switched hands at each step and the neck jumped 30-50 degrees in a frame */ C.H.look = A.lookS.clone(); C.H.lookW = .35; A.lookPt = A.lookS.clone(); }
     } else { tg = S.last && S.last.tg; hw = S.last && S.last.hw; }
     if (!tg) return;
     const W = S.W; const zDir = S.last.zDir;
