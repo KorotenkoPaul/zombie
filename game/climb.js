@@ -70,14 +70,14 @@ export function createClimb() {
       A.grab = 1; A.y = top(A, h - 1);
       startOver(A, -1, { LF: wp(B.LeftFoot), RF: wp(B.RightFoot) }, p.clone());
     } else {
-      if (o.up && p.y < o.yBot && p.y > o.yBot - .5) o.yBot = p.y; /* the floor he really stands on (gate: root up 26 cm in one frame at the rope ladder's foot) */ 
+      if (o.up && p.y < o.yBot + .08 && p.y > o.yBot - .5) { o.yBot = p.y; A.floorY = p.y; } /* (also a threshold board a few cm up: the root dropped 4 cm at the mount) */ /* the floor he really stands on (gate: root up 26 cm in one frame at the rope ladder's foot) */ 
       let n;
       if (o.up) n = -1; else { n = 0; let bd = 1e9; for (let i = 0; i < nR; i++) { const d = Math.abs(top(A, i) - p.y); if (d < bd) { bd = d; n = i; } } n = Math.min(n, nR - 2); }
       let hb = Math.min(nR - 2, n + A.K); { const ry = reachY(A, o.up ? o.yBot : top(A, n)); while (hb > Math.max(0, n + 1) && top(A, hb + 1) + .015 > ry) hb--; }
       A.limb.LF.r = n; A.limb.RF.r = o.up ? n : n + 1; A.limb.RH.r = hb; A.limb.LH.r = hb + 1;
       if (o.up) { A.limb.LF.floor = wp(B.LeftFoot); A.limb.RF.floor = wp(B.RightFoot); }
       for (const k of LIMBS) A.limb[k].from = wp(B[{ LF: 'LeftFoot', RF: 'RightFoot', LH: 'LeftHand', RH: 'RightHand' }[k]]);
-      A.y = o.up ? o.yBot : top(A, n); A.y0 = p.y;
+      A.y = A.y0 = p.y; A.p0 = p.clone();
     }
     A.hl = C.H.lad; // this climb belongs to this ladder run only (a reset body / new route drops it)
     S.act = A; S.wTarget = 1; S.resid = null;
@@ -178,7 +178,8 @@ export function createClimb() {
     if (A.mode === 'over') { const r = overTick(A, dt, p); if (r === 'off') { S.act = null; S.wTarget = 0; S.fade = .35; } return r; }
     C.play('437', { speed: 0, fade: .3 });
     // take hold first: hands go to their rungs, the body settles, then the steps start
-    if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .45); A.y = A.up ? A.o.yBot : lerp(A.y0, top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), ease(A.grab)); placeRoot(A, p); return null; }
+    if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .45); const e = ease(A.grab); A.y = lerp(A.y0, A.up ? A.o.yBot : top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), e); placeRoot(A, p);
+      if (A.p0) { p.x = lerp(A.p0.x, p.x, e); p.z = lerp(A.p0.z, p.z, e); } return null; } // from where the walk left him onto the ladder's line, eased (motion: root x snapped 4 cm and y 4 cm in one frame at every mount)
     if (A.mode === 'land') { // both feet on the floor: let go of the rungs, stand up
       A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1 - sstep(0, .45, A.lt);
       // a step back off the ladder before walking away (gate: arms, hips and shins swept through the rail when he turned off at the foot)

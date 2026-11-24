@@ -5,7 +5,7 @@
 const {open}=require('../anim/lib.js');const fs=require('fs');
 const arg=k=>{const i=process.argv.indexOf(k);return i>0?process.argv[i+1]:null;};
 const FINE=process.argv.includes("--fine");const OFF=process.argv.includes('--off'),SHOTS=arg('--shots'),ONLY=arg('--only');
-const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll_b','ll_t'],['ll_t','ll_b'],['g_foot','gate'],['gate','g_foot']].filter(r=>!ONLY||ONLY.split(',').includes(r.join('-')));
+const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll_b','ll_t'],['ll_t','ll_b'],['g_foot','gate'],['gate','g_foot']].filter(r=>!ONLY||ONLY.split(',').includes(r.join('-')));if(ONLY)for(const q of ONLY.split(','))if(!RUNS.some(r=>r.join('-')===q))RUNS.push(q.split('-')); // any node pair (e.g. walk in from kmid: the real mount)
 (async()=>{const {b,p,errs}=await open({seed:5,vp:{width:560,height:700},query:arg('--query')||''});await p.evaluate(()=>__qa.start());
  await p.evaluate(([off,co])=>{window.__noClimb=off;window.__noPops=window.__NP;window.__ladFlip=co===2;window.__wcam=1;if(co===true)window.__colOff={legs:true,arms:true};const HH=__dbg.HH;HH.setBrain({tick(){}});if(HH.inv){HH.inv.on=true;HH.inv.reset();}},[OFF,process.argv.includes("--flip")?2:process.argv.includes("--coloff")]);
  await p.evaluate(f=>{window.__fine=f;},FINE);await p.evaluate(v=>{window.__NP=v;},process.argv.includes('--nopops'));if(arg('--flags'))await p.evaluate(fl=>{for(const f of fl.split(','))window[f]=true;},arg('--flags'));
