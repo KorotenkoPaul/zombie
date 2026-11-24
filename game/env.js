@@ -366,7 +366,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   if(rainK>0){fogU.col.value.lerp(rainC,rainK*.7);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
   ffU.on.value=eve*(1-rainK);if(env.fireflies)env.fireflies.visible=ffU.on.value>.01;/* by day the points are fully transparent: don't draw them */const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.3);g.con.value=1.08+eve*.05-rainK*.06;/* rain: greyer, flatter, like looking through wet air */
   warmBounce(eve,rainK,nightK);
-  if(env.interiorOn){inProbe.sh.coefficients[0].set(eve*env.interiorK,0,0);}
+  if(env.interiorOn){inProbe.sh.coefficients[0].x=eve*env.interiorK;}/* .y = warm tint inside, set by lights.js */
   if(MOBILE){phoneNight(eve,rainK);foldLights();}else litForest();
   if(env.forestHaze&&scene.fog){env.forestHaze.hz.value.copy(scene.fog.color);env.forestHaze.hzK.value=.38+.25*rainK;}};
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
@@ -414,7 +414,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  const inProbe=new THREE.LightProbe();inProbe.name='envInteriorK';
  env.setInterior=rooms=>{const box=rooms.map(r=>`k=max(k,ib(p,vec3(${r[0].toFixed(3)},${r[2].toFixed(3)},${r[4].toFixed(3)}),vec3(${r[1].toFixed(3)},${r[3].toFixed(3)},${r[5].toFixed(3)})));`).join('');
   const c=THREE.ShaderChunk;c.lights_fragment_begin=c.lights_fragment_begin.replace('irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );','')
-   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.;'+box+'irradiance*=1.-k*lightProbe[0].x;}\n#endif');
+   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.;'+box+'irradiance*=1.-k*lightProbe[0].x;/* [LIGHTS] inside, the moon-blue fill turns warm (same luminance): lightProbe[0].y = how much */irradiance=mix(irradiance,vec3(dot(irradiance,vec3(.3,.59,.11)))*vec3(1.25,.95,.7),k*lightProbe[0].y);}\n#endif');
   c.lights_pars_begin=c.lights_pars_begin+'\nfloat ib(vec3 p,vec3 a,vec3 b){vec3 d=min(p-a,b-p);return smoothstep(-.13,-.06,min(d.x,min(d.y,d.z)));}';
   scene.add(inProbe);env.interiorOn=true;};env.interiorK=.75;/* share of the fill cut inside at full night (Lights: ~25% left) */
  // desktop: the forest impostors are unlit too; give them what a lit leaf card would get from the scene's lights (same as foldLights)
