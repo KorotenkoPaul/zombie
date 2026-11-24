@@ -110,6 +110,14 @@ export function createClimb() {
     if (CD && CD.depthAt) { try { for (const dz of [-.06, 0, .06]) for (let y = A.floorY + .08; y > A.floorY - .03; y -= .004) { const d = CD.depthAt(x, y, z + dz); if ((typeof d === 'number' ? d : (d && d.depth) || 0) > .002) { top = Math.max(top, y); break; } } } catch (e) { top = -1e9; } }
     return (A.ft[key] = top > -1e9 ? Math.min(top, A.floorY + .06) : A.floorY);
   }
+  // how far the climbing body may lean back from the rungs before its back meets something (a wall 45 cm behind the hatch ladder kh:
+  // pushed back for the knees, the back went 6 cm into it). Probed once per 10 cm of height, from the hips to the shoulders
+  function backRoom(A, y, planeZ) {
+    A.br = A.br || {}; const key = Math.round(y * 10); if (A.br[key] != null) return A.br[key];
+    const CD = window.__collide; let free = .6;
+    if (CD && CD.depthAt) { try { for (const h of [.15, .5, .85, 1.15, 1.3, 1.45]) for (const sx of [-.13, .13]) for (let d = A.Dhip; d < .6 + A.Dhip; d += .02) { const v = CD.depthAt(A.lad.x + sx, y + h, planeZ + A.zDir * d); if ((typeof v === 'number' ? v : (v && v.depth) || 0) > .002) { free = Math.min(free, d - A.Dhip); break; } } } catch (e) { free = 0; } }
+    return (A.br[key] = Math.max(0, free - .17)); /* the back is ~15 cm behind the hip line, and 2 cm to spare */
+  }
   // where each limb wants to be when it rests on rung i
   function restTarget(A, k, i) {
     const s = k[0] === 'L' ? -1 : 1, zD = A.zDir;
@@ -303,6 +311,7 @@ export function createClimb() {
       // keep the chest and head off the rungs: the body leans back from the ladder if they come too close
       // (only below the top of the ladder: above it there is nothing to hit; eased, and handed over smoothly at the edge)
       { let need = 0; const topY = A.R[A.R.length - 1].y + .1; if (A.mode !== 'over') for (const [bn, minD] of [['Spine2', .2], ['Head', .19]]) { const q = wp(B[bn]); if (q.y > topY) continue; const dz = (q.z - planeZ) * A.zDir; need = Math.max(need, minD - dz); }
+          if (A.mode === 'climb') for (const bn of ['LeftLeg', 'RightLeg']) { const q = wp(B[bn]); if (q.y > topY || !A.R.some(R => Math.abs(R.y - q.y) < .1)) continue; need = Math.max(need, Math.min(backRoom(A, root.position.y, planeZ), .09 - (q.z - planeZ) * A.zDir)); } /* a knee level with a rung stays off it (the new hero's shin went 3 cm into the rung climbing kl_b-bl_t); between the rungs it may come in */
         A.gn = (A.gn || 0) + (need - (A.gn || 0)) * Math.min(1, dt * (need > (A.gn || 0) + .02 ? 10 : 5)); /* faster while the head is in the rungs (mount: the brow sat in the top rung for half a second) */ A.gz = (A.gz || 0) + (A.gn - (A.gz || 0)) * Math.min(1, dt * (A.gn > (A.gz || 0) + .02 ? 9 : 4)); // two eased stages: the lean-back had no velocity ease (root z jerked 2 cm/frame²)
         if (A.gz > 1e-4) { root.position.z += A.zDir * A.gz; root.updateMatrixWorld(true); } }
       A.planeZ = planeZ;
