@@ -19,6 +19,9 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 |---|---|---|---|---|---|---|
 | B1 | P1 | telescope | Mimes a spyglass with both hands at his eye while the real telescope (tube on the tripod) stands 1 m to his side, untouched; he faces away from it; ends with arms spread out sideways (f3264) | f2148–f3264 | r4-085e32c/telescope_mimed_1m_away_f2148-3264.jpg | rest/deck family via hero-dev |
 | B2 | P1 | pot | Upright and at the stove (good), but after f2028 the stirring hand is open and empty, hovering beside the pot at rim height; the ladle is not in the hand or the pot. At the start the ladle dangles at his thigh | f1560–f3288 | r4-085e32c/pot_open_hand_no_ladle_f1560-3288.jpg | cooking family via hero-dev |
+| B3 | P1 | sleep | Sleeps with the right forearm raised and the hand held up in a stiff claw in the air for the whole sleep (not resting on the chest, pillow or quilt) | f5016–f5364+ | r4-085e32c/sleep_floats_in_and_hand_raised_f4968-5364.jpg | sleep family via hero-dev |
+| B4 | P2 | sleep | Getting in: sits on the edge (good), but lying back his head and shoulders go up behind the upper bunk's side rail; then the legs swing up level with the bed through the bunk ladder area | f4812–f4968 | r4-085e32c/sleep_getting_in_f4704-4836.jpg | sleep family / collide |
+| B5 | P3 | sleep | Sleeps in his boots while his slippers stand by the bed | f4704–f5364 | same | sleep family |
 
 ## Open on post-21:33 builds (features being re-landed)
 
