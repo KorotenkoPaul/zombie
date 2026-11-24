@@ -255,5 +255,84 @@ export function createWorkshop(K) {
       result: () => ({ ok: true }) });
   }
 
-  return { saw, sharpen, fixlamp, tick: tickOffcuts, setupSaw, layoutDbg: () => WB, sawGeom: (d, s) => sawGeom(d, s) };
+  // ================= CHOP: slicing a carrot on the kitchen board =================
+  // he takes the kitchen knife from beside the board, the left hand holds the carrot in a claw just behind the cut,
+  // the knife rocks on its tip: handle up, edge down through the carrot onto the board; slice after slice the cut and the
+  // claw creep along the carrot; then the knife goes back where it lay
+  function chop(o) {
+    const BO = () => { const P = PP(); const b = P && P.tools && P.tools.board; if (b) b.updateMatrixWorld(true); return b; };
+    const S = { ph: 'take', t: 0, u: 0, cut: 0, n: 0 };
+    const frame = () => { const b = BO(); const c = b.localToWorld(V(-.025, .028, .045)); const ax = V(1, 0, 0).applyQuaternion(b.getWorldQuaternion(Q())).setY(0).normalize();
+      const p = root.position; const fw = V(c.x - p.x, 0, c.z - p.z).normalize(); const r = bones.RightArm.getWorldPosition(V()).sub(bones.LeftArm.getWorldPosition(V())).setY(0).normalize();
+      if (ax.dot(r) < 0) ax.negate(); return { c, ax, fw }; }; // ax: along the carrot toward his right hand
+    const geom = th => { const F = frame(); const C = F.c.clone().addScaledVector(F.ax, .05 - S.cut); const up = V(0, 1, 0);
+      const W = F.fw.clone().multiplyScalar(Math.cos(th)).addScaledVector(up, -Math.sin(th)).normalize(); const U = up.clone().multiplyScalar(Math.cos(th)).addScaledVector(F.fw, Math.sin(th)).normalize();
+      const T = C.clone().addScaledVector(F.fw, .07); const gp = T.clone().addScaledVector(W, -.19).addScaledVector(U, .015 + .002); return { gp, tip: gp.clone().add(W), B: U.clone().negate(), C, F }; };
+    return job({ pt: () => { const P = PP(); return P && P.point ? P.point('board') : null; }, stand: .36, dur: [600, 600], vary: false, tools: [],
+      look: () => S.lookAt || (BO() && BO().getWorldPosition(V())), lookW: .9,
+      post: (a, dt) => { S.t += dt; const g = G(); if (!BO()) { a.T = 1e9; return; }
+        const claw = w => { const r = geom(0); handTo('Left', r.C.clone().addScaledVector(r.F.ax, -.05).add(V(0, .045, 0)).addScaledVector(r.F.fw, .01), w); if (g) g.hold('Left', BO(), null); };
+        if (S.ph === 'take') { const r = homeGrip('knife'); if (!r || take(a, 'knife', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'to'; S.t = 0; } claw(smooth(.3, 1, S.t)); return; }
+        if (S.ph === 'to') { const k = smooth(0, .5, S.t); const r = geom(.35 * k + .0); hold('Right', 'knife', r, g); claw(1); if (k >= 1) { S.ph = 'chop'; S.t = 0; S.u = 0; } return; }
+        if (S.ph === 'chop') { // one slice every ~0.45 s: the edge comes down fast and lifts slower
+          S.u += dt / .45; const ph = S.u % 1; const th = ph < .35 ? .35 * (1 - smooth(0, .35, ph)) : .35 * smooth(.45, 1, ph); const r = geom(th); hold('Right', 'knife', r, g); claw(1); S.lookAt = r.C;
+          const n = Math.floor(S.u); if (n !== S.n && ph > .3) { S.n = n; S.cut += .006; AU('chop', r.C); if (S.cut > .075) { S.ph = 'push'; S.t = 0; } } return; }
+        if (S.ph === 'push') { // the slices are pushed aside with the flat of the blade, the claw goes back to the start of the carrot
+          const k = smooth(0, .8, S.t); const th = .35 * (1 - Math.sin(Math.PI * k) * .5); const r = geom(th); r.gp.addScaledVector(r.F.ax, -.06 * Math.sin(Math.PI * k)); r.tip.addScaledVector(r.F.ax, -.06 * Math.sin(Math.PI * k)); hold('Right', 'knife', r, g);
+          if (k >= 1) { S.cut = 0; S.rounds = (S.rounds || 0) + 1; S.ph = S.rounds >= 3 ? 'put' : 'chop'; S.t = 0; S.u = 0; } claw(1); return; }
+        if (S.ph === 'put') { claw(1 - smooth(0, .5, S.t)); if (put(a, 'knife', 'Right', dt)) { S.ph = 'done'; a.T = 1e9; } return; }
+      },
+      end: a => { const g = G(); if (g) { g.free('Left'); g.free('Right'); } if (H.hold.Right && H.hold.Right.tool === 'knife') relTool('Right', 'knife', .3); a.held.length = 0; },
+      result: () => ({ ok: true }) });
+  }
+
+  // ================= HAMMER (craft): nailing a plank onto a crossbar at the bench =================
+  // the hammer lies at the front edge; he takes it, the left hand holds the nail for the first light taps, then flattens on
+  // the plank beside it; the swing turns round a point a forearm behind the grip, in the vertical plane through his right
+  // shoulder (the hand never comes above the shoulder or in front of the face), the face lands square on the nail head and
+  // the nail sinks a little with each blow; three or four nails, then the hammer goes back where it lay
+  let CR = null;
+  function buildCraft() { if (CR) return CR; const b = bench(); if (!b) return null; const rs = RS();
+    let map = null; b.traverse(o => { if (!map && o.isMesh && o.material && o.material.map) map = o.material.map; });
+    const wood = new THREE.MeshStandardMaterial({ color: map ? 0xE8C9A0 : 0xC89A63, roughness: .8, map }); const iron = new THREE.MeshStandardMaterial({ color: 0x8E9196, metalness: .4, roughness: .45 });
+    const g = new THREE.Group(); g.name = 'wsCraft'; b.add(g); if (rs < 0) { g.scale.x = -1; } // built for his right hand at +x
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(.07, .035, .26), wood); bar.position.set(.67, .9 + .0175, .2); const pl = new THREE.Mesh(new THREE.BoxGeometry(.34, .02, .1), wood); pl.position.set(.66, .9 + .035 + .01, .245);
+    for (const m of [bar, pl]) { m.castShadow = true; m.receiveShadow = true; g.add(m); }
+    const nails = []; for (const x of [.645, .69, .62, .71]) { const n = new THREE.Group(); const sh = new THREE.Mesh(new THREE.CylinderGeometry(.0018, .0018, .05, 6), iron); sh.position.y = .025; const hd = new THREE.Mesh(new THREE.CylinderGeometry(.0045, .0045, .0015, 10), iron); hd.position.y = .05; n.add(sh, hd); n.position.set(x, .955, .245 + (nails.length % 2 ? -.02 : .02)); n.visible = false; g.add(n); nails.push({ o: n, sunk: 0 }); }
+    CR = { g, nails, top: .955 }; return CR; }
+  const toWC = (x, y, z) => { const sx = CR && CR.g.scale.x < 0 ? -1 : 1; return toW(x * sx, y, z); };
+  function craft(o) {
+    const setup = () => { if (!buildCraft()) return; trimObst(); const P = PP(); const hm = P && P.tools && P.tools.benchHammer; if (!hm || hm.parent !== scene) return;
+      const rs = RS(); const gp = toWC(.72, .9 + .018, .318); restPose('benchHammer', gp, dirW(-rs, 0, 0), V(0, 0, 0).add(dirW(0, 0, -1))); };
+    setup(); const S = { ph: 'take', t: 0, ni: 0, hits: 0 };
+    const nailHead = i => { const n = CR.nails[i]; return toWC(n.o.position.x, n.o.position.y + .05 - n.sunk, n.o.position.z); };
+    // strike geometry: face (+b) down on the nail, handle (a) horizontal pointing forward from the hand; phi lifts it round the pivot
+    const swing = (N, phi) => { const fw = dirW(0, 0, -1), up = V(0, 1, 0); const k = fw.clone().cross(up).normalize(); // turning +phi about k lifts the head up and back
+      const W0 = fw.clone().add(V(0, -.12, 0)).normalize(), B0 = up.clone().negate(); const H0 = N.clone().addScaledVector(B0, -.1025); const gp0 = H0.clone().addScaledVector(W0, -.24);
+      const piv = gp0.clone().addScaledVector(fw, -.2).add(V(0, .02, 0)); const q = Q().setFromAxisAngle(k, phi);
+      const gp = piv.clone().add(gp0.clone().sub(piv).applyQuaternion(q)); const W = W0.clone().applyQuaternion(q), B = B0.clone().applyQuaternion(q); return { gp, tip: gp.clone().add(W), B }; };
+    return job({ pt: () => { if (!buildCraft()) return null; return toWC(.55, 0, .66).add(V(0, 1, 0)); }, stand: .03, dur: [600, 600], vary: false, tools: [],
+      start: () => setup(), look: () => S.lookAt || (CR && nailHead(0)), lookW: .9, tick: () => { H.face = benchYaw(); },
+      post: (a, dt) => { S.t += dt; const g = G(); if (!CR) { a.T = 1e9; return; }
+        const n = CR.nails[S.ni]; const N = n ? nailHead(S.ni) : null; S.lookAt = N || S.lookAt;
+        const leftOn = (w, onNail) => { const p = onNail && N ? N.clone().add(V(0, -.03, 0)).addScaledVector(dirW(0, 0, 1), .025) : toWC(.53, .956 + .02, .245); handTo('Left', p, w); if (g) g.hold('Left', CR.g, null); };
+        if (S.ph === 'take') { const r = homeGrip('benchHammer'); if (!r || take(a, 'benchHammer', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'set'; S.t = 0; } leftOn(smooth(.3, 1, S.t), false); return; }
+        if (S.ph === 'set') { // a nail from the plank's edge is stood on its point; the hammer waits low
+          if (!n) { S.ph = 'put'; S.t = 0; return; } if (S.t > .4 && !n.o.visible) { n.o.visible = true; n.sunk = 0; }
+          const r = swing(N, .5); hold('Right', 'benchHammer', r, g); leftOn(1, true); if (S.t > .9) { S.ph = 'swing'; S.t = 0; S.hits = 0; S.u = 0; } return; }
+        if (S.ph === 'swing') { // light taps first (the fingers hold the nail), then full blows (the hand flat on the plank)
+          const full = S.hits >= 2, T = full ? .7 : .5, top = full ? 1.0 : .4; S.u += dt / T; const u = S.u % 1;
+          const phi = u < .55 ? top * smooth(0, .55, u) : u < .62 ? top : u < .8 ? top * (1 - Math.pow((u - .62) / .18, 2)) : 0; hold('Right', 'benchHammer', swing(N, Math.max(0, phi)), g);
+          leftOn(1, !full); const c = Math.floor(S.u + .2); if (u >= .8 && S.hc !== Math.floor(S.u)) { S.hc = Math.floor(S.u); S.hits++; n.sunk = Math.min(.046, n.sunk + (full ? .012 : .004));
+            try { window.__audio && window.__audio.contact ? window.__audio.contact({ tool: 'hammer', kind: 'hit', pos: N.toArray(), strength: full ? rnd(.7, 1) : .35 }) : AU('hammer', N); } catch (e) { }
+            if (n.sunk >= .046) { S.ni++; S.ph = S.ni >= CR.nails.length || S.ni >= 3 + (Math.random() < .5 ? 1 : 0) ? 'rest' : 'set'; S.t = 0; } } void c; return; }
+        if (S.ph === 'rest') { hold('Right', 'benchHammer', swing(nailHead(S.ni - 1), .4), g); leftOn(1 - smooth(.6, 1.2, S.t), false); if (S.t > 1.3) { S.ph = 'put'; S.t = 0; } return; }
+        if (S.ph === 'put') { if (put(a, 'benchHammer', 'Right', dt)) { S.ph = 'done'; a.T = 1e9; } return; }
+      },
+      end: a => { const g = G(); if (g) { g.free('Left'); g.free('Right'); } if (H.hold.Right && H.hold.Right.tool === 'benchHammer') relTool('Right', 'benchHammer', .3); a.held.length = 0;
+        if (CR) for (const n of CR.nails) { if (n.sunk < .046) n.o.visible = false; } }, // a nail left half in is pulled again next time
+      result: () => ({ ok: true }) });
+  }
+
+  return { saw, sharpen, fixlamp, chop, craft, tick: tickOffcuts, setupSaw, layoutDbg: () => WB, sawGeom: (d, s) => sawGeom(d, s) };
 }
