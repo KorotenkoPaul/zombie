@@ -851,12 +851,18 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // his albedo). Outside the lit rooms half his light keeps his own colour at the same brightness: concept 6's olive,
     // chestnut and mustard read at night. His materials only; inside a lit room the lamp's warmth on him stays.
     rimU.uHue.value = .5 * (1 - dayK) * (1 - Math.min(1, w));
+    // the moon has phases (Environment: a random start, one step a night), and outside the moon is most of his light, so he
+    // read ~25% darker on a thin-moon night than at full moon. Less moon -> a little more of his own soft fill (his materials
+    // only: the night itself still gets darker with the moon, he just stays readable)
+    const ml = window.__env && window.__env.moonLight != null ? window.__env.moonLight : 1;
+    rimU.uFill.value.add(_rc.copy(MOON_FILL).multiplyScalar(MF_K * Math.max(0, 1 - ml) * (1 - dayK) * (1 - Math.min(1, w))));
   }
   const _rc = new THREE.Color();
   // hero-look thread: his face still read dark in the lit rooms at the normal camera (face luma ~88 of 255, deep orange).
   // The lamp light bounced back off the walls and floor in front of him: .42 lifts the face to ~120 and lets the eyes read.
   // Hero materials only, so the rooms are exactly as bright as before.
   const FILL_K = .42;
+  const MOON_FILL = new THREE.Color(0xD8DEE8), MF_K = .55;   // face 180 at full moon, 140 -> ~173 at new moon
 
   const api = {
     names: [...src.keys()],
