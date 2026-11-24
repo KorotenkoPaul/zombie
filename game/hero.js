@@ -1463,7 +1463,7 @@ export function createHero(ctx){
  // while sitting down / standing up it blends with how far the hips have travelled, so the body never pops.
  function sitDown(spot,then){H.trans=true;H.ground=false;H.face=spot.face;const fl=spot.floor??floorTop(BD);
   {const st=spot.p.clone().sub(rotY(V(sdEnd.x,0,sdEnd.z),spot.face));H.slide={x:st.x-root.position.x,z:st.z-root.position.z,yaw:wrapA(spot.face-root.rotation.y),k:0,d:.6};}
-  H.fit={mode:'sit',base:fl,y:spot.seat+SEAT_CLEAR,hStand:hyAt(SIT,0),hSeat:hyAt(SIT,1)};
+  H.fit={mode:'sit',base:fl,y:spot.seat+SEAT_CLEAR,hStand:hyAt(SIT,0),hSeat:hyAt(SIT,1)};{const e=root.position.y-fl;if(Math.abs(e)>.01&&Math.abs(e)<.4)H.fit.e=e;}/* arriving a little off the boards: ease onto them, no one-frame hop (gate: 16-21 cm root jump at the bed) */
   once(SIT,{fade:.4,then:()=>{H.trans=false;H.seated=spot;H.fit.mode='hold';{const dx=spot.p.x-root.position.x,dz=spot.p.z-root.position.z;if(Math.hypot(dx,dz)<.3)H.slide={x:dx,z:dz,yaw:wrapA(spot.face-root.rotation.y),k:0,d:.6};}then&&then();}});}
  function standUp(spot,then){H.trans=true;H.face=spot.face;const fl=spot.floor??floorTop(BD);
   H.fit={mode:'rise',base:fl,y:spot.seat+SEAT_CLEAR,hStand:hyAt(STAND,1),hSeat:hyAt(STAND,0)};
@@ -1672,8 +1672,8 @@ export function createHero(ctx){
   const t=V().crossVectors(up,V(0,1,0));if(t.lengthSq()<1e-8)return;const ax=f.clone().multiplyScalar(Math.sign(t.dot(f))||1);for(const n of ["Spine","Spine1","Spine2"])rotW(bones[n],ax,d/3);}
  // pulling a boot off he brings the foot up, not his face down to it (gate HARD: foot next to the head, 55 cm): the chest straightens
  // until the head is ~60 cm from either foot
- function seatFootGap(){if(!bones.Head||!bones.Spine)return;root.updateMatrixWorld(true);const hd=wp(bones.Head);let d=9;for(const sd of ['Left','Right']){const f=bones[sd+'Foot'];if(f)d=Math.min(d,f.getWorldPosition(V()).distanceTo(hd));}
-  if(d>=.6)return;const f=fwd(root.rotation.y);const lat=V().crossVectors(V(0,1,0),f).normalize();const a=Math.min(.35,(.6-d)*2.2);for(const n of ['Spine','Spine1','Spine2'])rotW(bones[n],lat,-a/3);}
+ function seatFootGap(){if(!bones.Head||!bones.Spine)return;root.updateMatrixWorld(true);const ht=bones.HeadTop_End||root.getObjectByName('mixamorigHeadTop_End');const hd=wp(ht||bones.Head);let d=9;for(const sd of ['Left','Right']){const f=bones[sd+'Foot'];if(f)d=Math.min(d,f.getWorldPosition(V()).distanceTo(hd));}
+  if(d>=.6)return;const f=fwd(root.rotation.y);const lat=V().crossVectors(V(0,1,0),f).normalize();const a=Math.min(.55,(.6-d)*2.6);for(const n of ['Spine','Spine1','Spine2'])rotW(bones[n],lat,-a/3);}
  function bseqTick(dt){bootTweenTick(dt);if(!BSEQ.a)return;seatLeanLimit();seatSideLimit();seatFootGap();const t=BSEQ.a.time;
   // the hand really goes down to the boot's spot by the bed: it sets the boot down there / picks it up from there (no boot flying to the floor)
   const R=BSEQ.r;if(R){const w=smooth(R.at-.55,R.at-.04,t)*(1-smooth(R.at+.12,R.at+.55,t));if(w>.001){const sp=bootSpot(R.sd).p.clone();sp.y+=.09;reachTo(R.sd,sp,w);}}while(BSEQ.b.length&&t>=BSEQ.b[0][0]){const [,f]=BSEQ.b.shift();f();}}
@@ -1834,7 +1834,7 @@ export function createHero(ctx){
   // height: stand on the real floor, or put the hips on the seat / mattress
   if(H.fit){const f=H.fit;const hy=bones.Hips.position.y;let w=1;
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
-   p.y=lerp(f.base,f.y-hy,w);}
+   p.y=lerp(f.base,f.y-hy,w);if(f.e){f.e*=Math.exp(-dt*7);if(Math.abs(f.e)<.002)f.e=0;p.y+=f.e;}}
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
    const sq=H.squat||0;/* KITCHEN: H.squat lowers the hips, the feet stay on the boards (legIK) */let f=floorAt(p.x,p.y+sq,p.z,.32);/* WALK: one ray between two planks hit the joist below: the root dipped 2 cm for a few frames. A drop is real only if the boards around agree */
    if(f!=null&&H.floorY!=null&&f<H.floorY-.006){for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y+sq,p.z+oz,.32);if(g2!=null&&g2>f&&g2<=H.floorY+.01)f=g2;}}
