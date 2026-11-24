@@ -9,3 +9,4 @@ tests/planks/*.txt
 pipeline/planks/*.png
 pipeline/planks/log_*
 pipeline/planks/prev*.jpg
+tests/spikes/out/

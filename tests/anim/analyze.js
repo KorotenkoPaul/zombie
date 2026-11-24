@@ -19,7 +19,7 @@ const LIMITS={
  detour:1.35,      // walked length / straight distance for one walk
  // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
  // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
- walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:70,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,supportCm:3,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+ walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:70,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,propBodyCm:3,supportCm:3,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
 };
 const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -49,6 +49,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  const ev={};for(const q of pen){const k=q.G+'|'+q.nm.replace(/#\d+/,'#');const e=ev[k]&&ev[k][ev[k].length-1];
   if(e&&q.i-e.i1<=18){e.i1=q.i;if(q.cm>e.cm){e.cm=q.cm;e.ip=q.i;e.pos=q.pos;e.nm=q.nm;}e.n++;}else (ev[k]=ev[k]||[]).push({i0:q.i,i1:q.i,ip:q.i,cm:q.cm,pos:q.pos,G:q.G,nm:q.nm,tol:q.tol,n:1});}
  for(const k in ev)for(const e of ev[k])add('penetration',e.ip,{bone:e.G,into:e.nm,value:+e.cm.toFixed(1),unit:'cm',limit:e.tol,dur:+((e.i1-e.i0+1)*lim.dt).toFixed(2),from:F[e.i0].f,to:F[e.i1].f,at:e.pos});
+ // ---- 1b. moving things through the body (carried bucket, held tools, opened door, plates): the static colliders above do not see them
+ {let ev=null;const flush=()=>{if(ev)add('prop-through-body',ev.ip,{bone:ev.g,into:ev.nm,value:ev.cm,unit:'cm inside',limit:lim.propBodyCm,P:ev.cm>=lim.propBodyCm?1:2,dur:+((ev.i1-ev.i0+1)*lim.dt).toFixed(2),from:F[ev.i0].f,to:F[ev.i1].f,what:ev.nm+' passes through the '+ev.g});ev=null;};
+  F.forEach((f,i)=>{const d=f.dp;if(!d){if(ev&&i-ev.i1>18)flush();return;}const [nm,g,cm]=d;if(ev&&(ev.nm!==nm||ev.g!==g)&&i-ev.i1>18)flush();if(ev&&ev.nm===nm&&ev.g===g){ev.i1=i;if(cm>ev.cm){ev.cm=cm;ev.ip=i;}}else{flush();ev={nm,g,cm,i0:i,i1:i,ip:i};}});flush();}
  // ---- 2. jumps (second difference spikes) ----
  const J=['Hips','Head','HeadTop_End','LeftHand','RightHand','LeftFoot','RightFoot','LeftLeg','RightLeg'];
  for(let i=2;i<F.length;i++){if(F[i].tag!==F[i-1].tag)continue;
@@ -131,6 +134,16 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    const w=(i0,i1)=>{let s=0,c=0;for(let k=Math.max(1,i0);k<Math.min(F.length,i1);k++){const p=F[k].root,q=F[k-1].root;s+=Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2])/lim.dt;c++;}return c?s/c:0;};
    const before=w(i-30,i),after=w(i,i+30);tempo.trans.push({f:F[i].f,ladder:b?'enter':'exit',before:+before.toFixed(2),after:+after.toFixed(2)});
    if(Math.max(before,after)>.05&&Math.max(before,after)/Math.max(.02,Math.min(before,after))>2.5)add('robot',i,{bone:'root',value:+(Math.max(before,after)/Math.max(.02,Math.min(before,after))).toFixed(1),unit:'x speed change at the ladder ('+before.toFixed(2)+' -> '+after.toFixed(2)+' m/s)',limit:2.5,what:'ladder '+(b?'entry':'exit')+': '+(after>before?'speeds up':'slows down')+' abruptly'});}}
+ // ---- 9b. posture: torso lean (hips -> neck) forward/back and sideways, from positions only (no bone axes).
+ // Walking or standing upright should not hunch or tilt; tasks that bend (sweep, chop, wash ...) get a looser forward limit.
+ {const BEND=/sweep|chop|wash|dishes|fetchwater|dumpwater|water|saw|hammer|sharpen|fix_|stoke|firewood|cook|pot|store|craft|hatch|trip|eat|tea/;let ev=null;
+  const flush=()=>{if(ev&&ev.i1-ev.i0>=12)add('posture',ev.ip,{bone:'Spine',value:ev.v,unit:'deg '+ev.k,limit:ev.lim,dur:+((ev.i1-ev.i0+1)*lim.dt).toFixed(2),from:F[ev.i0].f,to:F[ev.i1].f,what:ev.k+' lean while '+ev.a});ev=null;};
+  F.forEach((f,i)=>{if(f.fl.includes('B')||f.fl.includes('S')||f.fl.includes('L')||f.fl.includes('W')||f.fl.includes('F')||f.fl.includes('T')){flush();return;}
+   const hp=bone(f,'Hips'),nk=bone(f,'Neck'),lt=sub(bone(f,'LeftUpLeg'),bone(f,'RightUpLeg'));const v=sub(nk,hp);const L=len(v)||1;
+   const ln=len(lt)||1,side=Math.asin(Math.max(-1,Math.min(1,dot(v,lt)/(L*ln))))*180/Math.PI;const fwd=Math.acos(Math.max(-1,Math.min(1,v[1]/L)))*180/Math.PI;
+   const walk=f.fl.includes('P');const a=walk?'walking':f.task||f.state;const lf=walk?22:BEND.test(String(f.task))?70:30,ls=walk?12:18;
+   let k=null,x=0,l=0;if(fwd>lf){k='forward/back';x=fwd;l=lf;}else if(Math.abs(side)>ls){k='sideways';x=Math.abs(side);l=ls;}
+   if(!k){if(ev&&i-ev.i1>6)flush();return;}x=+x.toFixed(0);if(ev&&ev.k===k){ev.i1=i;if(x>ev.v){ev.v=x;ev.ip=i;}}else{flush();ev={k,v:x,lim:l,i0:i,i1:i,ip:i,a};}});flush();}
  // ---- 10. anatomy: owl head, ankles/toes, feet rolled over; hands/feet on real ladder rungs; objects moved without touching ----
  const n3=a=>{const l=len(a)||1;return [a[0]/l,a[1]/l,a[2]/l];},angd=(a,b)=>Math.acos(Math.max(-1,Math.min(1,dot(n3(a),n3(b)))))*180/Math.PI;
  const runs=(test,minN,cb)=>{let s0=-1,best=-1,bv=0;for(let i=0;i<=F.length;i++){const v=i<F.length?test(i):null;if(v!=null){if(s0<0){s0=i;bv=-1e9;}const a=Math.abs(v);if(a>bv){bv=a;best=i;}}else if(s0>=0){if(i-s0>=minN)cb(s0,i-1,best,bv);s0=-1;}}};
@@ -229,6 +242,8 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   else if(q.type==='turn-back')P=q.value<8?1:2;
   else if(q.type==='short-stay')P=q.value<8?2:3;
   else if(q.type==='sleep-turnover')P=2;
+  else if(q.type==='posture')P=q.value>=q.limit+15?1:2;
+  else if(q.type==='prop-through-body')P=q.value>=q.limit?1:2;
   else if(q.type==='robot')P=q.value>=q.limit*2?1:2;
   else if(q.type==='slow')P=(q.limit&&q.value<q.limit*.7)||q.value>q.limit*1.5?1:2;
   else if(q.type==='sharp-turn')P=r>=2?1:2;else if(q.type==='crab-walk')P=q.value>70?1:2;
