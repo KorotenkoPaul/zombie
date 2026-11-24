@@ -1210,7 +1210,7 @@ if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).c
   const cul=[];scene.traverse(o=>{if(o.frustumCulled){cul.push(o);o.frustumCulled=false;}});const sm=renderer.shadowMap.autoUpdate;
   const lm=camera.layers.mask;camera.layers.enableAll();try{renderer.render(scene,camera);}catch(e){console.warn('prewarm draw',e);}camera.layers.mask=lm;for(const o of cul)o.frustumCulled=true;renderer.shadowMap.autoUpdate=sm;
   renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
- PERF.startupMs=Math.round(performance.now()-T0);}
+ PERF.startupMs=Math.round(performance.now()-T0);window.__warmDone=true;/* tests/anim waits for this: until here hidden objects are shown for the shader warm-up */}
 // every shadow map is drawn during these hidden frames too, so the shadow/depth shader variants compile now and not when
 // the hero first walks up to a lamp
 const _shadowL=[];scene.traverse(o=>{if(o.isLight&&o.castShadow&&o.shadow)_shadowL.push(o);});
