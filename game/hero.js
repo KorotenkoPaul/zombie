@@ -1959,7 +1959,7 @@ export function createHero(ctx){
  // OUTDOOR: filling the bucket at the pond. Real mocap squat (hy_pickground) down to the waterline, held at the bottom while the
  // right fist pushes the bucket under (it tips, fills, a splash and the ripples), then a slow, heavy rise with the full bucket.
  // The bucket hangs from the real fist all the time; he shuffles so the fist comes over the water, not the bank.
- const PF={down:.7,hold:2.6};/* held part-way down: a bent-knee crouch with a straight back reaching forward, not a ball curled over the bucket (watcher) */
+ const PF={down:1.0,hold:2.6};/* the clip is lowest (hips .38) at 0.93-1.2 s; frozen at 0.7 it held him 16 cm higher *//* held part-way down: a bent-knee crouch with a straight back reaching forward, not a ball curled over the bucket (watcher) */
  const PICKC=()=>has('hy_floorpick')?'hy_floorpick':'hy_pickground';
  function pondFill(a,dt){const PD=window.__ground&&window.__ground.pond;let F=(PD&&PD.fill)||root.position;a.ft+=dt;const t=a.ft;const C='hy_pickground';
   // OUTDOOR: he faces the pond itself (its centre), crouches on the bank with the knees 0.1 m outside the drawn water
@@ -1968,8 +1968,8 @@ export function createHero(ctx){
    const d=V(-1.4-root.position.x,0,7.6-root.position.z).normalize();H.face=Math.atan2(d.x,d.z);
    // the water starts where the bank dips under the surface (the water plane is drawn where the ground is below it)
    const G=window.__ground,lv=PD?PD.level:0;const p0=root.position.clone();let tW=1;for(let t=0;t<3.5;t+=.03){let h=lv+1;try{h=G.heightAt(p0.x+d.x*t,p0.z+d.z*t);}catch(e){}if(h<lv-.005){tW=t;break;}}
-   const st=p0.clone().addScaledVector(d,tW-.42);/* knees (0.45 ahead in the crouch) 0.1 m short of the water */
-   a.stand=st;a.tgt=p0.clone().addScaledVector(d,tW+.16);a.tgt.y=PD?PD.level:a.tgt.y;}
+   const st=p0.clone().addScaledVector(d,tW-.08);/* down at the very edge of the water, toes on the waterline: from 0.42 back up the bank the pail never got within 15 cm of the surface (film, both heroes) *//* knees (0.45 ahead in the crouch) 0.1 m short of the water */
+   a.stand=st;a.tgt=p0.clone().addScaledVector(d,tW+.34).addScaledVector(V(-d.z,0,d.x),.1);/* out ahead of the knees and a little to his right: right under the knee it went through the shin */a.tgt.y=PD?PD.level:a.tgt.y;}
   if(a.tgt)F=a.tgt;
   const A=has(C)?actions[C]:null;
   if(A){if(t>=PF.down&&t<PF.down+PF.hold)A.timeScale=0;else if(t>=PF.down+PF.hold)A.timeScale=.62;/* full bucket: up slower than he went down */}
@@ -1996,7 +1996,7 @@ export function createHero(ctx){
   {let g=want.y-1;try{g=window.__ground.heightAt(want.x,want.z);}catch(e){}want.y=Math.max(want.y,g+.12);}
   if(want.distanceTo(R)>.005)odReach('Right',want,1);
   const L=odPalm('Left');odReach('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too */
-  odHang('waterBucket',1.0*a.dip);}
+  odHang('waterBucket',1.3*a.dip);}
  // a bucket in the fist hangs plumb from its handle (world upright, turned with him), tipped only when he tips it; never
  // follows the wrist's twist (it was swinging out at the hip or upside down at the feet)
  function odHang(n,tilt=0,free=false){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o)return;
@@ -2091,7 +2091,10 @@ export function createHero(ctx){
   let pen=-9,wp0=null;for(const y of [-.15,0,.06,.12,.17])for(const x of [-.03,0,.03]){const w=Q.localToWorld(V(x,y,0));const pn=R-w.distanceTo(c);if(pn>pen){pen=pn;wp0=w;}}
   const away=wp0?wp0.clone().sub(c):V();away.y=Math.min(away.y,0);if(away.lengthSq()<1e-6)away.copy(fwd(root.rotation.y).negate());away.normalize();QV.d=QV.d?QV.d.lerp(away,.2).normalize():away;
   const want=Math.max(0,pen)*1.6;QV.x+=want>QV.x?Math.min(want-QV.x,.05):-Math.min(QV.x-want,.004);if(QV.x<1e-4)return;
-  /* mostly lower down the back (it rides lower on a taller man), a little out from it */const sd=bones.Spine.getWorldPosition(V()).sub(bones.Spine2.getWorldPosition(V())).normalize();const dir=sd.multiplyScalar(.85).addScaledVector(QV.d||fwd(root.rotation.y).negate(),.35);const wp=Q.getWorldPosition(V()).addScaledVector(dir,QV.x);Q.parent.updateWorldMatrix(true,false);Q.position.copy(Q.parent.worldToLocal(wp));Q.updateMatrixWorld(true);}
+  /* tipped away from the head about its bottom end, which stays on his back: moved bodily it floated off his shoulder (film, adult hero drawing the bow) */
+  const piv=Q.localToWorld(V(0,-.45,0)),top=Q.localToWorld(V(0,.17,0));const up=top.clone().sub(piv).normalize();const bk=bones.Spine2.getWorldPosition(V()).sub(bones.Spine2.localToWorld(V(0,0,.1))).normalize();/* away from the back mostly, never out sideways off the shoulder */const aw=(QV.d||bk).clone().multiplyScalar(.35).addScaledVector(bk,.65).normalize();const ax=up.clone().cross(aw);if(ax.lengthSq()<1e-6)return;ax.normalize();
+  const th=Math.min(.35,QV.x/.6);const qr=new THREE.Quaternion().setFromAxisAngle(ax,th);const wq=Q.getWorldQuaternion(new THREE.Quaternion()).premultiply(qr);const wp=Q.getWorldPosition(V()).sub(piv).applyQuaternion(qr).add(piv);
+  Q.parent.updateWorldMatrix(true,false);const pq=Q.parent.getWorldQuaternion(new THREE.Quaternion());Q.position.copy(Q.parent.worldToLocal(wp));Q.quaternion.copy(pq.invert().multiply(wq));Q.updateMatrixWorld(true);}
  const EASE_T=['waterBucket','drainBucket','axe','logArmful'],easeSt={};
  function toolEase(){const P=PP();if(!P||!P.tools)return;const dt=1/60;
   for(const n of EASE_T){const o=P.tools[n];if(!o)continue;const S=easeSt[n];
@@ -2752,6 +2755,8 @@ export function createHero(ctx){
    /* WALK: on the ground the oak's roots are something to stand on: the body rises only when both soles (and the hips) are over a root;
       a single foot on a root is lifted by terrainFeet() with the knee bending, like stepping over it */
    const G=window.__ground;if(f!=null&&G&&G.standAt&&p.y<2&&!window.__noRootStep){const hs=['Left','Right'].map(s=>{const a=bones[s+'Foot']?bones[s+'Foot'].getWorldPosition(V()):p;return G.standAt(a.x,a.z);});f=Math.max(f,Math.min(G.standAt(p.x,p.z),...hs));}
+   /* OUTDOOR: the pond lies in a hollow the floor ray never sees (flat at 0): on its bank he stood 7-16 cm in the air (film, filling the pail). Near the pond the soles stand on the sloping bank */
+   if(f!=null&&G&&G.standAt&&p.y<.3){const dx=p.x+1.4,dz=p.z-7.6,c=Math.cos(-.12),sn=Math.sin(-.12);if(Math.hypot((dx*c+dz*sn)/1.75,(-dx*sn+dz*c)/1.15)<1.7){const hs=['Left','Right'].map(s=>{const a=bones[s+'Foot']?bones[s+'Foot'].getWorldPosition(V()):p;return G.standAt(a.x,a.z);});const lo=Math.max(G.standAt(p.x,p.z),...hs);if(lo<f)f=lo;}}
    if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
