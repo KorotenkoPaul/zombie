@@ -64,7 +64,7 @@ export function createGrab({ THREE, bones }) {
     saw: { g: [-.065, -.06, 0], a: [1, 0, 0], A: 'F', b: [0, 1, 0], B: 'T', tilt: 0, fwd: true },
     plankSaw: { g: [-.11, .075, 0], a: [1, 0, 0], A: 'F', b: [0, 1, 0], B: 'T', tilt: 0, fwd: true },
     axe: { g: [.01, -.58, 0], a: [0, 1, 0], A: 'T', b: [1, 0, 0], B: 'F', tilt: .1 },
-    broom: { g: [0, 1.02, 0], a: [0, 1, 0], A: 'T', b: [0, 0, 1], B: 'F', tilt: .1, two: [0, .66, 0] }, // two: where the other hand holds
+    broom: { g: [0, 1.02, 0], a: [0, 1, 0], A: 'T', b: [0, 0, 1], B: 'F', tilt: .1, two: [0, 1.34, 0] }, // two: where the other hand holds (the left on top, near the end: watch r15, at .66 it was out of reach and hung)
     pencil: { g: [.0, .0045, 0], a: [1, 0, 0], A: 'F', b: [0, 1, 0], B: 'T', tilt: 0, fwd: true, pinch: true },
     lantern: { g: [0, .24, 0], a: [0, -1, 0], A: 'F', b: [1, 0, 0], B: 'T', tilt: 0, fwd: true },
     kettle: { g: [0, .21, 0], a: [1, 0, 0], A: 'T', b: [0, -1, 0], B: 'P', tilt: 0 },// KITCHEN: palm down on the arched handle's top bar (it runs spout-to-back along x, spout toward the thumb), the body hangs below the palm
@@ -141,14 +141,16 @@ export function createGrab({ THREE, bones }) {
     const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6; const sx = Math.sin(SW.ph) * .18;
     const Bp = hp.clone().addScaledVector(fw, .7).addScaledVector(rt, .08 + sx).setY(fy + .02); // bristles on the boards, ahead of his feet
     for (const ft of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) { const b = bones[ft]; if (!b) continue; const fp = b.getWorldPosition(V()); const d = Bp.clone().sub(fp).setY(0); const ah = d.dot(fw); if (Math.abs(d.dot(rt)) < .22 && ah < .2) Bp.addScaledVector(fw, .2 - ah); }
-    const top = hp.clone().addScaledVector(fw, .2).addScaledVector(rt, .16 + sx * .25).add(V(0, .42, 0)); const dir = top.sub(Bp).normalize();
+    const top = hp.clone().addScaledVector(fw, .28).addScaledVector(rt, .07 + sx * .25).add(V(0, .42, 0)); const dir = top.sub(Bp).normalize();
     const sp = GRIP.broom; const Gp = Bp.clone().addScaledVector(dir, sp.g[1] * b.getWorldScale(V()).x); const Lp = Bp.clone().addScaledVector(dir, sp.two[1] * b.getWorldScale(V()).x);
     // tool orientation: local +y along the handle (bristles -> top), local +z (the bristle face) toward his front
     const z = fw.clone().addScaledVector(dir, -fw.dot(dir)).normalize(); const x = dir.clone().cross(z).normalize(); const Qt = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, dir, z));
     const Qh = Qt.clone().multiply(b.quaternion.clone().invert()); const hs = bones.RightHand.getWorldScale(V()).x;
     const gl = V(...sp.g).multiplyScalar(b.scale.x).applyQuaternion(b.quaternion).add(b.position).multiplyScalar(hs); const wrist = Gp.clone().sub(gl.applyQuaternion(Qh));
     ik2('Right', wrist, SW.w); setHandQ('Right', Qh, SW.w);
-    const pa = palm('Left'), wr = bones.LeftHand.getWorldPosition(V()); ik2('Left', Lp.clone().sub(pa.sub(wr)), SW.w); fistK.Left = Math.max(fistK.Left, SW.w); return true; }
+    /* the left fist on the handle's top end; its target eased (when he takes the broom up the handle still swings: the hand followed it
+       frame by frame, gate jitter) */ if (!SW.lp || SW.w < .05) SW.lp = Lp.clone(); else SW.lp.lerp(Lp, Math.min(1, dt * 14));
+    const pa = palm('Left'), wr = bones.LeftHand.getWorldPosition(V()); ik2('Left', SW.lp.clone().sub(pa.sub(wr)), SW.w); fistK.Left = Math.max(fistK.Left, SW.w); return true; }
   // ---- the bedroom door and its bolt move only under a palm (Pavel: nothing by magic wand) ----
   // props' door.openTo / boltTo only set a goal; door.hand(kind) (set here) lets the door move ('open') or the bolt slide
   // ('bolt') only on frames when a palm is on the leaf / on the bolt knob. The nearer free hand reaches there by the arm-only
