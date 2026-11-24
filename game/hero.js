@@ -603,10 +603,10 @@ export function createHero(ctx){
    if(a.step==='take'){// GRAB: step in until the tool's grip is within arm's reach, the fist onto the grip (not the tool's origin), close the hand only there
     const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=gripHome(n)||toolHome(n)||s;H.look=h;H.lookW=1;
     if(!a.st){a.st=1;a.pk=0;stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
-    const low=h.y<root.position.y+.7&&has('hy_pickground');if(low&&!a.pk){a.pk=1;once('hy_pickground',{fade:.3});}/* on the floor: a real squat down to it */
+    const low=h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.gotIt);/* low down: he bends his knees to it (feet stay on the boards) */
     a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.gotIt?1-smooth(0,.35,a.t-a.tg):1)];
-    if(!a.gotIt&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.04||a.t>(low?1.5:1.6))){a.gotIt=true;a.tg=a.t;grabTool(n,hand);AU('cloth');}
-    if(a.gotIt&&a.t-a.tg>.4&&(!low||a.t>1.9)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;if(a.held.length>=tools.length)work();}return;}
+    if(!a.gotIt&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.06||a.t>(low?1.5:1.6))){a.gotIt=true;a.tg=a.t;grabTool(n,hand);AU('cloth');}
+    if(a.gotIt&&a.t-a.tg>.4&&!(H.squat>0)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;if(a.held.length>=tools.length)work();}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
     // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
     if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
@@ -618,14 +618,17 @@ export function createHero(ctx){
    if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';const h=gripHome(n)||toolHome(n)||s;H.look=h;H.lookW=1;
     // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
     if(!a.st){a.st=1;a.pk=0;stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
-    const low=h.y<root.position.y+.7&&has('hy_pickground');if(low&&!a.pk){a.pk=1;once('hy_pickground',{fade:.3});}
+    const low=h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.rel);
     a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
-    if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.07||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;relTool(hand,n);}
-    if(a.rel&&a.t-a.tr>.4&&(!low||a.t>1.9)){a.held.pop();a.rel=false;a.t=0;a.rg=null;a.st=0;}}};
-  const finish=()=>{a.ik=null;endTask(o.result?o.result(a):undefined);};
+    if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;relTool(hand,n);}
+    if(a.rel&&a.t-a.tr>.4&&!(H.squat>0)){a.held.pop();a.rel=false;a.t=0;a.rg=null;a.st=0;}}};
+  const finish=()=>{a.ik=null;H.squat=0;endTask(o.result?o.result(a):undefined);};
   a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
-  a.leave=cb=>{for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
+  a.leave=cb=>{H.squat=0;for(const n of a.held){const t=tools.find(x=>x[0]===n);relTool(t?t[1]:'Right',n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
+ // GRAB: knees bent just enough that the shoulder is within arm's reach of a low grip, then up again (the code squat keeps the feet planted)
+ function jobSquat(a,dt,h,hand,down){const sh=bones[hand+'Arm'].getWorldPosition(V());const hz=Math.hypot(sh.x-h.x,sh.z-h.z);const R0=armLen*.9+PALM-.03;
+  const want=down?clamp(sh.y+(H.squat||0)-h.y-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,.45):0;const c=H.squat||0;H.squat=c+clamp(want-c,-1.1*dt,1.1*dt);if(!want&&H.squat<.012)H.squat=0;}
  // GRAB: a small step so the shoulder ends within ~0.36 m (level) of p: a reach, not a lean or a stretch
  function stepNear(p,hand){const sh=bones[hand+'Arm'];if(!sh||!p)return;const s0=sh.getWorldPosition(V());const d=V(p.x-s0.x,0,p.z-s0.z);const L=d.length();if(L<=.4)return;
   const q=root.position.clone().addScaledVector(d.normalize(),Math.min(.6,L-.34));pushOut(q);const mv=Math.hypot(q.x-root.position.x,q.z-root.position.z);if(mv<.04)return;
