@@ -135,6 +135,8 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R23-3 | P2 | sweep v6 (8e898b1) | R21-4 still there: often one-handed, with the left hand off the stick behind his hip (f2952) or on his head (f2424, hy_idle mid-sweep). The spot choice and the broom going home are fine | f2424, f2952 | r23-8e898b1-v6/sweep.jpg | Grab |
 | R23-4 | ok | saw v6 (8e898b1) | Good: fore-and-aft stroke at the vise from the shoulder, the left hand on the board | f4920–f5472 | r23-8e898b1-v6/saw.jpg | — |
 | R23-5 | P2 | telescope v6 (8e898b1) | R22-2 still there: the eyepiece is at his mouth or chin and his face looks up past it (f8580, f9204, f9852) | f8580–f9852 | r23-8e898b1-v6/tel.jpg | Leisure |
+| R24-1 | ok | sleep v6 (d3d9ba8, side camera) | Quilt FIXED: it lies over him down to the mattress, following the body, with no humps or gaps; no hand in the air; the head on the pillow. Small leftover: at f3396 a small brown corner pokes through the top of the quilt, then it is gone | f3396–f5100 | r24-d3d9ba8/sleep_quilt_ok.jpg | — |
+| R24-2 | ok/P3 | tea v6 (d3d9ba8) | Cup from the rack, onto the stove, pour from the kettle, drink. P3: pouring, he lifts the kettle with his forearm across his face and his hand at forehead height (f2328), much higher than a stove-top pour needs | f2088–f2940 | r24-d3d9ba8/tea.jpg | Kitchen |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
