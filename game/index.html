@@ -40,8 +40,8 @@ body{position:fixed;inset:0;margin:0;background:#0B1020;color:#fff;font-family:v
 .ib:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .ib:disabled{opacity:.35}
 .ib.on{background:rgba(255,190,110,.45);border-color:rgba(255,210,150,.8)}
-/* hint sits bottom-centre and keeps clear of the button column on both sides, so it stays centred */
-.hint{position:fixed;left:50%;bottom:var(--sb);transform:translateX(-50%);box-sizing:border-box;width:max-content;max-width:min(520px,calc(100% - 2 * (var(--ib) + var(--gap) + max(var(--sl),var(--sr)))));background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:8px 12px;font-size:var(--fs);line-height:1.4;text-align:center;transition:opacity .6s;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.45)}
+/* hint sits top-centre under the clock row (the bottom of the home view is the pond and the roots), clear of the button columns */
+.hint{position:fixed;left:50%;top:calc(var(--st) + 52px);transform:translateX(-50%);box-sizing:border-box;width:max-content;max-width:min(520px,calc(100% - 2 * (var(--ib) + var(--gap) + max(var(--sl),var(--sr)))));background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:8px 12px;font-size:var(--fs);line-height:1.4;text-align:center;transition:opacity .6s;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.45)}
 .hint b{color:var(--amber)}
 .hint.off{opacity:0}
 .toast{position:fixed;left:50%;top:22%;max-width:88vw;transform:translate(-50%,-50%) scale(.85);opacity:0;font-weight:700;font-size:clamp(22px,6.4vmin,30px);line-height:1.2;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.75);transition:opacity .5s,transform .6s cubic-bezier(.2,1.3,.4,1);pointer-events:none}
@@ -917,7 +917,7 @@ function shoot(from,vel){const g=arrowGeo.clone();g.traverse(o=>{if(o.isMesh)o.c
 const eq=new RAPIER.EventQueue(true);
 
 // ================= time, weather =================
-let hour=19.3,dayNo=1,weather='clear',rainK=0,spawnLeft=0,spawnT=0,over=false,hintT=8,breaches=0;
+let hour=19.3,dayNo=1,weather='clear',rainK=0,spawnLeft=0,spawnT=0,over=false,hintT=6,breaches=0;
 // the hero's brain: needs, mood, choices, gait, lamps (game/brain.js); attaches only once hero.js offers HH.setBrain
 let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSET+'brain.js',document.baseURI).href);BRAIN=createBrain({HH,lights:LIGHTS,hour:()=>hour,isNight:h=>isNight(h)});window.__brain=BRAIN;}catch(e){console.error('brain',e);}}
 // the game opens at any hour, in the middle of whatever he is doing: random hour, needs to match, then a quick
