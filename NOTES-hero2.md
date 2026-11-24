@@ -40,3 +40,26 @@ Vest and boots are separate skinned meshes (`split.mjs`, after slim, before lids
 The body underneath has a knitted sweater layer (vest triangles inset 1.4 cm along welded normals, sweater texels) and wool socks (boot triangles pulled 36% toward the foot bones); both taper to zero where they meet the body, so no cracks.
 Classification: per-triangle texel colour + dominant bone (torso & not sweater/skin/green -> vest; feet, or shin & leather -> boots), majority smoothing over welded adjacency.
 Tris: body 18k (incl. layers), vest 2.8k, boots 3.1k.
+
+## Concept 6 hero (?hero=v6, 2026-11-24)
+Pavel picked concept 6 ("нынешний, обновлённый": same palette as the original hero, more charming stylised proportions and richer clothes) from project files `hero-concepts/`.
+Only the look changes: same skeleton, rest pose, IBMs and clips (transplanted onto the pre-optim default, git 39ba715), so hero.js, moves, IK, collide and the gate work unchanged.
+Pipeline (same as ?hero=detail): concept sheet -> nano-banana-pro/edit clean A-pose front (no quiver/strap; the bow lives on the wall) + back view (`assets/refs/hero-v6-ref.jpg`) ->
+Meshy v6 image-to-3d (front only gave the better face than front+back; 30k, PBR) -> Meshy rigging -> `KEEP_NORMAL=1 ROUGH=.65 transplant.mjs old-dq.glb rig.glb` ->
+`slim.mjs 0.62` -> remove the old eyelids node -> `BT=.015 CAP=.03 CR=0 split-v6.mjs` (vest, boots; thin dark wool socks: the boots have deep creases down to the bone, so the old inset socks showed through as yellow patches) -> facescan (RES=.0008 XW=.13 Y0=.68 Y1=1.0) ->
+`lids.mjs '{"L":[-0.064,0.769,0.062,0.034],"R":[0.062,0.768,0.06,0.033],"skin":[-0.064,0.744],"lash":[-0.07,0.808],"off":0.0028,"ymin":0.7,"pow":0.4,"flat":1}'` ->
+`shrink.mjs in out 0.9 0.9` (head and hands 10% smaller around their centres, weight-blended: the first gate run had the big hair 2.6 cm deeper into ceilings/frames and hands 1-2 cm deeper into props) -> `ktxtex.mjs 2048 1024` -> quant -> `optim.mjs 0.65`.
+Result `assets/models/hero-v6.glb` / `game/hero-v6-glb.txt`: body 19.3k tris (incl. sweater/sock layers), vest 2.7k, boots 2.0k, eyelids 200; KTX2 base colour 2048 + webp normal 1024; 2.99 MB.
+Gate: run with Q.old='?hero=v6' (a temp copy of gate.js) next to a plain run on the same master and compare regression counts.
+
+v6 head fit (2026-11-24, integrator's full gate: head P1 into ladder openings/beam/bunks 92 -> 140): the concept head + hair was 35% wider and 45% deeper than the previous hero's.
+Now after split: `shrink.mjs 0.9 0.9` -> `headfit.mjs in out '[0.76,0.86,0.6]' '[0,0.66,0.05]' '[-0.01,0.85]' (the face relief in front of z=-0.01 keeps 0.85 depth so nose and chin keep their profile)` (x/y/z scale about the face front at skull base, weight-blended) so the head's 1-99% box is inside the previous hero's
+(x -0.131..0.132 vs -0.127..0.126, z -0.148..0.090 vs -0.160..0.112 (face pulled back: the first fit still had the face 2.5 cm into the hatch-ladder rungs), top 0.94 vs 1.0 in old-dq space) -> facescan (RES=.0006 XW=.1 Y0=.66 Y1=.9) ->
+lids '{"L":[-0.0454,0.7575,0.039,0.025],"R":[0.0386,0.7554,0.039,0.025],"skin":[-0.045,0.732],"lash":[-0.043,0.786],"off":0.0022,"ymin":0.68,"pow":0.4,"flat":1}' -> ktxtex -> quant -> optim.
+Measure heads in the transplant (old-dq) space, not after quant: quantize renormalises each mesh to its own box.
+
+v6 face v2 (2026-11-24, integrator: face not at concept quality: asymmetric, bumpy, orange, thin angry brows):
+new Meshy v6 image-to-3d with `symmetry_mode:"on"` and a texture_prompt (smooth light peachy skin, round cheeks, thick straight brows) -> same chain
+(rig, transplant, slim, rmlids, `UMIN=.3 BT=.015 CAP=.03 CR=0 split-v6.mjs`, shrink 0.9/0.9, headfit, lids '{"L":[-0.0466,0.759,0.042,0.026],"R":[0.0365,0.7566,0.042,0.026],"skin":[-0.0466,0.732],"lash":[-0.046,0.792],...}')
+-> `facesmooth.mjs in out 0 0.06` (face skin: smooth normals, flat normal map, softened and lightened base colour; position smoothing (iters>0) erased the nose, so 0) -> ktx/quant/optim.
+Comparisons: project files hero-v6/.
