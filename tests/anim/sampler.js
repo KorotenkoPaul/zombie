@@ -174,7 +174,12 @@ module.exports=function install(cfg){
   // which objects moved this frame (topmost moved one only), and how far the nearer palm is from it
   {const pr=[];heroBones.LeftHand.getWorldPosition(HP[0]);heroBones.LeftForeArm.getWorldPosition(FA);HP[0].add(HP[0].clone().sub(FA).setLength(.07));
    heroBones.RightHand.getWorldPosition(HP[1]);heroBones.RightForeArm.getWorldPosition(FA);HP[1].add(HP[1].clone().sub(FA).setLength(.07));const hp=H.root.position;
-   const moved=new Set();for(const m of MOV){const e=m.o.matrixWorld.elements;let d=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-m.last[k]);if(x>d)d=x;}if(d>2e-4){moved.add(m.o);for(let k=0;k<16;k++)m.last[k]=e[k];}}
+   const moved=new Set();const DD=new Map();for(const m of MOV){const e=m.o.matrixWorld.elements;let d=0,dOther=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-m.last[k]);if(x>d)d=x;if(k!==0&&k!==5&&k!==10&&k!==13&&x>dOther)dOther=x;}DD.set(m,[d,dOther]);}
+   for(const m of MOV){const e=m.o.matrixWorld.elements;const [d,dOther]=DD.get(m);
+    // a child that only rises/falls or scales on its own (water level in a bucket or sink while the tap runs) is not something he moves
+    const pm=m.o.parent&&MI.get(m.o.parent);const levelOnly=dOther<2e-4&&pm&&DD.get(pm)[0]<=2e-4;
+    if(d>2e-4&&levelOnly){for(let k=0;k<16;k++)m.last[k]=e[k];continue;}
+    if(d>2e-4){moved.add(m.o);for(let k=0;k<16;k++)m.last[k]=e[k];}}
    // the open door sways in the wind (props.js wind()): that is not the hero moving it. Count the door only when its open/bolt value changed
    const DR=window.__props&&window.__props.door;let doorStill=false;if(DR){const v=DR.open+DR.bolt*10;doorStill=v===lastDoor;lastDoor=v;}
    const inDoor=o=>{if(!DR||!DR.obj)return false;for(let x=o;x;x=x.parent)if(x===DR.obj)return true;return false;};
