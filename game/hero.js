@@ -543,12 +543,13 @@ export function createHero(ctx){
    const ket=()=>P&&P.tools&&P.tools.kettle;const kHandle=()=>{const k=ket();k.updateMatrixWorld(true);return k.localToWorld(V(0,.21,0));};
    const kSpout=()=>ket().localToWorld(V(.17,.155,0));const rgt=()=>{const f=fwd(root.rotation.y);return V(-f.z,0,f.x);};
    const cupAt=()=>{const hp=bones.Spine1.getWorldPosition(V());return hp.addScaledVector(fwd(root.rotation.y),.32).addScaledVector(rgt(),hand==='Right'?.04:-.04).add(V(0,-.12,0));};// mug held in front of the belly
-   goTo('sink',()=>{a.step='take';a.t=0;play(IDLE(),{fade:.4});});
+   /* KITCHEN: step up facing the mug (reaching sideways for it from the sink spot bent him over to one side) */
+   goTo('sink',()=>approachTo(a,rest.mug.clone(),.42,()=>{a.step='take';a.t=0;play(IDLE(),{fade:.4});}));
    a.ik=null;
    a.update=dt=>{a.t+=dt;
     if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
-    if(a.step==='take'){H.face=N.sink.face;H.look=rest.mug.clone();H.lookW=1;a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)),smooth(.1,.8,a.t)-smooth(.9,1.4,a.t)]];
-     if(a.t>.85&&!H.hold[hand]){grab(mug,hand,[0,.07,.035],[0,0,hand==='Right'?-Math.PI/2:Math.PI/2]);}
+    if(a.step==='take'){H.look=rest.mug.clone();H.lookW=1;/* the mug comes up from the counter into his hand in front of the belly (it never drops to dangle by his side) */a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)).lerp(cupAt(),smooth(.9,1.4,a.t)),smooth(.1,.8,a.t)]];
+     if(a.t>.85&&!H.hold[hand]){grab(mug,hand,hand==='Right'?[-.05,.136,.035]:[.05,.136,.035],[0,0,hand==='Right'?-Math.PI/2:Math.PI/2])/* KITCHEN: by its handle (the handle in the palm, not the mug's bottom on an open hand) */;}
      if(a.t>1.4){a.ik=null;if(!ket()){a.step='drink';a.t=0;a.turn=rnd(-1.1,-.5);return;}a.step='tostove';const kp=ket().getWorldPosition(V());const nn=nearNode(kp)||'stove';goTo(nn,()=>approachTo(a,kp,.42,()=>{a.step='kreach';a.t=0;}));}return;}
     if(a.step==='tostove'||a.step==='go')return;
     if(a.step==='kreach'){const h=kHandle();H.look=h;H.lookW=1;a.ik=[[oth,h,smooth(0,.6,a.t)],[hand,cupAt(),smooth(0,.6,a.t)]];
@@ -565,8 +566,21 @@ export function createHero(ctx){
      // a sip: the mug up to the lips by the arm (no clip miming it at the hip), a moment, down to the belly, a pause
      if(a.sip===undefined){a.sip=.8;a.sd=rnd(1.1,1.6);play(IDLE(),{fade:.6});}const u=a.t-a.sip;const k=u<0?0:smooth(0,.6,u)*(1-smooth(.6+a.sd,1.2+a.sd,u));
      if(u>1.2+a.sd){a.sip=a.t+rnd(2.5,5);a.sd=rnd(1.1,1.6);}
-     const hd=bones.Head.getWorldPosition(V());const lip=hd.addScaledVector(fwd(root.rotation.y),.12).add(V(0,.0,0));const c=cupAt();a.ik=[[hand,c.lerp(lip,k),1]];if(k>.6){H.look=null;}}};
-   a.post=dt=>{if(!a.ik)return;for(const [sd,t,w] of a.ik){if(w<.01||!t)continue;
+     const hd=bones.Head.getWorldPosition(V());const lip=hd.addScaledVector(fwd(root.rotation.y),.12).add(V(0,.0,0));const c=cupAt();a.sk=k;a.ik=[[hand,c.lerp(lip,k),1]];if(k>.6){H.look=null;}}};
+   // the mug stays upright in his hand (the wrist turns it level; it hung upside down off the IK'd hand); tilted toward him only at the lips
+   const level=w=>{if(w<.01||mug.parent!==bones[hand+'Hand'])return;const hb=bones[hand+'Hand'];mug.updateMatrixWorld(true);const u=V(0,1,0).applyQuaternion(mug.getWorldQuaternion(new THREE.Quaternion()));
+    const q=new THREE.Quaternion().slerp(new THREE.Quaternion().setFromUnitVectors(u,V(0,1,0)),w);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cq=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(q.multiply(cq)));hb.updateMatrixWorld(true);};
+   a.post=dt=>{/* carrying the mug: held upright in front of him while he walks */if(H.hold[hand]&&/^(tostove|go|approach)$/.test(a.step))reachGrip(hand,cupAt(),1);
+    a.post2();if(H.hold[hand])level(a.step==='drink'?1-(a.sk||0):a.step==='take'?smooth(.85,1.3,a.t):1);
+    // a sip: the mug itself is posed at the mouth (rim on the lips, tipped toward him, handle out to his side) and the hand follows it
+    if(a.step==='drink'&&(a.sk||0)>.01&&mug.parent===bones[hand+'Hand']){const k=a.sk;const f=fwd(root.rotation.y);const up=V(0,1,0);const rs=V(-f.z,0,f.x).multiplyScalar(hand==='Right'?1:-1);
+     const mouth=bones.Head.getWorldPosition(V()).addScaledVector(f,.1).add(V(0,.03,0));const th=.35+.25*smooth(.4,1,k);
+     const Y=up.clone().multiplyScalar(Math.cos(th)).addScaledVector(f,-Math.sin(th)).normalize();const X=rs.clone();const Z=X.clone().cross(Y).normalize();X.copy(Y.clone().cross(Z)).normalize();
+     const rimC=mouth.clone().addScaledVector(f,.035);const base=rimC.clone().addScaledVector(Y,-.09);
+     const hb=bones[hand+'Hand'];const Mw=new THREE.Matrix4().makeBasis(X,Y,Z).scale(mug.getWorldScale(V())).setPosition(base);mug.updateMatrix();const Hw=Mw.multiply(mug.matrix.clone().invert());
+     const hp=V(),hq=new THREE.Quaternion(),hs=V();Hw.decompose(hp,hq,hs);armIK(hand,hp,sidePole(hand),k);hb.updateMatrixWorld(true);
+     const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cq=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(cq.slerp(hq,k)));hb.updateMatrixWorld(true);}};
+   a.post2=()=>{if(!a.ik)return;for(const [sd,t,w] of a.ik){if(w<.01||!t)continue;
      if(sd==='pour'){// the kettle hand: put the spout above the mug (a few corrections), then tip it round the axis across the spout
       const k=ket();if(!k||k.parent!==bones[oth+'Hand'])continue;let tgt=t.clone().addScaledVector(rgt(),oth==='Left'?-.12:.12).add(V(0,.08,0));
       for(let i=0;i<3;i++){reachGrip(oth,tgt,w);k.updateMatrixWorld(true);const e=t.clone().sub(kSpout());e.y=0;if(e.length()<.01)break;tgt.add(e.multiplyScalar(.8));}
@@ -575,9 +589,9 @@ export function createHero(ctx){
       continue;}
      reachGrip(sd,t,w);}};
    a.leave=cb=>{try{if(ket()&&ket().parent!==ket().userData.home.parent)P.release('kettle');}catch(e){}if(!H.hold[hand]){cb();return;}a.t=0;a.ik=null;
-    const back=()=>{a.step='putmug';a.t=0;a.update=dt=>{a.t+=dt;H.face=N.sink.face;a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)),smooth(0,.7,a.t)-smooth(.9,1.4,a.t)]];
+    const back=()=>{a.step='approach';a.t=0;a.ik=null;approachTo(a,rest.mug.clone(),.42,()=>{a.step='putmug';a.t=0;});a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}a.ik=[[hand,cupAt().lerp(rest.mug.clone().add(V(0,.05,0)),smooth(0,.7,a.t)),1-smooth(.9,1.4,a.t)]];
      if(a.t>.75&&H.hold[hand]){release(hand);park(mug,rest.mug);}if(a.t>1.4){a.ik=null;cb();}};};
-    if(root.position.distanceTo(N.sink.p)>.8){a.update=()=>{};play(IDLE(),{fade:.4});goTo('sink',back);}else back();};return a;},
+    if(root.position.distanceTo(N.sink.p)>.8){a.step='go';a.update=()=>{};play(IDLE(),{fade:.4});goTo('sink',back);}else back();};return a;},
   wash:()=>{const a={step:'go'};goTo('sink',()=>{a.step='wash';a.t=0;grab(plate,'Left',[0,.05,.06],[Math.PI/2,0,0]);play('hy_wash',{fade:.7});});
    a.update=dt=>{if(a.step!=='wash')return;a.t+=dt;H.face=N.sink.face;const s=root.position.clone().add(fwd(H.face).multiplyScalar(.45));s.y=kTop-.05;H.look=s;H.lookW=1;};
    a.leave=cb=>{if(H.hold.Left){release('Left');plate.visible=false;}cb();};return a;},
