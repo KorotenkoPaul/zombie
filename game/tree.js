@@ -479,10 +479,14 @@ export function buildTree(THREE, o) {
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       // phones have no inner cards, so some shell cards take the darker inner shade to keep the clumps' depth
       const rs = MOB(o) && rnd(0, 1) < 0.35 ? rnd(0.4, 0.78) : rr;
+      if (MOB(o) && rs < 0.62 && rnd(0, 1) < 0.5) continue; // [ENV perf] half of the deepest-shade shell cards: mostly covered by the cards in front (overdraw)
       const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1));
       // lighter, yellow-green leaves on the clump edges and the odd autumn-yellow card, like the photo
       if (rs > 0.8 && (!MOB(o) || rnd(0, 1) < 0.75) && dir.y > -0.2) col.multiply(new THREE.Color(1.18, 1.14, 0.8));
-      if (rnd(0, 1) < 0.07) col.setRGB(1.5, 1.25, 0.45);
+      // autumn (Environment, per the coordinator): ~30% warm cards, most on the clump edges and the crown's top-right like the
+      // photo: gold, orange and a few rust; the crown stays mostly green
+      { const smooth01 = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); }; const edge = rs > 0.8 && dir.y > -0.3 ? 0.22 : 0, tr = smooth01((p.x - AX) / 6) * smooth01((p.y - 13) / 5) * 0.22;
+        const w = rnd(0, 1); if (w < 0.14 + edge + tr) { const k = rnd(0, 1); if (k < 0.5) col.setRGB(1.5, 1.22, 0.42); else if (k < 0.85) col.setRGB(1.6, 0.98, 0.38); else col.setRGB(1.3, 0.68, 0.32); col.multiplyScalar(rnd(0.85, 1.05)); } }
       im.setColorAt(n, col);
       shade[n] = (0.5 + 0.5 * Math.min(1, rs)) * (0.7 + 0.5 * Math.max(0, dir.y));
       n++;
