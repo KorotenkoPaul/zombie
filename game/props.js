@@ -515,9 +515,21 @@ function coatHooks() { const g = new THREE.Group(); W(g, .34, .07, .025, 0, 0, .
   const sc = add(g, drapeGeo(.11, .03, .32, { r: .015, wrinkle: .01 }), new THREE.MeshStandardMaterial({ color: 0xC9962E, roughness: .95, side: THREE.DoubleSide }), -.11, .0, .065, 0, Math.PI / 2, 0); void sc;
   const cap = add(g, new THREE.SphereGeometry(.075, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5A4632, roughness: .9 }), .11, -.04, .09); cap.scale.set(1, .75, 1); add(g, new THREE.CylinderGeometry(.06, .07, .008, 18, 1, false, 0, Math.PI), new THREE.MeshStandardMaterial({ color: 0x4A3826, roughness: .9 }), .11, -.04, .12, 0, Math.PI / 2, 0);
   return g; }
-function kettle() { const g = new THREE.Group(); g.userData.live = true; add(g, lathe([[0, 0], [.08, 0], [.095, .02], [.1, .06], [.09, .11], [.06, .135], [.035, .14], [.035, .145], [0, .145]], 28), M.enamel);
-  add(g, lathe([[0, 0], [.038, 0], [.04, .008], [.02, .02], [.012, .032], [0, .036]], 16), M.enamelDark, 0, .142, 0);
-  add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(.07, .05, 0), V(.12, .09, 0), V(.15, .14, 0), V(.17, .155, 0)]), 12, .012, 8), M.enamel);
+// the photo's kettle is chrome: worn and dulled by use, soot climbing from the base where the flame licks it, water
+// spots and fine scratches. Its reflection dims at night (NIGHT_METALS) so it never glows in the dark kitchen.
+const NIGHT_METALS = [];
+let _ketMat = null;
+function kettleMat() { if (_ketMat) return _ketMat; let ls = 4242; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#C9CDD1'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x++) { g.fillStyle = `rgba(${LR() < .5 ? '255,255,255' : '90,95,100'},${LR() * .07})`; g.fillRect(x, 0, 1, h); } /* brushed, worn */
+    const sg = g.createLinearGradient(0, h, 0, 0); sg.addColorStop(0, 'rgba(22,18,16,.95)'); sg.addColorStop(.22, 'rgba(30,24,20,.8)'); sg.addColorStop(.38, 'rgba(60,48,38,.3)'); sg.addColorStop(.5, 'rgba(60,48,38,0)'); g.fillStyle = sg; g.fillRect(0, 0, w, h); /* soot from the base */
+    g.filter = 'blur(3px)'; for (let i = 0; i < 26; i++) { g.fillStyle = `rgba(35,28,22,${.12 + LR() * .2})`; const x = LR() * w; g.beginPath(); g.ellipse(x, h * (.62 + LR() * .08), 3 + LR() * 6, 10 + LR() * 22, 0, 0, 6.3); g.fill(); } g.filter = 'none'; /* soft soot tongues licking up */
+    for (let i = 0; i < 60; i++) { g.strokeStyle = `rgba(250,250,250,${.1 + LR() * .2})`; g.beginPath(); const x = LR() * w, y = LR() * h * .55; g.moveTo(x, y); g.lineTo(x + (LR() - .5) * 30, y + (LR() - .5) * 8); g.stroke(); } /* scratches */
+    for (let i = 0; i < 30; i++) { g.fillStyle = `rgba(150,140,120,${.1 + LR() * .15})`; g.beginPath(); g.arc(LR() * w, LR() * h * .5, 1 + LR() * 4, 0, 6.3); g.fill(); } /* dried water spots */ });
+  _ketMat = new THREE.MeshStandardMaterial({ map: texOf(c), metalness: .85, roughness: .38, envMap: M.env, envMapIntensity: .8 }); _ketMat.userData.env0 = .8; NIGHT_METALS.push(_ketMat); return _ketMat; }
+function kettle() { const g = new THREE.Group(); g.userData.live = true; add(g, lathe([[0, 0], [.08, 0], [.095, .02], [.1, .06], [.09, .11], [.06, .135], [.035, .14], [.035, .145], [0, .145]], 28), kettleMat());
+  add(g, lathe([[0, 0], [.038, 0], [.04, .008], [.02, .02], [.012, .032], [0, .036]], 16), kettleMat(), 0, .142, 0);
+  add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(.07, .05, 0), V(.12, .09, 0), V(.15, .14, 0), V(.17, .155, 0)]), 12, .012, 8), kettleMat());
   add(g, new THREE.TorusGeometry(.07, .009, 8, 20, Math.PI), M.rubber, 0, .14, 0); return g; }
 function hood(height) { const g = new THREE.Group(); const c = add(g, new THREE.CylinderGeometry(.13, .5, .3, 4, 1, true), M.hood, 0, .15, 0, 0, Math.PI / 4); c.scale.set(1.15, 1, .72); c.material.side = THREE.DoubleSide;
   add(g, rb(.84, .045, .54, .01), M.hood, 0, .0, 0); add(g, rb(.2, height, .18, .01), M.hood, 0, .3 + height / 2, -.04); for (const y of [.33, .3 + height * .5]) add(g, rb(.22, .02, .2, .006), M.iron, 0, y, -.04); return bake(g); }
@@ -735,8 +747,22 @@ function workshopShelves(w = .95) { const g = new THREE.Group(); const levels = 
   { let x = .08; for (let k = 0; k < 3; k++) { const bw = rr(.03, .04), bh = rr(.16, .2); const b = closedBook(bw, bh, .15, M.covers[(k + 3) % M.covers.length]); b.position.set(x, .438, .11); g.add(b); x += bw + .004; } }
   for (const [x, h, r] of [[-.08, .09, .035], [.08, .12, .04]]) { const jj = jar(h, r, M.jarGlass); jj.position.set(x, .858, .1); g.add(jj); }
   { const jj = jar(.1, .035, M.glazeCream); jj.position.set(-.42, .018, .12); g.add(jj); const c = can(.07, .05, M.cans[0]); c.position.set(.4, .018, .1); g.add(c); }
+  // packed like the photo's workshop: every gap gets the small stuff a workshop collects (kraft boxes, twine, a coil of
+  // wire, a rolled rag)
+  { const kraft = std2(0xA9845A), kraftD = std2(0x8C6A44), twine = std2(0xC8B080), rag = std2(0x7A8A9A);
+    const box = (x, y, w, h, d, m, ry = 0) => { const b = add(g, rb(w, h, d, .004), m, x, y + h / 2, .12, 0, ry, 0); const fz = d / 2 + .0015; add(g, rb(w * .72, h * .34, .003, .001), M.linen, x + Math.sin(ry) * fz, y + h * .56, .12 + Math.cos(ry) * fz, 0, ry, 0); /* paper label on the front */ add(g, rb(w * 1.01, .004, d * 1.01, .001), m, x, y + h * .8, .12, 0, ry, 0); /* lid rim */ return b; };
+    const spool = (x, y) => { add(g, new THREE.CylinderGeometry(.03, .03, .055, 14), twine, x, y + .0275 + .006, .12); for (const k of [0, 1]) add(g, new THREE.CylinderGeometry(.036, .036, .006, 14), M.woodLight, x, y + .003 + k * .061, .12); };
+    // top
+    box(-.165, .858, .06, .07, .1, kraftD, .1); spool(.16, .858);
+    // middle
+    spool(-.055, .438); box(.41, .438, .1, .08, .13, kraft, -.08); box(.41, .518, .085, .05, .11, kraftD, .12);
+    add(g, new THREE.CylinderGeometry(.026, .026, .1, 10), rag, -.43, .438 + .026, .12, Math.PI / 2, 0, 0);
+    // bottom
+    add(g, new THREE.TorusGeometry(.042, .006, 6, 18), M.copper, -.07, .018 + .006, .12, Math.PI / 2, 0, 0); add(g, new THREE.TorusGeometry(.036, .006, 6, 18), M.copper, -.07, .018 + .018, .12, Math.PI / 2, 0, .3);
+    box(.145, .018, .08, .06, .11, kraft, .2); }
   return bake(g); }
 
+let _boxPaint = null; const boxPaint = () => _boxPaint || (_boxPaint = wearEnamel(new THREE.MeshStandardMaterial({ roughness: .5, metalness: .35, envMap: M.env, envMapIntensity: .4 }), 0x9E2A1E, 11, { grime: .3, chips: 14 }));
 function sideBench() {
   const g = new THREE.Group(); const L = 1.0, D = .42, H = .78;
   W(g, L, .05, D, 0, H - .025, 0, { mat: M.woodLight, r: .01 }); W(g, L - .02, .045, D - .02, 0, .14, 0, { mat: M.woodDark, r: .008 });
@@ -745,7 +771,7 @@ function sideBench() {
   // on top: pencil cup, jars of screws, a small toolbox, an oil can, a rag
   { const c = can(.11, .035, M.cans[2]); c.position.set(.36, H, .05); g.add(c); for (let i = 0; i < 5; i++) { const pc = add(g, new THREE.CylinderGeometry(.004, .004, .15, 6), [M.gripYellow, M.gripRed, M.gripBlue][i % 3], .36 + rr(-.015, .015), H + .14, .05 + rr(-.015, .015), rr(-.2, .2), 0, rr(-.2, .2)); void pc; } }
   for (const [x, z, h] of [[.18, -.08, .1], [.07, -.1, .08]]) { const j = jar(h, .035, M.jarGlass); j.position.set(x, H, z); g.add(j); }
-  { const b = new THREE.Group(); b.position.set(-.2, H, -.02); b.rotation.y = .15; g.add(b); add(b, rb(.26, .1, .14, .01), M.gripRed, 0, .05, 0); add(b, rb(.27, .015, .15, .006), M.iron, 0, .1, 0); add(b, new THREE.TorusGeometry(.04, .007, 6, 14, Math.PI), M.iron, 0, .108, 0); }
+  { const b = new THREE.Group(); b.position.set(-.2, H, -.02); b.rotation.y = .15; g.add(b); add(b, rb(.26, .1, .14, .01), boxPaint(), 0, .05, 0); /* painted steel, chipped (was glossy red plastic) */ add(b, rb(.27, .015, .15, .006), M.iron, 0, .1, 0); add(b, new THREE.TorusGeometry(.04, .007, 6, 14, Math.PI), M.iron, 0, .108, 0); }
   { const o = new THREE.Group(); o.position.set(-.4, H, .08); g.add(o); add(o, lathe([[0, 0], [.04, 0], [.042, .05], [.02, .08], [.006, .09], [.004, .17], [0, .17]], 18), M.copper); }
   { const r = add(g, drapeGeo(.18, .12, .02, { wrinkle: .006 }), M.clothBlue, .02, H + .002, .1); r.rotation.y = .5; }
   // under-shelf crate with offcuts
@@ -1409,7 +1435,7 @@ export function buildProps(ctx) {
       const dx = (x - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d > 1.35) continue;
       const sink = d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008; a[i + 1] = y - sink * press.k; }
     P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
-  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { if (out._toolProxyTick) out._toolProxyTick();
+  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }

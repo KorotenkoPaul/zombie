@@ -245,7 +245,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     // trodden: squashed low and pushed over, away from the track (a worn edge, not a mown lawn)
     if(tr>0){const e=.05;const gx=trackD(x+e,z)-trackD(x-e,z),gz=trackD(x,z+e)-trackD(x,z-e);const ax=V(gz,0,-gx).normalize();if(ax.lengthSq()>.5)q=new THREE.Quaternion().setFromAxisAngle(ax,.75*tr).multiply(q);}
     const m=new THREE.Matrix4().compose(V(x,groundH(x,z)-.02,z),q,V(sz*rr(.85,1.2),sz*rr(.8,1.25)*(1-.55*tr),sz*rr(.85,1.2)));
-    const dry=smooth(.6,.85,fbm2(x*.4,z*.4+20));const c=new THREE.Color().setHSL(rr(.27,.38)-dry*.12,rr(.22,.38)-dry*.04,rr(.33,.47)+dry*.06);pts.push({x,z,m,c});}}
+    const dry=smooth(.48,.78,fbm2(x*.4,z*.4+20));/* autumn: wider straw and olive patches */const c=new THREE.Color().setHSL(rr(.27,.38)-dry*.16,rr(.22,.38)+dry*.04,rr(.33,.47)+dry*.1);pts.push({x,z,m,c});}}
   const buckets=new Map();for(const p of pts){const cs=far?CHF:CH;const k=one?'all':Math.floor(p.x/cs)+','+Math.floor(p.z/cs);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(p);}
   for(const list of buckets.values()){const mk=g=>{if(!g)return null;const im=new THREE.InstancedMesh(g,grassMat,list.length);list.forEach((p,i)=>{im.setMatrixAt(i,p.m);im.setColorAt(i,p.c);});
     im.computeBoundingSphere();im.receiveShadow=true;im.castShadow=false;im.name=name;im.visible=false;scene.add(im);return im;};
@@ -311,10 +311,10 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const g=new THREE.PlaneGeometry(1,1,2,2).rotateX(-Math.PI/2);const p=g.attributes.position;for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setY(i,x*x*.35+z*z*.12+.01);}g.computeVertexNormals();
   const nr=g.attributes.normal;for(let i=0;i<nr.count;i++){const n=V(nr.getX(i),nr.getY(i),nr.getZ(i)).lerp(V(0,1,0),.6).normalize();nr.setXYZ(i,n.x,n.y,n.z);}
   const mat=new THREE.MeshStandardMaterial({map:tex,alphaTest:.5,side:THREE.DoubleSide,roughness:.9});
-  const N=MOBILE?130:520,ND=MOBILE?120:480;const im=new THREE.InstancedMesh(g,mat,N+ND);let n=0;
-  const pal=[[.07,.7,.36],[.04,.65,.3],[.1,.65,.4],[.16,.45,.32],[.02,.55,.26],[.12,.4,.26]];
+  const N=MOBILE?280:900,ND=MOBILE?150:520;/* autumn: more litter, readable from the home view */const im=new THREE.InstancedMesh(g,mat,N+ND);let n=0;
+  const pal=[[.07,.7,.36],[.04,.65,.3],[.1,.65,.4],[.16,.45,.32],[.02,.55,.26],[.12,.4,.26],[.09,.8,.46],[.12,.78,.46]];
   for(let i=0;i<N*20&&n<N;i++){const s=pick(R()<.7?ring(2.3,11):ring(11,30),(x,z)=>rootD(x,z)>.05&&pathD(x,z)>-.1,5);if(!s)continue;const [x,z]=s;
-   const sz=rr(.08,.14);const q=slopeQ(x,z,rr(0,6.28));q.multiply(new THREE.Quaternion().setFromEuler(E.set(rr(-.25,.25),0,rr(-.25,.25))));M.compose(V(x,groundH(x,z)+.012,z),q,Sc.set(sz,sz,sz*1.15));im.setMatrixAt(n,M);
+   const sz=rr(.1,.18);const q=slopeQ(x,z,rr(0,6.28));q.multiply(new THREE.Quaternion().setFromEuler(E.set(rr(-.25,.25),0,rr(-.25,.25))));M.compose(V(x,groundH(x,z)+.012,z),q,Sc.set(sz,sz,sz*1.15));im.setMatrixAt(n,M);
    const c=pal[Math.floor(R()*pal.length)];Col.setHSL(c[0]+rr(-.02,.02),c[1],c[2]+rr(-.05,.05));im.setColorAt(n,Col);n++;}
   // autumn drifts: the wind piles leaves up against the roots and the foot of the trunk, layer on layer, in clumps
   const stack=new Map();let nd=0;
@@ -672,7 +672,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   {const bg=mkBush(5,MOBILE?14:20);const NE=MOBILE?95:180;const im=new THREE.InstancedMesh(bg,mat,NE);im.name='groundBushes';let n=0;
    for(let t=0;t<NE*40&&n<NE;t++){const a=rr(0,6.28),r=(R()<.4?rr(10,15):rr(15,25))+(vnoise(a*3,1)-.5)*3;const x=Math.cos(a)*r,z=Math.sin(a)*r*.95;if(!edgeOK(x,z))continue;
     const sz=rr(1.2,2.4);M.compose(V(x,groundH(x,z)-.25,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(1,1.6),sz*rr(.8,1.25),sz*rr(1,1.5)));im.setMatrixAt(n,M);
-    Col.setHSL(rr(.3,.4),rr(.18,.32),rr(.38,.52));im.setColorAt(n,Col);n++;}
+    Col.setHSL(rr(.3,.4),rr(.18,.32),rr(.38,.52));const au=R();if(au<.2)Col.setHSL(rr(.1,.15),rr(.45,.6),rr(.42,.52));else if(au<.33)Col.setHSL(rr(.04,.07),rr(.5,.65),rr(.36,.46));/* autumn: a third yellow / rust */im.setColorAt(n,Col);n++;}
    im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);G.thicket=im;}
   {// young trees: a slim, slightly crooked trunk with a few side twigs, and two or three leaf clumps up top
    const r=rng(9);const parts=[];let px=0,pz=0;const pts=[];for(let i=0;i<=6;i++){const y=i/6*4.2;px+=(r()-.5)*.18;pz+=(r()-.5)*.18;pts.push(V(px,y,pz));}
@@ -686,7 +686,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    const NT=MOBILE?24:40;const ti=new THREE.InstancedMesh(trunkG,tmat,NT),ci=new THREE.InstancedMesh(crownG,mat,NT);let n=0;
    for(let t=0;t<NT*50&&n<NT;t++){const a=rr(0,6.28),rad=rr(12,27);const x=Math.cos(a)*rad,z=Math.sin(a)*rad;if(!edgeOK(x,z))continue;
     const sz=rr(.75,1.25);M.compose(V(x,groundH(x,z)-.1,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz,sz*rr(.9,1.2),sz));ti.setMatrixAt(n,M);ci.setMatrixAt(n,M);
-    Col.setHSL(rr(.28,.38),rr(.2,.35),rr(.42,.56));ci.setColorAt(n,Col);n++;}
+    Col.setHSL(rr(.28,.38),rr(.2,.35),rr(.42,.56));const au=R();if(au<.2)Col.setHSL(rr(.1,.15),rr(.45,.6),rr(.42,.52));else if(au<.33)Col.setHSL(rr(.04,.07),rr(.5,.65),rr(.36,.46));/* autumn: a third yellow / rust */ci.setColorAt(n,Col);n++;}
    for(const im of [ti,ci]){im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);}G.youngTrees=ti;}
   // ---- where the clearing meets the painted far forest (a 96 m cylinder): a ring of big, fog-tinted undergrowth hides
   // the line where the ground plane meets the painting, so the forest floor runs into the trees with no seam

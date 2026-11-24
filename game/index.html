@@ -377,6 +377,13 @@ const dWx=new THREE.InstancedBufferAttribute(new Float32Array(900*2),2),dFresh=n
 // every board, beam and slate of the house, for the wear/repair API (window.__planks)
 const PL=[];
 const beams=new THREE.InstancedMesh(darkGeo,darkBoard,900);beams.castShadow=true;beams.receiveShadow=true;beams.count=0;scene.add(beams);
+/* [PERF] shadow proxies for the boards and beams: the shadow pass draws them with three's plain depth material, which
+   ignores aBev, so their shadow is already the unit box. A 12-triangle box sharing the same instance matrices gives the
+   identical shadow for 44 -> 12 triangles a board (~30k fewer in every sun-shadow frame). The proxy is hidden and only
+   shown while three draws the shadow maps: that runs after the main render list is built, so the camera never draws it
+   (three tests shadow casters against the main camera's layers, so a layer can't do this). Its count follows the real mesh. */
+const shProxy=[];for(const src of [boards,beams]){const p=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({colorWrite:false}),src.instanceMatrix.count);p.instanceMatrix=src.instanceMatrix;p.count=0;p.castShadow=true;p.frustumCulled=false;p.visible=false;p.userData.shSrc=src;src.castShadow=false;scene.add(p);shProxy.push(p);}window.__shProxy=shProxy;
+{const sm=renderer.shadowMap,r0=sm.render.bind(sm);sm.render=(L,sc,cam)=>{for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{r0(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;}};}
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
 // `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
@@ -597,9 +604,9 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   const C=[V(x+sx*1.05,top+.04,z-.34),V(x+sx,top+.05,z-.12),V(x+sx,top-.04,z+.02)];
   const n=Math.ceil((top-bot)/.05);for(let i=1;i<=n;i++){const t=i/n,yy=top-.04-t*(top-.04-bot);C.push(V(x+xw(t)+sx*(1-.04*t)+Math.sin(yy*7.3+sx*9)*.006,yy,z+bow(t)));}
   if(y0>.5)C.push(V(x+sx*.95,y0+.025,z+.16),V(x+sx*.85+rnd(-.05,.05),y0+.025,z+.34));else C.push(V(x+sx*.97,bot-.09,z+.04),V(x+sx*.9,bot-.13,z+.1));
-  const base=new THREE.CatmullRomCurve3(C),L=base.getLength(),m=Math.ceil(L/.02);
+  const base=new THREE.CatmullRomCurve3(C),L=base.getLength(),m=Math.ceil(L/.03);/* [PERF] 3 cm steps (~3.7 per 11 cm twist) and 4 sides: the strands are 2-3 px wide even at the closest zoom, so this looks the same at about half the triangles (was 2 cm, 5 sides: ~29k for the two ladders) */
   for(const sp of [0,Math.PI]){const pts=[];for(let i=0;i<=m;i++){const u=i/m,c=base.getPointAt(u),a=u*L/.11*Math.PI*2+sp;pts.push(c.add(V(Math.cos(a)*.011,0,Math.sin(a)*.011)));}
-   ropes.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),m,.012,5));}
+   ropes.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),m,.012,4));}
   // tie: a fat knot round a short peg on the floor
   ropes.push(placed(knotGeo,V(x+sx*1.05,top+.04,z-.34),null,V(2.2,1.6,2.2)));
   rungs.push(placed(new THREE.CylinderGeometry(.03,.035,.16,6),V(x+sx*1.05,top+.06,z-.34)));
