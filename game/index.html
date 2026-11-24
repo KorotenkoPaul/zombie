@@ -243,6 +243,7 @@ const BOARD_ROWS=8;
 const [woodWallT,woodDarkT]=await Promise.all([tex('wood-wall.jpg'),tex('wood-dark.jpg')]);
 // wear map for the floors (round 3): 7 levels side by side, each 12 x 8 m of the house at ~9 cm, 0..1 = how worn by feet
 const WEAR={W:896,H:96,lv:[LG_,2.45,3.4+HY,3.6+HY,5.0+HY,7.4+HY,9.0+HY],ra:[0,1,2].map(()=>new THREE.Vector4(0,0,0,-99)),rb:[0,1,2].map(()=>new THREE.Vector4(-99,-99,0,0))};
+/* [LIGHTS] honey interior walls, per room (kitchen, bedroom, workshop), 0..1 */WEAR.hy=[1,0,1];
 WEAR.f=new Float32Array(WEAR.W*WEAR.H);WEAR.u8=new Uint8Array(WEAR.W*WEAR.H);
 WEAR.tex=new THREE.DataTexture(WEAR.u8,WEAR.W,WEAR.H,THREE.RedFormat,THREE.UnsignedByteType);WEAR.tex.magFilter=WEAR.tex.minFilter=THREE.LinearFilter;WEAR.tex.needsUpdate=true;
 WEAR.stamp=(x,y,z,amt,rad=.25)=>{let li=0,bd=9;WEAR.lv.forEach((l,i)=>{const d=Math.abs(y-l);if(d<bd){bd=d;li=i;}});if(bd>.3)return false;
@@ -254,7 +255,13 @@ const PLOD={value:1};
 const PLANK_GLSL=`float pH(float n){return fract(sin(n*127.1)*43758.5453);}
 float pH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i),pH2(i+vec2(1,0)),f.x),mix(pH2(i+vec2(0,1)),pH2(i+vec2(1,1)),f.x),f.y);}
-uniform float uLod;uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];
+uniform float uLod;uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];uniform float uHoney[3];
+// [LIGHTS] the room-side faces of the wall boards in the kitchen and workshop: the photo's lighter honey wood (the outside
+// faces stay weathered). vn = the view-space normal; the face counts as inside when it faces the room's centre
+vec3 pHoney(vec3 c,vec3 vn,float sd){if(sd<99.5||sd>399.5)return c;vec3 wn=(vec4(vn,0.)*viewMatrix).xyz;float h=0.;
+ for(int i=0;i<3;i++){vec4 A=uRoomA[i],R=uRoomB[i];if(uHoney[i]>0.&&vW.y>R.x-.15&&vW.y<R.y+.3&&vW.x>A.x-.35&&vW.x<A.y+.35&&vW.z>A.z-.35&&vW.z<A.w+.2){
+  vec3 cc=vec3((A.x+A.y)*.5,vW.y,(A.z+A.w)*.5);if(dot(wn,normalize(cc-vW))>.3)h=max(h,uHoney[i]);}}
+ float l=dot(c,vec3(.3,.59,.11));vec3 hn=mix(c,vec3(l)*vec3(1.3,1.,.66),.15)*vec3(1.5,1.72,1.7);return mix(c,hn,h);}
 vec2 pDH=vec2(0.);float pRgh=.8;
 vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);vec3 pn=abs(det)*sn-g;return dot(pn,pn)>1e-20?normalize(pn):sn;}/* [SAFETY] no NaN on degenerate pixels */
 // nail heads over every joist / batten: two per crossing. returns (dome height 0..1, rust halo 0..1, distance)
@@ -336,13 +343,13 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  // fresh, just repaired wood: pale and clean
  col=mix(col,col*vec3(1.32,1.2,1.0),fr);
  pDH=dH;return col;}`;
-function plankShader(m,o={}){/* [PERF] every plank material generates the same GLSL (options are uniforms; checked by comparing compiled sources): one shared program key instead of one per clone. Wrappers (rain/wind wrapKey, lights) build on this own key, so wrapped variants stay separate */if(!Object.prototype.hasOwnProperty.call(m,'customProgramCacheKey'))m.customProgramCacheKey=()=>'plank';const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv},uRoomA:{value:WEAR.ra},uRoomB:{value:WEAR.rb},tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
+function plankShader(m,o={}){/* [PERF] every plank material generates the same GLSL (options are uniforms; checked by comparing compiled sources): one shared program key instead of one per clone. Wrappers (rain/wind wrapKey, lights) build on this own key, so wrapped variants stay separate */if(!Object.prototype.hasOwnProperty.call(m,'customProgramCacheKey'))m.customProgramCacheKey=()=>'plank';const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv},uRoomA:{value:WEAR.ra},uRoomB:{value:WEAR.rb},uHoney:{value:WEAR.hy},tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
  m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U,{uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec2 aWx;attribute vec3 aBev;varying float vSeed,vFresh,vUpX;varying vec2 vWx;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
   .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.007,.28*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;vUpX=normalize((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).xyz).y;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;vUpX=0.;\n#endif\nvSeed=aRow;vLP=transformed;vFresh=aFresh;vWx=aWx;');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed,vFresh,vUpX;varying vec2 vWx;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+PLANK_GLSL)
-  .replace('#include <map_fragment>','diffuseColor.rgb*=plank(vLP,vSz,vSeed);')
+  .replace('#include <map_fragment>','diffuseColor.rgb*=plank(vLP,vSz,vSeed);\n#ifndef FLAT_SHADED\ndiffuseColor.rgb=pHoney(diffuseColor.rgb,normalize(vNormal),vSeed);\n#endif')
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=pRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=pnArb(-vViewPosition,normal,pDH,faceDirection);');};}
 plankShader(boardMat);
@@ -716,12 +723,18 @@ if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
 // ---- lockdown shutters (for the zombie nights): each open room front has folding plank shutters. Open, they are folded up
 // under the eave like an awning (two panels stacked, hinged at the top); in lockdown (window.__brain.locked) they swing down
 // and the lower panel unfolds, so the house reads sealed. Close to the camera they turn see-through so the hero stays visible.
-// API: window.__house.shutters {k:{kitchen,bedroom,workshop} 0 open..1 closed, set(room,on), auto (follow the brain)}
-const SHUT=(()=>{let tq=[];const rooms={kitchen:[KX0+.02,KX1,KT+.03,BD-.15,3.97],bedroom:[BX0,BX1,BD+.03,BD+2.28,3.93],workshop:[WX0,WX1,WS+.03,WS+2.28,4.13]};
- const R={},api={k:{},auto:true,set(room,on){const r=R[room];if(!r)return;const w=on?1:0;if(r.want===w)return;r.want=w;try{window.__audio&&window.__audio.play&&window.__audio.play(on?'shutter_close':'shutter_open',r.c);}catch(e){}},
- // Brain: close()/open() all rooms one after another (or one room by name); a call takes over from the auto follow
- close(room){api.auto=false;if(room)return api.set(room,1);tq=['kitchen','workshop','bedroom'].map((r,i)=>[r,i*1.6,true]);},
- open(room){api.auto=false;if(room)return api.set(room,0);tq=['bedroom','workshop','kitchen'].map((r,i)=>[r,i*1.2,false]);},snap(room,on){if(R[room])R[room].want=R[room].k=on?1:0;},state:room=>R[room]&&R[room].k};
+// GRAB (2026-11-24): they move ONLY with his hand. Each room has a pull cord from the lower edge of its shutter to a wooden
+// toggle just inside the window; the hero's palm holds the toggle and pulls it down (closing) or lets it up (opening), and the
+// shutter follows the toggle (k from the toggle's height). Nothing tweens them any more: no auto follow of the lockdown, no queue.
+// API: window.__house.shutters {k:{kitchen,bedroom,workshop} 0 open..1 closed, cord(room) {obj, toggle(v), toggleAt(k,v)},
+//   pull(room, palm) (k follows the palm on the cord), snap(room,on) (spawn / tests only), state(room); rooms also by window
+//   node name (kwin, bwin, wwin). set/close/open no longer move anything (kept as no-ops for old callers).
+const SHUT=(()=>{const RN={kwin:'kitchen',bwin:'bedroom',wwin:'workshop'};const rn=r=>RN[r]||r;const WX={kitchen:-2.83,bedroom:-3.43,workshop:3.17};/* 0.17 m to the right of each room's window node (hero.js N.kwin/bwin/wwin, he faces +z there): in front of his right shoulder */const CORD=.35,TOG=1.45;/* the toggle hangs 1.45 m over the floor open, 1.1 m pulled down (in his reach from the window spot, above the sill) */const rooms={kitchen:[KX0+.02,KX1,KT+.03,BD-.15,3.97],bedroom:[BX0,BX1,BD+.03,BD+2.28,3.93],workshop:[WX0,WX1,WS+.03,WS+2.28,4.13]};
+ const R={},api={k:{},auto:false,set(room,on){const r=R[rn(room)];if(r)r.want=on?1:0;},close(room){},open(room){},
+  snap(room,on){const r=R[rn(room)];if(r)r.want=r.k=on?1:0;},state:room=>R[rn(room)]&&R[rn(room)].k,
+  cord(room){const r=R[rn(room)];return r&&r.cord;},
+  /* the shutter follows the palm on the cord: k from the palm's height, only while the palm is at the toggle (8 cm), never more than a hand's move a frame */
+  pull(room,palm){const r=R[rn(room)];if(!r||!palm)return false;const t=r.cord.toggle(V());if(Math.hypot(palm.x-t.x,palm.z-t.z)>.08||Math.abs(palm.y-t.y)>.1)return false;const k=Math.min(1,Math.max(0,(r.top-palm.y)/CORD));r.k+=Math.max(-.04,Math.min(.04,k-r.k));api.k[r.name]=r.k;return true;}};
  for(const [name,[x0,x1,y0,y1,z]] of Object.entries(rooms)){
   const mat=boardMat.clone();plankShader(mat);const bat=boardMat.clone();plankShader(bat);bat.color.setScalar(.62);
   const H=y1-y0,h1=H*.5,np=Math.max(1,Math.round((x1-x0)/2.3)),PW=(x1-x0)/np,ups=[],los=[];
@@ -732,18 +745,22 @@ const SHUT=(()=>{let tq=[];const rooms={kitchen:[KX0+.02,KX1,KT+.03,BD-.15,3.97]
   for(let i=0;i<np;i++){const up=new THREE.Group();up.position.set(x0+PW*(i+.5),y1,z);scene.add(up);panel(up,PW-.02,h1,1);
    const lo=new THREE.Group();lo.position.set(0,-h1,0);up.add(lo);panel(lo,PW-.02,H-h1,1);bakeStatic(lo);bakeStatic(up,m=>m===lo||lo.children.includes(m));up.visible=false;ups.push(up);los.push(lo);
    /* moving, outside the rooms: not furniture for collide.js (its scan skips 'Shape' geometry; the merged panels broke its hash) */up.traverse(m=>{if(m.isMesh)m.geometry.type='ShutterShapeGeometry';});}
-  R[name]={ups,los,mat,bat,k:0,want:0,c:V((x0+x1)/2,(y0+y1)/2,z)};api.k[name]=0;}
- let lastLock=false;
- api.update=(dt)=>{const B=window.__brain,lk=!!(B&&B.locked);
-  if(api.auto&&lk!==lastLock){lastLock=lk;tq=['kitchen','workshop','bedroom'].map((r,i)=>[r,i*1.6,lk]);}
-  tq=tq.filter(q=>{q[1]-=dt;if(q[1]<=0){api.set(q[0],q[2]);return false;}return true;});
-  for(const [name,r] of Object.entries(R)){const k0=r.k;r.k+=Math.sign(r.want-r.k)*Math.min(Math.abs(r.want-r.k),dt/2.6);api.k[name]=r.k;
+  const wx=Math.min(x1-.2,Math.max(x0+.2,WX[name]??(x0+x1)/2));const pi=Math.min(np-1,Math.max(0,Math.floor((wx-x0)/PW)));
+  /* the pull cord: from the lower edge of the panel in front of the window, in through the front to a wooden toggle by the window */
+  const cm=new THREE.MeshStandardMaterial({color:0x8a7656,roughness:.95});const line=new THREE.Mesh(new THREE.CylinderGeometry(.006,.006,1,6),cm);line.geometry.translate(0,.5,0);scene.add(line);
+  const tog=new THREE.Group();scene.add(tog);{const m=new THREE.Mesh(new THREE.CylinderGeometry(.016,.016,.1,10),cm);m.rotation.z=Math.PI/2;tog.add(m);}for(const m of [line,...tog.children])m.geometry.type='ShutterShapeGeometry';/* moving: not furniture for collide.js */
+  const top=y0+TOG;const cord={obj:tog,toggleAt:(k,v=V())=>v.set(wx,top-CORD*Math.min(1,Math.max(0,k)),z-.15),toggle:(v=V())=>cord.toggleAt(R[name].k,v),
+   edge:(v=V())=>{const lo=los[pi];lo.updateWorldMatrix(true,false);return lo.localToWorld(v.set(wx-(x0+PW*(pi+.5)),-(H-h1)+.02,.04));}};
+  R[name]={name,ups,los,mat,bat,k:0,want:0,c:V((x0+x1)/2,(y0+y1)/2,z),cord,line,tog,top};api.k[name]=0;}
+ api.update=(dt)=>{
+  for(const [name,r] of Object.entries(R)){/* GRAB: k only changes in pull(), under his palm */const k0=r.k0??r.k;r.k0=r.k;api.k[name]=r.k;
    if(k0<1&&r.k>=1){try{window.__audio&&window.__audio.play&&window.__audio.play('board_up',r.c);}catch(e){}}
    const e=t=>t*t*(3-2*t),a=e(Math.min(1,r.k/.55)),b=e(Math.max(0,(r.k-.4)/.6));
    for(const up of r.ups){up.rotation.x=-1.42*(1-a);up.visible=r.k>.002;}/* open: stowed out of sight (Pavel saw the raised awnings as black slabs over the leaves) */for(const lo of r.los)lo.rotation.x=-(Math.PI-.06)*(1-b);
    // close to the camera a closed front turns see-through (the hero inside stays visible); from afar the house reads sealed
    const d=camera.position.distanceTo(r.c),f=Math.min(1,Math.max(0,(13-d)/6))*b,op=1-.75*f*f*(3-2*f);
-   for(const m of [r.mat,r.bat]){m.opacity=op;m.transparent=op<.98;m.depthWrite=op>.98;}}};
+   for(const m of [r.mat,r.bat]){m.opacity=op;m.transparent=op<.98;m.depthWrite=op>.98;}
+   {const t=r.cord.toggle(V());r.tog.position.copy(t);const e=r.cord.edge(V());const d=t.clone().sub(e);const L=d.length();r.line.position.copy(e);r.line.scale.set(1,Math.max(.01,L),1);r.line.quaternion.setFromUnitVectors(V(0,1,0),d.normalize());}}};
  api._R=R;return api;})();
 window.__house=Object.assign(window.__house||{},{shutters:SHUT});
 // lookout deck (right, top)
@@ -965,8 +982,8 @@ if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=M
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return 1/60;}// a day of 24 minutes, 1 game hour = 1 real minute (Pavel 2026-11-23)
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
-const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
- [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.68,.6,.94],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98]];
+const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
+ [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
 function pal0(h){h=((h%24)+24)%24;let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=clamp((h-a[0])/(b[0]-a[0]),0,1);const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 // [ENV] the palette is linear between keys and then averaged over +-0.4 h: no ease-in/ease-out stall at every key and no
 // sudden speed-up between them (dawn and dusk change at an even pace, no pops when time runs fast)
