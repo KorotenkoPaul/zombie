@@ -274,5 +274,19 @@
    "t1": 11.8
   },
   "note": "Deck telescope (replaces hy_telescope, whose right knee bent back). Calm standing legs (77_02) + both hands held up in front of the face (80_07, holding something at head height), small natural sway. 7.8 s loop close 0.8. Snap the hands to the tube and the eye to the eyepiece with IK; root still."
+ },
+ "carry_heavy_L": {
+  "src": "70_05",
+  "mirror": true,
+  "note": "Mirror of carry_heavy_R: heavy load in the LEFT hand."
+ },
+ "carry_bucket_R": {
+  "src": "70_05",
+  "note": "Outdoor P2 / pond. carry_heavy_R with the right hand held 0.30 m out from the pelvis so a bucket (0.28 m wide, ~0.25 m below the hand) clears the leg in every frame (it hit the knee by up to 12 cm in the suitcase clip), torso leans ~7 deg away from the load. Built by pipeline/clips/bucket.mjs. 7.5 s, root moves 2.8 m."
+ },
+ "carry_bucket_L": {
+  "src": "70_05",
+  "mirror": true,
+  "note": "Same as carry_bucket_R, bucket in the LEFT hand."
  }
 }
