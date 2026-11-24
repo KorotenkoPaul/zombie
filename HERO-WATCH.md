@@ -13,7 +13,14 @@ Severity: **P1** visible at normal play; **P2** noticeable when watching; **P3**
 Master 7ca7a48 rolled the hero code back to 9aa01f4 (21:33). W1–W13 were filmed on f3a6f8c/708e4b2/e778f58 (after 21:33) and are kept for the owners re-landing those features via `hero-dev`; round 4 re-films everything on the rollback.
 Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and hammer over the board; ce71310 already had the hy_idle-at-stove / head-back break. 9aa01f4 threw `collide RangeError: Map maximum size exceeded` (collide.js:128) at init.
 
-## Open
+## Open on the rollback baseline (085e32c / 7ca7a48)
+
+| # | P | task | what | frames | evidence | owner |
+|---|---|---|---|---|---|---|
+| B1 | P1 | telescope | Mimes a spyglass with both hands at his eye while the real telescope (tube on the tripod) stands 1 m to his side, untouched; he faces away from it; ends with arms spread out sideways (f3264) | f2148–f3264 | r4-085e32c/telescope_mimed_1m_away_f2148-3264.jpg | rest/deck family via hero-dev |
+| B2 | P1 | pot | Upright and at the stove (good), but after f2028 the stirring hand is open and empty, hovering beside the pot at rim height; the ladle is not in the hand or the pot. At the start the ladle dangles at his thigh | f1560–f3288 | r4-085e32c/pot_open_hand_no_ladle_f1560-3288.jpg | cooking family via hero-dev |
+
+## Open on post-21:33 builds (features being re-landed)
 
 | # | P | task | what | frames | evidence | owner |
 |---|---|---|---|---|---|---|
