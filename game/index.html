@@ -141,6 +141,9 @@ const texSetup=(t,rep,srgb)=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoCol
 const texImg=n=>new Promise((res,rej)=>TL.load(ASSET+n,res,undefined,rej));
 const texKtx=n=>fetch(ASSET+n.replace(/\.(jpg|png)$/,'-ktx2.txt')).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(b=>{const u=URL.createObjectURL(new Blob([Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0))]));return ktx2.loadAsync(u).finally(()=>URL.revokeObjectURL(u));});
 const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('ktx2 fallback',n,e);return texImg(n);}):texImg(n)).then(t=>texSetup(t,rep,srgb));
+// [PERF] the hero's animation data (~9 MB of JSON/text) starts downloading now, in parallel with the textures and models,
+// instead of one file after another once the world is built (three sequential round trips on a phone network)
+const PREF={moves:fetch(ASSET+'hero-moves.txt').then(r=>r.ok?r.json():null).catch(()=>null),repair:fetch(ASSET+'hero-moves-repair.txt').then(r=>r.ok?r.json():null).catch(()=>null),mdb:fetch(ASSET+'motion-db.txt').then(r=>r.ok?r.text():null).catch(()=>null)};
 const loader=new GLTFLoader();loader.setMeshoptDecoder(MeshoptDecoder);loader.setKTX2Loader(ktx2);/* hero-detail has a KTX2 base colour */
 const glb=n=>fetch(ASSET+n).then(r=>r.text()).then(b=>{const bin=Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0));return new Promise((res,rej)=>loader.parse(bin.buffer,'',g=>{prog();res(g);},rej));});
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
@@ -839,9 +842,9 @@ function makeBow(){const g=new THREE.Group();const curve=new THREE.CatmullRomCur
  const str=new THREE.Mesh(new THREE.CylinderGeometry(.003,.003,1.1,4),new THREE.MeshBasicMaterial({color:0xE8E2D0}));g.add(str);const grip=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.12,8),new THREE.MeshStandardMaterial({color:0x3A2414,roughness:.9}));g.add(grip);return g;}
 // the hero lives in hero.js (body, navigation, daily life)
 const tableO=OBST.find(o=>o.n==='table');
-const heroMoves=await fetch(ASSET+'hero-moves.txt').then(r=>r.ok?r.json():null).catch(()=>null);
+const heroMoves=await PREF.moves;
 // extra clip files (one per action family, so threads never fight over the big file): merged in, the main file wins on a name clash
-for(const f of ['hero-moves-repair.txt']){const x=await fetch(ASSET+f).then(r=>r.ok?r.json():null).catch(()=>null);if(x&&heroMoves)for(const k in x)if(!(k in heroMoves))heroMoves[k]=x[k];}
+for(const f of ['hero-moves-repair.txt']){const x=await PREF.repair;if(x&&heroMoves)for(const k in x)if(!(k in heroMoves))heroMoves[k]=x[k];}
 const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{LC,WS,KT,BD,DK},sfx,OBST,chair:chairO,chairFace:Math.PI,bunk,bedHead:1,
  table:tableO?{x0:tableO.x0,x1:tableO.x1,z0:tableO.z0,z1:tableO.z1,top:BD+.765}:null,
  ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
@@ -851,7 +854,7 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
 try{if(!/pose=off/.test(location.search)&&HH.stage){const PG=createPoseGuard({hero:HH});if(PG){window.__poseGuard=PG;HH.stage('guard',dt=>PG(dt));}}}catch(e){console.error('pose guard',e);}
 // motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
 try{const {createClimb}=await import(new URL(ASSET+'climb.js',document.baseURI).href);if(HH.setClimb){window.__climb=createClimb();HH.setClimb(window.__climb);}}catch(e){console.error('climb',e);}
-try{const mdb=await fetch(ASSET+'motion-db.txt').then(r=>r.ok?r.text():null).catch(()=>null);if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
+try{const mdb=await PREF.mdb;if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
 // ---- age (round 3): wear paths seeded from his walking graph, then stamped wherever he actually walks; repair API for Brain
 {for(const [a,b,t] of HH.E||[]){if(t||!N[a]||!N[b])continue;const A=N[a].p,Bp=N[b].p;const n=Math.ceil(A.distanceTo(Bp)/.05);for(let k=0;k<=n;k++){const p=A.clone().lerp(Bp,k/n);WEAR.stamp(p.x,p.y,p.z,.03,.3);}}
