@@ -8,6 +8,9 @@ F=0.5 node skintone.mjs G.glb Gt.glb | cut -c1-120
 [ -n "$FACEPOP" ] && node facepop.mjs Gt.glb Gt.glb "$FACEPOP" | tail -1
 [ -n "$BOOTS" ] && node bootlift.mjs Gt.glb Gt.glb "$BOOTS"
 [ -n "$BACKW" ] && node backweights.mjs Gt.glb Gt.glb "$BACKW"
+[ -n "$VESTK" ] && node vesttone.mjs Gt.glb Gt.glb "$VESTK"
+[ -n "$BOOTS2" ] && node bootlift.mjs Gt.glb Gt.glb "$BOOTS2"
+[ -n "$SLEEVE" ] && node sleeves.mjs Gt.glb Gt.glb "$SLEEVE"
 L=$(python3 -c "
 K=$K;CO=$CO;ZC=$ZC
 f=lambda x,y:[round(x*K,4),round(CO+(y-0.625)*K,4)]
