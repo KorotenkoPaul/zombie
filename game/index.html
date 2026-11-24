@@ -113,7 +113,7 @@ const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ASSET=window.__ASSET||'';
 const V=(x,y,z)=>new THREE.Vector3(x,y,z);
-let loaded=0;const TOTAL=9;function prog(t){loaded++;$('loadBar').style.width=(loaded/TOTAL*100)+'%';if(t)$('loadTx').textContent=t;}
+let loaded=0;const TOTAL=13;/* [PERF] 13 tex() loads; downloads fill 85%, shader prep the rest (the bar went to 144%) */function prog(t){loaded++;$('loadBar').style.width=(Math.min(loaded/TOTAL,1)*85)+'%';if(t)$('loadTx').textContent=t;}
 
 await RAPIER.init();prog();
 // ================= renderer =================
@@ -140,7 +140,7 @@ const ktx2=new KTX2Loader().setTranscoderPath('https://cdn.jsdelivr.net/npm/thre
 const texSetup=(t,rep,srgb)=>{t.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rep,rep);t.anisotropy=8;t.needsUpdate=true;prog();return t;};
 const texImg=n=>new Promise((res,rej)=>TL.load(ASSET+n,res,undefined,rej));
 const texKtx=n=>fetch(ASSET+n.replace(/\.(jpg|png)$/,'-ktx2.txt')).then(r=>{if(!r.ok)throw new Error(r.status);return r.text();}).then(b=>{const u=URL.createObjectURL(new Blob([Uint8Array.from(atob(b.trim()),c=>c.charCodeAt(0))]));return ktx2.loadAsync(u).finally(()=>URL.revokeObjectURL(u));});
-const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('ktx2 fallback',n,e);return texImg(n);}):texImg(n)).then(t=>texSetup(t,rep,srgb));
+const tex=(n,rep=1,srgb=true)=>(KTX2N.has(n)?texKtx(n).catch(e=>{console.warn('ktx2 fallback',n,e);return texImg(n);}):texImg(n)).then(t=>{texSetup(t,rep,srgb);/* [PERF] Props reuses the loaded image (window.__tex[name]) instead of decoding it again */(window.__tex=window.__tex||{})[n]=t;return t;});
 // [PERF] the hero's animation data (~9 MB of JSON/text) starts downloading now, in parallel with the textures and models,
 // instead of one file after another once the world is built (three sequential round trips on a phone network)
 const PREF={moves:fetch(ASSET+'hero-moves.txt').then(r=>r.ok?r.json():null).catch(()=>null),repair:fetch(ASSET+'hero-moves-repair.txt').then(r=>r.ok?r.json():null).catch(()=>null),mdb:fetch(ASSET+'motion-db.txt').then(r=>r.ok?r.text():null).catch(()=>null)};
@@ -336,7 +336,7 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  // fresh, just repaired wood: pale and clean
  col=mix(col,col*vec3(1.32,1.2,1.0),fr);
  pDH=dH;return col;}`;
-function plankShader(m,o={}){const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv},uRoomA:{value:WEAR.ra},uRoomB:{value:WEAR.rb},tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
+function plankShader(m,o={}){/* [PERF] every plank material generates the same GLSL (options are uniforms; checked by comparing compiled sources): one shared program key instead of one per clone. Wrappers (rain/wind wrapKey, lights) build on this own key, so wrapped variants stay separate */if(!Object.prototype.hasOwnProperty.call(m,'customProgramCacheKey'))m.customProgramCacheKey=()=>'plank';const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv},uRoomA:{value:WEAR.ra},uRoomB:{value:WEAR.rb},tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
  m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U,{uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec2 aWx;attribute vec3 aBev;varying float vSeed,vFresh,vUpX;varying vec2 vWx;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
@@ -1201,7 +1201,7 @@ const PERFX=/[?&]perfx/.test(location.search);
 // shadow uniforms on the CPU.
 if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
  renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
-{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
+{const T0=performance.now();$('loadTx').textContent='Готовим картинку…';$('loadBar').style.width='95%';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,15000))]);}catch(e){}
   // one real draw of everything (hidden things shown, nothing culled) into the frame's own target: a compiled program is only
