@@ -94,6 +94,17 @@ const rnd=(a,b)=>a+Math.random()*(b-a);
 // (e.g. rain's wet boards, props' injectors) have the same text for every material they wrap, so two materials whose
 // generated shaders differ could get one compiled program: on iPhone the boards drew with another material's shader
 // (white house, 2026-11-23). Default key now = identity of the hook function; owners' own customProgramCacheKey still wins.
+// [PERF][SAFETY] a normal that interpolates to (almost) zero (a merged mesh's opposite vertex normals, a degenerate flat-shaded
+// pixel) made normalize() return NaN in single pixels; bloom then blurred that NaN over the whole frame (black screen, K4).
+// The stock chunk now falls back to facing the camera instead.
+{const C=THREE.ShaderChunk;const safe=v=>`(dot(${v},${v})>1e-12?normalize(${v}):vec3(0.,0.,1.))`;
+ C.normal_fragment_begin=C.normal_fragment_begin.replace('vec3 normal = normalize( cross( fdx, fdy ) );','vec3 normal = '+safe('cross( fdx, fdy )')+';').replace('vec3 normal = normalize( vNormal );','vec3 normal = '+safe('vNormal')+';');
+ // the same in bump mapping: a pixel whose screen-space position derivative is zero (2x2 quad on an edge) made
+ // normalize(dFdx(...)) or the perturbed normal NaN. Fallback: the unperturbed normal.
+ C.bumpmap_pars_fragment=C.bumpmap_pars_fragment.replace('vec3 vSigmaX = normalize( dFdx( surf_pos.xyz ) );','vec3 vSigmaX = dFdx( surf_pos.xyz ); vSigmaX *= inversesqrt( max( dot( vSigmaX, vSigmaX ), 1e-30 ) );')
+  .replace('vec3 vSigmaY = normalize( dFdy( surf_pos.xyz ) );','vec3 vSigmaY = dFdy( surf_pos.xyz ); vSigmaY *= inversesqrt( max( dot( vSigmaY, vSigmaY ), 1e-30 ) );')
+  .replace('return normalize( abs( fDet ) * surf_norm - vGrad );','vec3 pn = abs( fDet ) * surf_norm - vGrad; return dot( pn, pn ) > 1e-20 ? normalize( pn ) : surf_norm;');
+ if(!C.normal_fragment_begin.includes('1e-12')||!C.bumpmap_pars_fragment.includes('1e-20'))console.warn('safe normal not installed (three changed)');}
 {const D=THREE.Material.prototype.onBeforeCompile,ids=new WeakMap();let nx=1;THREE.Material.prototype.customProgramCacheKey=function(){const f=this.onBeforeCompile;if(f===D)return f.toString();let i=ids.get(f);if(!i){i=nx++;ids.set(f,i);}return 'obc#'+i;};}
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const lerp=(a,b,k)=>a+(b-a)*k;
@@ -241,7 +252,7 @@ float pH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i),pH2(i+vec2(1,0)),f.x),mix(pH2(i+vec2(0,1)),pH2(i+vec2(1,1)),f.x),f.y);}
 uniform float uLod;uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];
 vec2 pDH=vec2(0.);float pRgh=.8;
-vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);return normalize(abs(det)*sn-g);}
+vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);vec3 pn=abs(det)*sn-g;return dot(pn,pn)>1e-20?normalize(pn):sn;}/* [SAFETY] no NaN on degenerate pixels */
 // nail heads over every joist / batten: two per crossing. returns (dome height 0..1, rust halo 0..1, distance)
 vec3 pNail(vec2 mm,vec3 sz,float wall){float pt=mix(1.,.62,wall);float a=mm.x+sz.x*.5-.06;float k=floor(a/pt+.5);float dx=min(abs(a-k*pt),abs(sz.x*.5-.06-mm.x));
  float dy=abs(abs(mm.y)-sz.y*.27);float r=length(vec2(dx,dy));return vec3(sqrt(max(0.,1.-r*r/(.0055*.0055))),smoothstep(.014,.004,r),r);}
@@ -398,7 +409,7 @@ float sH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float sN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(sH2(i),sH2(i+vec2(1,0)),f.x),mix(sH2(i+vec2(0,1)),sH2(i+vec2(1,1)),f.x),f.y);}
 uniform float uLod;uniform sampler2D tSlate,tMoss;
 vec2 sDH=vec2(0.);float sRgh=.8;
-vec3 snArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);return normalize(abs(det)*sn-g);}
+vec3 snArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);vec3 pn=abs(det)*sn-g;return dot(pn,pn)>1e-20?normalize(pn):sn;}/* [SAFETY] no NaN on degenerate pixels */
 // moss amount at a world point: soft patches, more on the back (shady, trunk) half and lower down each slope
 float sMoss(vec3 w,float sd){float n=sN(w.xz*1.3+sd*.0)*.65+sN(w.xz*4.1+3.)*.35;return smoothstep(.55,.78,n+(w.z<2.3?.12:-.1)+sH(sd+9.)*.12-.06);}
 // crack line height (metres, negative = groove) on the top face
