@@ -162,7 +162,10 @@ module.exports=function install(cfg){
   const pen=GN.map(()=>[0,-1,null]);
   // lying / sitting: how far the lowest part of each body group is above whatever is under it (1 cm steps down to 40 cm)
   const supOn=!!(H.inBed||H.seated)&&!H.swing;const sup=GN.map(()=>40);const sp=V();
-  const solidAt=p=>{let r=false;query(p,(sh)=>{if(!r&&depth(sh,p)>.002)r=true;});return r;};
+  // live boxes of moved seats (chair scooted under the table with him on it: the baked collider is still at its home spot)
+  const SEATB=[];if(supOn)for(const o of DYN)if(o.userData.seat&&o.visible)o.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();SEATB.push([new THREE.Matrix4().copy(m.matrixWorld).invert(),g.boundingBox]);});
+  const inSeat=p=>{for(const [mi,bb] of SEATB){DL.copy(p).applyMatrix4(mi);if(bb.containsPoint(DL))return true;}return false;};
+  const solidAt=p=>{let r=false;query(p,(sh)=>{if(!r&&depth(sh,p)>.002)r=true;});return r||(SEATB.length>0&&inSeat(p));};
   let nb=0;for(const [vi,g] of VS){vp.fromBufferAttribute(pos,vi);M.applyBoneTransform(vi,vp);vp.applyMatrix4(M.matrixWorld);if(nb<BODYP.length)BODYP[nb][0].copy(vp),BODYP[nb][1]=g;nb++;
    if(supOn&&(vi/step)%2===0&&sup[g]>0){sp.copy(vp);let k=0;for(;k<sup[g]&&k<40;k++){if(solidAt(sp))break;sp.y-=.01;}if(k<sup[g])sup[g]=k;}
    query(vp,(s,ci)=>{const d=depth(s,vp);if(d>pen[g][0]){pen[g][0]=d;pen[g][1]=ci;pen[g][2]=[+vp.x.toFixed(3),+vp.y.toFixed(3),+vp.z.toFixed(3)];}});
