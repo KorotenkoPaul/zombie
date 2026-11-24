@@ -82,6 +82,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createHero } from './hero.js';
 import { createMotion } from './motion.js';
+import { createPoseGuard } from './pose.js';
 import { buildTree, TREE_AXIS } from './tree.js';
 import { buildProps } from './props.js';
 import { createCameraRig, createDOF } from './camera.js';
@@ -846,6 +847,8 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
  ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
  mode:()=>{if(isNight(hour)&&zombies.some(z=>z.alive))return 'guard';if(B.some(b=>b.breakable&&b.loose))return 'repair';return null;},
  guardSpot:()=>guardSpot(),brokenBoard:()=>B.find(b=>b.breakable&&b.loose),repairBoard:b=>repairBoard(b),get WIN_NODE(){return WIN_NODE;}});
+// anatomical guard (game/pose.js): last slot every frame, joint limits, hinge knees/elbows, no snaps (HERO-RULES.md slot 8); inert until hero.js offers HH.stage
+try{if(!/pose=off/.test(location.search)&&HH.stage){const PG=createPoseGuard({hero:HH});if(PG){window.__poseGuard=PG;HH.stage('guard',dt=>PG(dt));}}}catch(e){console.error('pose guard',e);}
 // motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
 try{const {createClimb}=await import(new URL(ASSET+'climb.js',document.baseURI).href);if(HH.setClimb){window.__climb=createClimb();HH.setClimb(window.__climb);}}catch(e){console.error('climb',e);}
 try{const mdb=await fetch(ASSET+'motion-db.txt').then(r=>r.ok?r.text():null).catch(()=>null);if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
