@@ -9,11 +9,12 @@ const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll
 (async()=>{const {b,p,errs}=await open({seed:5,vp:{width:560,height:700}});await p.evaluate(()=>__qa.start());
  await p.evaluate(([off,co])=>{window.__noClimb=off;window.__ladFlip=co===2;window.__wcam=1;if(co===true)window.__colOff={legs:true,arms:true};const HH=__dbg.HH;HH.setBrain({tick(){}});if(HH.inv){HH.inv.on=true;HH.inv.reset();}},[OFF,process.argv.includes("--flip")?2:process.argv.includes("--coloff")]);
  await p.evaluate(f=>{window.__fine=f;},FINE);
+ await p.evaluate(h=>{window.__holdT=h;},arg("--hold"));
  if(SHOTS){fs.mkdirSync(SHOTS,{recursive:true});await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});}
  const res=[];
  for(const [a,z] of RUNS){
   await p.evaluate(([a,z])=>{const HH=__dbg.HH,H=HH.H;HH.spawn('nothing');const P=HH.N[a].p;HH.root.position.copy(P);const f=HH.floorAt(P.x,P.y+.3,P.z,.5);if(f!=null)HH.root.position.y=f;H.floorY=HH.root.position.y;H.node=a;
-   const n=HH.N[z].p;HH.root.rotation.y=Math.atan2(n.x-P.x,n.z-P.z);H.face=HH.root.rotation.y;HH.goTo(z);window.__rec=[];},[a,z]);
+   const n=HH.N[z].p;HH.root.rotation.y=Math.atan2(n.x-P.x,n.z-P.z);H.face=HH.root.rotation.y;if(window.__holdT){try{window.__props.grab(window.__holdT,HH.bones.LeftHand,{offset:new __dbg.THREE.Vector3(0,.08,.03)});}catch(e){}}HH.goTo(z);window.__rec=[];},[a,z]);
   let done=false,fr=0;const shots=[];
   while(!done&&fr<60*40){
    const r=await p.evaluate(()=>{__qa.step(window.__fine?1:2,1/60);const HH=__dbg.HH,H=HH.H,B=HH.bones,T=__dbg.THREE;const w=o=>o.getWorldPosition(new T.Vector3()).toArray();
