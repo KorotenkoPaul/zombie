@@ -129,6 +129,8 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let j = 0; j < 3; j++) { let t = f + TR[j]; if (t > n - 1) { if (!endStill) ok = false; t = n - 1; }
         loc(R[t*3], R[t*3+1], t2, 0); F[o + 15 + j*2] = t2[0]; F[o + 16 + j*2] = t2[1];
         const dy = R[t*3+2] - y; F[o + 21 + j*2] = Math.sin(dy); F[o + 22 + j*2] = Math.cos(dy); }
+      // generated turn-backs start on wide, splayed, sliding legs and their hips lag the body by 0.2 s at every walk start: starts and turns come from mocap
+      if (/^hy_turnback/.test(c.name)) ok = false;
       valid[gi] = ok ? 1 : 0; }
     c.fl = new Float32Array(n * 6); for (let f = 0; f < n; f++) for (let k = 0; k < 6; k++) c.fl[f*6 + k] = F[(g0 + f)*NF + k];
     g0 += n; }
@@ -319,7 +321,7 @@ export function createMotion({ hero, db, opts = {} }) {
       const fi = Math.floor(t0); const dx = c.dr[fi*3] * adv, dz = c.dr[fi*3+1] * adv, dy = c.dr[fi*3+2] * adv; const cs = Math.cos(S.cyaw), sn = Math.sin(S.cyaw);
       S.char.x += dx*cs + dz*sn; S.char.z += -dx*sn + dz*cs; S.cyaw += dy;
       // pull toward the simulation (short half-life), never further than a hand's width away
-      const kp = 1 - Math.exp(-dt * Math.LN2 / .18), ky = 1 - Math.exp(-dt * Math.LN2 / .14);
+      const kp = 1 - Math.exp(-dt * Math.LN2 / .12), ky = 1 - Math.exp(-dt * Math.LN2 / .14);
       S.char.x += (p.x - S.char.x) * kp; S.char.z += (p.z - S.char.z) * kp; S.cyaw += wrapA(yaw - S.cyaw) * ky;
       const ex = S.char.x - p.x, ez = S.char.z - p.z, el = Math.hypot(ex, ez), MAXD = .12; if (el > MAXD) { S.char.x = p.x + ex / el * MAXD; S.char.z = p.z + ez / el * MAXD; }
       const ea = wrapA(S.cyaw - yaw); if (Math.abs(ea) > .5) S.cyaw = yaw + Math.sign(ea) * .5;
