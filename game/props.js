@@ -261,6 +261,15 @@ function makeMaterials(renderer) {
     covers: [0x8E3B2E, 0x2F5D7C, 0x4E6B3A, 0xB2803A, 0x6B4A7A, 0x9C5B2E, 0x3E4C5E].map(c => std({ color: c, roughness: .7 })),
     cans: [['#B8442E', '#E9D7A8'], ['#3F6E9A', '#F0E6CC'], ['#6E8F4A', '#F3E2B0'], ['#C99A3A', '#5A3A22']].map(([a, b]) => std({ map: texOf(labelCanvas(a, b)), metalness: .5, roughness: .4, envMap: env, envMapIntensity: .8 })),
   };
+  // linen (pillows, bolster, lampshade): a real weave with slubs, soft washed-out stains and a faint ticking stripe,
+  // so the pillows read as cloth instead of smooth cream plastic (realism sweep). Low contrast: up close a weave, from the room just soft cloth
+  { const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#F6EFE2'; g.fillRect(0, 0, w, h);
+      for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(150,130,105,${.025 + Math.random() * .035})`; g.fillRect(0, y, w, 1); }
+      for (let x = 0; x < w; x += 2) { g.fillStyle = `rgba(255,252,245,${.04 + Math.random() * .05})`; g.fillRect(x, 0, 1, h); }
+      for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(140,118,92,${.05 + Math.random() * .07})`; g.fillRect(Math.random() * w, Math.random() * h, 6 + Math.random() * 26, 1); } /* slubs */
+      for (let i = 0; i < 5; i++) { const gr = g.createRadialGradient(0, 0, 0, 0, 0, 30); gr.addColorStop(0, 'rgba(150,120,70,.09)'); gr.addColorStop(1, 'rgba(150,120,70,0)'); g.save(); g.translate(Math.random() * w, Math.random() * h); g.scale(1, .6 + Math.random() * .6); g.fillStyle = gr; g.fillRect(-30, -30, 60, 60); g.restore(); }
+    });
+    M.linen.map = texOf(c, { rep: 5 }); M.linen.bumpMap = texOf(c, { srgb: false, rep: 5 }); M.linen.bumpScale = .8; M.linen.color.set(0xffffff); M.linen.needsUpdate = true; }
   scanWood(M.wood, 'wood-floor.jpg', { color: 0xF2DCC4 }); scanWood(M.woodLight, 'wood-wall.jpg', { color: 0xE6C49C }); scanWood(M.woodDark, 'wood-dark.jpg', { w: 256, h: 512, color: 0xC49470, bump: 1.6 });
   varyWood(M.wood); workTops(varyWood(M.woodLight)); varyWood(M.woodDark, .7); // (Planks thread) every piece its own tone
   return M;
@@ -338,7 +347,13 @@ function drapeGeo(len, wid, drop, { r = .05, wrinkle = .01, endDrop = 0, puff = 
   }
   geo.computeVertexNormals(); return geo;
 }
-function pillowGeo(w, h, d) { const g = rb(w, h, d, Math.min(w, h, d) * .45, 3); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const nx = p.getX(i) / (w / 2), nz = p.getZ(i) / (d / 2); const k = 1 - .55 * Math.pow(Math.max(Math.abs(nx), Math.abs(nz)), 3); p.setY(i, p.getY(i) * k); p.setZ(i, p.getZ(i) * (1 + .04 * Math.sin(nx * 3))); } g.computeVertexNormals(); return g; }
+function pillowGeo(w, h, d) { const g = rb(w, h, d, Math.min(w, h, d) * .45, 3); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const nx = p.getX(i) / (w / 2), nz = p.getZ(i) / (d / 2); const k = 1 - .55 * Math.pow(Math.max(Math.abs(nx), Math.abs(nz)), 3); p.setY(i, p.getY(i) * k); p.setZ(i, p.getZ(i) * (1 + .04 * Math.sin(nx * 3)));
+    /* cloth, not a moulded block: creases fanning in from the corners and edges, a soft dent where the head lay */
+    const y = p.getY(i), top = y > 0 ? 1 : .35, an = Math.atan2(nz, nx), e = Math.min(1, Math.max(Math.abs(nx), Math.abs(nz)));
+    const cr = Math.pow(Math.max(0, Math.sin(an * 9 + Math.sin(an * 3) * 1.3)), 6) * Math.pow(e, 2.5) * .018 + Math.sin(nx * 7.3 + nz * 4.1) * Math.sin(nz * 6.2 - nx * 2.3) * .005;
+    const dent = y > 0 ? Math.exp(-((nx + .1) ** 2 * 4 + (nz - .05) ** 2 * 3.5)) * h * .22 : 0;
+    p.setY(i, p.getY(i) - Math.sign(y) * cr * top - dent); }
+  g.computeVertexNormals(); return g; }
 
 // ================= builders =================
 function bunkBed() {
@@ -749,9 +764,20 @@ function telescope() {
 // ================= round 6: things the hero handles (food, wood, gear, chores) =================
 let MX = null;
 function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, ...o });
-  MX = { terracotta: s(0xB8603A, { roughness: .9 }), soil: s(0x3A2A1E, { roughness: 1 }), leaf: s(0x557F3C, { roughness: .6, side: THREE.DoubleSide }), leafDark: s(0x36572A, { roughness: .65, side: THREE.DoubleSide }),
+  /* terracotta: fired-clay mottling, white salt bloom up by the rim, a darker damp band at the foot, scuffs (was a flat orange) */
+  const tc = canvas(256, 128, (g, w, h) => { g.fillStyle = '#B5623C'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 500; i++) { g.fillStyle = `rgba(${150 + Math.random() * 60 | 0},${70 + Math.random() * 40 | 0},${40 + Math.random() * 25 | 0},${.12 + Math.random() * .25})`; const r = 1 + Math.random() * 5; g.fillRect(Math.random() * w, Math.random() * h, r, r); }
+    const gb = g.createLinearGradient(0, 0, 0, h); /* lathe v runs foot (canvas bottom) -> rim (~35% from the top) -> inside */ gb.addColorStop(.2, 'rgba(235,225,205,0)'); gb.addColorStop(.33, 'rgba(235,225,205,.45)'); gb.addColorStop(.45, 'rgba(235,225,205,0)'); gb.addColorStop(.75, 'rgba(70,35,20,0)'); gb.addColorStop(1, 'rgba(70,35,20,.5)'); g.fillStyle = gb; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(240,232,215,${.08 + Math.random() * .18})`; g.fillRect(Math.random() * w, h * (.3 + Math.random() * .12), 3 + Math.random() * 18, 1 + Math.random() * 3); }
+    for (let i = 0; i < 14; i++) { g.strokeStyle = 'rgba(90,45,25,.25)'; g.beginPath(); const x = Math.random() * w, y = Math.random() * h; g.moveTo(x, y); g.lineTo(x + 6 + Math.random() * 14, y + Math.random() * 3 - 1.5); g.stroke(); } });
+  /* the watering can: green paint gone chalky, chipped to grey zinc at the edges, a few rust freckles (was smooth plastic) */
+  const zc = canvas(256, 128, (g, w, h) => { g.fillStyle = '#62806A'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 300; i++) { g.fillStyle = `rgba(${80 + Math.random() * 40 | 0},${110 + Math.random() * 40 | 0},${90 + Math.random() * 30 | 0},${.1 + Math.random() * .2})`; g.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 10, 2 + Math.random() * 6); }
+    for (let i = 0; i < 45; i++) { const x = Math.random() * w, y = Math.random() < .5 ? Math.random() * h * .15 : h * (.85 + Math.random() * .15); g.fillStyle = 'rgba(160,165,160,.85)'; g.beginPath(); g.ellipse(x, y, 2 + Math.random() * 6, 1 + Math.random() * 3, Math.random() * 3, 0, 6.3); g.fill(); }
+    for (let i = 0; i < 25; i++) { g.fillStyle = `rgba(120,60,30,${.2 + Math.random() * .35})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 5); } });
+  MX = { terracotta: s(0xffffff, { roughness: 1, map: texOf(tc), bumpMap: texOf(tc, { srgb: false }), bumpScale: .8 }), soil: s(0x3A2A1E, { roughness: 1 }), leaf: s(0x557F3C, { roughness: .6, side: THREE.DoubleSide }), leafDark: s(0x36572A, { roughness: .65, side: THREE.DoubleSide }),
     carrot: s(0xE07A2A, { roughness: .6 }), onion: s(0xC8964E, { roughness: .45 }), potato: s(0xB08A58, { roughness: .9 }), stone: s(0x8E908A, { roughness: .95 }), stoneDark: s(0x5A5650, { roughness: .85 }),
-    straw: s(0xC9A45A, { roughness: 1 }), zinc: s(0x6F8A72, { metalness: .5, roughness: .45, envMap: M.env }), bark: (() => { const c = canvas(256, 256, (g) => { g.fillStyle = '#4E3A2A'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 70; i++) { const x0 = Math.random() * 256; g.strokeStyle = Math.random() < .6 ? 'rgba(28,18,10,.8)' : 'rgba(120,96,70,.55)'; g.lineWidth = 1 + Math.random() * 3; g.beginPath(); let x = x0; g.moveTo(x, -5); for (let y = 0; y <= 260; y += 16) { x += (Math.random() - .5) * 6; g.lineTo(x, y); } g.stroke(); }
+    straw: s(0xC9A45A, { roughness: 1 }), zinc: s(0xffffff, { metalness: .3, roughness: .62, envMap: M.env, envMapIntensity: .45, map: texOf(zc), bumpMap: texOf(zc, { srgb: false }), bumpScale: .6 }), bark: (() => { const c = canvas(256, 256, (g) => { g.fillStyle = '#4E3A2A'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 70; i++) { const x0 = Math.random() * 256; g.strokeStyle = Math.random() < .6 ? 'rgba(28,18,10,.8)' : 'rgba(120,96,70,.55)'; g.lineWidth = 1 + Math.random() * 3; g.beginPath(); let x = x0; g.moveTo(x, -5); for (let y = 0; y <= 260; y += 16) { x += (Math.random() - .5) * 6; g.lineTo(x, y); } g.stroke(); }
       for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${90 + Math.random() * 60},${70 + Math.random() * 40},${50 + Math.random() * 30},.35)`; g.fillRect(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 5, 6 + Math.random() * 14); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 3, roughness: 1, side: THREE.DoubleSide }); })(),
     splitwood: (() => { const c = canvas(128, 256, (g) => { g.fillStyle = '#C8955E'; g.fillRect(0, 0, 128, 256); for (let i = 0; i < 40; i++) { g.strokeStyle = Math.random() < .5 ? 'rgba(120,70,35,.35)' : 'rgba(240,200,150,.35)'; g.lineWidth = .5 + Math.random() * 2; g.beginPath(); let x = Math.random() * 128; g.moveTo(x, 0); for (let y = 0; y <= 256; y += 32) { x += (Math.random() - .5) * 5; g.lineTo(x, y); } g.stroke(); } });
