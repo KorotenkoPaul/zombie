@@ -8,6 +8,11 @@ before it goes in here. Model claims that did not survive the eye check are not 
 
 Severity: **P1** visible at normal play; **P2** noticeable when watching; **P3** minor.
 
+## Note (2026-11-24 00:30 UTC)
+
+Master 7ca7a48 rolled the hero code back to 9aa01f4 (21:33). W1–W13 were filmed on f3a6f8c/708e4b2/e778f58 (after 21:33) and are kept for the owners re-landing those features via `hero-dev`; round 4 re-films everything on the rollback.
+Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and hammer over the board; ce71310 already had the hy_idle-at-stove / head-back break. 9aa01f4 threw `collide RangeError: Map maximum size exceeded` (collide.js:128) at init.
+
 ## Open
 
 | # | P | task | what | frames | evidence | owner |
