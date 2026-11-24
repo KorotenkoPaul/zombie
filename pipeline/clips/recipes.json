@@ -412,5 +412,29 @@
   "src": "boots2",
   "mirror": true,
   "note": "Mirror of bootsoff_sit_R2 (left boot)."
+ },
+ "sneak_walk": {
+  "src": "17_03",
+  "t0": 8.633,
+  "t1": 9.967,
+  "note": "Real mocap (CMU 17_03 walk stealthily): crouched sneaking walk, hips ~9 cm lower than standing, ~0.4 m/s. One full gait cycle (1.33 s, matched start/end pose) -> loop, close 0.15. Play speed ~1.3 for a 1 s cycle; remove root motion (rm) for in place. In place (hips x/z zeroed), seam smoothed. Arms held out for balance."
+ },
+ "sneak_walk_b": {
+  "src": "77_14",
+  "t0": 6.1,
+  "t1": 7.433,
+  "note": "Real mocap (CMU 77_14 careful creeping): second sneaking cycle, 1.33 s, more upright arms-ready look. Loop, close 0.15. In place, seam smoothed. Arms low and ready: better with a bow in hand. Recommended."
+ },
+ "bow_shoot": {
+  "src": "fal bow_shoot-23",
+  "note": "Fal Hunyuan (bought, seed 23): reaches over the right shoulder for the bow, brings it to the left hand, nocks, raises the left arm, draws to the right cheek, aims, releases, lowers. 5 s, in place."
+ },
+ "pick_hare": {
+  "src": "fal pick_hare-23",
+  "note": "Fal Hunyuan (bought, seed 23): drops to one knee, right hand picks something small off the ground (~0.5 s-1.3 s), stands, puts it into a sack at the right hip (~2.4 s). 3 s, in place; knee bend max 139 deg."
+ },
+ "scan_bow": {
+  "src": "fal scan_bow-23",
+  "note": "Fal Hunyuan (bought, seed 23): stands still, bow down in the left hand, listens and slowly scans left/right with small weight shifts. Head lifted (headlevel). 6 s loop, seam smoothed."
  }
 }
