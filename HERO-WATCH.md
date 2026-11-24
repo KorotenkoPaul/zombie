@@ -35,6 +35,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | B16 | P1 | tea (hy_oven) | At the open oven he steps onto the oven door: right shin and foot on/through the open door, body bent deep into the oven mouth | f13740 | r4-085e32c/tea_foot_on_oven_door_f13596-14880.jpg | cooking/fire family / collide |
 | B17 | P3 | tea | "Making tea" is the generic hy_stir at the counter for 12 s, seen from behind; no kettle or cup in hand in any frame | f13896–f14616 | same | cooking family |
 | B18 | P1 | craft (hy_hammer) | Same backswing as B6 but worse: the hammer head comes back into his face (mouth/nose) on the up-stroke; and a metal bucket left over from the water errand stays stuck at his right hip/back for the whole job | f15132, f15420; bucket f14772–f15420 | r4-085e32c/craft_hammer_into_face_bucket_on_hip_f14772-15420.jpg | workshop family; water family (put the bucket down when the errand ends) |
+| R5-1 | P2 | dishes (8ddcfcc) | B12 improved: at the sink, facing it, plates go into the rack. New: right hand/forearm passes through the drying-rack pegs on each put-away; left hand hovers flat over the sink rim | f2316, f2496, f2568 | r5-8ddcfcc/dishes_at_sink_hand_through_rack_f2100-2676.jpg | kitchen/dishes family |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
