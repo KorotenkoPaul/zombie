@@ -816,10 +816,16 @@ export function createHero(ctx){
   if(t>=end){a.step='rise';if(A)A.timeScale=1;H.carry=BUCKET();a.fdone();}}
  function pondFillPost(a){const P=PP();const bk=P&&P.tools&&P.tools.waterBucket;if(!bk||!a.dip)return;
   // the fist goes down to the water: the bucket's rim just under the surface, tipped toward the pond so it fills
-  const R=odPalm('Right');const want=R.clone();const rimBelow=.35;/* fist to bucket bottom when hanging */const yFist=a.lv+rimBelow-.08;
+  const R=odPalm('Right');const want=R.clone();const rimBelow=.35;/* fist to bucket bottom when hanging */const yFist=a.lv+.02;/* the fist at the surface: the whole bucket under */
   if(R.y>yFist){want.y=lerp(R.y,yFist,a.dip);reachGrip('Right',want,a.dip);}
   const L=odPalm('Left');reachGrip('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too */
-  bk.rotation.x=-.5*a.dip;bk.updateMatrixWorld(true);}
+  odHang('waterBucket',.55*a.dip);}
+ // a bucket in the fist hangs plumb from its handle (world upright, turned with him), tipped only when he tips it; never
+ // follows the wrist's twist (it was swinging out at the hip or upside down at the feet)
+ function odHang(n,tilt=0){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o||o.parent!==bones.RightHand)return;const hb=bones.RightHand;hb.updateWorldMatrix(true,false);
+  const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt,root.rotation.y,0,'YXZ'));const hs=(o.userData.home&&o.userData.home.scale)||1;
+  const g=V(0,.35,0).multiplyScalar(hs).applyQuaternion(q);const pos=odPalm('Right').sub(g);
+  const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
  // OUTDOOR: a full bucket is carried like real weight: real mocap of a heavy case in the right hand (body leans away), else the sack carry
  const BUCKET=()=>has('hy_carrybucket')?'hy_carrybucket':'hy_carrysack';
  // OUTDOOR: both hands free on a ladder. What he carries in a hand goes over his shoulder on its rope (sling) for the climb
@@ -871,15 +877,19 @@ export function createHero(ctx){
     if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
    a.update=dt=>{if(a.step==='fill'){pondFill(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
-   a.post=()=>{if(a.step==='fill')pondFillPost(a);};
+   a.post=()=>{if(a.step==='fill'&&a.dip)pondFillPost(a);else odHang('waterBucket',0);};
    a.leave=cb=>{try{P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
-  setbucket:(o={})=>{const a={step:'go',t:0};const P=PP();visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
+  setbucket:(o={})=>{const a={step:'go',t:0,post:()=>odHang('waterBucket',0)};const P=PP();visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
    visit(a,PT('drainBay'),.5,'hy_picklog',[[.55,()=>{try{P.grab('drainBucket',bones.RightHand,{offset:V(0,.06,.02)});window.__audio.carry(true);}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
     goTo('gate',()=>{H.face=N.gate.face??0;a.step='pour';a.t=0;once('hy_water',{fade:.4,then:()=>{play(IDLE(),{fade:.4});try{P.water.pour('drainBucket',false);}catch(e){}
       a.step='back';visit(a,PT('drainBay'),.5,'hy_picklog',[[.5,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}});});});
    a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='pour'){a.t+=dt;if(a.t>.8&&!a.p){a.p=1;try{P.water.pour('drainBucket',true);}catch(e){}AU('bucket_dump',root.position);}}};
+   // OUTDOOR: the pour: the fist lifts the bucket out over the edge, the other hand under its bottom tips it right over, then back
+   a.post=()=>{if(a.step!=='pour'){odHang('drainBucket',0);return;}const D=has('hy_water')?durOf('hy_water'):2.5;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
+    if(w>.01)reachGrip('Right',root.position.clone().addScaledVector(f,.42).add(V(0,1.02,0)),w);const tilt=1.9*smooth(.45,.95,t)*(1-smooth(D-.8,D-.25,t));odHang('drainBucket',tilt);
+    const bk=PP().tools.drainBucket;if(bk&&w>.01){const bt=bk.localToWorld(V(0,.02,0));reachGrip('Left',bt,.85*w*smooth(.3,.6,t));odHang('drainBucket',tilt);}};
    a.leave=cb=>{try{P.water.pour('drainBucket',false);P.release('drainBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
   // OUTDOOR (Сделать вылазки наружу естественными): splitting firewood at the chopping block by the oak with the real axe.
   // He takes the axe out of the block, picks a round from the little stack beside it (squat, left hand), stands it on the block,
