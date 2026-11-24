@@ -36,6 +36,7 @@ export function createCameraRig(o) {
   // Safety stays (never inside the trunk, walls or limbs, no auto-movement). The free camera is kept behind ?cam=free.
   const CLASSIC = o.classic !== undefined ? !!o.classic : !/[?&]cam=free\b/.test(typeof location !== 'undefined' ? location.search : '');
   const ZMIN = 0.32, ZMAX = 1.2;     // Pavel 22:16: zoom out a little further than the home view (+20%)
+  let awayK = 0, zoomEff = 1;
   let zoomK = 1;
   const look = new THREE.Vector3(0, 7.4, 2.4), lookT = new THREE.Vector3();
   function classicZoom(f) { zoomK = clamp(zoomK * f, ZMIN, ZMAX); atHome = Math.abs(zoomK - 1) < 0.001; }
@@ -549,10 +550,20 @@ export function createCameraRig(o) {
     for (const U of fadeU) U.u.value = clamp(cur.dist * U.k, U.min, U.max);
     if (CLASSIC) {
       // focus: the whole house when zoomed out, the hero when zoomed in (as the original camera did)
-      const k = clamp(1 - (zoomK - ZMIN) / (1 - ZMIN), 0, 1), f = follow();
+      // the hero is away (outdoor trips hide him): ease back to the house view and return to him when he reappears
+      const f = follow(); awayK += ((f ? 0 : 1) - awayK) * damp(1.5, dt);
+      const zk = zoomK + (Math.max(1, zoomK) - zoomK) * awayK; zoomEff = zk;
+      const k = clamp(1 - (zk - ZMIN) / (1 - ZMIN), 0, 1);
       lookT.copy(home.target); if (f) lookT.lerp(f, k);
-      look.lerp(lookT, Math.min(1, dt * 2.5));
-      goal.target.copy(look); goal.dist = home.dist * zoomK;
+      // zoomed in on him: keep him a little left of centre, clear of the button column on the right, and track a bit
+      // quicker so a walking hero does not drift to the screen edge (phone watch: firewood trip, ladders)
+      if (k > 0) {
+        const halfW = goal.dist * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect;
+        const off = 0.16 * halfW * k;
+        lookT.x += Math.cos(cur.yaw) * off; lookT.z -= Math.sin(cur.yaw) * off;
+      }
+      look.lerp(lookT, Math.min(1, dt * (2.5 + 2.5 * k)));
+      goal.target.copy(look); goal.dist = home.dist * zk;
     }
     const dragging = ptrs.size > 0 || inert.on;
     keepOut(goal.target, dt, dragging, goal.yaw);
@@ -636,7 +647,7 @@ export function createCameraRig(o) {
     focusU.value = camPos.distanceTo(cur.target);
     // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar
     // (classic camera: zoomed in on the hero, every leaf card between him and the camera clears, at any distance)
-    const cutWant = Math.max(1 - THREE.MathUtils.smoothstep(focusU.value, 9, 15), CLASSIC ? THREE.MathUtils.smoothstep(1 - (zoomK - ZMIN) / (1 - ZMIN), 0.4, 0.85) : 0);
+    const cutWant = Math.max(1 - THREE.MathUtils.smoothstep(focusU.value, 9, 15), CLASSIC ? THREE.MathUtils.smoothstep(1 - (zoomEff - ZMIN) / (1 - ZMIN), 0.4, 0.85) : 0);
     cutU.value += (cutWant - cutU.value) * damp(4, dt);
     camera.position.copy(camPos);
     camera.lookAt(cur.target);
