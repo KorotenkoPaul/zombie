@@ -33,7 +33,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const hero = HH.hero, root = hero.root, bones = HH.bones;
   const mine = o => { while (o) { if (o === root) return true; o = o.parent; } return false; };
   const visible = o => { while (o) { if (!o.visible) return false; o = o.parent; } return true; };
-  const solidMat = o => { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (!m) return false; if (m.transparent && m.opacity < .6) return false; if (m.depthWrite === false || m.blending === THREE.AdditiveBlending) return false; return true; };
+  const solidMat = o => { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (!m) return false; if (m.transparent && m.opacity < .6) return false; if (m.alphaTest > 0) return false; /* cut-out leaves and bushes */ if (m.depthWrite === false || m.blending === THREE.AdditiveBlending) return false; return true; };
   const label = o => { const parts = []; let x = o; while (x && x !== scene) { if (x.name && !/^(Mesh|Object|Group|Scene)?_?\d*$/.test(x.name)) parts.push(x.name); x = x.parent; } return parts.reverse().join('/') || o.geometry.type; };
 
   // ---------- where the hero can be: the walk graph's box, padded ----------
@@ -94,7 +94,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     const name = label(o); if (/grass|foliage|leaf|leaves|fern|moss|weed|reed/i.test(name)) { skipped['soft ' + name.replace(/#\d+$/, '')] = 1; return; } // plants bend: not walls
     if (o.isInstancedMesh) {
       if (o.count > 1500) { skipped['inst ' + name] = o.count; return; }
-      for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, mi); m4.multiplyMatrices(o.matrixWorld, mi); wb.copy(o.geometry.boundingBox).applyMatrix4(m4); if (!wb.intersectsBox(REG)) continue; add(o, o.geometry, m4, name + '#' + i, i); }
+      for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, mi); m4.multiplyMatrices(o.matrixWorld, mi); wb.copy(o.geometry.boundingBox).applyMatrix4(m4); if (!wb.intersectsBox(REG)) continue; { const sz = wb.getSize(V()); const big = [sz.x, sz.y, sz.z].filter(v => v > 1.8).length; if (big >= 2 && !/plank|board|beam|floor|deck/i.test(name)) { skipped['big inst ' + name] = (skipped['big inst ' + name] || 0) + 1; continue; } } /* bushes / tree crowns as one big box are not walls */ add(o, o.geometry, m4, name + '#' + i, i); }
       return;
     }
     wb.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) return;
@@ -390,6 +390,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     root.position.add(off.root); applied.copy(off.root); root.updateMatrixWorld(true);
     if (off.head.lengthSq() > 1e-8) bendHead(off.head);
     for (let c = 2; c < 6; c++) { const L = LIMB[c]; if (!L.C) continue; L.C.getWorldPosition(anim[c]); if (off.limb[c].lengthSq() > 1e-8) ik2(L.A, L.B, L.C, anim[c].clone().add(off.limb[c]), c >= 4); }
+    skin(1 | 16 | 32); heldVsBody(dt); // the carrying arm first (against the legs and body), so the checks below see it where it is
     let it = 0, worst = 0, liveMask = 0;
     // kneeling / squatting (shin far from upright): the shin and foot rest on the boards by design; an IK lift of such a leg
     // swings the knee the wrong way (fix_board), so those legs are left alone
@@ -413,11 +414,14 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         // legs: only lift a foot / shin out of what is under it; a sideways nudge of a planted foot is a visible slide
         // (seated / sitting on an edge / lying the feet are not planted: a leg through a rail or a bed post is pushed out sideways too)
         if (P.chain >= 4 && kneel[P.chain]) continue;
+        // seated the hands rest on things (book, armrest): a graze under 2 cm is left alone, so the arm is
+        // not nudged on and off every frame (that was hand jitter while reading); a real dip into the bunk still is pushed out
+        if (hero.seated && (P.chain === 2 || P.chain === 3) && ex < .02) continue;
         if (P.chain >= 4 && OUT.n.y < .5 && !fit && !lying) continue;
         if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4 && OUT.n.y >= .5 && !fit && !lying) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
-      // on a ladder only hands and feet are corrected (moving the body or bending the head pops on the pull-up)
-      if (hero.lad) { pd[0] = 0; pd[1] = 0; anyP = pd.some(v => v > 0); }
+      // on a ladder the climb (climb.js) owns hands and feet on the rungs: collide stays out (its pushes were hand jumps on the pull-up)
+      if (hero.lad) { pd.fill(0); anyP = false; }
       for (const c of [0, 1]) if (sumW[c] > 0) push[c].copy(sumN[c]).multiplyScalar(1 / sumW[c]).multiplyScalar(pd[c] + .001);
       // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall); a sole is
       // only lifted straight up out of a board (never moved sideways); arms and head give way. Walking into things is the walk graph's job.
@@ -442,6 +446,29 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     }
     finish(t0, it, worst);
   }
+  // what a hand carries (bucket, sack, tool) must not swing through his own legs or body: the carrying arm is moved out from the
+  // body (2-bone IK, the load follows the hand), smoothly. Hands gripped by grab.js are left to it.
+  const HB = new THREE.Box3(), _hc = V(), _hp2 = V(), _iv = new THREE.Matrix4(), _lq = V();
+  // the carried meshes of a hand as oriented boxes: [inverse world matrix, local box, scale] (a tilted bucket's world box is twice its size)
+  function heldBoxes(C) { const out = []; for (const ch of C.children) { if (ch.isBone || !ch.visible) continue;
+      ch.traverse(m => { if (!m.isMesh || !m.visible || !m.geometry) return; const g = m.geometry; if (!g.boundingBox) g.computeBoundingBox(); const b = g.boundingBox; const sc = m.matrixWorld.getMaxScaleOnAxis();
+        const sz = b.getSize(_hc).multiplyScalar(sc); if (Math.min(sz.x, sz.y, sz.z) < .01 || Math.max(sz.x, sz.y, sz.z) < .08) return; out.push([new THREE.Matrix4().copy(m.matrixWorld).invert(), b, sc]); }); } return out; }
+  // depth of a world point inside one carried box (m), or 0
+  function inHeld(q, hb) { _lq.copy(q).applyMatrix4(hb[0]); const b = hb[1]; if (!b.containsPoint(_lq)) return 0; return Math.min(_lq.x - b.min.x, b.max.x - _lq.x, _lq.z - b.min.z, b.max.z - _lq.z, _lq.y - b.min.y, b.max.y - _lq.y) * hb[2]; }
+  // the carrying arm's sideways clearance (m), in the body's frame (a world offset pointed the wrong way once he turned)
+  const heldAmt = [0, 0, 0, 0, 0, 0];
+  function heldVsBody(dt) { const GR = window.__grab;
+    // at a task the tool works close to the body by design (hammer and board at the bunk): only a thing carried on the way is moved
+    const busy = !!(hero.fit || hero.seated || hero.inBed || hero.swing || hero.state === 'work');
+    for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const gripped = GR && GR.grip && GR.grip[c === 2 ? 'Left' : 'Right'];
+      const HBs = gripped || busy ? [] : heldBoxes(L.C); if (!HBs.length) { heldAmt[c] *= Math.exp(-dt * (busy && !gripped ? 1 : 3)); /* at a task: eased back over ~1 s, not dropped and regrown at every stop */ if (heldAmt[c] < .002) { heldAmt[c] = 0; continue; } }
+      L.A.getWorldPosition(_hc); bones.Hips.getWorldPosition(_hp2); const out = V(_hc.x - _hp2.x, 0, _hc.z - _hp2.z); if (out.lengthSq() < 1e-6) continue; out.normalize();
+      if (HBs.length) { let worst = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > worst) worst = d; } }
+        // grows quickly while the load is in the leg, never shrinks while he still carries it
+        if (worst > .005) { heldAmt[c] = Math.min(.15, heldAmt[c] + Math.min(worst + .01, .006)); st.held = (st.held || 0) + 1; } }
+      if (heldAmt[c] > 0) { const t = L.C.getWorldPosition(V()).addScaledVector(out, heldAmt[c]); ik2(L.A, L.B, L.C, t, false); } }
+  }
+
   function finish(t0, it, worst) { const ms = performance.now() - t0; st.frames++; st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
   // wrap the hero's update: corrections go on after hero.js has posed the body, and come off before it runs again
   // HERO-RULES.md: the 'collide' slot of the pose pipeline (after contacts, before grab and the guard); the old wrap only without stages
@@ -481,7 +508,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // what the body is in right now (no allowances): { shape name: deepest cm }
   function touching() { skin(); const r = {}; for (const P of PTS) { const kk = key(Math.floor(P.p.x / CS), Math.floor(P.p.y / CS), Math.floor(P.p.z / CS)); const a = G.get(kk); if (!a) continue;
       for (const n of a) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, P.p); if (d > .005) { const k = s.name + ':' + P.part; r[k] = Math.max(r[k] || 0, +(d * 100).toFixed(1)); } } } return r; }
-  const api = { touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
+  // how deep the body is in what the hands carry (cm), for tests
+  function heldDepth() { skin(); const r = {}; for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const HBs = heldBoxes(L.C); if (!HBs.length) continue;
+      let w = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > w) w = d; } } r[c === 2 ? 'L' : 'R'] = +(w * 100).toFixed(1); } return r; }
+  const api = { heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
     depthAt: (x, y, z) => probe(V(x, y, z), 7, false), navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
   return api;
 }
