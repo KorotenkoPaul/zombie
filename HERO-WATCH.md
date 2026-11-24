@@ -71,6 +71,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R9-4 | P2 | craft (70dd9e4) | R8-3 unchanged: hammer head comes back to forehead/face height on every backswing (side view) | f4212–f4932 | r9-70dd9e4/craft_hammer_head_at_face_height.jpg | workshop |
 | R9-5 | P2 | sleep (70dd9e4) | R7-9 unchanged: vest stays on; boots come off by hand fine (the orange pair on the rug are slippers, there from the start) | f7392–f7788 | r9-70dd9e4/sleep_bootsoff_vest_still_on.jpg | bed |
 | R9-6 | ok | ladders (70dd9e4) | R5-4/R6-6/R7-2 fixed in this run: on the rope ladder both hands grip the side ropes going down and up, at the top he puts his hands on the deck edge; on the wooden ladder a hand on the rail; no T-arms seen. Head-back on exit (R7-12) not seen in this clip | f3816–f7128 | r9-70dd9e4/ladders_hands_on_rope_ok.jpg | — |
+| R9-7 | ok | stoke (70dd9e4) | B13/B16 look fixed: kneels at the oven, opens the door by its handle, takes logs from the basket in his arms, kneels and feeds them in; no hovering squat, no foot on the door | f10908–f11724 | r9-70dd9e4/stoke_kneels_logs_into_oven_ok.jpg | — |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
