@@ -256,7 +256,13 @@ export function createHero(ctx){
  function legIK(dy,w){for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
    /* WALK: a straight leg has no knee direction (knee - hip/ankle midpoint ~ 0): the pole then pointed anywhere and a 1 cm floor step
       swung the trailing foot 9-22 cm (gate: RightFoot jump in the bedroom); fall back to the body's forward, blended in as the leg straightens */
-   const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));const pl=pole.length(),fb=fwd(root.rotation.y);pole.multiplyScalar(1/Math.max(pl,1e-6)).lerp(fb,1-smooth(.01,.04,pl));ik2(U,L,F,a.clone().add(V(0,dy,0)),pole,w,true);}}
+   const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));const pl=pole.length(),fb=fwd(root.rotation.y);pole.multiplyScalar(1/Math.max(pl,1e-6)).lerp(fb,1-smooth(.01,.04,pl));
+   /* POSE: the target is the clip's ankle moved by dy, so a foot the clip or motion lifts while the hips squat was lifted by the whole squat as well:
+      gate seed 1 stoke f39182 put the right ankle 3 cm from the hip joint (knee 177 deg, foot inside the thigh). Never ask for less reach than the
+      deepest real squat (knee interior 25 deg): a target closer to the hip keeps its height and slides out along the ground, away from the hip */
+   const tg=a.clone().add(V(0,dy,0)),t1=k.distanceTo(hp),s1=a.distanceTo(k),mn=Math.sqrt(t1*t1+s1*s1-2*t1*s1*Math.cos(25*Math.PI/180)),rel=tg.clone().sub(hp);
+   if(rel.length()<mn){const vy=rel.y,hz=V(rel.x,0,rel.z);let hl=hz.length();if(hl<1e-3){hz.copy(fb);hl=1;}const need=Math.sqrt(Math.max(0,mn*mn-vy*vy));tg.set(hp.x+hz.x/hl*need,tg.y,hp.z+hz.z/hl*need);}
+   ik2(U,L,F,tg,pole,w,true);}}
  // seated / perched: put each ankle at its standing height above the boards, then lift the toes out of the floor
  // targets and knee direction are low-passed so clip noise and IK flips never reach the feet
  const plantS={};
