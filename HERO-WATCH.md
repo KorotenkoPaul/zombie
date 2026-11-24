@@ -94,6 +94,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R12-4 | ok/P3 | dishes (a7473f6) | washing in the sink, plate into the rack, jug rinsed and stood in the rack, mug carried off by the handle; no floating dish this run (R7-3/R8-1 not seen). P3: once the free hand flicks up open-clawed beside the face (f9240) | f8880–f9900 | r12-a7473f6/dishes_ok.jpg | — |
 | R12-5 | ok | hatch (a7473f6) | he walks to the raised lid, takes its top edge with the right hand and lowers it in front of him (f11016–f11064), lets go of the ring as it lands; no arm through the wall this run (R9-10 not seen) | f10860–f11088 | r12-a7473f6/hatch_lowers_lid_by_hand_ok.jpg | — |
 | R13-1 | ok/P3 | fetchwater (b81e2ea) | still good: bank stand point (ellipse 1.11), bucket on the rope across the back on ladders, hands on rungs/ropes. P3: once on the rope ladder the left hand is off the rope reaching into the air (f3480) | f1200–f5640 | r13-b81e2ea/fetchwater_ok.jpg | ladders |
+| R13-2 | ok | stoke (b81e2ea) | opens the oven by its handle, takes the log bundle from beside the barrel, kneels and feeds logs in, keeps the bundle rope in hand; (my camera was inside the stove for f6696–6984) | f6000–f7320 | — | — |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
