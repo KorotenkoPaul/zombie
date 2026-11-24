@@ -121,7 +121,7 @@ export function createParticles({ THREE, scene, wind, lights, rooms = [], hero =
     fragmentShader: `varying vec4 vK;void main(){vec2 d=gl_PointCoord-.5;
       // leaf bit: a little flat flake turning (squashed by the spin phase); dust: a soft speck
       float leaf=step(.5,vK.z);vec2 q=vec2(d.x*(1.+2.*abs(sin(vK.w*6.28))),d.y);float k=leaf>.5?step(length(q),.42):smoothstep(.5,.15,length(d));
-      vec3 c=leaf>.5?mix(vec3(.55,.33,.12),vec3(.72,.55,.2),fract(vK.w*7.)):vec3(.62,.56,.48);if(k*vK.x<.02)discard;gl_FragColor=vec4(c,k*vK.x*(leaf>.5?1.:.45));}` });
+      vec3 c=leaf>.5?mix(vec3(.62,.34,.1),vec3(.8,.6,.18),fract(vK.w*7.)):vec3(.62,.56,.48);if(k*vK.x<.02)discard;gl_FragColor=vec4(c,k*vK.x*(leaf>.5?1.:.45));}` });
   const kick = new THREE.Points(kg, km); kick.frustumCulled = false; kick.renderOrder = 6; kick.visible = false; scene.add(kick); kick.matrixAutoUpdate = false; api.kick = kick;
   const K = []; for (let i = 0; i < NK; i++) K.push({ on: false, p: [0, 0, 0], v: [0, 0, 0], age: 0, life: 1, leaf: 0, sp: Math.random() });
   const feet = [{ b: 'LeftFoot', y: 0, vy: 0, cd: 0 }, { b: 'RightFoot', y: 0, vy: 0, cd: 0 }], fp = new THREE.Vector3(), hp = new THREE.Vector3(), lastHip = new THREE.Vector3(); let hipSp = 0, kickOn = true;
