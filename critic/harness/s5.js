@@ -1,7 +1,7 @@
 // Pass-2 pose check with the real skinned mesh (not bones): how deep the body goes into the chair seat,
 // the floor and the mattress, and where on the bed the hero lies. Plus close-up screenshots of each pose.
 // Usage: node s5.js <outdir>
-const {open}=require('./lib');const fs=require('fs');const O=process.argv[2];
+const {open,waitFrames}=require('./lib');const fs=require('fs');const O=process.argv[2];
 const MEASURE=()=>{const {hero,THREE}=window.__dbg;let scene=hero.root;while(scene.parent)scene=scene.parent;scene.updateMatrixWorld(true);
  const meshes=[];hero.root.traverse(o=>{if(o.isSkinnedMesh&&o.visible)meshes.push(o);});
  const V=[];const v=new THREE.Vector3();for(const m of meshes){const pos=m.geometry.attributes.position;const st=Math.max(1,Math.floor(pos.count/4000));
@@ -19,7 +19,7 @@ const MEASURE=()=>{const {hero,THREE}=window.__dbg;let scene=hero.root;while(sce
  let inBed=0,nBody=0;for(const p of V){if(p[1]>bed.top-.1&&p[1]<bed.top+.6){nBody++;if(p[0]>bed.x0&&p[0]<bed.x1&&p[2]>bed.z0&&p[2]<bed.z1)inBed++;}}
  const xs=V.map(p=>p[2]);return {verts:V.length,minY,floorUnderRoot:surf(root.x,root.z,root.y+.5),root:root.toArray(),penVerts:below,of:lowV.length,maxDepth:pen[0]?pen[0][0]:0,p90:pen.length?pen[Math.floor(pen.length*.1)][0]:0,into:names,
   bodyZ:[Math.min(...xs),Math.max(...xs)],bodyX:[Math.min(...V.map(p=>p[0])),Math.max(...V.map(p=>p[0]))],bed:{x:[bed.x0,bed.x1],z:[bed.z0,bed.z1],top:bed.top},bedFrac:nBody?inBed/nBody:0,task:hero.task,state:hero.state,clip:hero.cur&&hero.cur.getClip().name};};
-const shot=async(p,name,rp,yaw,pitch,dist)=>{await p.evaluate(([rp,y,pi,d])=>{__noRender(false);__th.cam(rp[0],rp[1]+.6,d,rp[2]);__th.view(y,pi,1);},[rp,yaw,pitch,dist]);await p.waitForTimeout(1500);await p.screenshot({path:O+'/'+name+'.png'});await p.evaluate(()=>{__th.cam();__noRender(true);});};
+const shot=async(p,name,rp,yaw,pitch,dist)=>{await p.evaluate(([rp,y,pi,d])=>{__noRender(false);__th.cam(rp[0],rp[1]+.6,d,rp[2]);__th.view(y,pi,1);},[rp,yaw,pitch,dist]);await waitFrames(p,3);await p.screenshot({path:O+'/'+name+'.png'});await p.evaluate(()=>{__th.cam();__noRender(true);});};
 (async()=>{const res={};
  for(const run of (process.env.RUNS||'seated,sleep,cook,craft').split(',')){const {b,p,errs}=await open({});
   await p.evaluate(()=>{const R=window.__renderer;const real=R.render;window.__noRender=on=>{R.render=on?function(s){s&&s.updateMatrixWorld&&s.updateMatrixWorld();}:real;};__noRender(true);});
