@@ -1082,15 +1082,16 @@ export function createHero(ctx){
     // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
     if(!a.st){a.st=1;a.pk=0;if(!bt)stepNear(h,hand,o.feetOff?n:null);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
     const low=!bt&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.rel);if(o.clear)kneesClear(o.clear,dt);
-    a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
-    if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else{relTool(hand,n);a.putAt=h.clone();}}
+    /* feetOff: the hand carries a floor tool out over its spot and then down onto it, not straight down past his feet (gate: the can's spout through the toes on the way down) */const hT=a.lean&&low&&!a.rel?h.clone().add(V(0,.24*(1-smooth(.55,1.05,a.t)),0)):h;
+    a.rg=[hand,hT,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
+    if(!a.rel&&a.t>(low?(a.lean?1.05:.8):.45)&&(palmTo(hand,h)<.08||a.t>(low?(a.lean?1.8:1.5):1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else{relTool(hand,n);a.putAt=h.clone();}}
     if(a.rel&&a.t-a.tr>.4&&!(H.squat>0)){a.held.pop();a.rel=false;a.toBelt=null;a.t=0;a.rg=null;a.st=0;}}};
   const finish0=()=>{a.ik=null;H.squat=0;endTask(o.result?o.result(a):undefined);};
   /* o.stepBack: a tool put down on the floor is stepped away from first (gate: the watering can on the boards went through his feet
      as his first steps to the next task crossed it); he backs off to ~.65 m from it, then leaves from there */
   const finish=()=>{const q=a.putAt;if(!o.stepBack||!q||a.backed){finish0();return;}a.backed=true;const p=root.position;let dx=p.x-q.x,dz=p.z-q.z,d=Math.hypot(dx,dz);if(d>.5){finish0();return;}if(d<1e-3){const f=fwd(root.rotation.y);dx=-f.x;dz=-f.z;d=1;}
    const t=V(q.x+dx/d*.65,p.y,q.z+dz/d*.65);a.ik=null;H.squat=0;a.faceYaw=root.rotation.y;/* backing off still facing it: a turn on the spot right beside it swung his toes through it */a.noPush=false;approachTo(a,t,0,()=>{a.faceYaw=null;finish0();});};
-  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
+  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01){/* feetOff: standing back from a floor tool, the waist bends further (a hand put the can down 11 cm short) */const RL0=REACH_LEAN;if(a.lean)REACH_LEAN=1.05;reachGrip(a.rg[0],a.rg[1],a.rg[2]);REACH_LEAN=RL0;}};
   a.leave=cb=>{H.squat=0;for(const n of a.held){const t=tools.find(x=>x[0]===n);const hd=t?t[1]:'Right';if(farHome(n))toBelt(n,hd);else if(awayHome(n))standDown(n,hd);else relTool(hd,n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
  // GRAB: knees bent just enough that the shoulder is within arm's reach of a low grip, then up again (the code squat keeps the feet planted)
@@ -1105,7 +1106,7 @@ export function createHero(ctx){
  function toesIn(f){let m=1e9;for(const s of ['Left','Right']){const T=bones[s+'ToeBase']||bones[s+'Foot'];if(!T)continue;const p=T.getWorldPosition(V());m=Math.min(m,Math.hypot(p.x-f.c.x,p.z-f.c.z));}return f.R-m;}
  function stepNear(p,hand,n){const sh=bones[hand+'Arm'];if(!sh||!p)return;const s0=sh.getWorldPosition(V());const d=V(p.x-s0.x,0,p.z-s0.z);const L=d.length();const fo=n?footOff(n):null;
   let q;if(L<=.4){if(!fo)return;q=root.position.clone();}else q=root.position.clone().addScaledVector(d.clone().normalize(),Math.min(.6,L-.34));
-  if(fo){/* toes ahead of the root by about what they are now: keep the root that much further off */const inn=toesIn(fo);const rc=Math.hypot(root.position.x-fo.c.x,root.position.z-fo.c.z);const need=Math.max(rc+Math.max(0,inn),fo.R+.13)/* the squat that follows brings the toes ~15 cm ahead of the root (measured: 43 -> 27 cm from the can) */;const qc=Math.hypot(q.x-fo.c.x,q.z-fo.c.z);if(qc<need){/* straight back from the way he faces (radially off the can it slid him sideways into the bunk end) */const f=fwd(root.rotation.y),ux=q.x-fo.c.x,uz=q.z-fo.c.z,bb=-(ux*f.x+uz*f.z),cc=ux*ux+uz*uz-need*need;const t=-bb+Math.sqrt(Math.max(0,bb*bb-cc));q.x-=f.x*t;q.z-=f.z*t;}}
+  if(fo){/* toes ahead of the root by about what they are now: keep the root that much further off */const inn=toesIn(fo);const rc=Math.hypot(root.position.x-fo.c.x,root.position.z-fo.c.z);const need=Math.max(rc+Math.max(0,inn),fo.R+.17)/* the squat that follows brings the toes ~15 cm ahead of the root (measured: 43 -> 27 cm from the can) */;const qc=Math.hypot(q.x-fo.c.x,q.z-fo.c.z);if(qc<need){/* straight back from the way he faces (radially off the can it slid him sideways into the bunk end) */const f=fwd(root.rotation.y),ux=q.x-fo.c.x,uz=q.z-fo.c.z,bb=-(ux*f.x+uz*f.z),cc=ux*ux+uz*uz-need*need;const t=-bb+Math.sqrt(Math.max(0,bb*bb-cc));q.x-=f.x*t;q.z-=f.z*t;}}
   pushOut(q);const mv=Math.hypot(q.x-root.position.x,q.z-root.position.z);if(mv<.04)return;
   {const p=root.position;for(const k of [.5,1]){const x=p.x+(q.x-p.x)*k,z=p.z+(q.z-p.z)*k;const y=floorAt(x,p.y+.2,z,.3,.5);if(y==null||Math.abs(y-p.y)>.04)return;}}/* only on the same floor: never a step off an edge or onto a ledge */
   H.slide={x:q.x-root.position.x,z:q.z-root.position.z,yaw:0,k:0,d:Math.max(.4,mv/.6)};if(mv>.12)play('30',{fade:.25,speed:.9});}
