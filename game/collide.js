@@ -231,8 +231,9 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (s.dead) return -1;
     vq.copy(p).applyMatrix4(s.inv); const fi = (vq.x - s.bmin.x) / s.cs, fj = (vq.y - s.bmin.y) / s.cs, fk = (vq.z - s.bmin.z) / s.cs; const i = Math.floor(fi), j = Math.floor(fj), k = Math.floor(fk);
     if (i < 1 || j < 1 || k < 1 || i >= s.nx - 1 || j >= s.ny - 1 || k >= s.nz - 1) return -1;
-    const D = s.D, nx = s.nx, ny = s.ny, at = (a, b, c) => D[(c * ny + b) * nx + a]; const d0 = at(i, j, k); if (!d0) return -1;
-    const gx = at(i + 1, j, k) - at(i - 1, j, k), gy = at(i, j + 1, k) - at(i, j - 1, k), gz = at(i, j, k + 1) - at(i, j, k - 1);
+    // [PERF] plain index math (the per-call closure was ~150 KB of garbage a frame); same cells as before
+    const D = s.D, nx = s.nx, sl = nx * s.ny, q = (k * s.ny + j) * nx + i; const d0 = D[q]; if (!d0) return -1;
+    const gx = D[q + 1] - D[q - 1], gy = D[q + nx] - D[q - nx], gz = D[q + sl] - D[q - sl];
     // way out = down the distance slope, in world space (local axes scaled by the object)
     n.set(0, 0, 0).addScaledVector(s.ax[0], -gx / s.sc[0]).addScaledVector(s.ax[1], -gy / s.sc[1]).addScaledVector(s.ax[2], -gz / s.sc[2]);
     if (n.lengthSq() < 1e-12) return -1; n.normalize();
