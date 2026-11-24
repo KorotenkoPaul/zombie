@@ -225,7 +225,7 @@
  },
  "idle_tired": {
   "src": "137_32",
-  "note": "'Old man wait': tired, slightly bent posture, for late evening. 42 s loop close 1.0."
+  "note": "REJECTED after the real-mesh review (do not use): 137_32 is an 'old man' wait, trunk bent forward 58 deg with bent knees, which looks crippled on the young hero; limiting the lean made him crouch and stare upward. For a tired hero use idle_stand_b (calm, small weight shifts) or sit_tired."
  },
  "jacket_on": {
   "src": "79_23",
