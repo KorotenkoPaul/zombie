@@ -1959,6 +1959,63 @@ export function createHero(ctx){
   const P0=bones.Hips.getWorldPosition(V()).addScaledVector(r,.28).addScaledVector(f,.06).add(V(0,-.12,0));
   const u=a.put?smooth(.08,.47,k):1-smooth(.47,.95,k);/* 1 = at the shelf */const seg=(A,B,x)=>A.clone().lerp(B,smooth(0,1,x));
   const at=u>.75?seg(P2,P3,(u-.75)/.25):u>.4?seg(P1,P2,(u-.4)/.35):seg(P0,P1,u/.4);a.spLast=at.clone();odReach('Right',at,a.put?1:wIn);odHang('waterBucket',0,true);return true;}
+ // ===== OUTDOOR hunt at the forest edge (clips from the Fal thread: hy_bowshoot, hy_scanbow, hy_sneak, hy_pickhare) =====
+ let hareObj=null,arrowObj=null;
+ function hareMesh(){const g=new THREE.Group();const fur=new THREE.MeshStandardMaterial({color:0x6e5a44,roughness:.95}),pale=new THREE.MeshStandardMaterial({color:0xcfc4b0,roughness:.95}),dark=new THREE.MeshStandardMaterial({color:0x2a2018,roughness:.9});
+  const body=new THREE.Mesh(new THREE.SphereGeometry(.1,12,9),fur);body.scale.set(1,.85,1.45);body.position.set(0,.09,0);g.add(body);
+  const hd=new THREE.Mesh(new THREE.SphereGeometry(.055,10,8),fur);hd.scale.set(.9,.95,1.2);hd.position.set(0,.17,.13);g.add(hd);
+  for(const sx of [-1,1]){const ear=new THREE.Mesh(new THREE.SphereGeometry(.02,6,5),fur);ear.scale.set(.8,4,.45);ear.position.set(sx*.022,.25,.1);ear.rotation.x=-.35;g.add(ear);
+   const eye=new THREE.Mesh(new THREE.SphereGeometry(.009,6,5),dark);eye.position.set(sx*.04,.185,.17);g.add(eye);
+   const leg=new THREE.Mesh(new THREE.SphereGeometry(.035,8,6),fur);leg.scale.set(.7,.6,1.6);leg.position.set(sx*.06,.035,-.05);g.add(leg);}
+  const tail=new THREE.Mesh(new THREE.SphereGeometry(.025,8,6),pale);tail.position.set(0,.11,-.15);g.add(tail);
+  g.traverse(m=>{if(m.isMesh){m.castShadow=true;}});g.name='hare';return g;}
+ function arrowMesh(){const g=new THREE.Group();const w=new THREE.MeshStandardMaterial({color:0x8a6a44,roughness:.8});const sh=new THREE.Mesh(new THREE.CylinderGeometry(.004,.004,.62,5),w);sh.rotation.x=Math.PI/2;g.add(sh);
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(.009,.04,5),new THREE.MeshStandardMaterial({color:0x555555,metalness:.6,roughness:.5}));tip.rotation.x=Math.PI/2;tip.position.z=.33;g.add(tip);
+  const fl=new THREE.MeshStandardMaterial({color:0xd8d0c0,roughness:.9,side:THREE.DoubleSide});for(const r of [0,2.1,4.2]){const f=new THREE.Mesh(new THREE.PlaneGeometry(.018,.07),fl);f.position.z=-.27;f.rotation.set(0,Math.PI/2,0);f.rotateOnWorldAxis(V(0,0,1),r);g.add(f);}
+  g.name='arrow';return g;}
+ const gH=(x,z,y)=>{try{const h=window.__ground.heightAt(x,z);if(h!=null)return h;}catch(e){}return y;};
+ // the bow from the back into the left hand: up over the left shoulder to the upper limb, then down to his side (and the reverse)
+ function bowReach(a,k,toHand){const bw=PP().tools&&PP().tools.bow;if(!bw)return;const sh=bones.LeftArm.getWorldPosition(V());const f=fwd(root.rotation.y);
+  const over=sh.clone().add(V(0,.14,0)).addScaledVector(f,-.1);const side=bones.Hips.getWorldPosition(V()).addScaledVector(V(f.z,0,-f.x),.24).addScaledVector(f,.12).add(V(0,-.08,0));
+  const w=smooth(0,.3,k)*(1-smooth(.75,1,k));if(w<.01)return;const at=k<.5?over:over.clone().lerp(side,smooth(.5,.85,k));odReach('Left',at,w);}
+ function huntStart(a,res,goOut){a.step='hunt';a.hp='draw';a.ht=0;a.hres=res;a.goOut=goOut;const f=fwd(N.g_out.face??H.face);H.face=N.g_out.face??H.face;
+  const e=root.position;const hp=e.clone().addScaledVector(f,2.6).addScaledVector(V(f.z,0,-f.x),rnd(-.15,.15));/* on the path out, not in the bushes beside it */hp.y=gH(hp.x,hp.z,e.y);a.hareAt=hp;
+  hareObj=hareObj||hareMesh();hareTidy();hareObj.position.copy(hp);hareObj.rotation.set(0,Math.atan2(-f.x,-f.z)+rnd(-.8,.8),0);hareObj.visible=true;scene.add(hareObj);
+  play(IDLE(),{fade:.4});H.look=hp.clone().add(V(0,.2,0));H.lookW=.5;const p0=a.post;a.post=dt=>{p0&&p0(dt);if(a.step==='hunt'&&(a.hp==='draw'||a.hp==='stow')&&a.rk!=null)bowReach(a,a.rk,a.hp==='draw');if(a.step==='hunt'&&a.hp==='pick'){if(a.ph2)hareCarry(a);else if(hareObj&&hareObj.parent===scene){hareObj.updateMatrixWorld(true);const g=hareObj.localToWorld(V(0,.06,-.14));a.hg0=g;const w=smooth(.3,.75,a.ht);if(w>.01)odReach('Right',g,w);}}};}
+ /* the hare never stays in his hand after the hunt is over, however the task ended */
+ let hareGuard=0;function hareTidy(){if(!hareGuard){hareGuard=1;stage('pre',()=>{if(hareObj&&hareObj.parent&&hareObj.parent!==scene&&!(act&&act.step==='hunt')){hareObj.parent.remove(hareObj);}});}}
+ /* up from the ground the hare is carried out in front and round the outside of his right thigh into the sack, never back
+    past his shins and hips (gate: shins 7, hips 6 cm in it); root-local: x left, z forward */
+ function hareCarry(a){const t=a.ht;const L=(x,y,z)=>root.localToWorld(V(x,y,z));
+  const P1=L(-.14,.62,.36),P2=L(-.34,.82,.06);const t0=a.pkT||(a.pkT=t);const at=t<t0+.65?a.hg0.clone().lerp(P1,smooth(t0,t0+.65,t)):P1.clone().lerp(P2,smooth(1.55,2.15,t));
+  const w=1-smooth(2.25,2.7,t);if(w>.01)odReach('Right',at,w);}
+ function huntEnd(a){if(hareObj&&hareObj.parent)hareObj.parent.remove(hareObj);if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);
+  try{const bw=PP().tools.bow;if(bw&&bw.parent===bones.LeftHand)onBack('bow',V(-.02,.06,-.15),[0,0,.55]);}catch(e){}H.look=null;H.lookW=0;H.slide=null;}
+ /* the bow changes parent (back <-> fist) without a jump: from where it was it eases into its new place over 0.35 s */
+ function bowMove(a,fn){const bw=PP().tools&&PP().tools.bow;if(!bw)return;bw.updateMatrixWorld(true);const M0=bw.matrixWorld.clone();try{fn();}catch(e){}a.bt={M0,tp:bw.position.clone(),tq:bw.quaternion.clone(),ts:bw.scale.clone(),k:0};}
+ function bowTween(a,dt){const T=a.bt;if(!T)return;const bw=PP().tools&&PP().tools.bow;if(!bw||!bw.parent){a.bt=null;return;}T.k=Math.min(1,T.k+dt/.35);bw.parent.updateWorldMatrix(true,false);
+  const L=bw.parent.matrixWorld.clone().invert().multiply(T.M0);const p0=V(),q0=new THREE.Quaternion(),s0=V();L.decompose(p0,q0,s0);const k=smooth(0,1,T.k);bw.position.lerpVectors(p0,T.tp,k);bw.quaternion.slerpQuaternions(q0,T.tq,k);bw.scale.lerpVectors(s0,T.ts,k);if(T.k>=1)a.bt=null;}
+ function huntTick(a,dt){a.ht+=dt;const t=a.ht;const ok=a.hres&&a.hres.ok;bowTween(a,dt);
+  if(a.hp==='draw'){a.rk=t/1.1;if(t>.5&&!a.bg){a.bg=1;bowMove(a,()=>PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)}));AU('cloth');}
+   if(t>1.1){a.hp='shoot';a.ht=0;once('hy_bowshoot',{fade:.35});AU('arrow');}return;}
+  if(a.hp==='shoot'){if(t>1.8&&!a.dr){a.dr=1;AU('bow_draw',root.position);}
+   if(t>3.95&&!a.rel){a.rel=1;AU('bow_release',root.position);arrowObj=arrowObj||arrowMesh();const from=bones.LeftHand.getWorldPosition(V());arrowObj.position.copy(from);scene.add(arrowObj);arrowObj.visible=true;
+    const to=a.hareAt.clone().add(V(0,.1,0));if(!ok)to.addScaledVector(V(fwd(H.face).z,0,-fwd(H.face).x),.5).addScaledVector(fwd(H.face),2.5);arrowObj.lookAt(to);a.ar={from,to,t:0};}
+   if(a.ar){const A=a.ar;A.t+=dt/(ok?.18:.3);const k=Math.min(1,A.t);arrowObj.position.lerpVectors(A.from,A.to,k);if(k>=1){a.ar=null;if(ok){hareObj.attach(arrowObj);a.fall=0;}else arrowObj.visible=false;}}
+   if(ok&&a.fall!=null&&a.fall<1){a.fall=Math.min(1,a.fall+dt/.25);hareObj.rotation.z=smooth(0,1,a.fall)*Math.PI/2*.95;hareObj.position.y=a.hareAt.y+.0;}
+   if(!ok&&a.rel){/* missed: the hare is off into the trees */a.hop=(a.hop||0)+dt;const f=fwd(H.face);const r=V(f.z,0,-f.x);const k=a.hop/1.2;if(k<1){const p=a.hareAt.clone().addScaledVector(f,2.6*k).addScaledVector(r,1.2*k);p.y=gH(p.x,p.z,a.hareAt.y)+.12*Math.abs(Math.sin(k*Math.PI*5));hareObj.position.copy(p);hareObj.rotation.y=Math.atan2(f.x+r.x*.4,f.z+r.z*.4);}else hareObj.visible=false;}
+   if(t>durOf('hy_bowshoot')-.05){a.hp='scan';a.ht=0;play('hy_scanbow',{fade:.5});H.lookW=0;}return;}
+  if(a.hp==='scan'){if(t>(ok?2.5:5.5)){if(ok){a.hp='stalk';a.ht=0;const f=fwd(root.rotation.y);const fr=V(f.z,0,-f.x);
+     /* he stops where his right hand, at the bottom of the pick-up, is on the hare (clip: 17 cm ahead, 1 cm left of the root) */
+     const st=a.hareAt.clone().addScaledVector(f,-.43).addScaledVector(fr,.22);/* it lies out front and to the right, past his right knee: the knee he drops onto and his feet stay clear of it (gate: feet 4, shins 7 cm in it) *//* the hand takes it by the hind legs: the body lies out in front, clear of his shins (gate: shins 7 cm in it) */hareObj.rotation.y=Math.atan2(f.x,f.z);hareObj.position.addScaledVector(f,0);const sx=st.x-root.position.x,sz=st.z-root.position.z;const d=Math.hypot(sx,sz);H.face=Math.atan2(sx,sz);
+     H.slide={x:sx,z:sz,yaw:0,k:0,d:Math.max(1,d/.42)};play('hy_sneak',{fade:.4,speed:1.3});H.look=a.hareAt.clone();H.lookW=.6;}
+    else{a.hp='stow';a.ht=0;play(IDLE(),{fade:.4});}}return;}
+  if(a.hp==='stalk'){root.rotation.y+=clamp(wrapA(H.face-root.rotation.y),-2*dt,2*dt);if(!H.slide){a.hp='pick';a.ht=0;once('hy_pickhare',{fade:.3});H.lookW=0;}return;}
+  if(a.hp==='pick'){if(t>.85&&!a.ph2&&(odPalmTo('Right',a.hg0||V())<.06||t>1.1)){a.ph2=1;a.hg0=odPalm('Right');bones.RightHand.updateWorldMatrix(true,false);bones.RightHand.attach(hareObj);AU('cloth');}
+   if(t>2.25&&!a.ph3){a.ph3=1;hareObj.visible=false;if(hareObj.parent)hareObj.parent.remove(hareObj);AU('zip');}
+   if(t>durOf('hy_pickhare')-.05){a.hp='stow';a.ht=0;play(IDLE(),{fade:.4});}return;}
+  if(a.hp==='stow'){a.rk=1-t/1.1;if(t>.55&&!a.bs){a.bs=1;bowMove(a,()=>onBack('bow',V(-.02,.06,-.15),[0,0,.55]));AU('cloth');}
+   if(t>1.1){huntEnd(a);const g=a.goOut;a.goOut=null;g&&g();}return;}}
  const carryOv=()=>{slingTick();if(H.carry&&H.path.length&&!H.lad&&has(H.carry)&&!H.ov)overlay(H.carry,{fade:.3,until:.98,weight:.85});};
  Object.assign(MAKE,{
   // out to the forest for meat or wood; gear from the workshop, out of sight for a while, back with the haul, gear off again
@@ -1970,12 +2027,16 @@ export function createHero(ctx){
      if(a.haul==='meatBag'){try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}fridgeVisit(a,'in',next);}
      else visit(a,PT('woodpile'),.5,'hy_droplogs',[[.6,()=>{try{P.release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],next);};
     a.unload=unload;if(a.leaving)return;unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);}));};
-   gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{if(a.leaving)return;a.step='out';goTo('g_out',()=>{if(a.leaving)return;a.step='away';a.t=0;root.visible=false;
-     if(kind==='hunt'&&Math.random()<.3)res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};});});
-   a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='away'){/* out of sight he turns round for home at an easy pace: no 180-degree snap when he reappears (QA: 45 cm/frame² hand jumps) */const fh=N.g_out.face!=null?N.g_out.face+Math.PI:H.face;H.face=fh;root.rotation.y+=clamp(wrapA(fh-root.rotation.y),-1.6*dt,1.6*dt);if(a.t>away&&Math.abs(wrapA(fh-root.rotation.y))<.02){root.rotation.y=fh;home();}}};
+   if(kind==='hunt'&&(o.hit!=null?!o.hit:Math.random()<.3))res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};
+   const goOut=()=>{if(a.leaving)return;a.step='out';goTo('g_out',()=>{if(a.leaving)return;a.step='away';a.t=0;root.visible=false;});};
+   /* OUTDOOR hunt (phone watch: three game hours of nothing behind a bush): at the forest edge, in sight, he takes the bow off
+      his back, waits for a hare, shoots, stalks up to it and puts it in the sack; then on out of sight for the rest of the trip */
+   const canHunt=kind==='hunt'&&!o.lantern&&!GEAR.lantern&&N.g_edge&&['hy_bowshoot','hy_scanbow','hy_sneak','hy_pickhare'].every(has)&&!window.__noHunt;
+   gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{if(a.leaving)return;if(canHunt){a.step='out';goTo('g_edge',()=>{if(a.leaving)return;huntStart(a,res,goOut);});}else goOut();});
+   a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='hunt'){huntTick(a,dt);return;}if(a.step==='away'){/* out of sight he turns round for home at an easy pace: no 180-degree snap when he reappears (QA: 45 cm/frame² hand jumps) */const fh=N.g_out.face!=null?N.g_out.face+Math.PI:H.face;H.face=fh;root.rotation.y+=clamp(wrapA(fh-root.rotation.y),-1.6*dt,1.6*dt);if(a.t>away&&Math.abs(wrapA(fh-root.rotation.y))<.02){root.rotation.y=fh;home();}}};
    // OUTDOOR: called away, he never walks off with the bow, quiver or lantern on him: the meat goes into the fridge and the
    // gear back on its pegs first, by hand (Pavel: worn only for the hunt). Out of sight in the forest he first comes back.
-   a.leave=cb=>{a.leaving=true;root.visible=true;if(a.step==='away')a.step='home';
+   a.leave=cb=>{a.leaving=true;root.visible=true;if(a.step==='hunt')huntEnd(a);if(a.step==='away'||a.step==='hunt')a.step='home';
     const off=()=>{if(GEAR.bow||GEAR.lantern||GEAR.coat)gearOff(a,()=>{play(IDLE(),{fade:.4});cb();});else cb();};
     if(a.haul&&a.unload){const u=a.unload;a.unload=null;u(off);}else{if(a.haul){try{PP().release(a.haul);window.__audio.carry(false);}catch(e){}H.carry=null;a.haul=null;}off();}};a.post=()=>{if(a.haul==='logArmful')odArmful();};return a;},
   store:(o={})=>{const a={step:'go',t:0};const P=PP();try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}H.carry='hy_carrysack';
