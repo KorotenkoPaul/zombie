@@ -280,6 +280,48 @@ function makeMaterials(renderer) {
 const STD2 = new Map(); const std2 = (c) => { if (!STD2.has(c)) STD2.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: .85 })); return STD2.get(c); }; // shared per colour: fewer materials, fewer merged meshes
 // perf: every colour-only standard material is drawn through one shared vertex-coloured material per (roughness band, metal or
 // not, env-lit or not, side). bake() and the global static merge both use it, so most objects end up one or two draw calls.
+// ---------- perf: one texture atlas for the small textured props (rugs, the picture, labels, cloths) ----------
+// Each of them was its own draw call only because of its own texture. A material that has nothing but a colour map
+// (opaque, no bump/normal/emissive, not live) is drawn into one atlas: its UVs (after the map's repeat/offset) are
+// remapped into its tile, repeats are baked by tiling the image in the tile, and colour, roughness and metalness ride in
+// the vertex attributes exactly as in plainV (same shader trick), so they all merge into one mesh. A texture that a
+// Fal image replaces later (upgrade()) is redrawn into its tile when it arrives (poll).
+const ATL = (() => {
+  const src = new Map(); /* texture -> { t, gs: [{g, uv0}], u0, u1, v0, v1 } */ let mat = null, cv = null, tex = null; const PAD = 6;
+  const ok = m => m && m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial && m.map && m.map.image && !m.bumpMap && !m.normalMap && !m.roughnessMap && !m.metalnessMap && !m.alphaMap && !m.aoMap && !m.emissiveMap && !m.lightMap && !m.transparent && !m.alphaTest && !m.polygonOffset && !m.vertexColors && !m.userData.keep && m.userData.env0 === undefined && m.emissive.getHex() === 0 && m.side !== THREE.BackSide && m.map.rotation === 0 && !NIGHT_METALS.includes(m) && (m.metalness < .5 || Math.abs((m.envMapIntensity ?? 1) - .9) < .35);
+  const api = {
+    take(m, g) { if (!ok(m) || !g.attributes.uv) return false; const t = m.map; t.updateMatrix(); const uv = g.attributes.uv, e = t.matrix.elements; let s = src.get(t);
+      if (!s) src.set(t, s = { t, gs: [], u0: 1e9, u1: -1e9, v0: 1e9, v1: -1e9, img: null });
+      const a = new Float32Array(uv.count * 2); for (let i = 0; i < uv.count; i++) { const u = uv.getX(i), v = uv.getY(i); const x = e[0] * u + e[3] * v + e[6], y = e[1] * u + e[4] * v + e[7]; a[i * 2] = x; a[i * 2 + 1] = y; s.u0 = Math.min(s.u0, x); s.u1 = Math.max(s.u1, x); s.v0 = Math.min(s.v0, y); s.v1 = Math.max(s.v1, y); }
+      if (s.u1 - s.u0 > 6 || s.v1 - s.v0 > 6) return false; /* a long repeated strip stays on its own texture */ s.gs.push({ g, a }); return true; },
+    mat() { if (!mat) { mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMap: ENV0 || null, envMapIntensity: .9, side: THREE.DoubleSide }); mat.userData.atlas = true;
+        mat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float vmet; varying float vMet;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMet = vmet;');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;'); };
+        mat.customProgramCacheKey = () => 'atlasV'; } return mat; },
+    // tile size: the texture's own pixels per repeat, at most 512
+    build() { if (!src.size) return; const L = [...src.values()].filter(s => s.gs.length);
+      for (const s of L) { let iw = s.t.image.width || 256, ih = s.t.image.height || 256; if (Math.max(iw, ih) <= 2 * Math.min(iw, ih)) iw = ih = Math.max(iw, ih); /* a square Fal image may replace a 1:2 canvas */ const ru = Math.max(.05, s.u1 - s.u0), rv = Math.max(.05, s.v1 - s.v0);
+        let wm = 0; for (const { g } of s.gs) { g.computeBoundingBox(); const z = g.boundingBox.getSize(new THREE.Vector3()); wm = Math.max(wm, z.x, z.y, z.z); } /* a Fal image may replace a small canvas later: at least ~300 px per metre */
+        let w = Math.min(500, Math.max(iw * ru, wm * 300)), h = Math.min(500, Math.max(ih * rv, wm * 300 * rv / ru)); const k = Math.min(1, 500 / Math.max(w, h)); /* 500 + padding: four in a 2048 row */ s.w = Math.max(16, Math.round(w * k)); s.h = Math.max(16, Math.round(h * k)); }
+      // shelf packing, tallest first: 1024², else 2048 x 1024, and only then shrink everything until it fits
+      let sc = 1, W = 1024, H = 1024;
+      for (let tries = 0; tries < 8; tries++) { if (tries === 1 && sc === 1 && W === 1024) { W = 2048; sc = 1.0001; } let x = 0, y = 0, rowH = 0, fit = true; for (const s of [...L].sort((a, b) => b.h - a.h)) { const w = Math.round(s.w * sc) + 2 * PAD, h = Math.round(s.h * sc) + 2 * PAD; if (x + w > W) { x = 0; y += rowH; rowH = 0; } if (y + h > H) { fit = false; break; } s.px = x + PAD; s.py = y + PAD; s.pw = w - 2 * PAD; s.ph = h - 2 * PAD; x += w; rowH = Math.max(rowH, h); } if (fit) break; if (tries) sc *= .85; }
+      cv = document.createElement('canvas'); cv.width = W; cv.height = H; tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; api.mat().map = tex;
+      for (const s of L) { api.draw(s);
+        // remap: atlas u = (px + (u'-u0)/(u1-u0)*pw)/W ; v: flipY, the tile's bottom is v0
+        for (const { g, a } of s.gs) { const uv = g.attributes.uv; const du = Math.max(1e-6, s.u1 - s.u0), dv = Math.max(1e-6, s.v1 - s.v0);
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, (s.px + (a[i * 2] - s.u0) / du * s.pw) / W, 1 - (s.py + s.ph - (a[i * 2 + 1] - s.v0) / dv * s.ph) / H); uv.needsUpdate = true; } }
+      tex.needsUpdate = true; api.list = L.map(s => (s.t.image.src ? s.t.image.src.split('/').pop() : 'canvas' + s.t.image.width + 'x' + s.t.image.height) + ' ' + s.pw + 'x' + s.ph); },
+    // the image repeated over the tile's uv range, also into the padding (so mip levels don't bleed in the neighbours)
+    draw(s) { const x = cv.getContext('2d'), img = s.t.image; s.img = img; const du = Math.max(1e-6, s.u1 - s.u0), dv = Math.max(1e-6, s.v1 - s.v0); const cw = s.pw / du, ch = s.ph / dv;
+      x.save(); x.beginPath(); x.rect(s.px - PAD, s.py - PAD, s.pw + 2 * PAD, s.ph + 2 * PAD); x.clip();
+      const ue = PAD / cw, ve = PAD / ch;
+      for (let ku = Math.floor(s.u0 - ue); ku < Math.ceil(s.u1 + ue); ku++) for (let kv = Math.floor(s.v0 - ve); kv < Math.ceil(s.v1 + ve); kv++)
+        x.drawImage(img, s.px + (ku - s.u0) * cw, s.py + (s.v1 - (kv + 1)) * ch, cw, ch);
+      x.restore(); },
+    poll(dt) { if (!tex || (api._t = (api._t || 0) - dt) > 0) return; api._t = .5; let ch = false; for (const s of src.values()) if (s.img && s.t.image !== s.img && s.t.image && (s.t.image.complete !== false)) { api.draw(s); ch = true; } if (ch) tex.needsUpdate = true; },
+    get texture() { return tex; } };
+  return api; })();
 const PLAINV = new Map(); let ENV0 = null; /* the shared env map, taken from the metal materials */
 // roughness rides in the vertex colour's alpha (opaque materials ignore alpha), so one material covers every roughness
 function plainOf(m) {
@@ -1428,27 +1470,42 @@ export function buildProps(ctx) {
       // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
       const top = yc + q.r + .03; const o = Math.max(0, d - q.r * .4); const dr = o < .08 ? 4 * o * o : .0256 + .64 * (o - .08) + 6 * (o - .08) * (o - .08);
       const h = top - dr - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
+  // ---- BED (2026-11-24, Pavel: "the quilt just appears on top of him, he never covers himself"): the quilt's head flap folds over a
+  // hinge across the bed. fold 0 = flat (a made bed), 1 = turned down onto the lower half. Character moves it with his hand on the
+  // flap's free edge (quiltFold / quiltEdge), so it only ever moves where his hand takes it; quiltLive(s) refreshes it every frame.
+  let qxMax = -1e9; if (qBase) for (let i = 0; i < qBase.length; i += 3) if (qBase[i + 1] <= qLowMax + .1 && qBase[i] > qxMax) qxMax = qBase[i];
+  const FL = .3, FR = .1, qFlat = qLowMax - .034, qHinge = qxMax - FL; const fold = { a: 0, shown: 0 }; const _fp = [0, 0];
+  // a point of the flap: x along the quilt, yo its height over the flat top (negative on the hanging sides), a the fold angle 0..PI.
+  // The cloth bends round the hinge on a radius (no crease through itself), then runs straight; it keeps its thickness on the turn.
+  function foldPt(x, yo, a, o) { const s = x - qHinge; if (s <= 0 || a < 1e-4) { o[0] = x; o[1] = qFlat + yo; return o; }
+    if (yo < 0) yo *= 1 - .85 * a / Math.PI;/* its hanging sides fold flat with it */ const rho = FR / a; let px, py, th;
+    if (s <= FR) { th = s / rho; px = qHinge + rho * Math.sin(th); py = qFlat + rho * (1 - Math.cos(th)); }
+    else { th = a; px = qHinge + rho * Math.sin(a) + (s - FR) * Math.cos(a); py = qFlat + rho * (1 - Math.cos(a)) + (s - FR) * Math.sin(a); }
+    o[0] = px - yo * Math.sin(th); o[1] = py + yo * Math.cos(th); return o; }
+  out.quiltFold = (v) => { if (v == null) return fold.a / Math.PI; fold.a = clamp01(v) * Math.PI; };
+  out.quiltLive = (t) => { press.fast = Math.max(press.fast || 0, t); };
+  // the flap's free edge in the world, at the z of the given world point (kept off the corners): where his fingers hold it
+  out.quiltEdge = (pw, sf = 1, zm = .33) => { if (!quiltMesh) return null; bunk.updateMatrixWorld(true); const pl = bunk.worldToLocal(pw.clone()); const zl = Math.max(-zm, Math.min(zm, pl.z));/* zm: up to its side hem */
+    foldPt(qHinge + FL * sf, .012, fold.a, _fp);/* sf: how far along the flap the hand holds it (1 = its free edge) */ let X = _fp[0], Y = _fp[1]; if (press.cover && press.k > .001 && cb.length) Y += liftAt(X, zl, Y) * press.k; return bunk.localToWorld(V(X, Y, zl)); };
+  out._quiltFoldDbg = () => ({ qxMax, qHinge, qFlat, a: fold.a });
   function pressQuilt(dt) {
-    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5);
-    if (press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones())) { coverT -= dt; if (coverT <= 0 || Math.abs(press.k - press.shown) >= .01) { coverT = .2; press.shown = press.k; bunk.updateMatrixWorld(true);
-        if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } }
-        const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, e = .02, k = press.k;
-        for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
-          const L0 = liftAt(x, z, y > qTop ? y : qTop) * (y >= qTop ? 1 : Math.max(0, (y - qBot) / (qTop - qBot))); if (L0 <= .002) continue;/* the hanging sides: the hem stays down, the cloth slopes from the lifted top edge to it (no box with a zigzag hem over a bare mattress) */ a[i + 1] = y + L0 * k;
-          if (nBase[i + 1] > .4) { const gx = (liftAt(x + e, z, y) - liftAt(x - e, z, y)) / (2 * e) * k, gz = (liftAt(x, z + e, y) - liftAt(x, z - e, y)) / (2 * e) * k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; } }
-        P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
-      return; }
-    if (Math.abs(press.k - press.shown) < .01 || !press.at) return; press.shown = press.k;
-    const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, c = press.at, e = .01;
-    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2]; if (Math.abs(y - c.y) > .3) continue;
-      if (press.cover) { const L0 = bodyLift(x, z, c); if (L0 <= 0) continue; a[i + 1] = y + L0 * press.k;
-        if (nBase[i + 1] > .4) { const gx = (bodyLift(x + e, z, c) - bodyLift(x - e, z, c)) / (2 * e) * press.k, gz = (bodyLift(x, z + e, c) - bodyLift(x, z - e, c)) / (2 * e) * press.k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; }
-        continue; }
-      // an elongated hollow along the bed (body length on x), deepest under the hips, with a slight rim of bunched cloth
-      const dx = (x - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d > 1.35) continue;
-      const sink = d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008; a[i + 1] = y - sink * press.k; }
-    P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
-  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
+    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5); if (press.fast > 0) press.fast -= dt;
+    const cover = press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones()); coverT -= dt;
+    const folded = Math.abs(fold.a - fold.shown) > 1e-3;
+    if (cover) { if (!(coverT <= 0 || press.fast > 0 || folded || Math.abs(press.k - press.shown) >= .01)) return; }
+    else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
+    press.shown = press.k; fold.shown = fold.a;
+    if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } } }
+    const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
+    for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
+      let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }
+      if (cover && k > .001) { /* the hanging sides: the hem stays down, the cloth slopes from the lifted top edge to it */let L0 = liftAt(X, z, Y > qTop ? Y : qTop); if (Y < qTop) L0 *= Math.max(0, (Y - qBot) / (qTop - qBot)); Y += L0 * k; }
+      else if (!cover && c && k > .001 && Math.abs(y - c.y) <= .3) { // an elongated hollow along the bed where he sits or lies on it, deepest under the hips
+        const dx = (X - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d <= 1.35) Y -= (d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008) * k; }
+      a[i] = X; a[i + 1] = Y; }
+    P.needsUpdate = true; quiltMesh.geometry.computeVertexNormals(); quiltMesh.geometry.computeBoundingSphere(); }
+  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { if (out._atlas) out._atlas.poll(dt); { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
@@ -1495,9 +1552,10 @@ export function buildProps(ctx) {
     const by = new Map(); const kill = []; const MST = out._mergeStats = {}; out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
       let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
-      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0; const pm = out._liveMats.has(m0) ? null : plainOf(m0); if (pm) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness, m0.metalness); mat = pm; key = pm.uuid + (cast ? 's' : 'n'); } else if (m0.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1));
+      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0; const pm = out._liveMats.has(m0) ? null : plainOf(m0); if (pm) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness, m0.metalness); mat = pm; key = pm.uuid + (cast ? 's' : 'n'); } else if (!out._liveMats.has(m0) && ATL.take(m0, g)) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness, m0.metalness); mat = ATL.mat(); key = 'atlas' + (cast ? 's' : 'n'); } else if (m0.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1));
       if (!by.has(key)) by.set(key, { mat, cast, gs: [] }); by.get(key).gs.push(g); kill.push(o); const rn = r.name || ('@' + r.position.toArray().map(v => v.toFixed(1))); MST[rn] = (MST[rn] || 0) + g.attributes.position.count / 3 * (cast ? 2 : 1); }); }
     for (const o of kill) o.removeFromParent();
+    ATL.build(); out._atlas = ATL;
     // a material whose casting parts add up to a few hundred triangles is not worth its own shadow draw: fold it into the non-casting mesh
     for (const [k, e] of [...by]) { if (!e.cast) continue; let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; const kn = k.slice(0, -1) + 'n'; if (n > 400) continue;
       if (by.has(kn)) { by.get(kn).gs.push(...e.gs); by.delete(k); } else e.cast = false; }

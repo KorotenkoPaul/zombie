@@ -659,7 +659,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       if (lockK > 0 && (s.name === 'kitchen' || s.name === 'bedroom' || s.name === 'workshop')) k *= 1 - .65 * lockK;
       let f = k > 0 ? flick(s, T) : 0;
       // he is at the stove feeding it: the fire is livelier, its glow dances on him and the kitchen
-      if (s.name === 'oven' && cooking) f = .82 + (f - .8) * 2.2;
+      if (s.name === 'oven' && cooking) f = .86 + (f - .8) * 1.5;   // livelier, but a room lit by a fire breathes; it doesn't strobe (was x2.2: the walls swung 3x)
       if (s.name === 'oven' && s.lights[0] && s.lights[0].l.userData.open) f += s.lights[0].l.userData.open * ((noise(T * 9 + 4) - .5) * .12 + (noise(T * 23 + 8) - .5) * .05);
       // outdoor flames feel the wind (game/wind.js): a gust makes the flame duck and stutter, then it steadies again.
       // Indoor flames stay calm. The glass of a lantern shelters it, so the dip is small.
@@ -809,7 +809,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // No extra light: a thin rim on the hero's own materials only (fresnel edge in the fragment shader). At night it is
   // the cool moonlit edge of the reference painting, by day a faint neutral edge. It brightens nothing else in the room,
   // costs no light slot and no draw call. Hooked lazily, so a hero swap (?hero=old, v6, LOD) gets it too.
-  const rimU = { uRimC: { value: new THREE.Color() }, uRimW: { value: new THREE.Color() }, uFill: { value: new THREE.Color() } }, RIM_NIGHT = new THREE.Color(0x7FA6E0), RIM_DAY = new THREE.Color(0xFFF1DC), FILL_C = new THREE.Color(0xFFCFA6);
+  const rimU = { uRimC: { value: new THREE.Color() }, uRimW: { value: new THREE.Color() }, uFill: { value: new THREE.Color() } }, RIM_NIGHT = new THREE.Color(0x7FA6E0), RIM_DAY = new THREE.Color(0xFFF1DC), FILL_C = new THREE.Color(0xFFD9BC);
   let inProbe = null;
   let rimRoot = null, rimN = 0; const rimShared = new Set();
   function rimHook(m) {
@@ -842,9 +842,13 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const hp = r.position; let w = 0;
     for (const [room, R] of Object.entries(ROOMS)) { const d = Math.hypot(hp.x - R.c.x, (hp.y + 1.1 - R.c.y) * 2, hp.z - R.c.z); w = Math.max(w, Math.min(1, warm[room] || 0) * smooth(3, 1.6, d)); }
     if (hand.g.visible) w = Math.max(w, Math.min(1, (src.get('hand') || {}).level || 0) * .8);
-    rimU.uFill.value.copy(FILL_C).multiplyScalar(.15 * w * (1 - dayK * .85));
+    rimU.uFill.value.copy(FILL_C).multiplyScalar(FILL_K * w * (1 - dayK * .85));
   }
   const _rc = new THREE.Color();
+  // hero-look thread: his face still read dark in the lit rooms at the normal camera (face luma ~88 of 255, deep orange).
+  // The lamp light bounced back off the walls and floor in front of him: .42 lifts the face to ~120 and lets the eyes read.
+  // Hero materials only, so the rooms are exactly as bright as before.
+  const FILL_K = .42;
 
   const api = {
     names: [...src.keys()],
