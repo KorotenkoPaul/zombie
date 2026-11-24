@@ -8,7 +8,7 @@
 const fs=require('fs'),path=require('path');const {open}=require('../anim/lib');
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const OUT=path.resolve(arg('out','/tmp/hero-watch'));const EVERY=+arg('every',6),CALM=+arg('calm',30),SEED=+arg('seed',1);
-const SZ=+arg('size',400);const FAST=!process.argv.includes('--post');const VIEW=arg('view','body');const MAXS=+arg('max',75);const AT=arg('at',null)?arg('at').split(',').map(Number):null;const ATCLIP=arg('atclip',null);const BONE=arg('bone','RightHand');const DIST=+arg('dist',.8);let atclipN=0,atclipLast=-1e9;
+const SZ=+arg('size',400);const FAST=!process.argv.includes('--post');const VIEW=arg('view','body'),FIXCAM=arg('cam',null);const MAXS=+arg('max',75);const AT=arg('at',null)?arg('at').split(',').map(Number):null;const ATCLIP=arg('atclip',null);const BONE=arg('bone','RightHand');const DIST=+arg('dist',.8);let atclipN=0,atclipLast=-1e9;
 // task, hour, opts, seconds after start to keep filming
 const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes',9],['wash',9],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
  ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],['supplies',11],
@@ -20,7 +20,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
  const {b,p,errs}=await open({seed:SEED,vp:{width:SZ,height:SZ}});
  if(hero!=='old')console.log('note: --hero new needs ?hero=new support in lib; using default');
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
- await p.evaluate(()=>__qa.start());await p.evaluate(f=>{window.__watchFast=f;},FAST);
+ await p.evaluate(()=>__qa.start());await p.evaluate(f=>{window.__watchFast=f;},FAST);if(FIXCAM)await p.evaluate(c=>{window.__watchCam=c;},FIXCAM.split(',').map(Number));
  await p.evaluate(()=>{
   const T=__dbg.THREE,H=__dbg.hero;let scene=H.root;while(scene.parent)scene=scene.parent;
   const mine=o=>{while(o){if(o===H.root)return true;o=o.parent;}return false;};
@@ -50,8 +50,8 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
     const dist=Math.max(view==='hands'?.65:.7,Math.min(want,score(W.yaw)-.12));
     const R=window.__camera&&window.__camera.rig;
     if(R&&R.set){if(__th.rig&&__th.rig.cine)__th.rig.cine(false);R.set({target:c.clone(),yaw:W.yaw,pitch,dist:Math.max(dist,1.5),snap:true});for(let i=0;i<4;i++)R.update(.25,{});if(window.__camera.dof)window.__camera.dof(false);}
-    const cam=__qaCamera;cam.position.set(c.x+Math.sin(W.yaw)*Math.cos(pitch)*dist,c.y+Math.sin(pitch)*dist,c.z+Math.cos(W.yaw)*Math.cos(pitch)*dist);cam.lookAt(c);
-    if(cam.fov&&dist<1.6){cam.fov=Math.min(75,50*1.6/dist);cam.updateProjectionMatrix();}else if(cam.fov!==50){cam.fov=50;cam.updateProjectionMatrix();}
+    const cam=__qaCamera;if(window.__watchCam){cam.position.set(...window.__watchCam);cam.lookAt(c);if(cam.fov!==50){cam.fov=50;cam.updateProjectionMatrix();}}else cam.position.set(c.x+Math.sin(W.yaw)*Math.cos(pitch)*dist,c.y+Math.sin(pitch)*dist,c.z+Math.cos(W.yaw)*Math.cos(pitch)*dist),cam.lookAt(c);
+    if(!window.__watchCam&&cam.fov&&dist<1.6){cam.fov=Math.min(75,50*1.6/dist);cam.updateProjectionMatrix();}else if(cam.fov!==50){cam.fov=50;cam.updateProjectionMatrix();}
     if(window.__watchFast&&!W.hid){W.hid=1;scene.traverse(o=>{if(o.isInstancedMesh&&o.count>500&&/canopy|forest/i.test(o.name||'')||(o.isInstancedMesh&&o.count>2500))o.visible=false;});}
     const far0=cam.far;if(window.__watchFast){cam.far=18;cam.updateProjectionMatrix();}
     cam.updateMatrixWorld();__noRender(false);if(window.__watchFast)__realRender.call(__renderer,scene,cam);else __qaComposer.render();__noRender(true);if(window.__watchFast){cam.far=far0;cam.updateProjectionMatrix();}
