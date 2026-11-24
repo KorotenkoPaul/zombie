@@ -538,11 +538,11 @@ export function createHero(ctx){
      if(pp&&PO.tools.ladle){pot.visible=false;a.pot2=1;a.step='topot';a.t=0;play(IDLE(),{fade:.5});approachTo(a,pp.getWorldPosition(V()),.45,()=>{a.step='getladle';a.t=0;});}
      else{a.step='stir';a.t=0;grab(spoon,'Right',[0,.06,.02],[0,0,-Math.PI/2]);play('hy_stir',{fade:.7});}};
    goTo('stove',()=>{pot.visible=true;pot.position.copy(potSpot());pot.rotation.y=rnd(0,6);
-    if(OVP()&&ovp){a.ovh=1;approachTo(a,ovp,.62,()=>{a.step='ovsq';a.t=0;});}
+    if(OVP()&&ovp){a.ovh=1;ovenSpot(a,()=>{a.step='ovsq';a.t=0;});}
     else{a.step='oven';a.t=0;once('hy_oven',{fade:.5,then:afterOven});}});
    const oven=()=>P3&&P3.oven?P3.oven:(ctx.ovenDoor&&ctx.ovenDoor());
    a.update=dt=>{if(a.step==='approach'){if(a.pot2||a.ovh){stepTick(a,dt);return;}}a.t+=dt;
-    if(/^(ovsq|open|peek|shut|up)$/.test(a.step)){const o=OVP();const h=o.handle(V());const m=ovp.clone().add(V(h.x-ovp.x,0,h.z-ovp.z).multiplyScalar(-.15)).setY(ovp.y+.02);const G=window.__grab;a.oik=null;
+    if(/^(ovsq|open|peek|shut|up)$/.test(a.step)){/* crouched: the idle's weight shifts would slide the planted feet over the boards; slow it right down */try{if(H.cur)H.cur.setEffectiveTimeScale(a.step==='up'?1:.12);}catch(e){}const o=OVP();const h=o.handle(V());const m=ovp.clone().add(V(h.x-ovp.x,0,h.z-ovp.z).multiplyScalar(-.15)).setY(ovp.y+.02);const G=window.__grab;a.oik=null;
      if(a.step==='ovsq'){H.look=h;H.lookW=1;if(a.sqd===undefined)a.sqd=Math.max(sqFor(h),sqFor(m)*.8);sqTo(a.sqd,dt);a.oik=['Right',h,smooth(.2,.8,a.t)];if(a.t>.85&&palmTo('Right',h)<.04||a.t>1.6){a.step='open';a.t=0;AU('ovenDoor',h);}}
      else if(a.step==='open'){o.setOpen(Math.min(1,o.open+dt/.9));H.look=m;H.lookW=.9;a.oik=['Right',o.handle(V()),1];if(G)G.hold('Right',o.door,()=>o.handle(V()));if(o.open>=1){if(G)G.free(o.door);a.step='peek';a.t=0;}}
      else if(a.step==='peek'){/* the hand lets go and rests on his knee while he looks at the fire */H.look=m;H.lookW=1;a.oik=['Right',h,1-smooth(0,.35,a.t)];if(a.t>1.7){a.step='shut';a.t=0;}}
@@ -837,6 +837,15 @@ export function createHero(ctx){
    if(a.wL>.01){const t=gl('gL',tL,palmPt('Left'));reachGrip('Left',t,a.wL);}else a.gL=null;REACH_LEAN=.6;};
   a.leave=cb=>{if(a.piece){D.settle(a.piece.i,a.piece.from==='dirty'&&a.piece.show!==a.piece.clean?'dirty':a.piece.from==='rack'?'rack':'rack');a.piece=null;}if(a.tapOn){try{P.water.tap(false);}catch(e){}}a.post=null;cb();};
   return a;}
+ // KITCHEN B16: the crouch spot in front of the oven: behind the end of its open drop-door (42 cm) so knees and feet stay clear of it.
+ // A short shuffle there (forward or back), facing the oven.
+ function ovenSpot(a,then){const P=window.__props||P3;const o=P&&P.oven;const op=PT('oven');if(!o||!o.handle||!op){then();return;}const h0=o.handle(V());/* out of the oven: toward the room side he stands on, square to the stove */let n=V(root.position.x-h0.x,0,root.position.z-h0.z).normalize();if(N.stove&&N.stove.face!=null){const f=fwd(N.stove.face).multiplyScalar(-1);if(f.dot(n)>.3)n=f;}
+  /* boards under both feet and the heels (behind the oven is the kitchen hatch): the first spot that has them, then a step aside */
+  const lat=V(-n.z,0,n.x);const okAt=c=>{for(const [u,v] of [[.12,0],[-.12,0],[.12,.18],[-.12,.18],[0,-.1]]){const x=c.x+lat.x*u+n.x*v,z=c.z+lat.z*u+n.z*v;const f=floorAt(x,root.position.y,z,.32,.3);if(f==null||Math.abs(f-root.position.y)>.06)return false;}return true;};
+  let q=null;for(const sd of [0,.22,-.22,.36,-.36])for(const dd of [.84,.8,.76]){if(q)break;const c=h0.clone().addScaledVector(n,dd).addScaledVector(lat,sd);c.y=root.position.y;if(okAt(c))q=c;}
+  if(!q){q=h0.clone().addScaledVector(n,.62);}q.y=root.position.y;pushOut(q);const p=root.position;const face=Math.atan2(-n.x,-n.z);H.face=face;const mv=Math.hypot(q.x-p.x,q.z-p.z);
+  const dur=Math.max(.35,mv/.6,Math.abs(wrapA(face-root.rotation.y))/2.4);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:wrapA(face-root.rotation.y),k:0,d:dur};if(mv>.06)play('30',{fade:.25,speed:.8});
+  a.step='approach';a.t=0;a.adur=dur;a.next=()=>{play(IDLE(),{fade:.35});then();};}
  function job(o){const a={step:'go',t:0,T:0,held:[]};const sp0=typeof o.pt==='function'?o.pt():o.pt;
   if(!sp0&&!o.node){a.update=()=>endTask(false);return a;}
   const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
@@ -990,10 +999,10 @@ export function createHero(ctx){
    const sqFor=(t,side='Right',mx=.45)=>{const sh=bones[side+'Arm'].getWorldPosition(V());const hz=Math.hypot(sh.x-t.x,sh.z-t.z);const R0=armLen*.9+PALM-.03;const dy=sh.y+(H.squat||0)-t.y;return clamp(dy-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,mx);};
    const mouth=()=>{const o=OV();const h=o.handle(V());const c=ovp.clone();return c.add(V(h.x-c.x,0,h.z-c.z).multiplyScalar(-.15)).setY(ovp.y+.02);};// inside the opening, above the embers
    a.ik=[];
-   const toOven=()=>{const nn=nearNode(ovp)||'stove';goTo(nn,()=>approachTo(a,ovp,.62,()=>{a.step='ovsq';a.t=0;H.carry=null;play(IDLE(),{fade:.4});}));};
+   const toOven=()=>{const nn=nearNode(ovp)||'stove';goTo(nn,()=>approachTo(a,ovp,.62,()=>ovenSpot(a,()=>{a.step='ovsq';a.t=0;H.carry=null;play(IDLE(),{fade:.4});})));};
    const nn=nearNode(wp)||'kmid';goTo(nn,()=>approachTo(a,wp,.5,()=>{a.step='pksq';a.t=0;AU('grunt');}));
    a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
-    const o=OV();a.ik=[];
+    const o=OV();a.ik=[];if(/^(pksq|ovsq|open|let|log|shut)$/.test(a.step)&&(H.squat||0)>.05){try{H.cur&&H.cur.setEffectiveTimeScale(.12);}catch(e){}}/* crouched: planted feet, no idle sway sliding them */
     if(a.step==='pksq'){// squat down to the pile, both hands onto the top logs
      H.look=wp;H.lookW=1;if(a.t<=1.0){if(a.sqd===undefined)a.sqd=sqFor(wp);sqTo(a.sqd,dt);}const w=smooth(.25,.9,a.t);a.ik=[['Left',wp.clone().add(V(0,.04,0)).addScaledVector(rightOf(),-.12),w],['Right',wp.clone().add(V(0,.04,0)).addScaledVector(rightOf(),.12),w]];
      if(a.t>1.0&&!a.got){a.got=1;try{P.grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});const ar=arm();if(ar){logs=ar.children.slice();home=logs.map(l=>({p:l.position.clone(),q:l.quaternion.clone(),v:l.visible}));}window.__audio&&window.__audio.carry&&window.__audio.carry(true);}catch(e){}
@@ -1776,9 +1785,11 @@ export function createHero(ctx){
    if(f.mode==='sit')w=smooth(0,1,(f.hStand-hy)/Math.max(.05,f.hStand-f.hSeat));else if(f.mode==='rise')w=1-smooth(0,1,(hy-f.hSeat)/Math.max(.05,f.hStand-f.hSeat));
    p.y=lerp(f.base,f.y-hy,w);}
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
-   const sq=H.squat||0;/* KITCHEN: H.squat lowers the hips, the feet stay on the boards (legIK) */let f=floorAt(p.x,p.y+sq,p.z,.32);/* WALK: one ray between two planks hit the joist below: the root dipped 2 cm for a few frames. A drop is real only if the boards around agree */
-   if(f!=null&&H.floorY!=null&&f<H.floorY-.006){for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y+sq,p.z+oz,.32);if(g2!=null&&g2>f&&g2<=H.floorY+.01)f=g2;}}
-   if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
+   const sq=H.squat||0;/* KITCHEN: H.squat lowers the hips, the feet stay on the boards (legIK) */let f;
+   if(sq>.02)f=floorAt(p.x,p.y+sq,p.z,.06,.6)??floorAt(p.x,p.y+sq,p.z,.2,.6);/* squatting: the ray starts at the feet's level (the boards), not inside his lowered body nor under the boards */
+   else{f=floorAt(p.x,p.y,p.z,.32,.9);/* WALK: one ray between two planks hit the joist below: the root dipped 2 cm for a few frames. A drop is real only if the boards around agree */
+    if(f!=null&&H.floorY!=null&&f<H.floorY-.006){for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y,p.z+oz,.32,.9);if(g2!=null&&g2>f&&g2<=H.floorY+.01)f=g2;}}}
+   if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3+sq){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-(sq>.02?2.6:.9)*dt,(sq>.02||H.sqUp?2.6:1.3)*dt);}/* a squat goes down (and back up) at its own pace: the root must keep up with it, or the hips never go down */}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
   runSlot('motion',dt);
