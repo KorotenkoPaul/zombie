@@ -961,6 +961,7 @@ export function createHero(ctx){
  // POSE: an open edge to sit on with the legs hanging: walk out from each node in 10-degree steps until the boards end
  // (small gaps between planks are crossed), then demand: nothing solid (railing, post, beam, roof) in front of the shins
  // or under the dangling feet, nothing behind the back at hip height, and the same along 30 cm either side (room for the thighs)
+ let EDGE_OK=null;
  function openEdge(nodes){const C=window.__collide;if(!C||!C.depthAt)return null;let best=null;
   const solid=(x,y,z)=>C.depthAt(x,y,z)>.005;
   for(const k of nodes){const n=N[k];if(!n)continue;for(let a=0;a<36;a++){const yaw=a*Math.PI/18;const f=fwd(yaw);let last=null,miss=0;
@@ -1221,9 +1222,11 @@ export function createHero(ctx){
    // ladder (the deck has railings all round and its one gap is cramped under the bedroom eave and by the rope ladder)
    // POSE: Pavel 2026-11-23: he sat inside the railing with his legs splayed through the balusters. The spot is now searched
    // for: no railing / post / beam in front of the shins or under the dangling feet, and his legs are never planted on the boards.
-   const e0=openEdge(['land','gate','wstep']);const node=e0?e0.node:'land';const a={step:'go',t:0,T:0};const dur=rnd(40,90);
-   if(!e0){a.update=()=>endTask(false);return a;}
-   goTo(node,()=>{const e=e0;a.e=e;const yaw=Math.atan2(e.f.x,e.f.z);
+   // the edges are fixed boards: a spot found once is kept (EDGE_OK) and checked again on arrival, so a passing prop, a not yet
+   // voxelised far shape or a search from the far end of the house never turns a ledge order into another task
+   const LN=['land','gate','wstep'];let e0=openEdge(LN);if(e0)EDGE_OK=e0;else e0=EDGE_OK;const a={step:'go',t:0,T:0};const dur=rnd(40,90);
+   const node=e0?e0.node:'land';H.ledgeWhy=e0?'':'no edge found from '+(nearNode(root.position)||'?');
+   goTo(node,()=>{/* looked at again from the spot itself (the grids near him are built by now) */const e1=openEdge([node]);if(e1)EDGE_OK=e1;const e=e1||e0;if(!e){H.ledgeWhy='no open edge at '+node;endTask(false);return;}a.e=e;const yaw=Math.atan2(e.f.x,e.f.z);
     const tgt=e.p.clone().addScaledVector(e.f,-.12);let tries=0;/* approachTo moves at most 1.2 m per call: step on until the hips are over the edge (he sat 1 m short on the workshop step) */const near=()=>{const sp=V(tgt.x,0,tgt.z).addScaledVector(e.f,.5);const go=()=>Math.hypot(root.position.x-tgt.x,root.position.z-tgt.z)>.06&&++tries<4;approachTo(a,sp,.5,()=>{if(go())near();else seat();});};const seat=()=>{a.step='sit';a.t=0;H.face=yaw;a.hy0=bones.Hips.getWorldPosition(V()).y;
      H.fit={mode:'hold',base:e.y,y:a.hy0,dangle:true};H.ground=false;AU('sigh');};near();});
    // LEISURE: sitting down is one motion: the hips sink while the legs fold over the edge (the dangle clip fades in from
