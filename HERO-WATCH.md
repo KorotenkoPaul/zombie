@@ -67,6 +67,9 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R8-3 | P2 | craft (9a3f357) | R6-4 improved: picks the hammer up by the handle, the arm no longer crosses the face, the strike lands on the nail. Left: at the top of the backswing the hammer head comes back beside his cheek/mouth (touching at f5004, at shoulder-cheek height f4644, f4932, f5364) | f4596–f5592 | r8-9a3f357/craft_hammer_better_head_at_cheek_f5004.jpg | workshop |
 | R9-1 | ok? | dishes (70dd9e4) | this run: washes at the sink, plates into the rack, then takes the mug by the handle and carries it off; no shelf put-away happened, so R7-3 (floating dish) not seen but not proven fixed | f2040–f2988 | r9-70dd9e4/dishes_clean_no_float.jpg | — |
 | R9-2 | ok | dumpwater (70dd9e4) | verified: at the workshop edge he lifts the bucket out and tips it, water stream visible, then carries it back by the handle and sets it under the sink | f2172–f2940 | r9-70dd9e4/dumpwater_pours_over_workshop_edge_ok.jpg | — |
+| R9-3 | ok | fetchwater pond (70dd9e4) | R6-5/R7-7 fixed: root (0.41, 7.74), pond-ellipse distance 1.04 (on the bank); kneels on the bank and dips the bucket into the water in front of him, then carries it by the handle | f5256–f5796 | r9-70dd9e4/pond_kneels_on_bank_ok.jpg | — |
+| R9-4 | P2 | craft (70dd9e4) | R8-3 unchanged: hammer head comes back to forehead/face height on every backswing (side view) | f4212–f4932 | r9-70dd9e4/craft_hammer_head_at_face_height.jpg | workshop |
+| R9-5 | P2 | sleep (70dd9e4) | R7-9 unchanged: vest stays on; boots come off by hand fine (the orange pair on the rug are slippers, there from the start) | f7392–f7788 | r9-70dd9e4/sleep_bootsoff_vest_still_on.jpg | bed |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
