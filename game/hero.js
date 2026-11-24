@@ -1857,7 +1857,7 @@ export function createHero(ctx){
   if(GEAR.lantern)try{window.__lights.set('hand',false);window.__lights.detachHand();}catch(e){}GEAR.bow=GEAR.lantern=false;try{window.__audio.carry(false);}catch(e){}H.carry=null;}
  // ---- OUTDOOR helpers (self-contained on this hero.js): reach with a little lean, the palm (not the wrist) on a point,
  // and a tool driven in the world while the hands hold its handle (the tool follows the real palm, never floats off it)
- const OD_PALM=.07;
+ const OD_PALM=.07;const BAIL=.48;/* GRAB: a bucket's bail apex over its origin (props.js mkB: H0 .3 + ring radius .186): where the fist holds it */
  function odPalm(side){const h=bones[side+'Hand'].getWorldPosition(V()),f=bones[side+'ForeArm'].getWorldPosition(V());return h.add(h.clone().sub(f).normalize().multiplyScalar(OD_PALM));}
  function odPalmTo(side,t){return t?odPalm(side).distanceTo(t):9;}
  const odLean={Left:{v:0,f:-9},Right:{v:0,f:-9}};let odFrame=0,odFrameOn=0;
@@ -2003,7 +2003,7 @@ export function createHero(ctx){
   if(t>=end){a.step='rise';if(A)A.timeScale=1;H.carry=BUCKET();a.fdone();}}
  function pondFillPost(a){const P=PP();const bk=P&&P.tools&&P.tools.waterBucket;if(!bk||!a.dip)return;
   // the fist goes down to the water: the bucket's rim just under the surface, tipped toward the pond so it fills
-  const R=odPalm('Right');const want=R.clone();const rimBelow=.35;/* fist to bucket bottom when hanging */const yFist=a.lv+.02;/* the fist at the surface: the whole bucket under */
+  const R=odPalm('Right');const want=R.clone();const rimBelow=BAIL;/* fist to bucket bottom when hanging */const yFist=a.lv+.02;/* the fist at the surface: the whole bucket under */
   // going down the bucket stays out at the side and ahead of the knee (frame by frame it went through his right thigh)
   {const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const d=R.clone().sub(bones.Hips.getWorldPosition(V()));const k=Math.min(1,a.dip*2);want.addScaledVector(r,(.08-d.dot(r))*k).addScaledVector(f,Math.max(0,.5*k-d.dot(f)));}/* ahead of both knees, which splay in the squat */
   // ...and at the bottom out over the water at the fill point (he squats on the bank; the arm and a forward lean reach it),
@@ -2037,7 +2037,7 @@ export function createHero(ctx){
      is pushed out off the forearm and swings about the fist, away from his arm (gate, adult hero: forearm 10 cm inside it) */
   if(!tilt&&n==='waterBucket'){const E=bones.RightForeArm.getWorldPosition(V()),Hh=bones.RightHand.getWorldPosition(V());const fa=Hh.clone().sub(E);const L=fa.length();const up=L>1e-3?fa.y/L:0;
    const d=V(fa.x,0,fa.z);if(up>.05&&d.lengthSq()>1e-5){d.normalize();const ax=V(0,-1,0).cross(d).normalize();const th=Math.min(.6,(up-.05)*1.3);q.premultiply(new THREE.Quaternion().setFromAxisAngle(ax,th));}}const hs=(o.userData.home&&o.userData.home.scale)||1;
-  const g=V(0,.35,0).multiplyScalar(hs).applyQuaternion(q);const pos=odPalm('Right').sub(g);
+  const g=V(0,BAIL+(.35-BAIL)*smooth(0,.5,tilt||0),0).multiplyScalar(hs).applyQuaternion(q);/* tipped over the hand slides to the rim side of the bail (as before): the pail does not drop 13 cm into his belly */const GG=window.__grab;const pos=(GG&&GG.gripPoint?GG.gripPoint('Right'):odPalm('Right')).sub(g);/* GRAB: the bail's apex through the closed fingers (it hung 13 cm over an open hand) */
   /* tipped over, the fist holds the rim from above: the pail hangs below the forearm, never round it (gate: forearm 13 cm inside while pouring) */if(tilt>.4&&n==='drainBucket'){const ax=V(0,1,0).applyQuaternion(q);const dn=V(0,-1,0).addScaledVector(ax,ax.y).normalize();pos.addScaledVector(dn,.2*hs*smooth(.4,1.2,tilt));}
   const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
  // OUTDOOR: an armful of logs is carried with both arms at the chest (not dangling from one hand at the hip), and over the
@@ -2137,12 +2137,12 @@ export function createHero(ctx){
   /* blended in from where the clip hand really is when the fist closes, and out after it lets go (gate: the hand jumped 38 between phases) */
   if(!o||o.parent!==bones.RightHand){if(!o)return false;const f=fwd(root.rotation.y);const hs=(o.userData.home&&o.userData.home.scale)||1;
    /* the shelf board is at his chin: the empty hand comes to the bail from in front of its edge, above it, and leaves the same way, never up or down through the board (gate: hand 9 cm in the shelf) */
-   if(!a.put&&a.spT==null){const k=a.t/Math.max(.3,a.clipDur);const P3=P.toolHome('waterBucket').add(V(0,.35*hs,0));const Pf=P3.clone().addScaledVector(shelfOut(P3),.24).add(V(0,.05,0));
+   if(!a.put&&a.spT==null){const k=a.t/Math.max(.3,a.clipDur);const P3=P.toolHome('waterBucket').add(V(0,BAIL*hs,0));const Pf=P3.clone().addScaledVector(shelfOut(P3),.24).add(V(0,.05,0));
     const w=smooth(.05,.22,k);if(w>.01)odReach('Right',k<.3?Pf:Pf.lerp(P3,smooth(.3,.45,k)),w);return false;}
    if(a.spLast&&a.spT!=null){a.spOut=(a.spOut||0)+1/60;if(!a.spFrom)a.spFrom=a.spLast.clone();const Pf=a.spFrom.clone().addScaledVector(shelfOut(a.spFrom),.24).add(V(0,.05,0));const w=1-smooth(.22,.55,a.spOut);if(w>.01)odReach('Right',a.spFrom.clone().lerp(Pf,smooth(0,.25,a.spOut)),w);}return false;}
   if(a.spT==null)a.spT=a.t;const wIn=a.put?smooth(0,.25,a.t-a.spT):1;/* taking it, the hand is already on the path (it came to the bail along it) */
   const k=a.t/Math.max(.3,a.clipDur);const hs=(o.userData.home&&o.userData.home.scale)||1;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
-  const P3=P.toolHome('waterBucket').add(V(0,.35*hs,0)),n=shelfOut(P3),Pf=P3.clone().addScaledVector(n,.24).addScaledVector(V(n.z,0,-n.x),.16).add(V(0,.05,0)),/* out over the edge to his right, wide of his head */P2=P3.clone().add(V(0,-.24,0)).addScaledVector(n,.3);const fl=root.position.y;
+  const P3=P.toolHome('waterBucket').add(V(0,BAIL*hs,0)),n=shelfOut(P3),Pf=P3.clone().addScaledVector(n,.24).addScaledVector(V(n.z,0,-n.x),.16).add(V(0,.05,0)),/* out over the edge to his right, wide of his head */P2=P3.clone().add(V(0,-.24,0)).addScaledVector(n,.3);const fl=root.position.y;
   const P1=root.position.clone().addScaledVector(f,.42).addScaledVector(r,.06);P1.y=fl+1.18;
   const P0=bones.Hips.getWorldPosition(V()).addScaledVector(r,.28).addScaledVector(f,.06).add(V(0,-.12,0));
   const u=a.put?smooth(.08,.47,k):1-smooth(.47,.95,k);/* 1 = at the shelf */const seg=(A,B,x)=>A.clone().lerp(B,smooth(0,1,x));
@@ -2258,7 +2258,7 @@ export function createHero(ctx){
    // taking it from under the sink and putting it back: the fist carries it on a clean path between its spot and his side,
    // never past his legs (frame by frame his shin went into it as the pick-up clip swung the hand back by the feet)
    a.post=()=>{if(a.step==='clip'&&PP().tools.drainBucket.parent===bones.RightHand){const k=a.t/Math.max(.3,a.clipDur);const hs=PP().tools.drainBucket.userData.home.scale||1;
-     const hg=PP().toolHome('drainBucket').add(V(0,.35*hs,0));const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const cy=bones.Hips.getWorldPosition(V()).addScaledVector(r,.42).addScaledVector(f,.06).add(V(0,-.12,0));cy.y=Math.max(cy.y,root.position.y+.42);/* in the squat the knees splay: the bucket is held up and out past them, its bottom off the floor (gate: shins 15 cm in it) */
+     const hg=PP().toolHome('drainBucket').add(V(0,BAIL*hs,0));const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const cy=bones.Hips.getWorldPosition(V()).addScaledVector(r,.42).addScaledVector(f,.06).add(V(0,-.12,0));cy.y=Math.max(cy.y,root.position.y+.42);/* in the squat the knees splay: the bucket is held up and out past them, its bottom off the floor (gate: shins 15 cm in it) */
      const u=a.back?smooth(.12,.45,k):1-smooth(.5,.85,k);const mid=hg.clone().addScaledVector(r,.36);mid.y=Math.max(mid.y,cy.y);/* out to the right at the bay first, then back to his side: never back past the shins */odReach('Right',u>.5?mid.lerp(hg,smooth(.5,1,u)):cy.clone().lerp(mid,smooth(0,.5,u)),1);odHang('drainBucket',0,true);return;}
     if(a.step!=='pour'){odHang('drainBucket',0);return;}H.bucketTilt=true;const D=a.D||2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
     if(w>.01)odReach('Right',root.position.clone().addScaledVector(f,.62).addScaledVector(V(-f.z,0,f.x),.2).add(V(0,.85,0)),w);/* from the waist, leaning out over the edge: the tipped pail hangs in front of his belly, never up before his face (phone watch f1040) */const tilt=1.6*smooth(.45,.95,t)*(1-smooth(D-.8,D-.25,t));odHang('drainBucket',tilt);
