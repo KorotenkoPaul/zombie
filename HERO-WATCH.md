@@ -43,6 +43,9 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R6-2 | P3 | tea (13785b2) | lifting the kettle off the stove he raises it to head height right beside his face before lowering it to pour | f2484 | r6-13785b2/tea_closeups_kettle_at_face_f2484.jpg | kitchen |
 | R6-3 | ok | chop (13785b2) | B8 fixed: knife edge on the carrot on the board, left hand holds the food, worktop height right | f2460–f3324 | r6-13785b2/chop_knife_on_board_ok.jpg | — |
 | R6-4 | P1 | craft (13785b2) | B6/B18 still: every hammer backswing lifts the upper arm across his face (sleeve hides the face) and the hammer head ends beside his ear; strike lands on the nail fine | f4836, f5016, f5160, f5340, f5520 | r6-13785b2/craft_hammer_arm_over_face.jpg | workshop |
+| R6-5 | P1 | fetchwater (13785b2) | stands IN the pond while filling: root fixed at (0.11, 7.57) for the whole hy_pickground, 1.51 m from the pond centre, inside the water ellipse (rx 1.75); both boots on the water among the lily pads | f5544–f6024 | r6-13785b2/fetchwater_stands_in_pond_f5856-6024.jpg | outdoor (stand point, ground.js G.pond.stand / hero) |
+| R6-6 | P1 | rope + wooden ladders (13785b2) | R5-4 confirmed with close-ups: climbing the rope ladder (bucket slung) both arms spread wide, palms open in the air, neither hand on a rope or rung; feet do step the rungs | main f4728–f5160; close-up replay f5016 | r6-13785b2/rope_ladder_arms_spread_no_grip.jpg | ladders |
+| R6-7 | P3 | walk to pond (13785b2) | walking off the rope ladder he tips his head far back looking at the sky for a few steps | f5304 | r6-13785b2/fetchwater_stands_in_pond_f5856-6024.jpg | look |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
