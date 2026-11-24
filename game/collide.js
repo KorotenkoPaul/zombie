@@ -303,9 +303,9 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
 
   // ---------- IK helpers ----------
   const _q = new THREE.Quaternion(), _pq = new THREE.Quaternion();
-  function turnBone(bone, childPos, goal, w = 1) {
+  function turnBone(bone, childPos, goal, w = 1, maxA = 0) {
     const bp = bone.getWorldPosition(V()); const v1 = childPos.clone().sub(bp), v2 = goal.clone().sub(bp); if (v1.lengthSq() < 1e-8 || v2.lengthSq() < 1e-8) return; v1.normalize(); v2.normalize();
-    const dq = new THREE.Quaternion().setFromUnitVectors(v1, v2); if (w < 1) dq.slerp(new THREE.Quaternion(), 1 - w); bone.getWorldQuaternion(_q); bone.parent.getWorldQuaternion(_pq); bone.quaternion.copy(_pq.invert().multiply(dq.multiply(_q))); bone.updateMatrixWorld(true);
+    const dq = new THREE.Quaternion().setFromUnitVectors(v1, v2); if (maxA > 0) { const ang = v1.angleTo(v2); if (ang > maxA) w = Math.min(w, maxA / ang); } if (w < 1) dq.slerp(new THREE.Quaternion(), 1 - w); bone.getWorldQuaternion(_q); bone.parent.getWorldQuaternion(_pq); bone.quaternion.copy(_pq.invert().multiply(dq.multiply(_q))); bone.updateMatrixWorld(true);
   }
   const _q2 = new THREE.Quaternion();
   function ik2(A, Bb, C, target, leg) {
@@ -331,7 +331,9 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const SPINE = ['Spine', 'Spine1', 'Spine2', 'Neck'].map(n => bones[n]).filter(Boolean), SPF = [.3, .45, .65, 1];
   function bendHead(delta) { // move the head by delta, shared down the spine
     const Hd = bones.Head; if (!Hd || !SPINE.length) return; const goal = Hd.getWorldPosition(V()).add(delta);
-    for (let i = 0; i < SPINE.length; i++) { const h = Hd.getWorldPosition(V()); const rem = goal.clone().sub(h); turnBone(SPINE[i], h, h.clone().addScaledVector(rem, SPF[i])); }
+    // each bone turns only a little per call (spine 12 deg, neck 20 deg): with its short lever the neck took the whole remainder
+    // and a 5-10 cm push hung the head upside down into the chest; what is left over stays a (small) contact instead
+    for (let i = 0; i < SPINE.length; i++) { const h = Hd.getWorldPosition(V()); const rem = goal.clone().sub(h); turnBone(SPINE[i], h, h.clone().addScaledVector(rem, SPF[i]), 1, SPINE[i] === bones.Neck ? .35 : .21); }
   }
 
   // ---------- per frame ----------
