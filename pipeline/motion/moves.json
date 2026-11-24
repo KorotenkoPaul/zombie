@@ -344,5 +344,17 @@
   "src": "washface-23",
   "smooth": 2,
   "speed": 1.0
+ },
+ "mc_stoolidle": {
+  "src": "stool_sit_idle",
+  "smooth": 1,
+  "loop": true,
+  "close": 0.8
+ },
+ "mc_eatsit": {
+  "src": "eat_sit",
+  "smooth": 1,
+  "loop": true,
+  "close": 0.6
  }
 }
