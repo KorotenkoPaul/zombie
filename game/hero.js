@@ -2373,7 +2373,7 @@ export function createHero(ctx){
   return {p,yaw:sd==='Right'?.18:-.12};}
  // bending over: half from the hips (the pelvis tips, the thighs stay where they are), half along the spine
  function leanB(ax,a){const ph=Math.min(a*.72,.95);/* the pelvis tips at most ~32 degrees (past that the gate sees the leg folded up past the hip) */rotW(bones.Hips,ax,ph);for(const n of ['LeftUpLeg','RightUpLeg'])rotW(bones[n],ax,-ph);['Spine','Spine1','Spine2'].forEach((n,j)=>rotW(bones[n],ax,(a-ph)*[.4,.35,.25][j]));}
- const BRC={a:0};function bootReach(dt){const R=BSEQ.r;if(!R||!R.down||!R.plan){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}const sd=R.sd,Bs=BT.side[sd];const pm=Bs&&Bs.prop;
+ const BRC={a:0};function bootReach(dt){const R=BSEQ.r;if(R&&R.pick){bootPickReach(dt,R);return;}if(!R||!R.down||!R.plan){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}const sd=R.sd,Bs=BT.side[sd];const pm=Bs&&Bs.prop;
   const held=pm&&pm.visible&&pm.parent&&/Hand$/.test(pm.parent.name);const t=R.t||0;
   if(!held){/* let go: the hand leaves the boot top and eases back to the clip over half a second */const L=R.last;if(!L){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}const w2=1-smooth(R.at,R.at+.6,t);BRC.a=Math.max(0,BRC.a-(dt||1/60)*1.2);
    if(BRC.a>.002)leanB(L.ax,BRC.a);root.updateMatrixWorld(true);if(w2>.001)romArmIK(L.side,L.tg.clone().add(V(0,.04*(1-w2),0)),sidePole(L.side),w2,null);return;}
@@ -2383,9 +2383,22 @@ export function createHero(ctx){
   const tg=R.plan.p.clone().add(hw.clone().sub(bc));tg.y+=.008;const side=/Left/.test(pm.parent.name)?'Left':'Right';const sh=bones[side+'Arm'];const reach=armLen*.97;
   // lean forward and toward the spot just enough that the arm reaches (found by trial, eased: a sudden spine turn is held back by the pop filter)
   const SP=['Spine','Spine1','Spine2'].map(n=>bones[n]);const q0=SP.map(b=>b.quaternion.clone());const LG=[bones.LeftUpLeg,bones.RightUpLeg];const qh0=bones.Hips.quaternion.clone(),ql0=LG.map(b=>b.quaternion.clone());const hp=wp(bones.Hips);const dh=V(tg.x-hp.x,0,tg.z-hp.z);if(dh.lengthSq()<1e-4)dh.copy(fwd(root.rotation.y));dh.normalize();/* bending forward from the hips lowers the shoulders; a side bend hardly does (and lifts the other shoulder) */{const pf=pelvisFwdGeo();const B=FIT.bed;if(B&&pf.z<0)pf.negate();/* seated the root's yaw is not where he faces */dh.multiplyScalar(.9).add(pf).normalize();}
-  const ax=V(0,1,0).cross(dh).normalize();let need=0;for(let i=0;i<8;i++){root.updateMatrixWorld(true);const ex=wp(sh).distanceTo(tg)-reach;if(ex<=.005||need>=1.8)break;const a=Math.min(1.8-need,ex*2.5+.03);need+=a;leanB(ax,a);}
+  const ax=V(0,1,0).cross(dh).normalize();let need=0;for(let i=0;i<16;i++){root.updateMatrixWorld(true);const ex=wp(sh).distanceTo(tg)-reach;if(ex<=.005||need>=cap)break;const a=Math.min(cap-need,ex*2.5+.03);need+=a;leanB(ax,a);}
   SP.forEach((b,j)=>b.quaternion.copy(q0[j]));bones.Hips.quaternion.copy(qh0);LG.forEach((b,j)=>b.quaternion.copy(ql0[j]));root.updateMatrixWorld(true);const st=dt||1/60;const want=need*w;BRC.a=want>BRC.a?Math.min(want,BRC.a+3*st):Math.max(want,BRC.a-2*st);
   if(BRC.a>.002)leanB(ax,BRC.a);root.updateMatrixWorld(true);romArmIK(side,tg,sidePole(side),w,null);R.last={tg:tg.clone(),ax:ax.clone(),side};}
+ // lean (eased) and arm IK so the wrist reaches tg; returns the lean axis
+ function bendReach(side,tg,w,dt,cap){cap=cap||1.8;const sh=bones[side+'Arm'];const reach=armLen*(cap>2?.99:.97);const SP=['Spine','Spine1','Spine2'].map(n=>bones[n]);const q0=SP.map(b=>b.quaternion.clone());const LG=[bones.LeftUpLeg,bones.RightUpLeg];const qh0=bones.Hips.quaternion.clone(),ql0=LG.map(b=>b.quaternion.clone());
+  root.updateMatrixWorld(true);const hp=wp(bones.Hips);const dh=V(tg.x-hp.x,0,tg.z-hp.z);if(dh.lengthSq()<1e-4)dh.set(0,0,1);dh.normalize();{const pf=pelvisFwdGeo();if(FIT.bed&&pf.z<0)pf.negate();dh.multiplyScalar(.9).add(pf).normalize();}
+  const ax=V(0,1,0).cross(dh).normalize();let need=0;for(let i=0;i<8;i++){root.updateMatrixWorld(true);const ex=wp(sh).distanceTo(tg)-reach;if(ex<=.005||need>=1.8)break;const a=Math.min(1.8-need,ex*2.5+.03);need+=a;leanB(ax,a);}
+  SP.forEach((b,j)=>b.quaternion.copy(q0[j]));bones.Hips.quaternion.copy(qh0);LG.forEach((b,j)=>b.quaternion.copy(ql0[j]));root.updateMatrixWorld(true);const st=dt||1/60;const want=need*w;BRC.a=want>BRC.a?Math.min(want,BRC.a+3*st):Math.max(want,BRC.a-2*st);
+  if(BRC.a>.002)leanB(ax,BRC.a);root.updateMatrixWorld(true);if(w>.001)romArmIK(side,tg,sidePole(side),w,null);return ax;}
+ // MORNING, boots on: the same bend in reverse - the hand goes down onto the boot standing on the floor, closes on its top and brings it up
+ function bootPickReach(dt,R){const sd=R.sd,Bs=BT.side[sd];const pm=Bs&&Bs.prop;if(!pm){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}const t=R.t||0;const held=pm.parent&&/Hand$/.test(pm.parent.name);if(held&&!R.picked){R.picked=true;R.pt=t;}
+  if(!held&&!R.picked){const w=smooth(R.at-1.0,R.at-.4,t);if(w<.001){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}root.updateMatrixWorld(true);_hb.setFromObject(pm);const top=_hb.getCenter(V());top.y=_hb.max.y;{/* the near rim of the collar, the side facing him: that is where fingers hook it */const hq=wp(bones.Hips);const d=V(hq.x-top.x,0,hq.z-top.z);const L=d.length();if(L>1e-3)top.add(d.multiplyScalar(Math.min(.045,L)/L));}
+   // the wrist a palm's length over the top of the shaft, so the palm closes on it
+   const Hn=bones[sd+'Hand'];const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);const off=wp(Hn).sub(palm);const tg=top.clone().add(V(0,.05,0)).add(off);/* palm just over the rim: the curled fingers hook the collar */R.last={tg:tg.clone(),side:sd};bendReach(sd,tg,w,dt,2.2);if(w>.9&&t>R.at-.45&&!R.pickNow){root.updateMatrixWorld(true);const pq=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);if(pq.distanceTo(top)<.075)R.pickNow=true;}return;}
+  // held: up with it, back to the clip over ~0.6 s
+  const L=R.last;if(!L){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}const t0=R.pt!=null?R.pt:R.at;const w2=1-smooth(t0,t0+.6,t);BRC.a=Math.max(0,BRC.a-(dt||1/60)*1.4);if(w2>.001)bendReach(sd,L.tg.clone().add(V(0,.12*(1-w2),0)),w2,dt,2.2);}
  // a boot just pulled off and carried down to the floor stays out of the legs: the arm carries it around the shins, not through them
  const _hb=new THREE.Box3(),HBC={Left:V(),Right:V()};function heldBootClear(dt){const st=dt||1/60;for(const sd of ['Left','Right']){const B=BT.side[sd];const pm=B&&B.prop;if(!pm||!pm.visible||!pm.parent||!/Hand$/.test(pm.parent.name))continue;
    const side=/Left/.test(pm.parent.name)?'Left':'Right';root.updateMatrixWorld(true);_hb.setFromObject(pm);const c=_hb.getCenter(V());const q=c.clone();bootClearShins(q,.27);const dl=q.sub(c);dl.y=0;const E=HBC[/Left/.test(pm.parent.name)?'Left':'Right'];/* eased, so the pop filter does not hold it back */E.lerp(dl,Math.min(1,st*14));if(E.lengthSq()<2.5e-5)continue;dl.copy(E);
@@ -2418,7 +2431,7 @@ export function createHero(ctx){
  // a seated clip with beats at clip seconds; the lifted foot may leave the floor (H.fit.liftOK), the planted one stays put
  const BSEQ={a:null,b:[],then:null,r:null};
  function seatedClip(name,beats,then,reach){const a=actions[name];if(!a){then&&then();return;}H.fit&&(H.fit.liftOK=true);BSEQ.a=a;BSEQ.r=reach||null;BSEQ.b=beats.slice().sort((x,y)=>x[0]-y[0]);BSEQ.then=then;
-  once(name,{fade:.45,speed:1.3,then:()=>{for(const [,f] of BSEQ.b)f();if(BSEQ.r&&BSEQ.r.dropNow){BSEQ.r.dropNow=false;bootDown(BSEQ.r.sd);}BSEQ.a=null;BSEQ.r=null;BSEQ.b=[];if(H.fit)H.fit.liftOK=false;then&&then();}});}
+  once(name,{fade:.45,speed:1.3,then:()=>{for(const [,f] of BSEQ.b)f();if(BSEQ.r&&BSEQ.r.dropNow){BSEQ.r.dropNow=false;bootDown(BSEQ.r.sd);}if(BSEQ.r&&BSEQ.r.pickNow){BSEQ.r.pickNow=false;const pb=BT.side[BSEQ.r.sd];if(pb&&pb.prop&&!(pb.prop.parent&&/Hand$/.test(pb.prop.parent.name)))bootPick(BSEQ.r.sd,BSEQ.r.sd);}if(BSEQ.r&&BSEQ.r.onNow){BSEQ.r.onNow=false;bootOn(BSEQ.r.sd);}BSEQ.a=null;BSEQ.r=null;BSEQ.b=[];if(H.fit)H.fit.liftOK=false;then&&then();}});}
  // seated on the bunk edge the upper body may lean forward, never far back: the clip's backward recline (lifting a foot onto
  // the knee) laid him down across the mattress with an arm out; the spine is turned so the chest stays at most ~8 degrees behind
  // the pelvis, spread over the three spine bones
@@ -2443,7 +2456,7 @@ export function createHero(ctx){
   if(SFG.v>.002){for(const b of SP)rotW(b,lat,-SFG.v/3);root.updateMatrixWorld(true);}}
  function bseqTick(dt){bootTweenTick(dt);if(!BSEQ.a)return;seatLeanLimit();seatSideLimit();const t=BSEQ.a.time;
   // the hand really goes down to the boot's spot by the bed: it sets the boot down there / picks it up from there (no boot flying to the floor)
-  const R=BSEQ.r;if(R&&R.down){if(!R.plan&&t>R.at-.9)R.plan=bootPlan(R.sd);R.t=t;}else if(R){const w=smooth(R.at-.55,R.at-.04,t)*(1-smooth(R.at+.12,R.at+.55,t));if(w>.001){const sp=bootSpot(R.sd).p.clone();sp.y+=.2;/* the palm on the shaft top, not on the sole */reachTo(R.sd,sp,w);}}
+  const R=BSEQ.r;if(R&&R.down){if(!R.plan&&t>R.at-.9)R.plan=bootPlan(R.sd);R.t=t;}else if(R&&R.pick){R.t=t;}else if(R){const w=smooth(R.at-.55,R.at-.04,t)*(1-smooth(R.at+.12,R.at+.55,t));if(w>.001){const sp=bootSpot(R.sd).p.clone();sp.y+=.2;/* the palm on the shaft top, not on the sole */reachTo(R.sd,sp,w);}}
   while(BSEQ.b.length&&t>=BSEQ.b[0][0]){const [,f]=BSEQ.b.shift();f();}}
  // clip times (s, after trimming) of the hand events, measured from the mocap keypoints
  const BOOT_OFF={grab:2.05/1.25,down:4.1/1.25},BOOT_ON=BOOTREV.R?{pick:BOOTREV.R-4.1/1.25+.05,on:BOOTREV.R-2.05/1.25}:{pick:.55/1.25,on:2.1/1.25},VEST_OFF={off:2.0};
@@ -2455,7 +2468,7 @@ export function createHero(ctx){
   let i=0;const next=()=>{if(i<steps.length)steps[i++](next);else done&&done();};next();}
  function dressSeq(done){bootInit();const steps=[];
   for(const sd of ['Right','Left']){const B=BT.side[sd];if(!B||B.on)continue;if(!has('hy_bootson'+sd[0])){bootShow(sd,true);B.prop.visible=false;continue;}
-   steps.push(n=>seatedClip('hy_bootson'+sd[0],[[BOOT_ON.pick,()=>bootPick(sd,sd)],[BOOT_ON.on,()=>bootOn(sd)]],n,{sd,at:BOOT_ON.pick}));}
+   steps.push(n=>seatedClip('hy_bootson'+sd[0],[[BOOT_ON.pick,()=>{const R=BSEQ.r;if(R&&R.pick&&R.sd===sd){if(!R.picked)R.pickNow=true;}/* taken into the hand at the start of the next frame, from the pose shown */else bootPick(sd,sd);}],[BOOT_ON.on,()=>{const R=BSEQ.r;if(R&&R.pick&&R.sd===sd)R.onNow=true;/* from the pose shown, not the raw clip hand */else bootOn(sd);}]],n,{sd,at:BOOT_ON.pick,pick:1}));}
   let i=0;const next=()=>{if(i<steps.length)steps[i++](next);else done&&done();};next();}
  function vestOnStanding(){if(!hasVest()||BT.vestOn)return;if(has('hy_jacketon')){overlay('hy_jacketon',{fade:.4,speed:1.2});setTimeoutGame(.9,()=>{vestPark(false);vestShow(true);AU('zip',root.position);});}else{vestPark(false);vestShow(true);}}
  const GT=[];function setTimeoutGame(t,f){GT.push({t,f});}function gtTick(dt){for(let i=GT.length-1;i>=0;i--){if((GT[i].t-=dt)<=0){const f=GT[i].f;GT.splice(i,1);f();}}}
@@ -2549,7 +2562,7 @@ export function createHero(ctx){
  // frame: hand 9.00 before the collide stage, 9.57 after). While a bed clip plays, a hand above ~35 cm over the mattress is put back down
  // beside the hip, on the mattress.
  /* a boot is let go from the hand as it was shown (after the pop filter and the pose guard, which wraps the whole update), so it stays exactly where the hand had it */
- stage('pre',()=>{const R=BSEQ.r;if(R&&R.dropNow){R.dropNow=false;bootDown(R.sd);}});/* next frame's start: the bones still hold the pose last shown */
+ stage('pre',()=>{const R=BSEQ.r;if(R&&R.dropNow){R.dropNow=false;bootDown(R.sd);}if(R&&R.onNow){R.onNow=false;bootOn(R.sd);}if(R&&R.pickNow){R.pickNow=false;const B=BT.side[R.sd];const pm=B&&B.prop;if(pm&&!(pm.parent&&/Hand$/.test(pm.parent.name))){root.updateMatrixWorld(true);_hb.setFromObject(pm);const top=_hb.getCenter(V());top.y=_hb.max.y;{const hq=wp(bones.Hips);const d=V(hq.x-top.x,0,hq.z-top.z);const L=d.length();if(L>1e-3)top.add(d.multiplyScalar(Math.min(.045,L)/L));}const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(R.sd):wp(bones[R.sd+'Hand']);/* the hand is on it: it simply closes; still out of reach (should not happen): the old short lift into the hand */const dd=palm.distanceTo(top);if(dd<.09||(dd<.2&&(R.t||0)>=R.at+.15)){pm.visible=true;bones[R.sd+'Hand'].attach(pm);}else if((R.t||0)<R.at+.15)R.pickNow=true;/* not on it yet: the hand keeps reaching, he takes it a moment later */else bootPick(R.sd,R.sd);}}});/* next frame's start: the bones still hold the pose last shown */
  stage('grab',dt=>{if(BSEQ.a){seatFootGap(dt);bootReach(dt);heldBootClear(dt);}else{SFG.v=0;BRC.a=0;HBC.Left.set(0,0,0);HBC.Right.set(0,0,0);}});
  stage('grab',()=>{const c=H.bedC,B=FIT.bed;if(!c||!B)return;root.updateMatrixWorld(true);
   /* lying down he swings his legs in with the thighs about level, not both knees thrown ~20 cm over the hips (watcher r12 f2520-2544) */if(c.dir>0){const kw=smooth(.12,.25,c.u)*(1-smooth(.8,.95,c.u));if(kw>.001){for(const sd of ['Left','Right'])dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],wp(bones[sd+'UpLeg']).y+.08,kw);root.updateMatrixWorld(true);}}const hp=wp(bones.Hips),lr=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).setY(0).normalize();
