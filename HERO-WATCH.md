@@ -103,6 +103,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R14-4 | ok | tea (b50450e) | cup from the rack, kettle pour, drink; hands on cup and kettle handle; only flaw is the broom on his hip (R14-2) | f8940–f10332 | r14-b50450e/tea_broom_still_on_hip.jpg | — |
 | R15-1 | P1 | sweep (b783bd1) | R14-2 still open: after sweep the broom snaps to his hip (stick up past his head) and he walks off to fix_shingle with it | f3216–f3432 | r15-b783bd1/broom_on_belt_still.jpg | Grab |
 | R15-2 | P2 | sweep (b783bd1) | Mostly one-handed: right hand on the stick, the left arm hangs loose at his side for long stretches (should be both hands, left high and right low) | f1836–f2076, f2952–f3096 | r15-b783bd1/sweep_one_hand.jpg | Grab |
+| R15-3 | ok | pot (b783bd1) | Ladle held at the handle end, bowl in the pot, left hand at the rim, steady stance; only flaw is the broom still on his hip from sweep (R15-1) | f4152–f5952 | r15-b783bd1/pot_ok_broom_on_hip.jpg | — |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
