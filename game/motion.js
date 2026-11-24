@@ -265,7 +265,10 @@ export function createMotion({ hero, db, opts = {} }) {
     if (any) root.updateMatrixWorld(true); }
   // hook the final pass after everything else in the hero's update (collide.js wraps HH.update too, possibly later: stay outermost)
   let fWrap = null;
-  function ensureFinal() { if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
+  // hero.js slots (HERO-RULES.md): the pop filter runs in 'pops', before the anatomical guard, instead of wrapping hero.update
+  let fStage = false;
+  function ensureFinal() { if (fStage) return; if (typeof hero.stage === 'function') { hero.stage('pops', dt => final(dt)); fStage = true; return; }
+    if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
     fWrap = dt => { inner(dt); if (g === FP.gen) final(dt); }; hero.update = fWrap; }
   function stepOffsets(dt) {
     for (let i = 0; i < NB * 3; i++) { const y = yB[(i / 3) | 0], e = Math.exp(-y * dt); const j1 = offV[i] + offX[i] * y; offX[i] = e * (offX[i] + j1 * dt); offV[i] = e * (offV[i] - j1 * y * dt); }
