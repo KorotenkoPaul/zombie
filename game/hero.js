@@ -557,7 +557,8 @@ export function createHero(ctx){
      if(Math.abs(nx-hc.angle)>1e-4){hc.drive(nx);a.st=0;}else a.st=(a.st||0)+dt;
      sqTo(sqFor(P(nx,tmp)),dt,.9);
      if(want&&hc.angle>=1.68){/* past upright: it tips over onto its rest under its own weight */hc.letGo(true);a.held=false;a.step='after';a.t=0;}
-     else if(!want&&hc.angle<=1.3){/* pulled past upright toward the hole: let go, it drops shut */hc.letGo(false);a.held=false;a.step='after';a.t=0;}
+     else if(!want&&hc.angle<=.01){/* GRAB: lowered by hand all the way down onto the frame (it used to be let go at 1.3 rad and drop shut, the palm a metre off) */hc.letGo(false);a.held=false;a.step='after';a.t=0;}
+     else if(a.st>.5&&!want&&hc.angle<.6){/* GRAB: low over the frame and out of his reach: the last few degrees it drops shut from his fingers */hc.letGo(false);a.held=false;a.step='after';a.t=0;}
      else if(a.st>1.2){/* the hand cannot carry it further: put it back down the way it was */hc.letGo(!want);a.held=false;a.step='after';a.t=0;}
      return;}
     if(a.step==='after'){a.w=Math.max(0,a.w-dt/.4);sqTo(0,dt,.9);if(a.t>.8&&(H.squat||0)<.01){H.squat=0;play(IDLE(),{fade:.4});endTask({ok:hc.isOpen()===want,open:hc.isOpen()});}}};
