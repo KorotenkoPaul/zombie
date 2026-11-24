@@ -18,11 +18,11 @@ const OUT=path.resolve(arg('out','/tmp/pose'));const ONLY=arg('only',null);const
 fs.mkdirSync(OUT,{recursive:true});
 // scenarios: setup runs in the page (H = __dbg.HH), frames to run, shots at these frames
 const SC=[
- {name:'idle',setup:`H.spawn('window');`,frames:900,shots:[700,800,900]},
- {name:'deck-look',setup:`H.spawn('look');`,frames:1500,shots:[900,1200,1500]},
- {name:'read',setup:`H.spawn('read');`,frames:600,shots:[300,600]},
- {name:'ledge',setup:`H.spawn('look');H.H.path=[];setTimeout(()=>{},0);`,after:`H.startTask('ledge');`,afterAt:5,frames:3600,shots:[2700,3000,3600]},
- {name:'telescope',setup:`H.spawn('telescope');`,frames:1500,shots:[1100,1500]},
+ {name:'idle',setup:`H.spawn('window');`,frames:900,shots:[...Array(8)].map((_,i)=>200+i*100)},
+ {name:'deck-look',setup:`H.spawn('look');`,frames:1500,shots:[...Array(10)].map((_,i)=>150+i*150)},
+ {name:'read',setup:`H.spawn('read');`,frames:900,shots:[...Array(6)].map((_,i)=>150+i*150),view:[[0,.9,1.3],[-.6,.7,1.2],[.6,.7,1.2]]},
+ {name:'ledge',setup:`H.spawn('look');H.H.path=[];setTimeout(()=>{},0);`,after:`H.startTask('ledge');`,afterAt:120,frames:3600,shots:[...Array(12)].map((_,i)=>2000+i*150)},
+ {name:'telescope',setup:`H.spawn('telescope');`,frames:1500,shots:[...Array(8)].map((_,i)=>300+i*150)},
  {name:'sleep-back',setup:`window.__sleepPose='back';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0],[-.5,.5,.9,'LeftFoot']]},
  {name:'sleep-sideL',setup:`window.__sleepPose='sideL';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0],[-.5,.5,.9,'LeftFoot']]},
  {name:'sleep-sideR',setup:`window.__sleepPose='sideR';H.spawn('sleep');`,frames:600,shots:[590],view:[[0,.3,2.6],[.9,.35,2.0]]},
