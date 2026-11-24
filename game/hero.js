@@ -292,7 +292,7 @@ export function createHero(ctx){
     ~0.1 s) and a swing foot looks 12 cm ahead, so it clears the riser instead of being shoved out of it. */
  const TF={Left:null,Right:null};
  function boardDy(g,dt){const p=root.position,fw=fwd(root.rotation.y),o={};for(const s of ['Left','Right']){const F=bones[s+'Foot'];if(!F){o[s]=g-p.y;continue;}const a=F.getWorldPosition(V());
-   const swing=a.y-(g+(POSE.ankle??.1))>.02;let fb=floorAt(a.x,g,a.z,.28,.25);if(swing&&H.path.length){const f2=floorAt(a.x+fw.x*.22,g,a.z+fw.z*.22,.28,.25);if(f2!=null&&(fb==null||f2>fb))fb=f2;}
+   const swing=a.y-(g+(POSE.ankle??.1))>.02;/* a sole is ~25 cm long: one ray into a gap between planks is not a step down */const fl=(x,z)=>{let m=null;for(const [ox,oz] of [[0,0],[.06,0],[-.06,0],[0,.06],[0,-.06]]){const h=floorAt(x+ox,g,z+oz,.28,.25);if(h!=null&&(m==null||h>m))m=h;}return m;};let fb=fl(a.x,a.z);if(swing&&H.path.length){const f2=fl(a.x+fw.x*.22,a.z+fw.z*.22);if(f2!=null&&(fb==null||f2>fb))fb=f2;}
    const tgt=(fb!=null&&Math.abs(fb-g)<.28)?fb:g;if(TF[s]==null||Math.abs(TF[s]-tgt)>.35)TF[s]=tgt;else TF[s]+=clamp(tgt-TF[s],-1.2*dt,1.4*dt);o[s]=TF[s]-p.y;}return o;}
  function terrainFeet(g){const G=window.__ground;if(!G||!G.standAt||root.position.y>2)return;
   for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const d=G.standAt(a.x,a.z)-g;if(Math.abs(d)<.01)continue;
