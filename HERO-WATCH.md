@@ -22,6 +22,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | B3 | P1 | sleep | Sleeps with the right forearm raised and the hand held up in a stiff claw in the air for the whole sleep (not resting on the chest, pillow or quilt) | f5016–f5364+ | r4-085e32c/sleep_floats_in_and_hand_raised_f4968-5364.jpg | sleep family via hero-dev |
 | B4 | P2 | sleep | Getting in: sits on the edge (good), but lying back his head and shoulders go up behind the upper bunk's side rail; then the legs swing up level with the bed through the bunk ladder area | f4812–f4968 | r4-085e32c/sleep_getting_in_f4704-4836.jpg | sleep family / collide |
 | B5 | P3 | sleep | Sleeps in his boots while his slippers stand by the bed | f4704–f5364 | same | sleep family |
+| B6 | P2 | hammer | Mostly good (upright, handle-end grip, strikes land on the board). The backswing lifts the hammer straight up in front of his face, head at nose height (f4488, f4668), instead of above the shoulder; left hand hovers flat over the board instead of holding it | f4308–f5388 | r4-085e32c/hammer_ok_backswing_at_face_f4308-5388.jpg | workshop family via hero-dev |
 
 ## Open on post-21:33 builds (features being re-landed)
 
