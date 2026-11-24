@@ -1276,7 +1276,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // hands stay on their targets), lifeLook after the task has set H.look. w: 0..1 (fade in/out with the work).
  /* its own PRNG: drawing from Math.random here would shift every later random choice of the shared (seeded) stream */
  let lifeS=12345;const lr=(a=0,b=1)=>{lifeS=(lifeS*1103515245+12345)%2147483648;return a+(b-a)*lifeS/2147483648;};
- function lifePre(a,dt,w=1,o={}){const L=a.life||(a.life={t:lr(0,20),T:lr(5,8),ph:lr(0,6.28),lk:V(),lkT:V(),nx:lr(.8,2)});L.t+=dt;{/* when this frame's clip did not rewrite a bone (a held or slowed pose), take our last offset off first: it must never pile up */const S=L.snap;if(S)for(const [b,pos,q,bp,bq] of S){if(pos&&b.position.distanceToSquared(pos)<1e-12)b.position.copy(bp);if(Math.abs(b.quaternion.dot(q))>1-1e-9)b.quaternion.copy(bq);}L.snap=null;}if(window.__noLife)w=0;if(w<.01)return;
+ function lifePre(a,dt,w=1,o={}){const L=a.life||(a.life={t:lr(0,20),T:lr(5,8),ph:lr(0,6.28),lk:V(),lkT:V(),nx:lr(.8,2)});L.t+=dt;if(window.__noLife)w=0;if(w<.01)return;
   const LB=[bones.Hips,bones.Spine,bones.Spine1,bones.Spine2].filter(Boolean),base=LB.map(b=>[b.position.clone(),b.quaternion.clone()]);
   const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
   if(o.shift!==false){const Hb=bones.Hips;const pre={};for(const sd of ['Left','Right']){const F=bones[sd+'Foot'];if(F)pre[sd]=[F.getWorldPosition(V()),F.getWorldQuaternion(new THREE.Quaternion())];}
@@ -1286,7 +1286,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    for(const sd of ['Left','Right']){const P=pre[sd];if(!P)continue;const U=bones[sd+'UpLeg'],Lg=bones[sd+'Leg'],F=bones[sd+'Foot'];const k=Lg.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(P[0]).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole.copy(f);pole.normalize().lerp(f,.3);
     ik2(U,Lg,F,P[0],k.clone().add(pole),1,false);const pq=F.parent.getWorldQuaternion(new THREE.Quaternion());F.quaternion.copy(pq.invert().multiply(P[1]));F.updateMatrixWorld(true);}}
   {const b=Math.sin(L.t*2*Math.PI/4.3);rotW(bones.Spine2,r,-.012*b*w);/* a breath: the chest rises and opens a little */}root.updateMatrixWorld(true);
-  L.snap=LB.map((b,i)=>[b,i===0?b.position.clone():null,b.quaternion.clone(),base[i][0],base[i][1]]);}
+  lifeUndo=LB.map((b,i)=>[b,b.position.clone().sub(base[i][0]),b.quaternion.clone().invert().premultiply(new THREE.Quaternion()).multiply(base[i][1])]);if(!lifeReg){lifeReg=1;stage('pre',()=>{/* next frame's start, before the clip: take our offset back off. A bone the clip rewrites loses it anyway; one it leaves (a held or slowed pose) must not pile it up */if(!lifeUndo)return;for(const [b,dp,dq] of lifeUndo){b.position.sub(dp);b.quaternion.multiply(dq);}lifeUndo=null;});}}
+ let lifeUndo=null,lifeReg=0;
  function lifeLook(a,dt,w=1,amp=.035){const L=a.life;if(window.__noLife)return;if(!L||w<.01||!H.look||!H.look.isVector3)return;L.nx-=dt;if(L.nx<=0){L.nx=lr(.7,2.4);L.lkT.set(lr(-1,1),lr(-.6,.6),lr(-1,1)).multiplyScalar(amp);}
   L.lk.lerp(L.lkT,1-Math.exp(-dt*14));/* a saccade: quick, then still */H.look=H.look.clone().addScaledVector(L.lk,w);}
  function chopPost(a,dt){const P=PP();const bd=P&&P.tools&&P.tools.board,kn=P&&P.tools&&P.tools.knife;if(!bd||!kn||kn.parent!==bones.RightHand)return;
