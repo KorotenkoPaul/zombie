@@ -28,6 +28,8 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | B9 | P2 | bolt | Faces the door now (good, no chair in the way), but the bolting is barely there: one reach of the right hand to the door's diagonal brace (f8340), otherwise both hands at his sides; no bolt is visible on that side of the door, and the whole action lasts 3 s | f8268–f8448 (hy_bolt) | r4-085e32c/bolt_no_bolt_hands_down_f8268-8448.jpg | doors/hatch family via hero-dev (+ Props: a visible bolt) |
 | B10 | P1 | hatch | Expected on the rollback (hand-driven hatch comes back via hero-dev): "closing the hatch" is the generic hy_take played upright next to a wall/door frame, an arm raised along the frame; he never bends to the floor lid | f8772–f8880 | r4-085e32c/hatch_generic_take_at_wall_f8772-8880.jpg | doors/hatch family |
 
+Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
+
 ## Open on post-21:33 builds (features being re-landed)
 
 | # | P | task | what | frames | evidence | owner |

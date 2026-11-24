@@ -8,7 +8,7 @@
 const fs=require('fs'),path=require('path');const {open}=require('../anim/lib');
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const OUT=path.resolve(arg('out','/tmp/hero-watch'));const EVERY=+arg('every',6),CALM=+arg('calm',30),SEED=+arg('seed',1);
-const SZ=+arg('size',400);const FAST=!process.argv.includes('--post');const VIEW=arg('view','body');const MAXS=+arg('max',75);const AT=arg('at',null)?arg('at').split(',').map(Number):null;
+const SZ=+arg('size',400);const FAST=!process.argv.includes('--post');const VIEW=arg('view','body');const MAXS=+arg('max',75);const AT=arg('at',null)?arg('at').split(',').map(Number):null;const ATCLIP=arg('atclip',null);const BONE=arg('bone','RightHand');const DIST=+arg('dist',.8);let atclipN=0,atclipLast=-1e9;
 // task, hour, opts, seconds after start to keep filming
 const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes',9],['wash',9],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
  ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],['supplies',11],
@@ -88,7 +88,8 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
    // dense while moving / changing pose / on ladders, sparse while steady
    const moving=s.path>0||s.lad||s.swing||s.trans||!last||s.clip!==last.clip||s.state!==last.state||Math.hypot(s.root[0]-last.root[0],s.root[1]-last.root[1],s.root[2]-last.root[2])>.01;
    const gap=moving?EVERY:CALM;
-   if(AT){if(AT.includes(total)){for(const [bn,yw,ds,pt] of [['RightHand',0,.8,.6],['RightHand',1.57,.8,.6],['RightHand',3.14,.8,.6],['RightHand',4.71,.8,.6],['RightHand',0,.5,1.4]]){const r=await p.evaluate(a=>__watch.inspect(...a),[bn,yw,ds,pt]);const file=`${dir}/at${total}_${bn}_${yw}_${pt}.png`;await p.locator('canvas').first().screenshot({path:file});log.push({f:total,bn,yw,...r});}console.log('inspected',total);}if(total>Math.max(...AT))break;}
+   const clipHit=ATCLIP&&s.clip===ATCLIP&&total-atclipLast>=240&&atclipN<3;
+   if(AT||ATCLIP){if(clipHit||(AT&&AT.includes(total))){if(clipHit){atclipN++;atclipLast=total;}for(const [bn,yw,ds,pt] of [[BONE,0,DIST,.6],[BONE,1.57,DIST,.6],[BONE,3.14,DIST,.6],[BONE,4.71,DIST,.6],[BONE,0,DIST*.6,1.4]]){const r=await p.evaluate(a=>__watch.inspect(...a),[bn,yw,ds,pt]);const file=`${dir}/at${total}_${bn}_${yw}_${pt}.png`;await p.locator('canvas').first().screenshot({path:file});log.push({f:total,bn,yw,...r});}console.log('inspected',total);}if(AT&&total>Math.max(...AT))break;if(ATCLIP&&atclipN>=3)break;}
    else if(seen&&frames-lastShot>=gap){const ts=Date.now();log.push(await shoot(dir));lastShot=frames;log[log.length-1].ms=Date.now()-ts;if(log.length%10==0)fs.writeFileSync(dir+'/log.json',JSON.stringify({task:t,hour:h,seen,log}));}
    last=s;
    if(seen&&s.task!==t&&t!=='walkabout'){if(++afterEnd>=Math.round(4*60/EVERY))break;}
