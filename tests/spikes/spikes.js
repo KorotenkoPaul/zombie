@@ -11,7 +11,7 @@
 const { chromium } = require('playwright');
 const { spawn } = require('child_process');
 const path = require('path'), fs = require('fs');
-const MIN = +(process.argv[2] || 10), PORT = 8131, FPS = 60;
+const MIN = +(process.argv[2] || 10), PORT = 8131, FPS = 60, RENDER_EVERY = +(process.env.EVERY || 6);
 const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
 
 (async () => {
@@ -49,6 +49,9 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
       for (const n of ['readPixels', 'getError', 'finish', 'clientWaitSync']) w(n, 'GPU: sync stall');
     }
   });
+  // expose the renderer (as the critic harness does) so frames can skip drawing: only every RENDER_EVERY-th frame is
+  // drawn (shader compiles and uploads still show on the drawn ones), which makes a 10-minute run ~6x faster in SwiftShader
+  await p.route(/\/index\.html$/, async r => { const res = await r.fetch(); let t = await res.text(); t = t.replace(/(const renderer=new THREE\.WebGLRenderer\([^;]*\);)/, '$1window.__renderer=renderer;'); await r.fulfill({ response: res, body: t, headers: { ...res.headers(), 'content-type': 'text/html' } }); });
   const tl = Date.now();
   await p.goto(`http://localhost:${PORT}/index.html`);
   await p.waitForFunction(() => window.__th && window.__rafCb, null, { timeout: 600000, polling: 500 });
@@ -80,6 +83,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
     pw(THREE.AnimationMixer.prototype, 'update', 'animation mixers');
     pw(THREE.Object3D.prototype, 'updateMatrixWorld', 'matrix updates');
     pw(THREE.Skeleton.prototype, 'update', 'skinning (skeleton)');
+    const R = window.__renderer; if (R) { const real = R.render; R.render = function (sc, c) { if (window.__skipDraw) { sc && sc.updateMatrixWorld && sc.updateMatrixWorld(); return; } return real.call(this, sc, c); }; }
     let VT = window.__realNow();
     window.__VT = { get: () => VT, add: ms => { VT += ms; } };
     Object.defineProperty(performance, 'now', { value: () => VT, configurable: true, writable: true });
@@ -89,7 +93,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
   const t0 = Date.now(); let hist = [];
   if (process.env.DBG) p.on('console', m => console.log('[page]', m.text().slice(0, 300)));
   for (let f0 = 0; f0 < total; f0 += CHUNK) {
-    const r = await p.evaluate(({ f0, n, fps }) => {
+    const r = await p.evaluate(({ f0, n, fps, every }) => {
       const T = window.__prof, out = [], rig = window.__th.rig;
       const mem = () => (performance.memory ? performance.memory.usedJSHeapSize : 0);
       for (let i = 0; i < n; i++) {
@@ -102,6 +106,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
         }
         T.acc = {}; T.stack.length = 0; window.__rcSites = {};
         window.__VT.add(1000 / fps);
+        window.__skipDraw = f >= 360 && (f % every) !== 0;
         const cb = window.__rafCb; window.__rafCb = null;
         const m0 = mem(), t = window.__realNow();
         if (cb) cb(window.__VT.get());
@@ -113,7 +118,7 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
         out.push({ f, ms, acc });
       }
       const slow = window.__slow.splice(0); return { out, st: window.__th.state(), slow };
-    }, { f0, n: Math.min(CHUNK, total - f0), fps: FPS });
+    }, { f0, n: Math.min(CHUNK, total - f0), fps: FPS, every: RENDER_EVERY });
     for (const x of r.slow) console.log('  [slow]', x.join(' :: '));
     for (const fr of r.out) {
       times.push(fr.ms); hist.push(fr.ms); if (hist.length > 121) hist.shift();
