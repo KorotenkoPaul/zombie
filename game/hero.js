@@ -2009,8 +2009,8 @@ export function createHero(ctx){
  const gH=(x,z,y)=>{try{const h=window.__ground.heightAt(x,z);if(h!=null)return h;}catch(e){}return y;};
  // the bow from the back into the left hand: up over the left shoulder to the upper limb, then down to his side (and the reverse)
  function bowReach(a,k,toHand){const bw=PP().tools&&PP().tools.bow;if(!bw)return;const sh=bones.LeftArm.getWorldPosition(V());const f=fwd(root.rotation.y);
-  const over=sh.clone().add(V(0,.14,0)).addScaledVector(f,-.1);const side=bones.Hips.getWorldPosition(V()).addScaledVector(V(f.z,0,-f.x),.24).addScaledVector(f,.12).add(V(0,-.08,0));
-  const w=smooth(0,.3,k)*(1-smooth(.75,1,k));if(w<.01)return;const at=k<.5?over:over.clone().lerp(side,smooth(.5,.85,k));odReach('Left',at,w);}
+  const over=sh.clone().add(V(0,.08,0)).addScaledVector(f,-.04).addScaledVector(V(-f.z,0,f.x),-.05);/* a shoulder can do this: higher or further back the pose guard held the hand at the shoulder anyway */const side=bones.Hips.getWorldPosition(V()).addScaledVector(V(f.z,0,-f.x),.24).addScaledVector(f,.12).add(V(0,-.08,0));
+  const w=smooth(0,.3,k)*(1-smooth(.7,1,k));if(w<.01)return;const at=k<.4?over:over.clone().lerp(side,smooth(.4,.8,k));odReach('Left',at,w);}
  function huntStart(a,res,goOut){a.step='hunt';a.hp='draw';a.ht=0;a.hres=res;a.goOut=goOut;const f=fwd(N.g_out.face??H.face);H.face=N.g_out.face??H.face;
   const e=root.position;const hp=e.clone().addScaledVector(f,2.6).addScaledVector(V(f.z,0,-f.x),rnd(-.15,.15));/* on the path out, not in the bushes beside it */hp.y=gH(hp.x,hp.z,e.y);a.hareAt=hp;
   hareObj=hareObj||hareMesh();hareTidy();hareObj.position.copy(hp);hareObj.rotation.set(0,Math.atan2(-f.x,-f.z)+rnd(-.8,.8),0);hareObj.visible=true;scene.add(hareObj);
@@ -2029,8 +2029,8 @@ export function createHero(ctx){
  function bowTween(a,dt){const T=a.bt;if(!T)return;const bw=PP().tools&&PP().tools.bow;if(!bw||!bw.parent){a.bt=null;return;}T.k=Math.min(1,T.k+dt/.35);bw.parent.updateWorldMatrix(true,false);
   const L=bw.parent.matrixWorld.clone().invert().multiply(T.M0);const p0=V(),q0=new THREE.Quaternion(),s0=V();L.decompose(p0,q0,s0);const k=smooth(0,1,T.k);bw.position.lerpVectors(p0,T.tp,k);bw.quaternion.slerpQuaternions(q0,T.tq,k);bw.scale.lerpVectors(s0,T.ts,k);if(T.k>=1)a.bt=null;}
  function huntTick(a,dt){a.ht+=dt;const t=a.ht;const ok=a.hres&&a.hres.ok;bowTween(a,dt);
-  if(a.hp==='draw'){a.rk=t/1.1;if(t>.5&&!a.bg){a.bg=1;bowMove(a,()=>PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)}));AU('cloth');}
-   if(t>1.1){a.hp='shoot';a.ht=0;once('hy_bowshoot',{fade:.35});AU('arrow');}return;}
+  if(a.hp==='draw'){a.rk=t/1.6;if(t>.6&&!a.bg){a.bg=1;bowMove(a,()=>PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)}));AU('cloth');}
+   if(t>1.6){a.hp='shoot';a.ht=0;once('hy_bowshoot',{fade:.35});AU('arrow');}return;}
   if(a.hp==='shoot'){if(t>1.8&&!a.dr){a.dr=1;AU('bow_draw',root.position);}
    if(t>3.95&&!a.rel){a.rel=1;AU('bow_release',root.position);arrowObj=arrowObj||arrowMesh();const from=bones.LeftHand.getWorldPosition(V());arrowObj.position.copy(from);scene.add(arrowObj);arrowObj.visible=true;
     const to=a.hareAt.clone().add(V(0,.1,0));if(!ok)to.addScaledVector(V(fwd(H.face).z,0,-fwd(H.face).x),.5).addScaledVector(fwd(H.face),2.5);arrowObj.lookAt(to);a.ar={from,to,t:0};}
@@ -2047,8 +2047,8 @@ export function createHero(ctx){
   if(a.hp==='pick'){if(t>.85&&!a.ph2&&(odPalmTo('Right',a.hg0||V())<.06||t>1.1)){a.ph2=1;a.hg0=odPalm('Right');bones.RightHand.updateWorldMatrix(true,false);bones.RightHand.attach(hareObj);AU('cloth');}
    if(t>2.25&&!a.ph3){a.ph3=1;hareObj.visible=false;if(hareObj.parent)hareObj.parent.remove(hareObj);AU('zip');}
    if(t>durOf('hy_pickhare')-.05){a.hp='stow';a.ht=0;play(IDLE(),{fade:.4});}return;}
-  if(a.hp==='stow'){a.rk=1-t/1.1;if(t>.55&&!a.bs){a.bs=1;bowMove(a,()=>onBack('bow',V(-.02,.06,-.15),[0,0,.55]));AU('cloth');}
-   if(t>1.1){huntEnd(a);const g=a.goOut;a.goOut=null;g&&g();}return;}}
+  if(a.hp==='stow'){a.rk=1-t/1.6;if(t>1.0&&!a.bs){a.bs=1;bowMove(a,()=>onBack('bow',V(-.02,.06,-.15),[0,0,.55]));AU('cloth');}
+   if(t>1.6){huntEnd(a);const g=a.goOut;a.goOut=null;g&&g();}return;}}
  const carryOv=()=>{slingTick();if(H.carry&&H.path.length&&!H.lad&&has(H.carry)&&!H.ov)overlay(H.carry,{fade:.3,until:.98,weight:.85});};
  Object.assign(MAKE,{
   // out to the forest for meat or wood; gear from the workshop, out of sight for a while, back with the haul, gear off again
