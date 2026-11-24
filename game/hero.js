@@ -151,20 +151,20 @@ export function createHero(ctx){
  // ---------- layout: walk graph (keeps clear of furniture) ----------
  const {LC,WS,KT,BD,DK}=lv;
  const N={
-  kh_b:{p:V(-1.22,LC,3.77)},land:{p:V(-.4,LC,2.85)},gate:{p:V(0,LC,3.35),face:0},wstep:{p:V(1.15,WS,3.15)},
+  kh_b:{p:V(-1.22,LC,3.77)},kh_side:{p:V(-.5,LC,3.8),tight:true},/* WALK: the kitchen ladder stands between kh_b and the landing: round its side, not through the rungs */land:{p:V(-.4,LC,2.85)},gate:{p:V(0,LC,3.35),face:0},wstep:{p:V(1.15,WS,3.15)},
   wmid:{p:V(2.4,WS,3.45)},bench:{p:V(2.55,WS,2.62),face:Math.PI},wwin:{p:V(3.0,WS,3.95),face:0},
   kh_t:{p:V(-1.22,KT,2.75)},kmid:{p:V(-2.5,KT,3.3)},kl_m:{p:V(-3.4,KT,2.65)},stove:{p:V(-3.25,KT,2.42),face:Math.PI},sink:{p:V(-2.3,KT,2.15),face:Math.PI},kwin:{p:V(-3.0,KT,3.45),face:0},kl_b:{p:V(-3.98,KT,2.62)},
   bl_t:{p:V(-3.98,BD,1.95)},bl_m:{p:V(-3.45,BD,2.6)},bmid:{p:V(-2.3,BD,3.05)},bwin:{p:V(-3.6,BD,3.6),face:0},bdoor:{p:V(-.1,BD,2.78)},
   ledge:{p:V(1.25,BD,3.5),face:0},ll_b:{p:V(1.35,BD,3.47)},ll_t:{p:V(1.35,DK,2.7)},deckm:{p:V(1.9,DK,2.5)},deck:{p:V(3.13,DK,2.62),face:0},
  };
- const E=[['kh_b','land'],['land','gate'],['land','wstep'],['wstep','wmid'],['wmid','bench'],['wmid','wwin'],['kh_b','kh_t','ladder'],['kh_t','kmid'],['kmid','stove'],['kmid','sink'],['kmid','kwin'],['kmid','kl_m'],['kl_m','kl_b'],
+ const E=[['kh_b','kh_side'],['kh_side','land'],['land','gate'],['land','wstep'],['wstep','wmid'],['wmid','bench'],['wmid','wwin'],['kh_b','kh_t','ladder'],['kh_t','kmid'],['kmid','stove'],['kmid','sink'],['kmid','kwin'],['kmid','kl_m'],['kl_m','kl_b'],
   ['kl_b','bl_t','ladder'],['bl_t','bl_m'],['bl_m','bmid'],['bmid','bwin'],['bmid','bdoor'],['bdoor','ledge'],['ledge','ll_b'],['ll_b','ll_t','ladder'],['ll_t','deckm'],['deckm','deck']];
  // the rooms can be shifted sideways as a block (lv.XL: left rooms, lv.XR: right rooms); landings at LC stay
  {const XL=lv.XL||0,XR=lv.XR||0;if(XL||XR)for(const k in N){const n=N[k];if(n.p.y<LC+.3)continue;n.p.x+=n.p.x<0?XL:XR;}}
  const LAD={'kh_b>kh_t':{lz:3.45,side:1},'kl_b>bl_t':{lz:2.3,side:1},'ll_b>ll_t':{lz:3.15,side:1,rope:true}};
  // the ground (ground.js __ground.exits.forest): rope ladder from the gate down to the clearing, the path out to the forest edge,
  // a hidden spot out in the fog, and the work spots by the chopping stump and the firewood pile
- {const X=window.__ground&&window.__ground.exits&&window.__ground.exits.forest;if(X&&X.nodes){const ids=['g_foot','g_path1','g_fork','g_exit1','g_exit2','g_edge','g_out'];
+ {const X=window.__ground&&window.__ground.exits&&window.__ground.exits.forest;if(X&&X.nodes){const ids=['g_foot','g_path1','g_fork','g_exit0','g_exit1','g_exit15','g_exit2','g_edge','g_out'];/* WALK: the track's bends way[3] and way[5] were not nodes, so he walked the chord g_fork->g_exit1 straight through a root */if(X.path&&X.path.length>6){X.nodes.g_exit0=X.nodes.g_exit0||X.path[3];X.nodes.g_exit15=X.nodes.g_exit15||X.path[5];}
   for(const k of ids)if(X.nodes[k])N[k]={p:X.nodes[k].clone(),tight:true};/* tight: walk the path ground.js laid round the roots and stones, no shortcuts */const chain=ids.filter(k=>N[k]);for(let i=1;i<chain.length;i++)E.push([chain[i-1],chain[i]]);
   if(N.g_foot){E.push(['g_foot','gate','ladder']);LAD['g_foot>gate']={lz:4.0,side:1,rope:true};}
   if(N.g_out)N.g_out.face=X.faceOut;
@@ -278,6 +278,12 @@ export function createHero(ctx){
  // feet 9-15 cm sideways over the boards (workshop). Each ankle is held in the world (two-bone IK) and the hips carry the sway; a
  // foot the clip lifts (a step or a weight shift) is let go and locked again where it lands. Off while the root travels or turns.
  const SOLE={Left:{on:false,w:0,t:V()},Right:{on:false,w:0,t:V()},rp:V(),ry:0,still:0};
+ // WALK: each sole on what is under it (the ground or a root top), relative to the body's support g: a foot over a root is
+ // lifted onto it (it used to wade through the bark), a foot beside the root when the body stands on it reaches down
+ function terrainFeet(g){const G=window.__ground;if(!G||!G.standAt||root.position.y>2)return;
+  for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const d=G.standAt(a.x,a.z)-g;if(Math.abs(d)<.01)continue;
+   const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));const pl=pole.length();pole.multiplyScalar(1/Math.max(pl,1e-6)).lerp(fwd(root.rotation.y),1-smooth(.01,.04,pl));
+   ik2(U,L,F,a.clone().add(V(0,clamp(d,-.25,.45),0)),pole,1,true);}}
  window.__SOLE=SOLE;function soleLock(g,dt){const moved=root.position.distanceTo(SOLE.rp)/Math.max(dt,1e-3),turned=Math.abs(wrapA(root.rotation.y-SOLE.ry))/Math.max(dt,1e-3);SOLE.rp.copy(root.position);SOLE.ry=root.rotation.y;
   const still=moved<.05&&turned<.35&&!H.path.length&&!H.slide&&!H.swing;SOLE.still=still?Math.min(1,SOLE.still+dt*4):0;
   for(const s of ['Left','Right']){const S=SOLE[s],U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());
@@ -352,7 +358,7 @@ export function createHero(ctx){
   const dx=aim.x-p.x,dz=aim.z-p.z;const want=Math.atan2(dx,dz);const da=wrapA(want-root.rotation.y);
   // ===== MOTION HOOK: with motion matching the stop is a human one (constant deceleration over the last step), no creeping =====
   const ladNext=motion&&nxt&&nxt.t==='ladder';// MOTION HOOK: slow down over the last steps to the ladder foot (to ~.4 m/s, the approach pace), not at it
-  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):ladNext?clamp(Math.sqrt(.16+2*1.6*Math.max(0,toT-.32))/H.walkV,0,1):1);const align=smooth(-.55,.75,Math.cos(da));// a person steps out while still turning, not after
+  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):ladNext?clamp(Math.sqrt(.16+2*1.6*Math.max(0,toT-.32))/H.walkV,0,1):1);let align=smooth(-.55,.75,Math.cos(da));/* WALK: just off a ladder the rungs are right in front of him: turn on the spot first (the first step used to go into the ladder) */if(H.ladOff){if(Math.hypot(p.x-H.ladOff.x,p.z-H.ladOff.z)<.3){if(Math.cos(da)<.75)align=0;}else H.ladOff=null;}// a person steps out while still turning, not after
   H.v+=clamp(vmax*align-H.v,-3.2*dt,(H.v<.5?3.2:2.4)*dt);
   stuckCheck(dt);
   // turn rate depends on speed: on the spot it takes small steps
@@ -379,7 +385,7 @@ export function createHero(ctx){
   if(!H.lad&&edgeShut(step.from,step.node)){try{window.__house.hatch.open();window.__audio&&window.__audio.play('hatch_open');}catch(e){}}// a closed hatch on the way: he pushes it open as he gets there
   if(!H.lad){const a=N[step.from].p;const up=target.y>a.y+.01;H.lad={up,phase:up?'mount':'over',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};}
   const L=H.lad;const cz=c.lz+(.32+(c.rope?.05:0))*c.side;const F=c.side>0?Math.PI:0;H.state='walk';H.ground=false;
-  const done=()=>{H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.v=L.up?.45:0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
+  const done=()=>{H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.ladOff=root.position.clone();H.v=L.up?.45:0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
   // watchdog (QA P0: froze on the rope ladder for minutes): a ladder never takes longer than a slow climb; past that, land on the target
   L.age=(L.age||0)+dt;if(L.age>14+(L.yTop-L.yBot)/.3){p.copy(target);const f0=floorAt(p.x,p.y+.3,p.z,.4);if(f0!=null)p.y=f0;play(IDLE()||'0',{fade:.3});done();return;}
   if(L.phase==='mount'){H.ground=true;if(ladApproach(V(L.x,p.y,cz),F,dt)){L.phase='climb';}}
@@ -649,7 +655,9 @@ export function createHero(ctx){
   if(!hit(q.x,q.z))return;for(let b=.1;b<=.9;b+=.1){for(const sd of [0,.15,-.15]){const x=q.x-ux*b-uz*sd,z=q.z-uz*b+ux*sd;if(!hit(x,z)){const t=V(x,q.y,z);pushOut(t);if(!hit(t.x,t.z)){q.x=t.x;q.z=t.z;return;}}}}}
  function approachTo(a,sp,stand,then){const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz)||1e-3;H.face=Math.atan2(dx,dz);
   const move=Math.max(0,Math.min(1.2,d-stand));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);headroom(q,dx/d,dz/d);const dur=Math.max(.3,move/.8,Math.abs(wrapA(H.face-root.rotation.y))/2.4);/* never faster than ~140 deg/s */
-  const mv=Math.hypot(q.x-p.x,q.z-p.z);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:wrapA(H.face-root.rotation.y),k:0,d:dur};if(mv>.35){/* a real step over there: face the way he goes, turn to the work at the end (no gliding sideways) */const yT=Math.atan2(q.x-p.x,q.z-p.z);H.slide.y0=root.rotation.y;H.slide.yT=root.rotation.y+wrapA(yT-root.rotation.y);H.slide.yF=H.slide.yT+wrapA(H.face-yT);H.slide.d=Math.max(dur,mv/.8+(Math.abs(wrapA(yT-root.rotation.y))+Math.abs(wrapA(H.face-yT)))/3);}if(move>.08)play('30',{fade:.3,speed:1});
+  const mv=Math.hypot(q.x-p.x,q.z-p.z);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:wrapA(H.face-root.rotation.y),k:0,d:dur};if(mv>.35){/* a real step over there: face the way he goes, turn to the work at the end (no gliding sideways) */const yT=Math.atan2(q.x-p.x,q.z-p.z);H.slide.y0=root.rotation.y;H.slide.yT=root.rotation.y+wrapA(yT-root.rotation.y);H.slide.yF=H.slide.yT+wrapA(H.face-yT);
+   /* WALK: three phases with their own time: turn toward the spot (<=150 deg/s, it used to be 30% of the slide: up to 380 deg/s), step there, turn to the work */
+   const t1=Math.abs(wrapA(yT-root.rotation.y))/2.6,t2=mv/.8,t3=Math.abs(wrapA(H.face-yT))/2.6;H.slide.d=Math.max(dur,t1+t2+t3);H.slide.a=t1/H.slide.d;H.slide.b=(t1+t2)/H.slide.d;}if(move>.08)play('30',{fade:.3,speed:1});
   a.step='approach';a.t=0;a.next=()=>{play(IDLE(),{fade:.4});then();};a.adur=H.slide.d;}
  // WALK: stop where the work is. The route is a graph walk to the node nearest the work; that node is often past the work
  // (the hero walked by the door bolt, on to the node, then spun 190 deg and walked back). When the work comes within reach on
@@ -1958,7 +1966,7 @@ export function createHero(ctx){
   mixer.update(dt);
   if(!fkSnap)fkSnap=fkList.map(()=>new THREE.Quaternion());for(let i=0;i<fkList.length;i++)fkSnap[i].copy(fkList[i].quaternion);
   for(const [n,a,t0] of pre){const t1=a.time;if(t1===t0)continue;const w=a.getEffectiveWeight();if(w<=0)continue;const d=rmAt(n,t1).sub(rmAt(n,t0));p.add(rotY(V(d.x,0,d.z),root.rotation.y).multiplyScalar(w));if(RM[n].y)p.y+=d.y*w;}
-  if(H.slide){const sl=H.slide;const k1=smooth(0,1,Math.min(1,sl.k+dt/sl.d)),k0=smooth(0,1,sl.k);sl.k=Math.min(1,sl.k+dt/sl.d);p.x+=sl.x*(k1-k0);p.z+=sl.z*(k1-k0);if(sl.yT!=null){const r=sl.k;root.rotation.y=r<.3?lerp(sl.y0,sl.yT,smooth(0,.3,r)):r<.7?sl.yT:lerp(sl.yT,sl.yF,smooth(.7,1,r));}else root.rotation.y+=sl.yaw*(k1-k0);if(sl.k>=1)H.slide=null;}
+  if(H.slide){const sl=H.slide;const pa=sl.a!=null?sl.a*.6:0,pb=sl.b!=null?Math.max(pa+.05,Math.min(1,sl.b+(1-sl.b)*.4)):1;/* WALK: he moves while stepping, not while turning on the spot (a little overlap) */const k1=smooth(pa,pb,Math.min(1,sl.k+dt/sl.d)),k0=smooth(pa,pb,sl.k);sl.k=Math.min(1,sl.k+dt/sl.d);p.x+=sl.x*(k1-k0);p.z+=sl.z*(k1-k0);if(sl.yT!=null){const r=sl.k,A=sl.a??.3,B=Math.min(sl.b??.7,.999);root.rotation.y=r<A?lerp(sl.y0,sl.yT,smooth(0,A,r)):r<B?sl.yT:lerp(sl.yT,sl.yF,smooth(B,1,r));}else root.rotation.y+=sl.yaw*(k1-k0);if(sl.k>=1)H.slide=null;}
   if(H.once){const o=H.once;const a=o.a;if(a.time>=o.end-1e-3||!a.isRunning()){H.once=null;o.then&&o.then();}}
   edgeTick(dt);bedTick(dt);overlayTick(dt);bseqTick(dt);gtTick(dt);bedClipTick(dt);
   // height: stand on the real floor, or put the hips on the seat / mattress
@@ -1968,6 +1976,9 @@ export function createHero(ctx){
   else if(H.ground){// follow the boards: small steps up/down only (a gap between planks or a hole never pulls him down a storey)
    const sq=H.squat||0;/* KITCHEN: H.squat lowers the hips, the feet stay on the boards (legIK) */let f=floorAt(p.x,p.y+sq,p.z,.32);/* WALK: one ray between two planks hit the joist below: the root dipped 2 cm for a few frames. A drop is real only if the boards around agree */
    if(f!=null&&H.floorY!=null&&f<H.floorY-.006){for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y+sq,p.z+oz,.32);if(g2!=null&&g2>f&&g2<=H.floorY+.01)f=g2;}}
+   /* WALK: on the ground the oak's roots are something to stand on: the body rises only when both soles (and the hips) are over a root;
+      a single foot on a root is lifted by terrainFeet() with the knee bending, like stepping over it */
+   const G=window.__ground;if(f!=null&&G&&G.standAt&&p.y<2&&!window.__noRootStep){const hs=['Left','Right'].map(s=>{const a=bones[s+'Foot']?bones[s+'Foot'].getWorldPosition(V()):p;return G.standAt(a.x,a.z);});f=Math.max(f,Math.min(G.standAt(p.x,p.z),...hs));}
    if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
@@ -1976,7 +1987,7 @@ export function createHero(ctx){
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
+  if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);if(H.ground&&!H.fit&&!window.__noRootStep)terrainFeet(g);if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   bedHand();bedLegClear(dt);
   H.bucketTilt=false;/* OUTDOOR: set again by a task that tips a bucket on purpose this frame (grab.js leaves it unplumbed) */
   if(act&&act.post)act.post(dt);if(act&&act.fr)fridgePost(act);/* KITCHEN: the hand on the fridge handle / shelf */try{slungPost();}catch(e){}
