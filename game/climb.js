@@ -50,6 +50,8 @@ export function createClimb() {
     const lad = findLadder(o.x, o.lz); if (!lad || !lad.rungs.length) return false;
     const B = C.bones, p = C.root.position, wp = b => b.getWorldPosition(V());
     C.root.updateMatrixWorld(true);
+    // the head's and chest's own 'up' measured once while he stands upright (the rig's local axes are not the world up)
+    if (!M.uH && !o.fromTop && B.Head && B.Spine2) { M.uH = V(0, 1, 0).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion()).invert()); M.uC = V(0, 1, 0).applyQuaternion(B.Spine2.getWorldQuaternion(new THREE.Quaternion()).invert()); }
     const zDir = Math.sign(o.cz - o.lz) || 1;
     const A = { o, lad, zDir, R: lad.rungs, up: o.up, K: 4, steps: 0, step: null, t: 0, mode: 'climb',
       Dhip: lad.rope ? .3 : .29, T: o.up ? .74 : .66, hx: lad.rope ? .2 : .17, fx: .1, limb: {}, grab: 0, floorY: o.yBot, fy: o.up ? 0 : 1 };
@@ -126,7 +128,8 @@ export function createClimb() {
     if (k[1] === 'H') return restTarget(A, k, A.R.length);
     const [a, b, lift] = k === c.h ? [.04, .46, .16] : [.5, .92, .2];
     const e = sstep(a, b, s); const from = restTarget(A, k, L.r), to = c.FF[k];
-    const q = from.lerp(to, e); q.y += Math.sin(Math.PI * e) * lift; return q;
+    // up first, then over the edge, then down onto the boards (a straight line clipped the floor's edge beam: gate, feet 5 cm into it)
+    const eh = sstep(.3, 1, e), ev = sstep(0, .6, e); const q = from.clone().lerp(to, eh); q.y = lerp(from.y, to.y, ev) + Math.sin(Math.PI * e) * lift; return q;
   }
 
   // ---- one frame of climbing (root height, gait). Returns 'off' (standing on the floor above) | 'bottom' | null ----
@@ -301,6 +304,9 @@ export function createClimb() {
     const fh = V(f.x, 0, f.z), ph = V(pf.x, 0, pf.z);
     if (fh.lengthSq() > 1e-4 && ph.lengthSq() > 1e-4) { fh.normalize(); ph.normalize(); const a = Math.atan2(fh.x, fh.z) - Math.atan2(ph.x, ph.z); const d = Math.atan2(Math.sin(a), Math.cos(a)); const M = 1.13;
       if (Math.abs(d) > M) { const ex = d - Math.sign(d) * M; if (B.Neck) rotWorld(B.Neck, Y, -ex * .5 * w); rotWorld(Hd, Y, -ex * .5 * w); } }
+    // nod/side bend: the head's up stays within 55 deg of the chest's up (gate: head tipped 70-88 deg back while looking up the ladder)
+    if (B.Spine2) { const hu = (M.uH || V(0, 1, 0)).clone().applyQuaternion(Hd.getWorldQuaternion(_q1())), cu = (M.uC || V(0, 1, 0)).clone().applyQuaternion(B.Spine2.getWorldQuaternion(_q1())); const a = hu.angleTo(cu), MT = .96;
+      if (a > MT) { const ax = hu.clone().cross(cu); if (ax.lengthSq() > 1e-8) { ax.normalize(); const ex = (a - MT) * w; if (B.Neck) rotWorld(B.Neck, ax, ex * .5); rotWorld(Hd, ax, ex * .5); } } }
     const q2 = Hd.getWorldQuaternion(_q1()); const f2 = V(0, 0, 1).applyQuaternion(q2), u = Y.clone().applyQuaternion(q2); const sd = f2.clone().cross(Y); if (sd.lengthSq() < 1e-4) return; sd.normalize();
     const roll = Math.asin(Math.max(-1, Math.min(1, u.dot(sd)))); const RM = .09; const ex = roll > RM ? roll - RM : roll < -RM ? roll + RM : 0; if (Math.abs(ex) > 1e-3) rotWorld(Hd, f2.normalize(), -ex * w);
   }
