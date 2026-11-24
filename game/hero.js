@@ -850,7 +850,7 @@ export function createHero(ctx){
   // out to the forest for meat or wood; gear from the workshop, out of sight for a while, back with the haul, gear off again
   trip:(o={})=>{const a={step:'go',t:0};const kind=o.kind||'hunt';const away=o.away||rnd(40,90);let res={ok:true};
    if(!N.g_out){a.update=()=>endTask({ok:false});return a;}
-   const home=()=>{a.step='home';root.visible=true;H.node='g_out';
+   const home=()=>{a.step='home';root.visible=true;H.look=null;H.lookW=0;/* OUTDOOR: no stale gaze from before the trip (he walked home staring at the sky) */H.node='g_out';
     const haul=kind==='hunt'?(res.ok?'meatBag':null):'logArmful';if(haul){try{PP().grab(haul,haul==='meatBag'?bones.RightHand:bones.LeftHand,{offset:haul==='meatBag'?V(0,.1,.02):V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}H.carry=haul==='meatBag'?'hy_carrysack':'hy_carrylogs';a.haul=haul;}
     const unload=next=>{if(!a.haul){next();return;}const P=PP();
      if(a.haul==='meatBag')visit(a,PT('fridge'),.5,'hy_fridgein',[[.15,()=>{try{P.fridge.openTo(1,.5);}catch(e){}}],[.55,()=>{try{P.release('meatBag');window.__audio.carry(false);}catch(e){}H.carry=null;}],[.85,()=>{try{P.fridge.openTo(0,.5);}catch(e){}}]],next);
