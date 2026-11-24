@@ -1208,7 +1208,6 @@ export function createHero(ctx){
    if(a.step==='take'){// GRAB: step in until the tool's grip is within arm's reach, the fist onto the grip (not the tool's origin), close the hand only there
     const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const bl=beltHas(n);const h=bl?beltPt():gripHome(n)||toolHome(n)||s;H.look=bl?null:h;H.lookW=1;
     if(!a.st){a.st=1;a.pk=0;if(!bl)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) *//* the step to the tool is over: the walk clip stops with it (it went on looping through the reach: walking on the spot at the bench, fix_wall) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
-    if(!bl&&floorPick(a,dt,h,hand,false,()=>{grabTool(n,hand);if(H.belt===n)H.belt=null;AU('cloth');},()=>{a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;a.sq0=null;a.tsU=null;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else work();}}))return;
     const low=!bl&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.gotIt);if(o.clear)kneesClear(o.clear,dt);/* low down: he bends his knees to it (feet stay on the boards) */
     if(a.gotIt&&low){/* GRAB: taken off the floor, the tool rises with him in front of his shins (it used to swing back through them) */if(a.sq0==null)a.sq0=H.squat||0;const up=Math.max(0,a.sq0-(H.squat||0));if(H.squat>.02)a.tsU=a.t;
      a.rg=[hand,h.clone().add(V(0,up+.06*smooth(0,.3,a.t-a.tg),0)),1-smooth(0,.35,a.t-(a.tsU??a.t))];}
@@ -1229,13 +1228,12 @@ export function createHero(ctx){
     /* a far home: the tool goes on the belt (right hip), no trip back across the house and no flying home */
     // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
     if(!a.st){a.st=1;a.pk=0;if(!bt)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
-    if(!bt&&floorPick(a,dt,h,hand,true,()=>relTool(hand,n),()=>{a.held.pop();a.rel=false;a.toBelt=null;a.t=0;a.rg=null;a.st=0;}))return;
     const low=!bt&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.rel);if(o.clear)kneesClear(o.clear,dt);
     a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
     if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else relTool(hand,n);}
     if(a.rel&&a.t-a.tr>.4&&!(H.squat>0)){a.held.pop();a.rel=false;a.toBelt=null;a.t=0;a.rg=null;a.st=0;}}};
   const finish=()=>{a.ik=null;H.squat=0;if(a.putCb){const c=a.putCb;a.putCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
-  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);if(a.fp)fpFeet(a.fp);ikList(a.ik);if(a.rg&&a.rg[2]>.01){if(a.rg[3])reachTo(a.rg[0],a.rg[1],a.rg[2]);else reachGrip(a.rg[0],a.rg[1],a.rg[2]);}if(a.fp&&a.kn){const RL=REACH_LEAN;REACH_LEAN=0;try{reachTo(a.kn[0],a.kn[1],a.kn[2]);}finally{REACH_LEAN=RL;}}else a.kn=null;};
+  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
   a.leave=cb=>{H.squat=0;if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;
    /* GRAB P1: cut short, the tools in his hands still go back by hand through the put step (carried home, set on the spot, or onto the belt), not flown off from where he stands */
    for(const h of ['Right','Left']){const n=H.hold[h]&&H.hold[h].tool;if(n&&!a.held.includes(n)&&tools.some(x=>x[0]===n))a.held.push(n);}
@@ -1243,34 +1241,11 @@ export function createHero(ctx){
    cb();};
   return a;}
  // GRAB: knees bent just enough that the shoulder is within arm's reach of a low grip, then up again (the code squat keeps the feet planted)
- function jobSquat(a,dt,h,hand,down){const sh=bones[hand+'Arm'].getWorldPosition(V());const hz=Math.max(0,Math.hypot(sh.x-h.x,sh.z-h.z)-(h.y<root.position.y+.45?.12:0));/* GRAB: down by his feet he bends at the waist too (reachGrip's lean takes ~12 cm of the distance) */const R0=armLen*.9+PALM-.03;
+ function jobSquat(a,dt,h,hand,down){const sh=bones[hand+'Arm'].getWorldPosition(V());const hz=Math.hypot(sh.x-h.x,sh.z-h.z);const R0=armLen*.9+PALM-.03;
   const want=down&&h.y<root.position.y+.7&&hz<R0*.95?clamp(sh.y+(H.squat||0)-h.y-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,.4):0;/* only for a grip low down and within reach sideways (it squatted at the counter for an out-of-reach knife) */const c=H.squat||0;H.squat=c+clamp(want-c,-1.1*dt,1.1*dt);if(!want&&H.squat<.012)H.squat=0;H.sqJob=H.squat>0;}
  // GRAB: a small step so the shoulder ends within ~0.36 m (level) of p: a reach, not a lean or a stretch
- /* GRAB: a grip down on the floor boards (the watering can's handle, ~27 cm up) is out of reach of a knee bend (H.squat stops at .4) and a
-    lean: the hand stopped 20-45 cm above it and the can jumped into the fist. A real mocap pick-up (PICKC) takes him down; the palm is eased
-    onto the handle through the bottom of it, the hand closes (or opens) there, and the clip brings him back up. true while it runs. */
- /* GRAB: the pick-up clip shuffles a foot out and back (gate: RightFoot jitter 13 cm): the soles stay where he stood, the clip keeps the
-    heights (heels up, knees forward), eased out over the last tenth as the idle takes over */
- function fpFeet(F){const u=F.t/F.D;if(!F.ft){F.ft={};for(const s of ['Left','Right']){const A=bones[s+'Foot'];if(A)F.ft[s]=A.getWorldPosition(V());}}
-  const w=1-smooth(.88,1,u);if(w<.01)return;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],A=bones[s+'Foot'];const p0=F.ft[s];if(!U||!L||!A||!p0)continue;
-   const a=A.getWorldPosition(V()),k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole.copy(fwd(root.rotation.y));pole.normalize();
-   ik2(U,L,A,V(p0.x,a.y,p0.z),pole,w,true);}root.updateMatrixWorld(true);heelLift(1/60,true);/* held in place, the ankles bend like the hatch crouch: the heels come up */}
- function floorPick(a,dt,h,hand,put,onHand,done){if(!(h.y<root.position.y+.36)||!has(PICKC()))return false;
-  if(!a.fp){a.fp={t:0,D:durOf(PICKC()),k:0,put};H.squat=0;once(PICKC(),{fade:.3,then:()=>{if(a.fp)a.fp.end=1;play(IDLE(),{fade:.4});}});}
-  const F=a.fp;F.t+=dt;const u=F.t/F.D;H.squat=0;
-  {/* the other hand on that knee down in the squat (the clip swung it out into the bunk bed's post) */const oh=hand==='Left'?'Right':'Left';const kn=bones[oh+'Leg'];if(kn){const w=smooth(.1,.3,u)*(1-smooth(.68,.88,u));if(w>.01){const f=fwd(root.rotation.y);const up=bones[oh+'UpLeg'];const t=up?up.getWorldPosition(V()).lerp(kn.getWorldPosition(V()),.7):kn.getWorldPosition(V());const c=root.position;const io=V(c.x-t.x,0,c.z-t.z);io.addScaledVector(f,-io.dot(f));if(io.length()>.04)io.setLength(.04);/* GRAB: on the thigh above the knee, a little in from its outside (on the knee itself the hand went 4-5 cm into the bunk bed's post) */a.kn=[oh,t.add(io).add(V(0,.08,0)),w];}else a.kn=null;}}
-  const G=window.__grab;const PT=t=>G&&G.palmTarget?G.palmTarget(hand,t):t;/* GRAB: the palm aimed with one eased weight (reachGrip's extra fist pass switched on at w .98: hand jumps 5-8 cm) */
-  if(!F.k){F.w=smooth(.14,.36,u);a.rg=[hand,PT(h),F.w,1];if((u>.42&&palmTo(hand,h)<.05)||u>.5){F.k=1;F.tk=F.t;F.miss=palmTo(hand,h);F.h0=PT(h);/* GRAB: the palm's spot where the hand closed, taken before the tool is in it (the grip point moves to the tool's and a handle in the hand moves with it: aiming at it fed back on itself, hand jitter 16, a 9 cm jump) */onHand();}}
-  else{/* held at the handle through the bottom of the clip (it dipped on: the can went 16 cm into the boards), then eased off as he rises */const e=1-smooth(.56,.72,u);
-   F.w=e;const h0=F.h0||PT(h);a.rg=e>.01?[hand,put?h0:h0.clone().add(V(0,.04*smooth(0,.3,F.t-F.tk),0)),e,1]:null;}
-  if(F.end||u>1.15){a.fp=null;a.rg=null;if(!put){const G=window.__grab;try{const P=PP();const n=P&&P.tools&&Object.keys(P.tools).find(k=>P.tools[k]&&P.tools[k].parent===bones[hand+'Hand']);if(G&&G.regrip&&n)G.regrip(n,hand,.4);}catch(e){}}done();}return true;}
- function stepNear(p,hand){const sh=bones[hand+'Arm'];if(!sh||!p)return;const s0=sh.getWorldPosition(V());const d=V(p.x-s0.x,0,p.z-s0.z);const L=d.length();
-  /* GRAB: a grip down by his feet (the watering can's handle) needs the shoulder closer over it, or the knee bend never starts (jobSquat: out of
-     reach sideways) and the hand stopped 45 cm above the handle: the can jumped into the fist */let q;if(p.y<root.position.y+.36&&has(PICKC())){/* GRAB: for a floor pick-up (floorPick) his feet go ~44 cm short of the grip and a hand-width to that side of it:
-   at the bottom of the mocap squat his knees come ~40 cm forward, and closer the can was in his right knee (pushed off it, the fist missed the handle 20 cm) */
-   const f=fwd(H.face??root.rotation.y),r=V(-f.z,0,f.x).multiplyScalar(hand==='Left'?-1:1);/* square on as he stands (he has turned to it) */
-   q=p.clone().addScaledVector(f,-.44).addScaledVector(r,-.16);q.y=root.position.y;}
-  else{const R=.34;if(L<=R+.06)return;q=root.position.clone().addScaledVector(d.normalize(),Math.min(.6,L-R));}pushOut(q);const mv=Math.hypot(q.x-root.position.x,q.z-root.position.z);if(mv<.04)return;
+ function stepNear(p,hand){const sh=bones[hand+'Arm'];if(!sh||!p)return;const s0=sh.getWorldPosition(V());const d=V(p.x-s0.x,0,p.z-s0.z);const L=d.length();if(L<=.4)return;
+  const q=root.position.clone().addScaledVector(d.normalize(),Math.min(.6,L-.34));pushOut(q);const mv=Math.hypot(q.x-root.position.x,q.z-root.position.z);if(mv<.04)return;
   {const p=root.position;for(const k of [.5,1]){const x=p.x+(q.x-p.x)*k,z=p.z+(q.z-p.z)*k;const y=floorAt(x,p.y+.2,z,.3,.5);if(y==null||Math.abs(y-p.y)>.04)return;}}/* only on the same floor: never a step off an edge or onto a ledge */
   H.slide={x:q.x-root.position.x,z:q.z-root.position.z,yaw:0,k:0,d:Math.max(.4,mv/.6)};if(mv>.12)play('30',{fade:.25,speed:.9});}
  function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}

@@ -212,28 +212,19 @@ export function createGrab({ THREE, bones }) {
   // can then swing the arm out and drag the rigid bucket sideways into the leg: put it back under the fist after collide.
   // A tip about his right axis (pouring) is kept. ----
   const _bq = new THREE.Quaternion();
-  const HBW = {};
   function hangBuckets() { const P = PROPS || window.__props; if (!P || !P.tools || window.__noBucketHang) return;
     const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero); if (!H || !H.root) return; const act = HHref && HHref.act;
-    for (const nm of ['waterBucket', 'drainBucket', 'wateringCan']) { const o = P.tools[nm]; if (!o || !o.visible) continue; const side = o.parent === bones.RightHand ? 'Right' : o.parent === bones.LeftHand ? 'Left' : null; if (!side) { HBW[nm] = 0; continue; }
-      /* GRAB: the push off the legs eases in once it is in the fist (at the instant the hand closed on the can it threw the fist 8 cm) */ HBW[nm] = Math.min(1, (HBW[nm] || 0) + 1 / 60 / .2); const fpk = act && act.fp && act.fp.put ? Math.min(1, act.fp.w || 0) : 0; const pw = HBW[nm] * HBW[nm] * (3 - 2 * HBW[nm]) * (1 - fpk);/* and gives way while the floor pick-up puts the fist on the can's spot (it pushed the fist 18 cm off it at the bottom: the can slid home from the opened hand) */
+    for (const nm of ['waterBucket', 'drainBucket', 'wateringCan']) { const o = P.tools[nm]; if (!o || !o.visible) continue; const side = o.parent === bones.RightHand ? 'Right' : o.parent === bones.LeftHand ? 'Left' : null; if (!side) continue;
       const can = nm === 'wateringCan'; if (can && act && act.step === 'work') continue; // the can (radius ~8 cm) only kept off his shins; it keeps its own grip pose, and while watering the clip holds it out
       if (H.bucketTilt) continue; // Outdoor tips it on purpose (scoop at the pond, pouring out): leave it to them
       const hb = bones[side + 'Hand'], fa = bones[side + 'ForeArm']; const tipping = !!(act && /^(pour|fill)$/.test(act.step || ''));
       // clear of his legs first (the arm takes the fist out): the bucket's side (radius ~0.17) plus a thigh (~0.08) from its axis
       if (!tipping) { const f = V(Math.sin(H.root.rotation.y), 0, Math.cos(H.root.rotation.y)), r = V(-f.z, 0, f.x).multiplyScalar(side === 'Right' ? 1 : -1);
         const c = palm(side).add(V(0, can ? -.12 : -.2, 0)); let need = 0; for (const [a, b] of [['UpLeg', 'Leg'], ['Leg', 'Foot']]) for (const L of ['Left', 'Right']) { const A = bones[L + a].getWorldPosition(V()), B = bones[L + b].getWorldPosition(V());
-          const ab = B.clone().sub(A); const t = Math.max(0, Math.min(1, c.clone().sub(A).dot(ab) / ab.lengthSq())); const q = A.addScaledVector(ab, t); const dq = c.clone().sub(q).setY(0), lat = dq.dot(r), fw = dq.dot(f), R = can ? .15 : .26;
-          /* only as far out as clears the leg: a can set down well ahead of the shin (fw) needs no push out (it pushed the fist 15 cm off the can's spot on the floor) */
-          if (Math.abs(c.y - q.y) < .25 && Math.hypot(lat, fw) < R) need = Math.max(need, Math.sqrt(Math.max(0, R * R - fw * fw)) - lat); }
-        if (need > .005 && pw > .001) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), pw); } }
-      if (can) { /* GRAB: set down on the floor (hero floorPick, put) the can turns upright and to its spot's heading round the fist on the way down,
-          so letting go turns nothing (it swung 20 cm out on the bent wrist and then pivoted 38 cm home after the hand opened) */
-        const F = act && act.fp; const k = F && (F.put || F.k) ? (F.put ? Math.min(1, F.w || 0) : 1) : 0; if (k <= .001) continue; const hm = o.userData.home;
-        const yaw = hm && hm.quat ? new THREE.Euler().setFromQuaternion(hm.quat, 'YXZ').y : H.root.rotation.y; o.updateMatrixWorld(true);
-        const q0 = o.getWorldQuaternion(new THREE.Quaternion()); _bq.copy(q0).slerp(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ')), k);
-        hb.updateMatrixWorld(true); const ws = o.getWorldScale(V()).x; const pos = gripPoint(side).sub(V(...GRIP.wateringCan.g).multiplyScalar(ws).applyQuaternion(_bq));
-        const M = new THREE.Matrix4().compose(pos, _bq, V(ws, ws, ws)); M.premultiply(hb.matrixWorld.clone().invert()); M.decompose(o.position, o.quaternion, o.scale); o.updateMatrixWorld(true); continue; }
+          const ab = B.clone().sub(A); const t = Math.max(0, Math.min(1, c.clone().sub(A).dot(ab) / ab.lengthSq())); const q = A.addScaledVector(ab, t); const lat = c.clone().sub(q).setY(0).dot(r);
+          if (Math.abs(c.y - q.y) < .25) need = Math.max(need, (can ? .19 : .26) - lat); }
+        if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), 1); } }
+      if (can) continue;
       // then hang it: plumb (his pouring tip about his right axis kept), the bail's middle at the fist
       o.updateMatrixWorld(true); o.getWorldQuaternion(_bq); { const e = new THREE.Euler().setFromQuaternion(_bq, 'YXZ'); _bq.setFromEuler(new THREE.Euler(tipping ? e.x : 0, H.root.rotation.y, 0, 'YXZ')); }
       hb.updateMatrixWorld(true); const h = hb.getWorldPosition(V()), fp = fa.getWorldPosition(V()); const pm = h.add(h.clone().sub(fp).normalize().multiplyScalar(.07)); // = hero.js odPalm
