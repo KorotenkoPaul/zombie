@@ -735,8 +735,22 @@ function workshopShelves(w = .95) { const g = new THREE.Group(); const levels = 
   { let x = .08; for (let k = 0; k < 3; k++) { const bw = rr(.03, .04), bh = rr(.16, .2); const b = closedBook(bw, bh, .15, M.covers[(k + 3) % M.covers.length]); b.position.set(x, .438, .11); g.add(b); x += bw + .004; } }
   for (const [x, h, r] of [[-.08, .09, .035], [.08, .12, .04]]) { const jj = jar(h, r, M.jarGlass); jj.position.set(x, .858, .1); g.add(jj); }
   { const jj = jar(.1, .035, M.glazeCream); jj.position.set(-.42, .018, .12); g.add(jj); const c = can(.07, .05, M.cans[0]); c.position.set(.4, .018, .1); g.add(c); }
+  // packed like the photo's workshop: every gap gets the small stuff a workshop collects (kraft boxes, twine, a coil of
+  // wire, a rolled rag)
+  { const kraft = std2(0xA9845A), kraftD = std2(0x8C6A44), twine = std2(0xC8B080), rag = std2(0x7A8A9A);
+    const box = (x, y, w, h, d, m, ry = 0) => { const b = add(g, rb(w, h, d, .004), m, x, y + h / 2, .12, 0, ry, 0); const fz = d / 2 + .0015; add(g, rb(w * .72, h * .34, .003, .001), M.linen, x + Math.sin(ry) * fz, y + h * .56, .12 + Math.cos(ry) * fz, 0, ry, 0); /* paper label on the front */ add(g, rb(w * 1.01, .004, d * 1.01, .001), m, x, y + h * .8, .12, 0, ry, 0); /* lid rim */ return b; };
+    const spool = (x, y) => { add(g, new THREE.CylinderGeometry(.03, .03, .055, 14), twine, x, y + .0275 + .006, .12); for (const k of [0, 1]) add(g, new THREE.CylinderGeometry(.036, .036, .006, 14), M.woodLight, x, y + .003 + k * .061, .12); };
+    // top
+    box(-.165, .858, .06, .07, .1, kraftD, .1); spool(.16, .858);
+    // middle
+    spool(-.055, .438); box(.41, .438, .1, .08, .13, kraft, -.08); box(.41, .518, .085, .05, .11, kraftD, .12);
+    add(g, new THREE.CylinderGeometry(.026, .026, .1, 10), rag, -.43, .438 + .026, .12, Math.PI / 2, 0, 0);
+    // bottom
+    add(g, new THREE.TorusGeometry(.042, .006, 6, 18), M.copper, -.07, .018 + .006, .12, Math.PI / 2, 0, 0); add(g, new THREE.TorusGeometry(.036, .006, 6, 18), M.copper, -.07, .018 + .018, .12, Math.PI / 2, 0, .3);
+    box(.145, .018, .08, .06, .11, kraft, .2); }
   return bake(g); }
 
+let _boxPaint = null; const boxPaint = () => _boxPaint || (_boxPaint = wearEnamel(new THREE.MeshStandardMaterial({ roughness: .5, metalness: .35, envMap: M.env, envMapIntensity: .4 }), 0x9E2A1E, 11, { grime: .3, chips: 14 }));
 function sideBench() {
   const g = new THREE.Group(); const L = 1.0, D = .42, H = .78;
   W(g, L, .05, D, 0, H - .025, 0, { mat: M.woodLight, r: .01 }); W(g, L - .02, .045, D - .02, 0, .14, 0, { mat: M.woodDark, r: .008 });
@@ -745,7 +759,7 @@ function sideBench() {
   // on top: pencil cup, jars of screws, a small toolbox, an oil can, a rag
   { const c = can(.11, .035, M.cans[2]); c.position.set(.36, H, .05); g.add(c); for (let i = 0; i < 5; i++) { const pc = add(g, new THREE.CylinderGeometry(.004, .004, .15, 6), [M.gripYellow, M.gripRed, M.gripBlue][i % 3], .36 + rr(-.015, .015), H + .14, .05 + rr(-.015, .015), rr(-.2, .2), 0, rr(-.2, .2)); void pc; } }
   for (const [x, z, h] of [[.18, -.08, .1], [.07, -.1, .08]]) { const j = jar(h, .035, M.jarGlass); j.position.set(x, H, z); g.add(j); }
-  { const b = new THREE.Group(); b.position.set(-.2, H, -.02); b.rotation.y = .15; g.add(b); add(b, rb(.26, .1, .14, .01), M.gripRed, 0, .05, 0); add(b, rb(.27, .015, .15, .006), M.iron, 0, .1, 0); add(b, new THREE.TorusGeometry(.04, .007, 6, 14, Math.PI), M.iron, 0, .108, 0); }
+  { const b = new THREE.Group(); b.position.set(-.2, H, -.02); b.rotation.y = .15; g.add(b); add(b, rb(.26, .1, .14, .01), boxPaint(), 0, .05, 0); /* painted steel, chipped (was glossy red plastic) */ add(b, rb(.27, .015, .15, .006), M.iron, 0, .1, 0); add(b, new THREE.TorusGeometry(.04, .007, 6, 14, Math.PI), M.iron, 0, .108, 0); }
   { const o = new THREE.Group(); o.position.set(-.4, H, .08); g.add(o); add(o, lathe([[0, 0], [.04, 0], [.042, .05], [.02, .08], [.006, .09], [.004, .17], [0, .17]], 18), M.copper); }
   { const r = add(g, drapeGeo(.18, .12, .02, { wrinkle: .006 }), M.clothBlue, .02, H + .002, .1); r.rotation.y = .5; }
   // under-shelf crate with offcuts
