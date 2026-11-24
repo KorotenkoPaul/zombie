@@ -76,6 +76,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R9-9 | ok | tea (70dd9e4) | whole errand natural: mug from the sink, kettle at the stove (kept at chest height now, R6-2 not seen), sip with the rim at the lips (f2856), carries the mug back by the handle | f2124–f3348 | r9-70dd9e4/tea_sip_ok.jpg | — |
 | R9-10 | P1 | hatch (70dd9e4) | hands-view re-film (fresh seed run): in the bedroom at (-3.9, 8.4, 2.0) his hand DOES take the lid edge (f1440–1446) — B10 contact fixed. But right after, during the same hy_take, his raised right forearm and hand go THROUGH the outer bedroom wall: from outside the hand sticks out of the planks beside the window while he stands inside | f1506–f1602 | r9-70dd9e4/hatch_hand_on_lid_then_arm_through_wall_f1506-1602.jpg | collide / Character |
 | R9-11 | ok | chop (70dd9e4) | still right (close-ups): knife edge on the carrot on the board, the other hand holds the food | f4116, f4836 | r9-70dd9e4/chop_closeups_ok.jpg | — |
+| R9-12 | ok | pot (70dd9e4) | ladle held by the handle, bowl in the pot while stirring (f7236), lifted just above the rim between stirs (f7416) | f6876–f9036 | r9-70dd9e4/pot_ladle_in_pot_ok.jpg | — |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
