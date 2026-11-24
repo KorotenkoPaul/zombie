@@ -310,7 +310,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  const GRADE_BODY=`float l=dot(x,vec3(.2126,.7152,.0722));
     // warm/cold split like the painting: warm (orange) pixels get extra saturation and glow, cold ones lean to moonlit teal-blue
     float wk=clamp((x.r-x.b)*2.5,0.,1.),ck=clamp((x.b-x.r)*3.,0.,1.);
-    x=mix(vec3(l),x,sat+wk*.12*night);
+    x=mix(vec3(l),x,mix(sat,max(sat,satW),wk)+wk*.12*night);/* [LIGHTS] rain greys the cold night (sat), the lamp-lit rooms keep their dry saturation (satW): cosy against the storm */
     // lamp-lit wood toward the photo's golden amber, not red-orange: warm pixels' green is pulled a little toward their red
     // (hue ~20 -> ~30 deg) and the warm glow added on the bright ones is gold
     x.g+=(x.r-x.g)*.14*wk*night;x+=vec3(.045,.035,0.)*wk*hi0(l)*night;x=mix(x,x*vec3(.9,.98,1.2),ck*.4*night);x=mix(x,vec3(l)*vec3(.92,1.,1.1),ck*.25*night);x*=1.+.14*ck*night*(1.-smoothstep(.3,.7,l));/* the photo's night blues are lighter: lift the cold mid/darks, not the warm rooms *//* cold darks less saturated (the photo's night blues are muted, not deep teal) */
@@ -323,9 +323,9 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     float sh=1.-smoothstep(0.,.45,l),hi=smoothstep(.45,1.,l);x+=lift*sh*(.6+.6*night);x=mix(x,x*warm*1.15,hi*.45*night);
     x=mix(x,x*vec3(1.07,1.0,.9)+vec3(.03,.012,.0)*(1.-l),morn*.6);
     vec2 d=vUv-.5;x*=1.-vig*dot(d,d)*2.2;`;
- env.gradePass=new ShaderPass({uniforms:{tDiffuse:{value:null},sat:{value:1.22},con:{value:1.08},lift:{value:new THREE.Color(0x0c1e36)},warm:{value:new THREE.Color(0xFFE2A8)},vig:{value:.32},night:{value:1},morn:{value:0},gOn:{value:1}},
+ env.gradePass=new ShaderPass({uniforms:{tDiffuse:{value:null},sat:{value:1.22},satW:{value:1.22},con:{value:1.08},lift:{value:new THREE.Color(0x0c1e36)},warm:{value:new THREE.Color(0xFFE2A8)},vig:{value:.32},night:{value:1},morn:{value:0},gOn:{value:1}},
   vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-  fragmentShader:`uniform sampler2D tDiffuse;uniform float sat,con,vig,night,morn;uniform vec3 lift,warm;varying vec2 vUv;
+  fragmentShader:`uniform sampler2D tDiffuse;uniform float sat,satW,con,vig,night,morn;uniform vec3 lift,warm;varying vec2 vUv;
    float hi0(float l){return smoothstep(.25,.8,l);}
    void main(){vec4 c=texture2D(tDiffuse,vUv);vec3 x=c.rgb;${GRADE_BODY}gl_FragColor=vec4(clamp(x,0.,1.),c.a);}`});
 
@@ -374,7 +374,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   {const W=window.__wind;if(W&&W.wet)env.wet.value=W.wet();/* one wetness for everyone: Wind's (soaks in ~8 s, dries over ~2 min, real time) */else{const w=env.wet.value;env.wet.value=rainK>w?Math.min(rainK,w+.006):Math.max(rainK,w-.0008);}}
   const wt=env.wet.value;barkMat.roughness=1-wt*.55;barkMat.color.setRGB(.6*(1-wt*.35),.55*(1-wt*.35),.5*(1-wt*.3));
   if(rainK>0){fogU.col.value.lerp(rainC,rainK*.7);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
-  ffU.on.value=eve*(1-rainK);if(env.fireflies)env.fireflies.visible=ffU.on.value>.01;/* by day the points are fully transparent: don't draw them */const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.3);g.con.value=1.08+eve*.05-rainK*.06;/* rain: greyer, flatter, like looking through wet air */
+  ffU.on.value=eve*(1-rainK);if(env.fireflies)env.fireflies.visible=ffU.on.value>.01;/* by day the points are fully transparent: don't draw them */const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.3);g.satW.value=1.2+eve*.08;g.con.value=1.08+eve*.05-rainK*.06;/* rain: greyer, flatter, like looking through wet air */
   warmBounce(eve,rainK,nightK);
   if(env.interiorOn){inProbe.sh.coefficients[0].x=eve*env.interiorK;}/* .y = warm tint inside, set by lights.js */
   if(MOBILE){phoneNight(eve,rainK);foldLights();}else litForest();
@@ -433,10 +433,10 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   cA.add(cB.copy(LA.color).multiplyScalar(LA.intensity)).add(cB.copy(fill.color).multiplyScalar(fill.intensity*.5)).add(cB.copy(rim.color).multiplyScalar(rim.intensity*.3));
   if(LS)cA.add(cC.copy(LS.color).multiplyScalar(LS.intensity*.3));c.copy(cA).multiplyScalar(1/Math.PI);}
  // the grade folded into three's OutputPass (one full-screen pass less): same uniforms, run right after tone mapping + sRGB
- env.foldGrade=op=>{const gu=env.gradePass.uniforms;for(const k of ['sat','con','lift','warm','vig','night','morn','gOn'])op.uniforms[k]=gu[k];
+ env.foldGrade=op=>{const gu=env.gradePass.uniforms;for(const k of ['sat','satW','con','lift','warm','vig','night','morn','gOn'])op.uniforms[k]=gu[k];
   op.uniforms.tFog={value:null};op.uniforms.fogOn={value:0};env.outU=op.uniforms;
   let fs=op.material.fragmentShader;fs=fs.replace(/gl_FragColor\s*=\s*texture2D\(\s*tDiffuse\s*,\s*vUv\s*\);/,'gl_FragColor=texture2D(tDiffuse,vUv);if(fogOn>.5){vec4 fg=texture2D(tFog,vUv);gl_FragColor.rgb=fg.rgb+gl_FragColor.rgb*(1.-fg.a);}/* half-res fog (premultiplied), merged here on phones */');
-  fs=fs.replace('uniform sampler2D tDiffuse;','uniform sampler2D tDiffuse,tFog;uniform float fogOn,sat,con,vig,night,morn,gOn;uniform vec3 lift,warm;float hi0(float l){return smoothstep(.25,.8,l);}');
+  fs=fs.replace('uniform sampler2D tDiffuse;','uniform sampler2D tDiffuse,tFog;uniform float fogOn,sat,satW,con,vig,night,morn,gOn;uniform vec3 lift,warm;float hi0(float l){return smoothstep(.25,.8,l);}');
   const e=fs.lastIndexOf('}');fs=fs.slice(0,e)+'if(gOn>.5){vec3 x=gl_FragColor.rgb;'+GRADE_BODY+'x+=(fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5)/255.;/* dither after the 8-bit grade: no banding in the sky and fog gradients */gl_FragColor.rgb=clamp(x,0.,1.);}\n}';op.material.fragmentShader=fs;op.material.needsUpdate=true;env.gradeFolded=true;};
  env.noiseTex=fogNoise;for(const m of farRings)m.material.uniforms.tNoise.value=fogNoise;/* the baked 128px tiling noise (R,G), also used by the sky clouds in index.html */
  env.sheets=sheets;env.puffs=puffs;window.__env=env;
