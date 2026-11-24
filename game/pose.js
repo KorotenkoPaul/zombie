@@ -12,8 +12,7 @@
 //    against the pelvis (so the head never passes ~100 deg from the hips: no owl);
 //  * knees are hinges: never backwards, sideways/twist play only as the knee bends; when a clamp moved a leg it is re-solved
 //    (two-bone) so the ankle stays where it was planted and the foot keeps its orientation;
-//  * no joint turns faster than a person can in one frame: a clip switch or a released IK
-//    target can never snap a bone 180 deg; the bone turns at its top speed instead and catches up in a few frames.
+//  * limits are soft (the joint eases into them), so nothing kinks or pops when a pose runs into one;
 // Debug: ?pose=off or window.__poseOff = true disables it; window.__poseGuard.stats() lists what it corrected.
 import * as THREE from 'three';
 
@@ -33,7 +32,7 @@ const LIM = {
   // thigh and knee: not clamped joint by joint (leg IK twists the shin about its own axis; undoing that slid planted feet). The knee
   // is kept a hinge geometrically instead (kneeFix: it always points the way the toes do), which never moves the foot.
   UpLeg:      { x: [-130, 38], t: [-70, 40], z: [-75, 32], v: 1800 },
-  Leg:        { x: [-5, 155], hinge: [12, .25, 10, .2], v: 2000 },
+  Leg:        { x: [-12, 155], hinge: [12, .25, 10, .2], v: 2000 },
   Foot:       { v: 1800 }, // feet: planted by leg IK in the world; a local clamp against a twisted shin tipped planted feet (off for now)
   ToeBase:    { x: [-62, 40], t: [-35, 35], z: [-35, 35], v: 900 },
 };
@@ -72,11 +71,14 @@ export function createPoseGuard({ hero }) {
   function recomp(x, t, z, target) { const ax = x * D2R, az = z * D2R, ang = Math.hypot(ax, az);
     if (ang < 1e-9) qs.set(0, 0, 0, 1); else { const s = Math.sin(ang / 2) / ang; qs.set(ax * s, 0, az * s, Math.cos(ang / 2)); }
     qt.set(0, Math.sin(t * D2R / 2), 0, Math.cos(t * D2R / 2)); return target.multiplyQuaternions(qs, qt); }
-  const clampR = (v, r) => r ? Math.min(r[1], Math.max(r[0], v)) : v;
+  // soft limits: inside the range minus a margin nothing changes; towards the limit the joint eases in (tanh), so a pose that
+  // runs into a limit never kinks (a hard clamp switching on and off made 10-20 cm/frame^2 pops)
+  const soft = (v, lo, hi) => { const m = Math.min(6, (hi - lo) / 4); if (v > hi - m) return hi - m + m * Math.tanh((v - hi + m) / m); if (v < lo + m) return lo + m - m * Math.tanh((lo + m - v) / m); return v; };
+  const clampR = (v, r) => r ? soft(v, r[0], r[1]) : v;
   // ROM clamp of one joint; returns degrees moved
   function rom(j) { if (!j.rom) return 0; const q = j.b.quaternion; q1.multiplyQuaternions(j.ri, q); const d = decomp(q1);
     let x = clampR(d.x, j.x), t, z;
-    if (j.hinge) { const f = Math.max(0, x), pz = j.hinge[0] + j.hinge[1] * f, pt = j.hinge[2] + j.hinge[3] * f; z = Math.min(pz, Math.max(-pz, d.z)); t = Math.min(pt, Math.max(-pt, d.t)); }
+    if (j.hinge) { const f = Math.max(0, x), pz = j.hinge[0] + j.hinge[1] * f, pt = j.hinge[2] + j.hinge[3] * f; z = soft(d.z, -pz, pz); t = soft(d.t, -pt, pt); }
     else { t = clampR(d.t, j.t); z = clampR(d.z, j.z); }
     const m = Math.abs(x - d.x) + Math.abs(t - d.t) + Math.abs(z - d.z); if (m < .05) return 0;
     recomp(x, t, z, q2); q.multiplyQuaternions(j.r, q2); j.cl += m; j.cn++; return m; }
@@ -85,7 +87,7 @@ export function createPoseGuard({ hero }) {
   function chain(js, yaw, tilt) { if (js.some(j => !j)) return 0;
     q3.set(0, 0, 0, 1); q4.set(0, 0, 0, 1); for (const j of js) { q3.multiply(j.b.quaternion); q4.multiply(j.r); }
     q1.copy(q4).invert().multiply(q3); const d = decomp(q1);
-    const sw = Math.hypot(d.x, d.z), k = sw > tilt ? tilt / sw : 1, t = Math.min(yaw, Math.max(-yaw, d.t));
+    const sw = Math.hypot(d.x, d.z), k = sw > 1e-6 ? soft(sw, -tilt, tilt) / sw : 1, t = soft(d.t, -yaw, yaw);
     const m = Math.abs(t - d.t) + sw * (1 - k); if (m < .05) return 0;
     recomp(d.x * k, t, d.z * k, q2); const tgt = q4.multiply(q2); // wanted chain rotation in the chain parent's frame
     const C = new THREE.Quaternion().multiplyQuaternions(tgt, q3.invert()); // correction in the parent frame
@@ -102,12 +104,14 @@ export function createPoseGuard({ hero }) {
   function worldQ(b, o) { return b.getWorldQuaternion(o); }
   function setWorldQ(b, wq) { b.parent.getWorldQuaternion(pq); b.quaternion.copy(pq.invert().multiply(wq)); }
   function reach(L) { const U = L.u.b, K = L.l.b, F = L.f.b; U.updateMatrixWorld(true);
-    const H = U.getWorldPosition(v1), A1 = F.getWorldPosition(v2); if (A1.distanceTo(L.A) < .004) { setWorldQ(F, L.F); return false; }
+    const H = U.getWorldPosition(v1), A1 = F.getWorldPosition(v2); if (A1.distanceTo(L.A) < 1e-4) { setWorldQ(F, L.F); return false; }
     const Kp = K.getWorldPosition(v3); const l1 = H.distanceTo(Kp), l2 = Kp.distanceTo(A1);
     const want = L.A.distanceTo(H), d = Math.min(l1 + l2 - 1e-3, Math.max(Math.abs(l1 - l2) + 1e-3, want));
-    const flex = 180 - Math.acos(Math.min(1, Math.max(-1, (l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2)))) / D2R;
+    const inner = (dd2) => Math.acos(Math.min(1, Math.max(-1, (l1 * l1 + l2 * l2 - dd2 * dd2) / (2 * l1 * l2)))) / D2R;
+    // change the bend by exactly what the distance needs (no change when the ankle is already where it was): continuous
+    const dFlex = inner(H.distanceTo(A1)) - inner(d);
     q1.multiplyQuaternions(L.l.ri, K.quaternion); const dd = decomp(q1);
-    recomp(Math.min(L.l.x[1], Math.max(L.l.x[0], flex)), dd.t, dd.z, q2); K.quaternion.multiplyQuaternions(L.l.r, q2);
+    recomp(Math.min(L.l.x[1], Math.max(L.l.x[0], dd.x + dFlex)), dd.t, dd.z, q2); K.quaternion.multiplyQuaternions(L.l.r, q2);
     U.updateMatrixWorld(true); const a = F.getWorldPosition(vA).sub(H).normalize(), b = L.A.clone().sub(H).normalize();
     const R = q4.setFromUnitVectors(a, b); worldQ(U, q3); setWorldQ(U, q3.premultiply(R));
     U.updateMatrixWorld(true); setWorldQ(F, L.F); return true; }
@@ -122,6 +126,7 @@ export function createPoseGuard({ hero }) {
   function run(dt) {
     if (window.__poseOff || !(dt > 0)) return; dt = Math.min(dt, .1); stat.frames++;
     const lad = !!(hero.H && hero.H.lad); root.updateMatrixWorld(true);
+    if (run.trace) { const t = run.trace; t.pre = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand'].map(n => B[n].getWorldPosition(new THREE.Vector3()).toArray()); }
     for (const L of LEGS) if (L.ok) { L.f.b.getWorldPosition(L.A); worldQ(L.f.b, L.F); }
     const legMoved = [false, false];
     for (const j of J) { if (lad && j.arm) continue; const m = rom(j); if (m) { stat.rom++; if (/Leg$/.test(j.n)) legMoved[/^Left/.test(j.n) ? 0 : 1] = true; const w = stat.worst[j.n]; if (!w || m > w) stat.worst[j.n] = +m.toFixed(1); } }
@@ -129,7 +134,8 @@ export function createPoseGuard({ hero }) {
     if (chain([byName.Neck, byName.Head], HEAD.yaw, HEAD.tilt)) stat.head++;
     root.updateMatrixWorld(true);
     LEGS.forEach((L, i) => { if (L.ok && legMoved[i] && !hero.inBed && reach(L)) stat.knee++; });
-    speed(dt);
+    if (run.trace) { const t = run.trace; t.post = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand'].map(n => B[n].getWorldPosition(new THREE.Vector3()).toArray()); }
+    // per-joint speed cap off: snaps are taken by motion.js's pop filter (slot 'pops'); a cap here added its own pops
     root.updateMatrixWorld(true); }
   function stats() { const r = { ...stat, joints: {} }; for (const j of J) if (j.cn || j.vn) r.joints[j.n] = { rom: j.cn, deg: +(j.cl / Math.max(1, j.cn)).toFixed(1), speed: j.vn }; return r; }
   function reset() { J.forEach(j => { j.has = false; j.cl = j.cn = j.vn = 0; }); Object.assign(stat, { frames: 0, rom: 0, vel: 0, head: 0, spine: 0, knee: 0, worst: {} }); }
