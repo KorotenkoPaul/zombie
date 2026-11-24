@@ -23,6 +23,8 @@ const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t
 const _v = new THREE.Vector3();
 
 // how a source wakes up and dies down (seconds), and how it flickers
+const GLOW = (() => { try { return new URLSearchParams(location.search).get('glow') === '1'; } catch (e) { return false; } })();
+const GLOW_K = { kitchen: 1.8, workshop: 1.6, oven: 1.3, bedroom: 1.1 }, GLOW_C = new THREE.Color(0xFFD9A0);
 const KINDS = {
   oil:      { on: .7,  off: .5,  flick: 'flame' },   // oil lanterns: catch, flare, settle
   electric: { on: .12, off: .08, flick: 'bulb' },    // dome lamp: quick, a small stutter
@@ -141,6 +143,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
 
   // a source: lights (with their full intensity), emissive materials (with full emissiveIntensity / opacity)
   function add(name, room, kind, pos, { lights = [], emis = [], opac = [], halo = null, haloSize = 1.5, extra = null, autoFn }) {
+    // ?glow=1 (critic L1, for Pavel to compare; not the default): the lit room closer to the photo's warmer, creamier glow.
+    // Kitchen and workshop lamps (and the oven) ~1.6-1.8x and creamier, reaching further; the bedroom only a touch, it stays cosy and dim.
+    const gk = GLOW && GLOW_K[name];
+    if (gk) for (const L of lights) { L.I *= gk; L.l.color.lerp(GLOW_C, .35); if (L.l.isPointLight && name !== 'bedroom') { L.l.distance *= 1.25; L.l.decay *= .85; } }
     let haloObj = null;
     if (ENV && ENV.addHalo) {
       // halos follow .intensity; an emissive-only lantern gets a light-less proxy so it still glows in the fog
@@ -851,12 +857,18 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // his albedo). Outside the lit rooms half his light keeps his own colour at the same brightness: concept 6's olive,
     // chestnut and mustard read at night. His materials only; inside a lit room the lamp's warmth on him stays.
     rimU.uHue.value = .5 * (1 - dayK) * (1 - Math.min(1, w));
+    // the moon has phases (Environment: a random start, one step a night), and outside the moon is most of his light, so he
+    // read ~25% darker on a thin-moon night than at full moon. Less moon -> a little more of his own soft fill (his materials
+    // only: the night itself still gets darker with the moon, he just stays readable)
+    const ml = window.__env && window.__env.moonLight != null ? window.__env.moonLight : 1;
+    rimU.uFill.value.add(_rc.copy(MOON_FILL).multiplyScalar(MF_K * Math.max(0, 1 - ml) * (1 - dayK) * (1 - Math.min(1, w))));
   }
   const _rc = new THREE.Color();
   // hero-look thread: his face still read dark in the lit rooms at the normal camera (face luma ~88 of 255, deep orange).
   // The lamp light bounced back off the walls and floor in front of him: .42 lifts the face to ~120 and lets the eyes read.
   // Hero materials only, so the rooms are exactly as bright as before.
   const FILL_K = .42;
+  const MOON_FILL = new THREE.Color(0xD8DEE8), MF_K = .55;   // face 180 at full moon, 140 -> ~173 at new moon
 
   const api = {
     names: [...src.keys()],
@@ -879,7 +891,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // otherwise our own small lantern hangs from the fingers
     attachHand: (bone, off = V(0, -.04, .02), carried = null) => {
       if (!bone) return false; const ws = bone.getWorldScale(V()).x || 1;
-      if (!carried) carried = bone.children.find(c => c !== hand.g && !c.isBone && !c.isLight && c.visible !== false) || null;
+      // the carried lantern is a child with meshes: the rig's end-effector helpers (mixamorigRightHandMiddle4, a bare Object3D)
+      // also hang off the hand bone, and picking one put the flame at the world origin (an empty box's centre), far below him:
+      // on night trips his lantern stayed dark and lit nothing
+      const hasMesh = o => { let m = false; o.traverse(x => { if (x.isMesh) m = true; }); return m; };
+      if (!carried) carried = bone.children.find(c => c !== hand.g && !c.isBone && !c.isLight && c.visible !== false && hasMesh(c)) || null;
       bone.add(hand.g); hand.g.scale.setScalar(1 / ws); hand.g.visible = true; hand.attached = bone; bone.getWorldPosition(hand.prev);
       if (carried) {
         bone.updateMatrixWorld(true); const c = new THREE.Box3().setFromObject(carried).getCenter(V()); bone.worldToLocal(c);
