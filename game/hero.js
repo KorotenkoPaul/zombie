@@ -2116,7 +2116,7 @@ export function createHero(ctx){
   if(H.inBed)bedPress(false);
   Object.assign(H,{path:[],then:null,wait:null,swing:null,bedB:null,edgeHold:null,lad:null,slide:null,once:null,trans:false,seated:null,inBed:false,fit:null,ground:true,v:0,av:0,look:null,lookW:0,pending:null,linger:0,turnStep:false});
   act=null;H.task=null;legPlantOff();}
- function spawn(task,o={}){resetBody();task=task||'read';
+ function spawn(task,o={}){resetBody();H.squat=0;H.sqJob=false;/* a knee bend (GRAB squat, oven) cut short never carries over into the new start: it kept the root 4.5 cm low for a whole task (gate: foot-bend on every walk) */task=task||'read';
   if(task==='read'&&!o.walking){const s=N.chair;root.position.set(s.p.x,s.floor,s.p.z);root.rotation.y=s.face;H.face=s.face;H.seated=s;H.node='chair_app';H.task='read';H.ground=false;
    H.fit={mode:'hold',base:s.floor,y:s.seat+SEAT_CLEAR};play(READ,{fade:0});act=MAKE.read({seated:true});act.name='read';lastAct=['read'];actDur=rnd(25,40);return;}
   if(task==='sleep'&&!o.walking&&N.bedlie){const li=N.bedlie,ed=N.bededge;root.position.set(li.p.x,floorTop(BD),li.p.z);root.rotation.y=0;H.face=0;H.node='bed_app';H.ground=false;H.inBed=true;try{undress(true,true);}catch(e){}
