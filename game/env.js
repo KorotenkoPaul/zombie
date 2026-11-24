@@ -148,7 +148,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
      const cs=9.6*tr.s*.75;crowns.push({p:ctr.add(V(0,cs*.1,0)),w:(sx*1.5+cs)*1.05,h:sy*1.5+cs,c:tint(Math.hypot(tr.x,tr.z),1)});}}
    env.canopy=mkImp(crowns,'forestCanopyImpostors');scene.remove(im);im.geometry.dispose();im.dispose();
    // understory: low bushes on the forest floor, young trees' crowns at 3-8 m, and leaf mass hung between neighbouring crowns
-   const ul=[];const ru=rng(57);const NU=MOBILE?170:560;for(let k=0;k<NU*3&&ul.length<NU;k++){const a=ru()*6.28,r=FR0-3+ru()*24,x=Math.cos(a)*r,z=Math.sin(a)*r;if(z>12)continue;
+   const ul=[];const ru=rng(57);const NU=MOBILE?130:560;for(let k=0;k<NU*3&&ul.length<NU;k++){const a=ru()*6.28,r=(MOBILE?FR0+1:FR0-3)+ru()*(MOBILE?20:24),x=Math.cos(a)*r,z=Math.sin(a)*r;if(z>12)continue;
     const lvl=ru();const w=lvl<.4?3.8+ru()*3.6:6+ru()*5;const y=groundH(x,z)+(lvl<.4?w*.34:4+ru()*8);ul.push({p:V(x,y,z),w:w*1.15,h:w,c:tint(r,lvl<.4?.72:.86)});}
    env.understory=mkImp(ul,'forestUnderstory');env.canopyTex=rt.texture;}catch(e){console.warn('canopy impostors',e);}}}
 
