@@ -1978,7 +1978,7 @@ export function createHero(ctx){
    fridgeVisit(a,'in',()=>endTask({ok:true}));
    a.update=dt=>{if(!stepTick(a,dt))carryOv();};
    /* walking to the fridge the sack hangs in his fist beside the hip, clear of the shins (the carry clip swung it through them) */
-   a.post=()=>{const mb=P.tools&&P.tools.meatBag;const on=a.step!=='fridge'&&!H.lad&&mb&&mb.parent===bones.RightHand;a.cw=H.lad?0:clamp((a.cw||0)+(on?1:-1)/60/.4,0,1);/* on a ladder the climb owns both hands */if(a.cw<.01||!mb||mb.parent!==bones.RightHand)return;
+   a.post=()=>{const mb=P.tools&&P.tools.meatBag;const isL=q=>q&&q.from&&(LAD[q.from+'>'+q.node]||LAD[q.node+'>'+q.from]);const P0=H.path&&H.path[0],P1=H.path&&H.path[1];const lf=isL(P0)?N[P0.from]:isL(P1)?N[P1.from]:null;const ladNear=!!(lf&&Math.hypot(lf.p.x-root.position.x,lf.p.z-root.position.z)<1.0);/* the arm lets the sack down before a ladder, not on it */const on=a.step!=='fridge'&&!H.lad&&!ladNear&&mb&&mb.parent===bones.RightHand;a.cw=clamp((a.cw||0)+(on?1:-1)/60/.3,0,1);/* eased off as he mounts a ladder: the climb owns both hands */if(a.cw<.01||!mb||mb.parent!==bones.RightHand)return;
     const fw=fwd(root.rotation.y);const cp=bones.Hips.getWorldPosition(V()).addScaledVector(V(-fw.z,0,fw.x),.28).addScaledVector(fw,.16).add(V(0,.16,0));{const l=root.worldToLocal(cp.clone());a.cs=a.cs?a.cs.lerp(l,.15):l;}{const G=window.__grab;const w=smooth(0,1,a.cw);const c=root.localToWorld(a.cs.clone());reachGrip('Right',G&&G.gripPoint&&w<.999?G.gripPoint('Right').lerp(c,w):c,1);}H.noPop={side:'Right',until:performance.now()+150};};
    a.leave=cb=>{try{P.release('meatBag');P.fridge.openTo(0,.4);}catch(e){}H.carry=null;cb();};return a;},
   eat:(o={})=>eatAction(o),
