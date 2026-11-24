@@ -129,7 +129,8 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let j = 0; j < 3; j++) { let t = f + TR[j]; if (t > n - 1) { if (!endStill) ok = false; t = n - 1; }
         loc(R[t*3], R[t*3+1], t2, 0); F[o + 15 + j*2] = t2[0]; F[o + 16 + j*2] = t2[1];
         const dy = R[t*3+2] - y; F[o + 21 + j*2] = Math.sin(dy); F[o + 22 + j*2] = Math.cos(dy); }
-      valid[gi] = ok ? 1 : 0; }
+      // generated turn-backs: kept for turning back mid-walk, but not for starting from rest (wide splayed legs, hips lag the body by 0.2 s)
+      valid[gi] = ok ? (/^hy_turnback/.test(c.name) ? 2 : 1) : 0; }
     c.fl = new Float32Array(n * 6); for (let f = 0; f < n; f++) for (let k = 0; k < 6; k++) c.fl[f*6 + k] = F[(g0 + f)*NF + k];
     g0 += n; }
   // normalisation: one scale per feature group, times the group's weight
@@ -148,7 +149,7 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let k = 0; k < NF; k++) { const v = Qv[k]; const d = v < bmin[o+k] ? bmin[o+k] - v : v > bmax[o+k] ? v - bmax[o+k] : 0; lb += d*d; if (lb >= bestC) break; }
       if (lb >= bestC) { pruned++; continue; }
       const e = Math.min(total, (bl + 1) * BS);
-      for (let i = bl * BS; i < e; i++) { if (!valid[i]) continue; let c = 0; const fo = i * NF; for (let k = 0; k < NF; k++) { const d = Qv[k] - F[fo + k]; c += d*d; if (c >= bestC) break; } if (c < bestC) { bestC = c; bestI = i; } } }
+      for (let i = bl * BS; i < e; i++) { if (!valid[i] || (valid[i] === 2 && S.noTB)) continue; let c = 0; const fo = i * NF; for (let k = 0; k < NF; k++) { const d = Qv[k] - F[fo + k]; c += d*d; if (c >= bestC) break; } if (c < bestC) { bestC = c; bestI = i; } } }
     S.pruned = pruned / NBL; return [bestI, bestC]; }
 
   // ---------- runtime state ----------
@@ -209,7 +210,7 @@ export function createMotion({ hero, db, opts = {} }) {
     for (let j = 0; j < 3; j++) { const dx = traj[j].x - S.char.x, dz = traj[j].z - S.char.z; const lx = dx*cs + dz*sn, lz = -dx*sn + dz*cs; const dy = traj[j].yaw - S.cyaw;
       Qv[15 + j*2] = (lx - mean[15 + j*2]) * scale[15 + j*2]; Qv[16 + j*2] = (lz - mean[16 + j*2]) * scale[16 + j*2];
       Qv[21 + j*2] = (Math.sin(dy) - mean[21 + j*2]) * scale[21 + j*2]; Qv[22 + j*2] = (Math.cos(dy) - mean[22 + j*2]) * scale[22 + j*2]; } }
-  function curCost() { const g = gidx(); if (!valid[g]) return 1e9; let c = 0; for (let k = 0; k < NF; k++) { const d = Qv[k] - F[g*NF + k]; c += d*d; } return c; }
+  function curCost() { const g = gidx(); if (!valid[g] || (valid[g] === 2 && S.noTB)) return 1e9; let c = 0; for (let k = 0; k < NF; k++) { const d = Qv[k] - F[g*NF + k]; c += d*d; } return c; }
 
   // ---------- foot locking ----------
   const lock = [0, 1].map(() => ({ on: false, hold: false, w: 0, p: new THREE.Vector3(), shown: new THREE.Vector3() }));
@@ -302,12 +303,12 @@ export function createMotion({ hero, db, opts = {} }) {
     if (wantOn) S.settle = .9; else S.settle = Math.max(0, S.settle - dt);
     const mmAct = !isBlocked && !window.__noMotion && (wantOn || (S.on && S.settle > 0 && !settled()));
     if (mmAct && !S.on) { // entering: start the character where the body is, find a frame for the current state
-      S.on = true; S.lockDelay = .3; S.char.set(p.x, p.y, p.z); S.cyaw = yaw; S.searchT = 0; S.forceSearch = true;
+      S.on = true; S.onT = 0; S.lockDelay = .3; S.char.set(p.x, p.y, p.z); S.cyaw = yaw; S.searchT = 0; S.forceSearch = true;
       // query from the current skeleton: feet / hips relative to the root (velocity unknown -> zero)
       predict(traj); buildQueryFromBody(traj); const [bi] = search(Qv, -1, 1e9); if (bi >= 0) { S.ci = where[bi*2]; S.t = where[bi*2+1]; } }
     if (!mmAct && S.on) { S.on = false; }
     S.layer = false;
-    if (S.on) {
+    if (S.on) { S.onT = (S.onT || 0) + dt; S.noTB = S.onT < .8;
       predict(traj);
       S.searchT -= dt;
       if (S.searchT <= 0 || S.forceSearch || S.t >= clips[S.ci].n - 2) { S.searchT = .1; S.forceSearch = false; const t0 = T0();
