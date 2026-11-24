@@ -209,11 +209,11 @@
  },
  "idle_stand_a": {
   "src": "77_02",
-  "note": "Replacement for clip '30' (standing base under cook / tea / water). Real mocap standing, relaxed, weight shifts. 15.6 s loop close 1.0."
+  "note": "Replacement for clip '30' (standing base under cook / tea / water). Real mocap standing, relaxed, weight shifts. 15.6 s loop close 1.0. Head lifted (headlevel.mjs): the capture hung the head ~34 deg forward, now ~14 deg like a normal gaze."
  },
  "idle_stand_b": {
   "src": "139_02",
-  "note": "Standing, shifting weight between feet. 7.8 s loop close 0.8."
+  "note": "Standing, shifting weight between feet. 7.8 s loop close 0.8. Head lifted (headlevel.mjs): the capture hung the head ~34 deg forward, now ~14 deg like a normal gaze."
  },
  "idle_stand_c": {
   "src": "111_28",
@@ -293,25 +293,25 @@
   "src": "69_16",
   "t0": 0.0,
   "t1": 1.45,
-  "note": "One 90 deg turn in place to the LEFT, real stepping feet (69_16 first turn). Play at speed 1.3-1.6 for a brisk turn; chain two for 180 deg."
+  "note": "One 90 deg turn in place to the LEFT, real stepping feet (69_16 first turn). Play at speed 1.3-1.6 for a brisk turn; chain two for 180 deg. Head lifted (headlevel.mjs): the capture hung the head ~34 deg forward, now ~14 deg like a normal gaze."
  },
  "turn90_L_b": {
   "src": "69_16",
   "t0": 1.75,
   "t1": 3.4,
-  "note": "Second 90 deg left turn take (69_16), slightly different footwork; alternate with turn90_L."
+  "note": "Second 90 deg left turn take (69_16), slightly different footwork; alternate with turn90_L. Head lifted (headlevel.mjs): the capture hung the head ~34 deg forward, now ~14 deg like a normal gaze."
  },
  "turn90_R": {
   "src": "69_18",
   "t0": 1.15,
   "t1": 2.85,
-  "note": "One 90 deg turn in place to the RIGHT, real stepping feet (69_18). Same use as turn90_L."
+  "note": "One 90 deg turn in place to the RIGHT, real stepping feet (69_18). Same use as turn90_L. Head lifted (headlevel.mjs): the capture hung the head ~34 deg forward, now ~14 deg like a normal gaze."
  },
  "turn90_R_b": {
   "src": "69_18",
   "t0": 2.75,
   "t1": 4.2,
-  "note": "Second 90 deg right turn take (69_18)."
+  "note": "Second 90 deg right turn take (69_18). Head lifted (headlevel.mjs): the capture hung the head ~34 deg forward, now ~14 deg like a normal gaze."
  },
  "sweep_L": {
   "src": "13_23",
@@ -342,5 +342,9 @@
   "t0": 0.9,
   "t1": 2.9,
   "note": "Second walk-stop take (16_34), slightly longer settle."
+ },
+ "listen_window": {
+  "src": "137_32",
+  "note": "Procedural on idle_stand_b (listen.mjs): over 1.3 s he leans in ~6 deg, turns his head ~13 deg toward the glass and tilts it ~16 deg (ear to the window), holds with the base breathing/weight shifts and a slow head drift, eases out over 1.3 s. 7.8 s, root still. Face the window with the RIGHT side of the head slightly forward; a hand on the sill comes from grab. Built with node listen.mjs hero.glb out/idle_stand_b.json out/listen_window.json 9."
  }
 }
