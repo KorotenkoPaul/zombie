@@ -515,9 +515,21 @@ function coatHooks() { const g = new THREE.Group(); W(g, .34, .07, .025, 0, 0, .
   const sc = add(g, drapeGeo(.11, .03, .32, { r: .015, wrinkle: .01 }), new THREE.MeshStandardMaterial({ color: 0xC9962E, roughness: .95, side: THREE.DoubleSide }), -.11, .0, .065, 0, Math.PI / 2, 0); void sc;
   const cap = add(g, new THREE.SphereGeometry(.075, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x5A4632, roughness: .9 }), .11, -.04, .09); cap.scale.set(1, .75, 1); add(g, new THREE.CylinderGeometry(.06, .07, .008, 18, 1, false, 0, Math.PI), new THREE.MeshStandardMaterial({ color: 0x4A3826, roughness: .9 }), .11, -.04, .12, 0, Math.PI / 2, 0);
   return g; }
-function kettle() { const g = new THREE.Group(); g.userData.live = true; add(g, lathe([[0, 0], [.08, 0], [.095, .02], [.1, .06], [.09, .11], [.06, .135], [.035, .14], [.035, .145], [0, .145]], 28), M.enamel);
-  add(g, lathe([[0, 0], [.038, 0], [.04, .008], [.02, .02], [.012, .032], [0, .036]], 16), M.enamelDark, 0, .142, 0);
-  add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(.07, .05, 0), V(.12, .09, 0), V(.15, .14, 0), V(.17, .155, 0)]), 12, .012, 8), M.enamel);
+// the photo's kettle is chrome: worn and dulled by use, soot climbing from the base where the flame licks it, water
+// spots and fine scratches. Its reflection dims at night (NIGHT_METALS) so it never glows in the dark kitchen.
+const NIGHT_METALS = [];
+let _ketMat = null;
+function kettleMat() { if (_ketMat) return _ketMat; let ls = 4242; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#C9CDD1'; g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x++) { g.fillStyle = `rgba(${LR() < .5 ? '255,255,255' : '90,95,100'},${LR() * .07})`; g.fillRect(x, 0, 1, h); } /* brushed, worn */
+    const sg = g.createLinearGradient(0, h, 0, 0); sg.addColorStop(0, 'rgba(22,18,16,.95)'); sg.addColorStop(.22, 'rgba(30,24,20,.8)'); sg.addColorStop(.38, 'rgba(60,48,38,.3)'); sg.addColorStop(.5, 'rgba(60,48,38,0)'); g.fillStyle = sg; g.fillRect(0, 0, w, h); /* soot from the base */
+    g.filter = 'blur(3px)'; for (let i = 0; i < 26; i++) { g.fillStyle = `rgba(35,28,22,${.12 + LR() * .2})`; const x = LR() * w; g.beginPath(); g.ellipse(x, h * (.62 + LR() * .08), 3 + LR() * 6, 10 + LR() * 22, 0, 0, 6.3); g.fill(); } g.filter = 'none'; /* soft soot tongues licking up */
+    for (let i = 0; i < 60; i++) { g.strokeStyle = `rgba(250,250,250,${.1 + LR() * .2})`; g.beginPath(); const x = LR() * w, y = LR() * h * .55; g.moveTo(x, y); g.lineTo(x + (LR() - .5) * 30, y + (LR() - .5) * 8); g.stroke(); } /* scratches */
+    for (let i = 0; i < 30; i++) { g.fillStyle = `rgba(150,140,120,${.1 + LR() * .15})`; g.beginPath(); g.arc(LR() * w, LR() * h * .5, 1 + LR() * 4, 0, 6.3); g.fill(); } /* dried water spots */ });
+  _ketMat = new THREE.MeshStandardMaterial({ map: texOf(c), metalness: .85, roughness: .38, envMap: M.env, envMapIntensity: .8 }); _ketMat.userData.env0 = .8; NIGHT_METALS.push(_ketMat); return _ketMat; }
+function kettle() { const g = new THREE.Group(); g.userData.live = true; add(g, lathe([[0, 0], [.08, 0], [.095, .02], [.1, .06], [.09, .11], [.06, .135], [.035, .14], [.035, .145], [0, .145]], 28), kettleMat());
+  add(g, lathe([[0, 0], [.038, 0], [.04, .008], [.02, .02], [.012, .032], [0, .036]], 16), kettleMat(), 0, .142, 0);
+  add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3([V(.07, .05, 0), V(.12, .09, 0), V(.15, .14, 0), V(.17, .155, 0)]), 12, .012, 8), kettleMat());
   add(g, new THREE.TorusGeometry(.07, .009, 8, 20, Math.PI), M.rubber, 0, .14, 0); return g; }
 function hood(height) { const g = new THREE.Group(); const c = add(g, new THREE.CylinderGeometry(.13, .5, .3, 4, 1, true), M.hood, 0, .15, 0, 0, Math.PI / 4); c.scale.set(1.15, 1, .72); c.material.side = THREE.DoubleSide;
   add(g, rb(.84, .045, .54, .01), M.hood, 0, .0, 0); add(g, rb(.2, height, .18, .01), M.hood, 0, .3 + height / 2, -.04); for (const y of [.33, .3 + height * .5]) add(g, rb(.22, .02, .2, .006), M.iron, 0, y, -.04); return bake(g); }
@@ -1423,7 +1435,7 @@ export function buildProps(ctx) {
       const dx = (x - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d > 1.35) continue;
       const sink = d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008; a[i + 1] = y - sink * press.k; }
     P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
-  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { if (out._toolProxyTick) out._toolProxyTick();
+  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
