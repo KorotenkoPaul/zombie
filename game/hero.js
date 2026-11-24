@@ -368,7 +368,7 @@ export function createHero(ctx){
    else if(r==='lost'){const py=p.y;if(Math.abs(py-(L.up?L.yTop:L.yBot))<.25||Math.abs(py-(L.up?L.yBot:L.yTop))<.25&&(L.lost=(L.lost||0)+1)>2){play(IDLE()||'0',{fade:.35});done();}else L.cl=null;}}
   else if(L.phase==='over'&&climb&&!window.__noClimb&&!L.start&&L.cl!==-1){// down: walk to the edge, back to the hole, climb down over it
    const P=L.P||(L.P=climb.topStand({x:L.x,lz:c.lz,cz,yTop:L.yTop}));if(!P){L.cl=-1;}
-   else{H.ground=true;const dP=Math.hypot(P.x-p.x,P.z-p.z);if(ladApproach(V(P.x,p.y,P.z),F,dt)||(dP<.1&&Math.abs(wrapA(F-root.rotation.y))<.9)){if(climb.begin({up:false,fromTop:true,x:L.x,lz:c.lz,side:c.side,cz,yBot:L.yBot,yTop:L.yTop})){L.phase='climb';L.cl=true;}else L.cl=-1;}}}
+   else{H.ground=true;const dP=Math.hypot(P.x-p.x,P.z-p.z);if(ladApproach(V(P.x,p.y,P.z),F,dt)||(dP<.12&&Math.abs(wrapA(F-root.rotation.y))<1.3)){if(climb.begin({up:false,fromTop:true,x:L.x,lz:c.lz,side:c.side,cz,yBot:L.yBot,yTop:L.yTop})){L.phase='climb';L.cl=true;}else L.cl=-1;}}}
   // ===== /CLIMB HOOK =====
   else if(L.phase==='climb'){turnTo(F,dt);p.x=L.x;p.z=cz;play('437',{speed:1.3,fade:.3});const v=.31*1.3*dt;const pull=rmCurve['435']?rmAt('435',99).y:1.4;
    if(L.up){p.y+=v;if(p.y>=L.yTop-pull){p.y=L.yTop-pull;L.phase='finish';once('435',{fade:.3,until:.86,then:()=>{L.phase='stand';}});/* the last ~0.45 s of the pull-up is standing still: step off instead */}}
