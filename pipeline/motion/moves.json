@@ -108,9 +108,10 @@
   "speed": 1.0
  },
  "hy_stretch": {
-  "src": "stretch-11",
-  "smooth": 2,
-  "speed": 1.3
+  "src": "rk7_stretch_upper_standing_lift",
+  "smooth": 1,
+  "speed": 1.25,
+  "dir": "project files clips/rk: Rokoko mocap, upper body of rk7_stretch_stand_and_walk 0.2-6.9 s (hands behind the head, then arms up) on standing legs from rk3_standing_looking_around (build.mjs upper, chestKeep .45), hips +5.8 cm; kept out of the public repo"
  },
  "hy_inspect": {
   "src": "inspect-11",
