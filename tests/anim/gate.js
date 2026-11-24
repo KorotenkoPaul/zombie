@@ -5,14 +5,14 @@
 // the baseline does not have, or one that got more than 25 % (and 2 units) worse. Fixes never fail it.
 //   node tests/anim/gate.js                 # check (run this before pushing anything that touches the hero)
 //   node tests/anim/gate.js --update-baseline   # after a real improvement: record the new, better state
-//   --heroes old,new  --cap 15  --out DIR
+//   --heroes old,new,orig  --cap 15  --out DIR
 const fs=require('fs'),path=require('path'),zlib=require('zlib');
 const {open}=require('./lib');const {simulate}=require('./simulate');const {analyze}=require('./analyze');
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
-const HEROES=arg('heroes','old,new').split(',');const CAP=+arg('cap',15);const OUT=path.resolve(arg('out','/tmp/anim-gate'));
+const HEROES=arg('heroes','old,new,orig').split(',');const CAP=+arg('cap',15);const OUT=path.resolve(arg('out','/tmp/anim-gate'));
 const BASE=path.join(__dirname,'gate-baseline.json');const UPDATE=process.argv.includes('--update-baseline');
 const GATE=new Set(['joint','owl-head','foot-bend','unsupported','penetration','grip','no-touch','jump','snap-turn','ladder-grip','prop-through-body']);
-const Q={old:'',new:'?hero=new'};
+const Q={old:'',new:'?hero=new',orig:'?hero=orig'};// old = default hero (v6 since 8e898b1), orig = the previous one
 const FROM=arg('from',null);// re-check recorded frames (DIR/<hero>/frames.json.gz) with the current analyze.js, no browser
 async function one(h){let D,errs=[];if(FROM){D=JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(FROM,h,'frames.json.gz'))));}else{const o=await open({seed:1,query:Q[h]??''});errs=o.errs;
  const got=[];await simulate(o.p,{gate:CAP,log:()=>{},only:arg('only',null)?new RegExp('^('+arg('only')+')$'):null,drain:async fr=>{for(const f of fr)got.push(f);}});
