@@ -1623,7 +1623,7 @@ export function createHero(ctx){
     a.unload=unload;if(a.leaving)return;unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);}));};
    gearOn(a,{jacket:o.jacket,bow:o.bow??kind==='hunt',lantern:o.lantern},()=>{if(a.leaving)return;a.step='out';goTo('g_out',()=>{if(a.leaving)return;a.step='away';a.t=0;root.visible=false;
      if(kind==='hunt'&&Math.random()<.3)res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};});});
-   a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='away'){if(a.t>away){H.face=N.g_out.face!=null?N.g_out.face+Math.PI:H.face;root.rotation.y=H.face;home();}}};
+   a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='away'){/* out of sight he turns round for home at an easy pace: no 180-degree snap when he reappears (QA: 45 cm/frame² hand jumps) */const fh=N.g_out.face!=null?N.g_out.face+Math.PI:H.face;H.face=fh;root.rotation.y+=clamp(wrapA(fh-root.rotation.y),-1.6*dt,1.6*dt);if(a.t>away&&Math.abs(wrapA(fh-root.rotation.y))<.02){root.rotation.y=fh;home();}}};
    // OUTDOOR: called away, he never walks off with the bow, quiver or lantern on him: the meat goes into the fridge and the
    // gear back on its pegs first, by hand (Pavel: worn only for the hunt). Out of sight in the forest he first comes back.
    a.leave=cb=>{a.leaving=true;root.visible=true;if(a.step==='away')a.step='home';
