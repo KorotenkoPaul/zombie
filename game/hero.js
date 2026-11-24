@@ -1184,7 +1184,8 @@ export function createHero(ctx){
     /* GRAB: and by the real furniture/wall shapes (collide.js): shoulders and hips 25 cm round the next step, the stooped head ~0.5 m ahead
        (corner post by the door, the bunk's rails); only a step that gets him deeper in is refused, so a tight spot never locks him */
     const CL=window.__collide;let blk2=false;if(CL&&CL.clearance){const c0=CL.clearance(p.x,p.y,p.z,.25),c1=CL.clearance(p.x+f.x*.15,p.y,p.z+f.z*.15,.25),c2=CL.clearance(p.x+f.x*.5,p.y,p.z+f.z*.5,.12);blk2=c1>Math.max(.01,c0+.003)||c2>.02;if(!blk2&&CL.depthAt&&bones.Head){/* the stooped head itself, a hand ahead (the bunk's upper rail) */const hd=bones.Head.getWorldPosition(V());for(const k of [.08,.16])if(CL.depthAt(hd.x+f.x*k,hd.y,hd.z+f.z*k)>.005){blk2=true;break;}}}/* beds and seats too (pushOut lets him sit on those) */
-    if(blocked||blk2||y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02){root.rotation.y+=Math.PI*.6*dt;H.face=root.rotation.y;}else{p.addScaledVector(f,.22*dt);}
+    const out=Math.abs(p.y-lv.BD)<.3&&p.x<.4&&(()=>{const x=p.x+f.x*.25,z=p.z+f.z*.25;return x>.4-.32||x<-4.2+.3||z<.5+.3||z>3.95-.3;})();/* GRAB: he sweeps the room he is in: never out through the door onto the ledge (broom in the air at the threshold, turning at the deck edge) */
+    if(blocked||blk2||out||y==null||Math.abs(y-p.y)>.1||q.distanceTo(p.clone().addScaledVector(f,.25))>.02){root.rotation.y+=Math.PI*.5*dt;H.face=root.rotation.y;H.lookW=.25;/* turning: the head turns with the chest, not ahead of it */}else{p.addScaledVector(f,.22*dt);}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
   water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',dur:[5,6],tools:[['wateringCan','Right']]}),
   listen:(o)=>{const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<1.5))||pick(WINDOWS);
