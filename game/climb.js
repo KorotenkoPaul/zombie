@@ -296,15 +296,16 @@ export function createClimb() {
       // upper body close to the ladder (the climb clip leans back ~16 cm: hands could not reach the rungs): pitch the spine
       // so the neck is ~24 cm from the rungs, split between the lower and the middle spine
       // with the palms on the floor above he leans over the edge (neck over the top of the ladder)
-      { const flat = (A.limb.LH.r >= A.R.length || A.limb.RH.r >= A.R.length) && (A.mode === 'over' || wp(B.Neck).y > A.o.yTop - .05); const want = flat ? .06 : .17; /* leaning over the edge only with the neck above it (below it the chest hit the rungs and the body was pushed back into a crouch) */ A.nd = A.nd == null ? want : A.nd + Math.sign(want - A.nd) * Math.min(Math.abs(want - A.nd), dt * .5); }
+      { const flat = (A.limb.LH.r >= A.R.length || A.limb.RH.r >= A.R.length) && (A.mode === 'over' || wp(B.Neck).y > A.o.yTop - .05); const want = flat ? .06 : !B.HeadTop_End && A.mode === 'climb' && A.limb.LF.r < 0 && A.limb.RF.r < 0 ? .22 : .17; /* standing at the foot of the ladder the original hero's big head (brow ~14 cm in front of the head bone) leant into the rung at head height: neck 5 cm further off until a foot is on a rung */ /* leaning over the edge only with the neck above it (below it the chest hit the rungs and the body was pushed back into a crouch) */ A.nd = A.nd == null ? want : A.nd + Math.sign(want - A.nd) * Math.min(Math.abs(want - A.nd), dt * .5); }
       if (A.mode !== 'over' || A.C.s < .85) { const kk = S.W * ease(A.grab) * (A.mode === 'over' ? 1 - sstep(.45, .85, A.C.s) : A.mode === 'land' ? 1 - sstep(0, .6, A.lt) : 1); /* stands up straight while stepping back (gate: 44 deg forward lean walking off) */
         for (const [bn, part] of [['Spine', .5], ['Spine1', 1]]) { const nk = wp(B.Neck); const dz = (nk.z - planeZ) * A.zDir - A.nd; if (Math.abs(dz) < .005) break;
           const goal = nk.clone(); goal.z -= A.zDir * dz * part; C.turnBone(B[bn], nk, goal, kk); } }
       // keep the chest and head off the rungs: the body leans back from the ladder if they come too close
       // (only below the top of the ladder: above it there is nothing to hit; eased, and handed over smoothly at the edge)
       { let need = 0; const topY = A.R[A.R.length - 1].y + .1; if (A.mode !== 'over') for (const [bn, minD] of [['Spine2', .2], ['Head', .19]]) { const q = wp(B[bn]); if (q.y > topY) continue; const dz = (q.z - planeZ) * A.zDir; need = Math.max(need, minD - dz); }
-        A.gn = (A.gn || 0) + (need - (A.gn || 0)) * Math.min(1, dt * 5); A.gz = (A.gz || 0) + (A.gn - (A.gz || 0)) * Math.min(1, dt * 4); // two eased stages: the lean-back had no velocity ease (root z jerked 2 cm/frame²)
+        A.gn = (A.gn || 0) + (need - (A.gn || 0)) * Math.min(1, dt * (need > (A.gn || 0) + .02 ? 10 : 5)); /* faster while the head is in the rungs (mount: the brow sat in the top rung for half a second) */ A.gz = (A.gz || 0) + (A.gn - (A.gz || 0)) * Math.min(1, dt * (A.gn > (A.gz || 0) + .02 ? 9 : 4)); // two eased stages: the lean-back had no velocity ease (root z jerked 2 cm/frame²)
         if (A.gz > 1e-4) { root.position.z += A.zDir * A.gz; root.updateMatrixWorld(true); } }
+      A.planeZ = planeZ;
       // the real shoulder height over the supporting rung (the plan used a standing estimate: hands were left 40-75 cm out of reach going down)
       if (A.mode === 'climb' && B.LeftArm && B.RightArm) { const so = (wp(B.LeftArm).y + wp(B.RightArm).y) / 2 - A.y; A.shOff = A.shOff == null ? so : A.shOff + (so - A.shOff) * Math.min(1, dt * 4); }
       if (B.LeftArm && B.RightArm) A.shP = { LH: wp(B.LeftArm), RH: wp(B.RightArm) };
@@ -359,6 +360,12 @@ export function createClimb() {
           if (n.lengthSq() > 1e-6 && want.lengthSq() > 1e-6) { n.normalize(); want.normalize(); const ang = Math.atan2(n.clone().cross(want).dot(fa), n.dot(want)); rotWorld(Hd, fa, ang * w); } } }
     }
     if (A && A.lookPt) aimHead(A.lookPt, W * .85);
+    // the face off the rungs (after the look, which would turn it back): the climb clip leans the head ~35 deg to the ladder and the brow went 2-3 cm into the top rung at the hatch.
+    // A climber keeps the head up: the middle of the skull (9 cm on from the neck; the face and brow ~11 cm round it) stays 20 cm off the rung plane, 4-6 cm off the rung, by tipping the head back (eased)
+    if (A && A.planeZ != null && B.Head && B.Neck) { let hk = 0; const h = wp(B.Head), c = h.clone().add(h.clone().sub(wp(B.Neck)).setLength(.09));
+      if (A.mode !== 'over' && c.y < A.R[A.R.length - 1].y + .12) { const big = !B.HeadTop_End; /* the original hero's head is bigger (brow ~17 cm above the head bone) */ hk = Math.min(.09, Math.max(0, (big ? .235 : .2) - (c.z - A.planeZ) * A.zDir)); }
+      A.hk = (A.hk || 0) + (hk - (A.hk || 0)) * Math.min(1, dt * (hk > A.hk ? 30 : 6)); /* in fast (a brow already in the rung), out slowly */
+      if (A.hk > 1e-3) { /* a pure nod back about the head's own ear-to-ear axis, kept level (a free turn, or a turn about the ladder's axis on a head turned to a hand, rolled it 19 deg) */ const ex = V(1, 0, 0).applyQuaternion(B.Head.getWorldQuaternion(new THREE.Quaternion())); ex.y = 0; if (ex.lengthSq() > .1) { ex.normalize(); const v = c.clone().sub(h), dz = ex.clone().cross(v).z; if (Math.abs(dz) > .02) rotWorld(B.Head, ex, Math.max(-.6, Math.min(.6, A.zDir * A.hk / dz))); } } }
   }
 
   // the head looks where he climbs (the climb clip throws it back to the ceiling): Neck 40 % / Head 60 %, kept within a
