@@ -26,6 +26,7 @@ for(let k=0;k<W*H;k++){for(let c=0;c<3;c++){let v=data[k*3+c]/255;const m=mean[k
   if(E[k]>0){const dv=v-m;v=m+dv*(1+C.lash*E[k]);if(lum>.75)v=v+(1-v)*C.scl*E[k];}
   if(B[k]>0&&lum<.45){v=v*(1-C.brow_k*B[k]);}
   if(F[k]>0&&lum>.5)v=v+(1-v)*C.skin*F[k];
+  if(C.hair&&E[k]<.05&&B[k]<.05&&lum<.4&&data[k*3]>data[k*3+2]){v=v*(1+C.hair*(c===0?1.25:c===1?1:.7));}
   out[k*3+c]=Math.max(0,Math.min(255,Math.round(v*255)));}if(E[k]>.5)ne++;if(B[k]>.5)nb++;}
 console.log('eye px',ne,'brow px',nb);
 await sharp(out,{raw:{width:W,height:H,channels:3}}).png().toFile('facepop_tex.png');

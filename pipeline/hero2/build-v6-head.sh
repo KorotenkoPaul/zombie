@@ -6,6 +6,7 @@ node graft.mjs sh13.glb hd-single.glb G.glb "{\"s\":$S,\"chinIn\":-0.5,\"chinOut
 F=0.5 node skintone.mjs G.glb Gt.glb | cut -c1-120
 [ -n "$GRADE" ] && bash gradestep.sh
 [ -n "$FACEPOP" ] && node facepop.mjs Gt.glb Gt.glb "$FACEPOP" | tail -1
+[ -n "$BOOTS" ] && node bootlift.mjs Gt.glb Gt.glb "$BOOTS"
 L=$(python3 -c "
 K=$K;CO=$CO;ZC=$ZC
 f=lambda x,y:[round(x*K,4),round(CO+(y-0.625)*K,4)]
