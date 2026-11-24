@@ -259,7 +259,12 @@ export function createClimb() {
       const t = tg[s[0] + 'F']; const sx = (s === 'Left' ? 1 : -1) * zDir;
       C.ik2(B[s + 'UpLeg'], B[s + 'Leg'], B[s + 'Foot'], t, V(sx * .3, .55, -zDir), W, false);
       const F = B[s + 'Foot'], Tb = B[s + 'ToeBase'];
-      if (F && Tb) { const a = wp(F), toe = wp(Tb); C.turnBone(F, toe, a.clone().add(V(0, -M.footUp, -zDir * M.footH)), W); }
+      if (F && Tb) { const a = wp(F), toe = wp(Tb); const d = V(0, -M.footUp, -zDir * M.footH);
+        // a real ankle: the toes point away from the calf side of the shin (the hip side), whatever the leg does when it folds deep
+        // over the edge (gate: 'knee bent the wrong way' when the toes swung to the hip side of a near-level shin)
+        const kn = wp(B[s + 'Leg']), hp = wp(B[s + 'UpLeg']); const sh = a.clone().sub(kn).normalize(); const o = hp.clone().sub(kn); o.addScaledVector(sh, -o.dot(sh));
+        if (o.lengthSq() > 1e-6) { o.normalize(); const dl = d.length(); const k = d.dot(o); if (k > -.35 * dl) { d.addScaledVector(o, -k - .35 * dl); d.setLength(dl); } }
+        C.turnBone(F, toe, a.clone().add(d), W); }
     }
     // arms: elbows down and out, wrist under and behind the rung, fingers over it (or the palm flat on the floor above)
     for (const s of ['Left', 'Right']) {
