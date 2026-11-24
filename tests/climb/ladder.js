@@ -16,11 +16,12 @@ const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll
   let done=false,fr=0;const shots=[];
   while(!done&&fr<60*40){
    const r=await p.evaluate(()=>{__qa.step(2,1/60);const HH=__dbg.HH,H=HH.H,B=HH.bones,T=__dbg.THREE;const w=o=>o.getWorldPosition(new T.Vector3()).toArray();
-    const rec={lad:H.lad?H.lad.phase:null,root:HH.root.position.toArray(),LH:w(B.LeftHand),RH:w(B.RightHand),LT:w(B.LeftToeBase),RT:w(B.RightToeBase),LF:w(B.LeftFoot),RF:w(B.RightFoot),LS:w(B.LeftArm),RS:w(B.RightArm),HP:w(B.Hips),clip:H.cur&&H.cur.getClip().name,W:window.__climb?window.__climb.weight:0,T:window.__climb&&window.__climb.targets()?Object.fromEntries(Object.entries(window.__climb.targets()).map(([k,v])=>[k,v.toArray()])):null,md:window.__climb&&window.__climb.state.act?window.__climb.state.act.mode:null};
+    const rec={lad:H.lad?H.lad.phase:null,root:HH.root.position.toArray(),LH:w(B.LeftHand),RH:w(B.RightHand),LT:w(B.LeftToeBase),RT:w(B.RightToeBase),LF:w(B.LeftFoot),RF:w(B.RightFoot),LS:w(B.LeftArm),LK:w(B.LeftLeg),RK:w(B.RightLeg),LU:w(B.LeftUpLeg),RU:w(B.RightUpLeg),HF:(()=>{const q=B.Hips.getWorldQuaternion(new T.Quaternion());const v=new T.Vector3(0,0,-1).applyQuaternion(q);return v.toArray();})(),RY:HH.root.rotation.y,RS:w(B.RightArm),HP:w(B.Hips),clip:H.cur&&H.cur.getClip().name,W:window.__climb?window.__climb.weight:0,T:window.__climb&&window.__climb.targets()?Object.fromEntries(Object.entries(window.__climb.targets()).map(([k,v])=>[k,v.toArray()])):null,md:window.__climb&&window.__climb.state.act?window.__climb.state.act.mode:null};
     window.__rec.push(rec);return {path:H.path.length,lad:!!H.lad,n:window.__rec.length};});
    fr+=2;
    const EVERY=+(arg('--every')||14);
-   if(SHOTS&&r.lad&&fr%EVERY===0&&shots.length<48){shots.push(fr);
+   const RG=arg('--range')?arg('--range').split(',').map(Number):[0,1e9];
+   if(SHOTS&&r.lad&&fr%EVERY===0&&fr>=RG[0]&&fr<=RG[1]&&shots.length<48){shots.push(fr);
     for(const [vi,yaw,pitch,dist] of (arg('--views')?JSON.parse(arg('--views')):[[0,.55,.1,1.7],[1,-.8,.05,1.6]])){const file=`${SHOTS}/${a}-${z}_${String(fr).padStart(5,'0')}_${vi}.png`;
      await p.evaluate(([yaw,pitch,dist])=>{const T=__dbg.THREE;const h=__dbg.HH.bones.Hips.getWorldPosition(new T.Vector3());const c=[h.x,h.y+.1,h.z];const R=window.__camera&&window.__camera.rig;
       if(window.__camera&&window.__camera.dof)window.__camera.dof(false);const yw=yaw+__dbg.HH.root.rotation.y+Math.PI;const cam=__qaCamera;cam.position.set(c[0]+Math.sin(yw)*Math.cos(pitch)*dist,c[1]+Math.sin(pitch)*dist,c[2]+Math.cos(yw)*Math.cos(pitch)*dist);cam.lookAt(c[0],c[1],c[2]);cam.updateMatrixWorld();
