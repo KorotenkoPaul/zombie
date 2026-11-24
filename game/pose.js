@@ -80,8 +80,15 @@ export function createPoseGuard({ hero }) {
     let x = clampR(d.x, j.x), t, z;
     if (j.hinge) { const f = Math.max(0, x), pz = j.hinge[0] + j.hinge[1] * f, pt = j.hinge[2] + j.hinge[3] * f; z = soft(d.z, -pz, pz); t = soft(d.t, -pt, pt); }
     else { t = clampR(d.t, j.t); z = clampR(d.z, j.z); }
-    const m = Math.abs(x - d.x) + Math.abs(t - d.t) + Math.abs(z - d.z); if (m < .05) return 0;
-    recomp(x, t, z, q2); q.multiplyQuaternions(j.r, q2); j.cl += m; j.cn++; return m; }
+    const m = Math.abs(x - d.x) + Math.abs(t - d.t) + Math.abs(z - d.z);
+    // the correction itself eases in and out (~60 ms): when a clip or IK jumps into a bad range in one frame, the fix follows
+    // within a few frames instead of moving the knee / hand by the whole amount at once (that read as a 12 cm/frame^2 pop)
+    if (m < .05) cd.set(0, 0, 0, 1); else { recomp(x, t, z, q2); q3.multiplyQuaternions(j.r, q2); cd.copy(q3).multiply(qi.copy(q).invert()); }
+    if (!j.c) j.c = new THREE.Quaternion();
+    if (curDt > 0 && j.cHas) j.c.slerp(cd, 1 - Math.exp(-curDt / .06)); else j.c.copy(cd); j.cHas = true;
+    if (Math.abs(j.c.w) > .999999) return 0;
+    q.premultiply(j.c); if (m >= .05) { j.cl += m; j.cn++; } return Math.max(m, .06); }
+  const cd = new THREE.Quaternion(), qi = new THREE.Quaternion(); let curDt = 0;
   // a chain (bones a..b, each the child of the previous) held so its end turns at most yaw / tips at most tilt from the bind pose;
   // the correction is spread evenly over the chain
   function chain(js, yaw, tilt) { if (js.some(j => !j)) return 0;
@@ -124,17 +131,17 @@ export function createPoseGuard({ hero }) {
       if (j.has && live) { const ang = j.prev.angleTo(q), mx = j.v * dt; if (ang > mx) { q.copy(j.prev.slerp(q, mx / ang)); j.vn++; stat.vel++; } }
       j.prev.copy(q); j.has = true; } }
   function run(dt) {
-    if (window.__poseOff || !(dt > 0)) return; dt = Math.min(dt, .1); stat.frames++;
+    if (window.__poseOff || !(dt > 0)) return; dt = Math.min(dt, .1); stat.frames++; curDt = window.__heroFast ? 0 : dt;
     const lad = !!(hero.H && hero.H.lad); root.updateMatrixWorld(true);
-    if (run.trace) { const t = run.trace; t.pre = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand'].map(n => B[n].getWorldPosition(new THREE.Vector3()).toArray()); }
+    if (run.trace) { const t = run.trace; t.pre = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand', 'LeftLeg'].map(n => B[n].getWorldPosition(new THREE.Vector3()).toArray()); }
     for (const L of LEGS) if (L.ok) { L.f.b.getWorldPosition(L.A); worldQ(L.f.b, L.F); }
     const legMoved = [false, false];
-    for (const j of J) { if (lad && j.arm) continue; const m = rom(j); if (m) { stat.rom++; if (/Leg$/.test(j.n)) legMoved[/^Left/.test(j.n) ? 0 : 1] = true; const w = stat.worst[j.n]; if (!w || m > w) stat.worst[j.n] = +m.toFixed(1); } }
+    if (run.trace) run.trace.cl = []; for (const j of J) { if (lad && j.arm) continue; const m = rom(j); if (m && run.trace && m > .5) run.trace.cl.push(j.n + ' ' + m.toFixed(1)); if (m) { stat.rom++; if (/Leg$/.test(j.n)) legMoved[/^Left/.test(j.n) ? 0 : 1] = true; const w = stat.worst[j.n]; if (!w || m > w) stat.worst[j.n] = +m.toFixed(1); } }
     if (chain([byName.Spine, byName.Spine1, byName.Spine2], SPINE.yaw, SPINE.tilt)) stat.spine++;
     if (chain([byName.Neck, byName.Head], HEAD.yaw, HEAD.tilt)) stat.head++;
     root.updateMatrixWorld(true);
-    LEGS.forEach((L, i) => { if (L.ok && legMoved[i] && !hero.inBed && reach(L)) stat.knee++; });
-    if (run.trace) { const t = run.trace; t.post = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand'].map(n => B[n].getWorldPosition(new THREE.Vector3()).toArray()); }
+    LEGS.forEach((L, i) => { if (L.ok && legMoved[i] && !hero.inBed && reach(L)) { stat.knee++; if (run.trace) run.trace.cl.push('reach' + i); } });
+    if (run.trace) { const t = run.trace; t.post = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand', 'LeftLeg'].map(n => B[n].getWorldPosition(new THREE.Vector3()).toArray()); }
     // per-joint speed cap off: snaps are taken by motion.js's pop filter (slot 'pops'); a cap here added its own pops
     root.updateMatrixWorld(true); }
   function stats() { const r = { ...stat, joints: {} }; for (const j of J) if (j.cn || j.vn) r.joints[j.n] = { rom: j.cn, deg: +(j.cl / Math.max(1, j.cn)).toFixed(1), speed: j.vn }; return r; }
