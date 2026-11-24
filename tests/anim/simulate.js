@@ -43,7 +43,12 @@ async function simulate(p,{start=6.5,hours=25,dt=1/60,tour=true,capture=null,log
    else await p.evaluate(h=>__th.setHour(h),h);
    await ask();let n=0,seen=false,idle=0;
    const cap=gate?60*(t==='sleep'?gate+35:gate):60*(maxS||90);
-   while(n<cap){await runFrames(60,'tour:'+t);n+=60;const s=await p.evaluate(()=>__dbg.hero.task);if(s===t)seen=true;if(seen&&s!==t){if(++idle>=3)break;}else if(!seen){if(n>=900)break;await ask();}}
+   // gate: the clock (cap) starts only once he is actually at it (state work/sleep on this task), so the long walks and ladders
+   // on the way do not eat the whole window and the action itself is always measured; at most 75 s to get there
+   let atWork=!gate,lead=0;
+   while(n<cap+lead){await runFrames(60,'tour:'+t);n+=60;const [s,st]=await p.evaluate(()=>[__dbg.hero.task,__dbg.hero.state]);if(s===t)seen=true;
+    if(!atWork){if(s===t&&st!=='walk'&&st!=='path'&&st!=='climb'){atWork=true;lead=n;}else if(n<4500)lead=n;}
+    if(seen&&s!==t){if(++idle>=3)break;}else if(!seen){if(n>=900)break;await ask();}}
    log('tour',t,seen?'ran':'never started','frames',n);}}
  return {info,total};
 }
