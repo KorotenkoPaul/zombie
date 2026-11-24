@@ -552,10 +552,27 @@ function pot() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.085, 0], [
 function pan(r = .11) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r, 0], [r + .012, .04], [r + .006, .042], [r - .004, .006], [0, .006]], 28), M.iron, 0, 0, 0, Math.PI / 2); // hangs flat against the wall, handle up
   add(g, rb(.026, .2, .012, .005), M.woodDark, 0, r + .11, .02); add(g, rb(.02, .05, .01, .004), M.iron, 0, r + .015, .02); add(g, new THREE.TorusGeometry(.008, .003, 6, 10), M.iron, 0, r + .205, .02); return g; }
 function ladle(len = .32) { const g = new THREE.Group(); add(g, new THREE.SphereGeometry(.04, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), M.steel, 0, -len / 2, 0); add(g, rb(.012, len, .004, .002), M.steel, 0, 0, -.01, -.06); add(g, new THREE.TorusGeometry(.01, .003, 6, 10), M.steel, 0, len / 2 + .008, -.012); return g; }
-function spatula(len = .3) { const g = new THREE.Group(); const bl = roundRect(.06, .085, .022); for (const x of [-.012, .012]) { const h = new THREE.Path(); h.absellipse(x, .005, .004, .025, 0, Math.PI * 2, true); bl.holes.push(h); } add(g, EX(bl, .004, .0015), M.woodLight, 0, -len / 2 + .04, 0); add(g, new THREE.CylinderGeometry(.007, .007, len - .08, 8), M.woodLight, 0, .04, 0); return g; }
+// carved wooden utensils (they were a flat slotted plate on a stick): one lofted solid each, an oval cross-section whose width
+// and thickness follow the carving along the length (y, tip at -len/2), so the bowl, neck and handle swell and taper with real
+// thickness, the spatula blade thins to a bevelled edge at the tip, and the spoon's bowl is dished (the section dips in the middle)
+function loftUtensil(len, wf, hf, df = () => 0, N = 14, Mn = 44) { const P = [], UV = [], I = [];
+  for (let i = 0; i <= Mn; i++) { const t = i / Mn, y = -len / 2 + t * len, w = Math.max(.0004, wf(t)), h = Math.max(.0003, hf(t)), d = df(t);
+    for (let j = 0; j <= N; j++) { const a = j / N * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a); P.push(w * c, y, h * sn - d * (1 - c * c)); UV.push(j / N, t); } }
+  for (let i = 0; i < Mn; i++) for (let j = 0; j < N; j++) { const a = i * (N + 1) + j, b = a + N + 1; I.push(a, b, a + 1, b, b + 1, a + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setIndex(I); g.computeVertexNormals(); return g; }
+const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+function spatula(len = .3) { const g = new THREE.Group(); const B = .36; // blade | neck | handle; the blade end is squared with round corners
+  const wf = t => t < B ? .029 * Math.pow(Math.min(1, t / .035), .35) * (1 - .1 * sm(.2, B, t)) : t < B + .1 ? .026 - .018 * sm(B, B + .1, t) : .008 + .003 * sm(.6, .95, t) * (1 - sm(.97, 1, t) * .9) ;
+  const hf = t => t < B ? .0012 + .0028 * sm(0, B, t) : t < B + .1 ? .004 + .002 * sm(B, B + .1, t) : .0058 * (1 - .85 * sm(.97, 1, t));
+  add(g, loftUtensil(len, wf, hf), M.woodLight); return g; }
+function woodSpoon(len = .28) { const g = new THREE.Group(); const B = .3;
+  const wf = t => t < B ? .03 * Math.sqrt(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2), 2))) + (t > B / 2 ? .007 * sm(B / 2, B, t) : 0) : t < B + .08 ? .009 - .002 * sm(B, B + .08, t) : .0072 + .0028 * sm(.55, .95, t) * (1 - sm(.97, 1, t) * .9);
+  const hf = t => t < B ? .0026 * Math.min(1, Math.sqrt(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2), 2))) * 3) + .0004 : t < B + .08 ? .0045 + .0012 * sm(B, B + .08, t) : .0056 * (1 - .85 * sm(.97, 1, t));
+  const df = t => t < B ? .011 * Math.pow(Math.max(0, 1 - Math.pow((t - B / 2) / (B / 2 * .92), 2)), .8) : 0;
+  add(g, loftUtensil(len, wf, hf, df), M.woodLight); return g; }
 function utensilRail(w = .55) { const g = new THREE.Group(); add(g, new THREE.CylinderGeometry(.008, .008, w, 10), M.brass, 0, 0, .04, 0, 0, Math.PI / 2); for (const s of [-1, 1]) add(g, rb(.02, .03, .05, .006), M.brass, s * w / 2, 0, .02);
   const hook = (x) => add(g, new THREE.TorusGeometry(.012, .0025, 6, 12, Math.PI * 1.4), M.brass, x, -.012, .04, 0, Math.PI / 2, 0);
-  const items = [[-.17, spatula(.2), -.12], [-.03, ladle(.24), -.14], [.08, spatula(.22), -.13], [.18, ladle(.2), -.12]]; for (const [x, o, y] of items) { hook(x); o.position.set(x, y, .045); g.add(o); }
+  const items = [[-.17, spatula(.2), -.12], [-.03, ladle(.24), -.14], [.08, woodSpoon(.23), -.135], /* same reach as before: the spatula's tip stays clear of the kettle lid */ [.18, ladle(.2), -.12]]; for (const [x, o, y] of items) { hook(x); o.position.set(x, y, .045); g.add(o); }
   return bake(g); }
 function coatHooks() { const g = new THREE.Group(); W(g, .34, .07, .025, 0, 0, .0125, { mat: M.woodDark, r: .008 });
   for (const x of [-.11, 0, .11]) { add(g, new THREE.CylinderGeometry(.008, .008, .06, 8), M.woodDark, x, 0, .05, Math.PI / 2); add(g, new THREE.SphereGeometry(.013, 10, 8), M.woodDark, x, 0, .08); }
