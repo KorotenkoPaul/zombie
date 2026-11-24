@@ -2291,9 +2291,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(!nock||!bw.visible||!base){if(base)base.visible=true;for(const c of bowStr)c.visible=false;return;}
   base.visible=false;bw.updateMatrixWorld(true);const tips=[bw.localToWorld(V(0,.56,.002)),bw.localToWorld(V(0,-.56,.002))];
   tips.forEach((t,i)=>{const c=bowStr[i];const d=nock.clone().sub(t);const L=d.length();c.position.copy(t).addScaledVector(d,.5);c.quaternion.setFromUnitVectors(V(0,1,0),d.normalize());c.scale.set(1,L,1);c.visible=true;});}
- const SHOT={reach0:.55,reach1:.95,take:1.3,back0:1.4,back1:1.8,nock:1.95,rel:3.95};
+ const SHOT={reach0:.4,reach1:1.25,take:1.3,back0:1.35,back1:2.15,nock:2.15,rel:3.95};/* slow in and out: a 0.4 s reach jumped the right hand 7-11 cm a frame (gate) */
  function shotPost(a){const t=a.ht;const Q=PP().tools&&PP().tools.quiver;if(!Q||Q.parent!==bones.Spine2)return;
-  /* into the quiver: the fingers to the fletchings at its mouth */const w=smooth(SHOT.reach0,SHOT.reach1,t)*(1-smooth(SHOT.back0,SHOT.back1,t));if(w>.01&&!a.rel)odReach('Right',Q.localToWorld(V(0,.1,0)),w);
+  /* into the quiver: the fingers to the fletchings at its mouth */const w=smooth(SHOT.reach0,SHOT.reach1,t)*(1-smooth(SHOT.back0,SHOT.back1,t));if(w>.01&&!a.rel)odReach('Right',Q.localToWorld(V(0,.1,0)),.65*w);/* most of the way to the quiver mouth, eased: at full weight the shoulder could not follow behind the head and the hand jumped 8-11 cm */
   shotA=a;if(!shotOn){shotOn=1;lateFn(()=>{const A=shotA;shotA=null;if(A&&act===A&&A.step==='hunt'&&A.hp==='shoot')shotLate(A);else if(handArrow&&handArrow.visible&&!(act&&act.ar)){handArrow.visible=false;bowString(null);}});}}
  function shotLate(a){const t=a.ht;const Q=PP().tools.quiver,bw=PP().tools.bow;if(a.rel){bowString(null);return;}
   if(t<SHOT.take){if(handArrow)handArrow.visible=false;bowString(null);return;}
