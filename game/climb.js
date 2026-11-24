@@ -156,8 +156,10 @@ export function createClimb() {
     // take hold first: hands go to their rungs, the body settles, then the steps start
     if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .45); A.y = A.up ? A.o.yBot : lerp(A.y0, top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), ease(A.grab)); placeRoot(A, p); return null; }
     if (A.mode === 'land') { // both feet on the floor: let go of the rungs, stand up
-      A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1 - sstep(0, .45, A.lt); placeRoot(A, p);
-      if (A.lt > .5) { S.act = null; S.wTarget = 0; S.fade = .3; return 'bottom'; } return null; }
+      A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1 - sstep(0, .45, A.lt);
+      // a step back off the ladder before walking away (gate: arms, hips and shins swept through the rail when he turned off at the foot)
+      A.back = BACK * sstep(.15, .75, A.lt); placeRoot(A, p);
+      if (A.lt > .8) { S.act = null; S.wTarget = 0; S.fade = .3; return 'bottom'; } return null; }
     if (!A.step) { A.step = planStep(A); if (!A.step) {
       if (A.up) { startOver(A, 1); return overTick(A, dt, p); }
       A.mode = 'land'; A.lt = 0; placeRoot(A, p); return null; } }
@@ -172,7 +174,8 @@ export function createClimb() {
   }
   const lerp = (a, b, t) => a + (b - a) * t;
 
-  function placeRoot(A, p) { p.y = A.y; p.x = A.lad.x; p.z = A.o.cz; } // hips are fixed exactly in post()
+  const BACK = .26;
+  function placeRoot(A, p) { p.y = A.y; p.x = A.lad.x; p.z = A.o.cz + A.zDir * (A.back || 0); } // hips are fixed exactly in post()
 
   // highest wrist the arm reaches with the body standing on a foot at rootY (shoulder over the hips, ~a hip distance from the rungs)
   function reachY(A, rootY) { const arm = (M.arm || .5) * .93, dz = A.Dhip - .065; return rootY + (A.shOff != null ? A.shOff : (M.shH || 1.1) * .9) + Math.sqrt(Math.max(0, arm * arm - dz * dz)); }
@@ -224,6 +227,8 @@ export function createClimb() {
       return q;
     }
     if (A.grab < 1 && L.from) return L.from.clone().lerp(restTarget(A, k, L.r), ease(A.grab));
+    if (A.mode === 'land' && k[1] === 'F' && A.back) { // the feet step back one after the other, lifted a little
+      const e = k === 'LF' ? sstep(.15, .5, A.lt) : sstep(.4, .75, A.lt); const q = restTarget(A, k, L.r); q.z += A.zDir * BACK * e; q.y += Math.sin(Math.PI * e) * .06; return q; }
     return restTarget(A, k, L.r);
   }
 
@@ -253,7 +258,7 @@ export function createClimb() {
       // over the edge: the correction is worked out for the body still on the ladder, and handed over to the standing clip
       let ko = 1, base = V(); if (A.mode === 'over') { ko = 1 - sstep(0, .6, A.C.s); base = root.position.clone().sub(V(A.lad.x, A.C.ys, A.o.cz)); }
       const hp = wp(B.Hips).sub(base);
-      const want = V(A.lad.x + sway, (A.mode === 'over' ? A.C.ys : A.y) + hipUp, planeZ + A.zDir * A.Dhip);
+      const want = V(A.lad.x + sway, (A.mode === 'over' ? A.C.ys : A.y) + hipUp, planeZ + A.zDir * (A.Dhip + (A.back || 0)));
       const d = want.sub(hp).multiplyScalar(ease(A.grab) * S.W * ko); d.y *= A.fy;
       root.position.add(d); root.updateMatrixWorld(true);
       // upper body close to the ladder (the climb clip leans back ~16 cm: hands could not reach the rungs): pitch the spine
