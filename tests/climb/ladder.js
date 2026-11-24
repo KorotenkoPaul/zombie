@@ -54,7 +54,7 @@ const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll
   const ladFrames=rec.filter(r=>r.lad).length;
   const out={run:a+'>'+z,sec:+(ladFrames/30).toFixed(1),done,handStill:st.hand.length,handMedCm:+(med(st.hand)*100).toFixed(1),handP90:+(p90(st.hand)*100).toFixed(1),footStill:st.foot.length,footMedCm:+(med(st.foot)*100).toFixed(1),footP90:+(p90(st.foot)*100).toFixed(1),rootJerkCm:+(maxJump*100).toFixed(1)};
   console.log(JSON.stringify(out));res.push(out);
-  {const D=SHOTS||'/tmp/claude-0/clrec';fs.mkdirSync(D,{recursive:true});fs.writeFileSync(D+'/'+a+'-'+z+'.json',JSON.stringify(rec));}
+  {const D=SHOTS||'/tmp/claude-0/clrec';fs.mkdirSync(D,{recursive:true});fs.writeFileSync(D+'/'+a+'-'+z+'.json',JSON.stringify(rec));if(process.argv.includes('--pen')){try{fs.writeFileSync(D+'/names.json',JSON.stringify(await p.evaluate(()=>window.__A&&__A.collNames?__A.collNames():[])));}catch(e){}}}
  }
 console.log("INV",JSON.stringify(await p.evaluate(()=>__dbg.HH.inv?__dbg.HH.inv.report():null),null,1));
  console.log('errors',errs.slice(0,8));await b.close();})();
