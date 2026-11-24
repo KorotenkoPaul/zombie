@@ -26,7 +26,7 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
  pick.forEach((q,n)=>{if(q.type==='focus'){const L=q.f1-q.f;for(let k=0;k<6;k++)job(q.f+Math.round(L*k/5),{n,k,kind:'sheet'});return;}const ff=q.type==='detour'||q.type==='crab-walk'||q.type==='sharp-turn'||q.type==='foot-slide'?OFF.map(o=>o*2):OFF;
   ff.forEach((o,k)=>job(q.f+o,{n,k,kind:'sheet'}));});
  pick.filter(q=>q.P===1).slice(0,CLIPS).forEach(q=>{const n=pick.indexOf(q);if(q.type==='focus'){for(let o=-20;o<=q.f1-q.f+20;o+=2)job(q.f+o,{n,k:o,kind:'clip'});return;}for(let o=-42;o<=42;o+=2)job(q.f+o,{n,k:o,kind:'clip'});});
- const {b,p,errs}=await open({seed:D.meta.seed,query:D.meta.query||'',vp:{width:360,height:360}});
+ const {b,p,errs}=await open({seed:D.meta.seed,query:D.meta.query||'',vp:D.meta.gate?{width:640,height:640}:{width:360,height:360}});
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  let drift=0;const t0=Date.now();
  await simulate(p,{start:D.meta.start??6.5,hours:D.meta.hours,tour:D.meta.tour??true,gate:D.meta.gate||0,log:()=>{},capture:{frames:new Set(want.keys()),fn:async fr=>{
@@ -36,12 +36,18 @@ function focus(q,f){if(q.at&&Math.abs(q.f-f.f)<3)return q.at;const k={head:'Head
    for(const [yaw,pitch,dist] of views){const file=`${DIR}/raw/${j.kind}_${String(j.n).padStart(2,'0')}_${j.kind==='sheet'?j.k+'_'+vi:String(j.k+1000).padStart(5,'0')}.png`;
     // through the game's own camera rig (it cuts holes in walls between the camera and the target, and its near-fade
     // radius follows the rig distance); depth of field off so the close-up stays sharp
-    await p.evaluate(([c,yaw,pitch,dist])=>{const T=__dbg.THREE;const R=window.__camera&&window.__camera.rig;
-     if(R&&R.set){__th.cam();if(__th.rig&&__th.rig.cine)__th.rig.cine(false);R.set({target:new T.Vector3(c[0],c[1],c[2]),yaw,pitch,dist,snap:true});for(let i=0;i<8;i++)R.update(.25,{});if(window.__camera.dof)window.__camera.dof(false);}
+    await p.evaluate(([c,yaw,pitch,dist])=>{const T=__dbg.THREE;const MR=Math.random;let rs=12345;Math.random=()=>((rs=(rs*1103515245+12345)>>>0)/4294967296);// rendering must not eat the simulation's seeded random stream (that made replays drift)
+     try{const R=window.__camera&&window.__camera.rig;
+     if(R&&R.set&&window.__qaRig){__th.cam();if(__th.rig&&__th.rig.cine)__th.rig.cine(false);R.set({target:new T.Vector3(c[0],c[1],c[2]),yaw,pitch,dist,snap:true});for(let i=0;i<8;i++)R.update(.25,{});if(window.__camera.dof)window.__camera.dof(false);}
      else{const cam=__qaCamera;cam.position.set(c[0]+Math.sin(yaw)*Math.cos(pitch)*dist,c[1]+Math.sin(pitch)*dist,c[2]+Math.cos(yaw)*Math.cos(pitch)*dist);cam.lookAt(c[0],c[1],c[2]);}
-     __qaCamera.updateMatrixWorld();__noRender(false);__qaComposer.render();__noRender(true);},[c,yaw,pitch,dist]);
+     // hide whatever stands between the camera and the hero (walls, roofs, beams), so the body is always in view
+     const cam=__qaCamera;cam.updateMatrixWorld();const hero=__dbg.hero.root;const isHero=o=>{for(let x=o;x;x=x.parent)if(x===hero)return true;return false;};
+     const hid=[];const tgt=new T.Vector3(c[0],c[1],c[2]);const pos=cam.position.clone();const rc=new T.Raycaster();rc.camera=cam;
+     for(const off of [[0,0,0],[0,.5,0],[0,-.5,0],[0,.9,0],[.25,0,0],[-.25,0,0]]){const a=tgt.clone().add(new T.Vector3(...off));const dir=pos.clone().sub(a);const L=dir.length();rc.set(a,dir.normalize());rc.far=L;
+      for(let k=0;k<30;k++){const h=rc.intersectObject(__qaComposer.passes.find(x=>x.scene).scene,true).find(x=>x.object.visible&&x.object.isMesh&&!isHero(x.object));if(!h)break;h.object.visible=false;hid.push(h.object);}}
+     __noRender(false);__qaComposer.render();__noRender(true);for(const o of hid)o.visible=true;}finally{Math.random=MR;}},[c,yaw,pitch,dist]);
     for(let tr=0;tr<3;tr++){await p.locator('canvas').first().screenshot({path:file});if(fs.statSync(file).size>15000)break;
-     await p.evaluate(()=>{__noRender(false);__qaComposer.render();__noRender(true);});await p.waitForTimeout(200);}vi++;}}}}});
+     await p.evaluate(()=>{const MR=Math.random;Math.random=()=>.5;try{__noRender(false);__qaComposer.render();__noRender(true);}finally{Math.random=MR;}});await p.waitForTimeout(200);}vi++;}}}}});
  await b.close();console.log('rendered',[...want.values()].flat().length,'jobs in',((Date.now()-t0)/1000).toFixed(0),'s; replay drift',(drift*100).toFixed(2),'cm');
  fs.writeFileSync(DIR+'/picked.json',JSON.stringify({pick,drift}));
  execSync(`python3 ${__dirname}/sheets.py ${DIR}`,{stdio:'inherit'});

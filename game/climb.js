@@ -275,7 +275,7 @@ export function createClimb() {
   function aimHead(pt, w) {
     const B = C.bones, Hd = B.Head, Nk = B.Neck; if (!Hd || !Nk || !pt || w < .01) return;
     for (const [b, part] of [[Nk, .4], [Hd, 1]]) {
-      const hp = Hd.getWorldPosition(V()); const f = V(0, 0, -1).applyQuaternion(Hd.getWorldQuaternion(_q1()));
+      const hp = Hd.getWorldPosition(V()); const f = V(0, 0, 1).applyQuaternion(Hd.getWorldQuaternion(_q1()));
       const want = pt.clone().sub(hp).normalize();
       // pitch only up to 30 deg up / 35 deg down from level
       const hz = Math.hypot(want.x, want.z) || 1e-3; let pit = Math.atan2(want.y, hz); pit = Math.max(-.6, Math.min(.52, pit)); want.set(want.x / hz * Math.cos(pit), Math.sin(pit), want.z / hz * Math.cos(pit));
