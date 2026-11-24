@@ -1105,7 +1105,8 @@ export function createHero(ctx){
   // after the head has turned to look along the tube (lookAt runs after this post) the head is pitched up with the tube and the
   // eye rode 9-10 cm over the eyepiece (visual watch: the eyepiece at his chin, the gaze past it): the eye is measured from the
   // head as it now is and the spine stoops it down onto the eyepiece, then the hands go back on the tube
-  const eyeNow=()=>{const hp=Hd.getWorldPosition(V());const top=bones.HeadTop_End?bones.HeadTop_End.getWorldPosition(V()):hp.clone().add(V(0,.2,0));const q=Hd.getWorldQuaternion(new THREE.Quaternion());const hf=V(0,0,1).applyQuaternion(q);return hp.clone().lerp(top,.42).addScaledVector(hf,.085);};
+  const EYE_UP=(()=>{try{return new URLSearchParams(location.search).get('hero')==='orig'?.085:.05;}catch(e){return .05;}})();
+  const eyeNow=()=>{const hp=Hd.getWorldPosition(V());const q=Hd.getWorldQuaternion(new THREE.Quaternion());const hf=V(0,0,1).applyQuaternion(q);if(bones.HeadTop_End){const top=bones.HeadTop_End.getWorldPosition(V());return hp.clone().lerp(top,.42).addScaledVector(hf,.085);}/* the head-top is not a Bone on either rig, so this is the path used: v6 (smaller head set lower) eyes 5 cm over the head joint, the bigger ?hero=orig head 8.5 cm; 7 cm forward (frame-checked from the side on both) */const hu=V(0,1,0).applyQuaternion(q);return hp.addScaledVector(hu,EYE_UP).addScaledVector(hf,.07);};
   const settle=()=>{for(let it=0;it<4;it++){const eye=eyeNow();const want=E.clone().addScaledVector(d,-.03);const hip=bones.Spine.getWorldPosition(V());
     const v=eye.clone().sub(hip),u=want.clone().sub(hip);const a1=Math.atan2(v.dot(dh),v.y),a2=Math.atan2(u.dot(dh),u.y);const ang=clamp(a2-a1,-.05,.3)*w;if(Math.abs(ang)<.003)break;
     rotW(bones.Spine,ax,ang*.4);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.25);root.updateMatrixWorld(true);}
