@@ -479,6 +479,7 @@ export function buildTree(THREE, o) {
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       // phones have no inner cards, so some shell cards take the darker inner shade to keep the clumps' depth
       const rs = MOB(o) && rnd(0, 1) < 0.35 ? rnd(0.4, 0.78) : rr;
+      if (MOB(o) && rs < 0.62 && rnd(0, 1) < 0.5) continue; // [ENV perf] half of the deepest-shade shell cards: mostly covered by the cards in front (overdraw)
       const r = rnd(0.82, 1.08); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.88, 1));
       // lighter, yellow-green leaves on the clump edges and the odd autumn-yellow card, like the photo
       if (rs > 0.8 && (!MOB(o) || rnd(0, 1) < 0.75) && dir.y > -0.2) col.multiply(new THREE.Color(1.18, 1.14, 0.8));

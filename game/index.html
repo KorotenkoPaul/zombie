@@ -390,7 +390,17 @@ const beams=new THREE.InstancedMesh(darkGeo,darkBoard,900);beams.castShadow=true
    shown while three draws the shadow maps: that runs after the main render list is built, so the camera never draws it
    (three tests shadow casters against the main camera's layers, so a layer can't do this). Its count follows the real mesh. */
 const shProxy=[];for(const src of [boards,beams]){const p=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({colorWrite:false}),src.instanceMatrix.count);p.instanceMatrix=src.instanceMatrix;p.count=0;p.castShadow=true;p.frustumCulled=false;p.visible=false;p.userData.shSrc=src;src.castShadow=false;scene.add(p);shProxy.push(p);}window.__shProxy=shProxy;
-{const sm=renderer.shadowMap,r0=sm.render.bind(sm);sm.render=(L,sc,cam)=>{for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{r0(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;}};}
+/* [PERF] the merged house props (props.js 'propsStatic', ~32k shadow triangles) leave the SUN's shadow pass: inside the
+   house the walls, floors and roof already shade them, and A/B shots at 7, 9, 15 and 18 h show no change. The lamps'
+   shadow maps still get them (the bunk's shadow at night). ?psSun (or __psSun=true) turns it back on. */
+let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
+{const sm=renderer.shadowMap,r0=sm.render.bind(sm);const draw=(L,sc,cam)=>{
+  if(!PSG&&--psT<=0){psT=60;PSG=scene.getObjectByName('propsStatic')||null;}
+  const ps=[];if(PSG&&!window.__psSun&&L.includes(sun))PSG.traverse(m=>{if(m.isMesh&&m.castShadow)ps.push(m);});
+  if(!ps.length){r0(L,sc,cam);return;}
+  const nu=sm.needsUpdate,rest=L.filter(l=>l!==sun);for(const m of ps)m.castShadow=false;try{r0([sun],sc,cam);}finally{for(const m of ps)m.castShadow=true;}
+  if(rest.length){sm.needsUpdate=nu;r0(rest,sc,cam);}};
+ sm.render=(L,sc,cam)=>{for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{draw(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;}};}
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
 // `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
@@ -962,8 +972,8 @@ if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=M
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return 1/60;}// a day of 24 minutes, 1 game hour = 1 real minute (Pavel 2026-11-23)
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
-const K=[[0,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98],[4.5,0x183A52,0x356A88,0x2E6079,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
- [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x1E4660,0x3E7593,0x336A84,0xA8CCEC,.68,.6,.94],[24,0x183A52,0x356A88,0x2E6079,0x9FC4E8,.6,.62,.98]];
+const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
+ [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
 function pal0(h){h=((h%24)+24)%24;let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=clamp((h-a[0])/(b[0]-a[0]),0,1);const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 // [ENV] the palette is linear between keys and then averaged over +-0.4 h: no ease-in/ease-out stall at every key and no
 // sudden speed-up between them (dawn and dusk change at an even pace, no pops when time runs fast)
