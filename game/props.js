@@ -1076,7 +1076,7 @@ export function buildProps(ctx) {
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
 
   // ---------- deck and landings ----------
-  place('telescope', telescope(), 3.5, DK, 1.3, { ry: -.6 + Math.PI }).position.y += .018; /* feet on the boards, not in them */
+  place('telescope', telescope(), 3.28, DK, 1.3, { ry: -.6 + Math.PI }).position.y += .018; /* feet on the boards, not in them; 22 cm in from the rail (LEISURE: he stood between the rail posts behind the eyepiece and his foot and hand went into them) */
   place('dbasket', basket(), 1.4, DK, .95);
   place('lbarrel', barrel(.75), -2.6, LL, 1.4);
   place('lbucket', bucket(.34), -1.9, LL, 1.8);
