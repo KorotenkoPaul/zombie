@@ -2119,7 +2119,26 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   {const G=window.__ground;let bs=-1e9;for(let i=0;i<16;i++){const a=i*Math.PI/8;const v=V(Math.sin(a),0,Math.cos(a));let sc=0;for(const k of [.5,1.05,1.6]){const x=c.x+v.x*k,z=c.z+v.z*k;sc+=G&&G.rootD?Math.min(.8,G.rootD(x,z)):0;}
     const q=c.clone().addScaledVector(v,1.05);for(const n of ['logpile','sawhorse']){const o=PP().objects&&PP().objects[n];if(o&&o.userData.box){const bb=o.userData.box;const dx=Math.max(bb.min.x-q.x,0,q.x-bb.max.x),dz=Math.max(bb.min.z-q.z,0,q.z-bb.max.z);sc-=Math.max(0,.7-Math.hypot(dx,dz))*3;}}
     sc+=.15*v.dot(u);if(sc>bs){bs=sc;u.copy(v);}}}const p=c.clone().addScaledVector(u,1.05);const G=window.__ground;p.y=G&&G.heightAt?G.heightAt(p.x,p.z):b.y;
-  N.g_block={p,face:Math.atan2(-u.x,-u.z)};(adj.g_block=adj.g_block||[]).push({to:best});(adj[best]=adj[best]||[]).push({to:'g_block'});}
+  N.g_block={p,face:Math.atan2(-u.x,-u.z)};
+  /* WALK: the straight line from the nearest node to the block ran over the oak's big root (70 cm high): the body walked through
+     it at 20 cm while the feet stood on top, knees up at the hips (gate: splitwood right leg 20-54 cm jumps). Walk round the roots:
+     a grid search over the root map, kept as tight waypoints */
+  const way=G&&G.rootTop?rootDetour(b,p):null;let prev=best;if(way)way.forEach((q,i)=>{const k='g_blk'+i;N[k]={p:q,tight:true};(adj[prev]=adj[prev]||[]).push({to:k});(adj[k]=adj[k]||[]).push({to:prev});prev=k;});
+  (adj.g_block=adj.g_block||[]).push({to:prev});(adj[prev]=adj[prev]||[]).push({to:'g_block'});}
+ // waypoints from a to b over the ground that stay off the roots (rootTop < 12 cm within a sole's reach); null if the line is clear
+ function rootDetour(a,b){const G=window.__ground;const R=(x,z)=>{let m=0;for(const [ox,oz] of [[0,0],[.22,0],[-.22,0],[0,.22],[0,-.22]])m=Math.max(m,G.rootTop(x+ox,z+oz));return m;};
+  const clear=(p,q)=>{const n=Math.ceil(Math.hypot(q.x-p.x,q.z-p.z)/.08);for(let i=0;i<=n;i++){const t=i/n;if(R(p.x+(q.x-p.x)*t,p.z+(q.z-p.z)*t)>.12)return false;}return true;};
+  if(clear(a,b))return null;const S=.25,x0=Math.min(a.x,b.x)-4,z0=Math.min(a.z,b.z)-4,nx=Math.ceil((Math.abs(a.x-b.x)+8)/S),nz=Math.ceil((Math.abs(a.z-b.z)+8)/S);
+  const id=(i,j)=>i*nz+j,cx=i=>x0+i*S,cz=j=>z0+j*S,ok=new Uint8Array(nx*nz);for(let i=0;i<nx;i++)for(let j=0;j<nz;j++)ok[id(i,j)]=R(cx(i),cz(j))<=.12?1:0;
+  const ia=Math.round((a.x-x0)/S),ja=Math.round((a.z-z0)/S),ib=Math.round((b.x-x0)/S),jb=Math.round((b.z-z0)/S);ok[id(ia,ja)]=ok[id(ib,jb)]=1;
+  const g=new Float32Array(nx*nz).fill(1e9),from=new Int32Array(nx*nz).fill(-1),done=new Uint8Array(nx*nz);g[id(ia,ja)]=0;const open=[id(ia,ja)];
+  while(open.length){let bi=0;for(let k=1;k<open.length;k++)if(g[open[k]]+Math.hypot(cx((open[k]/nz)|0)-b.x,cz(open[k]%nz)-b.z)<g[open[bi]]+Math.hypot(cx((open[bi]/nz)|0)-b.x,cz(open[bi]%nz)-b.z))bi=k;
+   const c=open.splice(bi,1)[0];if(done[c])continue;done[c]=1;if(c===id(ib,jb))break;const ci=(c/nz)|0,cj=c%nz;
+   for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++){if(!di&&!dj)continue;const i=ci+di,j=cj+dj;if(i<0||j<0||i>=nx||j>=nz)continue;const n=id(i,j);if(!ok[n]||done[n])continue;const ng=g[c]+S*Math.hypot(di,dj);if(ng<g[n]){g[n]=ng;from[n]=c;open.push(n);}}}
+  if(from[id(ib,jb)]<0)return null;const cells=[];for(let c=id(ib,jb);c>=0;c=from[c])cells.push(V(cx((c/nz)|0),0,cz(c%nz)));cells.reverse();cells[0]=a.clone();cells[cells.length-1]=b.clone();
+  // keep only the corners: from each kept point, the farthest cell still in clear sight
+  const out=[];let k=0;while(k<cells.length-1){let f=k+1;for(let m=cells.length-1;m>k+1;m--)if(clear(cells[k],cells[m])){f=m;break;}if(f<cells.length-1){const q=cells[f].clone();q.y=G.heightAt?G.heightAt(q.x,q.z):a.y;out.push(q);}k=f;}
+  return out.length?out:null;}
  function splitStock(S,n){// the rounds he sawed earlier stand by the block; topped up only while he is away from it (never under his eyes)
   if(S.stack.length>=n)return;const G=window.__ground;const c=S.top;const st=N.g_block?N.g_block.p.clone():root.position.clone();const d=V(c.x-st.x,0,c.z-st.z).normalize();const r=V(d.z,0,-d.x);/* his left */
   while(S.stack.length<n+1){const i=S.stack.length;const m=roundMesh();const p=st.clone().addScaledVector(r,.3+(i%2)*.24).addScaledVector(d,.42-Math.floor(i/2)*.24);/* in front, to his left: the squat reaches it */p.y=G&&G.heightAt?G.heightAt(p.x,p.z):p.y-.42;m.position.copy(p);m.rotation.y=Math.random()*6;scene.add(m);S.stack.push(m);}
