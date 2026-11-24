@@ -1134,7 +1134,20 @@ export function createHero(ctx){
    return job({pt:()=>teleStand(T),stand:.05,clip:IDLE()/* hips over the feet; cm_tele pushed the pelvis 10 cm ahead of the feet (a plank leaning back) */,loop:true,dur:[40,90],vary:false,start:a=>{AU('sigh');a.pan0=T.yoke.rotation.y;},
     look:a=>{const E=T.eye();const d=T.dir();return E.addScaledVector(d,6);},lookW:1,
     post:(a,dt)=>telePost(a,dt,T),end:()=>{play(IDLE(),{fade:.6});try{window.__grab.free(T.tube);}catch(e){}}});},
-  look:(o)=>job({node:'deck',slide:false,clip:has('hy_listen')?null:null,dur:[40,80],look:a=>root.position.clone().add(V(Math.sin(a.T*.22)*6,1.2+Math.sin(a.T*.13)*.6,8))}),
+  look:(o)=>{// LEISURE: out on the deck he goes up to the railing, rests both hands on the top rail and leans on it a little, looking
+   // out over the forest (the head sweeps slowly, now and then down at the ground); every so often he straightens up, hands off
+   // the rail, and then leans on it again (frame check: he stood in the middle of the deck with his arms hanging for a minute)
+   const n=N.deck;const rayD=(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;};const rail=(()=>{if(!n)return null;const f=fwd(n.face??0);/* scan forward with downward rays for the top rail (a thin cap: level rays slip under or over it) */for(let d=.2;d<1.5;d+=.025){const x=n.p.x+f.x*d,z=n.p.z+f.z*d;const dn=rayD(x,n.p.y+1.5,z,0,-1,0,1.6);if(dn==null)continue;const top=1.5-dn;if(top>.75&&top<1.25)return {p:V(x+f.x*.02,n.p.y+top,z+f.z*.02),f};}return null;})();
+   const sweep=a=>root.position.clone().add(V(Math.sin(a.T*.22)*6,1.2+Math.sin(a.T*.13)*.6-(a.dwn||0)*1.4,8));
+   if(!rail)return job({node:'deck',slide:false,dur:[40,80],look:sweep});
+   return job({pt:()=>rail.p.clone(),stand:.27,dur:[40,80],vary:false,clip:IDLE(),
+    start:a=>{a.on=1;a.nx=rnd(12,20);},
+    look:a=>{const f=rail.f;const hd=bones.Head.getWorldPosition(V());return hd.addScaledVector(f,8).add(V(Math.sin(a.T*.21)*5,-.3+Math.sin(a.T*.13)*.4-(a.dwn||0)*3,0));},lookW:.85,
+    tick:(a,dt)=>{H.face=Math.atan2(rail.f.x,rail.f.z);root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*3);{/* in to the rail, belly a hand's width off it (the obstacle box kept him an arm's length back: hands in the air over it) */const gap=rail.p.clone().sub(root.position).dot(rail.f)-.25;const st=clamp(gap,-.2*dt,.2*dt)*(a.on?1:0);if(Math.abs(st)>1e-5)root.position.addScaledVector(rail.f,st);}a.nx-=dt;if(a.nx<0){a.on^=1;a.nx=a.on?rnd(12,20):rnd(3,6);}
+     a.hw=clamp((a.hw||0)+(a.on?dt/.8:-dt/.7),0,1);a.dwn=Math.max(0,Math.sin(a.T*.09)-.75)*4;},
+    post:(a,dt)=>{const w=smooth(0,1,a.hw||0);if(w<.01)return;const f=rail.f,r=V(-f.z,0,f.x),ax=V(0,1,0).cross(f).normalize();rotW(bones.Spine,ax,.1*w);rotW(bones.Spine1,ax,.06*w);
+     const c=V(root.position.x,rail.p.y,root.position.z);c.addScaledVector(f,rail.p.clone().sub(c).dot(f));/* the rail line straight ahead of him */
+     /* palms on the top rail, a shoulder width apart (the rail is at his belly) */const tL=c.clone().addScaledVector(r,-.2).add(V(0,.045,0)),tR=c.clone().addScaledVector(r,.2).add(V(0,.045,0));const both=()=>{gripNoLean('Left',tL,w);gripNoLean('Right',tR,w);};both();const G=window.__grab;if(G&&G.late)G.late(both);/* again after the head turn and collide moved the chest */}});},
   ledge:(o)=>{// sit on an OPEN edge (no railing, a free drop under it) with the legs hanging over it: the round landing by the gate
    // ladder (the deck has railings all round and its one gap is cramped under the bedroom eave and by the rope ladder)
    // POSE: Pavel 2026-11-23: he sat inside the railing with his legs splayed through the balusters. The spot is now searched
