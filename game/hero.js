@@ -799,6 +799,27 @@ export function createHero(ctx){
   // tips over its outer bottom edge first, then drops to the ground lying on its bark
   const tip=smooth(0,.35,f.t/.55);const drop=k*k;const pos=f.p0.clone().lerp(f.land,smooth(.1,1,k));pos.y=f.p0.y+(f.land.y-f.p0.y)*drop+.06*Math.sin(Math.PI*k);
   f.h.position.copy(pos);f.h.rotation.set(0,f.yaw+f.spin*k,0);f.h.rotateZ(-(Math.PI/2)*Math.min(1,tip+drop*.6));f.h.updateMatrixWorld(true);if(k>=1){SPLF.splice(i,1);AU('wood',f.land);}}}
+ // OUTDOOR: filling the bucket at the pond. Real mocap squat (hy_pickground) down to the waterline, held at the bottom while the
+ // right fist pushes the bucket under (it tips, fills, a splash and the ripples), then a slow, heavy rise with the full bucket.
+ // The bucket hangs from the real fist all the time; he shuffles so the fist comes over the water, not the bank.
+ const PF={down:1.0,hold:2.6};
+ function pondFill(a,dt){const PD=window.__ground&&window.__ground.pond;const F=(PD&&PD.fill)||root.position;a.ft+=dt;const t=a.ft;const C='hy_pickground';
+  if(!a.fs){a.fs=1;if(has(C))once(C,{fade:.3});H.face=Math.atan2(F.x-root.position.x,F.z-root.position.z);}
+  const A=has(C)?actions[C]:null;
+  if(A){if(t>=PF.down&&t<PF.down+PF.hold)A.timeScale=0;else if(t>=PF.down+PF.hold)A.timeScale=.62;/* full bucket: up slower than he went down */}
+  const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const p=root.position;{const tx=F.x-f.x*.36+r.x*.12,tz=F.z-f.z*.36+r.z*.12;const m=.45*dt;p.x+=clamp(tx-p.x,-m,m);p.z+=clamp(tz-p.z,-m,m);}
+  root.rotation.y+=wrapA(H.face-root.rotation.y)*Math.min(1,dt*4);H.look=F.clone();H.lookW=.85*(1-smooth(PF.down+PF.hold,PF.down+PF.hold+.8,t));
+  const lv=PD?PD.level:F.y;const end=PF.down+PF.hold+(A?(durOf(C)-PF.down)/.62:1.5);
+  if(t>PF.down+.25&&!a.s1){a.s1=1;try{PD&&PD.splash&&PD.splash(F.x,F.z,1);}catch(e){}AU('bucket_fill',F);}
+  if(t>PF.down+PF.hold-.2&&!a.s2){a.s2=1;try{PD&&PD.splash&&PD.splash(F.x,F.z,.6);}catch(e){}AU('slosh',F);}
+  a.dip=smooth(PF.down-.1,PF.down+.5,t)*(1-smooth(PF.down+PF.hold-.4,PF.down+PF.hold+.1,t));a.lv=lv;
+  if(t>=end){a.step='rise';if(A)A.timeScale=1;H.carry=BUCKET();a.fdone();}}
+ function pondFillPost(a){const P=PP();const bk=P&&P.tools&&P.tools.waterBucket;if(!bk||!a.dip)return;
+  // the fist goes down to the water: the bucket's rim just under the surface, tipped toward the pond so it fills
+  const R=odPalm('Right');const want=R.clone();const rimBelow=.35;/* fist to bucket bottom when hanging */const yFist=a.lv+rimBelow-.08;
+  if(R.y>yFist){want.y=lerp(R.y,yFist,a.dip);reachGrip('Right',want,a.dip);}
+  const L=odPalm('Left');reachGrip('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too */
+  bk.rotation.x=-.5*a.dip;bk.updateMatrixWorld(true);}
  // OUTDOOR: a full bucket is carried like real weight: real mocap of a heavy case in the right hand (body leans away), else the sack carry
  const BUCKET=()=>has('hy_carrybucket')?'hy_carrybucket':'hy_carrysack';
  // OUTDOOR: both hands free on a ladder. What he carries in a hand goes over his shoulder on its rope (sling) for the climb
@@ -845,11 +866,12 @@ export function createHero(ctx){
   fetchwater:(o={})=>{const a={step:'go',t:0};const P=PP();const pond=window.__ground&&window.__ground.pond&&window.__ground.pond.fill;
    visit(a,PT('waterShelf'),.45,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
     const spot=pond?pond.clone?pond.clone():V(pond.x,pond.y,pond.z):(N.g_exit1?N.g_exit1.p.clone().add(V(.6,0,.6)):null);
-    const fill=()=>{a.step='fill';reps('hy_picklog',3,()=>{AU('bucket_fill',root.position);try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.3});H.look=root.position.clone().addScaledVector(fwd(H.face),2.5);H.lookW=.6;/* a breath at the water before carrying it home */
-      H.wait={t:rnd(2.5,4),then:()=>{a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};});};
+    const fill=()=>{a.step='fill';a.ft=0;a.fdone=()=>{try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.4});H.look=root.position.clone().addScaledVector(fwd(H.face),2.5);H.lookW=.6;/* a breath at the water before carrying it home */
+      H.wait={t:rnd(1.5,2.5),then:()=>{a.step='back';visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};};};
     if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
-   a.update=dt=>{if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
+   a.update=dt=>{if(a.step==='fill'){pondFill(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
+   a.post=()=>{if(a.step==='fill')pondFillPost(a);};
    a.leave=cb=>{try{P.release('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
   setbucket:(o={})=>{const a={step:'go',t:0};const P=PP();visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
