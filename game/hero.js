@@ -1041,7 +1041,7 @@ export function createHero(ctx){
  function kneesClear(obj,dt,any){if(!obj||(!any&&(H.squat||0)<.05))return;const bb=new THREE.Box3().setFromObject(obj);const bc=bb.getCenter(V());const R=Math.min(bb.max.x-bb.min.x,bb.max.z-bb.min.z)/2;let need=0;
   for(const n of ['LeftLeg','RightLeg','LeftFoot','RightFoot','LeftToeBase','RightToeBase']){const b=bones[n];if(!b)continue;const q=b.getWorldPosition(V());if(q.y>bb.max.y+.05)continue;need=Math.max(need,R+.075-Math.hypot(q.x-bc.x,q.z-bc.z));}
   if(need>0){const p=root.position;const v=V(p.x-bc.x,0,p.z-bc.z).normalize();const m=Math.min(need,.4*dt);/* a smooth shuffle back, never a pop (gate: head jerk) */p.x+=v.x*m;p.z+=v.z*m;}}
- function job(o){const a={step:'go',t:0,T:0,held:[],faceYaw:o.faceYaw??null};const sp0=typeof o.pt==='function'?o.pt():o.pt;
+ function job(o){const a={step:'go',t:0,T:0,held:[],faceYaw:o.faceYaw??null,lean:!!o.feetOff};const sp0=typeof o.pt==='function'?o.pt():o.pt;
   if(!sp0&&!o.node){a.update=()=>endTask(false);return a;}
   const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
   const dur=o.dur?rnd(o.dur[0],o.dur[1]):(o.clip&&!o.loop&&has(o.clip)?durOf(o.clip)*(o.reps||1):8);a.jdur=dur;
@@ -1061,7 +1061,7 @@ export function createHero(ctx){
      legs for the turn (standing hips) and gave them back with a 30 cm drop (fix_rope) */const sk=H.slide?H.slide.k:1;a.skN=sk===a.skL?(a.skN||0)+1:0;a.skL=sk;if(a.t>=a.adur&&(sk>=1||a.skN>2||a.t>a.adur+1.2||window.__noTurnWait)){a.next();}return;}
    if(a.step==='take'){// GRAB: step in until the tool's grip is within arm's reach, the fist onto the grip (not the tool's origin), close the hand only there
     const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const bl=beltHas(n);const h=bl?beltPt():gripHome(n)||toolHome(n)||s;H.look=bl?null:h;H.lookW=1;
-    if(!a.st){a.st=1;a.pk=0;if(!bl)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) *//* the step to the tool is over: the walk clip stops with it (it went on looping through the reach: walking on the spot at the bench, fix_wall) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
+    if(!a.st){a.st=1;a.pk=0;if(!bl)stepNear(h,hand,o.feetOff?n:null);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) *//* the step to the tool is over: the walk clip stops with it (it went on looping through the reach: walking on the spot at the bench, fix_wall) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
     const low=!bl&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.gotIt);if(o.clear)kneesClear(o.clear,dt);/* low down: he bends his knees to it (feet stay on the boards) */
     if(a.gotIt&&low){/* GRAB: taken off the floor, the tool rises with him in front of his shins (it used to swing back through them) */if(a.sq0==null)a.sq0=H.squat||0;const up=Math.max(0,a.sq0-(H.squat||0));if(H.squat>.02)a.tsU=a.t;
      a.rg=[hand,h.clone().add(V(0,up+.06*smooth(0,.3,a.t-a.tg),0)),1-smooth(0,.35,a.t-(a.tsU??a.t))];}
@@ -1080,7 +1080,7 @@ export function createHero(ctx){
     if(a.toBelt==null)a.toBelt=farHome(n);const bt=a.toBelt;const h=bt?beltPt():gripHome(n)||toolHome(n)||s;H.look=bt?null:h;H.lookW=1;
     /* a far home: the tool goes on the belt (right hip), no trip back across the house and no flying home */
     // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
-    if(!a.st){a.st=1;a.pk=0;if(!bt)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
+    if(!a.st){a.st=1;a.pk=0;if(!bt)stepNear(h,hand,o.feetOff?n:null);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
     const low=!bt&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.rel);if(o.clear)kneesClear(o.clear,dt);
     a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
     if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else{relTool(hand,n);a.putAt=h.clone();}}
@@ -1088,17 +1088,25 @@ export function createHero(ctx){
   const finish0=()=>{a.ik=null;H.squat=0;endTask(o.result?o.result(a):undefined);};
   /* o.stepBack: a tool put down on the floor is stepped away from first (gate: the watering can on the boards went through his feet
      as his first steps to the next task crossed it); he backs off to ~.65 m from it, then leaves from there */
-  const finish=()=>{const q=a.putAt;if(!o.stepBack||!q||a.backed){finish0();return;}a.backed=true;const p=root.position;let dx=p.x-q.x,dz=p.z-q.z,d=Math.hypot(dx,dz);if(d>.6){finish0();return;}if(d<1e-3){const f=fwd(root.rotation.y);dx=-f.x;dz=-f.z;d=1;}
+  const finish=()=>{const q=a.putAt;if(!o.stepBack||!q||a.backed){finish0();return;}a.backed=true;const p=root.position;let dx=p.x-q.x,dz=p.z-q.z,d=Math.hypot(dx,dz);if(d>.5){finish0();return;}if(d<1e-3){const f=fwd(root.rotation.y);dx=-f.x;dz=-f.z;d=1;}
    const t=V(q.x+dx/d*.65,p.y,q.z+dz/d*.65);a.ik=null;H.squat=0;a.faceYaw=root.rotation.y;/* backing off still facing it: a turn on the spot right beside it swung his toes through it */a.noPush=false;approachTo(a,t,0,()=>{a.faceYaw=null;finish0();});};
   a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
   a.leave=cb=>{H.squat=0;for(const n of a.held){const t=tools.find(x=>x[0]===n);const hd=t?t[1]:'Right';if(farHome(n))toBelt(n,hd);else if(awayHome(n))standDown(n,hd);else relTool(hd,n);}a.held=[];if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;cb();};
   return a;}
  // GRAB: knees bent just enough that the shoulder is within arm's reach of a low grip, then up again (the code squat keeps the feet planted)
- function jobSquat(a,dt,h,hand,down){const sh=bones[hand+'Arm'].getWorldPosition(V());const hz=Math.hypot(sh.x-h.x,sh.z-h.z);const R0=armLen*.9+PALM-.03;
+ function jobSquat(a,dt,h,hand,down){const sh=bones[hand+'Arm'].getWorldPosition(V());const hz0=Math.hypot(sh.x-h.x,sh.z-h.z);const hz=a.lean?Math.min(hz0,(armLen*.9+PALM-.03)*.85):hz0;/* feetOff: he stands back from a floor tool, so the squat goes down as if within reach and the waist lean (reachTo) covers the rest */const R0=armLen*.9+PALM-.03;
   const want=down&&h.y<root.position.y+.7&&hz<R0*.95?clamp(sh.y+(H.squat||0)-h.y-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,.4):0;/* only for a grip low down and within reach sideways (it squatted at the counter for an out-of-reach knife) */const c=H.squat||0;H.squat=c+clamp(want-c,-1.1*dt,1.1*dt);if(!want&&H.squat<.012)H.squat=0;H.sqJob=H.squat>0;}
  // GRAB: a small step so the shoulder ends within ~0.36 m (level) of p: a reach, not a lean or a stretch
- function stepNear(p,hand){const sh=bones[hand+'Arm'];if(!sh||!p)return;const s0=sh.getWorldPosition(V());const d=V(p.x-s0.x,0,p.z-s0.z);const L=d.length();if(L<=.4)return;
-  const q=root.position.clone().addScaledVector(d.normalize(),Math.min(.6,L-.34));pushOut(q);const mv=Math.hypot(q.x-root.position.x,q.z-root.position.z);if(mv<.04)return;
+ // GRAB (job feetOff): a tool standing on the floor keeps his toes 5 cm clear of its widest reach (the watering can's spout sticks out
+ // 29 cm at toe height: his toes stood in it as he squatted for it, gate 7 cm); the hand reaches the last bit with the lean
+ function footOff(n){const P=PP();const t=P&&P.tools&&P.tools[n];if(!t)return null;const c=toolHome(n)||t.getWorldPosition(V());if(c.y>root.position.y+.25)return null;
+  if(t.userData.footR==null){const b=new THREE.Box3().setFromObject(t),o=t.getWorldPosition(V());let r=0;for(const x of [b.min.x,b.max.x])for(const z of [b.min.z,b.max.z])r=Math.max(r,Math.hypot(x-o.x,z-o.z));t.userData.footR=Math.min(.4,r*.85);}
+  return {c,R:t.userData.footR+.05};}
+ function toesIn(f){let m=1e9;for(const s of ['Left','Right']){const T=bones[s+'ToeBase']||bones[s+'Foot'];if(!T)continue;const p=T.getWorldPosition(V());m=Math.min(m,Math.hypot(p.x-f.c.x,p.z-f.c.z));}return f.R-m;}
+ function stepNear(p,hand,n){const sh=bones[hand+'Arm'];if(!sh||!p)return;const s0=sh.getWorldPosition(V());const d=V(p.x-s0.x,0,p.z-s0.z);const L=d.length();const fo=n?footOff(n):null;
+  let q;if(L<=.4){if(!fo)return;q=root.position.clone();}else q=root.position.clone().addScaledVector(d.clone().normalize(),Math.min(.6,L-.34));
+  if(fo){/* toes ahead of the root by about what they are now: keep the root that much further off */const inn=toesIn(fo);const rc=Math.hypot(root.position.x-fo.c.x,root.position.z-fo.c.z);const need=Math.max(rc+Math.max(0,inn),fo.R+.13)/* the squat that follows brings the toes ~15 cm ahead of the root (measured: 43 -> 27 cm from the can) */;const qc=Math.hypot(q.x-fo.c.x,q.z-fo.c.z);if(qc<need){/* straight back from the way he faces (radially off the can it slid him sideways into the bunk end) */const f=fwd(root.rotation.y),ux=q.x-fo.c.x,uz=q.z-fo.c.z,bb=-(ux*f.x+uz*f.z),cc=ux*ux+uz*uz-need*need;const t=-bb+Math.sqrt(Math.max(0,bb*bb-cc));q.x-=f.x*t;q.z-=f.z*t;}}
+  pushOut(q);const mv=Math.hypot(q.x-root.position.x,q.z-root.position.z);if(mv<.04)return;
   {const p=root.position;for(const k of [.5,1]){const x=p.x+(q.x-p.x)*k,z=p.z+(q.z-p.z)*k;const y=floorAt(x,p.y+.2,z,.3,.5);if(y==null||Math.abs(y-p.y)>.04)return;}}/* only on the same floor: never a step off an edge or onto a ledge */
   H.slide={x:q.x-root.position.x,z:q.z-root.position.z,yaw:0,k:0,d:Math.max(.4,mv/.6)};if(mv>.12)play('30',{fade:.25,speed:.9});}
  function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
@@ -1371,7 +1379,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     a.v=(a.v||0)+clamp(vT-(a.v||0),-.6*dt,.5*dt);a.w=(a.w||0)+clamp(wT-(a.w||0),-3*dt,3*dt);
     if(a.v>1e-4)p.addScaledVector(fwd(root.rotation.y),a.v*dt);if(Math.abs(a.w)>1e-4){root.rotation.y+=a.w*dt;H.face=root.rotation.y;H.lookW=.25;}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
-  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',stepBack:true,reps:Math.random()<.5?1:2,/* the job lasts the pour(s): with dur 5-6 s the 3 s clip ended and he stood 2-3 s frozen, can in hand, before putting it back (frames) */tools:[['wateringCan','Right']]}),
+  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',stepBack:true,feetOff:true,reps:Math.random()<.5?1:2,/* the job lasts the pour(s): with dur 5-6 s the 3 s clip ended and he stood 2-3 s frozen, can in hand, before putting it back (frames) */tools:[['wateringCan','Right']]}),
   listen:(o)=>{
    // LEISURE (phone watch 2e3a58e: he stood 50 s in the middle of the workshop facing the viewer with the window at his back, and the
    // cupped hand read as a wave): he goes to a real glazed window of the room he is in (index.html win(): centre, inward normal),
