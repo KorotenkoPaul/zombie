@@ -139,12 +139,19 @@ export function createClimb() {
     if (CD && CD.depthAt) { try { for (const h of [.15, .5, .85, 1.15, 1.3, 1.45]) for (const sx of [-.13, .13]) for (let d = A.Dhip; d < .6 + A.Dhip; d += .02) { const v = CD.depthAt(A.lad.x + sx, y + h, planeZ + A.zDir * d); if ((typeof v === 'number' ? v : (v && v.depth) || 0) > .002) { free = Math.min(free, d - A.Dhip); break; } } } catch (e) { free = 0; } }
     return (A.br[key] = Math.max(0, free - .17)); /* the back is ~15 cm behind the hip line, and 2 cm to spare */
   }
+  // how far out to the side a palm goes on the floor above: 16 cm, less when a post stands beside the opening (bl_t: a 75x29x5 board 21 cm
+  // left of the ladder line, the left palm and forearm 2.5 cm in it on every pass); the palm's edge keeps 7.5 cm off it
+  function handOff(A, side) {
+    A.hO = A.hO || {}; if (A.hO[side] != null) return A.hO[side]; const CD = window.__collide; let free = .4;
+    if (CD && CD.depthAt) { try { for (const h of [.06, .15, .3]) for (const dz of [.03, .12]) for (let d = .1; d <= .3; d += .01) { const v = CD.depthAt(A.lad.x + side * d, A.o.yTop + h, A.edge - A.zDir * dz); if ((typeof v === 'number' ? v : (v && v.depth) || 0) > .002) { free = Math.min(free, d); break; } } } catch (e) { free = .4; } }
+    return (A.hO[side] = Math.max(.1, Math.min(.16, free - .075)));
+  }
   // where each limb wants to be when it rests on rung i
   function restTarget(A, k, i) {
     const s = k[0] === 'L' ? -1 : 1, zD = A.zDir;
     const side = s * zD; // the hero faces -zDir; his left is -x when he faces -z (body axes +Z, no mirrored root)
     if (k[1] === 'H') {
-      if (i >= A.R.length) return V(A.lad.x + side * .16, palmY(A), A.edge - zD * .03); // palm flat on the floor above
+      if (i >= A.R.length) return V(A.lad.x + side * handOff(A, side), palmY(A), A.edge - zD * .03); // palm flat on the floor above
       const c = rungP(A, i).add(V(side * A.hx, .01, 0));
       // the palm (7 cm up the forearm line from the wrist) on the rung: the wrist sits back along the forearm from the rung
       const sh = C.bones[(k[0] === 'L' ? 'Left' : 'Right') + 'Arm']; const el = sh ? sh.getWorldPosition(V()).add(V(0, -.22, zD * .04)) : c.clone().add(V(0, -.3, zD * .25));
@@ -359,7 +366,10 @@ export function createClimb() {
     // legs: knees forward between the rungs and a little out, then the ball of the foot onto the rung
     // once the climb has ended the walk owns the legs at once (frozen foot targets while he walked off bent the ankles: gate foot-bend near the ladders)
     if (A) for (const s of ['Left', 'Right']) {
-      const t = tg[s[0] + 'F']; const sx = (s === 'Left' ? -1 : 1) * zDir;
+      let t = tg[s[0] + 'F']; const sx = (s === 'Left' ? -1 : 1) * zDir;
+      // near full stretch the foot slows down softly (going straight the knee is ill-defined: it swung 13 cm in a frame as the foot
+      // stepped down off the kitchen floor onto the hatch ladder; gate, knee jump 11-12 cm/frame² on every descent at kh)
+      { const hp = wp(B[s + 'UpLeg']), Ll = hp.distanceTo(wp(B[s + 'Leg'])) + wp(B[s + 'Leg']).distanceTo(wp(B[s + 'Foot'])); const v = t.clone().sub(hp), d = v.length(), Lm = Ll * .985, x0 = (A.mode === 'over' ? .78 : .9) * Lm; /* over the edge the foot goes down faster than the body: a longer soft zone, so it settles onto the rung instead of stopping at 7 cm/frame */ if (d > x0) { const w = Lm - x0; v.setLength(x0 + w * Math.tanh((d - x0) / w)); t = hp.clone().add(v); } }
       C.ik2(B[s + 'UpLeg'], B[s + 'Leg'], B[s + 'Foot'], t, V(sx * .3, .55, -zDir), W, false);
       const F = B[s + 'Foot'], Tb = B[s + 'ToeBase'];
       if (F && Tb) { const a = wp(F), toe = wp(Tb); const onFl = A && A.mode !== 'over' && A.limb[s[0] + 'F'].r < 0 && !(A.step && A.step.move.some(m => m.k === s[0] + 'F')); const dd = M.ankFloor - M.toeFloor; A.flE = A.flE || {}; const fk = s[0] + 'F'; A.flE[fk] = A.flE[fk] == null ? (onFl ? 1 : 0) : A.flE[fk] + ((onFl ? 1 : 0) - A.flE[fk]) * Math.min(1, dt * 6); const d = V(0, -M.footUp, -zDir * M.footH).lerp(V(0, -dd, -zDir * Math.sqrt(Math.max(0, M.footUp * M.footUp + M.footH * M.footH - dd * dd))), A.flE[fk]); /* flat on the boards, the ball on a rung (eased: no ankle snap at the step) */
