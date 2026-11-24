@@ -142,7 +142,7 @@ export function createWorkshop(K) {
     return job({ pt: standAt, stand: .03, dur: [600, 600], vary: false, tools: [],
       start: a => { a.S = S; setupSaw(); },
       look: () => WB ? toWB(XC, BD.y1 - WB.depth, BD.z) : null, lookW: .9,
-      tick: (a, dt) => { H.face = benchYaw(); },
+      tick: (a, dt) => { H.face = benchYaw() + (window.__wsTurn ?? .5) * RS(); /* three-quarter to the room (the hero camera looks from behind him): the saw arm shows beside his body */ },
       post: (a, dt) => { if (!WB) { a.T = 1e9; return; } S.t += dt; const g = G();
         if (g) { g.hold('Left', WB.g, null); g.hold('Right', WB.g, null); }
         if (S.hx == null) S.hx = -.45;
@@ -318,7 +318,7 @@ export function createWorkshop(K) {
       const piv = gp0.clone().addScaledVector(fw, -(window.__wsPiv ?? .2)).add(V(0, .02, 0)); const q = Q().setFromAxisAngle(k, phi);
       const gp = piv.clone().add(gp0.clone().sub(piv).applyQuaternion(q)).addScaledVector(dirW(RS(), 0, 0), (window.__wsOut ?? .18) * Math.min(1, phi / .25)); const W = W0.clone().applyQuaternion(q), B = B0.clone().applyQuaternion(q); return { gp, tip: gp.clone().add(W), B }; };
     return job({ pt: () => { if (!buildCraft()) return null; return toWC(window.__wsSX ?? .45, 0, .66).add(V(0, 1, 0)); }, stand: .03, dur: [600, 600], vary: false, tools: [],
-      start: () => setup(), look: () => S.lookAt || (CR && nailHead(0)), lookW: .9, tick: () => { H.face = benchYaw(); },
+      start: () => setup(), look: () => S.lookAt || (CR && nailHead(0)), lookW: .9, tick: () => { H.face = benchYaw() + (window.__wsTurnH ?? 0) * RS(); },
       post: (a, dt) => { S.t += dt; const g = G(); if (!CR) { a.T = 1e9; return; }
         const n = CR.nails[S.ni]; const N = n ? nailHead(S.ni) : null; S.lookAt = N || S.lookAt;
         const leftOn = (w, onNail) => { const p = onNail && N ? N.clone().add(V(0, -.03, 0)).addScaledVector(dirW(0, 0, 1), .025) : toWC(.53, .92 + .03, .28); handTo('Left', p, w); if (g) g.hold('Left', CR.g, null); };
