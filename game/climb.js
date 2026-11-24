@@ -97,10 +97,13 @@ export function createClimb() {
     const side = s * zD; // the hero faces -zDir; his left is -x when he faces -z (body axes +Z, no mirrored root)
     if (k[1] === 'H') {
       if (i >= A.R.length) return V(A.lad.x + side * .16, A.o.yTop + .04, A.edge - zD * .03); // palm flat on the floor above
-      const c = rungP(A, i); return c.add(V(side * A.hx, .015, zD * .065)); }// wrist just behind the rung at its height: the palm lies over the rung, fingers hooked over the front (no finger bones in this rig)
+      const c = rungP(A, i).add(V(side * A.hx, .01, 0));
+      // the palm (7 cm up the forearm line from the wrist) on the rung: the wrist sits back along the forearm from the rung
+      const sh = C.bones[(k[0] === 'L' ? 'Left' : 'Right') + 'Arm']; const el = sh ? sh.getWorldPosition(V()).add(V(0, -.22, zD * .04)) : c.clone().add(V(0, -.3, zD * .25));
+      const dir = c.clone().sub(el); if (dir.lengthSq() < 1e-6) dir.set(0, 1, -zD); dir.normalize(); return c.addScaledVector(dir, -.06); }// wrist just behind the rung at its height: the palm lies over the rung, fingers hooked over the front (no finger bones in this rig)
     if (i < 0) { const f = A.limb[k].floor; if (f && A.up) return f.clone(); return V(A.lad.x + side * A.fx, A.floorY + M.footUp, A.o.cz - zD * .02); }
     const c = rungP(A, i); const R = A.R[Math.min(i, A.R.length - 1)];
-    return c.add(V(side * A.fx, R.r + .05 + M.footUp, zD * (M.footH - .02)));
+    return c.add(V(side * A.fx, R.r + .012 + M.footUp, zD * (M.footH - .03)));
   }
 
   // ---- over the top edge: s 0 = on the ladder (feet on the two top rungs, hands on the floor), 1 = standing up there ----
@@ -195,6 +198,9 @@ export function createClimb() {
       else move.push({ k: mf, to, a: 0, b: .62, arc: .13 });
     } else {
       move.push({ k: mf, to, a: 0, b: .5, arc: .13 }); if (hand) move.push({ k: hand, to: hto, a: .4, b: .88, arc: .09 });
+      // the other hand out of reach too (both hands on one rung, the body went on down): it comes down in the same step, first
+      { const o = hand === 'LH' ? 'RH' : hand === 'RH' ? 'LH' : (L.LH.r >= L.RH.r ? 'LH' : 'RH'); const ry2 = reachY(A, top(A, minAfter)) - .12;
+        if (L[o].r < nR && top(A, L[o].r) + .015 > ry2) { let t2 = L[o].r - 1; while (t2 > minAfter + 1 && top(A, t2) + .015 > ry2) t2--; if (hand && t2 === hto) t2 = Math.max(minAfter + 1, t2 - 1); if (t2 < L[o].r && t2 >= 0) move.push({ k: o, to: t2, a: .1, b: .55, arc: .09 }); } }
     }
     for (const m of move) { const l = L[m.k]; l.from = l.cur ? l.cur.clone() : restTarget(A, m.k, l.r); l.toP = restTarget(A, m.k, m.to); }
     const y0 = A.y, y1 = top(A, minAfter);
