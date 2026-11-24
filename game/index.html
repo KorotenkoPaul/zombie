@@ -408,7 +408,12 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
   if(!ps.length){r0(L,sc,cam);return;}
   const nu=sm.needsUpdate,rest=L.filter(l=>l!==sun);for(const m of ps)m.castShadow=false;try{r0([sun],sc,cam);}finally{for(const m of ps)m.castShadow=true;}
   if(rest.length){sm.needsUpdate=nu;r0(rest,sc,cam);}};
- sm.render=(L,sc,cam)=>{for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{draw(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;}};}
+/* [PERF] worst-case frames (night, every lamp lit): the lamp shadow maps (~120-140k tris each) and the sun/moon's (~110k) came
+   due on the same frame now and then (~600k tris in one frame). One shadow map a frame (sun or one lamp); whatever else is due waits a frame (longest waiting first), so a map is at most a frame or two late. */
+ const waitN=new Map();const due=l=>l.castShadow&&l.shadow&&!l.shadow.autoUpdate&&l.shadow.needsUpdate;
+ sm.render=(L,sc,cam)=>{const held=[];const D=L.filter(due);if(D.length>1){D.sort((a,b)=>(waitN.get(b)||0)-(waitN.get(a)||0)||(a===sun?-1:b===sun?1:0));
+   const go=D[0]===sun?[sun]:[D[0]];for(const l of D){if(go.includes(l)){waitN.set(l,0);continue;}l.shadow.needsUpdate=false;held.push(l);waitN.set(l,(waitN.get(l)||0)+1);}}
+  for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{draw(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
 // `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
