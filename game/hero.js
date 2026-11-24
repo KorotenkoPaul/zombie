@@ -836,7 +836,9 @@ export function createHero(ctx){
    if(st==='back'&&a.kind==='wash')tL=holdC().addScaledVector(r,-.08);
    /* a hand with nothing to do goes back to the clip (weights ramp, the hand glides) */a.wR+=((tR?1:0)-a.wR)*Math.min(1,dt*3.5);a.wL+=((tL?1:0)-a.wL)*Math.min(1,dt*3.5);
    H.look=lk=lk?lk.lerp(look,1-Math.exp(-dt*6)):look.clone();H.lookW=.85;
-   const gl=(k,v,from)=>{if(!a[k])a[k]=from.clone();if(v)a[k].lerp(v,1-Math.exp(-dt*12));return a[k];};
+   /* the hand glides to its target, lifted over the counter / basin edge on the way (never through the furniture) */
+   const C=window.__collide;const clear=q=>{if(!C||!C.depthAt)return q;for(let i=0;i<20;i++){let hit=false;for(const dy of [-.04,-.015,0])if(C.depthAt(q.x,q.y+dy,q.z)>.003){hit=true;break;}if(!hit)break;q.y+=.01;}return q;};
+   const gl=(k,v,from)=>{if(!a[k])a[k]=from.clone();if(v){a[k].lerp(v,1-Math.exp(-dt*12));if(a[k].distanceTo(v)>.03)clear(a[k]);}return a[k];};
    REACH_LEAN=st==='shelf'||st==='lift'?.65:.3;/* at the sink he leans a little towards the rack (a little more up to the shelf), never folds over it */
    if(a.wR>.01){const t=gl('gR',tR||null,palmPt('Right'));reachGrip('Right',t,a.wR);}else a.gR=null;
    /* up to the shelf the piece rides in the palm (where the hand really is), and only the last few cm go onto the shelf board */
