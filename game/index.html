@@ -243,6 +243,7 @@ const BOARD_ROWS=8;
 const [woodWallT,woodDarkT]=await Promise.all([tex('wood-wall.jpg'),tex('wood-dark.jpg')]);
 // wear map for the floors (round 3): 7 levels side by side, each 12 x 8 m of the house at ~9 cm, 0..1 = how worn by feet
 const WEAR={W:896,H:96,lv:[LG_,2.45,3.4+HY,3.6+HY,5.0+HY,7.4+HY,9.0+HY],ra:[0,1,2].map(()=>new THREE.Vector4(0,0,0,-99)),rb:[0,1,2].map(()=>new THREE.Vector4(-99,-99,0,0))};
+/* [LIGHTS] honey interior walls, per room (kitchen, bedroom, workshop), 0..1 */WEAR.hy=[1,0,1];
 WEAR.f=new Float32Array(WEAR.W*WEAR.H);WEAR.u8=new Uint8Array(WEAR.W*WEAR.H);
 WEAR.tex=new THREE.DataTexture(WEAR.u8,WEAR.W,WEAR.H,THREE.RedFormat,THREE.UnsignedByteType);WEAR.tex.magFilter=WEAR.tex.minFilter=THREE.LinearFilter;WEAR.tex.needsUpdate=true;
 WEAR.stamp=(x,y,z,amt,rad=.25)=>{let li=0,bd=9;WEAR.lv.forEach((l,i)=>{const d=Math.abs(y-l);if(d<bd){bd=d;li=i;}});if(bd>.3)return false;
@@ -254,7 +255,13 @@ const PLOD={value:1};
 const PLANK_GLSL=`float pH(float n){return fract(sin(n*127.1)*43758.5453);}
 float pH2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i),pH2(i+vec2(1,0)),f.x),mix(pH2(i+vec2(0,1)),pH2(i+vec2(1,1)),f.x),f.y);}
-uniform float uLod;uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];
+uniform float uLod;uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];uniform float uHoney[3];
+// [LIGHTS] the room-side faces of the wall boards in the kitchen and workshop: the photo's lighter honey wood (the outside
+// faces stay weathered). vn = the view-space normal; the face counts as inside when it faces the room's centre
+vec3 pHoney(vec3 c,vec3 vn,float sd){if(sd<99.5||sd>399.5)return c;vec3 wn=(vec4(vn,0.)*viewMatrix).xyz;float h=0.;
+ for(int i=0;i<3;i++){vec4 A=uRoomA[i],R=uRoomB[i];if(uHoney[i]>0.&&vW.y>R.x-.15&&vW.y<R.y+.3&&vW.x>A.x-.35&&vW.x<A.y+.35&&vW.z>A.z-.35&&vW.z<A.w+.2){
+  vec3 cc=vec3((A.x+A.y)*.5,vW.y,(A.z+A.w)*.5);if(dot(wn,normalize(cc-vW))>.3)h=max(h,uHoney[i]);}}
+ float l=dot(c,vec3(.3,.59,.11));vec3 hn=mix(c,vec3(l)*vec3(1.3,1.,.66),.15)*vec3(1.5,1.72,1.7);return mix(c,hn,h);}
 vec2 pDH=vec2(0.);float pRgh=.8;
 vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);vec3 pn=abs(det)*sn-g;return dot(pn,pn)>1e-20?normalize(pn):sn;}/* [SAFETY] no NaN on degenerate pixels */
 // nail heads over every joist / batten: two per crossing. returns (dome height 0..1, rust halo 0..1, distance)
@@ -336,13 +343,13 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  // fresh, just repaired wood: pale and clean
  col=mix(col,col*vec3(1.32,1.2,1.0),fr);
  pDH=dH;return col;}`;
-function plankShader(m,o={}){/* [PERF] every plank material generates the same GLSL (options are uniforms; checked by comparing compiled sources): one shared program key instead of one per clone. Wrappers (rain/wind wrapKey, lights) build on this own key, so wrapped variants stay separate */if(!Object.prototype.hasOwnProperty.call(m,'customProgramCacheKey'))m.customProgramCacheKey=()=>'plank';const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv},uRoomA:{value:WEAR.ra},uRoomB:{value:WEAR.rb},tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
+function plankShader(m,o={}){/* [PERF] every plank material generates the same GLSL (options are uniforms; checked by comparing compiled sources): one shared program key instead of one per clone. Wrappers (rain/wind wrapKey, lights) build on this own key, so wrapped variants stay separate */if(!Object.prototype.hasOwnProperty.call(m,'customProgramCacheKey'))m.customProgramCacheKey=()=>'plank';const U={tWear:{value:WEAR.tex},uLv:{value:WEAR.lv},uRoomA:{value:WEAR.ra},uRoomB:{value:WEAR.rb},uHoney:{value:WEAR.hy},tWoodA:{value:o.a||woodT},tWoodB:{value:o.b||woodWallT},uTintA:{value:o.ta||new THREE.Vector3(.62,.53,.45)},uTintB:{value:o.tb||new THREE.Vector3(.9,.6,.36)},uNails:{value:o.nails??1},uBump:{value:o.bump??.0005}};
  m.onBeforeCompile=sh=>{Object.assign(sh.uniforms,U,{uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec2 aWx;attribute vec3 aBev;varying float vSeed,vFresh,vUpX;varying vec2 vWx;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;\n#endif')
   .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.007,.28*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;vUpX=normalize((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).xyz).y;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;vUpX=0.;\n#endif\nvSeed=aRow;vLP=transformed;vFresh=aFresh;vWx=aWx;');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed,vFresh,vUpX;varying vec2 vWx;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+PLANK_GLSL)
-  .replace('#include <map_fragment>','diffuseColor.rgb*=plank(vLP,vSz,vSeed);')
+  .replace('#include <map_fragment>','diffuseColor.rgb*=plank(vLP,vSz,vSeed);\n#ifndef FLAT_SHADED\ndiffuseColor.rgb=pHoney(diffuseColor.rgb,normalize(vNormal),vSeed);\n#endif')
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=pRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=pnArb(-vViewPosition,normal,pDH,faceDirection);');};}
 plankShader(boardMat);

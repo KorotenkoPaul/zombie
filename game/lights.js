@@ -189,10 +189,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
+    // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
+    // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
+    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); scene.add(bb);
     const hg = housing(bPos); lastHang = null; hang(bPos, .23, true); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 2 : 1.7 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 2 : 1.7 }, { l: bb, I: MOBILE ? 1.35 : 1.25 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
