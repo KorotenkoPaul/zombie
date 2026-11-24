@@ -154,19 +154,27 @@ export function createGrab({ THREE, bones }) {
     // the clip folds him nearly double over the broom: the chest is held to at most ~35 deg forward (a sweeper's stoop)
     { const sp2 = bones.Spine2; if (sp2 && SW.w > .01) { const up = V(0, 1, 0).applyQuaternion(sp2.getWorldQuaternion(new THREE.Quaternion())); const pitch = Math.atan2(up.dot(fw), up.y); const tg = Math.max(0, pitch - .6) * SW.w; SW.ex = (SW.ex || 0) + Math.max(-1.2 * dt, Math.min(1.2 * dt, tg - (SW.ex || 0))); const ex = SW.ex; // eased: no jerk
       if (ex > .005) { const ax = rt.clone().negate(); rotW(bones.Spine, ax, -ex * .4); rotW(bones.Spine1, ax, -ex * .35); rotW(sp2, ax, -ex * .25); } } }
-    const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6; const sx = Math.sin(SW.ph) * .18;
-    const Bp = hp.clone().addScaledVector(fw, .7).addScaledVector(rt, .08 + sx).setY(fy + .02); // bristles on the boards, ahead of his feet
-    for (const ft of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) { const b = bones[ft]; if (!b) continue; const fp = b.getWorldPosition(V()); const d = Bp.clone().sub(fp).setY(0); const ah = d.dot(fw); if (Math.abs(d.dot(rt)) < .22 && ah < .2) Bp.addScaledVector(fw, .2 - ah); }
-    const top = hp.clone().addScaledVector(fw, .28).addScaledVector(rt, .07 + sx * .25).add(V(0, .42, 0)); const dir = top.sub(Bp).normalize();
-    const sp = GRIP.broom; const Gp = Bp.clone().addScaledVector(dir, sp.g[1] * b.getWorldScale(V()).x); const Lp = Bp.clone().addScaledVector(dir, sp.two[1] * b.getWorldScale(V()).x);
+    const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6;
+    const sp = GRIP.broom; const bs = b.getWorldScale(V()).x;
+    const line = sx => { const Bp = hp.clone().addScaledVector(fw, .7).addScaledVector(rt, .08 + sx).setY(fy + .02); // bristles on the boards, ahead of his feet
+      for (const ft of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) { const b = bones[ft]; if (!b) continue; const fp = b.getWorldPosition(V()); const d = Bp.clone().sub(fp).setY(0); const ah = d.dot(fw); if (Math.abs(d.dot(rt)) < .22 && ah < .2) Bp.addScaledVector(fw, .2 - ah); }
+      const top = hp.clone().addScaledVector(fw, .28).addScaledVector(rt, .07 + sx * .25).add(V(0, .42, 0)); const dir = top.sub(Bp).normalize();
+      return { Bp, dir, Lp: Bp.clone().addScaledVector(dir, sp.two[1] * bs) }; };
+    /* GRAB (watch R21-4: on the far part of each stroke the handle's top went out of the left hand's reach, the left fist came off it
+       and flew up open): the stroke is only as wide as the left hand can follow on the handle's top; its width eased, no jerk */
+    const ls = bones.LeftArm.getWorldPosition(V()), lf = bones.LeftForeArm.getWorldPosition(V()), lh = bones.LeftHand.getWorldPosition(V());
+    const lmax = ls.distanceTo(lf) + lf.distanceTo(lh) + .07 - .03; const s0 = Math.sin(SW.ph) * .18; let kf = 1;
+    for (const k of [1, .8, .6, .4, .2, 0]) { kf = k; if (line(s0 * k).Lp.distanceTo(ls) <= lmax) break; }
+    SW.kf = SW.kf == null ? kf : SW.kf + Math.max(-2 * dt, Math.min(2 * dt, kf - SW.kf)); const sx = s0 * Math.min(SW.kf, kf + .1);
+    const { Bp, dir, Lp } = line(sx); const Gp = Bp.clone().addScaledVector(dir, sp.g[1] * bs);
     // tool orientation: local +y along the handle (bristles -> top), local +z (the bristle face) toward his front
     const z = fw.clone().addScaledVector(dir, -fw.dot(dir)).normalize(); const x = dir.clone().cross(z).normalize(); const Qt = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, dir, z));
     const Qh = Qt.clone().multiply(b.quaternion.clone().invert()); const hs = bones.RightHand.getWorldScale(V()).x;
     const gl = V(...sp.g).multiplyScalar(b.scale.x).applyQuaternion(b.quaternion).add(b.position).multiplyScalar(hs); const wrist = Gp.clone().sub(gl.applyQuaternion(Qh));
     ik2('Right', wrist, SW.w); setHandQ('Right', Qh, SW.w);
     /* the left fist on the handle's top end; its target eased (when he takes the broom up the handle still swings: the hand followed it
-       frame by frame, gate jitter) */ if (!SW.lp || SW.w < .05) SW.lp = Lp.clone(); else SW.lp.lerp(Lp, Math.min(1, dt * 14));
-    const pa = palm('Left'), wr = bones.LeftHand.getWorldPosition(V()); ik2('Left', SW.lp.clone().sub(pa.sub(wr)), SW.w); fistK.Left = Math.max(fistK.Left, SW.w); return true; }
+       frame by frame, gate jitter) */ if (!SW.lp || SW.w < .05) SW.lp = Lp.clone(); else SW.lp.lerp(Lp, Math.min(1, dt * 28));
+    for (let it = 0; it < 3; it++) { const pa = palm('Left'), wr = bones.LeftHand.getWorldPosition(V()); if (pa.distanceTo(SW.lp) < .008) break; ik2('Left', SW.lp.clone().sub(pa.sub(wr)), SW.w); } /* the palm offset re-measured after each pass (it turns with the forearm) */ api_dbg.swGap = palm('Left').distanceTo(SW.lp); api_dbg.swLp = SW.lp; fistK.Left = Math.max(fistK.Left, SW.w); return true; }
   // ---- the bedroom door and its bolt move only under a palm (Pavel: nothing by magic wand) ----
   // props' door.openTo / boltTo only set a goal; door.hand(kind) (set here) lets the door move ('open') or the bolt slide
   // ('bolt') only on frames when a palm is on the leaf / on the bolt knob. The nearer free hand reaches there by the arm-only
