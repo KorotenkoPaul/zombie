@@ -659,7 +659,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       if (lockK > 0 && (s.name === 'kitchen' || s.name === 'bedroom' || s.name === 'workshop')) k *= 1 - .65 * lockK;
       let f = k > 0 ? flick(s, T) : 0;
       // he is at the stove feeding it: the fire is livelier, its glow dances on him and the kitchen
-      if (s.name === 'oven' && cooking) f = .82 + (f - .8) * 2.2;
+      if (s.name === 'oven' && cooking) f = .86 + (f - .8) * 1.5;   // livelier, but a room lit by a fire breathes; it doesn't strobe (was x2.2: the walls swung 3x)
       if (s.name === 'oven' && s.lights[0] && s.lights[0].l.userData.open) f += s.lights[0].l.userData.open * ((noise(T * 9 + 4) - .5) * .12 + (noise(T * 23 + 8) - .5) * .05);
       // outdoor flames feel the wind (game/wind.js): a gust makes the flame duck and stutter, then it steadies again.
       // Indoor flames stay calm. The glass of a lantern shelters it, so the dip is small.
