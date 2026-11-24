@@ -1256,8 +1256,15 @@ export function createHero(ctx){
   sweep:(o)=>job({pt:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),1).add(V(0,.1,0)),stand:.9,clip:'hy_sweep',loop:true,dur:[15,28],tools:[['broom','Right']],
    tick:(a,dt)=>{// shuffles slowly across the floor while sweeping, turning back at walls
     if(a.pause)return;
-    if(!a.spotDone){/* GRAB: with the broom in hand, first out into open floor (roomy), facing the way he goes, away from the furniture */const p=root.position;if(!a.spot)a.spot=sweepSpot();const d=V(a.spot.x-p.x,0,a.spot.z-p.z);const l=d.length();
-     if(l<.04||(a.spT=(a.spT||0)+dt)>6){a.spotDone=true;}else{const yT=Math.atan2(d.x,d.z);root.rotation.y+=clamp(wrapA(yT-root.rotation.y),-2.2*dt,2.2*dt);H.face=root.rotation.y;if(Math.abs(wrapA(yT-root.rotation.y))<.6)p.addScaledVector(d.normalize(),Math.min(l,.3*dt));return;}}
+    if(!a.spotDone){/* GRAB: with the broom in hand, first out into open floor (roomy), facing the way he goes, away from the furniture.
+       A far spot (over .5 m) he walks to with the walk clip, not shuffling in the sweep clip; on the way he steers off the furniture boxes
+       (gate: his right hand brushed the bunk on the long walk out) */const p=root.position;
+     if(!a.spot){a.spot=sweepSpot();a.spT=0;a.spL=Math.hypot(a.spot.x-p.x,a.spot.z-p.z);if(a.spL>.5&&has('30')){play('30',{fade:.35,speed:.8});a.spW=1;}}
+     const d=V(a.spot.x-p.x,0,a.spot.z-p.z);const l=d.length();
+     if(l<.04||(a.spT+=dt)>a.spL/.25+2){a.spotDone=true;if(a.spW){a.spW=0;play('hy_sweep',{fade:.45,speed:o.speed||1});}}
+     else{const n=d.clone().divideScalar(l),sd=V(n.z,0,-n.x);const g=hardPen(p.x+sd.x*.06,p.y,p.z+sd.z*.06,.35)-hardPen(p.x-sd.x*.06,p.y,p.z-sd.z*.06,.35);if(Math.abs(g)>1e-4&&l>.3)n.addScaledVector(sd,-Math.sign(g)*.5).normalize();
+      const yT=Math.atan2(n.x,n.z);root.rotation.y+=clamp(wrapA(yT-root.rotation.y),-2.2*dt,2.2*dt);H.face=root.rotation.y;H.lookW=.3;
+      const v=a.spW?Math.min(.55,.12+l*1.2):.3;if(Math.abs(wrapA(yT-root.rotation.y))<.6)p.addScaledVector(n,Math.min(l,v*dt));return;}}
     const p=root.position;const free=(ry,head)=>{const f=fwd(ry);const q=p.clone().addScaledVector(f,.25);pushOut(q);const y=floorAt(q.x,p.y+.2,q.z,.3,.5);
     /* GRAB: he stoops over the broom, so his head and the bristles are ~0.7 m ahead of his feet: keep that much clear of furniture too */const blocked=[.35,.55,.75].some(k=>{const x=p.x+f.x*k,z=p.z+f.z*k;return OBST.some(o=>Math.abs(o.y-p.y)<.6&&x>o.x0-.12&&x<o.x1+.12&&z>o.z0-.12&&z<o.z1+.12);});
     /* GRAB: and by the real furniture/wall shapes (collide.js): shoulders and hips 25 cm round the next step, the stooped head ~0.5 m ahead
