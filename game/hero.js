@@ -406,6 +406,8 @@ export function createHero(ctx){
  let act=null;
  function startTask(name,opts){if(name===H.task&&act&&!act.left&&(!opts||!Object.keys(opts).length)&&name!=='micro'&&name!=='switch')return;if(H.trans||H.lad){H.pending=name;H.pendingOpts=opts;return;}
   if(act&&act.leave&&!act.left){const nm=name;act.left=true;H.trans=true;act.leave(()=>{H.trans=false;act=null;startTask(nm,opts);});return;}
+  // still seated when a task without its own leave ends (or is cut short): stand up properly first, never slide off in a sitting pose
+  if(H.seated&&!H.inBed&&!H.bedB&&!H.swing&&H.fit){const sp=H.seated;act=null;H.trans=true;standUp(sp,()=>{H.node=sp.node||nearNode(root.position.clone().add(V(0,.3,0)))||H.node;startTask(name,opts);});return;}
   act=null;H.task=name;actT=0;const A=ACT[name]||{};actDur=A.dur?rnd(A.dur[0],A.dur[1]):8;lastAct.unshift(name);lastAct.length=3;H.look=null;H.lookW=0;
   const mk=MAKE[name];if(!mk)return;act=mk(opts||{});act.name=name;}
  // ===== BRAIN HOOK state: setBrain / gait / onTaskEnd =====
@@ -594,9 +596,7 @@ export function createHero(ctx){
     const back=()=>{a.step='approach';a.t=0;a.ik=null;approachTo(a,rest.mug.clone(),.42,()=>{a.step='putmug';a.t=0;});a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}a.ik=[[hand,cupAt().lerp(rest.mug.clone().add(V(0,.05,0)),smooth(0,.7,a.t)),1-smooth(.9,1.4,a.t)]];
      if(a.t>.75&&H.hold[hand]){release(hand);park(mug,rest.mug);}if(a.t>1.4){a.ik=null;cb();}};};
     if(root.position.distanceTo(N.sink.p)>.8){a.step='go';a.update=()=>{};play(IDLE(),{fade:.4});goTo('sink',back);}else back();};return a;},
-  wash:()=>{const a={step:'go'};goTo('sink',()=>{a.step='wash';a.t=0;grab(plate,'Left',[0,.05,.06],[Math.PI/2,0,0]);play('hy_wash',{fade:.7});});
-   a.update=dt=>{if(a.step!=='wash')return;a.t+=dt;H.face=N.sink.face;const s=root.position.clone().add(fwd(H.face).multiplyScalar(.45));s.y=kTop-.05;H.look=s;H.lookW=1;};
-   a.leave=cb=>{if(H.hold.Left){release('Left');plate.visible=false;}cb();};return a;},
+  wash:(o)=>dishesAction(o),/* the old gesture: the real dishes job now */
   look:()=>{const a={step:'go'};goTo('deck',()=>{a.step='look';a.t=0;play(IDLE(),{fade:.6});});a.update=dt=>{if(a.step!=='look')return;a.t+=dt;H.face=N.deck.face;
     const sweep=Math.sin(a.t*.25)*6;H.look=root.position.clone().add(V(sweep,1.2+Math.sin(a.t*.13)*.6,8));H.lookW=.8;};a.leave=cb=>cb();return a;},
   window:()=>{const a={step:'go'};const wn=pick(WINDOWS.filter(w=>Math.abs(N[w].p.y-root.position.y)<.8))||'bwin';goTo(wn,()=>{a.step='look';a.t=0;play(IDLE(),{fade:.6});});
@@ -633,6 +633,182 @@ export function createHero(ctx){
   const move=Math.max(0,d-stand);if(L<move+.6)return;
   const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);headroom(q,dx/d,dz/d);q.y=p.y;if(!segClear(p,q))return;
   a.cut=1;N.__stand={p:q};H.path=[{node:'__stand',t:last.t}];const th=H.then;H.then=()=>{H.node=a.nn;th&&th();};}
+ // meal: how far reachTo / reachGrip may bend the spine towards a far point (seated at a table: a little); the helpers are the kitchen / outdoor ones
+ let REACH_LEAN=.6;
+ // ===================== eating (HERO-RULES 2): one seated action, the plate and the spoon move only in his hands =====================
+ // take the plate off the stove with the left hand, three scoops from the pan with the spoon, walk to the barrel table, sit on the
+ // stool half turned (legs beside the barrel, never into it), set the plate down by hand, spoon from the plate to the mouth (code:
+ // scoop, lift, into the mouth, chew), rests between bites, spoon back on the plate, plate in the left hand, up, plate into the basin.
+ const espoon=sh((()=>{const g=new THREE.Group();const m=new THREE.MeshStandardMaterial({color:0xB9B5AC,roughness:.35,metalness:.6});
+  const h=new THREE.Mesh(new THREE.CylinderGeometry(.0035,.005,.15,6),m);h.position.y=.03;g.add(h);
+  const s=new THREE.Mesh(new THREE.SphereGeometry(.02,10,8),m);s.scale.set(1,1.35,.32);s.position.y=.12;g.add(s);return g;})());
+ espoon.visible=false;scene.add(espoon);const ESP={tip:V(0,.12,0)};
+ // head axes from the neck->head line (the same on both rigs; HeadTop_End points elsewhere on the detailed one) and the hips' facing
+ function headUp(){const n=bones.Neck.getWorldPosition(V());return bones.Head.getWorldPosition(V()).sub(n).normalize();}
+ function headFwd(){const u=headUp();const f=hipsFwd().clone();f.addScaledVector(u,-f.dot(u));return f.normalize();}
+ function mouthPt(){const p=bones.Head.getWorldPosition(V());return p.addScaledVector(headUp(),.045).addScaledVector(headFwd(),.085);}
+ function palmPt(side){const G=window.__grab;return G&&G.gripPoint?G.gripPoint(side):bones[side+'Hand'].getWorldPosition(V());}
+ // a hero-side item held in the fist (origin = grip, +y = its working end): hand turned so the item points at tip, fist on gp
+ function holdItemAt(side,o,gp,tip,w){const hb=bones[side+'Hand'];if(!o||o.parent!==hb||w<.01)return;
+  const ua=V(0,1,0).applyQuaternion(o.quaternion).normalize();const gl=o.position.clone();
+  const bas=(x,y)=>{const X=x.clone().normalize();const Y=y.clone().sub(X.clone().multiplyScalar(y.dot(X)));if(Y.lengthSq()<1e-6)Y.set(0,1,0).sub(X.clone().multiplyScalar(X.y));Y.normalize();return new THREE.Matrix4().makeBasis(X,Y,X.clone().cross(Y));};
+  const W=tip.clone().sub(gp).normalize();let Fw=gp.clone().sub(bones[side+'ForeArm'].getWorldPosition(V())).normalize();
+  for(let it=0;it<2;it++){const Qh=new THREE.Quaternion().setFromRotationMatrix(bas(W,Fw).multiply(bas(ua,V(0,1,0)).transpose()));
+   const sc=hb.getWorldScale(V()).x;const wrist=gp.clone().sub(gl.clone().multiplyScalar(sc).applyQuaternion(Qh));
+   armIK(side,wrist,sidePole(side),w);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cur=hb.getWorldQuaternion(new THREE.Quaternion());
+   hb.quaternion.copy(pq.invert().multiply(cur.slerp(Qh,w)));hb.updateMatrixWorld(true);Fw=hb.getWorldPosition(V()).sub(bones[side+'ForeArm'].getWorldPosition(V())).normalize();}}
+ // a key-framed path: [[u, value]...] (value: Vector3), smooth between keys
+ function keyed(K,u){if(u<=K[0][0])return K[0][1].clone();for(let i=1;i<K.length;i++)if(u<=K[i][0]){const k=smooth(K[i-1][0],K[i][0],u);return K[i-1][1].clone().lerp(K[i][1],k);}return K[K.length-1][1].clone();}
+ function eatAction(o={}){const a={step:'go',t:0,T:0};const P=PP();
+  const KT_=P&&P.surfaces&&P.surfaces.kitchenTable;const S0=KT_&&PT('eatSeat');const pl=P&&P.tools&&P.tools.plate;
+  if(!S0||!pl){a.update=()=>endTask({ok:false});return a;}
+  const face=KT_.face??-Math.PI/2;const F=fwd(face);const seat={p:S0.clone().setY(lv.KT),face,seat:S0.y,sit:true,floor:floorTop(lv.KT,S0.x,S0.z),node:'kmid'};
+  const standPt=seat.p.clone().sub(rotY(V(sdEnd.x,0,sdEnd.z),face));
+  // the stool sits between its stand point and the room: walk on and off round the front of it, never through it
+  const rtF=V(-F.z,0,F.x);const kmP=N.kmid?N.kmid.p:standPt;const sideK=Math.sign((kmP.x-seat.p.x)*rtF.x+(kmP.z-seat.p.z)*rtF.z)||1;
+  const toK=V(kmP.x-seat.p.x,0,kmP.z-seat.p.z).normalize();const wayPt=seat.p.clone().addScaledVector(F,.4).addScaledVector(toK,.45);/* in front of the stool, on the room side */
+  // the plate's spot on the barrel top: on the line from the table centre towards his chest, 17 cm out
+  const tableC=PT('eatTable');const chest0=seat.p.clone().addScaledVector(F,.07);const toMe=V(chest0.x-tableC.x,0,chest0.z-tableC.z).normalize();
+  const plateSpot=V(tableC.x,KT_.top+.002,tableC.z).addScaledVector(toMe,.2);/* near his edge of the top: he eats sitting up, not folded over */
+  const pan=PT('pan')||PT('pot');const home=toolHome('plate')||pan;const sinkP=PT('sink');
+  const bites=Math.round(rnd(7,10));let food=1;a.bite=0;
+  pl.visible=true;a.plate='home';a.spoon='plate';a.wL=0;a.wR=0;a.tw=0;
+  try{P.plate&&P.plate.setFood&&P.plate.setFood(0);}catch(e){}
+  // the spoon lies on the plate at the start (on the rim, handle out)
+  const spoonOnPlate=()=>{pl.add(espoon);const s=1/pl.getWorldScale(V()).x;espoon.scale.setScalar(s);espoon.position.set(.05,.03,.0).multiplyScalar(1);espoon.rotation.set(Math.PI/2,0,-Math.PI/2+.3);espoon.visible=true;if(H.hold.Right===espoon)H.hold.Right=null;a.spoon='plate';};
+  spoonOnPlate();
+  const spoonToHand=()=>{grab(espoon,'Right',[0,.075,.025],[0,0,-Math.PI/2]);a.spoon='hand';};
+  // the plate rides on the left palm, level, rim in the fingers (it moves only with the hand)
+  const shL=()=>bones.LeftArm.getWorldPosition(V());
+  const palmFor=c=>{const s=shL();const d=V(c.x-s.x,0,c.z-s.z);if(d.lengthSq()<1e-6)d.copy(fwd(root.rotation.y));d.normalize();return c.clone().addScaledVector(d,-.075).add(V(0,.028,0));};
+  const plateOnHand=()=>{const P2=palmPt('Left');const s=shL();const d=V(P2.x-s.x,0,P2.z-s.z);if(d.lengthSq()<1e-6)d.copy(fwd(root.rotation.y));d.normalize();if(pl.parent!==scene)scene.attach(pl);pl.position.copy(P2).addScaledVector(d,.075).add(V(0,-.028,0));pl.rotation.set(0,root.rotation.y,0);pl.scale.setScalar(1);};
+  const plateDown=(p)=>{if(pl.parent!==scene)scene.attach(pl);pl.position.copy(p);pl.rotation.set(0,face,0);pl.scale.setScalar(1);};
+  const rimL=()=>palmFor(pl.getWorldPosition(V()));
+  const spoonPt=()=>espoon.getWorldPosition(V());
+  const say=s=>{a.step=s;a.t=0;};
+  // 1) to the stove, the left hand takes the plate
+  // he stands facing the middle between the plate and the pan: the plate a little to his right, the pan a little to his left
+  const mid=home.clone().lerp(pan,.5);const plateHold=()=>{const me=root.position;const tw=V(me.x-mid.x,0,me.z-mid.z).normalize();return pan.clone().lerp(home,.55).addScaledVector(tw,.16).setY(pan.y+.1);};
+  const nn=nearNode(mid);const go1=()=>approachTo(a,mid,.5,()=>{say('take');H.look=home;H.lookW=.9;});if(nn)goTo(nn,go1);else go1();
+  const upd=dt=>{a.t+=dt;
+   if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
+   if(a.step==='take'){if(a.t>.7&&a.plate==='home'){a.plate='hand';AU('cloth');}if(a.t>1.3){say('spoon');}return;}
+   if(a.step==='spoon'){H.look=pl.getWorldPosition(V());H.lookW=.9;if(a.t>.55&&a.spoon==='plate'){spoonToHand();}if(a.t>.9){say('serve');a.sc=0;}return;}
+   if(a.step==='serve'){H.look=pan;H.lookW=.9;const n=Math.floor(a.t/1.35);if(n!==a.sc){a.sc=n;try{P.plate.setFood(Math.min(1,n/3));}catch(e){}AU('scrape',pan);}if(a.t>=4.05){say('spoonback');}return;}
+   if(a.step==='spoonback'){H.look=pl.getWorldPosition(V());if(a.t>.5&&a.spoon==='hand'){spoonOnPlate();}if(a.t>.85){say('go2');play(IDLE(),{fade:.4});
+     goTo('kmid',()=>approachTo(a,wayPt,0,()=>{say('go2');approachTo(a,standPt.clone().addScaledVector(F,1),1,()=>{say('sit');sitDown(seat,()=>{say('place');});});}));}return;}
+   if(a.step==='go2'||a.step==='sit'){H.look=null;return;}
+   if(a.step==='place'){H.look=plateSpot;H.lookW=.9;if(a.t>.9&&a.plate==='hand'){a.plate='table';plateDown(plateSpot);AU('cup',plateSpot);}if(a.t>1.3){say('pick');}return;}
+   if(a.step==='pick'){H.look=plateSpot;if(a.t>.6&&a.spoon==='plate')spoonToHand();if(a.t>1){say('eat');a.cyc=0;a.T=0;a.cu=0;a.per=rnd(2.6,3.3);a.rest=0;play(has('mc_stoolidle')?'mc_stoolidle':has('33')?'33':SITIDLE,{fade:.8});}return;}/* '33' (Mixamo seated idle): the Hunyuan sit idle folds the chest back over the stool on this rig */
+   if(a.step==='eat'){a.T+=dt;{const B=actions.mc_stoolidle;if(B&&H.cur===B){B.time=.3+.28*Math.sin(a.T*.9);}}/* the CMU stool clip slumps forward from 1.0 s to 4.4 s; keep it in its upright, breathing window (0-0.6 s) */if(a.rest>0){a.rest-=dt;H.look=a.restLook;H.lookW=.6;if(a.rest<=0){a.cu=0;a.per=rnd(2.6,3.3);}return;}
+    a.cu+=dt/a.per;if(a.cu>=1){a.cu=0;a.cyc++;a.per=rnd(2.5,3.4);if(a.cyc>=bites){say('putspoon');return;}if(Math.random()<.22){a.rest=rnd(2,4);a.restLook=root.position.clone().addScaledVector(F,rnd(1.5,3)).addScaledVector(V(-F.z,0,F.x),rnd(-1.6,1.2)).add(V(0,rnd(.9,1.5),0));/* out of the window / across the room, never behind him */}}
+    if(a.cu>.55&&!a.bit){a.bit=1;food=Math.max(0,1-(a.cyc+1)/bites);try{P.plate.setFood(food);}catch(e){}}if(a.cu<.1)a.bit=0;
+    H.look=a.cu<.32||a.cu>.85?plateSpot.clone().add(V(0,.18,0)):mouthPt().addScaledVector(headFwd(),.6).add(V(0,-.12,0));H.lookW=.6;/* eyes down to the plate, not the whole chest folded over it */return;}
+   if(a.step==='putspoon'){H.look=plateSpot;if(a.t>.6&&a.spoon==='hand')spoonOnPlate();if(a.t>1){say('lift');}return;}
+   if(a.step==='lift'){if(a.t>.6&&a.plate==='table'){a.plate='hand';}if(a.t>.9){say('up');H.look=null;standUp(seat,()=>{H.node=seat.node;/* this standUp names only the chair and the bed */say('go3');H.look=null;approachTo(a,wayPt,0,()=>{say('go3');const n2=N.sink?'sink':nearNode(sinkP);const g=()=>approachTo(a,sinkP,.42,()=>{say('drop');});if(n2)goTo(n2,g);else g();});});}return;}
+   if(a.step==='go3'||a.step==='up'){H.look=null;return;}
+   if(a.step==='drop'){H.look=sinkP;H.lookW=.9;if(a.t>.8&&a.plate==='hand'){a.plate='home';try{P.release('plate');pl.visible=false;P.dishes&&P.dishes.setDirty(P.dishes.state().dirty+1);}catch(e){}espoon.visible=false;espoon.parent&&espoon.parent.remove(espoon);scene.add(espoon);AU('cup',sinkP);}
+    if(a.t>1.3)endTask({ok:true});return;}};
+  // the eyes move between targets with a short glide, never a jump
+  a.update=dt=>{upd(dt);if(H.task!=="eat")return;const L=H.look;if(L&&L.isVector3){if(!a.lk)a.lk=L.clone();else a.lk.lerp(L,1-Math.exp(-dt*7));H.look=a.lk.clone();}else a.lk=null;};
+  // hand targets glide too (a switch of target is a move, not a jump)
+  const glide=(key,v,dt,k=12,from)=>{if(!a[key]){a[key]=(from||v).clone();}a[key].lerp(v,1-Math.exp(-dt*k));return a[key];};
+  // hands (contacts slot): weights ramp, never snap
+  a.post=dt=>{const st=a.step;const k=x=>Math.min(1,x);REACH_LEAN=H.seated===seat?.12:.6;try{post2(dt);}finally{REACH_LEAN=.6;}};
+  const post2=dt=>{const st=a.step;
+   const wantL=a.plate==='hand'||st==='take'&&a.t<.7||st==='place'||st==='lift'||(st==='eat'||st==='pick'||st==='putspoon');
+   const wantR=a.spoon==='hand'||(st==='spoon'&&a.t<.55)||(st==='pick'&&a.t<.6)||(st==='putspoon')||(st==='spoonback');
+   a.wL+=((wantL?1:0)-a.wL)*Math.min(1,dt*3.5);a.wR+=((wantR?1:0)-a.wR)*Math.min(1,dt*3.5);
+   const f=fwd(root.rotation.y),up=V(0,1,0),rt=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());
+   // seated: turn the chest to the plate and lean in a little (before any hand is placed)
+   const seated=H.seated===seat&&(st==='place'||st==='pick'||st==='eat'||st==='putspoon'||st==='lift');a.tw+=((seated?1:0)-a.tw)*Math.min(1,dt*3);
+   if(a.tw>.01){const c=plateSpot.clone();const d=V(c.x-hp.x,0,c.z-hp.z).normalize();const hf=hipsFwd();let ang=Math.atan2(hf.x*d.z-hf.z*d.x,hf.x*d.x+hf.z*d.z);/* +: to his left */
+    const th=-clamp(ang*.7,-.75,.75)*a.tw;/* yaw about +y that turns the chest to the plate */for(const [b,s] of [['Spine',.35],['Spine1',.35],['Spine2',.3]])rotW(bones[b],up,th*s);rotW(bones.Neck,up,-th*.85);
+    const ax=up.clone().cross(d).normalize();const bite=st==='eat'&&!a.rest?smooth(.3,.5,a.cu)*(1-smooth(.68,.85,a.cu)):0;const lean=(.04+.07*bite)*a.tw;rotW(bones.Spine,ax,lean*.5);rotW(bones.Spine1,ax,lean*.3);rotW(bones.Spine2,ax,lean*.2);
+    if(st==='eat'&&a.cu>.68&&a.cu<.98&&!a.rest){const ch=Math.sin((a.cu-.68)*Math.PI*2*5)*.03*(1-smooth(.85,.98,a.cu));rotW(bones.Head,rt,ch);}/* chewing */}
+   // left hand
+   if(a.wL>.01){let t=null;
+    const carry=hp.clone().addScaledVector(f,.3).addScaledVector(rt,-.1).add(V(0,H.seated?.3:.12,0));
+    if(st==='take'&&a.plate==='home'){t=palmFor(home);}
+    else if(st==='place'&&a.plate==='hand'){t=carry.lerp(palmFor(plateSpot),smooth(.05,.8,a.t));}
+    else if(st==='lift'&&a.plate==='table'){t=rimL();}
+    else if(st==='lift'){t=rimL().lerp(carry,smooth(.6,.9,a.t));}
+    else if(a.plate==='table'){t=rimL();}
+    else if(a.plate==='hand'){t=carry;if(st==='serve'||st==='spoon'||st==='spoonback')t=palmFor(plateHold());if(st==='spoonback')t=palmFor(plateHold()).lerp(carry,smooth(.4,.85,a.t));if(st==='take')t=palmFor(home).lerp(palmFor(plateHold()),smooth(.7,1.25,a.t));if(st==='drop')t=carry.lerp(palmFor(sinkP.clone().add(V(0,.03,0))),smooth(0,.75,a.t));}
+    if(t)reachGrip('Left',glide('gL',t,dt,12,palmPt('Left')),a.wL);}else a.gL=null;
+   if(a.plate==='hand')plateOnHand();
+   // right hand with the spoon
+   if(a.wR>.01){const pc=pl.getWorldPosition(V());let gp=null,tip=null,free=null;
+    if(a.spoon!=='hand'){/* reaching for the spoon lying on the plate / putting it there */free=spoonPt().add(V(0,.02,0));}
+    else if(st==='serve'){const u=(a.t%1.35)/1.35;const toPl=pc.clone().add(V(0,.05,0));const inPan=pan.clone().add(V(0,.02,0));
+     gp=keyed([[0,toPl.clone().add(V(0,.1,0))],[.35,inPan.clone().add(V(0,.11,0))],[.55,inPan.clone().add(V(0,.1,0)).addScaledVector(rt,.04)],[.85,toPl.clone().add(V(0,.11,0))],[1,toPl.clone().add(V(0,.1,0))]],u);
+     tip=keyed([[0,toPl],[.35,inPan],[.55,inPan.clone().addScaledVector(rt,.05)],[.85,toPl],[1,toPl]],u);}
+    else if(st==='eat'&&!a.rest){const u=a.cu;const m=mouthPt();const hf=headFwd();hf.y=Math.min(hf.y,0);hf.normalize();
+     const p0=pc.clone().add(V(0,.012,0));const tow=V(hp.x-pc.x,0,hp.z-pc.z).normalize();const side=Math.sin(a.cyc*2.3)*.03;
+     const s0=p0.clone().addScaledVector(tow,-.04).addScaledVector(rt,side),s1=p0.clone().addScaledVector(tow,.04).addScaledVector(rt,side);
+     const mIn=m.clone().addScaledVector(hf,-.01),mOut=m.clone().addScaledVector(hf,.11).add(V(0,-.04,0));
+     tip=keyed([[0,s0.clone().add(V(0,.03,0))],[.12,s0],[.3,s1],[.5,mOut.clone().addScaledVector(hf,-.03)],[.58,mIn],[.66,mIn],[.76,mOut.clone().addScaledVector(hf,.03)],[1,s0.clone().add(V(0,.03,0))]],u);
+     gp=tip.clone().add(keyed([[0,tow.clone().multiplyScalar(.1).add(V(0,.07,0))],[.3,tow.clone().multiplyScalar(.11).add(V(0,.06,0))],[.5,hf.clone().multiplyScalar(.12).add(V(0,-.05,0))],[.66,hf.clone().multiplyScalar(.12).add(V(0,-.05,0))],[.8,hf.clone().multiplyScalar(.1).add(V(0,-.08,0))],[1,tow.clone().multiplyScalar(.1).add(V(0,.07,0))]],u));}
+    else{/* between bites / resting: the spoon rests over the plate edge */const c=pc.clone().addScaledVector(rt,.06).add(V(0,.03,0));tip=c;gp=c.clone().add(V(0,.08,0)).addScaledVector(V(hp.x-pc.x,0,hp.z-pc.z).normalize(),.08);}
+    a.hw=(a.hw||0)+((gp?1:0)-(a.hw||0))*Math.min(1,dt*5);
+    const tgt=glide('gR',gp||free,dt,st==='eat'?16:10,palmPt('Right'));if(gp){const tt=glide('gT',tip,dt,16);reachGrip('Right',tgt,a.wR*(1-a.hw));holdItemAt('Right',espoon,tgt,tt,a.wR*a.hw);}else{a.gT=null;reachGrip('Right',tgt,a.wR);}}
+   else{a.gR=null;a.gT=null;}
+  };
+  a.leave=cb=>{try{P.release('plate');}catch(e){}espoon.visible=false;if(H.hold.Right===espoon)H.hold.Right=null;espoon.parent&&espoon.parent.remove(espoon);scene.add(espoon);a.post=null;
+   if(H.seated===seat||a.step==='place'||a.step==='pick'||a.step==='eat'||a.step==='putspoon'||a.step==='lift'){standUp(seat,()=>{H.node=seat.node;cb();});}else cb();};
+  return a;}
+ // ===================== dishes by hand (HERO-RULES 2) =====================
+ // facing the basin: dry pieces from the rack go up onto the shelf first (one at a time, a hand on each), then every dirty piece:
+ // the right hand lifts it out of the basin, the left holds it under the running tap, the right scrubs it (small circles), it turns
+ // clean, the left stands it in the rack. Nothing moves unless a hand holds it.
+ function dishesAction(o={}){const a={step:'go',t:0,T:0};const P=PP();const D=P&&P.dishes;const sinkP=PT('sink');
+  if(!D||!D.take||!sinkP){a.update=()=>endTask({ok:false});return a;}
+  const tapP=PT('tap')||sinkP.clone().add(V(0,.22,-.1));const shelfP=PT('dishShelf');
+  a.wL=0;a.wR=0;a.n=0;a.piece=null;let lk=null;
+  const say=s=>{a.step=s;a.t=0;};const sh0=()=>bones.LeftArm.getWorldPosition(V());
+  const face2=()=>{const f=fwd(root.rotation.y);return f;};
+  const nn=N.sink?'sink':nearNode(sinkP);const go=()=>approachTo(a,sinkP,.36,()=>{play(IDLE(),{fade:.6});next();});if(nn)goTo(nn,go);else go();
+  // what next: dry ones up to the shelf (at most 2 a visit), then the dirty ones
+  function next(){const st=D.state();if(st.rack>0&&(a.up||0)<2&&shelfP&&!(st.dirty>0&&Math.random()<.5)){a.up=(a.up||0)+1;a.kind='shelf';say('reachR');return;}
+   if(st.dirty>0&&a.n<4){a.kind='wash';say('reachR');return;}
+   if(a.tapOn){try{P.water.tap(false);}catch(e){}a.tapOn=false;}say('end');}
+  const pieceAt=(c,q)=>{const p=a.piece;if(!p)return;const ob=p.show;if(ob.parent!==scene)scene.attach(ob);ob.position.copy(c);ob.quaternion.copy(q);ob.scale.setScalar(1);ob.visible=true;};
+  // where a piece sits in the left hand: in front of him under the tap, tilted towards him
+  const holdC=()=>{const f=face2();const r=V(-f.z,0,f.x);const c=tapP.clone();c.y=sinkP.y+.15;return c.addScaledVector(f,-.09).addScaledVector(r,-.02);};
+  const holdQ=()=>new THREE.Quaternion().setFromEuler(new THREE.Euler(-.9,root.rotation.y,0,'YXZ'));
+  a.update=dt=>{a.t+=dt;a.T+=dt;
+   if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
+   if(a.step==='reachR'){// right hand to the piece (basin or rack)
+    const from=a.kind==='shelf'?'rack':'dirty';const st=D.state();if((from==='rack'?st.rack:st.dirty)<=0){next();return;}
+    if(a.t>.7){const p=D.take(from);if(!p){next();return;}a.piece={...p,show:from==='rack'?p.clean:p.obj,from};a.n+=from==='dirty'?1:0;
+     a.p0=a.piece.show.getWorldPosition(V());a.q0=a.piece.show.getWorldQuaternion(new THREE.Quaternion());AU(p.kind==='cup'?'cup':'plate',a.p0);say(a.kind==='shelf'?'lift':'totap');}return;}
+   if(a.step==='totap'){if(a.t>.3&&!a.tapOn){try{P.water.tap(true);}catch(e){}a.tapOn=true;}if(a.t>.8){say('scrub');a.dur=rnd(2.6,4);}return;}
+   if(a.step==='scrub'){if(a.t>a.dur*.6&&a.piece.show!==a.piece.clean){const ob=a.piece.obj;ob.visible=false;a.piece.show=a.piece.clean;}if(a.t>a.dur){say('torack');}return;}
+   if(a.step==='torack'){if(a.t>.9){D.settle(a.piece.i,'rack');AU('plate',sinkP);a.piece=null;say('back');}return;}
+   if(a.step==='lift'){if(a.t>1.1){say('shelf');}return;}
+   if(a.step==='shelf'){if(a.t>1.0){D.settle(a.piece.i,'shelf');AU('plate',shelfP);a.piece=null;say('back');}return;}
+   if(a.step==='back'){if(a.t>.35)next();return;}
+   if(a.step==='end'){if(a.t>.5)endTask({ok:true});return;}};
+  a.post=dt=>{const st=a.step;const f=face2(),r=V(-f.z,0,f.x),up=V(0,1,0);const hp=bones.Hips.getWorldPosition(V());
+   let look=sinkP;let tR=null,tL=null;
+   if(st==='reachR'){const from=a.kind==='shelf'?'rack':'dirty';const st2=D.state();const i=Array.from({length:4},(_,k)=>k).find(k=>D.where(k)===from);if(i!=null){const s=D.slot(i,from).pos;tR=s.clone().add(V(0,from==='dirty'?.05:.03,0));look=s;}
+    if(a.kind==='wash')tL=holdC().addScaledVector(r,-.08).add(V(0,-.02,0));}
+   else if(a.piece){const pc=a.piece.show;
+    if(st==='totap'){const k=smooth(0,.8,a.t);const c=a.p0.clone().lerp(holdC(),k);c.y+=Math.sin(k*Math.PI)*.06;const q=a.q0.clone().slerp(holdQ(),k);pieceAt(c,q);tL=c.clone().addScaledVector(r,-.08);tR=c.clone().addScaledVector(r,.07);look=c;}
+    else if(st==='scrub'){const c=holdC();const w=Math.sin(a.t*1.3)*.15;const q=holdQ().multiply(new THREE.Quaternion().setFromAxisAngle(V(0,0,1),w));pieceAt(c,q);
+     const n=V(0,1,0).applyQuaternion(q);const ph=a.t*2*Math.PI*1.6;const e1=V(1,0,0).applyQuaternion(q),e2=V(0,0,1).applyQuaternion(q);
+     tR=c.clone().addScaledVector(n,.03).addScaledVector(e1,Math.cos(ph)*.035).addScaledVector(e2,Math.sin(ph)*.035);tL=c.clone().addScaledVector(r,-.08);look=c;}
+    else if(st==='torack'){const sl=D.slot(a.piece.i,'rack');const k=smooth(0,.85,a.t);const c=holdC().lerp(sl.pos,k);c.y+=Math.sin(k*Math.PI)*.05;pieceAt(c,holdQ().slerp(sl.quat,k));tL=c.clone().addScaledVector(r,-.06).add(V(0,.02,0));look=sl.pos;}
+    else if(st==='lift'||st==='shelf'){const sl=D.slot(a.piece.i,'shelf');const k=st==='lift'?smooth(0,1.1,a.t)*.6:.6+.4*smooth(0,.9,a.t);
+     const mid=a.p0.clone().lerp(sl.pos,.5).add(V(0,.15,0)).addScaledVector(f,-.12);const c=k<.6?a.p0.clone().lerp(mid,smooth(0,.6,k)):mid.clone().lerp(sl.pos,smooth(.6,1,k));pieceAt(c,a.q0.clone().slerp(sl.quat,k));tR=c.clone().add(V(0,-.01,0));look=c;}}
+   if(st==='back'&&a.kind==='wash')tL=holdC().addScaledVector(r,-.08);
+   /* a hand with nothing to do goes back to the clip (weights ramp, the hand glides) */a.wR+=((tR?1:0)-a.wR)*Math.min(1,dt*3.5);a.wL+=((tL?1:0)-a.wL)*Math.min(1,dt*3.5);
+   H.look=lk=lk?lk.lerp(look,1-Math.exp(-dt*6)):look.clone();H.lookW=.85;
+   const gl=(k,v,from)=>{if(!a[k])a[k]=from.clone();if(v)a[k].lerp(v,1-Math.exp(-dt*12));return a[k];};
+   if(a.wR>.01){const t=gl('gR',tR||null,palmPt('Right'));reachGrip('Right',t,a.wR);}else a.gR=null;
+   if(a.wL>.01){const t=gl('gL',tL,palmPt('Left'));reachGrip('Left',t,a.wL);}else a.gL=null;};
+  a.leave=cb=>{if(a.piece){D.settle(a.piece.i,a.piece.from==='dirty'&&a.piece.show!==a.piece.clean?'dirty':a.piece.from==='rack'?'rack':'rack');a.piece=null;}if(a.tapOn){try{P.water.tap(false);}catch(e){}}a.post=null;cb();};
+  return a;}
  function job(o){const a={step:'go',t:0,T:0,held:[]};const sp0=typeof o.pt==='function'?o.pt():o.pt;
   if(!sp0&&!o.node){a.update=()=>endTask(false);return a;}
   const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
@@ -716,7 +892,7 @@ export function createHero(ctx){
  // tool placed exactly, the stir. The integrator folds them into job() later.
  function reachTo(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
   for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+PALM);if(ex<=.01)break;
-   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(.6-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
+   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(REACH_LEAN-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):t;/* the palm, not the wrist, on the point */
   armIK(side,wt,sidePole(side),clamp(w,0,1));}
@@ -820,10 +996,7 @@ export function createHero(ctx){
    function cleanup(){const ar=arm();try{logs.forEach((l,i)=>{if(ar&&l.parent!==ar)ar.attach(l);if(home[i]){l.position.copy(home[i].p);l.quaternion.copy(home[i].q);l.visible=home[i].v;}});P.release('logArmful');}catch(e){}
     try{window.__audio&&window.__audio.carry&&window.__audio.carry(false);}catch(e){}H.carry=null;H.squat=0;a.ik=[];}
    a.leave=cb=>{cleanup();try{const o=OV();if(o&&o.open>0){if(G())G().free(o.door);o.setOpen(0);}}catch(e){}cb();};return a;},
-  dishes:(o)=>job({pt:()=>PT('sink'),stand:.42,clip:'hy_wash',loop:true,dur:[16,30],
-   start:a=>{const P=window.__props||P3;try{P.water&&P.water.tap&&P.water.tap(true);}catch(e){}},
-   tick:(a,dt)=>{a.wt=(a.wt||0)+dt;if(a.wt>3.2){a.wt=0;const P=window.__props||P3;try{if(P.dishes&&P.dishes.wash()===-1){a.T=Math.max(a.T,999);}}catch(e){}}},
-   end:a=>{const P=window.__props||P3;try{P.water&&P.water.tap&&P.water.tap(false);if(P.dishes){for(let i=0;i<4;i++)P.dishes.putAway();}}catch(e){}}}),
+  dishes:(o)=>dishesAction(o),
   supplies:(o)=>job({pt:()=>PT('pantry'),stand:.5,clip:'hy_count',loop:true,dur:[15,28]}),
   tea:MAKE.tea,
   // workshop
@@ -997,7 +1170,7 @@ export function createHero(ctx){
  function palmTo(side,t){return t?odPalm(side).distanceTo(t):9;}
  function reachGrip(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
   for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+OD_PALM);if(ex<=.01)break;
-   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();if(d.dot(fwd(root.rotation.y))<-.1)break;/* never arch backwards to reach (frame by frame: a banana back at the top of the axe swing); the arm alone goes there */const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(.6-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
+   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();if(d.dot(fwd(root.rotation.y))<-.1)break;/* never arch backwards to reach (frame by frame: a banana back at the top of the axe swing); the arm alone goes there */const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(REACH_LEAN-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>OD_PALM*1.5?s1.clone().addScaledVector(tw,(tl-OD_PALM)/tl):t;armIK(side,wt,sidePole(side),clamp(w,0,1));}
  // the axe in the world: head at `head`, handle running from the head along -dir, edge toward `blade`
@@ -1182,15 +1355,7 @@ export function createHero(ctx){
   store:(o={})=>{const a={step:'go',t:0};const P=PP();try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}H.carry='hy_carrysack';
    fridgeVisit(a,'in',()=>endTask({ok:true}));
    a.update=dt=>{if(!stepTick(a,dt))carryOv();};a.leave=cb=>{try{P.release('meatBag');P.fridge.openTo(0,.4);}catch(e){}H.carry=null;cb();};return a;},
-  eat:(o={})=>{// the plate from the stove to the table, sit, eat 10-15 s, then the plate to the sink
-   const a={step:'go',t:0,T:0};const P=PP();const dur=rnd(10,15);
-   visit(a,toolHome('plate')||PT('pan'),.45,'hy_take',[[.45,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});a.pl=1;}catch(e){}}]],()=>{a.step='serve';if(has('hy_stir'))play('hy_stir',{fade:.5});H.look=PT('pan')||null;H.lookW=.8;/* serves himself from the pan before sitting down */H.wait={t:rnd(3.5,5),then:()=>{a.step='go2';play(IDLE(),{fade:.4});goTo('chair_app',()=>{a.step='sit';sitDown(N.chair,()=>{
-     const tp=PT('table')||root.position.clone().addScaledVector(fwd(root.rotation.y),.4).setY(FIT.tableTop);try{const pl=P.tools.plate;scene.attach(pl);pl.position.copy(tp).add(V(0,.01,0));pl.quaternion.identity();}catch(e){}
-     a.step='eat';a.t=0;play(has('hy_eat')?'hy_eat':SITIDLE,{fade:.8});});});}};});
-   a.update=dt=>{if(stepTick(a,dt))return;if(a.step==='eat'){a.T+=dt;H.look=PT('table');H.lookW=.9;try{P.plate&&P.plate.setFood&&P.plate.setFood(1-a.T/dur);}catch(e){}
-     if(a.T>dur){a.step='up';standUp(N.chair,()=>{try{P.grab('plate',bones.LeftHand,{offset:V(0,.05,.08)});}catch(e){}
-       visit(a,PT('sink'),.42,'hy_take',[[.45,()=>{try{P.release('plate');a.pl=0;P.dishes&&P.dishes.setDirty(P.dishes.state().dirty+1);}catch(e){}}]],()=>endTask({ok:true}));});}}};
-   a.leave=cb=>{try{P.release('plate');}catch(e){}if(a.step==='eat'){standUp(N.chair,cb);}else cb();};return a;},
+  eat:(o={})=>eatAction(o),
   // water: the tap bucket from the pond, the drain bucket emptied outside
   fetchwater:(o={})=>{const a={step:'go',t:0};const P=PP();const pond=window.__ground&&window.__ground.pond&&window.__ground.pond.fill;
    visit(a,PT('waterShelf'),.45,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
@@ -1247,7 +1412,7 @@ export function createHero(ctx){
   once(SIT,{fade:.4,then:()=>{H.trans=false;H.seated=spot;H.fit.mode='hold';{const dx=spot.p.x-root.position.x,dz=spot.p.z-root.position.z;if(Math.hypot(dx,dz)<.3)H.slide={x:dx,z:dz,yaw:wrapA(spot.face-root.rotation.y),k:0,d:.6};}then&&then();}});}
  function standUp(spot,then){H.trans=true;H.face=spot.face;const fl=spot.floor??floorTop(BD);
   H.fit={mode:'rise',base:fl,y:spot.seat+SEAT_CLEAR,hStand:hyAt(STAND,1),hSeat:hyAt(STAND,0)};
-  once(STAND,{fade:.45,until:.9,then:()=>{H.fit=null;H.seated=null;H.trans=false;H.ground=true;H.floorY=fl;play(IDLE(),{fade:.6});H.node=spot===N.chair?'chair_app':'bed_app';then&&then();}});}
+  once(STAND,{fade:.45,until:.9,then:()=>{H.fit=null;H.seated=null;H.trans=false;H.ground=true;H.floorY=fl;play(IDLE(),{fade:.6});H.node=spot.node||(spot===N.chair?'chair_app':'bed_app');then&&then();}});}
  // lying down: sit on the edge, lean onto the left hand towards the pillow, lower the body and swing the legs up.
  // Done as a staged blend from the seated pose to the (pre-turned) sleep clip: torso leads, the legs follow; getting up is the same played backwards.
  const _bedQ=new THREE.Quaternion();
