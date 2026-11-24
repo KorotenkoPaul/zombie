@@ -651,11 +651,12 @@ export function createHero(ctx){
    if(a.step==='spoon'){H.look=pl.getWorldPosition(V());H.lookW=.9;if(a.t>.55&&a.spoon==='plate'){spoonToHand();}if(a.t>.9){say('serve');a.sc=0;}return;}
    if(a.step==='serve'){H.look=pan;H.lookW=.9;const n=Math.floor(a.t/1.35);if(n!==a.sc){a.sc=n;try{P.plate.setFood(Math.min(1,n/3));}catch(e){}AU('scrape',pan);}if(a.t>=4.05){say('spoonback');}return;}
    if(a.step==='spoonback'){H.look=pl.getWorldPosition(V());if(a.t>.5&&a.spoon==='hand'){spoonOnPlate();}if(a.t>.85){say('go2');play(IDLE(),{fade:.4});
-     goTo('kmid',()=>approachTo(a,wayPt,0,()=>{say('go2');approachTo(a,standPt.clone().addScaledVector(F,1),1,()=>{say('sit');sitDown(seat,()=>{say('place');});});}));}return;}
+     goTo('kmid',()=>approachTo(a,wayPt,0,()=>{say('go2');approachTo(a,standPt.clone().addScaledVector(F,1),1,()=>{say('sit');sitDown(seat,()=>{say('place');play(has('mc_stoolidle')?'mc_stoolidle':has('33')?'33':SITIDLE,{fade:.5});/* straight onto the upright stool idle: the generic sit idle leans him back while he sets the plate down */});});}));}return;}
    if(a.step==='go2'||a.step==='sit'){H.look=null;return;}
    if(a.step==='place'){H.look=plateSpot;H.lookW=.9;if(a.t>.9&&a.plate==='hand'){a.plate='table';plateDown(plateSpot);AU('cup',plateSpot);}if(a.t>1.3){say('pick');}return;}
    if(a.step==='pick'){H.look=plateSpot;if(a.t>.6&&a.spoon==='plate')spoonToHand();if(a.t>1){say('eat');a.cyc=0;a.T=0;a.cu=0;a.per=rnd(2.6,3.3);a.rest=0;play(has('mc_stoolidle')?'mc_stoolidle':has('33')?'33':SITIDLE,{fade:.8});}return;}/* '33' (Mixamo seated idle): the Hunyuan sit idle folds the chest back over the stool on this rig */
-   if(a.step==='eat'){a.T+=dt;{const B=actions.mc_stoolidle;if(B&&H.cur===B){B.time=.3+.28*Math.sin(a.T*.9);}}/* the CMU stool clip slumps forward from 1.0 s to 4.4 s; keep it in its upright, breathing window (0-0.6 s) */if(a.rest>0){a.rest-=dt;H.look=a.restLook;H.lookW=.6;if(a.rest<=0){a.cu=0;a.per=rnd(2.6,3.3);}return;}
+   {const B=actions.mc_stoolidle;if(B&&H.cur===B&&/^(place|pick|eat|putspoon|lift)$/.test(a.step)){a.T2=(a.T2||0)+dt;B.time=.3+.28*Math.sin(a.T2*.9);}}
+   if(a.step==='eat'){a.T+=dt;/* the CMU stool clip slumps forward from 1.0 s to 4.4 s; keep it in its upright, breathing window (0-0.6 s) */if(a.rest>0){a.rest-=dt;H.look=a.restLook;H.lookW=.6;if(a.rest<=0){a.cu=0;a.per=rnd(2.6,3.3);}return;}
     a.cu+=dt/a.per;if(a.cu>=1){a.cu=0;a.cyc++;a.per=rnd(2.5,3.4);if(a.cyc>=bites){say('putspoon');return;}if(Math.random()<.22){a.rest=rnd(2,4);a.restLook=root.position.clone().addScaledVector(F,rnd(1.5,3)).addScaledVector(V(-F.z,0,F.x),rnd(-1.6,1.2)).add(V(0,rnd(.9,1.5),0));/* out of the window / across the room, never behind him */}}
     if(a.cu>.55&&!a.bit){a.bit=1;food=Math.max(0,1-(a.cyc+1)/bites);try{P.plate.setFood(food);}catch(e){}}if(a.cu<.1)a.bit=0;
     H.look=a.cu<.32||a.cu>.85?plateSpot.clone().add(V(0,.18,0)):mouthPt().addScaledVector(headFwd(),.6).add(V(0,-.12,0));H.lookW=.6;/* eyes down to the plate, not the whole chest folded over it */return;}
@@ -669,21 +670,25 @@ export function createHero(ctx){
   // hand targets glide too (a switch of target is a move, not a jump)
   const glide=(key,v,dt,k=12,from)=>{if(!a[key]){a[key]=(from||v).clone();}a[key].lerp(v,1-Math.exp(-dt*k));return a[key];};
   // hands (contacts slot): weights ramp, never snap
-  a.post=dt=>{const st=a.step;const k=x=>Math.min(1,x);REACH_LEAN=H.seated===seat?.12:.6;try{post2(dt);}finally{REACH_LEAN=.6;}};
+  a.post=dt=>{const st=a.step;const k=x=>Math.min(1,x);REACH_LEAN=H.seated===seat||st==='sit'||st==='up'?.12:.3;/* he never folds over the plate: the plate comes to him */try{post2(dt);}finally{REACH_LEAN=.6;}};
   const post2=dt=>{const st=a.step;
    const wantL=a.plate==='hand'||st==='take'&&a.t<.7||st==='place'||st==='lift'||(st==='eat'||st==='pick'||st==='putspoon');
    const wantR=a.spoon==='hand'||(st==='spoon'&&a.t<.55)||(st==='pick'&&a.t<.6)||(st==='putspoon')||(st==='spoonback');
    a.wL+=((wantL?1:0)-a.wL)*Math.min(1,dt*3.5);a.wR+=((wantR?1:0)-a.wR)*Math.min(1,dt*3.5);
    const f=fwd(root.rotation.y),up=V(0,1,0),rt=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());
+   // sitting down / getting up: the sit clip folds the chest far over the thighs (70 deg, head into the barrel); a person lowering onto
+   // a stool keeps the chest within ~25 deg of upright: tip the spine back by the excess
+   if(st==='sit'||st==='up'){const n0=bones.Neck.getWorldPosition(V());const v=n0.sub(hp);const lv=V(v.x,0,v.z);const ang=Math.atan2(lv.length(),Math.max(1e-3,v.y));const lim=.42;
+    if(ang>lim&&lv.lengthSq()>1e-6){const ax=up.clone().cross(lv.normalize()).normalize();const ex=-(ang-lim);rotW(bones.Spine,ax,ex*.45);rotW(bones.Spine1,ax,ex*.35);rotW(bones.Spine2,ax,ex*.2);}}
    // seated: turn the chest to the plate and lean in a little (before any hand is placed)
    const seated=H.seated===seat&&(st==='place'||st==='pick'||st==='eat'||st==='putspoon'||st==='lift');a.tw+=((seated?1:0)-a.tw)*Math.min(1,dt*3);
    if(a.tw>.01){const c=plateSpot.clone();const d=V(c.x-hp.x,0,c.z-hp.z).normalize();const hf=hipsFwd();let ang=Math.atan2(hf.x*d.z-hf.z*d.x,hf.x*d.x+hf.z*d.z);/* +: to his left */
     const th=-clamp(ang*.7,-.75,.75)*a.tw;/* yaw about +y that turns the chest to the plate */for(const [b,s] of [['Spine',.35],['Spine1',.35],['Spine2',.3]])rotW(bones[b],up,th*s);rotW(bones.Neck,up,-th*.85);
-    const ax=up.clone().cross(d).normalize();const bite=st==='eat'&&!a.rest?smooth(.3,.5,a.cu)*(1-smooth(.68,.85,a.cu)):0;const lean=(.04+.07*bite)*a.tw;rotW(bones.Spine,ax,lean*.5);rotW(bones.Spine1,ax,lean*.3);rotW(bones.Spine2,ax,lean*.2);
+    const ax=up.clone().cross(d).normalize();const bite=st==='eat'&&!a.rest?smooth(.3,.5,a.cu)*(1-smooth(.68,.85,a.cu)):0;const lean=(.06+.07*bite+(st==='place'||st==='pick'||st==='lift'?.04:0))*a.tw;/* the chest goes over the thighs when the hands go to the table */rotW(bones.Spine,ax,lean*.5);rotW(bones.Spine1,ax,lean*.3);rotW(bones.Spine2,ax,lean*.2);
     if(st==='eat'&&a.cu>.68&&a.cu<.98&&!a.rest){const ch=Math.sin((a.cu-.68)*Math.PI*2*5)*.03*(1-smooth(.85,.98,a.cu));rotW(bones.Head,rt,ch);}/* chewing */}
    // left hand
    if(a.wL>.01){let t=null;
-    const carry=hp.clone().addScaledVector(f,.3).addScaledVector(rt,-.1).add(V(0,H.seated?.3:.12,0));
+    const carry=hp.clone().addScaledVector(f,.3).addScaledVector(rt,-.1).add(V(0,H.seated||st==='sit'?.3:.12,0));
     if(st==='take'&&a.plate==='home'){t=palmFor(home);}
     else if(st==='place'&&a.plate==='hand'){t=carry.lerp(palmFor(plateSpot),smooth(.05,.8,a.t));}
     else if(st==='lift'&&a.plate==='table'){t=rimL();}
@@ -762,7 +767,7 @@ export function createHero(ctx){
    const gl=(k,v,from)=>{if(!a[k])a[k]=from.clone();if(v)a[k].lerp(v,1-Math.exp(-dt*12));return a[k];};
    REACH_LEAN=.3;/* at the sink he leans a little towards the rack, never folds over it */
    if(a.wR>.01){const t=gl('gR',tR||null,palmPt('Right'));reachGrip('Right',t,a.wR);}else a.gR=null;
-   if(a.wL>.01){const t=gl('gL',tL,palmPt('Left'));reachGrip('Left',t,a.wL);}else a.gL=nullREACH_LEAN=.6;};
+   if(a.wL>.01){const t=gl('gL',tL,palmPt('Left'));reachGrip('Left',t,a.wL);}else a.gL=null;REACH_LEAN=.6;};
   a.leave=cb=>{if(a.piece){D.settle(a.piece.i,a.piece.from==='dirty'&&a.piece.show!==a.piece.clean?'dirty':a.piece.from==='rack'?'rack':'rack');a.piece=null;}if(a.tapOn){try{P.water.tap(false);}catch(e){}}a.post=null;cb();};
   return a;}
  function job(o){const a={step:'go',t:0,T:0,held:[]};const sp0=typeof o.pt==='function'?o.pt():o.pt;
