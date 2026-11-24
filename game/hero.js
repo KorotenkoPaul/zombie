@@ -405,7 +405,7 @@ export function createHero(ctx){
    try{const T=PP().tools||{};for(const n in T){const o=T[n];for(const h of ['Left','Right'])if(o&&o.parent===bones[h+'Hand']){H.stowed.push([h,n,o.position.clone(),o.quaternion.clone(),o.scale.x]);if(/Bucket|meat|log|plate/i.test(n)){onBack(n,V(h==='Left'?-.04:.04,-.06,-.3),[0,0,0]);if(SLUNG_AT[n]){scene.attach(o);slung[n]=1;try{slungPost();}catch(e){}}/* OUTDOOR: hung on its rope by slungPost (hip bandolier) at once: not one frame up at the shoulder blades, through his head (QA 14.5 cm) */}/* bulky: hung clear behind the back (phone watch: hips inside the bucket) */else onBack(n,V(h==='Left'?-.05:.05,.08,-.15),[0,0,h==='Left'?.55:-.55]);}}}catch(e){}}
   if(!H.lad){const a=N[step.from].p;const up=target.y>a.y+.01;H.lad={up,phase:up?'mount':'over',x:target.x,yBot:Math.min(a.y,target.y),yTop:Math.max(a.y,target.y)};}
   const L=H.lad;const cz=c.lz+(.32+(c.rope?.05:0))*c.side;const F=c.side>0?Math.PI:0;H.state='walk';H.ground=false;
-  const done=()=>{if(H.stowed&&H.stowed.length){for(const [h,t,pp,pq,ps] of H.stowed){try{if(slung[t]&&SLUNG_AT[t])continue;/* OUTDOOR: a slung load comes back into the hand only once the hand is down off the rungs (slingTick); at the top the raised fist put the bucket at his head (QA) */if(pp){const o=PP().tools[t];const b=bones[h+'Hand'];if(o&&b){b.add(o);o.position.copy(pp);o.quaternion.copy(pq);o.scale.setScalar(ps);}}else grabTool(t,h);}catch(e){}}H.stowed=null;}/* CLIMB HOOK: tools back into the hands */H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.ladOff=root.position.clone();H.v=L.up?.45:0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
+  const done=()=>{if(H.stowed&&H.stowed.length){for(const [h,t,pp,pq,ps] of H.stowed){try{if(slung[t]&&SLUNG_AT[t])continue;/* OUTDOOR: a slung load comes back into the hand only once the hand is down off the rungs (slingTick); at the top the raised fist put the bucket at his head (QA) */if(pp){const o=PP().tools[t];const b=bones[h+'Hand'];if(o&&b){b.add(o);o.position.copy(pp);o.quaternion.copy(pq);o.scale.setScalar(ps);}}else grabTool(t,h);}catch(e){}}H.stowed=null;}/* CLIMB HOOK: tools back into the hands */H.lad=null;H.path.shift();H.node=step.node;H.ground=true;H.ladOff=L.up?null:root.position.clone();/* WALK: only at the foot of a ladder (the rungs are in front of him); at the top he walks on off the ladder (it stopped him dead, 0.19 -> 0.01 m/s) */H.v=L.up?.45:0;H.av=0;H.stk=null;const f=floorAt(root.position.x,root.position.y,root.position.z,.2);H.floorY=(f!=null&&Math.abs(f-target.y)<.25)?f:target.y;H.fit=null;};
   // watchdog (QA P0: froze on the rope ladder for minutes): a ladder never takes longer than a slow climb; past that, land on the target
   L.age=(L.age||0)+dt;if(L.age>14+(L.yTop-L.yBot)/.3){p.copy(target);const f0=floorAt(p.x,p.y+.3,p.z,.4);if(f0!=null)p.y=f0;play(IDLE()||'0',{fade:.3});done();return;}
   if(L.phase==='mount'){H.ground=true;if(ladApproach(V(L.x,p.y,cz),F,dt)){L.phase='climb';}}
@@ -982,7 +982,7 @@ export function createHero(ctx){
   const dur=o.dur?rnd(o.dur[0],o.dur[1]):(o.clip&&!o.loop&&has(o.clip)?durOf(o.clip)*(o.reps||1):8);a.jdur=dur;
   const tools=(o.tools||[]).filter(([n])=>hasTool(n));
   const begin=()=>{const tk=tools.length&&!a.fetched;a.step=tk?'take':'work';a.t=0;o.start&&o.start(a);if(!tk)work();};
-  const work=()=>{a.step='work';a.t=0;if(o.clip&&has(o.clip)){if(o.loop)play(o.clip,{fade:.5,speed:o.speed||1});else once(o.clip,{fade:.45,speed:o.speed||1,then:()=>{if(a.step==='work'&&a.T<dur-1)play(o.idle&&has(o.idle)?o.idle:IDLE(),{fade:.5});}});}else play(IDLE(),{fade:.5});};
+  const work=()=>{a.step='work';a.t=0;if(o.clip&&has(o.clip)){if(o.loop)play(o.clip,{fade:window.__fadeIn??o.fadeIn??.5,speed:o.speed||1});else once(o.clip,{fade:.45,speed:o.speed||1,then:()=>{if(a.step==='work'&&a.T<dur-1)play(o.idle&&has(o.idle)?o.idle:IDLE(),{fade:.5});}});}else play(IDLE(),{fade:.5});};
   const go=()=>{const s=sp();if(o.node){goTo(o.node,()=>{if(o.slide===false){H.face=N[o.node].face??H.face;begin();}else approachTo(a,s,o.stand??.45,begin);});}
    else{const nn=nearNode(s);a.nn=nn;if(nn)goTo(nn,()=>approachTo(a,s,o.stand??.45,begin));else approachTo(a,s,o.stand??.45,begin);}};
   /* a tool that lives somewhere else (the hammer on the workshop bench, the wrench) is fetched by walking there and taking it in the hand,
@@ -996,7 +996,7 @@ export function createHero(ctx){
      legs for the turn (standing hips) and gave them back with a 30 cm drop (fix_rope) */const sk=H.slide?H.slide.k:1;a.skN=sk===a.skL?(a.skN||0)+1:0;a.skL=sk;if(a.t>=a.adur&&(sk>=1||a.skN>2||a.t>a.adur+1.2||window.__noTurnWait)){a.next();}return;}
    if(a.step==='take'){// GRAB: step in until the tool's grip is within arm's reach, the fist onto the grip (not the tool's origin), close the hand only there
     const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const bl=beltHas(n);const h=bl?beltPt():gripHome(n)||toolHome(n)||s;H.look=bl?null:h;H.lookW=1;
-    if(!a.st){a.st=1;a.pk=0;if(!bl)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
+    if(!a.st){a.st=1;a.pk=0;if(!bl)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) *//* the step to the tool is over: the walk clip stops with it (it went on looping through the reach: walking on the spot at the bench, fix_wall) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
     const low=!bl&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.gotIt);if(o.clear)kneesClear(o.clear,dt);/* low down: he bends his knees to it (feet stay on the boards) */
     if(a.gotIt&&low){/* GRAB: taken off the floor, the tool rises with him in front of his shins (it used to swing back through them) */if(a.sq0==null)a.sq0=H.squat||0;const up=Math.max(0,a.sq0-(H.squat||0));if(H.squat>.02)a.tsU=a.t;
      a.rg=[hand,h.clone().add(V(0,up+.06*smooth(0,.3,a.t-a.tg),0)),1-smooth(0,.35,a.t-(a.tsU??a.t))];}
@@ -1014,7 +1014,7 @@ export function createHero(ctx){
    if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';if(a.toBelt==null)a.toBelt=farHome(n);const bt=a.toBelt;const h=bt?beltPt():gripHome(n)||toolHome(n)||s;H.look=bt?null:h;H.lookW=1;
     /* a far home: the tool goes on the belt (right hip), no trip back across the house and no flying home */
     // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
-    if(!a.st){a.st=1;a.pk=0;if(!bt)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}
+    if(!a.st){a.st=1;a.pk=0;if(!bt)stepNear(h,hand);}if(H.slide&&H.slide.k<1){a.t=0;return;}if(a.st===1&&Math.abs(wrapA(H.face-root.rotation.y))<.12){a.st=2;/* once the turn on the spot is done too: the turn steps use the walk clip (stopping it mid-turn flickered idle/walk: hand jitter, fix_hinge) */if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});}
     const low=!bt&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.rel);if(o.clear)kneesClear(o.clear,dt);
     a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.rel?1-smooth(0,.35,a.t-a.tr):1)];
     if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else relTool(hand,n);}
@@ -1436,7 +1436,7 @@ export function createHero(ctx){
   fix_hinge:{clip:null,wipe:'hinge',tools:[['benchWrench','Right']],stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
   fix_window:{clip:null,wipe:true,stand:.5,def:()=>{const ps=panes();const near=ps.filter(q=>Math.abs(q.floor-root.position.y)<.8);const q=pick(near.length?near:ps);if(q){winPick=q;return q.p.clone();}winPick=null;const w=pick(WINDOWS);return N[w].p.clone().addScaledVector(fwd(N[w].face??0),.5).add(V(0,1.3,0));}},
   fix_railing:{nail:'rail',clip:pos=>hamClip(pos,'hy_railing'),standFn:pos=>has('hy_standhammer')?safeStand(pos,.38):.45,tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
-  clear_roof:{clip:'hy_clearleaves',floorHands:true,stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
+  clear_roof:{clip:'hy_clearleaves',floorHands:true,fadeIn:1,/* 50 cm down into the crouch: over a second, not at 1 m/s from a standstill */stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
   fix_chimney:{clip:null,wipe:'chimney',stand:.45,def:()=>V(-3.2,KT+1.5,1.53)}};
  // ---- the body goes to the work, not the arm ----
  // hammering at a height: below ~0.72 m he kneels on one knee (upright kneel, hands ~0.6 m), waist to chest he stands bent over it,
@@ -1457,7 +1457,8 @@ export function createHero(ctx){
  // width beyond his toes), never inside a wall or under a beam; returns the stand-off for approachTo
  function safeStand(pt,min,from,hs){const p0=from||root.position;const g0=floorAt(p0.x,p0.y+.3,p0.z,.45,.9);const p=V(p0.x,g0!=null?g0:p0.y,p0.z);/* a graph node may sit above the boards (a ladder top) */const dx=pt.x-p.x,dz=pt.z-p.z,d=Math.hypot(dx,dz);if(d<1e-3)return min;const ux=dx/d,uz=dz/d;const C=window.__collide;
   let ok=0;for(let t=0;t<=d-min+1e-6;t+=.05){let good=true;for(const e of [0,.22]){const x=p.x+ux*(t+e),z=p.z+uz*(t+e);const g=floorAt(x,p.y+.3,z,.45,.5);if(g==null||Math.abs(g-p.y)>.12){good=false;break;}}
-   if(good&&C&&C.depthAt){const x=p.x+ux*t,z=p.z+uz*t;for(const hy of hs||[.2,.5,.75,1,1.25])if(C.depthAt(x,p.y+hy,z)>.01){good=false;break;}}if(!good)break;ok=t;}
+   if(good&&C&&C.depthAt){const x=p.x+ux*t,z=p.z+uz*t;for(const hy of hs||[.2,.5,.75,1,1.25])if(C.depthAt(x,p.y+hy,z)>.01){good=false;break;}}
+   /* furniture has no collider: the desk, the bench, a barrel stop him like a wall does (he stood behind the bedroom desk, a hammer's length short of the wall) */if(good&&!window.__noFurnStand){const x=p.x+ux*t,z=p.z+uz*t,r=.2;for(const o of OBST){if(Math.abs(o.y-p.y)>.5)continue;if(p.x>o.x0-r&&p.x<o.x1+r&&p.z>o.z0-r&&p.z<o.z1+r)continue;/* he starts beside it already */if(x>o.x0-r&&x<o.x1+r&&z>o.z0-r&&z<o.z1+r){good=false;break;}}}if(!good)break;ok=t;}
   return Math.max(min,d-ok);}
  // a part he can really reach (Pavel: the body goes to the work): from the walkable spot next to it, standing where the boards end, the
  // nail must be within an arm and a hammer, at a height one of the work poses serves, with room for his body. Brain's pick stays when it
@@ -1637,7 +1638,7 @@ export function createHero(ctx){
   const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));const clip=typeof R.clip==='function'?R.clip(o.pos?pos:null):R.clip;
   const D=rnd(18,35);/* known here, so the blow's IK fades out before the job ends (no snap back to the clip) */
   const W0=R.wipe==='hinge'?hingeW():R.wipe==='rope'?ropeW():R.wipe==='chimney'?chimneyW():R.wipe&&pos?(winPick&&winPick.p.distanceTo(pos)<.01?{p:winPick.p.clone(),n:winPick.n.clone(),t:0}:wallNear(pos)):null;/* the window: walk up to the pane itself, not to a point in front of it */
-  const J=job({noCut:!!(R.standFn&&o.pos),/* the stand is measured from the node the part was checked from: no short cut off the route */faceYaw:W0?Math.atan2(-W0.n.x,-W0.n.z):null,pt:()=>W0?(W0.at?W0.at.clone():W0.p.clone().addScaledVector(W0.n,.42)):pos,/* the spot ~42 cm in front of the pane, then he turns to face it */node:pos?null:R.node,get stand(){return W0?.02:R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */lookW:R.wipe==='rope'?.45:undefined,/* fix_rope: eyes down on the low knots without folding the neck past 70 deg over the squat's bent chest (gate owl-head 72) */
+  const J=job({noCut:!!(R.standFn&&o.pos),/* the stand is measured from the node the part was checked from: no short cut off the route */faceYaw:W0?Math.atan2(-W0.n.x,-W0.n.z):null,pt:()=>W0?(W0.at?W0.at.clone():W0.p.clone().addScaledVector(W0.n,.42)):pos,/* the spot ~42 cm in front of the pane, then he turns to face it */node:pos?null:R.node,get stand(){return W0?.02:R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],fadeIn:R.fadeIn,vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */lookW:R.wipe==='rope'?.45:undefined,/* fix_rope: eyes down on the low knots without folding the neck past 70 deg over the squat's bent chest (gate owl-head 72) */
    post:R.floorHands?(a,dt)=>{squatDrop(a,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,D-a.T<.6);handsOnFloor(floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y);}:R.wipe&&pos?(a,dt)=>{const W=a.win||(a.win=W0);if(W&&W.upd)W.upd(a,dt);if(R.wipe==='rope')squatDrop(a,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,D-a.T<.6);wipeWindow(a,dt,W,D-a.T<.8);}:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{if(R.nail==='floor')kneelDrop(a,dt,floorOf(pos),D-a.T<.6);/* a floor nail is placed once he has knelt (the pelvis still turns for the first moments of the kneel) */if(R.nail==='floor'&&(a.nlT=(a.nlT||0)+dt)<1.2&&!window.__nail0)a.nl=null;const n=a.nl||(a.nl=nailOf(R,pos));
      /* a wall or rail nail right under his chin can't be struck with a hammer held in a real wrist: the blow goes a little to his right
         along the board instead (the same board, ~0.58 m from the shoulder) */
@@ -2167,12 +2168,12 @@ export function createHero(ctx){
    // BED (Pavel: the vest comes off before sleep, on this hero too): the vest is painted into the one body texture, so the torso's
    // brown leather texels become the mustard shirt under it while the vest is off, and a folded copy of the vest's own triangles
    // lies on the quilt. The mask: torso-weighted vertices whose texel is the vest's brown (not the shirt, skin or trousers).
-   const vm=new Float32Array(P.count);let nv=0;const mat0=Array.isArray(body.material)?body.material[0]:body.material;
+   const vm=new Float32Array(P.count);let nv=0;const SH=[0,0,0,0,0],VL=[0,0];const mat0=Array.isArray(body.material)?body.material[0]:body.material;
    try{const img=mat0.map&&mat0.map.image;if(img&&UV){const W_=img.width,H_=img.height;const cv=document.createElement('canvas');cv.width=W_;cv.height=H_;const cx=cv.getContext('2d',{willReadFrequently:true});cx.drawImage(img,0,0);const px=cx.getImageData(0,0,W_,H_).data;
      const tor=new Set(['Spine','Spine1','Spine2','LeftShoulder','RightShoulder'].map(bi).filter(x=>x>=0)),hip=new Set([bi('Hips')]);
      for(let i=0;i<P.count;i++){if(wOf(i,tor)<.5||wOf(i,hip)>.35)continue;const u=Math.min(W_-1,Math.max(0,UV.getX(i)*W_|0)),v=Math.min(H_-1,Math.max(0,UV.getY(i)*H_|0));const o=(v*W_+u)*4;const r=px[o]/255,gg=px[o+1]/255,b=px[o+2]/255;
-      const mx=Math.max(r,gg,b),mn=Math.min(r,gg,b),sat=mx>0?(mx-mn)/mx:0;if(gg>=r||(mx>.7&&sat<.45)||(gg/r>.72&&sat>.45)||mx<.12)continue;vm[i]=1;nv++;}}}catch(e){console.warn('vest mask',e);}
-   if(nv>200){g.setAttribute('vest',new THREE.BufferAttribute(vm,1));BT.vestU={value:0};
+      const mx=Math.max(r,gg,b),mn=Math.min(r,gg,b),sat=mx>0?(mx-mn)/mx:0;const lm=.3*r+.59*gg+.11*b;if(gg>=r||(mx>.7&&sat<.45)||(gg/r>.72&&sat>.45)||mx<.12){/* the shirt's own colour (mustard: red over green over blue, saturated, light) */if(r>gg&&gg>b&&sat>.45&&gg/r>.6&&mx>.35){SH[0]+=r;SH[1]+=gg;SH[2]+=b;SH[3]+=lm;SH[4]++;}continue;}vm[i]=1;nv++;VL[0]+=lm;VL[1]++;}}}catch(e){console.warn('vest mask',e);}
+   if(nv>200){g.setAttribute('vest',new THREE.BufferAttribute(vm,1));BT.vestU={value:0};/* the shirt colour per unit of brightness, and the vest's mean brightness: the vest texels become shirt, keeping their shading */BT.shirt=SH[4]>20?new THREE.Vector3(SH[0],SH[1],SH[2]).divideScalar(SH[4]):new THREE.Vector3(.72,.52,.2);BT.vestL=VL[1]?VL[0]/VL[1]:.25;BT.shirtL=SH[4]>20?SH[3]/SH[4]:.55;
     const keep=[];for(let t=0;t<nTri;t++){const a=vi(t,0),b=vi(t,1),c=vi(t,2);if(vm[a]&&vm[b]&&vm[c])keep.push(a,b,c);}
     const used=[...new Set(keep)];const remap=new Map(used.map((v,i)=>[v,i]));const pos=new Float32Array(used.length*3),uv=new Float32Array(used.length*2);const bb=new THREE.Box3();
     used.forEach((v,i)=>{const q=bp(v);pos.set([q.x,q.y,q.z],i*3);bb.expandByPoint(q);uv.set([UV.getX(v),UV.getY(v)],i*2);});
@@ -2181,7 +2182,7 @@ export function createHero(ctx){
    const mats=Array.isArray(body.material)?body.material:[body.material];body.material=mats.map(m0=>{const m=m0.clone();m.onBeforeCompile=sh=>{sh.uniforms.sockK=BT.sockU;sh.uniforms.vestK=BT.vestU||{value:0};const hv=!!BT.vestU;
      sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float sock;varying float vSock;'+(hv?'attribute float vest;varying float vVest;':'')).replace('#include <begin_vertex>','#include <begin_vertex>\nvSock=sock;'+(hv?'vVest=vest;':''));
      sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float sockK;varying float vSock;'+(hv?'uniform float vestK;varying float vVest;':'')).replace('#include <map_fragment>','#include <map_fragment>\n{float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.27,.25,.23)*(.8+.5*l),vSock*sockK);}'+
-      (hv?'\n{diffuseColor.rgb=mix(diffuseColor.rgb,min(diffuseColor.rgb*vec3(1.34,1.54,1.32),vec3(1.)),smoothstep(.3,.7,vVest)*vestK);}':''));};
+      (hv?'\n{float lv=dot(diffuseColor.rgb,vec3(.3,.59,.11));vec3 sh=vec3('+[BT.shirt.x,BT.shirt.y,BT.shirt.z].map(x=>Math.pow(x,2.2).toFixed(4)).join(',')+')*clamp(lv/'+Math.pow(BT.vestL,2.2).toFixed(4)+',.5,1.6);/* canvas texels are sRGB, the shader works in linear */diffuseColor.rgb=mix(diffuseColor.rgb,min(sh,vec3(1.)),smoothstep(.3,.7,vVest)*vestK);}':''));};
      m.customProgramCacheKey=()=>BT.vestU?'hero-sock-vest':'hero-sock';return m;});if(body.material.length===1)body.material=body.material[0];}
   return BT.ok=true;}catch(e){console.error('boots',e);return BT.ok=false;}}
  // world matrix the static boot needs to sit exactly where the skinned boot is drawn right now
@@ -2286,6 +2287,13 @@ export function createHero(ctx){
   const y0=dir>0?ed.seat+SEAT_CLEAR:li.seat+LIE_CLEAR,y1=dir>0?li.seat+LIE_CLEAR:ed.seat+SEAT_CLEAR;
   const tr=actions[name].getClip().tracks.find(t=>/Hips\.position$/.test(t.name));H.bedC={dir,t:0,dur:durOf(name)/BEDC_SPEED,from,to,y0,y1,u:0,plant:dir>0?1:0,then,name,hx0:tr?tr.values[0]:null,hz0:tr?tr.values[2]:null};
   once(name,{fade:dir>0?.45:.6,speed:BEDC_SPEED});}
+ // sitting on the bed edge the knees stay about hip width apart (the get-up and boot clips spread them wide: 'a wide squat', watcher f1320-1800).
+ // The thigh turns in at the hip; the foot comes with it and legPlant sets it down there.
+ const KN={w:0};function kneeNarrow(dt){const B=FIT.bed;const on=!!(B&&H.fit&&H.fit.mode==='hold'&&!H.inBed&&(BSEQ.a||!H.bedC||(H.bedC.dir<0&&H.bedC.u>.55)||(H.bedC.dir>0&&H.bedC.u<.3))&&N.bededge&&root.position.distanceTo(N.bededge.p)<.9);
+  KN.w=on?Math.min(1,KN.w+dt*2.5):Math.max(0,KN.w-dt*2.5);if(KN.w<.01)return;root.updateMatrixWorld(true);
+  const hp=wp(bones.Hips),f=fwd(root.rotation.y),right=V().crossVectors(V(0,1,0),f).normalize();
+  for(const sd of ['Left','Right']){const U=bones[sd+'UpLeg'],L=bones[sd+'Leg'];if(!U||!L)continue;const k=wp(L);const off=k.clone().sub(hp).dot(right);const lim=.19;if(Math.abs(off)<=lim)continue;
+   const k2=k.clone().addScaledVector(right,-(Math.abs(off)-lim)*Math.sign(off));turnBone(U,k,k2,KN.w);}}
  function bedClipTick(dt){const c=H.bedC;if(!c)return;c.t=Math.min(c.dur,c.t+dt);const u=c.u=c.t/c.dur;
   // across the bed: first along the edge toward the pillow, then in under the upper bunk (getting up: out first)
   if(c.hx0!=null){bones.Hips.position.x=c.hx0;bones.Hips.position.z=c.hz0;}
@@ -2411,7 +2419,7 @@ export function createHero(ctx){
   for(const [n,a,t0] of pre){const t1=a.time;if(t1===t0)continue;const w=a.getEffectiveWeight();if(w<=0)continue;const d=rmAt(n,t1).sub(rmAt(n,t0));p.add(rotY(V(d.x,0,d.z),root.rotation.y).multiplyScalar(w));if(RM[n].y)p.y+=d.y*w;}
   if(H.slide){const sl=H.slide;const pa=sl.a!=null?sl.a*.6:0,pb=sl.b!=null?Math.max(pa+.05,Math.min(1,sl.b+(1-sl.b)*.4)):1;/* WALK: he moves while stepping, not while turning on the spot (a little overlap) */const k1=smooth(pa,pb,Math.min(1,sl.k+dt/sl.d)),k0=smooth(pa,pb,sl.k);sl.k=Math.min(1,sl.k+dt/sl.d);p.x+=sl.x*(k1-k0);p.z+=sl.z*(k1-k0);if(sl.yT!=null){const r=sl.k,A=sl.a??.3,B=Math.min(sl.b??.7,.999);root.rotation.y=r<A?lerp(sl.y0,sl.yT,smooth(0,A,r)):r<B?sl.yT:lerp(sl.yT,sl.yF,smooth(B,1,r));}else root.rotation.y+=sl.yaw*(k1-k0);if(sl.k>=1)H.slide=null;}
   if(H.once){const o=H.once;const a=o.a;if(a.time>=o.end-1e-3||!a.isRunning()){H.once=null;o.then&&o.then();}}
-  edgeTick(dt);bedTick(dt);overlayTick(dt);bseqTick(dt);gtTick(dt);bedClipTick(dt);
+  edgeTick(dt);bedTick(dt);overlayTick(dt);bseqTick(dt);gtTick(dt);bedClipTick(dt);kneeNarrow(dt);
   // height: stand on the real floor, or put the hips on the seat / mattress
   /* KITCHEN: a crouch whose task is gone (cut off mid-squat) eases back up instead of staying on for the next task */
   /* the root settles for a moment after a crouch: the soles stay locked meanwhile (soleLock took the last few mm of rise for walking and let the feet jump 11-14 cm) */if(H.kSquat)H.kSqG=.6;else if((H.kSqG||0)>0)H.kSqG-=dt;
