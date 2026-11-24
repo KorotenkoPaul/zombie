@@ -269,17 +269,35 @@ export function createHero(ctx){
  const plantS={};
  // where the pelvis faces (flat): knees point that way, whatever the root yaw or a twisted clip says
  function hipsFwd(){const q=bones.Hips.getWorldQuaternion(new THREE.Quaternion());const f=V(0,0,1).applyQuaternion(q);f.y=0;const r=fwd(root.rotation.y);if(f.lengthSq()<1e-4)return r;f.normalize();if(f.dot(r)<-.2)f.negate();return f;}
+ function toesFwd(s){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)return hipsFwd();const d=T.getWorldPosition(V()).sub(F.getWorldPosition(V()));d.y=0;if(d.lengthSq()<1e-6)return hipsFwd();d.normalize();const h=hipsFwd();return d.dot(h)<0?h:d.add(h).normalize();}
  function legPlant(g,dt,pw=1){const M=window.__plantMode??2;if(M===0||pw<.01)return;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V()),k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
-   const tgt=V(a.x,g+(POSE.ankle??.1),a.z);if(H.fit&&H.fit.liftOK&&a.y>tgt.y)tgt.y=a.y;/* BED: a foot lifted by the clip (boot off) may leave the floor; it never goes through it */let pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole=fwd(root.rotation.y);pole.normalize().multiplyScalar(.35).add(hipsFwd());pole.normalize();
+   const tgt=V(a.x,g+(POSE.ankle??.1),a.z);if(H.fit&&H.fit.liftOK&&a.y>tgt.y)tgt.y=a.y;/* BED: a foot lifted by the clip (boot off) may leave the floor; it never goes through it */let pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole=fwd(root.rotation.y);pole.normalize().multiplyScalar(.35).add(toesFwd(s));pole.normalize();/* KNEES: toward the toes (the pelvis forward let a turned-out foot have its knee fall in: radio crouch) */
    if(M===1){ik2(U,L,F,tgt,pole,1,true);continue;}
    let S=plantS[s];if(!S||(pw>=.999&&S.t.distanceTo(tgt)>.3)||!S.on){S=plantS[s]={t:tgt.clone(),p:pole.clone(),on:true};}
-   const kk=1-Math.exp(-(dt||1/60)*3);S.t.lerp(tgt,kk);S.p.lerp(pole,kk).normalize();ik2(U,L,F,S.t,S.p,pw,true);}toeGuard(g,dt,pw);}
+   const kk=1-Math.exp(-(dt||1/60)*3);S.t.lerp(tgt,kk);S.p.lerp(pole,kk).normalize();ik2(U,L,F,S.t,S.p,pw,true);}toeGuard(g,dt,pw);kneeOverToes();/* KNEES: the planted crouch kept a knee that the clip had inside the toes (radio) */}
  // a knee may never bend forward (a clip glitch or an IK pole flip): re-solve that leg with the knee pointing where the pelvis faces
  function kneeGuard(){const hf=hipsFwd();for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;
    const hp=U.getWorldPosition(V()),k=L.getWorldPosition(V()),a=F.getWorldPosition(V());const mid=hp.clone().add(a).multiplyScalar(.5);const off=k.clone().sub(mid);
    const leg=a.clone().sub(hp);if(leg.lengthSq()<1e-4)continue;const ld=leg.clone().normalize();const pf=hf.clone().sub(ld.clone().multiplyScalar(hf.dot(ld)));if(pf.lengthSq()<1e-4)continue;pf.normalize();
    const o=off.clone().sub(ld.clone().multiplyScalar(off.dot(ld)));if(o.length()<.02||o.dot(pf)>-.3*o.length())continue;
-   ik2(U,L,F,a,pf.clone().add(o.normalize().multiplyScalar(.15)),1,true);}}
+   ik2(U,L,F,a,pf.clone().add(o.normalize().multiplyScalar(.15)),1,true);}
+  kneeOverToes();}
+ // KNEES: a bent knee goes out over the toes, never in past them (gate: in the radio crouch the left knee sat 15 cm inside the
+ // line from hip to foot, toes turned out 20 deg; a turning step of the motion matching swung it 8 cm in). Inward of the toe
+ // line by more than ~10 deg the leg is re-solved with the knee toward the toes, eased in by how far in it was (no snap);
+ // the ankle and the foot's own angle stay.
+ const KOT={Left:0,Right:0,f:{},b:{Left:0,Right:0},w:{}};
+ function kneeOverToes(){if(window.__noKneeToes)return;const dt=1/60;for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;
+   const hp=U.getWorldPosition(V()),k=L.getWorldPosition(V()),a=F.getWorldPosition(V()),t=T.getWorldPosition(V());const leg=a.clone().sub(hp);const ll=leg.length();if(ll<1e-3)continue;const ld=leg.clone().multiplyScalar(1/ll);
+   const off=k.clone().sub(hp);off.sub(ld.clone().multiplyScalar(off.dot(ld)));const bend=off.length();
+   const td=t.clone().sub(a);td.y=0;if(td.lengthSq()<1e-6){KOT[s]=0;continue;}td.normalize();const pf=td.clone().sub(ld.clone().multiplyScalar(td.dot(ld)));if(pf.lengthSq()<1e-4){KOT[s]=0;continue;}pf.normalize();
+   /* which side is 'in': toward the other leg */const o2=bones[(s==='Left'?'Right':'Left')+'UpLeg'].getWorldPosition(V()).sub(hp);const inw=o2.sub(ld.clone().multiplyScalar(o2.dot(ld))).sub(pf.clone().multiplyScalar(o2.dot(pf)));if(inw.lengthSq()<1e-6)continue;inw.normalize();
+   /* not for a near-straight leg (the reach clamp would move the ankle: soles came off the boards) nor a kneel (knee at the ankle's height: clear_roof) nor a foot turned well away from the pelvis */
+   const l1=hp.distanceTo(k),l2=k.distanceTo(a);const kneel=k.y<a.y+.12;const fh=hipsFwd();
+   let want=0;if(bend>.06&&ll<l1+l2-.02&&!kneel&&td.dot(fh)>.5){const ang=Math.atan2(off.dot(inw),off.dot(pf));want=smooth(.15,.4,ang);}/* radians toward the other leg, 9..23 deg */
+   /* once a frame from the pose as the clip and the legs left it; a later pass (the planted crouch re-solves the legs) only re-applies it */
+   const first=KOT.f[s]!==FRN;if(first){KOT.f[s]=FRN;KOT.b[s]=KOT[s];KOT.w[s]=want;}else KOT.w[s]=Math.max(KOT.w[s],want);KOT[s]=KOT.b[s]+clamp(KOT.w[s]-KOT.b[s],-dt*4,dt*4);if(KOT[s]<.01||(!first&&want<.01))continue;
+   ik2(U,L,F,a,pf.clone().addScaledVector(inw,-.15).normalize(),KOT[s],true);}}
  function legPlantOff(){for(const k in plantS)plantS[k].on=false;}
  // POSE: standing still, the soles stay where they were put down: idle clips sway the legs about a fixed pelvis, which slid the
  // feet 9-15 cm sideways over the boards (workshop). Each ankle is held in the world (two-bone IK) and the hips carry the sway; a
@@ -393,7 +411,7 @@ export function createHero(ctx){
   const da=wrapA(want-root.rotation.y);
   // ===== MOTION HOOK: with motion matching the stop is a human one (constant deceleration over the last step), no creeping =====
   const ladNext=motion&&nxt&&nxt.t==='ladder';// MOTION HOOK: slow down over the last steps to the ladder foot (to ~.4 m/s, the approach pace), not at it
-  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):ladNext?clamp(Math.sqrt(.16+2*1.6*Math.max(0,toT-.32))/H.walkV,0,1):1);let align=smooth(-.55,.75,Math.cos(da));/* WALK: just off a ladder the rungs are right in front of him: turn on the spot first (the first step used to go into the ladder) */if(H.ladOff){if(Math.hypot(p.x-H.ladOff.x,p.z-H.ladOff.z)<.3){if(Math.cos(da)<.75){/* once he has turned his back on the rungs he steps out while still turning (he stood 0.7 s turning on the spot: robot at the ladder exit) */const lf=H.ladOff.f;const away=lf==null?0:smooth(.35,-.3,Math.cos(root.rotation.y-lf));align=Math.min(align,away);H.pivot=1;}}else H.ladOff=null;}// a person steps out while still turning, not after
+  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):ladNext?clamp(Math.sqrt(.16+2*1.6*Math.max(0,toT-.32))/H.walkV,0,1):1);let align=smooth(-.55,.75,Math.cos(da));/* WALK: just off a ladder the rungs are right in front of him: turn on the spot first (the first step used to go into the ladder) */if(H.ladOff){if(Math.hypot(p.x-H.ladOff.x,p.z-H.ladOff.z)<.3){if(Math.cos(da)<.75){if(window.__noPivot){align=0;}else{/* once he has turned his back on the rungs he steps out while still turning (he stood 0.7 s turning on the spot: robot at the ladder exit) */const lf=H.ladOff.f;const away=lf==null?0:smooth(.35,-.3,Math.cos(root.rotation.y-lf));align=Math.min(align,away);H.pivot=1;}}}else H.ladOff=null;}// a person steps out while still turning, not after
   H.v+=clamp(vmax*align-H.v,-3.2*dt,(H.v<.5?3.2:2.4)*dt);
   stuckCheck(dt);
   // turn rate depends on speed: on the spot it takes small steps
