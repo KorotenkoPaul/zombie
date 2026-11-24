@@ -60,6 +60,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R7-10 | P2 | sleep lie-down (071a2cf) | during hy_bedlie his left arm drapes off the mattress and the open hand lies on the floor rug | f2406 | same | bed |
 | R7-11 | ok | telescope (071a2cf) | B1/W9 fixed: steps up to the tripod, eye at the eyepiece, far hand on the tube; near hand rests bent by his collar (reads as steadying himself, fine) | f1860–f4788 | r7-071a2cf/telescope_eye_at_eyepiece_ok.jpg | — |
 | R7-12 | P2 | after every ladder (071a2cf) | PATTERN: stepping off the top of a ladder he throws the head far back (face to the ceiling) with both arms out for ~0.5 s; seen entering the bedroom before the bolt (f5424–5448), at the kitchen/workshop ladders (R7-2) and after the rope ladder (R6-7). Closing the door: hand on the door edge, good; bolt slide hidden behind his body | f5424–f5652 | r7-071a2cf/bolt_head_back_after_ladder_f5424-5448.jpg | ladders / look |
+| R7-13 | P1 | hatch (071a2cf) | B10 unchanged: the open hatch lid stands up on the bedroom floor (left), he walks past it to the window and does a generic hy_take with the arm raised high at the window/wall, then the task ends; no bend down, no hand on the lid | f7572–f7872 | r7-071a2cf/hatch_take_at_window_not_lid.jpg | Character / bedtime |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
