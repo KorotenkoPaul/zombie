@@ -2681,7 +2681,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   // yawns
   const yc=actions.stretch_yawn;let yT=0;if(yc&&H.cur===yc&&yc.isRunning()){const u=yc.time/Math.max(.1,yc.getClip().duration);yT=smooth(.18,.38,u)*(1-smooth(.62,.85,u));}
   const h=hour();const tired=(h>=21.5||h<6)||t==='sleep'&&!H.inBed&&!H.bedB;
-  FACE.next-=dt;if(FACE.next<=0){FACE.next=25+faceRnd()*50;if(tired&&base===0&&t!=='eat'&&!H.inBed&&!H.bedB&&!H.bedC&&!FACE.yt&&faceRnd()<.55)FACE.yt={t:0,d:2.8+faceRnd()*1.2};}
+  if(t!==FACE.lt){FACE.lt=t;if(t==='sleep'&&!H.inBed&&faceRnd()<.7){FACE.next=1.5+faceRnd()*2.5;FACE.yq=1;}}/* off to bed: usually a yawn on the way */
+  FACE.next-=dt;if(FACE.next<=0){FACE.next=25+faceRnd()*50;if(tired&&base===0&&t!=='eat'&&!H.inBed&&!H.bedB&&!H.bedC&&!FACE.yt&&(FACE.yq||faceRnd()<.55))FACE.yt={t:0,d:2.8+faceRnd()*1.2};FACE.yq=0;}
   if(FACE.yt){const Y=FACE.yt;Y.t+=dt;const u=Y.t/Y.d;yT=Math.max(yT,smooth(0,.32,u)*(1-smooth(.68,1,u)));if(u>=1||base>0||H.inBed)FACE.yt=null;}
   if(H.inBed&&!H.bedB&&!H.bedC)yT=Math.max(yT,.1);/* asleep: lips just apart */
   if(t==='eat'&&act&&act.step==='eat'&&!act.rest&&act.cu>.68&&act.cu<.98)yT=Math.max(yT,.13*Math.max(0,Math.sin((act.cu-.68)*Math.PI*2*5))*(1-smooth(.85,.98,act.cu)));/* chewing, in step with the head */
