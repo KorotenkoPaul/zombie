@@ -280,6 +280,48 @@ function makeMaterials(renderer) {
 const STD2 = new Map(); const std2 = (c) => { if (!STD2.has(c)) STD2.set(c, new THREE.MeshStandardMaterial({ color: c, roughness: .85 })); return STD2.get(c); }; // shared per colour: fewer materials, fewer merged meshes
 // perf: every colour-only standard material is drawn through one shared vertex-coloured material per (roughness band, metal or
 // not, env-lit or not, side). bake() and the global static merge both use it, so most objects end up one or two draw calls.
+// ---------- perf: one texture atlas for the small textured props (rugs, the picture, labels, cloths) ----------
+// Each of them was its own draw call only because of its own texture. A material that has nothing but a colour map
+// (opaque, no bump/normal/emissive, not live) is drawn into one atlas: its UVs (after the map's repeat/offset) are
+// remapped into its tile, repeats are baked by tiling the image in the tile, and colour, roughness and metalness ride in
+// the vertex attributes exactly as in plainV (same shader trick), so they all merge into one mesh. A texture that a
+// Fal image replaces later (upgrade()) is redrawn into its tile when it arrives (poll).
+const ATL = (() => {
+  const src = new Map(); /* texture -> { t, gs: [{g, uv0}], u0, u1, v0, v1 } */ let mat = null, cv = null, tex = null; const PAD = 6;
+  const ok = m => m && m.isMeshStandardMaterial && !m.isMeshPhysicalMaterial && m.map && m.map.image && !m.bumpMap && !m.normalMap && !m.roughnessMap && !m.metalnessMap && !m.alphaMap && !m.aoMap && !m.emissiveMap && !m.lightMap && !m.transparent && !m.alphaTest && !m.polygonOffset && !m.vertexColors && !m.userData.keep && m.userData.env0 === undefined && m.emissive.getHex() === 0 && m.side !== THREE.BackSide && m.map.rotation === 0 && !NIGHT_METALS.includes(m) && (m.metalness < .5 || Math.abs((m.envMapIntensity ?? 1) - .9) < .35);
+  const api = {
+    take(m, g) { if (!ok(m) || !g.attributes.uv) return false; const t = m.map; t.updateMatrix(); const uv = g.attributes.uv, e = t.matrix.elements; let s = src.get(t);
+      if (!s) src.set(t, s = { t, gs: [], u0: 1e9, u1: -1e9, v0: 1e9, v1: -1e9, img: null });
+      const a = new Float32Array(uv.count * 2); for (let i = 0; i < uv.count; i++) { const u = uv.getX(i), v = uv.getY(i); const x = e[0] * u + e[3] * v + e[6], y = e[1] * u + e[4] * v + e[7]; a[i * 2] = x; a[i * 2 + 1] = y; s.u0 = Math.min(s.u0, x); s.u1 = Math.max(s.u1, x); s.v0 = Math.min(s.v0, y); s.v1 = Math.max(s.v1, y); }
+      if (s.u1 - s.u0 > 6 || s.v1 - s.v0 > 6) return false; /* a long repeated strip stays on its own texture */ s.gs.push({ g, a }); return true; },
+    mat() { if (!mat) { mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMap: ENV0 || null, envMapIntensity: .9, side: THREE.DoubleSide }); mat.userData.atlas = true;
+        mat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float vmet; varying float vMet;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMet = vmet;');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;'); };
+        mat.customProgramCacheKey = () => 'atlasV'; } return mat; },
+    // tile size: the texture's own pixels per repeat, at most 512
+    build() { if (!src.size) return; const L = [...src.values()].filter(s => s.gs.length);
+      for (const s of L) { let iw = s.t.image.width || 256, ih = s.t.image.height || 256; if (Math.max(iw, ih) <= 2 * Math.min(iw, ih)) iw = ih = Math.max(iw, ih); /* a square Fal image may replace a 1:2 canvas */ const ru = Math.max(.05, s.u1 - s.u0), rv = Math.max(.05, s.v1 - s.v0);
+        let wm = 0; for (const { g } of s.gs) { g.computeBoundingBox(); const z = g.boundingBox.getSize(new THREE.Vector3()); wm = Math.max(wm, z.x, z.y, z.z); } /* a Fal image may replace a small canvas later: at least ~300 px per metre */
+        let w = Math.min(500, Math.max(iw * ru, wm * 300)), h = Math.min(500, Math.max(ih * rv, wm * 300 * rv / ru)); const k = Math.min(1, 500 / Math.max(w, h)); /* 500 + padding: four in a 2048 row */ s.w = Math.max(16, Math.round(w * k)); s.h = Math.max(16, Math.round(h * k)); }
+      // shelf packing, tallest first: 1024², else 2048 x 1024, and only then shrink everything until it fits
+      let sc = 1, W = 1024, H = 1024;
+      for (let tries = 0; tries < 8; tries++) { if (tries === 1 && sc === 1 && W === 1024) { W = 2048; sc = 1.0001; } let x = 0, y = 0, rowH = 0, fit = true; for (const s of [...L].sort((a, b) => b.h - a.h)) { const w = Math.round(s.w * sc) + 2 * PAD, h = Math.round(s.h * sc) + 2 * PAD; if (x + w > W) { x = 0; y += rowH; rowH = 0; } if (y + h > H) { fit = false; break; } s.px = x + PAD; s.py = y + PAD; s.pw = w - 2 * PAD; s.ph = h - 2 * PAD; x += w; rowH = Math.max(rowH, h); } if (fit) break; if (tries) sc *= .85; }
+      cv = document.createElement('canvas'); cv.width = W; cv.height = H; tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; api.mat().map = tex;
+      for (const s of L) { api.draw(s);
+        // remap: atlas u = (px + (u'-u0)/(u1-u0)*pw)/W ; v: flipY, the tile's bottom is v0
+        for (const { g, a } of s.gs) { const uv = g.attributes.uv; const du = Math.max(1e-6, s.u1 - s.u0), dv = Math.max(1e-6, s.v1 - s.v0);
+          for (let i = 0; i < uv.count; i++) uv.setXY(i, (s.px + (a[i * 2] - s.u0) / du * s.pw) / W, 1 - (s.py + s.ph - (a[i * 2 + 1] - s.v0) / dv * s.ph) / H); uv.needsUpdate = true; } }
+      tex.needsUpdate = true; api.list = L.map(s => (s.t.image.src ? s.t.image.src.split('/').pop() : 'canvas' + s.t.image.width + 'x' + s.t.image.height) + ' ' + s.pw + 'x' + s.ph); },
+    // the image repeated over the tile's uv range, also into the padding (so mip levels don't bleed in the neighbours)
+    draw(s) { const x = cv.getContext('2d'), img = s.t.image; s.img = img; const du = Math.max(1e-6, s.u1 - s.u0), dv = Math.max(1e-6, s.v1 - s.v0); const cw = s.pw / du, ch = s.ph / dv;
+      x.save(); x.beginPath(); x.rect(s.px - PAD, s.py - PAD, s.pw + 2 * PAD, s.ph + 2 * PAD); x.clip();
+      const ue = PAD / cw, ve = PAD / ch;
+      for (let ku = Math.floor(s.u0 - ue); ku < Math.ceil(s.u1 + ue); ku++) for (let kv = Math.floor(s.v0 - ve); kv < Math.ceil(s.v1 + ve); kv++)
+        x.drawImage(img, s.px + (ku - s.u0) * cw, s.py + (s.v1 - (kv + 1)) * ch, cw, ch);
+      x.restore(); },
+    poll(dt) { if (!tex || (api._t = (api._t || 0) - dt) > 0) return; api._t = .5; let ch = false; for (const s of src.values()) if (s.img && s.t.image !== s.img && s.t.image && (s.t.image.complete !== false)) { api.draw(s); ch = true; } if (ch) tex.needsUpdate = true; },
+    get texture() { return tex; } };
+  return api; })();
 const PLAINV = new Map(); let ENV0 = null; /* the shared env map, taken from the metal materials */
 // roughness rides in the vertex colour's alpha (opaque materials ignore alpha), so one material covers every roughness
 function plainOf(m) {
@@ -811,6 +853,13 @@ function telescope() {
 
 // ================= round 6: things the hero handles (food, wood, gear, chores) =================
 let MX = null;
+// canvas twill for the coat: diagonal ribs, slubs, rubbed-pale wear and grime (map near white so the material colour rules)
+let _twill = null;
+function twillOf() { if (_twill) return _twill; let ls = 3131; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(128, 128, (g, w, h) => { g.fillStyle = '#F2F2F2'; g.fillRect(0, 0, w, h);
+    for (let k = -h; k < w; k += 3) { g.strokeStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.15 + LR() * .2})`; g.lineWidth = 1; g.beginPath(); g.moveTo(k, 0); g.lineTo(k + h, h); g.stroke(); }
+    for (let k = 0; k < 25; k++) { const x = LR() * w, y = LR() * h, r = 6 + LR() * 16; const gr = g.createRadialGradient(x, y, 0, x, y, r); const pale = LR() < .5; gr.addColorStop(0, pale ? 'rgba(255,250,235,.25)' : 'rgba(40,36,28,.14)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  const t = texOf(c); t.repeat.set(9, 9); const b = texOf(c, { srgb: false }); b.repeat.set(9, 9); _twill = { map: t, bumpMap: b, bumpScale: 1.2 }; return _twill; }
 function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, ...o });
   /* terracotta: fired-clay mottling, white salt bloom up by the rim, a darker damp band at the foot, scuffs (was a flat orange) */
   const tc = canvas(256, 128, (g, w, h) => { g.fillStyle = '#B5623C'; g.fillRect(0, 0, w, h);
@@ -829,9 +878,9 @@ function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStanda
       for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${90 + Math.random() * 60},${70 + Math.random() * 40},${50 + Math.random() * 30},.35)`; g.fillRect(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 5, 6 + Math.random() * 14); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 3, roughness: 1, side: THREE.DoubleSide }); })(),
     splitwood: (() => { const c = canvas(128, 256, (g) => { g.fillStyle = '#C8955E'; g.fillRect(0, 0, 128, 256); for (let i = 0; i < 40; i++) { g.strokeStyle = Math.random() < .5 ? 'rgba(120,70,35,.35)' : 'rgba(240,200,150,.35)'; g.lineWidth = .5 + Math.random() * 2; g.beginPath(); let x = Math.random() * 128; g.moveTo(x, 0); for (let y = 0; y <= 256; y += 32) { x += (Math.random() - .5) * 5; g.lineTo(x, y); } g.stroke(); } });
-      return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 2, roughness: .9 }); })(), endgrain: new THREE.MeshStandardMaterial({ map: texOf(canvas(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 4, 64, 64, 64); r.addColorStop(0, '#B8834F'); r.addColorStop(.85, '#D9AE78'); r.addColorStop(.93, '#8A5A34'); r.addColorStop(1, '#4A3020'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); g.strokeStyle = 'rgba(120,75,40,.45)'; for (let i = 6; i < 56; i += 4 + Math.random() * 4) { g.lineWidth = .8 + Math.random(); g.beginPath(); g.ellipse(64 + Math.random() * 2, 64 + Math.random() * 2, i, i * (.94 + Math.random() * .06), Math.random(), 0, Math.PI * 2); g.stroke(); } g.strokeStyle = 'rgba(60,35,20,.7)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(64, 64); g.lineTo(64 + 50 * Math.cos(1), 64 + 50 * Math.sin(1)); g.stroke(); })), roughness: .9 }),
+      return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 2, roughness: .9 }); })(), endgrain: endGrainMat(11, false),
     grille: s(0x8A7350, { roughness: 1 }), meat: s(0xA2343A, { roughness: .5 }), fat: s(0xEEDCCB, { roughness: .6 }), paper: s(0xD8C7A0, { roughness: .95 }), sack: s(0xB59B6E, { roughness: 1 }),
-    jacket: s(0x4F5A3C, { roughness: .95 }), jacketDark: s(0x3A4230, { roughness: .95 }), patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x6A4128, { roughness: .7 }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
+    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x6A4128, { roughness: .7 }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
     rope: s(0xB09A6A, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
   return MX; }
 // a box between two points (legs, struts) and a tapered rod between two points
@@ -890,6 +939,32 @@ function logGeo(vi, lo = false) {
   for (const g of parts) { for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k); if (!g.attributes.normal) g.computeVertexNormals(); }
   const geo = mergeGeometries(parts, true); geo.groups.forEach((gr, i) => { gr.materialIndex = mats[i]; }); geo.computeBoundingSphere(); _logGeos[ck] = geo; return geo;
 }
+// sawn end grain of a log left outdoors (realism sweep: the old one was a clean cartoon target with one painted line):
+// wobbly growth rings that crowd toward the bark, a pale sapwood band, the heart off-centre, radial drying checks that
+// open toward the rim, faint saw-kerf arcs, grey weathering in blotches, a dark bark rim. Bump from the same canvas.
+// chop = the chopping block's top: also axe scars (thin dark gouges in every direction) and a dirty, trampled-dark rim.
+function endGrainMat(sd, chop) { let ls = sd * 7919 + 13; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const N = 256, C = N / 2; const c = canvas(N, N, (g) => {
+    const hx = C + (LR() - .5) * 14, hy = C + (LR() - .5) * 14;
+    const r = g.createRadialGradient(hx, hy, 2, C, C, C); r.addColorStop(0, '#8E6A46'); r.addColorStop(.55, '#A9835A'); r.addColorStop(.8, '#B8956A'); r.addColorStop(.88, '#C9AA7E'); r.addColorStop(.93, '#6E4A2C'); r.addColorStop(1, '#2E1E12'); g.fillStyle = r; g.fillRect(0, 0, N, N);
+    // growth rings: wobbly closed curves, tighter outward, alternating dark latewood
+    const ph = [LR() * 6, LR() * 6, LR() * 6]; for (let k = 0, rad = 4; rad < C * .9; k++) { rad += 3.2 * (1 - rad / C * .55) + LR() * 2.2;
+      g.strokeStyle = `rgba(${70 + LR() * 20},${45 + LR() * 12},${25},${.22 + LR() * .25})`; g.lineWidth = .6 + LR() * 1.3; g.beginPath();
+      for (let a = 0; a <= 64; a++) { const t = a / 64 * Math.PI * 2; const w = rad * (1 + .035 * Math.sin(t * 2 + ph[0]) + .02 * Math.sin(t * 5 + ph[1] + k * .1) + .012 * Math.sin(t * 11 + ph[2])); const x = hx + (C - hx) * rad / C + Math.cos(t) * w, y = hy + (C - hy) * rad / C + Math.sin(t) * w; if (a) g.lineTo(x, y); else g.moveTo(x, y); } g.stroke(); }
+    // saw-kerf arcs across the face
+    g.globalAlpha = .1; for (let k = 0; k < 18; k++) { g.strokeStyle = LR() < .5 ? '#3A2616' : '#E8D2AE'; g.lineWidth = 1 + LR() * 2; g.beginPath(); g.arc(C - 260, C + (k - 9) * 14 + LR() * 6, 300, -.35, .35); g.stroke(); } g.globalAlpha = 1;
+    // weathering: grey blotches, stronger toward the rim
+    for (let k = 0; k < 120; k++) { const a = LR() * Math.PI * 2, d = Math.sqrt(LR()) * C * .88, x = C + Math.cos(a) * d, y = C + Math.sin(a) * d, rr2 = 4 + LR() * 16; const gr = g.createRadialGradient(x, y, 0, x, y, rr2); gr.addColorStop(0, `rgba(120,116,108,${.08 + .16 * d / C})`); gr.addColorStop(1, 'rgba(120,116,108,0)'); g.fillStyle = gr; g.fillRect(x - rr2, y - rr2, rr2 * 2, rr2 * 2); }
+    // drying checks: thin dark wedges from near the heart out to the bark, wider outside
+    const nc = 3 + Math.floor(LR() * 3); for (let k = 0; k < nc; k++) { let a = LR() * Math.PI * 2; const r0 = C * (.08 + LR() * .25), r1 = C * (.7 + LR() * .22); g.fillStyle = 'rgba(28,16,8,.85)'; g.beginPath(); const pts = []; for (let t = 0; t <= 1.0001; t += .1) { const rr = r0 + (r1 - r0) * t; a += (LR() - .5) * .06; pts.push([hx + Math.cos(a) * rr, hy + Math.sin(a) * rr, .3 + t * 1.8, -Math.sin(a), Math.cos(a)]); }
+      pts.forEach(([x, y, w, nx, ny], i) => { if (i) g.lineTo(x + nx * w, y + ny * w); else g.moveTo(x + nx * w, y + ny * w); }); for (let i = pts.length - 1; i >= 0; i--) { const [x, y, w, nx, ny] = pts[i]; g.lineTo(x - nx * w, y - ny * w); } g.fill(); }
+    if (chop) { // axe scars and grime
+      for (let k = 0; k < 70; k++) { const a = LR() * Math.PI * 2, d = Math.sqrt(LR()) * C * .75, x = C + Math.cos(a) * d, y = C + Math.sin(a) * d, b = LR() * Math.PI, L = 8 + LR() * 26;
+        g.strokeStyle = `rgba(40,24,12,${.35 + LR() * .4})`; g.lineWidth = .8 + LR() * 1.4; g.beginPath(); g.moveTo(x - Math.cos(b) * L / 2, y - Math.sin(b) * L / 2); g.lineTo(x + Math.cos(b) * L / 2, y + Math.sin(b) * L / 2); g.stroke();
+        g.strokeStyle = 'rgba(225,200,160,.35)'; g.lineWidth = .6; g.beginPath(); g.moveTo(x - Math.cos(b) * L / 2 + 1, y - Math.sin(b) * L / 2 + 1); g.lineTo(x + Math.cos(b) * L / 2 + 1, y + Math.sin(b) * L / 2 + 1); g.stroke(); }
+      const gr = g.createRadialGradient(C, C, C * .3, C, C, C * .92); gr.addColorStop(0, 'rgba(60,45,30,0)'); gr.addColorStop(1, 'rgba(60,45,30,.45)'); g.fillStyle = gr; g.fillRect(0, 0, N, N); }
+  });
+  return new THREE.MeshStandardMaterial({ map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 1.6, roughness: .93, color: 0xD2C6B6 }); }
 function logMats() { const X = mx(); return [X.bark, X.endgrain, X.splitwood]; }
 // vertex mask: parts whose float attribute `attr` is >= uniform `u` collapse out of view (main pass and shadow passes alike)
 function maskMat(m, attr, u, cmp = '>') { const pm = m.clone(); const ob = m.onBeforeCompile, ck = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
@@ -1043,8 +1118,26 @@ function quiver() { const X = mx(), g = new THREE.Group(); // origin at the stra
   add(g, new THREE.TorusGeometry(.057, .005, 5, 16), std2(0x3E2618), 0, -.25, 0, Math.PI / 2);
   for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025; add(g, new THREE.CylinderGeometry(.003, .003, .2, 4), std2(0xC9A875), x, .05, z); add(g, new THREE.PlaneGeometry(.025, .06), X.fletch, x, .12, z, 0, a, 0); }
   return bake(g); }
-function meatBag() { const X = mx(), g = new THREE.Group(); const s = add(g, lathe([[0, 0], [.09, 0], [.13, .05], [.14, .14], [.1, .22], [.04, .26], [.05, .3], [0, .3]], 16), X.sack, 0, -.3, 0); s.scale.set(1, 1, .8);
-  add(g, new THREE.TorusGeometry(.04, .008, 5, 12), X.rope, 0, -.04, 0, Math.PI / 2); add(g, rb(.08, .04, .06, .012), X.meat, .05, -.06, .05, .4, 0, .3); g.userData.grip = V(0, 0, 0); return bake(g); }
+// the meat sack (realism sweep: it was a smooth yellow blob with a red box stuck on it): coarse burlap with a visible weave,
+// lumpy where the cuts inside press out, gathered at the neck under a twine tie, and a dark blood-soaked patch at the bottom
+let _burlap = null;
+function burlapMat() { if (_burlap) return _burlap; let ls = 5151; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#8E7550'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 4) for (let x = 0; x < w; x += 4) { const o = ((x + y) / 4) % 2; g.fillStyle = `rgba(${o ? '196,168,118' : '70,54,34'},${.1 + LR() * .14})`; g.fillRect(x, y + (o ? 0 : 2), 3, 2); g.fillRect(x + (o ? 2 : 0), y, 2, 3); }
+    for (let k = 0; k < 14; k++) { g.strokeStyle = `rgba(60,45,28,${.2 + LR() * .2})`; g.lineWidth = 1 + LR(); g.beginPath(); const y = LR() * h; g.moveTo(0, y); g.lineTo(w, y + (LR() - .5) * 8); g.stroke(); } // slubs
+    for (let k = 0; k < 40; k++) { const x = LR() * w, y = LR() * h, r = 4 + LR() * 18; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(50,38,24,${.12 + LR() * .15})`); gr.addColorStop(1, 'rgba(50,38,24,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } // grime
+    for (let k = 0; k < 9; k++) { const x = LR() * w, y = h * (.05 + LR() * .22), r = 14 + LR() * 30; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(78,18,16,.75)'); gr.addColorStop(.7, 'rgba(70,22,18,.35)'); gr.addColorStop(1, 'rgba(70,22,18,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } // blood soaked through at the bottom (v = 0 is the bottom of the lathe)
+  });
+  const t = texOf(c); t.repeat.set(4, 1); const b = texOf(c, { srgb: false }); b.repeat.set(4, 1); t.flipY = b.flipY = false;
+  _burlap = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 1.4, roughness: 1 }); return _burlap; }
+function meatBag() { const X = mx(), g = new THREE.Group(); const lg = lathe([[0, 0], [.09, 0], [.13, .05], [.14, .14], [.11, .21], [.045, .255], [.04, .27], [.06, .3], [.05, .315], [0, .3]], 20);
+  { const P = lg.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), a = Math.atan2(z, x), r = Math.hypot(x, z); const body = Math.max(0, Math.sin(Math.min(1, y / .24) * Math.PI));
+      const k = 1 + body * (.09 * Math.sin(a * 3 + y * 20) + .06 * Math.sin(a * 5 - y * 31) + .04 * Math.cos(a * 2 + 1.3)) + (y > .255 ? .18 * Math.sin(a * 9) : 0); /* lumps of meat inside; the gathered neck frills */
+      P.setX(i, x * k); P.setZ(i, z * k); P.setY(i, y - (y < .03 ? .0 : .012 * Math.sin(a * 2) * body)); void r; } lg.computeVertexNormals(); }
+  const s = add(g, lg, burlapMat(), 0, -.3, 0); s.scale.set(1, 1, .8);
+  add(g, new THREE.TorusGeometry(.043, .006, 5, 14), X.rope, 0, -.042, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .005, 5, 14), X.rope, 0, -.05, 0, Math.PI / 2 + .12);
+  { const c = new THREE.CatmullRomCurve3([V(.04, -.045, .02), V(.07, -.07, .045), V(.075, -.12, .05)]); add(g, new THREE.TubeGeometry(c, 8, .004, 5), X.rope); } // the twine's loose end
+  g.userData.grip = V(0, 0, 0); return bake(g); }
 function logArmful() { const X = mx(), g = new THREE.Group(); for (const [x, y, v] of [[-.06, 0, 3], [.06, 0, 4], [0, .1, 5]]) { const l = logPiece(.5, .065, v); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
   for (const z of [-.14, .14]) add(g, new THREE.TorusGeometry(.12, .007, 5, 18), X.rope, 0, .04, z).scale.set(1.05, .95, 1); g.userData.grip = V(0, .05, 0); return bake(g); }
 function sawhorse() { const X = mx(), g = new THREE.Group(); const L = .95, H = .62;
@@ -1054,10 +1147,21 @@ function sawhorse() { const X = mx(), g = new THREE.Group(); const L = .95, H = 
   W(g, .22, .035, .2, .62, .02, .12, { mat: M.woodLight, ry: .6, rz: .05 }); // an off-cut on the ground
   add(g, new THREE.CircleGeometry(.22, 14), X.sawdust, .5, .004, .02, -Math.PI / 2).scale.set(1, .7, 1);
   return bake(g); }
+// the axe head: forged iron gone dark, rust blooming round the eye and along the top and bottom, hammer marks, and a
+// bright honed bevel with fine scratches along the bit (it was flat black). Extrude UVs are in metres: repeat maps the head.
+let _axeMat = null;
+function axeHeadMat() { if (_axeMat) return _axeMat; let ls = 9091; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(128, 128, (g, w, h) => { g.fillStyle = '#3B3C3F'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 60; k++) { const x = LR() * w, y = LR() * h, r = 2 + LR() * 6; g.fillStyle = `rgba(${LR() < .5 ? '20,20,22' : '90,92,96'},${.12 + LR() * .2})`; g.beginPath(); g.ellipse(x, y, r, r * (.6 + LR() * .4), LR() * 3, 0, 7); g.fill(); } // hammer marks
+    for (let k = 0; k < 55; k++) { const u = LR(), x = u < .5 ? LR() * w * .45 : LR() * w * .75, y = u < .5 ? LR() * h : (LR() < .5 ? LR() * h * .18 : h - LR() * h * .18), r = 2 + LR() * 7; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${120 + LR() * 30},${55 + LR() * 20},25,${.5 + LR() * .3})`); gr.addColorStop(1, 'rgba(110,50,20,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
+    const eg = g.createLinearGradient(w * .7, 0, w * .9, 0); eg.addColorStop(0, 'rgba(160,165,170,0)'); eg.addColorStop(1, 'rgba(170,175,180,.95)'); g.fillStyle = eg; g.fillRect(w * .7, 0, w * .3, h);
+    g.strokeStyle = 'rgba(230,232,235,.35)'; g.lineWidth = .5; for (let k = 0; k < 30; k++) { const y = LR() * h; g.beginPath(); g.moveTo(w * (.76 + LR() * .06), y); g.lineTo(w * .95, y + (LR() - .5) * 6); g.stroke(); } });
+  const t = texOf(c); t.repeat.set(5, 5); t.offset.set(.2, .5); const b = texOf(c, { srgb: false }); b.repeat.set(5, 5); b.offset.set(.2, .5);
+  _axeMat = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 1.2, metalness: .7, roughness: .55, envMap: M.env, envMapIntensity: .5 }); return _axeMat; }
 function axe() { const g = new THREE.Group(); // origin at the head; the handle runs down -y
-  const c = new THREE.CatmullRomCurve3([V(0, .02, 0), V(.01, -.25, 0), V(-.005, -.5, 0), V(.012, -.68, 0)]); add(g, new THREE.TubeGeometry(c, 16, .016, 8), M.woodLight); add(g, new THREE.SphereGeometry(.022, 10, 8), M.woodLight, .012, -.69, 0).scale.set(1, .7, 1);
+  const c = new THREE.CatmullRomCurve3([V(0, .02, 0), V(.01, -.25, 0), V(-.005, -.5, 0), V(.012, -.68, 0)]); add(g, new THREE.TubeGeometry(c, 16, .016, 8), M.woodDark); add(g, new THREE.SphereGeometry(.022, 10, 8), M.woodDark, .012, -.69, 0).scale.set(1, .7, 1); /* a worn, dark oiled handle (was pale and plain) */
   const sh = new THREE.Shape(); sh.moveTo(-.035, .03); sh.lineTo(.03, .028); sh.quadraticCurveTo(.09, .05, .13, .075); sh.quadraticCurveTo(.145, 0, .13, -.075); sh.quadraticCurveTo(.09, -.04, .03, -.028); sh.lineTo(-.035, -.03); sh.lineTo(-.035, .03);
-  add(g, EX(sh, .022, .004), M.iron, 0, 0, 0); add(g, rb(.012, .15, .026, .002), M.steel, .132, 0, 0); // honed edge
+  add(g, EX(sh, .022, .004), axeHeadMat(), 0, 0, 0); add(g, rb(.012, .15, .026, .002), M.steel, .132, 0, 0); // honed edge
   g.userData.grip = V(.01, -.55, 0); return bake(g); }
 function handSaw() { const g = new THREE.Group(); const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.5, 0); sh.lineTo(.5, .06); sh.lineTo(0, .12); sh.lineTo(0, 0); add(g, EX(sh, .0015, .0005), M.steel);
   const hs = new THREE.Shape(); hs.moveTo(-.02, -.01); hs.lineTo(-.15, .0); hs.quadraticCurveTo(-.17, .08, -.13, .15); hs.lineTo(-.02, .14); hs.lineTo(-.02, -.01); const hole = new THREE.Path(); hole.absellipse(-.09, .07, .028, .045, 0, Math.PI * 2, true); hs.holes.push(hole);
@@ -1337,7 +1441,7 @@ export function buildProps(ctx) {
   { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01, z); lp.rotation.y = .5; scene.add(lp); lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(lp); lp.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'logpile' }); PT.logpile = [lp, V(0, .9, .2)]; }
   { // chopping block (a sawn round standing on end) with the axe bitten into its top, beside the log pile
-    const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
+    const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.traverse(o => { if (o.isMesh && Array.isArray(o.material)) o.material = o.material.map(m => m === mx().endgrain ? endGrainMat(5, true) : m); }); /* the block's top: axe scars */ cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(cb); cb.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: y0, n: 'chopblock' });
     const ax = axe(); tool('axe', ax, scene, x + .05, y0 + .42 + .03, z, [0, .8, -2.25]); PT.chopblock = [cb, V(0, 0, .21)];
     const ch = new THREE.Group(); for (let i = 0; i < 7; i++) { const w = W(ch, rr(.04, .08), .012, rr(.02, .04), rr(-.35, .35), .006, rr(-.35, .35), { mat: mx().splitwood, ry: rr(0, 3), r: .004 }); void w; } ch.position.set(x, y0, z); scene.add(ch); } // wood chips around it
@@ -1463,7 +1567,7 @@ export function buildProps(ctx) {
         const dx = (X - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d <= 1.35) Y -= (d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008) * k; }
       a[i] = X; a[i + 1] = Y; }
     P.needsUpdate = true; quiltMesh.geometry.computeVertexNormals(); quiltMesh.geometry.computeBoundingSphere(); }
-  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
+  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { if (out._atlas) out._atlas.poll(dt); { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
@@ -1510,9 +1614,10 @@ export function buildProps(ctx) {
     const by = new Map(); const kill = []; const MST = out._mergeStats = {}; out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
       let g0 = lodGeo(o), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== o.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !o.material.vertexColors) g.deleteAttribute('color'); if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(o.matrixWorld);
-      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0; const pm = out._liveMats.has(m0) ? null : plainOf(m0); if (pm) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness, m0.metalness); mat = pm; key = pm.uuid + (cast ? 's' : 'n'); } else if (m0.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1));
+      g.computeBoundingSphere(); const cast = o.castShadow && g.boundingSphere.radius > CAST_R; /* only big parts cast (perf; phone stricter) */ const m0 = o.material; let key = m0.uuid + (cast ? 's' : 'n'), mat = m0; const pm = out._liveMats.has(m0) ? null : plainOf(m0); if (pm) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness, m0.metalness); mat = pm; key = pm.uuid + (cast ? 's' : 'n'); } else if (!out._liveMats.has(m0) && ATL.take(m0, g)) { if (m0.flatShading) g.computeVertexNormals(); colorize(g, m0.color, m0.roughness, m0.metalness); mat = ATL.mat(); key = 'atlas' + (cast ? 's' : 'n'); } else if (m0.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1));
       if (!by.has(key)) by.set(key, { mat, cast, gs: [] }); by.get(key).gs.push(g); kill.push(o); const rn = r.name || ('@' + r.position.toArray().map(v => v.toFixed(1))); MST[rn] = (MST[rn] || 0) + g.attributes.position.count / 3 * (cast ? 2 : 1); }); }
     for (const o of kill) o.removeFromParent();
+    ATL.build(); out._atlas = ATL;
     // a material whose casting parts add up to a few hundred triangles is not worth its own shadow draw: fold it into the non-casting mesh
     for (const [k, e] of [...by]) { if (!e.cast) continue; let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; const kn = k.slice(0, -1) + 'n'; if (n > 400) continue;
       if (by.has(kn)) { by.get(kn).gs.push(...e.gs); by.delete(k); } else e.cast = false; }
