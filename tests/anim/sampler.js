@@ -142,7 +142,7 @@ module.exports=function install(cfg){
  const propName=o=>{for(let x=o,d=0;x&&d<6;x=x.parent,d++)if(PN.has(x))return PN.get(x)+(d?'/'+d:'');return null;};
  const MOV=[];const heroRoot=hero.root;const isHero=o=>{for(let x=o;x;x=x.parent)if(x===heroRoot)return true;return false;};
  scene.traverse(o=>{if(o===scene||o.isLight||o.isCamera||isHero(o)||o.isInstancedMesh||o.isPoints||o.isSprite)return;if(o.isMesh&&o.geometry){if(!o.geometry.boundingSphere)o.geometry.computeBoundingSphere();if(o.geometry.boundingSphere.radius>2.5)return;}
-  if(!o.isMesh&&!o.isGroup&&o.type!=='Object3D')return;if(o.userData.fluid)return;/* running water (tap, pour, drip) follows the bucket or tap, nobody's hand moves it */const nm=propName(o)||[o.name,o.parent&&o.parent.name,o.parent&&o.parent.parent&&o.parent.parent.name].filter(Boolean).join('<')||(o.geometry?o.geometry.type:o.type);
+  if(!o.isMesh&&!o.isGroup&&o.type!=='Object3D')return;if(o.userData.fluid||o.userData.fx)return;/* running water (tap, pour, drip) follows the bucket or tap, nobody's hand moves it */const nm=propName(o)||[o.name,o.parent&&o.parent.name,o.parent&&o.parent.parent&&o.parent.parent.name].filter(Boolean).join('<')||(o.geometry?o.geometry.type:o.type);
   const wp=new THREE.Vector3();o.getWorldPosition(wp);let kids=0;o.traverse(()=>kids++);MOV.push({o,last:o.matrixWorld.elements.slice(),nm,id:MOV.length,n:0,at:[+wp.x.toFixed(2),+wp.y.toFixed(2),+wp.z.toFixed(2)],kids});});
  const BX=new THREE.Box3(),HP=[V(),V()],FA=V();const MI=new Map(MOV.map(m=>[m.o,m]));
  // the hatch lid swings or falls on its own after letGo (real gravity): mark those frames so the no-touch check skips them
@@ -187,7 +187,10 @@ module.exports=function install(cfg){
    // the open door sways in the wind (props.js wind()): that is not the hero moving it. Count the door only when its open/bolt value changed
    const DR=window.__props&&window.__props.door;let doorStill=false;if(DR){const v=DR.open+DR.bolt*10;doorStill=v===lastDoor;lastDoor=v;}
    const inDoor=o=>{if(!DR||!DR.obj)return false;for(let x=o;x;x=x.parent)if(x===DR.obj)return true;return false;};
-   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;if(doorStill&&inDoor(o))continue;if(carried.has(o))continue;const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
+   // a child that rides on a moving parent (bottle on the fridge door shelf while the hand swings the door by its handle) belongs to the
+   // topmost ancestor that moved at all since its last record, even below the per-frame threshold: measure the palm to that whole assembly
+   {const up=new Set();for(const o of moved){let top=o;for(let x=o.parent;x;x=x.parent){const mx=MI.get(x);if(mx&&DD.get(mx)&&DD.get(mx)[0]>1e-6)top=x;}up.add(top);}moved.clear();for(const o of up)moved.add(o);}
+   for(const o of moved){if(o.parent&&moved.has(o.parent))continue;if(doorStill&&inDoor(o))continue;if(carried.has(o))continue;{let ff=false;for(let x=o;x&&!ff;x=x.parent)if(x.userData&&x.userData.freeFall)ff=true;if(ff)continue;}/* dropped and falling under gravity (game sets userData.freeFall), like the hatch after letGo */const m=MI.get(o);m.n++;if(isHero(o))continue;o.getWorldPosition(vp);if(vp.distanceTo(hp)>2.5)continue;
     BX.setFromObject(o);if(BX.isEmpty())continue;const dh=Math.min(BX.distanceToPoint(HP[0]),BX.distanceToPoint(HP[1]));pr.push([m.id,+(dh*100).toFixed(1)]);}
    if(pr.length)r.mv=pr;hipLast=(hipLast||V()).copy(hipNow);if(hatchFree)r.hfree=1;
    // held tools: anything hung under a hand bone (not a bone); distance from that palm to the tool's mesh
@@ -196,8 +199,8 @@ module.exports=function install(cfg){
    // things that move (carried bucket, held tools, opened doors, plates): body vertices inside them. Static furniture is covered by the colliders above
    for(const o of moved)if(!isHero(o))DYN.add(o);HAND.forEach(hb=>{for(const ch of hb.children)if(!ch.isBone&&ch.visible&&!ch.isLight)DYN.add(ch);});
    const hp2=H.root.position;let best=null;
-   for(const o of DYN){if(!o.visible)continue;o.getWorldPosition(vp);if(vp.distanceTo(hp2)>1.6)continue;const nm=propName(o)||o.name||'held';
-    o.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry||m.isSkinnedMesh)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(DV);if(sz.length()<.03||sz.length()>2.5)return;
+   for(const o of DYN){if(!o.visible||o.userData.fluid||o.userData.fx)continue;o.getWorldPosition(vp);if(vp.distanceTo(hp2)>1.6)continue;const nm=propName(o)||o.name||'held';
+    o.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry||m.isSkinnedMesh||m.userData.fluid||m.userData.fx)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(DV);if(sz.length()<.03||sz.length()>2.5)return;
      DI.copy(m.matrixWorld).invert();const cx=(bb.min.x+bb.max.x)/2,cz=(bb.min.z+bb.max.z)/2,rr=Math.min(sz.x,sz.z)/2;const round=Math.abs(sz.x-sz.z)<.15*Math.max(sz.x,sz.z);
      const sc=DS.setFromMatrixScale(m.matrixWorld);const k=Math.min(sc.x,sc.y,sc.z);
      for(const [p,g2] of BODYP){if(g2===1||g2===2)continue;DL.copy(p).applyMatrix4(DI);if(DL.y<bb.min.y||DL.y>bb.max.y)continue;let d;
