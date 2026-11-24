@@ -58,7 +58,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       o.castShadow = false;
       if (pm.lampGlass && o.material === pm.lampGlass) {
         if (!panes.length) panes.push(pm.lampGlass.clone());
-        const m = panes[0]; m.emissive = new THREE.Color(0xFFB060); m.emissiveIntensity = 0; o.material = m;
+        const m = panes[0]; m.emissive = new THREE.Color(0xFFC274); m.emissiveIntensity = 0; o.material = m;
       }
     });
     return panes;
@@ -108,9 +108,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     scene.add(im); lastChain = im; return im;
   }
   let lastChain = null, lastHang = null;  // [WIND] what the last hang() built, so a lantern outside can swing in the wind
-  function hang(pos, topOff = .23) {
+  function hang(pos, topOff = .23, wallOnly = false) {
     const top = pos.clone().add(V(0, topOff, 0)), list = solids();
-    rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = rc.intersectObjects(list, false)[0];
+    rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = wallOnly ? null : rc.intersectObjects(list, false)[0];
     if (up) { const ch = chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 4, 10), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); scene.add(hook);
       ch.geometry = bakeGeo([ch, hook]); ch.position.set(0, 0, 0); ch.quaternion.identity(); ch.scale.set(1, 1, 1); scene.remove(hook); lastHang = { top: up.point.clone(), chain: ch }; return 'chain'; }
     // bracket: find the nearest vertical surface around the lantern's top
@@ -135,7 +135,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   function bulbMesh(pos, r, col = 0xFFE0A0) {
-    const m = new THREE.MeshStandardMaterial({ color: col, emissive: 0xFF9A30, emissiveIntensity: 0, roughness: .4 });
+    const m = new THREE.MeshStandardMaterial({ color: col, emissive: 0xFFAE45, emissiveIntensity: 0, roughness: .4 });
     const b = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 7), m); b.position.copy(pos); scene.add(b); return m;
   }
 
@@ -155,7 +155,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- kitchen: hanging lantern over the counter (the old front lantern hung in mid-air and was removed) ----------
   const kPos = PL.kitchenLamp ? PL.kitchenLamp.pos.clone() : V(-2.3, KT + 1.78, 1.75);
   {
-    const l = new THREE.PointLight(0xFFB25E, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
+    const l = new THREE.PointLight(0xFFC373, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     const panes = claimHousing(kPos);
     const b = bulbMesh(kPos, .07);
     add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 5.2 : 4.6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
@@ -175,20 +175,27 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
-  const bPos = V(-2.0, BD + 1.95, 2.95);   // over the aisle in front of the bunk (Props moved it), not over the top bunk
+  // photo: a wall lamp high on the back wall above the bunk, by the ladder end. Its light falls forward and down, so the
+  // upper bunk lies in the light and the lower one sits in the upper's shadow, with the floor in front lit.
+  // (The hero switches it at Props' wall switch, so it can hang out of his reach.)
+  const bPos = V(-1.0, BD + 2.55, 1.6);   // on the back wall just past the ladder end of the bunk (photo)
   {
     // Pavel: cosy, not bright. A warm, muted lantern whose main light is a shadowed cone falling down and back onto the
     // bunk, so the upper bunk throws its shadow over the lower one (one 512/1024 spot map, redrawn only while the hero
     // is in the room); a weak unshadowed fill keeps the corners and the walls above the cone from going black.
-    const l = new THREE.PointLight(0xFFA54E, 0, MOBILE ? 5.5 : 5, MOBILE ? 1.4 : 1.6); l.position.copy(bPos); scene.add(l);
-    const bs = new THREE.SpotLight(0xFFA54E, 0, 6, 1.12, .65, 1.4); bs.position.copy(bPos).add(V(0, -.08, 0));
-    bs.target.position.set(-2.25, BD + .35, 1.75); scene.add(bs, bs.target);
+    const l = new THREE.PointLight(0xFFB866, 0, MOBILE ? 5.5 : 5, MOBILE ? 1.4 : 1.6); l.position.copy(bPos); scene.add(l);
+    // a narrower cone keeps the 512 map sharp enough (no self-shadowing)
+    const bs = new THREE.SpotLight(0xFFB866, 0, 6, .95, .8, 1.4); bs.position.copy(bPos).add(V(0, -.15, .06));   // just under the lantern's base plate (it would shade the whole cone)
+    bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
-    bs.shadow.bias = -.0015; bs.shadow.normalBias = .03; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
-    const hg = housing(bPos); lastHang = null; hang(bPos); const panes = claimHousing(bPos);
+    bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
+    // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
+    // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
+    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); scene.add(bb);
+    const hg = housing(bPos); lastHang = null; hang(bPos, .23, true); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 3.6 : 3.4 }, { l, I: MOBILE ? .8 : .6 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 2 : 1.7 }, { l: bb, I: MOBILE ? 1.35 : 1.25 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -204,7 +211,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   {
     // it hangs below the kitchen floor: a downward cone (no light upward), so it lights the landing and the ladders but
     // can't shine up through the boards into the kitchen and make it look lit (no shadow map on this one)
-    const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.SpotLight(0xFFB25E, 0, 5.5, 1.1, .7, 1.6); l.position.copy(p);
+    const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.SpotLight(0xFFC373, 0, 5.5, 1.1, .7, 1.6); l.position.copy(p);
     l.target.position.copy(p).add(V(0, -3, .2)); scene.add(l, l.target);
     const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;
@@ -264,11 +271,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   {
     const g = hand.g; g.visible = false; scene.add(g);
     if (P3 && P3.lanternHousing) { const hh = new THREE.Group(); hand.housing = hh; hh.scale.setScalar(.62); hh.position.y = -.17; P3.lanternHousing(hh, .02); g.add(hh); hh.traverse(o => { if (o.isMesh) o.castShadow = false; }); }
-    const bm = new THREE.MeshStandardMaterial({ color: 0xFFE0A0, emissive: 0xFF9A30, emissiveIntensity: 0, roughness: .4 });
+    const bm = new THREE.MeshStandardMaterial({ color: 0xFFE0A0, emissive: 0xFFAE45, emissiveIntensity: 0, roughness: .4 });
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 8), bm); bulb.position.y = -.17; g.add(bulb);
     // a carried oil lantern lights a pool of ground ~3 m round him and the fog around it (the halo, and Environment's fog
     // puffs pick up the lowest lit halos). Indoors it is dimmer so it doesn't fight the room lamps.
-    const l = new THREE.PointLight(0xFFB25E, 0, 3.8, 1.5); l.position.y = -.17; g.add(l);   // short reach: no shadow map, so it must not climb through the floors above
+    const l = new THREE.PointLight(0xFFC373, 0, 3.8, 1.5); l.position.y = -.17; g.add(l);   // short reach: no shadow map, so it must not climb through the floors above
     hand.bulbPos = bulb; hand.light = l; hand.bulb = bulb;
     const s0 = add('hand', 'outside', 'oil', V(), { lights: [{ l, I: 3.4 }], emis: [[bm, 5]], haloSize: 1.5, autoFn: () => false });
     hand.L = s0.lights[0];
@@ -295,7 +302,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const hatchFx = (() => {
     const x0 = -4.28, x1 = -3.68, z0 = 2.32, z1 = 3.25, y = LV.BD + .03, depth = LV.BD - LV.KT;
     const W = x1 - x0, D = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-    const u = { k: { value: 0 }, up: { value: 0 }, col: { value: new THREE.Color(0xFFB060) } };
+    const u = { k: { value: 0 }, up: { value: 0 }, col: { value: new THREE.Color(0xFFC274) } };
     const geo = new THREE.BoxGeometry(W, depth, D, 1, 1, 1); geo.translate(0, -depth / 2, 0);
     const mat = new THREE.ShaderMaterial({ uniforms: u, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       vertexShader: 'varying float vY;varying vec2 vXZ;void main(){vY=position.y;vXZ=position.xz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
@@ -305,7 +312,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
         gl_FragColor=vec4(col*a*k*(.55+.45*edge),1.);}` });
     const m = new THREE.Mesh(geo, mat); m.position.set(cx, y, cz); m.renderOrder = 3; m.frustumCulled = false; m.visible = false; scene.add(m);
     let spot = null;
-    if (!MOBILE) { spot = new THREE.SpotLight(0xFFB060, 0, depth + 1.2, .3, .8, 1.4); spot.position.set(cx, y + .25, cz); spot.target.position.set(cx, LV.KT, cz + .15); scene.add(spot, spot.target); }
+    if (!MOBILE) { spot = new THREE.SpotLight(0xFFC274, 0, depth + 1.2, .3, .8, 1.4); spot.position.set(cx, y + .25, cz); spot.target.position.set(cx, LV.KT, cz + .15); scene.add(spot, spot.target); }
     return { m, u, spot, y };
   })();
   function updateHatch(dayK) {
@@ -326,11 +333,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     doorLight = new THREE.Object3D(); doorLight.position.set(ax[0] + dd.x * r, LG + .75, ax[1] + dd.z * r);
     // the lantern-lit cave inside the hollow: a warm light deep in it lights the carved walls, the one at the mouth spills onto the platform
     const rIn = TREE.R(LG + .7) - 1.0;
-    const cave = new THREE.PointLight(0xFFA850, 0, 3.6, 1.3); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave); doorCave = cave;
+    const cave = new THREE.PointLight(0xFFBA66, 0, 3.6, 1.3); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave); doorCave = cave;
     doorLight.position.set(ax[0] + dd.x * (r + .25), LG + .8, ax[1] + dd.z * (r + .25));
     const glow = TREE.bark && TREE.bark.material.userData.doorGlow;
     // the warm wedge that falls out of the doorway onto the landing, the roots and the path below it
-    const spill = new THREE.SpotLight(0xFFA650, 0, 9, .75, 1, 1.4);
+    const spill = new THREE.SpotLight(0xFFB862, 0, 9, .75, 1, 1.4);
     spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
     spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
     add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 6.5, sway: .02 }, { l: spill, I: 9 }], haloSize: 2.4,
@@ -358,7 +365,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (MOBILE) continue;      // phones: no separate bounce light; the room lantern has a softer, longer falloff instead
     // bounce = light thrown back by the lit walls: no falloff inside the room (decay 0, soft cut at the walls), so it
     // never makes a hot spot on whatever stands next to it (the upper bunk sat 10 cm from the old one and burned white)
-    const b = new THREE.PointLight(0xFFBE80, 0, 3.6, 0); b.position.copy(R.c); scene.add(b);
+    const b = new THREE.PointLight(0xFFCB90, 0, 3.6, 0); b.position.copy(R.c); scene.add(b);
     glows.push({ room, l: b, I: R.bounce * .5 });
   }
   for (const w of windows) {
@@ -373,7 +380,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // spill: a cone thrown OUT of the window onto the bark and leaves. A spot pointing away from the room, so it can't
     // reach the inside walls through the boards (the old point light lit a hot stripe beside the kitchen window).
     if (back && !MOBILE) {
-      const l = new THREE.SpotLight(0xFFA850, 0, 3.6, 1.05, .85, 1.6); l.position.copy(p).addScaledVector(n, .2);
+      const l = new THREE.SpotLight(0xFFBA66, 0, 3.6, 1.05, .85, 1.6); l.position.copy(p).addScaledVector(n, .2);
       l.target.position.copy(p).addScaledVector(n, 2).add(V(0, -.5, 0)); scene.add(l, l.target);
       glows.push({ room: w.room, l, I: 3, spill: true, win: w });
     }
@@ -676,7 +683,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       const share = s.kind === 'glow' ? .04 : s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
-    wgSrc.forEach((w, i) => { const v = w.k() * (1 - dayK); wgC.value[i].set(1.0 * v, .58 * v, .26 * v); });
+    wgSrc.forEach((w, i) => { const v = w.k() * (1 - dayK); wgC.value[i].set(1.0 * v, .64 * v, .32 * v); });
     for (const g of glows) {
       let v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8) * (g.win ? g.win.leak ?? 1 : 1);
       if (g.l) g.l.intensity = v;
@@ -689,6 +696,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     updateCurtains(dt, dayK); updateBeams(dayK, T); updateWisps(dt); updateHand(dt); updateHatch(dayK);
     if (pool) updatePool(dt);
     updateHeroRim(dayK);
+    // Pavel: the bedroom textiles must read warm, not moon-blue. Environment's interior mask (a LightProbe used as a parameter)
+    // turns the leftover blue night fill warm inside the rooms, same luminance (no brighter room); the moon stays outside.
+    if (!inProbe) scene.traverse(o => { if (o.isLightProbe && o.name === 'envInteriorK') inProbe = o; });
+    if (inProbe) inProbe.sh.coefficients[0].y = .85 * (1 - dayK);
     for (const w of windows) {
       // Seen from inside the room a window is dark glass with the night (or the day sky) behind it, never a lamp:
       // no warm self-glow (critic T14). The warm glow of a lit window lives outside: halo + spill light (room glow).
@@ -742,7 +753,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     for (const s of src.values()) for (const L of s.lights) if ((L.l.isPointLight || (L.l.isSpotLight && !L.l.castShadow)) && L.l !== doorCave) virt.push(L.l);
     for (const l of virt) { l.visible = false; l.castShadow = false; }
     if (doorCave) doorCave.visible = false;
-    const slots = Array.from({ length: POOL_N }, () => { const l = new THREE.SpotLight(0xFFB25E, 0, 5, Math.PI / 2 * .97, .3, 1.5); scene.add(l, l.target); return { l, v: null, w: 0, sc: 0 }; });
+    const slots = Array.from({ length: POOL_N }, () => { const l = new THREE.SpotLight(0xFFC373, 0, 5, Math.PI / 2 * .97, .3, 1.5); scene.add(l, l.target); return { l, v: null, w: 0, sc: 0 }; });
     // A slot has no shadow map, so a room lamp would light the room below through its floor (bedroom lamp -> kitchen
     // ceiling, fridge top, hood). The slot's spot shader gets a floor plane instead: nothing deeper than the lamp's own
     // floor (along the slot's straight-down axis) is lit. Encoded in the decay uniform (>= 10: 10 + 4*round(decay*4) + h),
@@ -799,6 +810,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // the cool moonlit edge of the reference painting, by day a faint neutral edge. It brightens nothing else in the room,
   // costs no light slot and no draw call. Hooked lazily, so a hero swap (?hero=old, v6, LOD) gets it too.
   const rimU = { uRimC: { value: new THREE.Color() }, uRimW: { value: new THREE.Color() }, uFill: { value: new THREE.Color() } }, RIM_NIGHT = new THREE.Color(0x7FA6E0), RIM_DAY = new THREE.Color(0xFFF1DC), FILL_C = new THREE.Color(0xFFCFA6);
+  let inProbe = null;
   let rimRoot = null, rimN = 0; const rimShared = new Set();
   function rimHook(m) {
     if (!m || m.userData.heroRim || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial || m.isMeshLambertMaterial)) return;
@@ -877,7 +889,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     addSource: (n, o = {}) => {
       if (src.has(n) || !o.pos) return false;
       const lights = [];
-      if (o.light && !MOBILE) { const l = new THREE.PointLight(o.light.color ?? 0xFFB25E, 0, o.light.dist ?? 2.5, 1.6); l.position.copy(o.pos); scene.add(l); lights.push({ l, I: o.light.I ?? 1.5 }); }
+      if (o.light && !MOBILE) { const l = new THREE.PointLight(o.light.color ?? 0xFFC373, 0, o.light.dist ?? 2.5, 1.6); l.position.copy(o.pos); scene.add(l); lights.push({ l, I: o.light.I ?? 1.5 }); }
       add(n, o.room || 'outside', KINDS[o.kind] ? o.kind : 'glow', o.pos, { lights, emis: o.mats || [], opac: o.opac || [], haloSize: o.haloSize ?? .35, autoFn: () => false });
       for (const [m] of o.mats || []) if (m) m.emissiveIntensity = 0;
       api.names = [...src.keys()]; return true;

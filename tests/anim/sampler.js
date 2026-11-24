@@ -199,11 +199,11 @@ module.exports=function install(cfg){
    // things that move (carried bucket, held tools, opened doors, plates): body vertices inside them. Static furniture is covered by the colliders above
    for(const o of moved)if(!isHero(o))DYN.add(o);HAND.forEach(hb=>{for(const ch of hb.children)if(!ch.isBone&&ch.visible&&!ch.isLight)DYN.add(ch);});
    const hp2=H.root.position;let best=null;
-   for(const o of DYN){if(!o.visible||o.userData.fluid||o.userData.fx)continue;o.getWorldPosition(vp);if(vp.distanceTo(hp2)>1.6)continue;const nm=propName(o)||o.name||'held';
+   for(const o of DYN){if(!o.visible||o.userData.fluid||o.userData.fx)continue;if(o.userData.seat&&(H.seated||H.trans))continue;/* the chair he sits on (moved under the table with him on it): the seat, not a penetration */o.getWorldPosition(vp);if(vp.distanceTo(hp2)>1.6)continue;const nm=propName(o)||o.name||'held';let off=false;for(let x=o;x&&!off;x=x.parent)if(x.userData&&x.userData.offFoot)off=true;/* boot sliding off its foot (game sets userData.offFoot): feet/shins inside it is how it comes off */
     o.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry||m.isSkinnedMesh||m.userData.fluid||m.userData.fx)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(DV);if(sz.length()<.03||sz.length()>2.5)return;
      DI.copy(m.matrixWorld).invert();const cx=(bb.min.x+bb.max.x)/2,cz=(bb.min.z+bb.max.z)/2,rr=Math.min(sz.x,sz.z)/2;const round=Math.abs(sz.x-sz.z)<.15*Math.max(sz.x,sz.z);
      const sc=DS.setFromMatrixScale(m.matrixWorld);const k=Math.min(sc.x,sc.y,sc.z);
-     for(const [p,g2] of BODYP){if(g2===1||g2===2)continue;DL.copy(p).applyMatrix4(DI);if(DL.y<bb.min.y||DL.y>bb.max.y)continue;let d;
+     for(const [p,g2] of BODYP){if(g2===1||g2===2||(off&&(g2===3||g2===4)))continue;DL.copy(p).applyMatrix4(DI);if(DL.y<bb.min.y||DL.y>bb.max.y)continue;let d;
       if(round){const rd=Math.hypot(DL.x-cx,DL.z-cz);if(rd>=rr)continue;d=Math.min(rr-rd,DL.y-bb.min.y,bb.max.y-DL.y);}
       else{if(DL.x<bb.min.x||DL.x>bb.max.x||DL.z<bb.min.z||DL.z>bb.max.z)continue;d=Math.min(DL.x-bb.min.x,bb.max.x-DL.x,DL.y-bb.min.y,bb.max.y-DL.y,DL.z-bb.min.z,bb.max.z-DL.z);}
       d*=k;if(d>.01&&(!best||d>best[2]))best=[nm,g2,d];}});}

@@ -337,7 +337,7 @@ export function createWind(opt = {}) {
       const geo = new THREE.PlaneGeometry(0.09, 0.11);
       const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
       const im = new THREE.InstancedMesh(geo, mat, N); im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      const cols = [0x6E8A3A, 0x8C9A3C, 0xB49A3A, 0xA8742E, 0x7A5A2E];
+      const cols = [0xC8902C, 0xD8A838, 0xB86A26, 0xA8742E, 0x8C9A3C, 0xC0502A]; /* autumn: orange, gold, rust, one green in six */
       const c = new THREE.Color(); for (let i = 0; i < N; i++) im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.8, 1.1)));
       o.scene.add(im); im.matrixAutoUpdate = false;   // per-instance matrices move, the mesh itself never does
       // spawn points: the leaf cards of the crown (their centres)
@@ -418,7 +418,7 @@ export function createWind(opt = {}) {
     const im = new THREE.InstancedMesh(geo, mat, LN); im.frustumCulled = false; im.name = 'leafLitter';
     const P = new Float32Array(LN * 3), on = new Uint8Array(LN); let n = 0, head = 0, dirty = false, seeded = false, seedT = 0, sweepT = 0;
     const zero = new THREE.Matrix4().makeScale(0, 0, 0), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
-    const cols = [0x8A5A26, 0xA0682A, 0x7A4E22, 0xB0823A, 0x6E5A2C, 0x94602C], c = new THREE.Color();
+    const cols = [0xA8682A, 0xC0802E, 0x8A5426, 0xC89A3A, 0xB0582A, 0x94602C], c = new THREE.Color(); /* autumn: orange-gold */
     for (let i = 0; i < LN; i++) { im.setMatrixAt(i, zero); im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.7, 1.0))); }
     o.scene.add(im); im.matrixAutoUpdate = false;
     const put = (i, x, y, z, yaw) => {
