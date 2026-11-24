@@ -108,9 +108,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     scene.add(im); lastChain = im; return im;
   }
   let lastChain = null, lastHang = null;  // [WIND] what the last hang() built, so a lantern outside can swing in the wind
-  function hang(pos, topOff = .23) {
+  function hang(pos, topOff = .23, wallOnly = false) {
     const top = pos.clone().add(V(0, topOff, 0)), list = solids();
-    rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = rc.intersectObjects(list, false)[0];
+    rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = wallOnly ? null : rc.intersectObjects(list, false)[0];
     if (up) { const ch = chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 4, 10), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); scene.add(hook);
       ch.geometry = bakeGeo([ch, hook]); ch.position.set(0, 0, 0); ch.quaternion.identity(); ch.scale.set(1, 1, 1); scene.remove(hook); lastHang = { top: up.point.clone(), chain: ch }; return 'chain'; }
     // bracket: find the nearest vertical surface around the lantern's top
@@ -175,20 +175,27 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
-  const bPos = V(-2.0, BD + 1.95, 2.95);   // over the aisle in front of the bunk (Props moved it), not over the top bunk
+  // photo: a wall lamp high on the back wall above the bunk, by the ladder end. Its light falls forward and down, so the
+  // upper bunk lies in the light and the lower one sits in the upper's shadow, with the floor in front lit.
+  // (The hero switches it at Props' wall switch, so it can hang out of his reach.)
+  const bPos = V(-1.0, BD + 2.55, 1.6);   // on the back wall just past the ladder end of the bunk (photo)
   {
     // Pavel: cosy, not bright. A warm, muted lantern whose main light is a shadowed cone falling down and back onto the
     // bunk, so the upper bunk throws its shadow over the lower one (one 512/1024 spot map, redrawn only while the hero
     // is in the room); a weak unshadowed fill keeps the corners and the walls above the cone from going black.
     const l = new THREE.PointLight(0xFFB866, 0, MOBILE ? 5.5 : 5, MOBILE ? 1.4 : 1.6); l.position.copy(bPos); scene.add(l);
-    const bs = new THREE.SpotLight(0xFFB866, 0, 6, 1.12, .65, 1.4); bs.position.copy(bPos).add(V(0, -.08, 0));
-    bs.target.position.set(-2.25, BD + .35, 1.75); scene.add(bs, bs.target);
+    // a narrower cone keeps the 512 map sharp enough (no self-shadowing)
+    const bs = new THREE.SpotLight(0xFFB866, 0, 6, .95, .8, 1.4); bs.position.copy(bPos).add(V(0, -.15, .06));   // just under the lantern's base plate (it would shade the whole cone)
+    bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
-    bs.shadow.bias = -.0015; bs.shadow.normalBias = .03; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
-    const hg = housing(bPos); lastHang = null; hang(bPos); const panes = claimHousing(bPos);
+    bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
+    // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
+    // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
+    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); scene.add(bb);
+    const hg = housing(bPos); lastHang = null; hang(bPos, .23, true); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 3.6 : 3.4 }, { l, I: MOBILE ? .8 : .6 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 2 : 1.7 }, { l: bb, I: MOBILE ? 1.35 : 1.25 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -652,7 +659,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       if (lockK > 0 && (s.name === 'kitchen' || s.name === 'bedroom' || s.name === 'workshop')) k *= 1 - .65 * lockK;
       let f = k > 0 ? flick(s, T) : 0;
       // he is at the stove feeding it: the fire is livelier, its glow dances on him and the kitchen
-      if (s.name === 'oven' && cooking) f = .82 + (f - .8) * 2.2;
+      if (s.name === 'oven' && cooking) f = .86 + (f - .8) * 1.5;   // livelier, but a room lit by a fire breathes; it doesn't strobe (was x2.2: the walls swung 3x)
       if (s.name === 'oven' && s.lights[0] && s.lights[0].l.userData.open) f += s.lights[0].l.userData.open * ((noise(T * 9 + 4) - .5) * .12 + (noise(T * 23 + 8) - .5) * .05);
       // outdoor flames feel the wind (game/wind.js): a gust makes the flame duck and stutter, then it steadies again.
       // Indoor flames stay calm. The glass of a lantern shelters it, so the dip is small.
