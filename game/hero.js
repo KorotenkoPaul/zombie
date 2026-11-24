@@ -991,7 +991,7 @@ export function createHero(ctx){
    if(a.step==='shelf'){if(a.t>1.0){D.settle(a.piece.i,'shelf');AU('plate',shelfP);a.piece=null;say('back');}return;}
    if(a.step==='back'){if(a.t>.35)next();return;}
    if(a.step==="end"){if(a.t>1.7||a.t>.5&&a.wL<.03&&a.wR<.03)endTask({ok:true});return;}};
-  a.post=dt=>{const st=a.step;const f=face2(),r=V(-f.z,0,f.x),up=V(0,1,0);const hp=bones.Hips.getWorldPosition(V());
+  a.post=dt=>{const st=a.step;a.lw=(a.lw||0)+((/^(go|approach)$/.test(st)?0:1)-(a.lw||0))*Math.min(1,dt*1.5);lifePre(a,dt,a.lw);/* life at the sink: weight shift, breath (before the hands are placed) */const f=face2(),r=V(-f.z,0,f.x),up=V(0,1,0);const hp=bones.Hips.getWorldPosition(V());
    let look=sinkP;let tR=null,tL=null;
    if(st==='reachR'){const from=a.kind==='shelf'?'rack':'dirty';const st2=D.state();const i=Array.from({length:4},(_,k)=>k).find(k=>D.where(k)===from);if(i!=null){const s=D.slot(i,from).pos;tR=s.clone().add(V(0,from==='dirty'?.05:.03,0));look=s;}
     if(a.kind==='wash')tL=holdC().addScaledVector(r,-.1).add(V(0,.07,0)).addScaledVector(f,-.06);/* waits up over the front of the basin: the elbow stays above the countertop */}
@@ -1010,7 +1010,7 @@ export function createHero(ctx){
    if(st==='back'&&a.relL&&a.t<.3)tL=a.relL.clone().add(V(0,.1*smooth(0,.3,a.t),0)).addScaledVector(f,-.05*smooth(0,.3,a.t));/* let go off the top edge: up and back, never down through the plate */
    else if(st==='back'&&a.kind==='wash'){a.relL=null;tL=holdC().addScaledVector(r,-.08);}
    /* a hand with nothing to do goes back to the clip (weights ramp, the hand glides) */a.wR+=((tR?1:0)-a.wR)*Math.min(1,dt*3.5);a.wL+=((tL?1:0)-a.wL)*Math.min(1,dt*3.5);
-   H.look=lk=lk?lk.lerp(look,1-Math.exp(-dt*6)):look.clone();H.lookW=.85;
+   H.look=lk=lk?lk.lerp(look,1-Math.exp(-dt*6)):look.clone();H.lookW=.85;lifeLook(a,dt,a.lw,.03);
    /* the hand glides to its target, lifted over the counter / basin edge on the way (never through the furniture) */
    const C=window.__collide;const clear=q=>{if(!C||!C.depthAt)return q;for(let i=0;i<20;i++){let hit=false;for(const dy of [-.04,-.015,0])if(C.depthAt(q.x,q.y+dy,q.z)>.003){hit=true;break;}if(!hit)break;q.y+=.01;}return q;};
    const gl=(k,v,from)=>{if(!a[k])a[k]=from.clone();if(v){const g=a[k];let w=v;
@@ -1234,7 +1234,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   return true;}
  // KITCHEN: a hand goes to the pot over the top: from where it hangs it rises in an arc and comes down onto the handle (Walk aca2dc2)
  function reachArc(a,side,t,dt){const R=a.arc||(a.arc={});let r=R[side];if(!r){r=R[side]={p0:bones[side+'Hand'].getWorldPosition(V()),k:0};}r.k=Math.min(1,r.k+dt/.7);const k=smooth(0,1,r.k);
-  if(r.k>=1)return t;/* up first, then over, then a few cm down onto it: no loop above the target (the old arc lifted the shorter hero's fist over his shoulder, a 12 cm jump and a 40 cm jitter, gate orig) */const ky=smooth(0,.55,r.k),kx=smooth(.2,1,r.k);const q=r.p0.clone().lerp(t,kx);q.y=r.p0.y+(t.y-r.p0.y)*ky+.05*Math.sin(Math.PI*kx);return q;}
+  if(r.k>=1)return t;/* up first, then over, then a few cm down onto it: no loop above the target (the old arc lifted the shorter hero's fist over his shoulder, a 12 cm jump and a 40 cm jitter, gate orig) */const ky=smooth(0,.4,r.k),kx=smooth(.2,1,r.k);const q=r.p0.clone().lerp(t,kx);q.y=r.p0.y+(t.y-r.p0.y)*ky+.05*Math.sin(Math.PI*kx);return q;}
  function stirPost(a,dt){const P=PP();const pot=P&&P.tools&&P.tools.pot,la=P&&P.tools&&P.tools.ladle;if(!pot||!la||la.parent!==bones.RightHand)return;
   a.sw=Math.min(1,(a.sw||0)+dt/.6);a.sa=(a.sa||0)+dt*4.6;pot.updateMatrixWorld(true);const c=pot.localToWorld(V(0,.07,0));const sh=bones.RightArm.getWorldPosition(V());
   const toMe=V(sh.x-c.x,0,sh.z-c.z).normalize();const B=c.clone().add(V(Math.cos(a.sa)*.045,0,Math.sin(a.sa)*.045));// the bowl in the soup
@@ -1269,8 +1269,28 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  let SLM=null;function chopSlice(a,bd,x){if(!SLM)SLM=new THREE.MeshStandardMaterial({color:0xE07A2A,roughness:.6});a.sl=a.sl||[];
   for(const m of a.sl)m.position.x+=Math.sign(x||1)*.007;let m=a.sl.length>=6?a.sl.shift():new THREE.Mesh(new THREE.CylinderGeometry(.014,.015,.006,12),SLM);
   if(m.parent!==bd)bd.add(m);m.position.set(x,.026,.008+(Math.random()-.5)*.012);m.rotation.set(0,0,Math.PI/2*.15*Math.sign(x||1));m.userData.t=0;a.sl.push(m);}
+
+ // ===== KITCHEN: life while he works at a counter (coordinator round 27): a slow weight shift from one leg to the other (the pelvis
+ // slides 1.5-2 cm over the loaded foot and drops a little on the free side, the feet stay planted by a two-bone leg IK), a breath in
+ // the chest, and the eyes wandering a few cm over the work with quick saccades. lifePre runs before the hands are placed (so the
+ // hands stay on their targets), lifeLook after the task has set H.look. w: 0..1 (fade in/out with the work).
+ /* its own PRNG: drawing from Math.random here would shift every later random choice of the shared (seeded) stream */
+ let lifeS=12345;const lr=(a=0,b=1)=>{lifeS=(lifeS*1103515245+12345)%2147483648;return a+(b-a)*lifeS/2147483648;};
+ function lifePre(a,dt,w=1,o={}){const L=a.life||(a.life={t:lr(0,20),T:lr(5,8),ph:lr(0,6.28),lk:V(),lkT:V(),nx:lr(.8,2)});L.t+=dt;{/* when this frame's clip did not rewrite a bone (a held or slowed pose), take our last offset off first: it must never pile up */const S=L.snap;if(S)for(const [b,pos,q,bp,bq] of S){if(pos&&b.position.distanceToSquared(pos)<1e-12)b.position.copy(bp);if(Math.abs(b.quaternion.dot(q))>1-1e-9)b.quaternion.copy(bq);}L.snap=null;}if(window.__noLife)w=0;if(w<.01)return;
+  const LB=[bones.Hips,bones.Spine,bones.Spine1,bones.Spine2].filter(Boolean),base=LB.map(b=>[b.position.clone(),b.quaternion.clone()]);
+  const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+  if(o.shift!==false){const Hb=bones.Hips;const pre={};for(const sd of ['Left','Right']){const F=bones[sd+'Foot'];if(F)pre[sd]=[F.getWorldPosition(V()),F.getWorldQuaternion(new THREE.Quaternion())];}
+   const x=Math.sin(L.t*2*Math.PI/L.T+L.ph);/* -1..1: which foot carries him */
+   const d=r.clone().multiplyScalar(.018*x*w).add(V(0,-.006*Math.abs(x)*w,0));const wp=Hb.getWorldPosition(V()).add(d);Hb.position.copy(Hb.parent.worldToLocal(wp));Hb.updateMatrixWorld(true);
+   rotW(Hb,f,-.035*x*w);rotW(bones.Spine,f,.022*x*w);rotW(bones.Spine1,f,.013*x*w);/* the pelvis drops on the free side, the chest stays upright */root.updateMatrixWorld(true);
+   for(const sd of ['Left','Right']){const P=pre[sd];if(!P)continue;const U=bones[sd+'UpLeg'],Lg=bones[sd+'Leg'],F=bones[sd+'Foot'];const k=Lg.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(P[0]).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole.copy(f);pole.normalize().lerp(f,.3);
+    ik2(U,Lg,F,P[0],k.clone().add(pole),1,false);const pq=F.parent.getWorldQuaternion(new THREE.Quaternion());F.quaternion.copy(pq.invert().multiply(P[1]));F.updateMatrixWorld(true);}}
+  {const b=Math.sin(L.t*2*Math.PI/4.3);rotW(bones.Spine2,r,-.012*b*w);/* a breath: the chest rises and opens a little */}root.updateMatrixWorld(true);
+  L.snap=LB.map((b,i)=>[b,i===0?b.position.clone():null,b.quaternion.clone(),base[i][0],base[i][1]]);}
+ function lifeLook(a,dt,w=1,amp=.035){const L=a.life;if(window.__noLife)return;if(!L||w<.01||!H.look||!H.look.isVector3)return;L.nx-=dt;if(L.nx<=0){L.nx=lr(.7,2.4);L.lkT.set(lr(-1,1),lr(-.6,.6),lr(-1,1)).multiplyScalar(amp);}
+  L.lk.lerp(L.lkT,1-Math.exp(-dt*14));/* a saccade: quick, then still */H.look=H.look.clone().addScaledVector(L.lk,w);}
  function chopPost(a,dt){const P=PP();const bd=P&&P.tools&&P.tools.board,kn=P&&P.tools&&P.tools.knife;if(!bd||!kn||kn.parent!==bones.RightHand)return;
-  a.cw=Math.min(1,(a.cw||0)+dt/.7);bd.updateMatrixWorld(true);const L=v=>bd.localToWorld(v);
+  a.cw=Math.min(1,(a.cw||0)+dt/.7);lifePre(a,dt,smooth(.3,1,a.cw));bd.updateMatrixWorld(true);const L=v=>bd.localToWorld(v);
   const sh=bones.RightArm.getWorldPosition(V());const c0=L(V(0,.022,.045));const toMe=V(sh.x-c0.x,0,sh.z-c0.z).normalize();
   const xr=L(V(1,0,0)).sub(L(V(0,0,0)));xr.y=0;xr.normalize();const rt=V(-toMe.z,0,toMe.x).multiplyScalar(-1);/* his right */const sx=xr.dot(rt)>=0?1:-1;// board +x on his right?
   // the cut moves along the carrot toward its thin end, then starts again
@@ -1290,11 +1310,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
      the counter's front edge); it is carried at full IK from where it was, up over the edge in an arc, and down onto the carrot */
   if(!a.lh0)a.lh0=bones.LeftHand.getWorldPosition(V());const e=smooth(0,1,a.cw);const lp=a.lh0.clone().lerp(lp0,e).add(V(0,.16*Math.sin(Math.PI*Math.min(1,e*1.15)),0));if(e>=1)lp.copy(lp0);
   const lw=Math.min(1,a.cw*4)*.95;gripNoLean('Left',lp,lw);if(G&&G.late)G.late(()=>gripNoLean('Left',lp,lw));
-  H.look=cut;H.lookW=1;}
+  H.look=cut;H.lookW=1;lifeLook(a,dt,smooth(.3,1,a.cw),.03);}
  Object.assign(MAKE,{
   // kitchen
   chop:(o)=>job({pt:()=>PT('board'),stand:.3,/* KITCHEN (watcher B8): no hy_chop clip (it chopped at hip height under the worktop, bow-legged, the left hand hanging): he stands upright at the board, the knife is held by hand IK and rocks on its tip over the carrot, the left hand holds the carrot */loop:true,dur:[22,40],tools:[['knife','Right']],vary:false,post:(a,dt)=>chopPost(a,dt),end:a=>{if(a.sl){for(const m of a.sl)m.parent&&m.parent.remove(m);a.sl=null;}if(a.chHold){a.chHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
-  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.45,/* POT: standing right up at the stove (pushR .15) put his feet in the oven door and the fist through the stove front: back at .45 *//* KITCHEN: no hy_stir clip (it sways the whole body and mimes beside the pot): the stirring arm is hand IK (stirPost), the body stands calm */loop:true,dur:[25,45],tools:[['ladle','Right']],vary:false,post:(a,dt)=>stirPost(a,dt),end:a=>{if(a.stirHold){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
+  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.45,pushR:.23,/* the oven door's handle bar stands out past the stove box: 3 cm more room for his toes *//* POT: standing right up at the stove (pushR .15) put his feet in the oven door and the fist through the stove front: back at .45 *//* KITCHEN: no hy_stir clip (it sways the whole body and mimes beside the pot): the stirring arm is hand IK (stirPost), the body stands calm */loop:true,dur:[25,45],tools:[['ladle','Right']],vary:false,post:(a,dt)=>stirPost(a,dt),end:a=>{if(a.stirHold){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
   stoke:(o)=>{// KITCHEN: logs from the woodpile into the oven, all by hand. Squat at the pile, both palms on the logs, the armful goes into the
    // left arm; walk over cradling it; squat at the oven, the right hand takes the door handle and lowers the door as far as the hand carries it;
    // one log after another: the right hand takes it out of the left arm and pushes it into the fire; the right hand lifts the door shut; stand up.
@@ -1336,7 +1356,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     if(a.step==='up'){const h=o.handle(V());a.ik=[['Right',h,1-smooth(0,.7,a.t)]];sqTo(0,dt,.9);if(a.t>.75&&(H.squat||0)<.01){cleanup();play(IDLE(),{fade:.5});endTask({ok:true});a.step='done';}return;}};
    // while squatting at the oven the armful rests on his left thigh (the left forearm across it), never dangling to the floor
    const lap=()=>{const hp=bones.Hips.getWorldPosition(V());const f=fwd(root.rotation.y);return hp.addScaledVector(f,.34).addScaledVector(rightOf(),-.14).add(V(0,-.02,0));};
-   a.post=()=>{/* the gaze glides between the handle, the fire and the logs (a new look target turned head and spine at once: the head jumped 16 cm and the arms with it) */if(H.look){a.lk=a.lk?a.lk.lerp(H.look,1-Math.exp(-6/60)):H.look.clone();H.look=a.lk.clone();}
+   a.post=dt=>{dt=dt||1/60;{const on=/^(ovsq|open|let|log|shut)$/.test(a.step);a.lw=(a.lw||0)+((on?1:0)-(a.lw||0))*Math.min(1,dt*1.5);lifePre(a,dt,a.lw,{shift:false});/* squatting at the oven: a breath, no weight shift */}/* the gaze glides between the handle, the fire and the logs (a new look target turned head and spine at once: the head jumped 16 cm and the arms with it) */if(H.look){a.lk=a.lk?a.lk.lerp(H.look,1-Math.exp(-6/60)):H.look.clone();H.look=a.lk.clone();}lifeLook(a,dt,a.lw,.04);
     const ik=(a.ik||[]).slice();if(/^(ovsq|open|let|log|shut)$/.test(a.step)&&a.got&&logs.some(l=>l.visible&&l.parent!==bones.RightHand)){ik.unshift(['Left',lap(),a.step==='ovsq'?smooth(0,.6,a.t):1]);a.lapW=1;}
     else if((a.lapW||0)>0){/* the last log gone: the left arm leaves his lap slowly (it dropped 7-15 cm at once) */a.lapW=Math.max(0,a.lapW-1/60/.5);ik.unshift(['Left',lap(),smooth(0,1,a.lapW)]);}
     for(const [sd,t,w] of ik)if(t&&w>.01)reachGrip(sd,t,Math.min(1,w));};
