@@ -885,7 +885,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // otherwise our own small lantern hangs from the fingers
     attachHand: (bone, off = V(0, -.04, .02), carried = null) => {
       if (!bone) return false; const ws = bone.getWorldScale(V()).x || 1;
-      if (!carried) carried = bone.children.find(c => c !== hand.g && !c.isBone && !c.isLight && c.visible !== false) || null;
+      // the carried lantern is a child with meshes: the rig's end-effector helpers (mixamorigRightHandMiddle4, a bare Object3D)
+      // also hang off the hand bone, and picking one put the flame at the world origin (an empty box's centre), far below him:
+      // on night trips his lantern stayed dark and lit nothing
+      const hasMesh = o => { let m = false; o.traverse(x => { if (x.isMesh) m = true; }); return m; };
+      if (!carried) carried = bone.children.find(c => c !== hand.g && !c.isBone && !c.isLight && c.visible !== false && hasMesh(c)) || null;
       bone.add(hand.g); hand.g.scale.setScalar(1 / ws); hand.g.visible = true; hand.attached = bone; bone.getWorldPosition(hand.prev);
       if (carried) {
         bone.updateMatrixWorld(true); const c = new THREE.Box3().setFromObject(carried).getCenter(V()); bone.worldToLocal(c);
