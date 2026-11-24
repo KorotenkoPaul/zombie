@@ -1752,6 +1752,13 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  const PP=()=>window.__props||P3;
  // WORKSHOP HOOK ("Сделать работу в мастерской естественной"): saw, sharpen and fixlamp are job()s in game/workshop.js; they write only the hands (job post)
  {const WSH=createWorkshop({THREE,V,H,root,bones,job,PP,AU,smooth,rnd,grabTool,relTool,scene,armIK,sidePole,P3,OBST});MAKE.saw=WSH.saw;MAKE.sharpen=WSH.sharpen;MAKE.fixlamp=WSH.fixlamp;MAKE.craft=WSH.craft;H.workshop=WSH;}
+ /* the quiver lies on his back whatever the body: the back's surface is found on the skinned mesh itself (the adult hero's thick
+    jumper needed it 5 cm further out than the slim original, where it then floated a hand's width off the vest: film, hunt) */
+ function quiverSpot(){const x=.06,y=.2;let zb=null;/* y = the strap ring at its top; the tube (radius .055) runs .52 down from it */
+  try{bones.Spine2.updateWorldMatrix(true,false);const ms=[];root.traverse(o=>{if(o.isSkinnedMesh&&o.visible)ms.push(o);});
+   for(const yy of [-.25,-.15,-.05,.05,.12]){const from=bones.Spine2.localToWorld(V(x,yy,-.6)),to=bones.Spine2.localToWorld(V(x,yy,0));const rc=new THREE.Raycaster(from,to.clone().sub(from).normalize(),0,.6);
+    const hit=rc.intersectObjects(ms,false)[0];if(hit){const z=bones.Spine2.worldToLocal(hit.point.clone()).z;zb=zb==null?z:Math.min(zb,z);}}}catch(e){}
+  return V(x,y,clamp(zb??-.1,-.3,0)-.065);}/* the tube's side on the furthest-out point of his back over its length */
  function onBack(n,off,rot){try{PP().grab(n,bones.Spine2,{offset:off,rot:new THREE.Quaternion().setFromEuler(new THREE.Euler(...rot))});}catch(e){}}
  // a short station step: walk up to a world point, play a one-off clip, call cb at fraction `at` of the clip, then go on
  /* the supply bucket shelf: he always stands square in front of it, wherever he comes from (from the sink side approachTo + pushOut
@@ -1813,7 +1820,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  const peg=n=>{const p=PT(n);if(!p)return null;const q=p.clone();q.hand=true;/* hand height: stand on the floor below it, not on a floor level with it */return q;};
  function gearOn(a,o,then){const seq=[];
   if(o.jacket&&!GEAR.coat&&COAT)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketon',[[.14,()=>{try{PP().setHere&&PP().setHere('jacket',false);}catch(e){}COAT.on=true;GEAR.coat=true;}],[.55,()=>AU('zip')]]/* no rigid jacket in the hand: it leaves the peg at the touch and settles on the body (skinned coat fades in) */,next));
-  if(o.bow&&!GEAR.bow)seq.push(next=>bowVisit(a,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',V(.06,.2,-.21),[0,0,-.18]);onBack('bow',V(-.02,.06,-.15),[0,0,.55]);/* OUTDOOR: slung across the back, both hands free for the ladder (Pavel: bow on the back) */GEAR.bow=true;}]],next));
+  if(o.bow&&!GEAR.bow)seq.push(next=>bowVisit(a,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',quiverSpot(),[0,0,-.18]);onBack('bow',V(-.02,.06,-.15),[0,0,.55]);/* OUTDOOR: slung across the back, both hands free for the ladder (Pavel: bow on the back) */GEAR.bow=true;}]],next));
   if(o.lantern&&!GEAR.lantern&&hasTool('lantern'))seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{PP().grab('lantern',bones.RightHand,{offset:V(0,.06,.03)});window.__lights&&window.__lights.attachHand&&window.__lights.attachHand(bones.RightHand);window.__lights.set('hand',true);}catch(e){}GEAR.lantern=true;}]],next));
   const run=i=>{if(a.leaving)return;if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  function gearOff(a,then){const seq=[];
