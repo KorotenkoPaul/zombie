@@ -1833,9 +1833,21 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const run=()=>{const fy=a.faceYaw;a.faceYaw=yaw;approachTo(a,S,0,()=>{a.faceYaw=fy;a.step='clip';a.t=0;a.hits=hits.slice();a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
    if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const x of a.hits)x[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const x of hits)x[1]();then();}});};
   const nn=nearNode(S);if(nn)goTo(nn,run);else run();}
+ /* a deep mocap squat (hy_pickground) rocks both boots back onto the heels, toes up off the boards (ToeBase 6-10 cm over its planted
+    height, gate: orig hero stands on air 8 cm): each boot is turned about the ankle until its toes are back on the floor */
+ function toesDown(rest=.05){const fl=H.floorY;if(fl==null)return;for(const s of ['Left','Right']){const F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;
+   const a=F.getWorldPosition(V()),t=T.getWorldPosition(V());const v=t.clone().sub(a);const L=v.length();const want=Math.max(-.92*L,fl+rest-a.y);if(t.y-fl-rest<.002||L<.03||want>=t.y-a.y)continue;/* as far down as the boot can tip (it skipped a boot it could not quite reach: legs jittered 13 cm) */
+   const hz=Math.sqrt(L*L-want*want),h0=Math.hypot(v.x,v.z);if(h0<1e-4)continue;const v2=V(v.x/h0*hz,want,v.z/h0*hz);
+   const q=new THREE.Quaternion().setFromUnitVectors(v.clone().normalize(),v2.normalize());const pw=F.parent.getWorldQuaternion(new THREE.Quaternion());const fw=F.getWorldQuaternion(new THREE.Quaternion()).premultiply(q);
+   F.quaternion.copy(pw.invert().multiply(fw));F.updateMatrixWorld(true);}}
+ let sqA=null,sqOn=0;/* run last (guard stage): earlier, the leg planting after the task's post put the boots back on their toes */
+ function squatFeet(a){const fl=H.floorY;if(fl==null)return;const hy=n=>bones[n]?bones[n].getWorldPosition(V()).y-fl:9;
+  if(!a.sf0)return;
+  const d0=clamp(Math.min(hy('LeftFoot'),hy('RightFoot'))-a.sf0.ank,0,.12);a.sqD=(a.sqD||0)+clamp(d0-(a.sqD||0),-.012,.012);const d=a.sqD;/* eased: at most 1.2 cm a frame */if(d>.002){const hp=bones.Hips;const w=hp.getWorldPosition(V()).add(V(0,-d,0));hp.position.copy(hp.parent.worldToLocal(w));hp.updateMatrixWorld(true);}
+  toesDown(Math.max(.02,a.sf0.toe));}
  /* OUTDOOR: the drain bucket under the counter is taken and put back with the right hand from beside it: the pail stands ahead of his right
     foot, out at that side, never between his knees (from straight in front, 0.15 m to his left, the squat's shins went through it 8-9 cm) */
- function drainVisit(a,clip,hits,then){const pt=PT('drainBay');const P=PP();const bk=P&&P.tools&&P.tools.drainBucket;const h=P&&P.toolHome?P.toolHome('drainBucket'):null;const cn=bk&&bk.userData.home&&bk.userData.home.parent;
+ function drainVisit(a,clip,hits,then){if(!a.sf0&&H.floorY!=null&&!H.path.length){const hy=n=>bones[n]?bones[n].getWorldPosition(V()).y-H.floorY:9;const k=Math.min(hy('LeftFoot'),hy('RightFoot')),t=Math.min(hy('LeftToeBase'),hy('RightToeBase'));if(k>0&&k<.2&&t>0&&t<.12)a.sf0={ank:k,toe:t};}/* his standing boots, before he sets off */const pt=PT('drainBay');const P=PP();const bk=P&&P.tools&&P.tools.drainBucket;const h=P&&P.toolHome?P.toolHome('drainBucket'):null;const cn=bk&&bk.userData.home&&bk.userData.home.parent;
   if(!pt||!h||!cn){visit(a,pt,.22,clip,hits,then);return;}
   const n=V(0,0,1).applyQuaternion(cn.getWorldQuaternion(new THREE.Quaternion()));n.y=0;if(n.lengthSq()<1e-6){visit(a,pt,.22,clip,hits,then);return;}n.normalize();const f=n.clone().negate(),r=V(-f.z,0,f.x);
   const S=h.clone().addScaledVector(f,-.36).addScaledVector(r,-.25);{const fy=floorAt(S.x,h.y+.3,S.z,.4,.6);S.y=fy!=null?fy:root.position.y;}const yaw=Math.atan2(f.x,f.z);
@@ -2316,7 +2328,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    // OUTDOOR: the pour: the fist lifts the bucket out over the edge, the other hand under its bottom tips it right over, then back
    // taking it from under the sink and putting it back: the fist carries it on a clean path between its spot and his side,
    // never past his legs (frame by frame his shin went into it as the pick-up clip swung the hand back by the feet)
-   a.post=()=>{if(a.step==='clip'&&PP().tools.drainBucket.parent===bones.RightHand){const k=a.t/Math.max(.3,a.clipDur);const hs=PP().tools.drainBucket.userData.home.scale||1;
+   a.post=()=>{if(a.step==='clip'){sqA=a;if(!sqOn){sqOn=1;lateFn(()=>{const A=sqA;sqA=null;if(A&&act===A&&A.step==='clip')squatFeet(A);});}}if(a.step==='clip'&&PP().tools.drainBucket.parent===bones.RightHand){const k=a.t/Math.max(.3,a.clipDur);const hs=PP().tools.drainBucket.userData.home.scale||1;
      const hg=PP().toolHome('drainBucket').add(V(0,.35*hs,0));const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const cy=bones.Hips.getWorldPosition(V()).addScaledVector(r,.42).addScaledVector(f,.06).add(V(0,-.12,0));cy.y=Math.max(cy.y,root.position.y+.42);/* in the squat the knees splay: the bucket is held up and out past them, its bottom off the floor (gate: shins 15 cm in it) */
      const u=a.back?smooth(.12,.45,k):1-smooth(.5,.85,k);const mid=hg.clone().addScaledVector(r,.36);mid.y=Math.max(mid.y,cy.y);/* out to the right at the bay first, then back to his side: never back past the shins */odReach('Right',u>.5?mid.lerp(hg,smooth(.5,1,u)):cy.clone().lerp(mid,smooth(0,.5,u)),1);odHang('drainBucket',0,true);return;}
     if(a.step!=='pour'){odHang('drainBucket',0);return;}H.bucketTilt=true;const D=a.D||2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
