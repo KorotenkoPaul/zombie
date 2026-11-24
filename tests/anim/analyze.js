@@ -204,10 +204,14 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  // support: lying, every part rests on the mattress / floor; sitting, the pelvis on the seat (and feet down unless he dangles them)
  {const gi=n=>GN.indexOf(n);const need=f=>f.fl.includes('B')?['head','hips','torso','shins','feet']:f.task==='ledge'?['hips']:['hips','feet'];
   for(const G of ['head','hips','torso','shins','feet']){const g=gi(G);if(g<0)continue;
-   runs(i=>{const f=F[i];if(!f.sup||/[WT]/.test(f.fl)||!need(f).includes(G))return null;return f.sup[g]>=lim.supportCm?f.sup[g]:null;},30,(a,b,i,v)=>add('unsupported',i,{bone:G,value:v,unit:'cm gap under it ('+(F[i].fl.includes('B')?'lying':'sitting')+')',limit:lim.supportCm,what:G+' hangs in the air instead of resting on the bed/seat/floor',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}}
+   runs(i=>{const f=F[i];if(!f.sup||i<30||F[i].f<30||/[WT]/.test(f.fl)||!need(f).includes(G))return null;return f.sup[g]>=lim.supportCm?f.sup[g]:null;},30,(a,b,i,v)=>add('unsupported',i,{bone:G,value:v,unit:'cm gap under it ('+(F[i].fl.includes('B')?'lying':'sitting')+')',limit:lim.supportCm,what:G+' hangs in the air instead of resting on the bed/seat/floor',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}}
  // standing: at least one foot on the floor (rule 3.1): both toes > 4 cm above whatever is under them while not walking/climbing/seated
- {runs(i=>{const f=F[i];if(f.fl!==''||i<1)return null;const g1=f.gnd[1],g3=f.gnd[3];if(g1==null||g3==null)return null;const l=bone(f,'LeftToeBase')[1]-g1,r=bone(f,'RightToeBase')[1]-g3;const m=Math.min(l,r);return m>.04?+(m*100).toFixed(1):null;},20,
-   (a,b,i,v)=>add('unsupported',i,{bone:'feet',value:v,unit:'cm both feet above the floor (standing)',limit:4,what:'stands on air',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}
+ // the ToeBase joint of a planted boot sits ~7 cm above the floor (boot sole + toe joint): calibrate that rest height per hero (10th percentile
+ // of the lower toe over all standing frames) and measure the gap above it, so a normal stance is 0
+ {const toeH=f=>{const g1=f.gnd[1],g3=f.gnd[3];if(g1==null||g3==null)return null;return Math.min(bone(f,'LeftToeBase')[1]-g1,bone(f,'RightToeBase')[1]-g3);};
+  const hs=F.filter(f=>f.fl==='').map(toeH).filter(v=>v!=null).sort((a,b)=>a-b);const toe0=hs.length>100?Math.max(0,Math.min(.1,hs[hs.length*.1|0])):0;tempo.toeRest=+(toe0*100).toFixed(1);
+  runs(i=>{const f=F[i];if(f.fl!==''||i<1)return null;const t=toeH(f);if(t==null)return null;const m=t-toe0;return m>.04?+(m*100).toFixed(1):null;},20,
+   (a,b,i,v)=>add('unsupported',i,{bone:'feet',value:v,unit:'cm both feet above the floor (standing, above the planted-boot rest height)',limit:4,what:'stands on air',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}
  // held tools: the palm holding it should be on it (< 5 cm from the tool's mesh) the whole time it is held
  {const ev={};F.forEach((f,i)=>{for(const [nm,k,d] of f.grip||[]){const key=nm+'|'+k;let e=ev[key]&&ev[key][ev[key].length-1];if(!e||i-e.i1>3){e={i0:i,i1:i,d:[]};(ev[key]=ev[key]||[]).push(e);}e.i1=i;e.d.push(d);}});
   tempo.grip=[];for(const key in ev)for(const e of ev[key]){if(e.d.length<10)continue;const s2=e.d.slice().sort((a,b)=>a-b);const med=s2[s2.length>>1];const [nm,k]=key.split('|');
