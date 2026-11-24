@@ -253,7 +253,7 @@ export function createHero(ctx){
   const ca=clamp((l1*l1+dd*dd-l2*l2)/(2*l1*dd),-1,1),sa=Math.sqrt(1-ca*ca);let pp=pole.clone().sub(dir.clone().multiplyScalar(pole.dot(dir)));if(pp.lengthSq()<1e-6)pp=V(0,0,1);pp.normalize();
   const elbow=a.clone().addScaledVector(dir,ca*l1).addScaledVector(pp,sa*l1);turnBone(A,b,elbow,w);const b2=Bb.getWorldPosition(V()),c2=C.getWorldPosition(V());turnBone(Bb,c2,a.clone().addScaledVector(dir,dd),w);
   if(endQ){C.parent.getWorldQuaternion(_pq);const want=_pq.clone().invert().multiply(endQ);C.quaternion.slerp(want,w);C.updateMatrixWorld(true);}}
- function legIK(dy,w){for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
+ function legIK(dy0,w){for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const dy=typeof dy0==='number'?dy0:dy0[s];if(Math.abs(dy)<.004)continue;const a=F.getWorldPosition(V());const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());
    /* WALK: a straight leg has no knee direction (knee - hip/ankle midpoint ~ 0): the pole then pointed anywhere and a 1 cm floor step
       swung the trailing foot 9-22 cm (gate: RightFoot jump in the bedroom); fall back to the body's forward, blended in as the leg straightens */
    const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));const pl=pole.length(),fb=fwd(root.rotation.y);pole.multiplyScalar(1/Math.max(pl,1e-6)).lerp(fb,1-smooth(.01,.04,pl));
@@ -286,6 +286,14 @@ export function createHero(ctx){
  const SOLE={Left:{on:false,w:0,t:V()},Right:{on:false,w:0,t:V()},rp:V(),ry:0,still:0};
  // WALK: each sole on what is under it (the ground or a root top), relative to the body's support g: a foot over a root is
  // lifted onto it (it used to wade through the bark), a foot beside the root when the body stands on it reaches down
+ /* WALK: on the boards each sole has its own floor (a step up onto the workshop, the top of the kitchen ladder). Both feet used to
+    follow the root's floor: when the root's ray crossed the step edge, both feet jumped 20 cm in one frame (the swing foot was
+    pushed 17 cm forward, a planted one popped out of the step). Each foot's floor is eased (a sole crossing an edge rises over
+    ~0.1 s) and a swing foot looks 12 cm ahead, so it clears the riser instead of being shoved out of it. */
+ const TF={Left:null,Right:null};
+ function boardDy(g,dt){const p=root.position,fw=fwd(root.rotation.y),o={};for(const s of ['Left','Right']){const F=bones[s+'Foot'];if(!F){o[s]=g-p.y;continue;}const a=F.getWorldPosition(V());
+   const swing=a.y-(g+(POSE.ankle??.1))>.02;let fb=floorAt(a.x,g,a.z,.28,.25);if(swing&&H.path.length){const f2=floorAt(a.x+fw.x*.22,g,a.z+fw.z*.22,.28,.25);if(f2!=null&&(fb==null||f2>fb))fb=f2;}
+   const tgt=(fb!=null&&Math.abs(fb-g)<.28)?fb:g;if(TF[s]==null||Math.abs(TF[s]-tgt)>.35)TF[s]=tgt;else TF[s]+=clamp(tgt-TF[s],-1.2*dt,1.4*dt);o[s]=TF[s]-p.y;}return o;}
  function terrainFeet(g){const G=window.__ground;if(!G||!G.standAt||root.position.y>2)return;
   for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const d=G.standAt(a.x,a.z)-g;if(Math.abs(d)<.01)continue;
    const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));const pl=pole.length();pole.multiplyScalar(1/Math.max(pl,1e-6)).lerp(fwd(root.rotation.y),1-smooth(.01,.04,pl));
@@ -2069,7 +2077,7 @@ export function createHero(ctx){
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(Math.abs(dy)>.004)legIK(dy,1);if(H.ground&&!H.fit&&!window.__noRootStep)terrainFeet(g);if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
+  if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(H.ground&&!H.fit&&p.y>2&&!window.__noBoardStep&&!H.squat)legIK(boardDy(g,dt),1);else{TF.Left=TF.Right=null;if(Math.abs(dy)>.004)legIK(dy,1);}if(H.ground&&!H.fit&&!window.__noRootStep)terrainFeet(g);if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);toeGuard(g,dt);}if(!H.inBed&&!H.bedB)kneeGuard();}
   bedHand();bedLegClear(dt);
   H.bucketTilt=false;/* OUTDOOR: set again by a task that tips a bucket on purpose this frame (grab.js leaves it unplumbed) */
   if(act&&act.post)act.post(dt);if(act&&act.fr)fridgePost(act);/* KITCHEN: the hand on the fridge handle / shelf */try{slungPost();}catch(e){}
