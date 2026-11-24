@@ -648,7 +648,7 @@ export function createHero(ctx){
   if(far){const h=toolHome(tools[0][0]);const fetch=()=>approachTo(a,h.clone().setY(root.position.y),.42,()=>{a.step='take';a.t=0;a.afterTake=()=>{a.fetched=true;a.step="go";a.t=0;go();};});const nn=nearNode(h);if(nn)goTo(nn,fetch);else fetch();}
   else go();
   a.update=dt=>{a.t+=dt;const s=sp();
-   if(a.step==='go'&&!a.cut&&a.nn&&motion&&H.path.length&&!window.__noCut)cutShort(a,s,o.stand??.45);
+   if(a.step==='go'&&!o.noCut&&!a.cut&&a.nn&&motion&&H.path.length&&!window.__noCut)cutShort(a,s,o.stand??.45);
    if(a.step==='approach'){H.look=s;H.lookW=.6;if(a.t>=a.adur){a.next();}return;}
    if(a.step==='take'){// reach each tool's home and close the hand on it
     const [n,hand]=tools[a.held.length]||[];if(!n){work();return;}const h=toolHome(n)||s;H.look=h;H.lookW=1;a.ik=[[hand,h,smooth(0,.45,a.t)*(1-smooth(.6,.95,a.t))]];
@@ -1067,7 +1067,7 @@ export function createHero(ctx){
   const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));const clip=typeof R.clip==='function'?R.clip(o.pos?pos:null):R.clip;
   const D=rnd(18,35);/* known here, so the blow's IK fades out before the job ends (no snap back to the clip) */
   const W0=R.wipe==='hinge'?hingeW():R.wipe==='rope'?ropeW():R.wipe==='chimney'?chimneyW():R.wipe&&pos?(winPick&&winPick.p.distanceTo(pos)<.01?{p:winPick.p.clone(),n:winPick.n.clone(),t:0}:wallNear(pos)):null;/* the window: walk up to the pane itself, not to a point in front of it */
-  const J=job({faceYaw:W0?Math.atan2(-W0.n.x,-W0.n.z):null,pt:()=>W0?(W0.at?W0.at.clone():W0.p.clone().addScaledVector(W0.n,.42)):pos,/* the spot ~42 cm in front of the pane, then he turns to face it */node:pos?null:R.node,get stand(){return W0?.02:R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */
+  const J=job({noCut:!!(R.standFn&&o.pos),/* the stand is measured from the node the part was checked from: no short cut off the route */faceYaw:W0?Math.atan2(-W0.n.x,-W0.n.z):null,pt:()=>W0?(W0.at?W0.at.clone():W0.p.clone().addScaledVector(W0.n,.42)):pos,/* the spot ~42 cm in front of the pane, then he turns to face it */node:pos?null:R.node,get stand(){return W0?.02:R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */
    post:R.floorHands?(a,dt)=>{handsOnFloor(floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y);}:R.wipe&&pos?(a,dt)=>{const W=a.win||(a.win=W0);if(W&&W.upd)W.upd(a,dt);wipeWindow(a,dt,W,D-a.T<.8);}:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{if(R.nail==='floor')kneelDrop(a,dt,floorOf(pos),D-a.T<.6);const n=a.nl||(a.nl=nailOf(R,pos));a.endIn=D-a.T;repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
    tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;if(hamr&&a.hm&&!a.hmFar)return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});
   /* called away mid-blow (Brain, the tour): the arm eases back to the clip over a third of a second instead of snapping */
