@@ -97,6 +97,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R13-2 | ok | stoke (b81e2ea) | opens the oven by its handle, takes the log bundle from beside the barrel, kneels and feeds logs in, keeps the bundle rope in hand; (my camera was inside the stove for f6696–6984) | f6000–f7320 | — | — |
 | R13-3 | ok/P3 | telescope (b81e2ea) | both hands on the tube, eye to the eyepiece most of the time; now and then he lifts his face off the eyepiece and looks to the side with his hands still up on the tube (reads as glancing away, P3 at most) | f9060–f11940 | r13-b81e2ea/telescope_ok.jpg | — |
 | R13-4 | ok | ledge (b81e2ea) | R7-5 fixed (close-ups from 5 sides): sits on the deck edge beside the rail post, knees bent, shins hanging down over the drop, both hands on the edge; nothing through the railing | f15180, f15936 | r13-b81e2ea/ledge_legs_hang_bent_ok.jpg | — |
+| R14-1 | ok | sweep (b50450e) | R9-13/R10-2/R12-3 fixed in this run: he sweeps the open floor between the bunk and the door (x -1.4..-0.7, z 1.7..3.5), clear of the chair, desk, post and door; broom in both hands, bristles on the boards | f1536–f2520 | r14-b50450e/sweep_open_floor_ok.jpg | — |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
