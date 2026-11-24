@@ -920,7 +920,7 @@ export function createHero(ctx){
  // tool placed exactly, the stir. The integrator folds them into job() later.
  function reachTo(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
   for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+PALM);if(ex<=.01)break;
-   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(REACH_LEAN-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
+   const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();if(d.dot(fwd(root.rotation.y))<-.1)break;/* never arch backwards to reach: the arm alone goes there */const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(REACH_LEAN-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):t;/* the palm, not the wrist, on the point */
   armIK(side,wt,sidePole(side),clamp(w,0,1));}
@@ -1104,10 +1104,14 @@ export function createHero(ctx){
    a.leave=cb=>{if(a.step==='sit'||a.step==='work'){a.step='up';a.t=0;const wait=()=>{if(H.fit&&a.step==='up'&&a.t<UP+.4){setTimeout(wait,100);}else{a.ik=null;H.fit=null;H.ground=true;cb();}};wait();}else cb();};
    return a;},
   firewood:(o)=>{const X=window.__ground&&window.__ground.exits&&window.__ground.exits.forest;if(!X||!N.g_wood)return job({pt:()=>PT('woodpile'),stand:.5,clip:'hy_picklog',dur:[2,3]});
-   const a={step:'go'};goTo('g_wood',()=>{H.face=N.g_wood.face;a.step='pick';reps('hy_picklog',4+(Math.random()<.5?1:0),()=>{try{(window.__props||P3).grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}
-     H.carry='hy_carrylogs';const wp=PT('woodpile');const nn=wp?nearNode(wp):'kmid';goTo(nn||'kmid',()=>{a.step='drop';if(wp)H.face=Math.atan2(wp.x-root.position.x,wp.z-root.position.z);once('hy_droplogs',{fade:.4,then:()=>{
-      try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});endTask({ok:true,logs:3});}});});});});
-   a.update=()=>{carryOv();};
+   const a={step:'go',t:0};goTo('g_wood',()=>{H.face=N.g_wood.face;a.step='pick';reps('hy_picklog',4+(Math.random()<.5?1:0),()=>{try{(window.__props||P3).grab('logArmful',bones.LeftHand,{offset:V(.1,.12,.1)});}catch(e){}try{window.__audio.carry(true);}catch(e){}
+     H.carry='hy_carrylogs';const wp=PT('woodpile');
+     // OUTDOOR: the logs go onto the woodpile itself: he walks right up to it and faces it (frame by frame he dropped them at the
+     // foot of the kitchen ladder, 1.3 m from the pile, side-on to it)
+     const done=()=>{play(IDLE(),{fade:.4});endTask({ok:true,logs:3});};
+     if(wp){a.step='drop';visit(a,wp,.5,'hy_droplogs',[[.6,()=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],done);}
+     else goTo('kmid',()=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;done();});});});
+   a.update=dt=>{if(stepTick(a,dt))return;carryOv();};
    a.leave=cb=>{try{(window.__props||P3).release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};a.post=()=>odArmful();return a;},
  });
  // close (or open) the window shutters one window after another: walk up, reach for the shutter, it swings at the touch
@@ -1210,7 +1214,7 @@ export function createHero(ctx){
  const OD_PALM=.07;
  function odPalm(side){const h=bones[side+'Hand'].getWorldPosition(V()),f=bones[side+'ForeArm'].getWorldPosition(V());return h.add(h.clone().sub(f).normalize().multiplyScalar(OD_PALM));}
  function palmTo(side,t){return t?odPalm(side).distanceTo(t):9;}
- function reachGrip(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
+ function odReach(side,t,w){/* OUTDOOR: palm-target reach (targets here are odPalm points); the kitchen's reachGrip aims the fist's grip point */const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
   for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+OD_PALM);if(ex<=.01)break;
    const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();if(d.dot(fwd(root.rotation.y))<-.1)break;/* never arch backwards to reach (frame by frame: a banana back at the top of the axe swing); the arm alone goes there */const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(REACH_LEAN-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
@@ -1259,7 +1263,7 @@ export function createHero(ctx){
    let at=tp;if(rd.parent===bones.LeftHand){/* carried up with the rising body, then over to the block top */const k=smooth(1.35,2.6,t);const to=c.clone().add(V(0,SPL_RH+.01,0));at=a.r0.clone().add(V(0,SPL_RH+.01,0)).lerp(to,k);at.y+=.3*Math.sin(Math.PI*k);
     /* the round, not the palm, has to land on the block: the hand goes where the round's offset from the palm puts it there */if(k>.3){const want=a.r0.clone().lerp(c,k);want.y=lerp(a.r0.y,c.y,k)+.3*Math.sin(Math.PI*k);const pm=odPalm('Left');const off=pm.sub(rd.getWorldPosition(V()));at=want.add(off);}}
    else if(a.placed)at=c.clone().add(V(0,SPL_RH+.01,0));
-   if(w>.01)reachGrip('Left',at,w);a.lk=at;axeRest(a,d,1);
+   if(w>.01)odReach('Left',at,w);a.lk=at;axeRest(a,d,1);
    // a step in to set the round on the block (it is out of reach from where he swings), and a step back out after
    const step=(dist,back)=>{const q=c.clone().addScaledVector(d,-dist);const sx=q.x-rp.x,sz=q.z-rp.z;H.slide={x:sx,z:sz,yaw:0,k:0,d:Math.max(.45,Math.hypot(sx,sz)/(back?.55:.75))};play('30',{fade:.25});if(actions['30'])actions['30'].timeScale=back?-.8:1;};
    if(t>1.85&&!a.st1){a.st1=1;step(.6,false);}if(t>2.5&&!a.st1b){a.st1b=1;play(IDLE(),{fade:.3});}
@@ -1289,7 +1293,7 @@ export function createHero(ctx){
  // both hands on the axe handle: right hand at the tool's grip, left hand at the handle's end; the blade faces the way it swings
  function holdAxe(a,piv,d,r,th,rH,w){const dir=d.clone().multiplyScalar(Math.cos(th)).add(V(0,Math.sin(th),0));const tan=d.clone().multiplyScalar(-Math.sin(th)).add(V(0,Math.cos(th),0));
   const gR=piv.clone().addScaledVector(dir,rH-AXE_G);const gL=piv.clone().addScaledVector(dir,Math.max(.22,rH-.67)).addScaledVector(r,.01);
-  reachGrip('Left',gL,w*.95);reachGrip('Right',gR,w);
+  odReach('Left',gL,w*.95);odReach('Right',gR,w);
   // the axe goes where the right fist really is (contact first); while blending out it hangs from the fist
   const pR=odPalm('Right');const hang=V(0,-1,0).addScaledVector(d,.22).normalize();const dd=hang.lerp(dir,w).normalize();axeWorld(pR.clone().addScaledVector(dd,AXE_G),dd,tan.clone().negate().lerp(d,1-w));a.dbg=[gR,gL];}
  // the round comes apart: two halves tip outwards off the block and drop onto the ground on both sides
@@ -1321,20 +1325,20 @@ export function createHero(ctx){
   const R=odPalm('Right');const want=R.clone();const rimBelow=.35;/* fist to bucket bottom when hanging */const yFist=a.lv+.02;/* the fist at the surface: the whole bucket under */
   // going down the bucket stays out at the side and ahead of the knee (frame by frame it went through his right thigh)
   {const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const d=R.clone().sub(bones.Hips.getWorldPosition(V()));const k=Math.min(1,a.dip*2);want.addScaledVector(r,(.08-d.dot(r))*k).addScaledVector(f,Math.max(0,.5*k-d.dot(f)));}/* ahead of both knees, which splay in the squat */
-  if(R.y>yFist)want.y=lerp(R.y,yFist,a.dip);if(want.distanceTo(R)>.005)reachGrip('Right',want,1);
-  const L=odPalm('Left');reachGrip('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too */
+  if(R.y>yFist)want.y=lerp(R.y,yFist,a.dip);if(want.distanceTo(R)>.005)odReach('Right',want,1);
+  const L=odPalm('Left');odReach('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too */
   odHang('waterBucket',.55*a.dip);}
  // a bucket in the fist hangs plumb from its handle (world upright, turned with him), tipped only when he tips it; never
  // follows the wrist's twist (it was swinging out at the hip or upside down at the feet)
- function odHang(n,tilt=0){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o)return;
+ function odHang(n,tilt=0,free=false){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o)return;
   if(o.parent!==bones.RightHand)return;const hb=bones.RightHand;
   // a full bucket is never inside his leg: the straight arm holds the fist out at the side, level with the hip, and the
   // heavy bucket hardly swings (frame by frame the rim went through the thigh at every step)
-  if(!tilt){const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());const R=odPalm('Right');const d=R.clone().sub(hp);
-   const lat=d.dot(r),fw=d.dot(f);const want=R.clone().addScaledVector(r,Math.max(0,.32-lat)).addScaledVector(f,clamp(fw,-.06,.06)-fw);if(want.distanceTo(R)>.005)reachGrip('Right',want,1);
+  if(!tilt&&!free){const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());const R=odPalm('Right');const d=R.clone().sub(hp);
+   const lat=d.dot(r),fw=d.dot(f);const want=R.clone().addScaledVector(r,Math.max(0,.32-lat)).addScaledVector(f,clamp(fw,-.06,.06)-fw);if(want.distanceTo(R)>.005)odReach('Right',want,1);
    // the free left arm only balances the weight: a little out from the hip, relaxed and swinging, never a stiff wing
    const l=r.clone().negate();const L=odPalm('Left');const dl=L.clone().sub(hp);const sw=clamp(bones.RightFoot.getWorldPosition(V()).sub(bones.LeftFoot.getWorldPosition(V())).dot(f)*.18,-.07,.07);
-   const nat=hp.clone().addScaledVector(l,.27).addScaledVector(f,.04+sw).add(V(0,-.1,0));if(dl.y>-.1||dl.dot(l)>.3)reachGrip('Left',L.lerp(nat,.75),1);}
+   const nat=hp.clone().addScaledVector(l,.27).addScaledVector(f,.04+sw).add(V(0,-.1,0));if(dl.y>-.1||dl.dot(l)>.3)odReach('Left',L.lerp(nat,.75),1);}
   hb.updateWorldMatrix(true,false);
   const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt,root.rotation.y,0,'YXZ'));const hs=(o.userData.home&&o.userData.home.scale)||1;
   const g=V(0,.35,0).multiplyScalar(hs).applyQuaternion(q);const pos=odPalm('Right').sub(g);
@@ -1343,7 +1347,7 @@ export function createHero(ctx){
  // ladder it rides across his back on its ropes, lying level (it stood up past his head)
  function odArmful(){const P=PP();const o=P&&P.tools&&P.tools.logArmful;if(!o||!o.visible)return;const inHand=o.parent===bones.LeftHand,back=o.parent===bones.Spine2;if(!inHand&&!back)return;
   const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const ch=bones.Spine2.getWorldPosition(V());let c;
-  if(inHand){c=ch.clone().addScaledVector(f,.27).add(V(0,-.16,0));const lo=V(0,-.08,0);reachGrip('Left',c.clone().addScaledVector(r,-.18).add(lo),1);reachGrip('Right',c.clone().addScaledVector(r,.18).add(lo),1);}
+  if(inHand){c=ch.clone().addScaledVector(f,.27).add(V(0,-.16,0));const lo=V(0,-.08,0);odReach('Left',c.clone().addScaledVector(r,-.18).add(lo),1);odReach('Right',c.clone().addScaledVector(r,.18).add(lo),1);}
   else c=ch.clone().addScaledVector(f,-.21).add(V(0,.03,0));
   const up=V(0,1,0);const X=up.clone().cross(r).normalize();const q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,up,r));const hs=(o.userData.home&&o.userData.home.scale)||1;
   const par=o.parent;par.updateWorldMatrix(true,false);const M=new THREE.Matrix4().compose(c,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
@@ -1360,19 +1364,23 @@ export function createHero(ctx){
   if(lad&&H.ov&&H.carry&&H.ov.T===ovTracks(H.carry)&&H.ov.end-H.ov.t>.3)H.ov.end=H.ov.t+.3;}
  // after every pose: what is slung for the ladder hangs on its rope between the shoulder blades, upright in the world,
  // well below the neck (frame by frame the Spine2 offsets put the bucket over his head like a hat and the sack into his head)
- const SLUNG_AT={waterBucket:[.28,-.5],drainBucket:[.3,-.52],meatBag:[.24,-.12]};
+ const SLUNG_AT={waterBucket:[.27,-.42,.36],drainBucket:[.29,-.44,.36],meatBag:[.3,-.22,.13]};/* [behind Spine2, below it, the rope's tie point up the load] */
  // the rope it hangs by: from the handle up over the right shoulder, across the chest to the left hip and round the back again
  let strap=null;const strapMat=new THREE.MeshStandardMaterial({color:0x8a6a45,roughness:1});
- function strapTo(o,f,hs){const r=V(-f.z,0,f.x),l=r.clone().negate();const top=o.localToWorld(V(0,.36,0));const sh=bones.RightShoulder.getWorldPosition(V());const sp=bones.Spine2.getWorldPosition(V()),hp=bones.Hips.getWorldPosition(V());
+ function strapTo(o,f,hs,ty){const r=V(-f.z,0,f.x),l=r.clone().negate();const top=o.localToWorld(V(0,ty,0));const sh=bones.RightShoulder.getWorldPosition(V());const sp=bones.Spine2.getWorldPosition(V()),hp=bones.Hips.getWorldPosition(V());
   const pts=[top,sh.clone().addScaledVector(f,-.1).add(V(0,.07,0)),sh.clone().addScaledVector(f,.06).add(V(0,.05,0)),sp.clone().addScaledVector(f,.14).addScaledVector(l,.02),hp.clone().addScaledVector(f,.1).addScaledVector(l,.15).add(V(0,.05,0)),
    hp.clone().addScaledVector(l,.19).add(V(0,.08,0)),hp.clone().addScaledVector(f,-.14).addScaledVector(l,.08).add(V(0,.12,0)),top.clone().addScaledVector(r,.05).add(V(0,-.02,0))];
   const g=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts,true),48,.011,5,true);
   if(!strap){strap=new THREE.Mesh(g,strapMat);strap.castShadow=true;strap.frustumCulled=false;scene.add(strap);}else{strap.geometry.dispose();strap.geometry=g;}strap.visible=true;}
  function slungPost(){const P=PP();if(!P||!P.tools)return;let f=null,any=false;
   for(const n in SLUNG_AT){const o=P.tools[n];if(!o||!slung[n]||o.parent!==bones.Spine2)continue;f=f||fwd(root.rotation.y);const S=SLUNG_AT[n];
-   const hs=(o.userData.home&&o.userData.home.scale)||1;const pos=bones.Spine2.getWorldPosition(V()).addScaledVector(f,-S[0]).add(V(0,S[1]*hs,0));
+   const hs=(o.userData.home&&o.userData.home.scale)||1;const sp=bones.Spine2.getWorldPosition(V());
+   // clear of whatever sticks out furthest behind him: on a ladder the hips and thighs push back past the shoulder blades
+   // (frame by frame his pelvis sat inside the bucket all the way up the rope ladder)
+   let back=sp.dot(f);for(const bn of ['Hips','LeftUpLeg','RightUpLeg','Spine'])if(bones[bn])back=Math.min(back,bones[bn].getWorldPosition(V()).dot(f));
+   const pos=sp.clone().addScaledVector(f,back-sp.dot(f)-S[0]).add(V(0,S[1]*hs,0));
    const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,root.rotation.y,0,'YXZ'));const par=o.parent;par.updateWorldMatrix(true,false);
-   const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);if(!any&&n!=='meatBag'){any=true;strapTo(o,f,hs);}}
+   const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);if(!any){any=true;strapTo(o,f,hs,S[2]);}}
   if(!any&&strap)strap.visible=false;}
 
  const carryOv=()=>{slingTick();if(H.carry&&H.path.length&&!H.lad&&has(H.carry)&&!H.ov)overlay(H.carry,{fade:.3,until:.98,weight:.85});};
@@ -1412,14 +1420,19 @@ export function createHero(ctx){
   setbucket:(o={})=>{const a={step:'go',t:0,post:()=>odHang('waterBucket',0)};const P=PP();visit(a,PT('waterShelf'),.45,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
-   visit(a,PT('drainBay'),.5,'hy_picklog',[[.55,()=>{try{P.grab('drainBucket',bones.RightHand,{offset:V(0,.06,.02)});window.__audio.carry(true);}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
+   visit(a,PT('drainBay'),.22,'hy_pickground',[[.45,()=>{try{P.grab('drainBucket',bones.RightHand,{offset:V(0,.06,.02)});window.__audio.carry(true);}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
     goTo('gate',()=>{H.face=N.gate.face??0;a.step='pour';a.t=0;play(IDLE(),{fade:.4});/* hy_water (a watering clip) twisted him 90 deg off the edge: the pour is the arms' own work */H.wait={t:2.8,then:()=>{try{P.water.pour('drainBucket',false);}catch(e){}
-      a.step='back';visit(a,PT('drainBay'),.5,'hy_picklog',[[.5,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};});});
+      a.step='back';a.back=1;visit(a,PT('drainBay'),.22,'hy_pickground',[[.47,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};});});
    a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='pour'){if(a.t>.8&&!a.p){a.p=1;try{P.water.pour('drainBucket',true);}catch(e){}AU('bucket_dump',root.position);}}};
    // OUTDOOR: the pour: the fist lifts the bucket out over the edge, the other hand under its bottom tips it right over, then back
-   a.post=()=>{if(a.step!=='pour'){odHang('drainBucket',0);return;}const D=2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
-    if(w>.01)reachGrip('Right',root.position.clone().addScaledVector(f,.42).add(V(0,1.02,0)),w);const tilt=1.9*smooth(.45,.95,t)*(1-smooth(D-.8,D-.25,t));odHang('drainBucket',tilt);
-    const bk=PP().tools.drainBucket;if(bk&&w>.01){const bt=bk.localToWorld(V(0,.02,0));reachGrip('Left',bt,.85*w*smooth(.3,.6,t));odHang('drainBucket',tilt);}};
+   // taking it from under the sink and putting it back: the fist carries it on a clean path between its spot and his side,
+   // never past his legs (frame by frame his shin went into it as the pick-up clip swung the hand back by the feet)
+   a.post=()=>{if(a.step==='clip'&&PP().tools.drainBucket.parent===bones.RightHand){const k=a.t/Math.max(.3,a.clipDur);const hs=PP().tools.drainBucket.userData.home.scale||1;
+     const hg=PP().toolHome('drainBucket').add(V(0,.35*hs,0));const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const cy=bones.Hips.getWorldPosition(V()).addScaledVector(r,.3).addScaledVector(f,.08).add(V(0,-.12,0));
+     const u=a.back?smooth(.12,.45,k):1-smooth(.5,.85,k);odReach('Right',cy.lerp(hg,u),1);odHang('drainBucket',0,true);return;}
+    if(a.step!=='pour'){odHang('drainBucket',0);return;}const D=2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
+    if(w>.01)odReach('Right',root.position.clone().addScaledVector(f,.42).add(V(0,1.02,0)),w);const tilt=1.9*smooth(.45,.95,t)*(1-smooth(D-.8,D-.25,t));odHang('drainBucket',tilt);
+    const bk=PP().tools.drainBucket;if(bk&&w>.01){const bt=bk.localToWorld(V(0,.02,0));odReach('Left',bt,.85*w*smooth(.3,.6,t));odHang('drainBucket',tilt);}};
    a.leave=cb=>{try{P.water.pour('drainBucket',false);P.release('drainBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
   // OUTDOOR (Сделать вылазки наружу естественными): splitting firewood at the chopping block by the oak with the real axe.
   // He takes the axe out of the block, picks a round from the little stack beside it (squat, left hand), stands it on the block,
