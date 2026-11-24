@@ -322,6 +322,18 @@ export function createHero(ctx){
   for(const [nm,f] of [['Spine',.4],['Spine1',.35],['Spine2',.25]]){const b=bones[nm];if(!b)continue;const h=bones.Head.getWorldPosition(V());
    const fw=fwd(root.rotation.y);const goal=h.clone().add(V(fw.x*duckS.v*.7,-duckS.v,fw.z*duckS.v*.7));turnBone(b,h,goal,f/(1-(nm==='Spine'?0:nm==='Spine1'?.4:.75)));}}
  function armIK(side,target,pole,w){ik2(bones[side+'Arm'],bones[side+'ForeArm'],bones[side+'Hand'],target,pole,w,false);}
+ // arm IK whose result the anatomical guard (pose.js, last) leaves alone: solved at full weight with the joints fitted inside their
+ // range, the target corrected from where the hand really ends up, then blended in by w. A plain armIK beside the hip lying down was
+ // pulled back by the guard 12-22 cm INTO the mattress (traced per slot, bed r13). minY: the hand never ends below it.
+ const RAI={};let FRN=0;
+ function romArmIK(sd,tg,pole,w,minY){const PG=window.__poseGuard;if(!PG||!PG.fit||window.__noFit){armIK(sd,tg,pole,w);return;}
+  const A=bones[sd+'Arm'],F=bones[sd+'ForeArm'],Hn=bones[sd+'Hand'];const q0=[A.quaternion.clone(),F.quaternion.clone(),Hn.quaternion.clone()];
+  /* the elbow solution sticks (switching poles between frames flips the arm, and motion.js's pop filter then holds the old arm for ~1 s) */
+  const R=RAI[sd]||(RAI[sd]={pi:0,f:-9});if(FRN-R.f>30)R.pi=0;R.f=FRN;const PLS=[pole,pole.clone().add(V(0,1.6,0)),pole.clone().negate()];
+  let best=null;for(const pi of [R.pi,...[0,1,2].filter(i=>i!==R.pi)]){const pl=PLS[pi];A.quaternion.copy(q0[0]);F.quaternion.copy(q0[1]);Hn.quaternion.copy(q0[2]);
+   const t=tg.clone();let e=9;for(let i=0;i<6;i++){ik2(A,F,Hn,t,pl,1,false);PG.fit(A);PG.fit(F);A.updateMatrixWorld(true);const h=wp(Hn);const d=tg.clone().sub(h);e=d.length();if(minY!=null&&h.y<minY)e+=(minY-h.y)*3;if(e<.01)break;t.add(d);}
+   if(!best||e<best.e-.03)best={e,pi,q:[A.quaternion.clone(),F.quaternion.clone()]};if(pi===R.pi&&e<.03)break;}R.pi=best.pi;
+  A.quaternion.copy(q0[0]).slerp(best.q[0],w);F.quaternion.copy(q0[1]).slerp(best.q[1],w);Hn.quaternion.copy(q0[2]);A.updateMatrixWorld(true);}
  // head and neck turn toward a point (smoothed, limited like a real neck)
  const lookS={yaw:0,pitch:0};
  // head look with human limits: the head never turns more than ~70 deg from the pelvis (neck + chest together),
@@ -2319,7 +2331,13 @@ export function createHero(ctx){
      const tor=new Set(['Spine','Spine1','Spine2','LeftShoulder','RightShoulder'].map(bi).filter(x=>x>=0)),hip=new Set([bi('Hips')]);
      for(let i=0;i<P.count;i++){if(wOf(i,tor)<.5||wOf(i,hip)>.35)continue;const u=Math.min(W_-1,Math.max(0,UV.getX(i)*W_|0)),v=Math.min(H_-1,Math.max(0,UV.getY(i)*H_|0));const o=(v*W_+u)*4;const r=px[o]/255,gg=px[o+1]/255,b=px[o+2]/255;
       const mx=Math.max(r,gg,b),mn=Math.min(r,gg,b),sat=mx>0?(mx-mn)/mx:0;const lm=.3*r+.59*gg+.11*b;if(gg>=r||(mx>.7&&sat<.45)||(gg/r>.72&&sat>.45)||mx<.12){/* the shirt's own colour (mustard: red over green over blue, saturated, light) */if(r>gg&&gg>b&&sat>.45&&gg/r>.6&&mx>.35){SH[0]+=r;SH[1]+=gg;SH[2]+=b;SH[3]+=lm;SH[4]++;}continue;}vm[i]=1;nv++;VL[0]+=lm;VL[1]++;}}}catch(e){console.warn('vest mask',e);}
-   if(nv>200){g.setAttribute('vest',new THREE.BufferAttribute(vm,1));BT.vestU={value:0};/* the shirt colour per unit of brightness, and the vest's mean brightness: the vest texels become shirt, keeping their shading */BT.shirt=SH[4]>20?new THREE.Vector3(SH[0],SH[1],SH[2]).divideScalar(SH[4]):new THREE.Vector3(.72,.52,.2);BT.vestL=VL[1]?VL[0]/VL[1]:.25;BT.shirtL=SH[4]>20?SH[3]/SH[4]:.55;
+   if(nv>200){/* the shader mask is the torso itself (soft at its border); which texels are vest is decided per pixel in the shader. The per-vertex mask
+     on this fragmented atlas left whole strips of leather on the chest and back while the vest was off (watcher r12, 40ef242) */const tm=new Float32Array(P.count);{/* the torso by its place in the bind pose (between the hip joint and the neck, inside the shoulders): bone weights
+     missed the lower front panels, which are skinned to the hips and thighs */const bpos=n=>{const k=bi(n);return k<0?null:V().setFromMatrixPosition(S.boneInverses[k].clone().invert());};
+     const h0=bpos('Hips'),n0=bpos('Neck'),la=bpos('LeftArm'),ra=bpos('RightArm');if(h0&&n0&&la&&ra){const up=n0.clone().sub(h0),L=up.length();up.normalize();const lat=la.clone().sub(ra);const W2=lat.length()/2;lat.normalize();const mid=la.clone().add(ra).multiplyScalar(.5);
+      for(let i=0;i<P.count;i++){const q=bp(i);const y=q.clone().sub(h0).dot(up)/L,x=Math.abs(q.clone().sub(mid).dot(lat))/W2;tm[i]=smooth(-.12,-.04,y)*(1-smooth(1.04,1.12,y))*(1-smooth(.82,.95,x));}}
+     else{const tor=new Set(['Spine','Spine1','Spine2','LeftShoulder','RightShoulder'].map(bi).filter(x=>x>=0)),hip=new Set([bi('Hips')]);for(let i=0;i<P.count;i++)tm[i]=clamp((wOf(i,tor)-.3)/.3,0,1)*(1-clamp((wOf(i,hip)-.6)/.25,0,1));}}
+    g.setAttribute('vest',new THREE.BufferAttribute(tm,1));BT.vestU={value:0};/* the shirt colour per unit of brightness, and the vest's mean brightness: the vest texels become shirt, keeping their shading */BT.shirt=SH[4]>20?new THREE.Vector3(SH[0],SH[1],SH[2]).divideScalar(SH[4]):new THREE.Vector3(.72,.52,.2);BT.vestL=VL[1]?VL[0]/VL[1]:.25;BT.shirtL=SH[4]>20?SH[3]/SH[4]:.55;
     const keep=[];for(let t=0;t<nTri;t++){const a=vi(t,0),b=vi(t,1),c=vi(t,2);if(vm[a]&&vm[b]&&vm[c])keep.push(a,b,c);}
     const used=[...new Set(keep)];const remap=new Map(used.map((v,i)=>[v,i]));const pos=new Float32Array(used.length*3),uv=new Float32Array(used.length*2);const bb=new THREE.Box3();
     used.forEach((v,i)=>{const q=bp(v);pos.set([q.x,q.y,q.z],i*3);bb.expandByPoint(q);uv.set([UV.getX(v),UV.getY(v)],i*2);});
@@ -2328,8 +2346,8 @@ export function createHero(ctx){
    const mats=Array.isArray(body.material)?body.material:[body.material];body.material=mats.map(m0=>{const m=m0.clone();m.onBeforeCompile=sh=>{sh.uniforms.sockK=BT.sockU;sh.uniforms.vestK=BT.vestU||{value:0};const hv=!!BT.vestU;
      sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float sock;varying float vSock;'+(hv?'attribute float vest;varying float vVest;':'')).replace('#include <begin_vertex>','#include <begin_vertex>\nvSock=sock;'+(hv?'vVest=vest;':''));
      sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float sockK;varying float vSock;'+(hv?'uniform float vestK;varying float vVest;':'')).replace('#include <map_fragment>','#include <map_fragment>\n{float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.27,.25,.23)*(.8+.5*l),vSock*sockK);}'+
-      (hv?'\n{float lv=dot(diffuseColor.rgb,vec3(.3,.59,.11));vec3 sh=vec3('+[BT.shirt.x,BT.shirt.y,BT.shirt.z].map(x=>Math.pow(x,2.2).toFixed(4)).join(',')+')*clamp(lv/'+Math.pow(BT.vestL,2.2).toFixed(4)+',.5,1.6);/* canvas texels are sRGB, the shader works in linear */diffuseColor.rgb=mix(diffuseColor.rgb,min(sh,vec3(1.)),smoothstep(.3,.7,vVest)*vestK);}':''));};
-     m.customProgramCacheKey=()=>BT.vestU?'hero-sock-vest':'hero-sock';return m;});if(body.material.length===1)body.material=body.material[0];}
+      (hv?'\n{float lv=dot(diffuseColor.rgb,vec3(.3,.59,.11));vec3 sh=vec3('+[BT.shirt.x,BT.shirt.y,BT.shirt.z].map(x=>Math.pow(x,2.2).toFixed(4)).join(',')+')*mix(.82,1.12,smoothstep(.0,'+(2*Math.pow(BT.vestL,2.2)).toFixed(4)+',lv));/* canvas texels are sRGB, the shader works in linear */vec3 sc=pow(max(diffuseColor.rgb,vec3(0.)),vec3(1./2.2));float mx=max(sc.r,max(sc.g,sc.b)),mn=min(sc.r,min(sc.g,sc.b)),sat=mx>0.?(mx-mn)/mx:0.,gr=sc.g/max(sc.r,.001);/* vest = everything on the torso that is not the mustard shirt, not skin and not the green trousers: the leather is brown, dark grey and black with metal studs */float vb=(1.-smoothstep(.02,.06,sc.g-max(sc.r,sc.b)))*(1.-smoothstep(.55,.65,gr)*smoothstep(.3,.42,sat)*smoothstep(.22,.32,mx))*(1.-smoothstep(.64,.74,mx)*(1.-smoothstep(.38,.5,sat))*smoothstep(.08,.16,sc.r-sc.b));diffuseColor.rgb=mix(diffuseColor.rgb,min(sh,vec3(1.)),smoothstep(.2,.6,vVest)*vb*vestK);}':''));};
+     m.customProgramCacheKey=()=>BT.vestU?'hero-sock-vest2':'hero-sock';return m;});if(body.material.length===1)body.material=body.material[0];}
   return BT.ok=true;}catch(e){console.error('boots',e);return BT.ok=false;}}
  // world matrix the static boot needs to sit exactly where the skinned boot is drawn right now
  function bootWorld(B,out){root.updateMatrixWorld(true);const S=B.S;out.copy(B.foot.matrixWorld).multiply(S.boneInverses[B.fi]).multiply(_bm2.makeTranslation(B.c0.x,B.c0.y,B.c0.z));
@@ -2465,9 +2483,12 @@ export function createHero(ctx){
   if(c.dir<0){const k=smooth(.5,.95,c.u);if(k>0){const f=V(0,0,1).applyQuaternion(bones.Hips.getWorldQuaternion(new THREE.Quaternion()));const yaw=Math.atan2(f.x,f.z)-root.rotation.y;
     if(Math.hypot(f.x,f.z)>.3)rotW(bones.Hips,V(0,1,0),-wrapA(yaw)*k);}}
   root.updateMatrixWorld(true);const hp2=wp(bones.Hips),lr=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).setY(0).normalize();
+  // lying is read from the body, not the clip time: once the neck is down near the mattress an arm never hangs over the front edge
+  // (watcher r12 f2544: the u>.3 gate let the clip's arm dangle to the floor for ~0.4 s while he was already lying)
+  const nkY=wp(bones.Neck).y,lyK=c.dir>0?1-smooth(B.mat+.42,B.mat+.62,nkY):1-smooth(B.mat+.42,B.mat+.62,nkY);
   for(const sd of ['Left','Right']){const Hn=bones[sd+'Hand'];if(!Hn)continue;const hw=wp(Hn);
    // a hand pressing into the mattress (the clip's bed was lower) rests ON it: collide.js used to throw the whole arm ~40 cm up out of it
-   const lying=(c.dir>0&&c.u>.3)||(c.dir<0&&c.u<.35);/* lying, an arm never hangs over the front edge toward the floor (watcher f2115) */const over=hw.x>B.x0-.02&&hw.x<B.x1+.02&&hw.z<B.z1+(lying?.6:.2)&&hw.z>B.z1-.95;if(over&&hw.y<B.mat+.12){const wl=hw.z>B.z1+.2?(c.dir>0?smooth(.3,.48,c.u):1-smooth(.2,.35,c.u)):1;let tg=V(hw.x,Math.max(hw.y,B.mat+.1),Math.min(hw.z,B.z1-.1));if(lying){/* lying: the hand rests beside the hip, a pose the shoulder can hold (pose.js rom pulled a far reach back into the mattress) */const bh=hp2.clone().addScaledVector(lr,sd==='Left'?.24:-.24);bh.y=B.mat+.1;bh.z=Math.min(bh.z,B.z1-.1);tg.lerp(bh,.75);}armIK(sd,tg,sidePole(sd),wl);continue;}/* and off the front rail: a forearm across the rail made collide.js flip the whole arm up */
+   const lying=lyK>.05||(c.dir>0&&c.u>.3)||(c.dir<0&&c.u<.35);/* lying, an arm never hangs over the front edge toward the floor (watcher f2115) */const over=hw.x>B.x0-.02&&hw.x<B.x1+.02&&hw.z<B.z1+(lying?.7:.2)&&hw.z>B.z1-.95;if(over&&hw.y<B.mat+.12){const wl=hw.z>B.z1+.2?Math.max(lyK,c.dir>0?smooth(.3,.48,c.u):1-smooth(.2,.35,c.u)):1;let tg=V(hw.x,Math.max(hw.y,B.mat+.1),Math.min(hw.z,B.z1-.1));if(lying){/* lying: the hand rests beside the hip, a pose the shoulder can hold (pose.js rom pulled a far reach back into the mattress) */const bh=hp2.clone().addScaledVector(lr,sd==='Left'?.24:-.24);bh.y=B.mat+.1;bh.z=Math.min(bh.z,B.z1-.1);tg.lerp(bh,.75);}romArmIK(sd,tg,sidePole(sd),wl,B.mat+.06);continue;}/* and off the front rail: a forearm across the rail made collide.js flip the whole arm up */
    const ex=hw.y-(B.mat+.35);if(ex<=0)continue;
    const t=hp2.clone().addScaledVector(lr,sd==='Left'?.27:-.27);t.y=B.mat+.04;armIK(sd,t,sidePole(sd),clamp(ex/.15,0,1));}}
  function lieDown(then){const ed=N.bededge;H.face=0;
@@ -2507,7 +2528,7 @@ export function createHero(ctx){
   for(const sd of ['Left','Right']){const Hn=bones[sd+'Hand'];if(!Hn)continue;const ex=wp(Hn).y-(B.mat+.35);if(ex<=0)continue;
    const t=hp.clone().addScaledVector(lr,sd==='Left'?.27:-.27);t.y=B.mat+.1;t.z=Math.min(t.z,B.z1-.1);armIK(sd,t,sidePole(sd),clamp(ex/.12,0,1));}});
  function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt);}catch(e){console.error('hero slot '+slot,e);}}}
- function update(dt){if(dt<=0)return;runSlot('pre',dt);const r=updateCore(dt);runSlot('collide',dt);runSlot('grab',dt);runSlot('pops',dt);runSlot('guard',dt);if(INV.on)invCheck(dt);return r;}
+ function update(dt){if(dt<=0)return;FRN++;runSlot('pre',dt);const r=updateCore(dt);runSlot('collide',dt);runSlot('grab',dt);runSlot('pops',dt);runSlot('guard',dt);if(INV.on)invCheck(dt);return r;}
  // HERO-RULES 3, live: ?inv in the URL (or HH.inv.on=true) checks the final pose every frame (geometry only, no bone axes)
  // and counts what breaks per task; HH.inv.report() lists them, the first of each kind is logged with its frame
  const INV={on:/[?&]inv\b/.test(location.search),n:0,hits:{},prev:null,report(){return Object.entries(this.hits).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>k+' x'+v.n+' worst '+v.worst.toFixed(v.unit==='deg'?0:2)+v.unit+' first f'+v.f);},reset(){this.hits={};this.n=0;}};
