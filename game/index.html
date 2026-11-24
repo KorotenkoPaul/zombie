@@ -531,7 +531,7 @@ shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT}
 const shingGeo=bevelBoxGeo();const sRow=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aRow',sRow);const sFresh=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aFresh',sFresh);
 const SHING=new THREE.InstancedMesh(shingGeo,shingleMat,2000);SHING.count=0;SHING.castShadow=!MOBILE;/* [PERF] the roof slabs still cast the roof's shadow on phones */SHING.receiveShadow=true;scene.add(SHING);
 // [PERF] shingles live on layer 5: the main camera and the sun's shadow camera see it, lamp (point) shadow cameras don't
-SHING.layers.set(5);camera.layers.enable(5);sun.shadow.camera.layers.enable(5);
+SHING.layers.set(5);camera.layers.enable(5);sun.shadow.camera.layers.enable(5);sun.shadow.camera.layers.enable(6);/* layer 6: the hero's shadow-only proxy (hero.js), never drawn in the main pass */
 // [PERF] static house parts built from several meshes are baked into one mesh per material (draw calls on phones)
 function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matrixWorld.clone().invert();const by=new Map(),rm=[];
  g.traverse(m=>{if(!m.isMesh||m.isInstancedMesh||keep(m)||m.material.transparent)return;const geo=(m.geometry.index?m.geometry.toNonIndexed():m.geometry.clone());geo.applyMatrix4(inv.clone().multiply(m.matrixWorld));
