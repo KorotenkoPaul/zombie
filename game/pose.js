@@ -106,7 +106,7 @@ export function createPoseGuard({ hero }) {
     return m; }
   // legs: when a clamp moved the thigh or the knee, the leg is re-solved (two-bone, knee as a hinge) so the ankle stays exactly
   // where it was planted and the foot keeps its orientation in the world
-  const LEGS = [['LeftUpLeg', 'LeftLeg', 'LeftFoot'], ['RightUpLeg', 'RightLeg', 'RightFoot']].map(([u, l, f]) => ({ u: byName[u], l: byName[l], f: byName[f], A: new THREE.Vector3(), F: new THREE.Quaternion(), ok: !!(byName[u] && byName[l] && byName[f]) }));
+  const LEGS = [['LeftUpLeg', 'LeftLeg', 'LeftFoot'], ['RightUpLeg', 'RightLeg', 'RightFoot']].map(([u, l, f]) => ({ u: byName[u], l: byName[l], f: byName[f], A: new THREE.Vector3(), F: new THREE.Quaternion(), S: new THREE.Quaternion(), ok: !!(byName[u] && byName[l] && byName[f]) }));
   const pq = new THREE.Quaternion(), vA = new THREE.Vector3();
   function worldQ(b, o) { return b.getWorldQuaternion(o); }
   function setWorldQ(b, wq) { b.parent.getWorldQuaternion(pq); b.quaternion.copy(pq.invert().multiply(wq)); }
@@ -121,7 +121,14 @@ export function createPoseGuard({ hero }) {
     recomp(Math.min(L.l.x[1], Math.max(L.l.x[0], dd.x + dFlex)), dd.t, dd.z, q2); K.quaternion.multiplyQuaternions(L.l.r, q2);
     U.updateMatrixWorld(true); const a = F.getWorldPosition(vA).sub(H).normalize(), b = L.A.clone().sub(H).normalize();
     const R = q4.setFromUnitVectors(a, b); worldQ(U, q3); setWorldQ(U, q3.premultiply(R));
-    U.updateMatrixWorld(true); setWorldQ(F, L.F); return true; }
+    // knee twist the clamp took out goes to the thigh: the whole leg turns about the hip-ankle line (the ankle stays) until the
+    // shin is back where the clip had it round that line, so the knee points where the toes point and the foot keeps its angle
+    // to the shin (keeping only the foot's world angle bent the ankle: gate foot-bend while walking 83 -> 106)
+    U.updateMatrixWorld(true); const ax = L.A.clone().sub(H); if (ax.lengthSq() > 1e-6) { ax.normalize();
+      worldQ(K, q1); q2.copy(L.S).multiply(q1.invert()); const pr = ax.dot(v3.set(q2.x, q2.y, q2.z));
+      q4.set(ax.x * pr, ax.y * pr, ax.z * pr, q2.w); const n = q4.length(); if (n > 1e-6) { q4.x /= n; q4.y /= n; q4.z /= n; q4.w /= n;
+        worldQ(U, q3); setWorldQ(U, q3.premultiply(q4)); U.updateMatrixWorld(true); } }
+    setWorldQ(F, L.F); return true; }
   // speed limit
   const rootPrev = new THREE.Vector3(); let gap = 0;
   function speed(dt) {
@@ -134,7 +141,7 @@ export function createPoseGuard({ hero }) {
     if (window.__poseOff || !(dt > 0)) return; dt = Math.min(dt, .1); stat.frames++; curDt = window.__heroFast ? 0 : dt;
     const lad = !!(hero.H && hero.H.lad); root.updateMatrixWorld(true);
     if (run.trace) { const t = run.trace; t.pre = ['LeftFoot', 'RightFoot', 'LeftHand', 'RightHand', 'LeftLeg'].map(n => B[n].getWorldPosition(new THREE.Vector3()).toArray()); }
-    for (const L of LEGS) if (L.ok) { L.f.b.getWorldPosition(L.A); worldQ(L.f.b, L.F); }
+    for (const L of LEGS) if (L.ok) { L.f.b.getWorldPosition(L.A); worldQ(L.f.b, L.F); worldQ(L.l.b, L.S); }
     const legMoved = [false, false];
     if (run.trace) run.trace.cl = []; for (const j of J) { if (lad && j.arm) continue; const m = rom(j); if (m && run.trace && m > .5) run.trace.cl.push(j.n + ' ' + m.toFixed(1)); if (m) { stat.rom++; if (/Leg$/.test(j.n)) legMoved[/^Left/.test(j.n) ? 0 : 1] = true; const w = stat.worst[j.n]; if (!w || m > w) stat.worst[j.n] = +m.toFixed(1); } }
     if (chain([byName.Spine, byName.Spine1, byName.Spine2], SPINE.yaw, SPINE.tilt)) stat.spine++;
