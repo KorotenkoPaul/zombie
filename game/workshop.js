@@ -41,11 +41,11 @@ export function createWorkshop(K) {
   // ---------- bench-local layout (workbench(): L 1.7 along x, D .66 along z, top .9; the vice at the front-left end) ----------
   // The hero's right hand is on the bench's -x side when he faces it, so the vice end is where he saws.
   const VICE = { x: -.63, y: .84, z: .33 + .0537 }; // the gap between the iron and the wooden jaw
-  const BD = { y0: .89, y1: 1.04, t: .018, z: VICE.z }; // the board stands on edge in the jaws
+  const BD = { y0: .89, y1: window.__wsBY1 ?? .97, t: .018, z: VICE.z }; // the board stands on edge in the jaws
   const XC = -.80; // cut line, just left (his right) of the jaws and past the bench end
   const OFF = .15; // offcut length
-  const SAW_STAND = [-.66, .72]; // where he stands (bench-local x, z)
-  const ALPHA = .6; // blade angle below horizontal (34 deg)
+  const SAW_STAND = [-.66, .94]; // where he stands (bench-local x, z)
+  let ALPHA = window.__wsAL ?? .9; // steeper and the board lower: he is small (shoulder ~26 cm over the bench), a 34 deg blade on a tall board put the handle at his shoulder and the arm could not fold that far // blade angle below horizontal (34 deg)
 
   // ---------- the board (and the kerf in it) ----------
   let WB = null, MIR = false; const toWB = (x, y, z) => toW(MIR ? 2 * VICE.x - x : x, y, z);
@@ -140,26 +140,26 @@ export function createWorkshop(K) {
     if (PP().tools.benchSaw.parent === scene) sawRest(); return true; }
   function saw(o) {
     setupSaw();
-    const standAt = () => { if (!bench()) return null; trimObst(); buildBoard(); return toWB(SAW_STAND[0], 0, SAW_STAND[1]).add(V(0, 1, 0)); };
+    const standAt = () => { if (!bench()) return null; trimObst(); buildBoard(); return toWB(window.__wsSSX ?? SAW_STAND[0], 0, window.__wsSSZ ?? SAW_STAND[1]).add(V(0, 1, 0)); };
     const S = { ph: 'take', t: 0, cuts: 0, want: Math.random() < .5 ? 2 : 3, s: 0, dir: 1, w: 0 };
     return job({ pt: standAt, stand: .03, dur: [600, 600], vary: false, tools: [],
       start: a => { a.S = S; setupSaw(); },
       look: () => WB ? toWB(XC, BD.y1 - WB.depth, BD.z) : null, lookW: .9,
-      tick: (a, dt) => { H.face = benchYaw() + (window.__wsTurn ?? .5) * RS(); /* three-quarter to the room (the hero camera looks from behind him): the saw arm shows beside his body */ },
+      tick: (a, dt) => { H.face = benchYaw() + (window.__wsTurn ?? .3) * RS(); /* three-quarter to the room (the hero camera looks from behind him): the saw arm shows beside his body */ },
       post: (a, dt) => { if (!WB) { a.T = 1e9; return; } S.t += dt; const g = G();
         if (g) { g.hold('Left', WB.g, null); g.hold('Right', WB.g, null); }
         if (S.hx == null) S.hx = -.45;
         // the left hand holds the board's top edge in front of him; after a slide it lets go and takes a new hold (a small lift)
         if (S.ph === 'saw' && S.hx < -.451) { S.rg = (S.rg || 0) + dt / .5; const k = smooth(0, 1, S.rg); S.hxL = S.hxL ?? S.hx; S.hx = S.hxL + (-.45 - S.hxL) * k; S.lift = .04 * Math.sin(Math.PI * k); if (k >= 1) { S.hx = -.45; S.hxL = null; S.rg = 0; S.lift = 0; } }
         const hp = () => toWB(S.hx, BD.y1 + .012 + (S.lift || 0), BD.z);
-        if (S.ph === 'take') { const r = sawGeom(Math.max(.012, WB.depth), -.02); if (take(a, 'benchSaw', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'saw'; S.t = 0; S.u = 0; } reachGrip('Left', hp(), smooth(0, .7, S.t)); return; }
+        if (S.ph === 'take') { const r = sawGeom(Math.max(.012, WB.depth), -.02); if (take(a, 'benchSaw', 'Right', r.gp, r.tip, r.B, dt)) { S.ph = 'saw'; S.t = 0; S.u = 0; S.amp = null; } reachGrip('Left', hp(), smooth(0, .7, S.t)); return; }
         if (S.ph === 'saw') { // strokes: ~0.85 s each, the push cuts; the stroke is shorter at the start of a cut
-          S.u += dt / .85; const amp = WB.depth < .02 ? .06 : .11; const s = amp * Math.sin(S.u * Math.PI * 2);
+          S.u += dt / .85; S.amp = S.amp == null ? .06 : S.amp + ((WB.depth < .02 ? .05 : (window.__wsAmp ?? .08)) - S.amp) * Math.min(1, dt * 1.5); const amp = S.amp; const kin = smooth(0, .6, S.t); const s = kin * (amp * Math.sin(S.u * Math.PI * 2) + (window.__wsSO ?? .015)) - (1 - kin) * .02; // the stroke grows in from the rest pose and lengthens smoothly once the kerf has a start
           const push = Math.cos(S.u * Math.PI * 2) > 0; if (push) { WB.depth = Math.min(BD.y1 - BD.y0, WB.depth + dt * .045); layout(); }
-          const r = sawGeom(WB.depth, s); holdToolAt('Right', 'benchSaw', r.gp, r.tip, 1, r.B); if (g && g.late) g.late(() => holdToolAt('Right', 'benchSaw', r.gp, r.tip, 1, r.B));
+          const r = sawGeom(WB.depth, s); S.gpT = r.gp; holdToolAt('Right', 'benchSaw', r.gp, r.tip, 1, r.B); if (g && g.late) g.late(() => holdToolAt('Right', 'benchSaw', r.gp, r.tip, 1, r.B));
           reachGrip('Left', hp(), 1);
-          if (WB.depth >= BD.y1 - BD.y0 - 1e-4 && s < -amp * .9) { dropOffcut(); S.cuts++; S.ph = 'look'; S.t = 0; S.last = r; }
-          else if (S.finish && WB.depth >= .016 && s < -amp * .9) { S.ph = 'put'; S.t = 0; }
+          if (WB.depth >= BD.y1 - BD.y0 - 1e-4 && Math.sin(S.u * Math.PI * 2) < -.9) { dropOffcut(); S.cuts++; S.ph = 'look'; S.t = 0; S.last = r; }
+          else if (S.finish && WB.depth >= .016 && Math.sin(S.u * Math.PI * 2) < -.9) { S.ph = 'put'; S.t = 0; }
           return; }
         if (S.ph === 'look') { // the offcut falls: the saw stays still in the cut, he watches it land
           const r = S.last; holdToolAt('Right', 'benchSaw', r.gp, r.tip, 1, r.B); if (g && g.late) g.late(() => holdToolAt('Right', 'benchSaw', r.gp, r.tip, 1, r.B)); reachGrip('Left', hp(), 1);
@@ -310,9 +310,14 @@ export function createWorkshop(K) {
     const nails = []; for (const x of [.645, .69, .62, .71]) { const n = new THREE.Group(); const sh = new THREE.Mesh(new THREE.CylinderGeometry(.0018, .0018, .05, 6), iron); sh.position.y = .025; const hd = new THREE.Mesh(new THREE.CylinderGeometry(.0045, .0045, .0015, 10), iron); hd.position.y = .05; n.add(sh, hd); n.position.set(x, .9, .28 + (nails.length % 2 ? -.018 : .012)); n.visible = false; g.add(n); nails.push({ o: n, sunk: 0 }); }
     CR = { g, nails, top: .92 }; return CR; }
   const toWC = (x, y, z) => { const sx = CR && CR.g.scale.x < 0 ? -1 : 1; return toW(x * sx, y, z); };
+  // the bench hammer lives on the bench's front edge from the moment the world loads (its peg on the toolwall is out of his
+  // reach): placed once, before anyone can see it, so no task ever makes it fly from the wall to the bench without a hand
+  let hamPlaced = false;
+  function hammerOnBench() { if (hamPlaced) return true; const P = PP(); const hm = P && P.tools && P.tools.benchHammer; if (!bench() || !G() || !G().GRIP || !hm || hm.parent !== scene || !buildCraft()) return false;
+    const gp = toWC(.72, .9 + .022, .318); restPose('benchHammer', gp, dirW(-RS(), 0, 0), dirW(0, 0, -1)); hamPlaced = true; return true; }
+  { let tries = 0; const poll = () => { try { if (hammerOnBench()) return; } catch (e) { } if (++tries < 600) setTimeout(poll, 100); }; setTimeout(poll, 0); }
   function craft(o) {
-    const setup = () => { if (!buildCraft()) return; trimObst(); const P = PP(); const hm = P && P.tools && P.tools.benchHammer; if (!hm || hm.parent !== scene) return;
-      const rs = RS(); const gp = toWC(.72, .9 + .022, .318); restPose('benchHammer', gp, dirW(-rs, 0, 0), V(0, 0, 0).add(dirW(0, 0, -1))); };
+    const setup = () => { if (!buildCraft()) return; trimObst(); hammerOnBench(); }; // the hammer already lies on the bench since load: nothing moves here
     setup(); const S = { ph: 'take', t: 0, ni: 0, hits: 0 };
     const nailHead = i => { const n = CR.nails[i]; return toWC(n.o.position.x, n.o.position.y + .05 - n.sunk, n.o.position.z); };
     // strike geometry: face (+b) down on the nail, handle (a) horizontal pointing forward from the hand; phi lifts it round the pivot
