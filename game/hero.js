@@ -910,7 +910,7 @@ export function createHero(ctx){
   fix_board:{clip:has('hy_kneelfloor')?'hy_kneelfloor':'hy_nailboard',tools:[['benchHammer','Right']],stand:has('hy_kneelfloor')?.45:.5,nail:'floor',def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
   fix_wall:{nail:'wall',clip:pos=>hamClip(pos,'hy_patchwall'),tools:[['benchHammer','Right']],stand:.45,standFn:pos=>has('hy_standhammer')?safeStand(pos,.36):.45,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
   fix_rope:{clip:'hy_ropeknot',node:'gate',stand:.45,def:()=>N.gate&&N.gate.p.clone().add(V(0,.3,.6))},
-  fix_hinge:{clip:'hy_oilhinge',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
+  fix_hinge:{clip:null,wipe:'hinge',tools:[['benchWrench','Right']],stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
   fix_window:{clip:null,wipe:true,stand:.5,def:()=>{const ps=panes();const near=ps.filter(q=>Math.abs(q.floor-root.position.y)<.8);const q=pick(near.length?near:ps);if(q){winPick=q;return q.p.clone();}winPick=null;const w=pick(WINDOWS);return N[w].p.clone().addScaledVector(fwd(N[w].face??0),.5).add(V(0,1.3,0));}},
   fix_railing:{nail:'rail',clip:pos=>hamClip(pos,'hy_railing'),standFn:pos=>has('hy_standhammer')?safeStand(pos,.38):.45,tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
   clear_roof:{clip:'hy_clearleaves',stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
@@ -990,7 +990,7 @@ export function createHero(ctx){
     S.lean=(S.lean||0)+(clamp(need/.5,0,.55)-(S.lean||0))*(1-Math.exp(-dt*4));if(S.lean>.005&&dir.lengthSq()>1e-4){const ax=V(0,1,0).cross(dir.normalize()).normalize();
      for(const n of ['Spine','Spine1','Spine2']){const b=bones[n];if(!b)continue;const qw=new THREE.Quaternion().setFromAxisAngle(ax,S.lean/3);const bw=b.getWorldQuaternion(new THREE.Quaternion());const pq=b.parent.getWorldQuaternion(new THREE.Quaternion());
       b.quaternion.copy(pq.invert().multiply(qw.multiply(bw)));b.updateMatrixWorld(true);}}}
-   {const ls=bones.LeftArm.getWorldPosition(V());const k=d.clone().cross(up).normalize();const lp=nail.clone().addScaledVector(k,-.13).addScaledVector(d,-.05).addScaledVector(up,.015);if(ls.distanceTo(lp)<armLen*.95)armIK('Left',lp,V(0,-1,0),w*.9);}
+   {const ls=bones.LeftArm.getWorldPosition(V());const k=d.clone().cross(up).normalize();const lp=nail.clone().addScaledVector(k,-.13).addScaledVector(d,-.05).addScaledVector(up,.045);/* the wrist a palm above the surface: the hand rests ON it */if(ls.distanceTo(lp)<armLen*.95)armIK('Left',lp,V(0,-1,0),w*.9);}
    /* the face, not the fist, goes onto the nail: the hammer is turned whole (handle along the blow, face toward the surface, raised
       back round the wrist while lifting), the hand follows it, and the wrist target is corrected by the face's measured miss */
    const k=d.clone().cross(up).normalize();
@@ -1019,6 +1019,11 @@ export function createHero(ctx){
    B.setFromObject(o);B.getSize(sz);B.getCenter(c);if(sz.y<.5||sz.y>1.2||Math.min(sz.x,sz.z)>.02||Math.max(sz.x,sz.z)<.5||Math.max(sz.x,sz.z)>1.2)return;
    let best=null,bd=1e9;for(const k in N){const p=N[k].p;const dy=c.y-p.y;if(dy<.8||dy>1.9)continue;const d=Math.hypot(p.x-c.x,p.z-c.z);if(d<bd){bd=d;best=p;}}if(!best||bd>3)return;
    const n=sz.x<sz.z?V(Math.sign(best.x-c.x)||1,0,0):V(0,0,Math.sign(best.z-c.z)||1);PANES.push({p:c.clone(),n,floor:best.y,w:Math.max(sz.x,sz.z)});});return PANES;}
+ /* the door's upper hinge (the leaf's edge opposite the handle), the side of the leaf he is on, and where the other hand steadies the leaf */
+ function hingeW(){const P=window.__props||P3;const d=P&&P.door;const D=d&&d.obj&&d.obj.userData.door;if(!D||!D.piv||!D.piv.children[0])return null;const leaf=D.piv.children[0];leaf.updateMatrixWorld(true);
+  const p=leaf.localToWorld(V(D.w/2-.05,D.h*.78,0));const n=V(0,0,1).transformDirection(leaf.matrixWorld).setY(0).normalize();const hd=d.handle(V());
+  if(root.position.clone().sub(p).setY(0).dot(n)<0)n.negate();const along=hd.clone().sub(p).setY(0);along.addScaledVector(n,-along.dot(n));along.normalize();
+  return {p,n,fixed:true,t:0,lv:along.multiplyScalar(.28).add(V(0,-.22,0))};}
  function wallNear(pt){let best=null;for(let i=0;i<16;i++){const a=i*Math.PI/8,d={x:Math.sin(a),y:0,z:Math.cos(a)};const r=new RAPIER.Ray({x:pt.x,y:pt.y,z:pt.z},d);
    const h=world.castRayAndGetNormal(r,1.4,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});const t=h?(h.toi??h.timeOfImpact):null;
    if(t!=null&&t>.05&&Math.abs(h.normal.y)<.4&&(!best||t<best.t))best={t,p:V(pt.x+d.x*t,pt.y,pt.z+d.z*t),n:V(h.normal.x,0,h.normal.z).normalize()};}return best;}
@@ -1028,16 +1033,17 @@ export function createHero(ctx){
   const n=W.n,up=V(0,1,0),s=up.clone().cross(n).normalize();if(bones.RightArm.getWorldPosition(V()).sub(bones.LeftArm.getWorldPosition(V())).dot(s)<0)s.negate();/* s: toward his right shoulder (measured) */
   const chest=bones.Spine2?bones.Spine2.getWorldPosition(V()):root.position.clone().add(V(0,1.3,0));const dw=chest.clone().sub(W.p).dot(n);
   if(dw>.75){return;}/* too far to touch: the clip alone */a.wt=(a.wt||0)+dt;const ph=a.wt*Math.PI*2/1.6;
-  const base=W.p.clone().setY(clamp(chest.y-.05,W.p.y-.25,W.p.y+.3));const sd=chest.clone().sub(base).dot(s);base.addScaledVector(s,sd);
+  const base=W.fixed?W.p.clone():W.p.clone().setY(clamp(chest.y-.05,W.p.y-.25,W.p.y+.3));if(!W.fixed){const sd=chest.clone().sub(base).dot(s);base.addScaledVector(s,sd);}
   const G=window.__grab;const solve=()=>{root.updateMatrixWorld(true);
-   const rt=base.clone().addScaledVector(n,.075).addScaledVector(s,.12+Math.cos(ph)*.08).addScaledVector(up,.05+Math.sin(ph)*.07);
-   const lt=base.clone().addScaledVector(n,.075).addScaledVector(s,-.2).addScaledVector(up,.1);
+   const rt=W.fixed?base.clone().addScaledVector(n,.075).addScaledVector(up,Math.sin(ph*1.6)*.025)/* dabbing oil into the hinge knuckle */
+     :base.clone().addScaledVector(n,.075).addScaledVector(s,.12+Math.cos(ph)*.08).addScaledVector(up,.05+Math.sin(ph)*.07);
+   const lt=W.fixed?base.clone().addScaledVector(n,.075).add(W.lv):base.clone().addScaledVector(n,.075).addScaledVector(s,-.2).addScaledVector(up,.1);
    armIK('Right',rt,V(0,-1,0).addScaledVector(s,.5),w);armIK('Left',lt,V(0,-1,0).addScaledVector(s,-.5),w*.9);};
   if(G&&G.late)G.late(solve);else solve();}
  for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{if(has('hy_standhammer'))try{pickPart(k,o);}catch(e){}const pos=o.pos?V(...o.pos):(R.def?R.def():null);
   const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));const clip=typeof R.clip==='function'?R.clip(o.pos?pos:null):R.clip;
   const D=rnd(18,35);/* known here, so the blow's IK fades out before the job ends (no snap back to the clip) */
-  const W0=R.wipe&&pos?(winPick&&winPick.p.distanceTo(pos)<.01?{p:winPick.p.clone(),n:winPick.n.clone(),t:0}:wallNear(pos)):null;/* the window: walk up to the pane itself, not to a point in front of it */
+  const W0=R.wipe==='hinge'?hingeW():R.wipe&&pos?(winPick&&winPick.p.distanceTo(pos)<.01?{p:winPick.p.clone(),n:winPick.n.clone(),t:0}:wallNear(pos)):null;/* the window: walk up to the pane itself, not to a point in front of it */
   const J=job({pt:()=>W0?W0.p.clone().addScaledVector(W0.n,.42):pos,/* the spot ~42 cm in front of the pane, then he turns to face it */node:pos?null:R.node,get stand(){return W0?.02:R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */
    post:R.wipe&&pos?(a,dt)=>{const W=a.win||(a.win=W0);wipeWindow(a,dt,W,D-a.T<.8);}:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{if(R.nail==='floor')kneelDrop(a,dt,floorOf(pos),D-a.T<.6);const n=a.nl||(a.nl=nailOf(R,pos));a.endIn=D-a.T;repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
    tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;if(hamr&&a.hm&&!a.hmFar)return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});
