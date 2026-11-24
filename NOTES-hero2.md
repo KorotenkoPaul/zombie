@@ -71,6 +71,8 @@ Comparisons: project files hero-v6/.
   - scales the head uniformly (s), puts raw chin y=chinIn at y=chinOut, drops the bust shoulders below raw y=ycut;
   - skins it Head 1 above the chin, smooth blend to Neck below;
   - adds it to Mesh_0 as TWO primitives (x<0 / x>=0) with a material "head": hero.js picks the body as the LARGEST skinned mesh (sock/vest shader), so each head part must stay smaller than the body primitive (15.2k verts). Simplifying the head instead broke the face shading and the neck.
+- v3.1 (after the integrator's review): graft params cut 0.58, ycut -0.76, so the head's own neck reaches into the sweater collar and covers the body's neck stub (no light seam strip). cut 0.55 opened a see-through gap at the front of the collar.
+- `F=0.5 node skintone.mjs G.glb Gt.glb`: the body's hand/neck skin pixels (UV islands of Hand/Neck/Head-weighted triangles, skin-coloured only) get a per-channel gain halfway toward the head's cheek colour, so hands and neck match the face. REF=neck uses the head's neck instead.
 - Body input: split-v6 output with hands 0.9 (`shrink.mjs sp13.glb sh13.glb 1.0 0.9`).
 - Lids: `PRIM=1,2 node lids.mjs G.glb GL.glb '{"L":[-0.0388,0.7415,0.047,0.031],"R":[0.0412,0.7415,0.047,0.031],"skin":[-0.06,0.735],"lash":[-0.0388,0.7535],"off":0.0016,"ymin":0.68,"pow":0.33,"flat":1}'` (PRIM = comma list of primitives to ray-cast; facescan.mjs takes PRIM too).
 - `HEADS=1024 node ktxtex.mjs GL.glb K.glb 2048 1024` (head base colour 1024), then quant + optim 0.65. Asset 5.3 MB base64.
