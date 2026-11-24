@@ -58,6 +58,7 @@ Baseline comparison (same seed): 0b6dc51 and 9aa01f4 upright with real stir and 
 | R7-8 | ok | sleep (071a2cf) | B5 fixed: sits on the lower bunk edge, pulls each boot off by hand (hy_bootsoffR/L), boots stand on the rug, socks on; lies down and the quilt covers the body, head on the pillow; stays still for 2+ game hours | f1740–f10254 | r7-071a2cf/sleep_under_quilt.jpg | — |
 | R7-9 | P2 | sleep (071a2cf) | the vest stays ON (Pavel: vest and boots off before sleep) — still worn while sitting, lying down and under the quilt | f2280–f2532 | r7-071a2cf/sleep_bootsoff_ok_vest_stays_arm_to_floor.jpg | bed |
 | R7-10 | P2 | sleep lie-down (071a2cf) | during hy_bedlie his left arm drapes off the mattress and the open hand lies on the floor rug | f2406 | same | bed |
+| R7-11 | ok | telescope (071a2cf) | B1/W9 fixed: steps up to the tripod, eye at the eyepiece, far hand on the tube; near hand rests bent by his collar (reads as steadying himself, fine) | f1860–f4788 | r7-071a2cf/telescope_eye_at_eyepiece_ok.jpg | — |
 
 Looked fine on the rollback (eye check): read (sits on the chair, book held open in both hands, f9864–f11208 and a 4-side close-up), saw (right hand on the saw handle, left hand holds the board in the vice), sitting down on the bed edge.
 
