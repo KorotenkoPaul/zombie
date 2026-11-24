@@ -48,6 +48,11 @@ const NEXT = { calm: [['breeze', 0.85], ['windy', 0.15]], breeze: [['calm', 0.5]
 const PREVAIL = Math.atan2(0.66, 0.75); // blows from the far left-back corner towards the camera side
 const SPAN = 60; // gusts start this far upwind of the tree and run this far past it
 
+// a program cache key that stays unique per material after wrapping onBeforeCompile: three's default key is
+// onBeforeCompile.toString(), which after a wrap is the WRAPPER's source, the same for every wrapped material (so they
+// shared one program: the white boards on Pavel's phone). Capture the wrapped hook's source and any own key now.
+const wrapKey = (m, prev, tag) => { const own = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey : null, src = prev ? prev.toString() : '';
+  return () => (own ? own.call(m) : '') + '|' + src + '|' + tag; };
 export const WIND_GLSL = `
 uniform float uWT,uWet,uRain;uniform vec2 uFogBank;uniform vec4 uWind;uniform vec4 uGust;uniform vec2 uDrift;
 float windGust(vec3 p){float x=uGust.x-dot(p.xz,uWind.xy);
@@ -175,11 +180,11 @@ export function createWind(opt = {}) {
     // ready-made: a MeshStandardMaterial / MeshPhysicalMaterial (flat, not instanced) whose surface normal follows the
     // wind ripple and rain rings, so the lamps, the moon and the env map glint on it like on water.
     rippleStandard(mat, THREE) {
-      const prev = mat.onBeforeCompile;
+      const prev = mat.onBeforeCompile, wk = wrapKey(mat, prev, 'windWater');
       mat.onBeforeCompile = (sh, r) => { if (prev) prev(sh, r); W.hookWater(sh, THREE);
         sh.vertexShader = 'varying vec3 vWWater;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvWWater=(modelMatrix*vec4(transformed,1.)).xyz;');
         sh.fragmentShader = 'varying vec3 vWWater;\n' + sh.fragmentShader.replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal=normalize((viewMatrix*vec4(waterNormal(vWWater),0.)).xyz);'); };
-      mat.customProgramCacheKey = () => 'windWater'; mat.needsUpdate = true; return mat;
+      mat.customProgramCacheKey = wk; mat.needsUpdate = true; return mat;
     },
     // for a THREE.ShaderMaterial (no #include <common>): adds the uniforms, puts the GLSL in front of the vertex shader
     // and defines WIND, so the owner can write `#ifdef WIND ... #endif` and still compile without this file

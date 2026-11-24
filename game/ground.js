@@ -467,7 +467,9 @@ export function createGround(C){const __before=new Set(C.scene.children);
     vec3 c=mix(uDeep,sky,clamp(fr*1.1+.05,0.,1.));
     c+=vec3(.85,.92,1.)*pow(max(dot(R,uMoon),0.),220.)*uNight*2.5;
     // night: darker open water inside a thin moonlit waterline, so its shape still reads through the blue mist
-    c*=1.-.35*uNight*smoothstep(-.1,-.5,vD);c+=uSky*vec3(.9,1.,1.1)*.9*uNight*smoothstep(-.16,-.05,vD)*smoothstep(.03,-.03,vD);
+    c*=1.-.35*uNight*smoothstep(-.1,-.5,vD);
+    // night: the open water catches the bright blue night sky above the clearing (a soft silver sheen), lighter than the mist around it
+    c+=vec3(.16,.26,.34)*uNight*(.35+.65*fr)*smoothstep(-.05,-.4,vD);c+=uSky*vec3(.9,1.,1.1)*.9*uNight*smoothstep(-.16,-.05,vD)*smoothstep(.03,-.03,vD);
     // shallow at the rim: you see the mud bottom through it, then it fades into the bank
     float sh=smoothstep(0.,-.7,vD);c=mix(c*vec3(.75,.7,.6)+vec3(.02,.016,.01),c,sh);float a=mix(.0,.95,smoothstep(.04,-.25,vD));
     gl_FragColor=vec4(c,a);
@@ -475,7 +477,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     #include <colorspace_fragment>
     vec3 pre=gl_FragColor.rgb;
     #include <fog_fragment>
-    gl_FragColor.rgb=mix(gl_FragColor.rgb,pre,.6);// the fog thins over the water: it stays visible at night
+    gl_FragColor.rgb=mix(gl_FragColor.rgb,pre,.85);// the fog thins over the water: it stays visible at night
    }`;
   const fogU=THREE.UniformsLib.fog;let water;
   if(!MOBILE){water=new Reflector(geo,{textureWidth:512,textureHeight:512,clipBias:.003,shader:{name:'Pond',uniforms:{...THREE.UniformsUtils.clone(fogU),...U},vertexShader:VS,fragmentShader:FS(true)}});

@@ -20,7 +20,6 @@ import * as THREE from 'three';
 const FPS = 30;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
-const CARRY = /carry|bucket|hold/;
 const LOCO_CLIPS = new Set(['30', '0', '11', '12', 'hy_idle']); // hero.js clips that only stand in for walking / standing
 const LOWER = /^(Hips|LeftUpLeg|LeftLeg|LeftFoot|LeftToeBase|RightUpLeg|RightLeg|RightFoot|RightToeBase)$/;
 
@@ -130,8 +129,6 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let j = 0; j < 3; j++) { let t = f + TR[j]; if (t > n - 1) { if (!endStill) ok = false; t = n - 1; }
         loc(R[t*3], R[t*3+1], t2, 0); F[o + 15 + j*2] = t2[0]; F[o + 16 + j*2] = t2[1];
         const dy = R[t*3+2] - y; F[o + 21 + j*2] = Math.sin(dy); F[o + 22 + j*2] = Math.cos(dy); }
-      // generated (fal) clips are kept for starts, stops and turns; steady walking comes from real mocap (generated walking looks stiff)
-      if (/^hy_/.test(c.name) && c.speed[f] > .55) ok = false;
       valid[gi] = ok ? 1 : 0; }
     c.fl = new Float32Array(n * 6); for (let f = 0; f < n; f++) for (let k = 0; k < 6; k++) c.fl[f*6 + k] = F[(g0 + f)*NF + k];
     g0 += n; }
@@ -239,19 +236,6 @@ export function createMotion({ hero, db, opts = {} }) {
   function devAngle(q, qi, a, b, i) { const ib = [-b[i], -b[i+1], -b[i+2], b[i+3]], d = [0, 0, 0, 0], pr = [0, 0, 0, 0]; qmul(a, i, ib, 0, d, 0); qmul(d, 0, a, i, pr, 0);
     const dot = Math.abs(pr[0]*q[qi] + pr[1]*q[qi+1] + pr[2]*q[qi+2] + pr[3]*q[qi+3]) / Math.max(1e-9, Math.hypot(pr[0], pr[1], pr[2], pr[3])); return 2 * Math.acos(Math.min(1, dot)); }
 
-  // ---------- foot planting under hero.js clips (work, idle, small pivots): a foot the clip holds still on the floor stays put in
-  // the world while the root turns or shuffles under it; it lets go (and re-plants) when the clip lifts it or the leg is stretched ----------
-  const clipLocal = [new THREE.Vector3(), new THREE.Vector3()]; let clipLocalOk = false;
-  function clipLock(dt) { root.updateMatrixWorld(true); const fy = root.position.y;
-    for (let s = 0; s < 2; s++) { const L = lock[s]; const fb = HB[legs[s][2]]; const ap = fb.getWorldPosition(_a);
-      const loc = root.worldToLocal(_c.copy(ap)); const lv = clipLocalOk ? Math.hypot(loc.x - clipLocal[s].x, loc.z - clipLocal[s].z) / dt : 9; clipLocal[s].copy(loc);
-      const inC = ap.y - fy < restAnkle + .03 && lv < .12;
-      if (inC && !L.on && !L.hold) { L.on = true; L.p.copy(L.w > .05 ? L.shown : ap); }
-      if (L.on && (_b.copy(ap).sub(L.p).setY(0).length() > .1 || !inC)) { L.on = false; L.hold = inC; } // stretched: let go, step again when the clip next plants it
-      if (!inC || (L.hold && L.w < .02)) L.hold = false; // after a quick re-step the foot plants again where it landed
-      L.w = clamp(L.w + (L.on ? dt / .1 : -dt / .14), 0, 1);
-      if (L.w > .001) { if (!L.on) { L.p.lerp(ap, 1 - Math.exp(-dt * 14)); L.p.y = ap.y + .045 * Math.sin(Math.PI * L.w); /* the re-step lifts the foot a little */ } const w = L.w * L.w * (3 - 2 * L.w); L.shown.copy(ap).lerp(L.p, w); legIK(s, L.p, w); } else L.shown.copy(ap); }
-    clipLocalOk = true; }
   // ---------- final pass: no pose ever pops on screen ----------
   // Runs after everything that touches the skeleton in a frame (hero.js clips and IK, motion matching, collide.js). When a bone's
   // final rotation breaks from its own constant-velocity prediction (a clip switched without a long enough cross-fade, an IK target
@@ -268,11 +252,8 @@ export function createMotion({ hero, db, opts = {} }) {
     const off = !FP.on || window.__noPops;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
     let any = false, hit = 0;
-    // GRAB HOOK: a deliberately sharp move (a hammer blow) on one arm is not a pop; hero.js sets H.noPop each frame it swings
-    const NP = H.noPop && H.noPop.age < .25 ? H.noPop.side : null; if (H.noPop) H.noPop.age += dt;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const i3 = b*3;
-      if (NP && /Arm|Hand|Shoulder/.test(names[b]) && names[b].includes(NP)) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; fV[i3] = fV[i3+1] = fV[i3+2] = 0; }
-      else if (!off && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
+      if (!off && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
         if (dv > (FP.hot > 0 ? FP.thrHot : FP.thr)) { // start from what was on screen last frame
           const t = [0, 0, 0, 0]; qmul(fShown, b*4, [-fRaw[b*4], -fRaw[b*4+1], -fRaw[b*4+2], fRaw[b*4+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], fX, i3); fV[i3] = fV[i3+1] = fV[i3+2] = 0; hit++; } }
       if (off) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; }
@@ -282,9 +263,10 @@ export function createMotion({ hero, db, opts = {} }) {
     if (hit) { FP.n++; FP.bones += hit; }
     fr2.set(fr1); fr1.set(fRaw); fN++;
     if (any) root.updateMatrixWorld(true); }
-  // the final pass runs as the velocity limiter ("no snaps") of the 'guard' slot (HERO-RULES.md §1, #8), registered once; no HH.update wrapping
-  let fReg = false;
-  function ensureFinal() { if (fReg || typeof hero.stage !== 'function') return; fReg = true; hero.stage('guard', dt => final(dt)); }
+  // hook the final pass after everything else in the hero's update (collide.js wraps HH.update too, possibly later: stay outermost)
+  let fWrap = null;
+  function ensureFinal() { if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
+    fWrap = dt => { inner(dt); if (g === FP.gen) final(dt); }; hero.update = fWrap; }
   function stepOffsets(dt) {
     for (let i = 0; i < NB * 3; i++) { const y = yB[(i / 3) | 0], e = Math.exp(-y * dt); const j1 = offV[i] + offX[i] * y; offX[i] = e * (offX[i] + j1 * dt); offV[i] = e * (offV[i] - j1 * y * dt); }
     { const e = Math.exp(-yP * dt); for (let k = 0; k < 3; k++) { const j1 = offPV[k] + offP[k] * yP; offP[k] = e * (offP[k] + j1 * dt); offPV[k] = e * (offPV[k] - j1 * yP * dt); } } }
@@ -344,12 +326,7 @@ export function createMotion({ hero, db, opts = {} }) {
       curH[0] = t3[0] + ox*c2 + oz*s2; curH[1] = t3[1]; curH[2] = t3[2] - ox*s2 + oz*c2;
       const hq = cur.slice(HIPS*4, HIPS*4 + 4); qmul(rq, 0, hq, 0, cur, HIPS*4);
       // layering: an action clip from hero.js keeps the upper body
-      const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : null;
-      // the upper body keeps the action only while carrying, or for the last moments of a one-off action (stands up stretching and walks
-      // off); a long action held stiff over walking legs reads as a robot: then the arms swing with the walk
-      let lay = !!(cn && !LOCO_CLIPS.has(cn) && H.cur.getEffectiveWeight() > .5);
-      if (lay && !CARRY.test(cn)) { const d = H.cur.getClip().duration, left = d - H.cur.time; lay = H.cur.loop === THREE.LoopOnce && left < .8; }
-      S.layer = lay;
+      const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : null; S.layer = !!(cn && !LOCO_CLIPS.has(cn) && H.cur.getEffectiveWeight() > .5);
     }
     // ---------- choose the source of every bone, inertialize switches, write the skeleton ----------
     // layered: the action's spine is re-based on the motion-matched pelvis so the upper body keeps the action's orientation
@@ -374,7 +351,6 @@ export function createMotion({ hero, db, opts = {} }) {
     prevOut.set(out); prevOutH.set(outH); haveOut = true;
     root.updateMatrixWorld(true);
     // foot locking while the data says the foot is planted
-    if (S.on) clipLocalOk = false;
     if (S.on && !window.__noFootLock) { const c = clips[S.ci], f = clamp(Math.round(S.t), 0, c.n - 1);
       S.lockDelay = (S.lockDelay || 0) - dt; const cs = Math.cos(S.cyaw), sn = Math.sin(S.cyaw);
       for (let s = 0; s < 2; s++) { const L = lock[s]; const inC = !!c.con[f*2+s]; const fb = HB[legs[s][2]]; const ap = fb.getWorldPosition(_a);
@@ -385,8 +361,7 @@ export function createMotion({ hero, db, opts = {} }) {
         if (!inC) { L.on = false; L.hold = false; }
         L.w = clamp(L.w + (L.on ? dt / .07 : -dt / .16), 0, 1);
         if (L.w > .001) { if (!L.on) L.p.lerp(ap, 1 - Math.exp(-dt * 14)); const w = L.w * L.w * (3 - 2 * L.w); L.shown.copy(ap).lerp(L.p, w); legIK(s, L.p, w); } else L.shown.copy(ap); } }
-    else if (window.__clipLock && !window.__noFootLock && !isBlocked && !H.lad && !H.trans && H.ground !== false) clipLock(dt);
-    else for (const L of lock) { L.on = L.hold = false; L.w = Math.max(0, L.w - dt / .16); if (L.w > .001) { const ap = HB[legs[lock.indexOf(L)][2]].getWorldPosition(_a); const w = L.w * L.w * (3 - 2 * L.w); L.shown.copy(ap).lerp(L.p, w); legIK(lock.indexOf(L), L.p, w); } }
+    else for (const L of lock) { L.on = L.hold = false; L.w = 0; }
     if (S.on) { // world position of the feet for tests
       S.charSpeed = Math.hypot(S.char.x - (S.lastChar ? S.lastChar.x : S.char.x), S.char.z - (S.lastChar ? S.lastChar.z : S.char.z)) / dt; S.lastChar = { x: S.char.x, z: S.char.z }; }
   }
@@ -401,6 +376,6 @@ export function createMotion({ hero, db, opts = {} }) {
 
   // timing check: n full searches against random database frames as queries (Date.now: works under a frozen performance.now)
   function bench(n = 400) { let pr = 0; const t0 = Date.now(); for (let i = 0; i < n; i++) { const g = (Math.random() * total) | 0; for (let k = 0; k < NF; k++) Qv[k] = F[g*NF + k] + (Math.random() - .5) * .3; search(Qv, -1, 1e9); pr += S.pruned; } return { msPerSearch: (Date.now() - t0) / n, pruned: pr / n }; }
-  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones, reg: fReg, frames: fN }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
+  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
   return api;
 }
