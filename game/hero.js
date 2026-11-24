@@ -1270,14 +1270,20 @@ export function createHero(ctx){
    // on it, and ends beside the shut door at the bolt. Spots in the door's frame: hinge + r * (-cos th, 0, sin th), th = open * 1.66.
    const spot=(th,r)=>{const w=D.width||.77;return D.obj.localToWorld(V(w/2-Math.cos(th)*r,0,Math.sin(th)*r));};
    const want=()=>{const th=D.open*1.66;return spot(Math.min(th+.4,1.5),.8+.13*smooth(0,.6,th));};
-   const follow=(a,dt)=>{const p=root.position,q=want();const dx=q.x-p.x,dz=q.z-p.z,m=Math.hypot(dx,dz);a.v=Math.min(.75,Math.max(0,(a.v||0)+(m>.03?2:-3)*dt),Math.sqrt(2*2*m));const st=Math.min(m,a.v*dt);/* eased start and stop: no jerk in the feet */if(m>1e-4){p.x+=dx/m*st;p.z+=dz/m*st;}
+   /* GRAB (watch r10: coming in with the door ~30 deg open he walked straight to the closing spot behind the leaf, through it: hips 23 cm
+      inside): on the leaf's front side he first steps out to 1.1 m from the hinge (past the leaf's tip with his body), then round that
+      circle to behind the leaf, and only then to the closing spot. Polar spots in the door's frame as above. */
+   const polar=p=>{const l=D.obj.worldToLocal(p.clone());const w=D.width||.77;const x=w/2-l.x;return [Math.atan2(l.z,x),Math.hypot(x,l.z)];};
+   const route=(p,q)=>{if(D.open<=.02)return q;const thL=D.open*1.66,[thW]=polar(q),[thP,rP]=polar(p);if(thW<=thL||thP>thL+.12)return q;
+    if(rP<1.03)return spot(Math.min(Math.max(thP,.12),Math.max(.12,thL-.12)),1.1);return spot(Math.min(thP+.6,thL+.3),1.1);};
+   const follow=(a,dt)=>{const p=root.position,q=route(p,want());const dx=q.x-p.x,dz=q.z-p.z,m=Math.hypot(dx,dz);a.v=Math.min(.75,Math.max(0,(a.v||0)+(m>.03?2:-3)*dt),Math.sqrt(2*2*m));const st=Math.min(m,a.v*dt);/* eased start and stop: no jerk in the feet */if(m>1e-4){p.x+=dx/m*st;p.z+=dz/m*st;}
     const lk=D.open>.02?spot(D.open*1.66,.62):D.boltKnob(V());const yF=Math.atan2(lk.x-p.x,lk.z-p.z);const dy=wrapA(yF-root.rotation.y);root.rotation.y+=Math.sign(dy)*Math.min(Math.abs(dy),2.4*dt);H.face=root.rotation.y;
     const mv=st/dt>.12;if(mv&&!a.walk){a.walk=1;play('30',{fade:.25,speed:.8});}else if(!mv&&a.walk&&m<.03){a.walk=0;play(IDLE(),{fade:.4});}return m;};
    return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.42,clip:null,dur:[14,14],vary:false,
    look:a=>D.open>.02?spot(D.open*1.66,.62).setY(root.position.y+.95):D.boltKnob(V()),
    start:a=>{a.ds='shut';a.dt=0;},
    tick:(a,dt)=>{a.dt+=dt;const m=follow(a,dt);
-    if(a.ds==='shut'){if(m<.12&&D.target!==0)D.openTo(0);if((D.open<=1e-3&&m<.05)||a.dt>9){D.openTo(D.open);D.boltTo(to);a.ds='bolt';a.dt=0;}return;}
+    if(a.ds==='shut'){if(m<.12&&D.target!==0)D.openTo(0);if(D.open<=1e-3&&m<.05){D.openTo(D.open);D.boltTo(to);a.ds='bolt';a.dt=0;}else if(a.dt>11){D.openTo(D.open);a.ds='done';a.dt=0;/* not shut in time: the bolt is never pushed on an open door */}return;}
     if(a.ds==='bolt'){if(Math.abs(D.bolt-to)<1e-3){AU('bolt',D.boltKnob(V()));a.ds='done';a.dt=0;}else if(a.dt>3){D.boltTo(D.bolt);a.ds='done';a.dt=0;}return;}
     if(a.ds==='done'&&a.dt>.6)a.T=1e3;}});},
   radio:(o)=>{const P=window.__props||P3;const R=P&&P.radio;if(!R||!R.knob)return job({pt:()=>PT('radio'),stand:.45,clip:'hy_radio',loop:true,dur:[30,60]});
