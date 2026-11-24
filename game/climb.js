@@ -278,7 +278,7 @@ export function createClimb() {
   function aimHead(pt, w) {
     const B = C.bones, Hd = B.Head, Nk = B.Neck; if (!Hd || !Nk || !pt || w < .01) return;
     for (const [b, part] of [[Nk, .4], [Hd, 1]]) {
-      const hp = Hd.getWorldPosition(V()); const f = V(0, 0, -1).applyQuaternion(Hd.getWorldQuaternion(_q1()));
+      const hp = Hd.getWorldPosition(V()); const f = V(0, 0, 1).applyQuaternion(Hd.getWorldQuaternion(_q1()));
       const want = pt.clone().sub(hp).normalize();
       // pitch only up to 30 deg up / 35 deg down from level
       const hz = Math.hypot(want.x, want.z) || 1e-3; let pit = Math.atan2(want.y, hz); pit = Math.max(-.6, Math.min(.52, pit)); want.set(want.x / hz * Math.cos(pit), Math.sin(pit), want.z / hz * Math.cos(pit));
@@ -288,15 +288,15 @@ export function createClimb() {
     }
     headLimits(Math.min(1, w / .85));
   }
-  // a human neck: the head stays within 65 deg of the pelvis in yaw and rolls at most ~5 deg (no owl, no ear on the shoulder)
+  // a human neck (pelvis and head face local +Z): the head stays within 65 deg of the pelvis in yaw and rolls at most ~5 deg (no owl, no ear on the shoulder)
   function rotWorld(b, axis, ang) { const pq = b.parent.getWorldQuaternion(_q1()); const bq = b.getWorldQuaternion(_q1()); const r = _q1().setFromAxisAngle(axis, ang); b.quaternion.copy(pq.invert().multiply(r.multiply(bq))); b.updateMatrixWorld(true); }
   function headLimits(w) {
     const B = C.bones, Hd = B.Head; if (!Hd || !B.Hips) return; const Y = V(0, 1, 0);
-    const hq = Hd.getWorldQuaternion(_q1()); const f = V(0, 0, -1).applyQuaternion(hq); const pf = V(0, 0, -1).applyQuaternion(B.Hips.getWorldQuaternion(_q1()));
+    const hq = Hd.getWorldQuaternion(_q1()); const f = V(0, 0, 1).applyQuaternion(hq); const pf = V(0, 0, 1).applyQuaternion(B.Hips.getWorldQuaternion(_q1()));
     const fh = V(f.x, 0, f.z), ph = V(pf.x, 0, pf.z);
     if (fh.lengthSq() > 1e-4 && ph.lengthSq() > 1e-4) { fh.normalize(); ph.normalize(); const a = Math.atan2(fh.x, fh.z) - Math.atan2(ph.x, ph.z); const d = Math.atan2(Math.sin(a), Math.cos(a)); const M = 1.13;
       if (Math.abs(d) > M) { const ex = d - Math.sign(d) * M; if (B.Neck) rotWorld(B.Neck, Y, -ex * .5 * w); rotWorld(Hd, Y, -ex * .5 * w); } }
-    const q2 = Hd.getWorldQuaternion(_q1()); const f2 = V(0, 0, -1).applyQuaternion(q2), u = Y.clone().applyQuaternion(q2); const sd = f2.clone().cross(Y); if (sd.lengthSq() < 1e-4) return; sd.normalize();
+    const q2 = Hd.getWorldQuaternion(_q1()); const f2 = V(0, 0, 1).applyQuaternion(q2), u = Y.clone().applyQuaternion(q2); const sd = f2.clone().cross(Y); if (sd.lengthSq() < 1e-4) return; sd.normalize();
     const roll = Math.asin(Math.max(-1, Math.min(1, u.dot(sd)))); const RM = .09; const ex = roll > RM ? roll - RM : roll < -RM ? roll + RM : 0; if (Math.abs(ex) > 1e-3) rotWorld(Hd, f2.normalize(), -ex * w);
   }
 
