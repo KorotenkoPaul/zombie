@@ -93,12 +93,21 @@ export function createClimb() {
     // rope ladders sway in their vertex shader (wind.js windRope): follow the same offset so the hands stay on the rung on screen
     const W = window.__wind; if (A.lad.rope && A.lad.len && W && W.swayAt && r.sw > 0) { try { const o = W.swayAt(q, 1.1); const k = .05 * A.lad.len * r.sw * r.sw * (1 - .45 * (W.wet ? W.wet() : 0)); q.x += o.x * k; q.z += o.z * k; } catch (e) {} }
     return q; }
+  // height of the flat palm on the floor above: over the real boards (the deck's edge beam stands 3 cm above the floor height,
+  // and the fingers hang ~5 cm below the wrist: gate, fingers 4-6 cm into the 349x28x12 beam at the top of the rope ladder)
+  function palmY(A) {
+    if (A.palmY != null) return A.palmY; const CD = window.__collide; let top = -1e9;
+    if (CD && CD.depthAt) { try { for (const sd of [-1, 1]) for (let dz = 0; dz <= .16; dz += .04) { const x = A.lad.x + sd * .16, z = A.edge - A.zDir * (.03 + dz);
+      for (let y = A.o.yTop + .15; y > A.o.yTop - .06; y -= .005) { const d = CD.depthAt(x, y, z); if ((typeof d === 'number' ? d : (d && d.depth) || 0) > .002) { top = Math.max(top, y); break; } } } } catch (e) { top = -1e9; }
+      if (top > -1e9) A.palmY = Math.max(A.o.yTop + .04, Math.min(A.o.yTop + .12, top + .055)); }
+    return A.palmY != null ? A.palmY : A.o.yTop + .04;
+  }
   // where each limb wants to be when it rests on rung i
   function restTarget(A, k, i) {
     const s = k[0] === 'L' ? -1 : 1, zD = A.zDir;
     const side = s * zD; // the hero faces -zDir; his left is -x when he faces -z (body axes +Z, no mirrored root)
     if (k[1] === 'H') {
-      if (i >= A.R.length) return V(A.lad.x + side * .16, A.o.yTop + .04, A.edge - zD * .03); // palm flat on the floor above
+      if (i >= A.R.length) return V(A.lad.x + side * .16, palmY(A), A.edge - zD * .03); // palm flat on the floor above
       const c = rungP(A, i).add(V(side * A.hx, .01, 0));
       // the palm (7 cm up the forearm line from the wrist) on the rung: the wrist sits back along the forearm from the rung
       const sh = C.bones[(k[0] === 'L' ? 'Left' : 'Right') + 'Arm']; const el = sh ? sh.getWorldPosition(V()).add(V(0, -.22, zD * .04)) : c.clone().add(V(0, -.3, zD * .25));
@@ -136,7 +145,11 @@ export function createClimb() {
     const c = A.C, s = c.s, L = A.limb[k];
     if (k[1] === 'H') { // palms on the boards, then (as he stands up) the hands come down beside the thighs under IK: the climb clip's raised
       // arms never blend through 'arms straight out in front' on their way to the idle pose (frame review: zombie arms at the top)
-      const f = restTarget(A, k, A.R.length); const e = sstep(.36, .72, s); if (e <= 0) return f;
+      let f = restTarget(A, k, A.R.length);
+      // a hand still on a rung when the body comes up to the edge (the boards were out of its reach): onto the boards now, up first, then over the beam
+      if (L.r < A.R.length && c.dir > 0) { const g = restTarget(A, k, L.r), u = (s - (k === 'LH' ? 0 : .08)) / .26; const ey = sine(u / .6), ez = sine((u - .4) / .6);
+        f = V(lerp(g.x, f.x, ez), lerp(g.y, f.y, ey) + Math.sin(Math.PI * Math.min(1, Math.max(0, u))) * .03, lerp(g.z, f.z, ez)); if (u >= 1) L.r = A.R.length; }
+      const e = sstep(.36, .72, s); if (e <= 0) return f;
       const sh = C.bones[(k[0] === 'L' ? 'Left' : 'Right') + 'Arm'].getWorldPosition(V()); const hp = C.bones.Hips.getWorldPosition(V());
       const out = sh.clone().sub(hp).setY(0); if (out.lengthSq() > 1e-6) out.normalize();
       const hang = sh.clone().add(V(0, -.55, 0)).addScaledVector(out, .05); hang.z -= A.zDir * .03;
@@ -182,6 +195,10 @@ export function createClimb() {
 
   // highest wrist the arm reaches with the body standing on a foot at rootY (shoulder over the hips, ~a hip distance from the rungs)
   function reachY(A, rootY) { const arm = (M.arm || .5) * .93, dz = A.Dhip - .065; return rootY + (A.shOff != null ? A.shOff : (M.shH || 1.1) * .9) + Math.sqrt(Math.max(0, arm * arm - dz * dz)); }
+  // can the hand reach the palm spot on the floor above (past the top rung and the edge beam) from a body standing at rootY?
+  // (it went there with the body still low: the arm ran out 12 cm short and the fingers dragged through the edge beam)
+  function reachFloor(A, rootY) { const arm = (M.arm || .5) * .95, g = restTarget(A, 'LH', A.R.length), rz = rungP(A, A.R.length - 1).z;
+    const dz = (A.Dhip - .065) + Math.abs(rz - g.z), sy = rootY + (A.shOff != null ? A.shOff : (M.shH || 1.1) * .9); return Math.hypot(dz, g.y - sy) <= arm; }
   function planStep(A) {
     const L = A.limb, nR = A.R.length, up = A.up;
     const fl = L.LF.r <= L.RF.r ? 'LF' : 'RF', fh = fl === 'LF' ? 'RF' : 'LF';
@@ -196,7 +213,7 @@ export function createClimb() {
     const hLo = L.LH.r <= L.RH.r ? 'LH' : 'RH', hHi = hLo === 'LH' ? 'RH' : 'LH';
     let hand = null, hto = null;
     // hands: one rung higher than the other hand; past the top rung the palm goes flat on the floor above
-    if (up) { if (L[hLo].r < minAfter + A.K && L[hLo].r < nR) { hand = hLo; hto = Math.min(nR, L[hHi].r + 1); if (hto > nR - 1) hto = top(A, minAfter) + 1.3 > A.o.yTop + .05 ? nR : (L[hHi].r === nR - 1 ? nR - 2 : nR - 1); if (hto < nR) { const ry = reachY(A, top(A, minAfter)); while (hto > L[hLo].r && top(A, hto) + .015 > ry) hto--; } if (hto <= L[hLo].r) hand = null; } }
+    if (up) { if (L[hLo].r < minAfter + A.K && L[hLo].r < nR) { hand = hLo; hto = Math.min(nR, L[hHi].r + 1); if (hto > nR - 1) hto = reachFloor(A, top(A, minAfter)) ? nR : (L[hHi].r === nR - 1 ? nR - 2 : nR - 1); if (hto < nR) { const ry = reachY(A, top(A, minAfter)); while (hto > L[hLo].r && top(A, hto) + .015 > ry) hto--; } if (hto <= L[hLo].r) hand = null; } }
     else { const ry = reachY(A, top(A, minAfter)) - .12; const hy = r => r >= nR ? A.o.yTop : top(A, r) + .015; // palm flat on the floor above: its height is the floor's
       if (L[hHi].r > minAfter + A.K || L[hHi].r >= nR || hy(L[hHi].r) > ry) { /* a palm still on the boards above comes onto the top rung with the first step down (gate: hand gripping air) *//* going down the hands stay a rung lower: the body hangs lower under them */ hand = hHi; hto = Math.min(nR - 1, L[hLo].r - 1); if (L[hLo].r >= nR) hto = nR - 1; while (hto > minAfter + 1 && top(A, hto) + .015 > ry) hto--; } }
     if (hand && hto === L[hand].r) hand = null;
@@ -222,7 +239,10 @@ export function createClimb() {
     if (A.mode === 'over') return overLimb(A, k);
     const L = A.limb[k]; const st = A.step; const m = st && st.move.find(q => q.k === k);
     if (m && L.from) {
-      const e = L.e || 0; const q = L.from.clone().lerp(restTarget(A, k, m.to), e); // live goal: the wrist aim follows the shoulder, a frozen goal jumped at the step end
+      const e = L.e || 0; const g = restTarget(A, k, m.to); const q = L.from.clone().lerp(g, e); // live goal: the wrist aim follows the shoulder, a frozen goal jumped at the step end
+      // a hand onto (or off) the floor above: up first, then over the edge beam (down: back off the boards first, then down to the rung)
+      if (k[1] === 'H' && (m.to >= A.R.length || L.r >= A.R.length)) { const upw = g.y > L.from.y; const ey = upw ? sine(Math.min(1, e / .6)) : sine(Math.max(0, (e - .4) / .6)), ez = upw ? sine(Math.max(0, (e - .4) / .6)) : sine(Math.min(1, e / .6));
+        q.y = L.from.y + (g.y - L.from.y) * ey; q.z = L.from.z + (g.z - L.from.z) * ez; }
       const s = Math.sin(Math.PI * e); q.z += A.zDir * m.arc * s; q.y += (k[1] === 'F' ? .04 : .02) * s;
       // a swinging hand goes round its shoulder, not through it (the target passed 6 cm from the shoulder joint: the elbow whipped round)
       if (k[1] === 'H' && A.shP && A.shP[k]) { const sp = A.shP[k], R0 = .24; const r = Math.hypot(q.y - sp.y, q.z - sp.z); const out = (k === 'LH' ? -1 : 1) * A.zDir;
@@ -315,7 +335,7 @@ export function createClimb() {
       const CD = window.__collide; S.lf = S.lf || {}; const t0 = t;
       // only at the top (ledge beam, floor edge): on the rungs the grip is meant to wrap the rung, and lifting off it flickered frame to frame (arm pops)
       const nearTop = A ? t.y > A.R[A.R.length - 1].y - .06 : true;
-      if (t && CD && CD.depthAt && nearTop) { t = t.clone(); for (let n = 0; n < 12; n++) { let dd = 0; try { const pc = t.clone().add(V(0, 0, -zDir * .06)); const d1 = CD.depthAt(t.x, t.y, t.z), d2 = CD.depthAt(pc.x, pc.y, pc.z); dd = Math.max(typeof d1 === 'number' ? d1 : (d1 && d1.depth) || 0, typeof d2 === 'number' ? d2 : (d2 && d2.depth) || 0); } catch (e) { break; } if (dd <= .002) break; t.y += Math.min(.03, dd + .005); } }
+      if (t && CD && CD.depthAt && nearTop) { t = t.clone(); for (let n = 0; n < 12; n++) { let dd = 0; try { const dv = d => typeof d === 'number' ? d : (d && d.depth) || 0; /* wrist, palm, and the fingers (they hang ~5 cm below the wrist line, 10-15 cm ahead) */ for (const [f, dy] of [[0, 0], [.06, 0], [.11, -.045], [.15, -.055]]) dd = Math.max(dd, dv(CD.depthAt(t.x, t.y + dy, t.z - zDir * f))); } catch (e) { break; } if (dd <= .002) break; t.y += Math.min(.03, dd + .005); } }
       { const need = t && t0 ? t.y - t0.y : 0; const cur = S.lf[k] || 0; S.lf[k] = cur + (need - cur) * Math.min(1, dt * (need > cur ? 14 : 5)); if (t0) { t = t0.clone(); t.y += S.lf[k]; } } // eased lift
       const sx = (s === 'Left' ? -1 : 1) * zDir; const w = W * (hw ? hw[k] : 1); if (w < .002) continue;
       C.ik2(B[s + 'Arm'], B[s + 'ForeArm'], B[s + 'Hand'], t, V(sx * .7, -1, zDir * .45), w, false); if (window.__qa) { S.tl = S.tl || {}; S.tl[k] = [t.x, t.y, t.z, w, wp(B[s + 'Hand']).distanceTo(t)]; }
