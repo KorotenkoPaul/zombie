@@ -2662,7 +2662,34 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  const BL={t:rnd(2,5),k:0};
  function lidTick(dt){let want=0;const b=H.bedB;if(H.inBed&&!b)want=1;if(H.bedC)want=H.bedC.dir>0?smooth(.75,1,H.bedC.u):1-smooth(0,.3,H.bedC.u);else if(b)want=smooth(.55,.9,b.u)*(b.dir>0?1:smooth(.75,.95,b.u));
   BL.t-=dt;if(BL.t<=0){BL.t=rnd(2.5,6);if(Math.random()<.2)BL.t=.25;BL.b=0;}if(BL.b!=null){BL.b+=dt;const k=BL.b<.07?BL.b/.07:1-(BL.b-.07)/.1;if(k<=0)BL.b=null;else want=Math.max(want,k);}
+  if(FACE.lid>want)want=FACE.lid;/* a yawn squeezes the eyes half shut; effort narrows them */
   BL.k+=(want-BL.k)*Math.min(1,dt*(want>BL.k?25:8));setLids(BL.k);}
+ // FACE (v6 head, pipeline/hero2/facemorph.mjs): morph targets 'effort' (brows down and together, cheeks up, lips pressed)
+ // and 'yawn' (jaw drops, brows up; the 'mouth' node's own 'yawn' opens a dark oval over the lips). Heads without them: no-op.
+ // effort: from the task (how heavy the work is) times how hard the hand is moving right now (peaks on each strike or lift).
+ // yawn: the stretch_yawn clip, now and then when he is tired (late evening, on his way to bed), a little open when asleep;
+ // chewing moves the jaw while he eats. Own PRNG: Math.random would shift the seeded gate stream.
+ const FACE=(()=>{const tg=[];let mo=null;root.traverse(o=>{if(!o.morphTargetDictionary)return;if(o.name==='mouth')mo=o;else if(o.morphTargetDictionary.effort!=null)tg.push(o);});
+  if(mo)mo.castShadow=false;
+  return {tg,mo,e:0,y:0,lid:0,yt:null,next:40,seed:7177,hp:null};})();
+ const FX_EFF={splitwood:1,saw:.85,repair:.7,hammer:.7,craft:.6,dumpwater:.7,firewood:.6,water:.55,fetchwater:.55,stoke:.45,chop:.35,hunt:.5,sweep:.25};
+ function faceRnd(){FACE.seed=(FACE.seed*16807)%2147483647;return FACE.seed/2147483647;}
+ function faceTick(dt){if(!FACE.tg.length||dt<=0)return;const t=H.task||'';let base=FX_EFF[t]||(/^fix/.test(t)?.6:0);
+  if(H.inBed||H.seated&&t!=='saw')base=0;if(H.path.length||H.trans||H.lad||H.slide)base=/^(firewood|water|fetchwater)$/.test(t)?base*.5:0;/* on the way there: nothing to strain at (a load in his arms: a little) */
+  const hp=bones.RightHand?root.worldToLocal(bones.RightHand.getWorldPosition(V())):null;/* relative to his body: walking is not a strike */let sp=0;if(hp&&FACE.hp){sp=hp.distanceTo(FACE.hp)/dt;}if(hp)FACE.hp=(FACE.hp||V()).copy(hp);
+  const eT=base*(.4+.6*smooth(.2,1.4,sp));FACE.e+=(eT-FACE.e)*Math.min(1,dt*(eT>FACE.e?6:2.5));
+  // yawns
+  const yc=actions.stretch_yawn;let yT=0;if(yc&&H.cur===yc&&yc.isRunning()){const u=yc.time/Math.max(.1,yc.getClip().duration);yT=smooth(.18,.38,u)*(1-smooth(.62,.85,u));}
+  const h=hour();const tired=(h>=21.5||h<6)||t==='sleep'&&!H.inBed&&!H.bedB;
+  FACE.next-=dt;if(FACE.next<=0){FACE.next=25+faceRnd()*50;if(tired&&base===0&&t!=='eat'&&!H.inBed&&!H.bedB&&!H.bedC&&!FACE.yt&&faceRnd()<.55)FACE.yt={t:0,d:2.8+faceRnd()*1.2};}
+  if(FACE.yt){const Y=FACE.yt;Y.t+=dt;const u=Y.t/Y.d;yT=Math.max(yT,smooth(0,.32,u)*(1-smooth(.68,1,u)));if(u>=1||base>0||H.inBed)FACE.yt=null;}
+  if(H.inBed&&!H.bedB&&!H.bedC)yT=Math.max(yT,.1);/* asleep: lips just apart */
+  if(t==='eat'&&act&&act.step==='eat'&&!act.rest&&act.cu>.68&&act.cu<.98)yT=Math.max(yT,.13*Math.max(0,Math.sin((act.cu-.68)*Math.PI*2*5))*(1-smooth(.85,.98,act.cu)));/* chewing, in step with the head */
+  FACE.y+=(yT-FACE.y)*Math.min(1,dt*(yT>FACE.y?5:3.5));
+  const ef=FACE.e*(1-FACE.y);FACE.lid=Math.max(.5*smooth(.3,.9,FACE.y),.22*ef);
+  for(const o of FACE.tg){const D=o.morphTargetDictionary;o.morphTargetInfluences[D.effort]=ef;o.morphTargetInfluences[D.yawn]=FACE.y;}
+  if(FACE.mo)FACE.mo.morphTargetInfluences[FACE.mo.morphTargetDictionary.yawn]=FACE.y;
+  window.__face={e:+ef.toFixed(3),y:+FACE.y.toFixed(3)};}
  // the quilt and mattress sink under him (props.js bedPress)
  function bedPress(on){const P=window.__props||P3;if(!P)return;const hp=on?bones.Hips.getWorldPosition(V()):null;// asleep he lies under the quilt (props bedCover: a body-shaped mound)
   try{if(P.bedCover)P.bedCover(hp);/* BED: no bedPress(null) after it: both share one state, so that switched the cover off and the quilt never rose over him */else if(P.bedPress)P.bedPress(hp);}catch(e){}}
@@ -3128,7 +3155,7 @@ stage('grab',dt=>{lieSettle(dt);quiltHandTick(dt);});
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
   runSlot('motion',dt);
   if(act&&act.preLeg&&!window.__sqLate){try{act.preLeg(dt);}catch(e){console.error('preLeg',e);}}/* REPAIRS: squatting work lowers the pelvis before the soles are planted */
-  sleepTick(dt);lidTick(dt);coatTick(dt);
+  sleepTick(dt);faceTick(dt);lidTick(dt);coatTick(dt);
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
