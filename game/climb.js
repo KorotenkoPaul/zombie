@@ -71,13 +71,17 @@ export function createClimb() {
       for (const k of LIMBS) A.limb[k].from = wp(B[{ LF: 'LeftFoot', RF: 'RightFoot', LH: 'LeftHand', RH: 'RightHand' }[k]]);
       A.y = o.up ? o.yBot : top(A, n); A.y0 = p.y;
     }
+    A.hl = C.H.lad; // this climb belongs to this ladder run only (a reset body / new route drops it)
     S.act = A; S.wTarget = 1; S.resid = null;
     return true;
   }
 
   // top of rung i (where a sole rests); -1 = the floor below, >= nR = the floor above
   function top(A, i) { if (i < 0) return A.floorY; if (i >= A.R.length) return A.o.yTop; const r = A.R[i]; return r.y + r.r; }
-  function rungP(A, i) { if (i < 0) return V(A.lad.x, A.floorY, A.o.cz); const r = A.R[Math.min(i, A.R.length - 1)]; return V(r.x, r.y, r.z); }
+  function rungP(A, i) { if (i < 0) return V(A.lad.x, A.floorY, A.o.cz); const r = A.R[Math.min(i, A.R.length - 1)]; const q = V(r.x, r.y, r.z);
+    // rope ladders sway in their vertex shader (wind.js windRope): follow the same offset so the hands stay on the rung on screen
+    const W = window.__wind; if (A.lad.rope && A.lad.len && W && W.swayAt && r.sw > 0) { try { const o = W.swayAt(q, 1.1); const k = .05 * A.lad.len * r.sw * r.sw * (1 - .45 * (W.wet ? W.wet() : 0)); q.x += o.x * k; q.z += o.z * k; } catch (e) {} }
+    return q; }
   // where each limb wants to be when it rests on rung i
   function restTarget(A, k, i) {
     const s = k[0] === 'L' ? 1 : -1, zD = A.zDir;
@@ -87,7 +91,7 @@ export function createClimb() {
       const c = rungP(A, i); return c.add(V(side * A.hx, -.045, zD * .07)); }
     if (i < 0) { const f = A.limb[k].floor; if (f && A.up) return f.clone(); return V(A.lad.x + side * A.fx, A.floorY + M.footUp, A.o.cz - zD * .02); }
     const c = rungP(A, i); const R = A.R[Math.min(i, A.R.length - 1)];
-    return c.add(V(side * A.fx, R.r + .03 + M.footUp, zD * (M.footH - .02)));
+    return c.add(V(side * A.fx, R.r + .05 + M.footUp, zD * (M.footH - .02)));
   }
 
   // ---- over the top edge: s 0 = on the ladder (feet on the two top rungs, hands on the floor), 1 = standing up there ----
@@ -124,6 +128,7 @@ export function createClimb() {
 
   // ---- one frame of climbing (root height, gait). Returns 'off' (standing on the floor above) | 'bottom' | null ----
   function tick(dt) {
+    if (S.act && C.H.lad !== S.act.hl) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; }
     const A = S.act; if (!A) return null;
     const p = C.root.position;
     A.t += dt;
@@ -165,7 +170,7 @@ export function createClimb() {
     let hand = null, hto = null;
     // hands: one rung higher than the other hand; past the top rung the palm goes flat on the floor above
     if (up) { if (L[hLo].r < minAfter + A.K && L[hLo].r < nR) { hand = hLo; hto = Math.min(nR, L[hHi].r + 1); if (hto > nR - 1) hto = top(A, minAfter) + 1.3 > A.o.yTop + .05 ? nR : (L[hHi].r === nR - 1 ? nR - 2 : nR - 1); if (hto === L[hLo].r) hand = null; } }
-    else { if (L[hHi].r > minAfter + A.K + 1) { hand = hHi; hto = Math.min(nR - 1, L[hLo].r - 1); if (L[hLo].r >= nR) hto = nR - 1; } }
+    else { if (L[hHi].r > minAfter + A.K) {/* going down the hands stay a rung lower: the body hangs lower under them */ hand = hHi; hto = Math.min(nR - 1, L[hLo].r - 1); if (L[hLo].r >= nR) hto = nR - 1; } }
     if (hand && hto === L[hand].r) hand = null;
     if (up) {
       if (hand) { move.push({ k: hand, to: hto, a: 0, b: .42, arc: .09 }); move.push({ k: mf, to, a: .3, b: .84, arc: .13 }); }
@@ -195,6 +200,8 @@ export function createClimb() {
 
   // ---- after the clip pose: hips to the ladder, limbs onto the rungs ----
   function post(dt) {
+    // the body was reset (spawn / freeze guard / random start) while on a ladder: drop the climb at once
+    if (S.act && C.H.lad !== S.act.hl) { S.act = null; S.W = 0; S.wTarget = 0; S.last = null; S.resid = null; }
     const A = S.act;
     // fade the IK weight (also after the climb ended, while the next clip takes over)
     const fadeT = A ? .3 : (S.fade || .3);
@@ -237,7 +244,10 @@ export function createClimb() {
       S.last = { tg, zDir: A.zDir, hw, flat: { LH: A.limb.LH.r >= A.R.length, RH: A.limb.RH.r >= A.R.length } };
       // look at the hand that moves next (or between the hands); over the edge: ahead
       const nh = A.step && A.step.move.find(m => m.k[1] === 'H');
-      C.H.look = A.mode === 'over' ? A.P.clone().add(V(0, 1.2, -A.zDir * 1.5)) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone(); C.H.lookW = .45;
+      { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
+        let L = A.mode === 'over' ? V(A.P.x, hd.y + .05, A.P.z - A.zDir * 1.4) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
+        if (A.mode !== 'over') { L.y = Math.min(L.y, hd.y + .2); L.z = planeZ; }
+        C.H.look = L; C.H.lookW = .35; A.lookPt = L; }
     } else { tg = S.last && S.last.tg; hw = S.last && S.last.hw; }
     if (!tg) return;
     const W = S.W; const zDir = S.last.zDir;
@@ -255,6 +265,23 @@ export function createClimb() {
       const Hd = B[s + 'Hand']; if (Hd) { const a = wp(Hd); const dir = V(0, 1, 0).applyQuaternion(Hd.getWorldQuaternion(new THREE.Quaternion())); const tip = a.clone().addScaledVector(dir, .09);
         const flat = S.last.flat && S.last.flat[k];
         C.turnBone(Hd, tip, a.clone().add(flat ? V(0, -.015, -zDir * .09) : V(0, .075, -zDir * .06)), w); }
+    }
+    if (A && A.lookPt) aimHead(A.lookPt, W * .85);
+  }
+
+  // the head looks where he climbs (the climb clip throws it back to the ceiling): Neck 40 % / Head 60 %, kept within a
+  // human pitch range, after the limbs so nothing turns it back afterwards
+  const _q1 = () => new THREE.Quaternion();
+  function aimHead(pt, w) {
+    const B = C.bones, Hd = B.Head, Nk = B.Neck; if (!Hd || !Nk || !pt || w < .01) return;
+    for (const [b, part] of [[Nk, .4], [Hd, 1]]) {
+      const hp = Hd.getWorldPosition(V()); const f = V(0, 0, 1).applyQuaternion(Hd.getWorldQuaternion(_q1()));
+      const want = pt.clone().sub(hp).normalize();
+      // pitch only up to 30 deg up / 35 deg down from level
+      const hz = Math.hypot(want.x, want.z) || 1e-3; let pit = Math.atan2(want.y, hz); pit = Math.max(-.6, Math.min(.52, pit)); want.set(want.x / hz * Math.cos(pit), Math.sin(pit), want.z / hz * Math.cos(pit));
+      const dq = _q1().setFromUnitVectors(f, want); dq.slerp(_q1(), 1 - w * part);
+      const bq = b.getWorldQuaternion(_q1()), pq = b.parent.getWorldQuaternion(_q1());
+      b.quaternion.copy(pq.invert().multiply(dq.multiply(bq))); b.updateMatrixWorld(true);
     }
   }
 

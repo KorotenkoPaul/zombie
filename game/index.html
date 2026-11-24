@@ -645,17 +645,17 @@ const BX0=-4.2,BX1=.4;
 floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]]});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
-const HATCH=(()=>{const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
+const HATCH=(()=>{/* own plank materials: plain meshes sharing boardMat's instanced program came out flat white (critic T20) */const hB=boardMat.clone();plankShader(hB);const hD=boardMat.clone();plankShader(hD);hD.color.setScalar(.5);const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
  // the opening reads as a real hole (Pavel): a dark trim frame round it on the bedroom floor, and the floor's thickness lined
  // with boards inside it, so from the kitchen below it is a framed square hole with the ladder going up through it
  {const fr=new THREE.Group();scene.add(fr);const W=x1-hx0,D=z1-z0,cx=(hx0+x1)/2,cz=(z0+z1)/2;
   const bx=(sx,sy,sz,px,py,pz,mat)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(px,py,pz);m.castShadow=m.receiveShadow=true;fr.add(m);};
-  for(const sd of [-1,1]){if(sd>0)bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,darkBoard);/* -x: the wall is the edge */bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),darkBoard);
-   bx(.035,.26,D,cx+sd*(W/2-.017),y-.15,cz,boardMat);bx(W-.07,.26,.035,cx,y-.15,cz+sd*(D/2-.017),boardMat);}
+  for(const sd of [-1,1]){if(sd>0)bx(.09,.05,D+.18,cx+sd*(W/2+.045),y+.002,cz,hD);/* -x: the wall is the edge */bx(W,.05,.09,cx,y+.002,cz+sd*(D/2+.045),hD);
+   bx(.035,.26,D,cx+sd*(W/2-.017),y-.15,cz,hB);bx(W-.07,.26,.035,cx,y-.15,cz+sd*(D/2-.017),hB);}
   bakeStatic(fr);}
  const lid=new THREE.Group();g.add(lid);const L=z1-z0;
- const PW=(x1-x0)/4;for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(PW-.004,.05,L-.01),boardMat);m.position.set(x0-(x0+x1)/2+PW/2+i*PW,0,-L/2);m.castShadow=m.receiveShadow=true;lid.add(m);}
- for(const zz of [-.18,-L+.18]){const m=new THREE.Mesh(new THREE.BoxGeometry(.58,.04,.09),darkBoard);m.position.set(0,-.04,zz);lid.add(m);}
+ const PW=(x1-x0)/4;for(let i=0;i<4;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(PW-.004,.05,L-.01),hB);m.position.set(x0-(x0+x1)/2+PW/2+i*PW,0,-L/2);m.castShadow=m.receiveShadow=true;lid.add(m);}
+ for(const zz of [-.18,-L+.18]){const m=new THREE.Mesh(new THREE.BoxGeometry(.58,.04,.09),hD);m.position.set(0,-.04,zz);lid.add(m);}
  const ring=new THREE.Mesh(new THREE.TorusGeometry(.045,.009,6,14),new THREE.MeshStandardMaterial({color:0x2A2622,metalness:.7,roughness:.45}));ring.position.set(0,.03,-L+.12);ring.rotation.x=Math.PI/2;lid.add(ring);
  for(const xx of [-.2,.2]){const h=new THREE.Mesh(new THREE.BoxGeometry(.05,.02,.12),ring.material);h.position.set(xx,.03,-.04);lid.add(h);}
  bakeStatic(lid,m=>m===ring);const OPEN=1.95;let ang=OPEN,target=OPEN;lid.rotation.x=ang;
@@ -832,7 +832,7 @@ const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{
  ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
  mode:()=>{if(isNight(hour)&&zombies.some(z=>z.alive))return 'guard';if(B.some(b=>b.breakable&&b.loose))return 'repair';return null;},
  guardSpot:()=>guardSpot(),brokenBoard:()=>B.find(b=>b.breakable&&b.loose),repairBoard:b=>repairBoard(b),get WIN_NODE(){return WIN_NODE;}});
-// anatomical guard (game/pose.js): last slot every frame, joint limits, hinge knees/elbows, no snaps (HERO-RULES.md slot 8)
+// anatomical guard (game/pose.js): last slot every frame, joint limits, hinge knees/elbows, no snaps (HERO-RULES.md slot 8); inert until hero.js offers HH.stage
 try{if(!/pose=off/.test(location.search)&&HH.stage){const PG=createPoseGuard({hero:HH});if(PG){window.__poseGuard=PG;HH.stage('guard',dt=>PG(dt));}}}catch(e){console.error('pose guard',e);}
 // motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
 try{const {createClimb}=await import(new URL(ASSET+'climb.js',document.baseURI).href);if(HH.setClimb){window.__climb=createClimb();HH.setClimb(window.__climb);}}catch(e){console.error('climb',e);}

@@ -19,7 +19,7 @@ async function one(h){let D,errs=[];if(FROM){D=JSON.parse(zlib.gunzipSync(fs.rea
  const R=analyze(D);fs.mkdirSync(OUT+'/'+h,{recursive:true});fs.writeFileSync(OUT+'/'+h+'/frames.json.gz',zlib.gzipSync(JSON.stringify({...D,meta:{seed:1,query:Q[h]??'',gate:CAP}})));
  fs.writeFileSync(OUT+'/'+h+'/issues.json',JSON.stringify(R));const byF=new Map(D.frames.map(f=>[f.f,f]));
  const worst={};for(const q of R.issues){if(q.P!==1||!GATE.has(q.type))continue;if(q.type==='jump'&&q.value<10)continue;
-  const task=(byF.get(q.f)||{}).task||'-';const k=[h,q.type,q.bone,String(q.into||'').replace(/#\d+.*|~\d+/,''),task].join('|');
+  const fr=byF.get(q.f)||{};const task=String(fr.tag||'').replace(/^tour:/,'')||fr.task||'-';const k=[h,q.type,q.bone,String(q.into||'').replace(/#\d+.*|~\d+/,''),task].join('|');
   if(!worst[k]||q.value>worst[k].v)worst[k]={v:q.value,f:q.f,unit:q.unit,what:q.what||''};}
 // HARD limits on the paths Pavel watches (bed, eating, fridge, stirring, ladders): these fail even if the baseline has them
  const hard=[];for(const q of R.issues){const f=byF.get(q.f)||{};const key=/^(sleep|eat|cook|store|pot)$/.test(f.task)||f.fl&&f.fl.includes('L');if(!key)continue;
@@ -32,11 +32,6 @@ async function one(h){let D,errs=[];if(FROM){D=JSON.parse(zlib.gunzipSync(fs.rea
   console.log('gate baseline written:',Object.keys(keep).length,'known P1 problems ('+frames+' frames, '+((Date.now()-t0)/1000|0)+' s)');process.exit(0);}
  const base=JSON.parse(fs.readFileSync(BASE));const bad=[];
  for(const k in cur){const v=cur[k].v,b0=base[k];if(b0===undefined)bad.push(['NEW',k,v,cur[k]]);else if(v>b0*1.25&&v-b0>2)bad.push(['WORSE',k,v,cur[k],b0]);}
- // the detailed hero is not fully deterministic yet (replays can part after ~1000 frames): a regression must show up again
- // in a second run to count
- if(bad.length&&!FROM){const hs=[...new Set(bad.map(x=>x[1].split('|')[0]))];console.log('re-running',hs.join(','),'to confirm',bad.length,'possible regressions...');
-  const again={};for(const r of await Promise.all(hs.map(one)))Object.assign(again,r.worst);
-  for(let i=bad.length-1;i>=0;i--){const k=bad[i][1];const b0=base[k];const v2=again[k]&&again[k].v;const still=v2!==undefined&&(b0===undefined||(v2>b0*1.25&&v2-b0>2));if(!still)bad.splice(i,1);}}
  const hard=res.flatMap(r=>r.hard);
  const fixed=Object.keys(base).filter(k=>!(k in cur)&&HEROES.includes(k.split('|')[0]));
  console.log(`anim gate: ${frames} frames, ${((Date.now()-t0)/1000|0)} s; ${bad.length} regressions, ${fixed.length} baseline problems gone`);

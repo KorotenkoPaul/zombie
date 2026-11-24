@@ -48,6 +48,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (sc.some(v => v < 1e-6)) return false; ax.forEach((a, i) => a.multiplyScalar(1 / sc[i]));
     const lh = bb.getSize(V()).multiplyScalar(.5); s.h = [lh.x * sc[0], lh.y * sc[1], lh.z * sc[2]]; s.c = bb.getCenter(V()).applyMatrix4(mw); s.ax = ax; s.sc = sc;
     if (s.kind === 'cyl') s.r = s.r0 * sc[0]; if (s.kind === 'sph') s.r = s.r0 * sc[0];
+    s.flat = s.kind === 'box' && ax.some(v => Math.abs(v.y) > .97);
     if (s.kind === 'vox') { s.inv = (s.inv || new THREE.Matrix4()).copy(mw).invert(); s.sMin = Math.min(...sc); }
     return true;
   }
@@ -260,7 +261,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       // POSE (poses thread): asleep, hero.js lays the body on the measured mattress itself; the bed's voxels (mattress, quilt mound,
       // pillow, all one 'bunkbed' grid) pushed the root up ~20-50 cm and made the head twitch on the pillow every ~0.3 s
       if (s.cls >= 2 && lying && hero.inBed && !hero.bedB) continue;
-     /* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue; const d = depth(s, p); if (d <= 0) continue;
+     /* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue;
+      // the floor is hero.js's (support slot puts the soles on hero.floorY): a sole within 6 cm of the floor level is not 'in' a floor
+      // board. Uneven planks are boxes here, thicker than the visible board; lifting the foot out of them made him hover 10 cm.
+      if (s.flat && (part === 3 || part === 4) && p.y < root.position.y + .06 && s.c.y < root.position.y + .03) continue; const d = depth(s, p); if (d <= 0) continue;
       let allow = part === 3 ? ALLOW.feet : ALLOW.hard;
       if (s.cls >= 2) allow = (lying && p.y < root.position.y + .6) ? ALLOW.pillow : ALLOW.soft;
       else if (s.cls === 1 && (part === 4 || part === 5)) allow = ALLOW.seat;
@@ -303,6 +307,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     const bp = bone.getWorldPosition(V()); const v1 = childPos.clone().sub(bp), v2 = goal.clone().sub(bp); if (v1.lengthSq() < 1e-8 || v2.lengthSq() < 1e-8) return; v1.normalize(); v2.normalize();
     const dq = new THREE.Quaternion().setFromUnitVectors(v1, v2); if (w < 1) dq.slerp(new THREE.Quaternion(), 1 - w); bone.getWorldQuaternion(_q); bone.parent.getWorldQuaternion(_pq); bone.quaternion.copy(_pq.invert().multiply(dq.multiply(_q))); bone.updateMatrixWorld(true);
   }
+  const _q2 = new THREE.Quaternion();
   function ik2(A, Bb, C, target, leg) {
     if (!A || !Bb || !C) return; const endQ = C.getWorldQuaternion(new THREE.Quaternion());
     const a = A.getWorldPosition(V()), b = Bb.getWorldPosition(V()), c = C.getWorldPosition(V()); const l1 = a.distanceTo(b), l2 = b.distanceTo(c);
@@ -310,7 +315,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     // a nearly straight limb (hanging arm, stance leg) has no clear bend plane: its tiny pole flips from frame to frame and so did the
     // elbow / knee (hand and head jumps while walking). A small anatomical bias (knee forward, elbow back) keeps the plane steady,
     // and fades in continuously as the limb straightens.
-    { const fw = V(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)); pole.addScaledVector(fw, (leg ? .04 : -.04) * l1); }
+    // the body's own forward, never the root's yaw (during tasks the root yaw and the body can differ): a knee points where its toes
+    // point, an elbow away from where the pelvis faces (the rig's pelvis faces its local -Z, HERO-RULES.md)
+    { let fw = null; if (leg) { const toe = (C === bones.LeftFoot ? bones.LeftToeBase : bones.RightToeBase); if (toe) { fw = toe.getWorldPosition(V()).sub(c); fw.y = 0; } }
+      else if (bones.Hips) { fw = V(0, 0, 1).applyQuaternion(bones.Hips.getWorldQuaternion(_q2)); fw.y = 0; }
+      if (fw && fw.lengthSq() > 1e-6) { fw.normalize(); pole.addScaledVector(fw, (leg ? .04 : -.04) * l1); } }
     const tv = target.clone().sub(a); const dd = clamp(tv.length(), Math.abs(l1 - l2) + .01, l1 + l2 - 1e-4); /* no forced knee bend on a straight leg (that pops) */ const dir = tv.normalize();
     const ca = clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1), sa = Math.sqrt(1 - ca * ca); let pp = pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pp.lengthSq() < 1e-8) pp = V(0, 0, 1); pp.normalize();
     const knee = a.clone().addScaledVector(dir, ca * l1).addScaledVector(pp, sa * l1); turnBone(A, b, knee); turnBone(Bb, C.getWorldPosition(V()), a.clone().addScaledVector(dir, dd));
@@ -334,7 +343,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // while still needed and released slowly afterwards, so push / release never alternate (no jitter, no pops)
   // the limits are on the correction's velocity VECTOR (m/frame): its change from one frame to the next (acceleration) and its size,
   // so a push can't flip direction from one frame to the next (that was visible as head / hand jitter)
-  const MAXS = [.005, .008, .012, .012, .03, .03], ACC = [.0012, .0025, .004, .004, .03, .03];
+  const MAXS = [.005, .008, .012, .012, .015, .015], ACC = [.0012, .0025, .004, .004, .006, .006];
   const gv = [V(), V(), V(), V(), V(), V()], lastGv = [V(), V(), V(), V(), V(), V()], hold = new Float32Array(6), _tg = V();
   const take = (c, v) => { _tg.copy(gv[c]).add(v).sub(lastGv[c]); if (_tg.length() > ACC[c]) _tg.setLength(ACC[c]); _tg.add(lastGv[c]); if (_tg.length() > MAXS[c]) _tg.setLength(MAXS[c]);
     v.copy(_tg).sub(gv[c]); gv[c].copy(_tg); return v; };
@@ -350,7 +359,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   let guardV = 0, guardT = 0, prevGap = 0;
   function floorGuard(dt) { if (window.__colOff && window.__colOff.floor) return; // the root never stands below the boards (hero.js only climbs back up from 12 cm)
     if (!hero.ground || hero.fit || hero.lad || hero.swing || hero.inBed || (hero.path[0] && hero.path[0].t === 'ladder')) return; const p = root.position; if (p.y < 1.5) return; /* house floors only: on the ground hero.js follows the terrain */ const top = boardTop(p.x, p.y, p.z); if (top == null) return;
-    const gap = top - p.y; if (gap <= .004) { guardV = 0; guardT = 0; prevGap = 0; return; }
+    const gap = top - (p.y + (hero.squat || 0)); /* a squat lowers the root on purpose (hero.js support slot): the feet stay on the boards */ if (gap <= .004) { guardV = 0; guardT = 0; prevGap = 0; return; }
     // hero.js climbs back onto the boards itself in most cases: step in only when he stays under them (0.4 s without rising)
     if (!guardV) { guardT = (prevGap - gap > .002) ? 0 : guardT + dt; prevGap = gap; if (guardT < .4) return; } guardV = Math.min(guardV + .004, .03); const k = Math.min(gap, guardV); p.y += k; hero.floorY = top; st.floorFix++; root.updateMatrixWorld(true);
   }
@@ -367,12 +376,13 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     for (let c = 0; c < 6; c++) { const b = CB[c]; nearTrunk[c] = !!trunk && Math.hypot(Math.max(b[0].x - trunk.TAX[0], trunk.TAX[0] - b[1].x, 0), Math.max(b[0].z - trunk.TAX[1], trunk.TAX[1] - b[1].z, 0)) < 2.4; }
   }
   const _hp = V(), lastHip = V(1e9, 0, 0), lastEnd = [null, null, V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0)]; let lastTouch = -100;
+  const kneel = [false, false, false, false, false, false], _kp = V(), _fp = V();
   function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++;
     if (bigQ.length) cutBig(); buildSome(1.5); trackMoving();
     floorGuard(dt);
-    const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 14);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
+    const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 6);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGv[c].copy(gv[c]); gv[c].set(0, 0, 0); }
     { const GR = window.__grab; if (GR) for (const c of [2, 3]) if (GR.grip[c === 2 ? 'Left' : 'Right']) { off.limb[c].set(0, 0, 0); hold[c] = 0; } }// a gripping hand stays on its handle (game/grab.js)
     if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) off.limb[c].multiplyScalar(c >= 4 ? relFoot : rel);
@@ -381,6 +391,9 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (off.head.lengthSq() > 1e-8) bendHead(off.head);
     for (let c = 2; c < 6; c++) { const L = LIMB[c]; if (!L.C) continue; L.C.getWorldPosition(anim[c]); if (off.limb[c].lengthSq() > 1e-8) ik2(L.A, L.B, L.C, anim[c].clone().add(off.limb[c]), c >= 4); }
     let it = 0, worst = 0, liveMask = 0;
+    // kneeling / squatting (shin far from upright): the shin and foot rest on the boards by design; an IK lift of such a leg
+    // swings the knee the wrong way (fix_board), so those legs are left alone
+    for (const c of [4, 5]) { const L = LIMB[c]; kneel[c] = false; if (!L.B || !L.C) continue; const k = L.B.getWorldPosition(_kp), f = L.C.getWorldPosition(_fp); const d = k.distanceTo(f); kneel[c] = d > 1e-4 && Math.abs(k.y - f.y) / d < .6; }
     // cheap frames: with nothing touched lately, the body is probed only every other frame, and not at all while the pose stands
     // still (asleep, seated, a slow task); the corrections already in place are applied every frame above
     { const hp = bones.Hips ? bones.Hips.getWorldPosition(_hp) : root.position; let mv = 0; for (const c of [2, 3, 4, 5]) if (LIMB[c].C) mv = Math.max(mv, anim[c].distanceTo(lastEnd[c])); mv = Math.max(mv, hp.distanceTo(lastHip));
@@ -399,6 +412,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         if (tc <= 1) { sumN[tc].addScaledVector(OUT.n, ex); sumW[tc] += ex; if (ex > pd[tc]) pd[tc] = ex; }
         // legs: only lift a foot / shin out of what is under it; a sideways nudge of a planted foot is a visible slide
         // (seated / sitting on an edge / lying the feet are not planted: a leg through a rail or a bed post is pushed out sideways too)
+        if (P.chain >= 4 && kneel[P.chain]) continue;
         if (P.chain >= 4 && OUT.n.y < .5 && !fit && !lying) continue;
         if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4 && OUT.n.y >= .5 && !fit && !lying) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
