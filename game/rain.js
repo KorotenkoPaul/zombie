@@ -135,7 +135,12 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
   // into RGBA8 (three's packDepthToRGBA); depth test keeps the topmost. SUB texels per cell, so the roof-edge search and
   // the leaf-tip drips can still look between cell centres. Same targets as the rays (everything else hidden for it).
   const SUB = 8, HX = NX * SUB, HZ = NZ * SUB, YLO = -2, YSPAN = 40; let hi = null;
-  function renderTop() {
+  // The readback is ASYNC (WebGL2): readPixels into a pixel-pack buffer + a fence, polled over the next frames; only
+  // when the GPU is done are the bytes copied out (getBufferSubData, no stall). A plain readRenderTargetPixels here
+  // stalled the GPU for seconds on the phone right after load (Camera's profiler). No WebGL2: the rays.
+  let pend = null;
+  function startTop() {
+    const gl = renderer.getContext(); if (!(typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext)) throw new Error('no webgl2');
     const rt = new THREE.WebGLRenderTarget(HX, HZ, { type: THREE.UnsignedByteType, depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
     const cam = new THREE.OrthographicCamera(X0, X0 + W, -Z0, -(Z0 + D), 0.1, 80);   // looking down -y: screen x = world x, screen up = world -z
     cam.position.set(0, 60, 0); cam.up.set(0, 0, -1); cam.lookAt(0, 0, 0); cam.layers.enableAll(); cam.updateMatrixWorld(true);
@@ -151,19 +156,33 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
     scene.traverse(o => { if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.visible && !keep.has(o)) { o.visible = false; hid.push(o); } });
     const prevRT = renderer.getRenderTarget(), ov = scene.overrideMaterial, bg = scene.background, fog = scene.fog, su = renderer.shadowMap.autoUpdate, ac = renderer.autoClear;
     const cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha(), mwa = scene.matrixWorldAutoUpdate;
+    let pbo = null, fence = null;
     try {
       scene.overrideMaterial = mat; scene.background = null; scene.fog = null; renderer.shadowMap.autoUpdate = false; renderer.autoClear = true; scene.matrixWorldAutoUpdate = false;
       renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, cam);
-      const px = new Uint8Array(HX * HZ * 4); renderer.readRenderTargetPixels(rt, 0, 0, HX, HZ, px);
-      hi = new Float32Array(HX * HZ);
-      const UD = 255 / 256 / 255;   // three's UnpackDownscale over the byte range
-      for (let i = 0; i < HX * HZ; i++) { const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2], a = px[i * 4 + 3];
-        if (!(r | g | b | a)) { hi[i] = -99; continue; }
-        const v = (r / 16777216 + g / 65536 + b / 256 + a) * UD; hi[i] = YLO + v * YSPAN; }
+      // still bound to rt's framebuffer: queue the copy into a buffer on the GPU side and a fence behind it
+      pbo = gl.createBuffer(); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo); gl.bufferData(gl.PIXEL_PACK_BUFFER, HX * HZ * 4, gl.STREAM_READ);
+      gl.readPixels(0, 0, HX, HZ, gl.RGBA, gl.UNSIGNED_BYTE, 0); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
     } finally {
       renderer.setRenderTarget(prevRT); scene.overrideMaterial = ov; scene.background = bg; scene.fog = fog; renderer.shadowMap.autoUpdate = su; renderer.autoClear = ac;
-      renderer.setClearColor(cc, ca); scene.matrixWorldAutoUpdate = mwa; for (const o of hid) o.visible = true; rt.dispose(); mat.dispose();
+      renderer.setClearColor(cc, ca); scene.matrixWorldAutoUpdate = mwa; for (const o of hid) o.visible = true; mat.dispose();
     }
+    pend = { gl, rt, pbo, fence, frames: 0 };
+  }
+  // true once the map is in `hi`
+  function pollTop() {
+    const P = pend, gl = P.gl; P.frames++;
+    const st = gl.clientWaitSync(P.fence, 0, 0);
+    if (st !== gl.ALREADY_SIGNALED && st !== gl.CONDITION_SATISFIED) { if (st === gl.WAIT_FAILED) throw new Error('fence wait failed'); if (P.frames < 600) return false; }
+    const px = new Uint8Array(HX * HZ * 4); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, P.pbo); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, px); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.deleteSync(P.fence); gl.deleteBuffer(P.pbo); P.rt.dispose(); pend = null;
+    const h = new Float32Array(HX * HZ);
+    const UD = 255 / 256 / 255;   // three's UnpackDownscale over the byte range
+    for (let i = 0; i < HX * HZ; i++) { const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2], a = px[i * 4 + 3];
+      if (!(r | g | b | a)) { h[i] = -99; continue; }
+      const v = (r / 16777216 + g / 65536 + b / 256 + a) * UD; h[i] = YLO + v * YSPAN; }
+    hi = h;
     // the materials of whatever is the top surface somewhere (they get wet): a target whose own height range holds the
     // map's height at a few points inside its footprint
     for (const [m, b] of targets) {
@@ -173,6 +192,7 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
         const y = hiAt(x, z); if (y != null && y >= b.min.y - 0.02 && y <= b.max.y + 0.02 && y > groundH(x, z) + 0.05) hit = true; }
       if (hit) for (const x of mats) topMats.add(x);
     }
+    return true;
   }
   // world -> texel: screen x = world x, screen y (row 0 at the bottom) = from z = Z0 + D down to Z0
   function hiAt(x, z) { const ix = Math.floor((x - X0) / W * HX), iz = Math.floor((Z0 + D - z) / D * HZ); if (ix < 0 || iz < 0 || ix >= HX || iz >= HZ) return null; const y = hi[iz * HX + ix]; return y > -50 ? y : null; }
@@ -236,7 +256,9 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
       if (!R.ready) {
         if (wait-- > 0) return;
         if (!targets) { collect(); return; }                       // one frame: the target list; the next: the map
-        if (renderer && !hi && !R._noFast) { try { renderTop(); } catch (e) { hi = null; R._noFast = true; console.warn('rain: top-down map failed, using rays', e); } }
+        if (renderer && !hi && !R._noFast) {
+          try { if (!pend) { startTop(); return; } if (!pollTop()) return; }   // render this frame, pick the bytes up when the GPU is done
+          catch (e) { hi = null; pend = null; R._noFast = true; console.warn('rain: top-down map failed, using rays', e); } }
         // rays (fallback only): a few ms per frame at most, so building the map never shows as a hitch
         const t0 = performance.now(), budget = hi ? 1e9 : (MOBILE ? 3 : 5);
         for (; scan < NX * NZ && performance.now() - t0 < budget; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
