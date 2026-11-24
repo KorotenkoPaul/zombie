@@ -37,7 +37,8 @@ const SPIKE = +(process.env.SPIKE || 40), CHUNK = +(process.env.CHUNK || 600);
     T.wrapFn = (f, key) => function () {
       const t0 = realNow(); T.stack.push(0);
       try { return f.apply(this, arguments); }
-      finally { const el = realNow() - t0, child = T.stack.pop(); T.acc[key] = (T.acc[key] || 0) + el - child; if (T.stack.length) T.stack[T.stack.length - 1] += el; }
+      finally { const el = realNow() - t0, child = T.stack.pop(); T.acc[key] = (T.acc[key] || 0) + el - child; if (T.stack.length) T.stack[T.stack.length - 1] += el;
+        if (key.startsWith('GPU') && el > 20 && window.__slow) window.__slow.push([key + ' ' + el.toFixed(0) + ' ms', new Error().stack.split('\n').slice(2, 12).map(s => s.trim().replace(/https?:\/\/[^/]+\//, '')).join(' < ')]); }
     };
     for (const C of [window.WebGL2RenderingContext, window.WebGLRenderingContext]) {
       if (!C) continue; const P = C.prototype;
