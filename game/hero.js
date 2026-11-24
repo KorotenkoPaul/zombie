@@ -1124,7 +1124,18 @@ export function createHero(ctx){
   const dR=G&&G.gripPoint?G.gripPoint('Right').distanceTo(gR):0;
   if(a.pt>a.pn.st&&a.pt<a.pn.end&&dR<.05){const k=smooth(a.pn.st,a.pn.end,a.pt);T.yoke.rotation.y=a.pn.from+(a.pn.to-a.pn.from)*k;T.yoke.updateMatrixWorld(true);}
   if(G&&w>.5){G.hold('Right',T.tube,()=>T.gripR());G.hold('Left',T.tube,()=>T.gripL());}
-  if(G&&G.late)G.late(()=>{gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);});}
+  // after the head has turned to look along the tube (lookAt runs after this post) the head is pitched up with the tube and the
+  // eye rode 9-10 cm over the eyepiece (visual watch: the eyepiece at his chin, the gaze past it): the eye is measured from the
+  // head as it now is and the spine stoops it down onto the eyepiece, then the hands go back on the tube
+  const EYE_UP=(()=>{try{return new URLSearchParams(location.search).get('hero')==='orig'?.085:.05;}catch(e){return .05;}})();
+  const eyeNow=()=>{const hp=Hd.getWorldPosition(V());const q=Hd.getWorldQuaternion(new THREE.Quaternion());const hf=V(0,0,1).applyQuaternion(q);if(bones.HeadTop_End){const top=bones.HeadTop_End.getWorldPosition(V());return hp.clone().lerp(top,.42).addScaledVector(hf,.085);}/* the head-top is not a Bone on either rig, so this is the path used: v6 (smaller head set lower) eyes 5 cm over the head joint, the bigger ?hero=orig head 8.5 cm; 7 cm forward (frame-checked from the side on both) */const hu=V(0,1,0).applyQuaternion(q);return hp.addScaledVector(hu,EYE_UP).addScaledVector(hf,.07);};
+  const settle=()=>{for(let it=0;it<4;it++){const eye=eyeNow();const want=E.clone().addScaledVector(d,-.03);const hip=bones.Spine.getWorldPosition(V());
+    const v=eye.clone().sub(hip),u=want.clone().sub(hip);const a1=Math.atan2(v.dot(dh),v.y),a2=Math.atan2(u.dot(dh),u.y);const ang=clamp(a2-a1,-.05,.3)*w;if(Math.abs(ang)<.003)break;
+    rotW(bones.Spine,ax,ang*.4);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.25);root.updateMatrixWorld(true);}
+   /* the eye still above the eyepiece (a stoop moves an eye over the hips forward, hardly down): he bends the knees that much,
+      eased over the next frames (H.squat lowers the root, the feet stay on the boards) */{const dy=eyeNow().y-(E.y-.008);H.sqJob=true;a.sq=clamp((a.sq||0)+dy*Math.min(1,dt*3),0,.13);H.squat=a.sq*w;}
+gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
+  if(G&&G.late)G.late(settle);}
  const telePt=()=>{const P=window.__props||P3;const t=P&&P.placed&&P.placed.telescope;if(t&&t.position)return t.position.clone().add(V(0,1.35,0));return V(3.5,DK+1.35,1.3);};
  // the edge of the platform in front of a node: step forward until the boards end
  function edgeFrom(node){const n=N[node];if(!n)return null;const f=fwd(n.face??0);const p=n.p.clone();let last=null;
@@ -1434,13 +1445,13 @@ export function createHero(ctx){
       const f=fwd(root.rotation.y),ax=V(0,1,0).cross(f).normalize();rotW(bones.Spine,ax,-.28*sw);rotW(bones.Spine1,ax,-.16*sw);/* a crouch, not a 60 deg stoop: the lowered hips take the height, the back straightens */}
      if(a.kp&&a.kw>.01){gripNoLean('Right',a.kp,smooth(0,1,a.kw));const G=window.__grab;if(G&&G.late){const k=a.kp,w=smooth(0,1,a.kw);G.late(()=>gripNoLean('Right',k,w));}}},
     end:a=>{a.ik=null;H.squat=0;legPlantOff();if(a.sq){a.sq=0;play(IDLE(),{fade:.5});}}});},
-  telescope:(o)=>{const T=teleParts();if(!T)return job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')});
+  telescope:(o)=>{const T=teleParts();if(T)window.__tele=T;if(!T)return job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')});
    // LEISURE + GRAB: at the real telescope, not mimed in the air a metre away: he stands behind the eyepiece facing along the tube,
    // the calm standing mocap (cm_tele, CMU 77_02 legs + hands held up at the face) is the base, the spine stoops until his eye is
    // at the eyepiece, the left hand cups the tube under the eyepiece, the right rests on top of the tube; now and then he swings it a little
    return job({pt:()=>teleStand(T),via:st=>{const n=N.deck;if(!n||st.distanceTo(V(n.p.x,st.y,n.p.z))<.9)return null;const u=V(n.p.x-st.x,0,n.p.z-st.z).normalize();return st.clone().addScaledVector(u,.3);},viaFace:()=>{const d=T.dir();return Math.atan2(d.x,d.z);}/* the last 30 cm is a side-step that turns him to the tube on the way: no turn on the spot between the rail posts */,stand:.05,clip:IDLE()/* hips over the feet; cm_tele pushed the pelvis 10 cm ahead of the feet (a plank leaning back) */,loop:true,dur:[40,90],vary:false,start:a=>{AU('sigh');a.pan0=T.yoke.rotation.y;},
     look:a=>{const E=T.eye();const d=T.dir();return E.addScaledVector(d,6);},lookW:1,
-    post:(a,dt)=>telePost(a,dt,T),end:()=>{play(IDLE(),{fade:.6});try{window.__grab.free(T.tube);}catch(e){}}});},
+    post:(a,dt)=>telePost(a,dt,T),end:a=>{H.squat=0;H.sqJob=false;a.sq=0;play(IDLE(),{fade:.6});try{window.__grab.free(T.tube);}catch(e){}}});},
   look:(o)=>{// LEISURE: out on the deck he goes up to the railing, rests both hands on the top rail and leans on it a little, looking
    // out over the forest (the head sweeps slowly, now and then down at the ground); every so often he straightens up, hands off
    // the rail, and then leans on it again (frame check: he stood in the middle of the deck with his arms hanging for a minute)
@@ -1510,7 +1521,7 @@ export function createHero(ctx){
  // close (or open) the window shutters one window after another: walk up, reach for the shutter, it swings at the touch
  // opts: {close:true|false, windows:['bwin','kwin','wwin']}; house hook: window.__house.shutters.close(name)/open(name) when it exists
  MAKE.shutters=(o={})=>{const a={step:'go',t:0};const close=o.close!==false;const list=(o.windows||WINDOWS).filter(w=>N[w]);
-  const go=()=>{const w=list.shift();if(!w){play(IDLE(),{fade:.4});endTask({ok:true,close});return;}const n=N[w];const pt=n.p.clone().addScaledVector(fwd(n.face??0),.5).add(V(0,1.3,0));pt.hand=true;
+  const go=()=>{const w=list.shift();if(!w){play(IDLE(),{fade:.4});endTask({ok:true,close});return;}const n=N[w];const pt=n.p.clone().addScaledVector(fwd(n.face??0),.5).add(V(0,1.3,0));pt.hand=true;pt.faceTo=n.p;
    visit(a,pt,.4,has('hy_window')?'hy_window':'hy_take',[[.45,()=>{try{const S=window.__house&&window.__house.shutters;S&&(close?S.close(w):S.open(w));}catch(e){}AU(close?'shutter_close':'shutter_open',pt);}]],go);};
   go();a.update=dt=>{stepTick(a,dt);};return a;};
  // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
@@ -1787,7 +1798,7 @@ export function createHero(ctx){
   const run=()=>{const fy=a.faceYaw;a.faceYaw=yaw;approachTo(a,S,0,()=>{a.faceYaw=fy;a.step='clip';a.t=0;a.hits=hits.slice();a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
    if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const x of a.hits)x[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const x of hits)x[1]();then();}});};
   const nn=nearNode(S);if(nn)goTo(nn,run);else run();}
- function visit(a,pt,stand,clip,hits,then){if(!pt){then();return;}const nn=nearNode(pt);const run=()=>approachTo(a,pt,stand,()=>{a.step='clip';a.t=0;a.hits=hits.slice();a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
+ function visit(a,pt,stand,clip,hits,then){if(!pt){then();return;}const nn=nearNode(pt);const run=()=>approachTo(a,pt,stand,()=>{a.step='clip';a.t=0;a.hits=hits.slice();if(pt.faceTo)H.face=Math.atan2(pt.faceTo.x-root.position.x,pt.faceTo.z-root.position.z);a.clipDur=has(clip)?durOf(clip):1.2;a.pt=pt;
    if(has(clip))once(clip,{fade:.35,then:()=>{a.step='next';for(const h of a.hits)h[1]();a.hits=[];play(IDLE(),{fade:.4});then();}});else{for(const h of hits)h[1]();then();}});
   if(nn)goTo(nn,run);else run();}
  // KITCHEN (re-added on the rolled-back body): the fridge by hand. He stands on the latch side clear of the door's swing, takes the handle, the door opens only as
