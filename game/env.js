@@ -167,7 +167,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
      vec3 nt=c*1.0;
      vec3 o=mix(day,nt,night);
      // bottom of the painting melts into the scene fog, so the far ground edge doesn't draw a straight line against it
-     vec3 hz=mix(fogc,vec3(dot(fogc,vec3(.33)))*1.5+vec3(.05,.09,.11),.3);o=mix(o,hz,smoothstep(.34,.08,vUv.y));float a=smoothstep(1.,.5,vUv.y+(texture2D(map,vec2(uv.x*3.,.5)).r-.3)*.4)*ok;
+     vec3 hz=mix(fogc,hor,.25);/* [ENV] the far rings' own haze colour: no brighter band to glint white between their trunks */o=mix(o,hz,smoothstep(.34,.08,vUv.y));float a=smoothstep(1.,.5,vUv.y+(texture2D(map,vec2(uv.x*3.,.5)).r-.3)*.4)*ok;
      gl_FragColor=vec4(o,a);
      #include <colorspace_fragment>
     }`});
@@ -188,9 +188,9 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
      float tree(float u,float y,float sp,float off){float c=floor((u+off)/sp);float x=(u+off)-(c+.5)*sp;x+=(hs(c)-.5)*sp*.5;
       float H=(.5+.5*hs(c+7.))*(9.+k*11.);float w=sp*(.42+.3*hs(c+3.));float cr=w*(1.2+.6*hs(c+5.));float yc=H-cr*.8;
       float d=length(vec2(x/w,(y-yc)/cr));float e=texture2D(tNoise,vec2(u*.23,y*.19)+seed).r;
-      float crown=1.-step(1.+(e-.5)*.55,d);float trunk=step(abs(x),.25+.25*hs(c+9.))*step(y,yc);return max(crown,trunk);}
+      float crown=1.-step(1.+(e-.5)*.55,d);float trunk=step(abs(x+(y/yc-.5)*(hs(c+11.)-.5)*.6),(.25+.25*hs(c+9.))*(1.25-.5*clamp(y/yc,0.,1.)))*step(y,yc);/* tapered, a slight lean: not rectangles */return max(crown,trunk);}
      void main(){float u=atan(vW.z,vW.x)*R;float y=vW.y;
-      float s=max(max(tree(u,y,4.2,0.),tree(u,y-1.2,3.4,1.9)),tree(u,y+.8,2.9,3.3));if(s<.5||y>40.)discard;
+      float s=max(max(tree(u,y,4.2,0.),tree(u,y-1.2,3.4,1.9)),tree(u,y+.8,2.9,3.3));/* a ragged band of undergrowth and far trunks closes the bottom of each ring: the pale backdrop fog never shows through as white slivers */float ub=4.5+k*3.+3.*texture2D(tNoise,vec2(u*.031,.5)+seed*.7).r;s=max(s,step(y,ub));if(s<.5||y>40.)discard;
       // the bottom of each ring sinks into the ground fog; a faint vertical gradient and leaf noise keep the flat colour alive
       float n=texture2D(tNoise,vec2(u*.05,y*.05)+seed*.3).g;vec3 c=col*(.9+.2*n)*(.92+.1*smoothstep(0.,25.,y));
       c=mix(c,haze,k*.55+smoothstep(8.,-1.,y)*(1.-k*.4)*.6);gl_FragColor=vec4(c,1.);

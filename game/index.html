@@ -588,8 +588,10 @@ function wallSide(x,z0,z1,y0,y1,holes=[],out=-1){const ok=z=>y=>!holeAt(holes,z,
   const zb=z+.155;if(zb<z1-.05)for(const [a,b2] of runs(ok(zb),y0+.02,y1-.02,.05,.12))board(V(x+out*.035,(a+b2)/2,zb),b2-a,rnd(.065,.08),.022,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.004,.004)),{tint:rnd(.8,.92),wall:true,bat:out});}}
 const disc=(cx,cz,r,zmin)=>(x,z)=>(x-cx)**2+(z-cz)**2<=r*r&&z>=zmin;
 function brace(a,b2,w=.16){a=a.clone().addScaledVector(b2.clone().sub(a).normalize(),-.14);const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),{dark:true});}
-function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.42));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;post(x,y,y+.95,z);}
- if(skip){if(skip[0]>x0)brace(V(x0,y+.95,z0),V(skip[0],y+.95,lerp(z0,z1,(skip[0]-x0)/(x1-x0))),.09);if(x1>skip[1])brace(V(skip[1],y+.95,lerp(z0,z1,(skip[1]-x0)/(x1-x0))),V(x1,y+.95,z1),.09);}else brace(V(x0,y+.95,z0),V(x1,y+.95,z1),.09);}
+// like the photo: light square posts about every 0.85 m, a top rail and a middle rail (it was a palisade of 20 cm posts
+// every 0.42 m with only a top rail, which read as a heavy fence)
+function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.85));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;board(V(x,y+.47,z),.94,.12,.12,new THREE.Euler(0,0,Math.PI/2),{dark:true});}
+ for(const [h,w] of [[.95,.09],[.5,.065]]){if(skip){if(skip[0]>x0)brace(V(x0,y+h,z0),V(skip[0],y+h,lerp(z0,z1,(skip[0]-x0)/(x1-x0))),w);if(x1>skip[1])brace(V(skip[1],y+h,lerp(z0,z1,(skip[1]-x0)/(x1-x0))),V(x1,y+h,z1),w);}else brace(V(x0,y+h,z0),V(x1,y+h,z1),w);}}
 // rope ladders: tied over the floor edge with a knot round a peg, two twisted strands per side, round rungs lashed
 // with knots, slightly uneven, the bottom hanging free. They sway in the wind in the vertex shader, weighted by the
 // distance below the tie point (top stays put), driven by the global wind (game/wind.js windRope).
