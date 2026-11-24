@@ -918,6 +918,15 @@ export function createHero(ctx){
  // ---- the body goes to the work, not the arm ----
  // hammering at a height: below ~0.72 m he kneels on one knee (upright kneel, hands ~0.6 m), waist to chest he stands bent over it,
  // above the chest he straightens up (clips in hero-moves-repair.txt: real CMU kneel / hammer mocap)
+ /* kneeling at a floor board: the clip's kneeling knee floats ~6-13 cm (rolled-back rig's leg/root offset). The pelvis comes down until that
+    knee (and its toes) rest on the boards; the standing foot is held where it was by leg IK, so only the kneeling leg sinks */
+ function kneelDrop(a,dt,g,out){const LK=bones.LeftLeg,RK=bones.RightLeg;if(!LK||!RK||!bones.Hips)return;root.updateMatrixWorld(true);
+  a.kw=Math.max(0,Math.min(1,(a.kw||0)+(out?-dt/.4:dt/.6)));if(a.kw<=0)return;
+  const ly=LK.getWorldPosition(V()).y,ry=RK.getWorldPosition(V()).y;const K=ly<ry?'Left':'Right',S=K==='Left'?'Right':'Left';
+  const kn=bones[K+'Leg'].getWorldPosition(V()).y-g-.065,tb=bones[K+'ToeBase']?bones[K+'ToeBase'].getWorldPosition(V()).y-g-.025:kn;
+  const drop=clamp(Math.min(kn,tb),0,.15)*smooth(0,1,a.kw);if(drop<.002)return;
+  const F=bones[S+'Foot'],fp=F.getWorldPosition(V());const Hp=bones.Hips;const hw=Hp.getWorldPosition(V());hw.y-=drop;Hp.position.copy(Hp.parent.worldToLocal(hw));Hp.updateMatrixWorld(true);
+  const U=bones[S+'UpLeg'],L=bones[S+'Leg'];const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(fp).multiplyScalar(.5));ik2(U,L,F,fp,pole,1,true);}
  function floorOf(pos){const nn=nearNode(pos);if(!nn||!N[nn])return root.position.y;const f=N[nn].p;const g=floorAt(f.x,f.y+.3,f.z,.45,.9);return g!=null?g:f.y;}
  function hamClip(pos,old){if(!pos||!has('hy_standhammer'))return old;const dy=pos.y-floorOf(pos);
   return dy<.72&&has('hy_kneelhammer')?'hy_kneelhammer':dy>1.1&&has('hy_hammerhigh')?'hy_hammerhigh':'hy_standhammer';}
@@ -947,7 +956,7 @@ export function createHero(ctx){
    const sh=bones.RightArm.getWorldPosition(V());const v=q.clone().sub(sh);const L=v.length();if(L>.05){v.normalize();const r=new RAPIER.Ray({x:sh.x,y:sh.y,z:sh.z},{x:v.x,y:v.y,z:v.z});
     const hh=world.castRay(r,L+.05,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});const t=hh?(hh.toi??hh.timeOfImpact):null;if(t!=null&&t>.25&&t<L)q=sh.clone().addScaledVector(v,t-.005);}}if(R.nail==='floor'){const hp=bones.Hips.getWorldPosition(V());
    const f=bones.LeftUpLeg.getWorldPosition(V()).sub(bones.RightUpLeg.getWorldPosition(V())).cross(V(0,1,0)).setY(0).normalize();/* the way the pelvis faces */
-   const d=V(q.x-hp.x,0,q.z-hp.z);const ah=d.dot(f),sd=Math.sqrt(Math.max(0,d.lengthSq()-ah*ah));if(ah<.3||ah>.6||sd>.2)q=hp.clone().addScaledVector(f,.46).add(V(-f.z*.08,0,f.x*.08));
+   const d=V(q.x-hp.x,0,q.z-hp.z);const ah=d.dot(f),sd=Math.sqrt(Math.max(0,d.lengthSq()-ah*ah));/* the knee goes down within reach of the board: the nail is where the hand comes down, ~40 cm ahead of the pelvis */q=hp.clone().addScaledVector(f,clamp(ah,.34,.42)).add(V(-f.z*.08,0,f.x*.08));
    const g=floorAt(q.x,root.position.y+.2,q.z,.5,.6);q.y=(g!=null?g:root.position.y)+.005;}
   else if(R.nail==='wall'&&bones.RightArm.getWorldPosition(V()).distanceTo(q)>armLen+.3){/* the picked board is out of reach (a desk, a bunk in the way): the wall right in front of him */
    const f=bones.LeftUpLeg.getWorldPosition(V()).sub(bones.RightUpLeg.getWorldPosition(V())).cross(V(0,1,0)).setY(0).normalize();const hp=bones.Hips.getWorldPosition(V());
@@ -1000,10 +1009,10 @@ export function createHero(ctx){
   const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));const clip=typeof R.clip==='function'?R.clip(o.pos?pos:null):R.clip;
   const D=rnd(18,35);/* known here, so the blow's IK fades out before the job ends (no snap back to the clip) */
   const J=job({pt:()=>pos,node:pos?null:R.node,get stand(){return R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */
-   post:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{const n=a.nl||(a.nl=nailOf(R,pos));a.endIn=D-a.T;repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
+   post:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{if(R.nail==='floor')kneelDrop(a,dt,floorOf(pos),D-a.T<.6);const n=a.nl||(a.nl=nailOf(R,pos));a.endIn=D-a.T;repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
    tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;if(hamr&&a.hm&&!a.hmFar)return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});
   /* called away mid-blow (Brain, the tour): the arm eases back to the clip over a third of a second instead of snapping */
-  if(J.post){const p0=J.post;J.post=dt=>{p0(dt);if(J.step!=='work'&&J.hm&&J.hm.w>0&&J.nl){J.endIn=0;J.hm.fastOut=1;repairHammer(J,dt,J.nl,nrmOf(R,J.nl));}};}
+  if(J.post){const p0=J.post;J.post=dt=>{p0(dt);if(J.step!=='work'&&J.kw>0&&R.nail==='floor')kneelDrop(J,dt,floorOf(pos),true);if(J.step!=='work'&&J.hm&&J.hm.w>0&&J.nl){J.endIn=0;J.hm.fastOut=1;repairHammer(J,dt,J.nl,nrmOf(R,J.nl));}};}
   return J;};
  // ===================== gear: a skinned coat that really follows the body, bow and quiver from the workshop wall =====================
  // the coat is cut from the body mesh itself (torso + arms, pushed out 1.5 cm along the normals) and shares the skeleton
