@@ -64,7 +64,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  // ---- 3. joints ----
  F.forEach((f,i)=>{for(const s of ['Left','Right']){const m=M[i][s];
   if(m.knee<lim.kneeMin)add('joint',i,{bone:s+'Leg',value:+m.knee.toFixed(0),unit:'deg knee',limit:lim.kneeMin,what:'knee folded too far'});
-  if(m.knee<150&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
+  // deep squats (interior < 60 deg) make the side test ill-conditioned: there only a flat fold counts (Pose: interior < 20 deg or ankle within 10 cm of the hip)
+  {const U=bone(F[i],s+'UpLeg'),A=bone(F[i],s+'Foot');const ah=len(sub(A,U))*100;if(m.knee<20||ah<10)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg folded flat',limit:160,what:'leg folded flat (knee interior '+m.knee.toFixed(0)+' deg, ankle '+ah.toFixed(0)+' cm from the hip)'});}
+  if(m.knee>=60&&m.knee<150&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
   if(m.footHead<lim.footHeadM&&!f.fl.includes('B'))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
   if(m.footUp>lim.footUpM)add('joint',i,{bone:s+'Foot',value:+(m.footUp*100).toFixed(0),unit:'cm along body above hip',limit:lim.footUpM*100,what:'leg folded up past the hip'});}});
  // ---- 4. foot sliding while planted ----
@@ -229,7 +231,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  // priority
  for(const q of merged){const r=q.limit?q.value/q.limit:2;let P=3;
   if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2))?1:q.value>=2?2:3;
-  else if(q.type==='joint')P=/broken|next to the head|past the hip/.test(q.what)?1:2;
+  else if(q.type==='joint')P=/broken|next to the head|past the hip|folded flat/.test(q.what)?1:2;
   else if(q.type==='jump'||q.type==='snap-turn')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='foot-slide')P=q.value>=8?1:q.value>=4?2:3;

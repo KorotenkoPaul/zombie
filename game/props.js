@@ -995,8 +995,8 @@ export function buildProps(ctx) {
   const kbar = place('kbarrel', barrel(.78), -4.02, KT, 3.33);
   { const tp = new THREE.Group(); for (let i = -1; i <= 1; i++) W(tp, .2, .03, .6, i * .205, .015, 0, { mat: M.woodLight, r: .008, grain: 2 }); for (const x of [-.14, .14]) W(tp, .5, .025, .05, 0, -.0125, x, { mat: M.woodDark, r: .006, grain: 0 }); tp.rotation.y = .12;
     tp.position.set(0, .785, 0); kbar.add(tp); bake(tp); }
-  const kst = place('kstool', stool(), -3.53, KT, 3.3, { seat: true }); out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 };
-  place('kbucket', bucket(.34), -3.55, KT, 3.28);
+  const kst = place('kstool', stool(), -3.40, KT, 3.33, { seat: true }); /* 62 cm from the barrel: he sits half turned (face +.87 rad), legs past the barrel's left, chest turned to the plate */ out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 + .87 };
+  place('kbucket', bucket(.34), -4.22, KT, 3.86); /* corner behind the barrel (was under the stool) */
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
 
@@ -1020,17 +1020,28 @@ export function buildProps(ctx) {
       setOpen(k) { ds.open = ds.toO = clamp01(k); if (ds.open > .02) ds.bolt = ds.toB = 0; apply(); },
       setBolt(k) { ds.bolt = ds.toB = ds.open > .02 ? 0 : clamp01(k); apply(); },
       openTo(k) { ds.toO = clamp01(k); }, boltTo(k) { ds.toB = clamp01(k); },
+      get target() { return ds.toO; }, get boltTarget() { return ds.toB; },
+      // the leaf (for a palm pushing on it) and its width; hand(kind) is set by grab.js: openTo/boltTo then only move the door
+      // ('open') or the bolt ('bolt') while a palm is on it (Pavel: nothing moves by itself). Without grab.js the old timed swing.
+      leaf() { return D.piv.children[0]; }, width: D.w, hand: null,
       // world points for the hand: the knob on the latch edge, and the bolt knob
       handle(t = V()) { D.piv.updateMatrixWorld(true); return D.piv.children[0].localToWorld(t.set(-D.w / 2 + .1, D.h * .46, .07)); },
       boltKnob(t = V()) { D.bar.updateMatrixWorld(true); return D.bar.localToWorld(t.set(.02, .034, .01)); },
-      update(dt) { let ch = false; for (const [k, t, r] of [['open', 'toO', .9], ['bolt', 'toB', 3]]) { if (ds[k] !== ds[t]) { const d = ds[t] - ds[k]; ds[k] = Math.abs(d) < r * dt ? ds[t] : ds[k] + Math.sign(d) * r * dt; ch = true; } } if (ch) { if (ds.open > .02) ds.bolt = ds.toB = 0; apply(); }
+      update(dt) { let ch = false; const hd = out.door.hand;
+        for (const [k, t, r] of [['open', 'toO', .9], ['bolt', 'toB', 3]]) { if (ds[k] === ds[t]) continue;
+          if (k === 'bolt' && ds.open > .02) continue; // the bolt waits until the door is shut
+          if (hd && !hd(k)) continue; // no palm on it: it stays where it is
+          const rr = hd && k === 'open' ? .42 : r; /* by hand: a steady pull, about 0.7 rad/s */ const d = ds[t] - ds[k]; ds[k] = Math.abs(d) < rr * dt ? ds[t] : ds[k] + Math.sign(d) * rr * dt; ch = true; }
+        if (ch) { if (ds.open > .02) { ds.bolt = 0; if (ds.toO > .02) ds.toB = 0; } apply(); }
         wind(dt); } };
     // wind: an open, unattended door swings on a spring toward the wind; in a strong gust (s > ~1) it slams shut-ish and bangs.
     // Not while someone moves it (open != toO) and never when bolted shut.
     const sw = { a: 0, v: 0, cd: 0 }; const wp = V();
-    function wind(dt) { const Wd = window.__wind; if (!Wd || !Wd.sample || ds.open !== ds.toO || ds.open < .05) { if (sw.a) { sw.a = 0; sw.v = 0; apply(); } return; }
+    function wind(dt) { const Wd = window.__wind; if (!Wd || !Wd.sample || ds.open !== ds.toO || ds.open < .05) { if (sw.a) { if (ds.open !== ds.toO) ds.open = clamp01(ds.open + sw.a / 1.66); /* the hand takes it from where the wind left it, no jump */ sw.a = 0; sw.v = 0; apply(); } return; }
       dg.getWorldPosition(wp); wp.y += 1; let f = 0; try { const w = Wd.sample(wp); const s = w.s || 0; // push toward closing when the wind blows into the room through the doorway (-x), open when it blows out
         f = (-(w.x || 0)) * (s > 1 ? 2.2 : .6) + Math.sin(performance.now() * .0013) * .05 * s; } catch (e) { f = 0; }
+      // hinge friction: a door resting still stays put in ordinary wind; only a strong gust (s > ~1) gets it swinging
+      if (Math.abs(f) < .45 && Math.abs(sw.v) < .02) { sw.v = 0; return; }
       sw.v += (f - sw.a * 9 - sw.v * 2.2) * dt; sw.a += sw.v * dt; sw.cd -= dt;
       const lo = -ds.open * 1.66 + .02, hi = .06; // can't open past the wall stop, can close all the way
       if (sw.a < lo || sw.a > hi) { const hit = Math.abs(sw.v); sw.a = Math.max(lo, Math.min(hi, sw.a)); sw.v *= -.3;
@@ -1081,7 +1092,7 @@ export function buildProps(ctx) {
   PT.pantry = [pantry, V(0, .6, .3)];
   const cn = placed.counter, cTop = cn.userData.floorY + .9;
   tool('board', choppingBoard(), scene, -2.62, cTop, 1.4, [0, .05, 0]); tool('knife', knife(), scene, -2.6, cTop + .023, 1.33, [0, -.15, 0]);
-  const plateO = tool('plate', bake(plateOfFood()), st, .2, .915, -.12); /* serving plate waits by the pan on the stove */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
+  const plateO = tool('plate', bake(plateOfFood()), st, .21, .915, .13); /* serving plate waits by the pan on the stove, front right (in reach; at the back he folded over the hot pan) */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
   // food on the plate: setFood(1) full, (.5) half eaten, (0) empty. (Meshes are merged per material, so we scale the food meshes down.)
   out.plate = { obj: plateO, setFood(k) { k = clamp01(k); for (const m of food) { m.visible = k > .02; m.scale.setScalar(.35 + .65 * k); } } }; out.plate.setFood(0);
   PT.board = [out.tools.board, V(0, .03, 0)]; PT.sink = [cn, V(.23, .76, .04)];
@@ -1105,7 +1116,7 @@ export function buildProps(ctx) {
     // the shelf over the window: plates stacked, the cup in the bowl
     const ksh = placed.kshelf; const onShelf = [[-.02, .018, .12, [0, 0, 0]], [-.02, .034, .12, [0, 0, 0]], [.14, .018, .12, [0, 0, 0]], [.14, .028, .12, [0, 0, 0]]];
     const objs = KIND.map((k, i) => { const o = { dirty: mk(k, true), rack: mk(k, false), shelf: mk(k, false) };
-      for (const [where, parent, slot] of [['dirty', cn, inSink[i]], ['rack', rack, inRack[i]], ['shelf', ksh, onShelf[i]]]) { const ob = o[where]; ob.position.set(slot[0], slot[1], slot[2]); ob.rotation.set(...slot[3]); parent.add(ob); ob.visible = false; } return o; });
+      for (const [where, parent, slot] of [['dirty', cn, inSink[i]], ['rack', rack, inRack[i]], ['shelf', ksh, onShelf[i]]]) { const ob = o[where]; ob.position.set(slot[0], slot[1], slot[2]); ob.rotation.set(...slot[3]); parent.add(ob); ob.visible = false; ob.userData.slot = { parent, pos: ob.position.clone(), rot: ob.rotation.clone() }; } return o; });
     const loc = ['dirty', 'shelf', 'shelf', 'dirty'];
     const show = () => objs.forEach((o, i) => { for (const w of ['dirty', 'rack', 'shelf']) o[w].visible = loc[i] === w; });
     const count = w => loc.filter(l => l === w).length;
@@ -1113,6 +1124,13 @@ export function buildProps(ctx) {
       setDirty(n) { n = Math.max(0, Math.min(4, Math.round(n))); while (count('dirty') < n) { const i = loc.indexOf('shelf') >= 0 ? loc.indexOf('shelf') : loc.indexOf('rack'); if (i < 0) break; loc[i] = 'dirty'; } while (count('dirty') > n) loc[loc.indexOf('dirty')] = 'shelf'; show(); return count('dirty'); },
       wash() { const i = loc.indexOf('dirty'); if (i < 0) return -1; loc[i] = 'rack'; show(); return i; },
       putAway() { const i = loc.indexOf('rack'); if (i < 0) return -1; loc[i] = 'shelf'; show(); return i; },
+      // by hand (Character / dishes): take(from) lifts one piece out of the basin ('dirty') or the rack ('rack'): {i, kind, obj: dirty look,
+      // clean: clean look}; the hero carries obj / clean in world space; settle(i, where) puts piece i back into its slot there.
+      // slot(i, where) -> {pos, quat} in world space (where the hand has to bring it).
+      take(from = 'dirty') { const i = loc.indexOf(from); if (i < 0) return null; loc[i] = 'hand'; show(); return { i, kind: KIND[i], obj: objs[i].dirty, clean: objs[i].rack }; },
+      settle(i, where) { for (const w of ['dirty', 'rack', 'shelf']) { const ob = objs[i][w], sl = ob.userData.slot; if (ob.parent !== sl.parent) sl.parent.add(ob); ob.position.copy(sl.pos); ob.rotation.copy(sl.rot); ob.scale.setScalar(1); } loc[i] = where; show(); },
+      slot(i, where) { const ob = objs[i][where], sl = ob.userData.slot; sl.parent.updateMatrixWorld(true); const m = new THREE.Matrix4().compose(sl.pos, new THREE.Quaternion().setFromEuler(sl.rot), V(1, 1, 1)).premultiply(sl.parent.matrixWorld); const pos = V(), quat = new THREE.Quaternion(); m.decompose(pos, quat, V()); return { pos, quat }; },
+      where: i => loc[i],
       setState({ dirty = 0, rack: r = 0 } = {}) { for (let i = 0; i < 4; i++) loc[i] = i < dirty ? 'dirty' : i < dirty + r ? 'rack' : 'shelf'; show(); } };
     show(); PT.rack = [rack, V(0, .1, 0)]; PT.dishShelf = [ksh, V(.06, .1, .12)]; PT.sink = [cn, V(BX, .78, BZ)]; }
 
@@ -1194,7 +1212,7 @@ export function buildProps(ctx) {
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
   // --- workshop: whetstone and a lantern to repair on the bench; jacket on a peg by the open side; bow and quiver on the left wall
   { const bt = wb.userData.floorY + .9; const ws = whetstone(); ws.position.set(2.72, bt, 2.14); ws.rotation.y = .03; /* at the front edge: the hero's arm reaches only the front 25 cm of this deep bench (workshop thread) */ scene.add(ws); PT.whetstone = [ws, V(0, .08, 0)];
-    tool('lantern', repairLantern(), scene, 3.05, bt, 2.07); /* front edge, in reach (workshop thread) */ PT.nails = [wb, V(.35, .95, -.18)]; PT.bench = [wb, V(0, .92, .1)]; }
+    tool('lantern', repairLantern(), scene, 2.93, bt, 2.07); /* front edge, in reach (workshop thread) */ PT.nails = [wb, V(.35, .95, -.18)]; PT.bench = [wb, V(0, .92, .1)]; }
   const peg = (x, y, z, ry) => { const p = new THREE.Group(); add(p, new THREE.CylinderGeometry(.014, .016, .09, 10), M.woodDark, 0, 0, .045, Math.PI / 2); add(p, new THREE.SphereGeometry(.02, 10, 8), M.woodDark, 0, 0, .09); add(p, rb(.06, .1, .015, .005), M.woodDark, 0, 0, .0075); p.position.set(x, y, z); p.rotation.y = ry; scene.add(p); return p; };
   { const pj = peg(4.575, WS + 1.72, 3.72, -Math.PI / 2); const jk = jacket(); tool('jacket', jk, scene, 4.575 - .07, WS + 1.72 - .005, 3.72, [0, -Math.PI / 2, 0]); jk.position.x = 4.575 - .06 - .02; PT.jacketPeg = [pj, V(0, 0, .09)]; }
   { const pb = [peg(.925, WS + 1.82, 2.1, Math.PI / 2), peg(.925, WS + 1.1, 2.1, Math.PI / 2)]; tool('bow', bowOnWall(), scene, .925 + .1, WS + 1.45, 2.1, [0, 0, 0]); PT.bowPeg = [pb[0], V(0, 0, .09)];
@@ -1258,6 +1276,7 @@ export function buildProps(ctx) {
   const quiltMesh = (() => { let q = null; bunk.traverse(o => { if (o.isMesh && o.material === M.quilt && (!q || o.position.y < q.position.y)) q = o; }); return q; })(); // the LOWER bunk's quilt (he sleeps there; the last match was the upper one, so the cover never rose over him)
   const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null, nBase = quiltMesh ? quiltMesh.geometry.attributes.normal.array.slice() : null;
   const press = { at: null, k: 0, shown: -1, cover: false };
+  const qTop = (() => { if (!qBase) return 0; let m = -1e9; for (let i = 1; i < qBase.length; i += 3) if (nBase[i] > .7 && qBase[i] > m) m = qBase[i]; return m - .04; })();
   // bedPress(worldHip): a hollow where he sits or lies ON the quilt. bedCover(worldHip): he lies UNDER it: the quilt rises over a
   // body (head toward the pillow, +x in the bed), so his legs never show through. null releases either; both ease in and out.
   out.bedPress = (p) => { press.at = p ? bunk.worldToLocal(p.clone()) : press.at; press.on = !!p; if (p) press.cover = false; };
@@ -1271,23 +1290,34 @@ export function buildProps(ctx) {
   // H3b: under the quilt the cover follows his real body: every torso/limb bone of the sleeping hero lifts the cloth to its own
   // height plus the body's thickness there (soft union of blobs), so on his back, side or stomach the quilt drapes over him.
   // The head and hands stay out. Refreshed 5 times a second while he is in bed (breathing, turning over).
-  const COVER_B = [[/Hips$/, .15, .2], [/Spine$/, .15, .2], [/Spine1$/, .15, .2], [/Spine2$/, .15, .2], [/Neck$/, .06, .1], [/(Left|Right)Shoulder$/, .08, .12], [/(Left|Right)Arm$/, .07, .11], [/(Left|Right)ForeArm$/, .06, .1],
-    [/(Left|Right)UpLeg$/, .09, .14], [/(Left|Right)Leg$/, .07, .12], [/(Left|Right)Foot$/, .06, .11], [/(Left|Right)ToeBase$/, .05, .09]];
+  // BED (2026-11-24): the cover is draped over CAPSULES along his bones (thigh, shin, foot, spine, arms), not blobs at the joints:
+  // between two joints the blobs left a dip and his shins and boots came up through the quilt. Cloth falls from each limb's
+  // top to the mattress in a soft curve, so it tents over bent knees and lies flat between the legs.
+  const COVER_SEG = [['Hips', 'Spine1', .15], ['Spine1', 'Spine2', .16], ['Spine2', 'Neck', .13], ['LeftUpLeg', 'RightUpLeg', .12],
+    ['LeftUpLeg', 'LeftLeg', .105], ['RightUpLeg', 'RightLeg', .105], ['LeftLeg', 'LeftFoot', .085], ['RightLeg', 'RightFoot', .085],
+    ['LeftFoot', 'LeftToeBase', .09], ['RightFoot', 'RightToeBase', .09],
+    ['LeftShoulder', 'LeftArm', .075], ['RightShoulder', 'RightArm', .075], ['LeftArm', 'LeftForeArm', .06], ['RightArm', 'RightForeArm', .06]];/* forearms and hands stay out (on top of the quilt), they tented it into peaks */
   let coverBones = null, coverT = 0; const cb = [];
   function findCoverBones() { if (coverBones) return coverBones; if (!press.at) return null; const at = bunk.localToWorld(press.at.clone()); let sk = null, best = 1e9;
     const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
-    const list = []; for (const bn of sk.bones) { const nm = bn.name.replace(/^.*[:_]/, ''); const d = COVER_B.find(([re]) => re.test(nm)); if (d) list.push({ b: bn, r: d[1], s: d[2] }); } return (coverBones = list.length >= 6 ? list : null); }
-  out._quiltDbg = () => ({ mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
-  const _cv = V();
-  function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const dx = x - q.x, dz = z - q.z, d2 = (dx * dx + dz * dz) / (q.s * q.s); if (d2 > 4) continue; const h = q.y + q.r - y0; if (h <= 0) continue; acc += Math.pow(h * Math.exp(-d2), 4); } return Math.pow(acc, .25); }
+    const byName = {}; for (const bn of sk.bones) byName[bn.name.replace(/^.*[:_]/, '').replace(/^mixamorig/, '')] = bn;
+    const list = []; for (const [a, b, r] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r }); return (coverBones = list.length >= 8 ? list : null); }
+  out._quiltDbg = () => ({ m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
+  const _cv = V(), _cw = V();
+  // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
+  function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const dx = x - (q.ax + ex * t), dz = z - (q.az + ez * t), d = Math.sqrt(dx * dx + dz * dz); const yc = q.ay + (q.by - q.ay) * t;
+      // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
+      const top = yc + q.r + .03; const o = Math.max(0, d - q.r * .4); const dr = o < .08 ? 4 * o * o : .0256 + .64 * (o - .08) + 6 * (o - .08) * (o - .08);
+      const h = top - dr - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
   function pressQuilt(dt) {
     if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5);
     if (press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones())) { coverT -= dt; if (coverT <= 0 || Math.abs(press.k - press.shown) >= .01) { coverT = .2; press.shown = press.k; bunk.updateMatrixWorld(true);
-        if (press.on && findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.b.getWorldPosition(_cv); bunk.worldToLocal(_cv); cb.push({ x: _cv.x, y: _cv.y, z: _cv.z, r: q.r, s: q.s }); } }
+        if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } }
         const P = quiltMesh.geometry.attributes.position, a = P.array, N = quiltMesh.geometry.attributes.normal, na = N.array, e = .02, k = press.k;
         for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; na[i] = nBase[i]; na[i + 1] = nBase[i + 1]; na[i + 2] = nBase[i + 2];
-          const L0 = liftAt(x, z, y); if (L0 <= .002) continue; a[i + 1] = y + L0 * k;
+          const L0 = liftAt(x, z, y > qTop ? y : qTop); if (L0 <= .002) continue;/* the hanging sides lift no more than the top edge above them */ a[i + 1] = y + L0 * k;
           if (nBase[i + 1] > .4) { const gx = (liftAt(x + e, z, y) - liftAt(x - e, z, y)) / (2 * e) * k, gz = (liftAt(x, z + e, y) - liftAt(x, z - e, y)) / (2 * e) * k; const nx = nBase[i] - gx, ny = nBase[i + 1], nz = nBase[i + 2] - gz, l = Math.hypot(nx, ny, nz); na[i] = nx / l; na[i + 1] = ny / l; na[i + 2] = nz / l; } }
         P.needsUpdate = true; N.needsUpdate = true; quiltMesh.geometry.computeBoundingSphere(); }
       return; }

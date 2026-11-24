@@ -129,13 +129,17 @@ export function createGrab({ THREE, bones }) {
   const twoW = { Left: 0, Right: 0 };
   // ---- sweeping: the broom's bristles on the floor in front of him, short strokes side to side; the right fist high on the
   // handle, the left lower on it (the clip alone carried the broom over his shoulder) ----
-  let HHref = null; const SW = { w: 0, ph: 0, ox: null };
+  const api_dbg = {}; let HHref = null; const SW = { w: 0, ph: 0, ox: null };
   function setHandQ(side, Qh, w) { const hb = bones[side + 'Hand']; const pq = hb.parent.getWorldQuaternion(new THREE.Quaternion()); const cur = hb.getWorldQuaternion(new THREE.Quaternion()); hb.quaternion.copy(pq.invert().multiply(cur.slerp(Qh, w))); hb.updateMatrixWorld(true); }
   function sweepDrive(dt) { const P = PROPS || window.__props; const b = P && P.tools && P.tools.broom; const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero);
     const on = !!(b && b.parent === bones.RightHand && H && H.task === 'sweep' && !window.__noSweepDrive); SW.w = Math.max(0, Math.min(1, SW.w + (on ? dt : -dt) / .5)); if (SW.w < .01 || !b || b.parent !== bones.RightHand) return false;
     const hips = bones.Hips; const hp = hips.getWorldPosition(V()); const fw = V(0, 0, 1).applyQuaternion(hips.getWorldQuaternion(new THREE.Quaternion())); fw.y = 0; fw.normalize(); const rt = V(0, 1, 0).cross(fw).normalize().negate();
-    const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6; const sx = Math.sin(SW.ph) * .22;
-    const Bp = hp.clone().addScaledVector(fw, .62).addScaledVector(rt, .1 + sx).setY(fy + .02); // bristles on the boards
+    // the clip folds him nearly double over the broom: the chest is held to at most ~35 deg forward (a sweeper's stoop)
+    { const sp2 = bones.Spine2; if (sp2 && SW.w > .01) { const up = V(0, 1, 0).applyQuaternion(sp2.getWorldQuaternion(new THREE.Quaternion())); const pitch = Math.atan2(up.dot(fw), up.y); const tg = Math.max(0, pitch - .6) * SW.w; SW.ex = (SW.ex || 0) + Math.max(-1.2 * dt, Math.min(1.2 * dt, tg - (SW.ex || 0))); const ex = SW.ex; // eased: no jerk
+      if (ex > .005) { const ax = rt.clone().negate(); rotW(bones.Spine, ax, -ex * .4); rotW(bones.Spine1, ax, -ex * .35); rotW(sp2, ax, -ex * .25); } } }
+    const fy = H.root ? H.root.position.y : hp.y - .95; SW.ph += dt * 2.6; const sx = Math.sin(SW.ph) * .18;
+    const Bp = hp.clone().addScaledVector(fw, .7).addScaledVector(rt, .08 + sx).setY(fy + .02); // bristles on the boards, ahead of his feet
+    for (const ft of ['LeftFoot', 'RightFoot', 'LeftToeBase', 'RightToeBase']) { const b = bones[ft]; if (!b) continue; const fp = b.getWorldPosition(V()); const d = Bp.clone().sub(fp).setY(0); const ah = d.dot(fw); if (Math.abs(d.dot(rt)) < .22 && ah < .2) Bp.addScaledVector(fw, .2 - ah); }
     const top = hp.clone().addScaledVector(fw, .2).addScaledVector(rt, .16 + sx * .25).add(V(0, .42, 0)); const dir = top.sub(Bp).normalize();
     const sp = GRIP.broom; const Gp = Bp.clone().addScaledVector(dir, sp.g[1] * b.getWorldScale(V()).x); const Lp = Bp.clone().addScaledVector(dir, sp.two[1] * b.getWorldScale(V()).x);
     // tool orientation: local +y along the handle (bristles -> top), local +z (the bristle face) toward his front
@@ -144,7 +148,59 @@ export function createGrab({ THREE, bones }) {
     const gl = V(...sp.g).multiplyScalar(b.scale.x).applyQuaternion(b.quaternion).add(b.position).multiplyScalar(hs); const wrist = Gp.clone().sub(gl.applyQuaternion(Qh));
     ik2('Right', wrist, SW.w); setHandQ('Right', Qh, SW.w);
     const pa = palm('Left'), wr = bones.LeftHand.getWorldPosition(V()); ik2('Left', Lp.clone().sub(pa.sub(wr)), SW.w); fistK.Left = Math.max(fistK.Left, SW.w); return true; }
-  function twoHands(dt) { const P = PROPS || window.__props; if (!P || !P.tools) return; if (sweepDrive(dt)) return;
+  // ---- the bedroom door and its bolt move only under a palm (Pavel: nothing by magic wand) ----
+  // props' door.openTo / boltTo only set a goal; door.hand(kind) (set here) lets the door move ('open') or the bolt slide
+  // ('bolt') only on frames when a palm is on the leaf / on the bolt knob. The nearer free hand reaches there by the arm-only
+  // IK; the palm keeps its spot on the leaf while the door swings (re-picked only if it drifts out of reach). No hand in
+  // reach: the door just waits. Off switch: window.__noDoorHand (the old timed swing).
+  const DR = { w: 0, side: null, loc: null, face: 0, mode: null, tp: null, on: { open: false, bolt: false } }; api_dbg.DR = DR;
+  function doorDrive(dt) { const P = PROPS || window.__props; const D = P && P.door; if (!D || !D.leaf || !bones.RightArm) return;
+    if (window.__noDoorHand) { if (D.hand && D.hand.__grab) D.hand = null; return; }
+    if (!D.hand) { D.hand = k => !!DR.on[k]; D.hand.__grab = true; }
+    DR.on.open = DR.on.bolt = false;
+    const mode = Math.abs(D.open - D.target) > 1e-3 ? 'open' : Math.abs(D.bolt - D.boltTarget) > 1e-3 && D.open <= .02 ? 'bolt' : null;
+    // a goal belongs to the task that set it: if he moves on to something else the door stays where his hand left it
+    const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero); const task = H ? H.task : null;
+    if (mode && DR.task === undefined) DR.task = task; if (!mode) DR.task = undefined;
+    if (mode && task !== DR.task) { D.openTo(D.open); D.boltTo(D.bolt); DR.task = undefined; return; }
+    const leaf = D.leaf(); leaf.updateMatrixWorld(true); const hw = (D.width || .77) / 2;
+    if (mode && !DR.side) { // the hand: the free one whose shoulder is nearer the door's handle
+      const h = D.handle(V()); let best = 9; for (const s of ['Left', 'Right']) { let busy = !!grip[s]; for (const ch of bones[s + 'Hand'].children) if (ch.isObject3D && !ch.isBone && ch.visible && !/mixamorig/.test(ch.name)) busy = true;
+        const d = bones[s + 'Arm'].getWorldPosition(V()).distanceTo(h) + (busy ? 1 : 0); if (d < best) { best = d; DR.side = s; } } }
+    if (mode !== DR.mode) { DR.loc = null; DR.mode = mode || DR.mode; }
+    const side = DR.side; if (!side) return; const sh = bones[side + 'Arm'].getWorldPosition(V());
+    let want = null;
+    if (mode === 'bolt') want = D.boltKnob(V());
+    else if (mode === 'open') { // a flat palm on the leaf, on the face toward him, chest high, toward the latch side
+      const pick = () => { const l = leaf.worldToLocal(sh.clone()); DR.face = l.z > 0 ? .07 : -.035; DR.loc = V(Math.min(hw - .25, Math.max(-hw + .05, l.x)), Math.min(1.2, Math.max(.75, l.y - .22)), DR.face); };
+      if (!DR.loc) pick(); want = leaf.localToWorld(DR.loc.clone()); if (want.distanceTo(sh) > .5 || (leaf.worldToLocal(sh.clone()).z > 0) !== (DR.face > 0)) { pick(); want = leaf.localToWorld(DR.loc.clone()); } }
+    const reach = !!want && want.distanceTo(sh) < .56; // arm .41 + palm: farther and the palm would stop short
+    DR.w = Math.max(0, Math.min(1, DR.w + (reach ? dt : -dt) / .35));
+    if (want) { if (!DR.tp) DR.tp = palm(side); const d = want.clone().sub(DR.tp); const mx = 1.4 * dt; DR.tp.add(d.length() > mx ? d.setLength(mx) : d); }
+    if (DR.w < .01) { if (!mode) { DR.side = null; DR.tp = null; DR.mode = null; } return; }
+    const w = DR.w * DR.w * (3 - 2 * DR.w); const hb = bones[side + 'Hand']; for (let it = 0; it < 3; it++) { const pa = palm(side), wr = hb.getWorldPosition(V()); ik2(side, DR.tp.clone().sub(pa.sub(wr)), it ? 1 : w); if (w < .99) break; } // the palm sits past the wrist along the forearm, which turns with the IK: a few passes
+    if (mode && want && DR.w > .97 && palm(side).distanceTo(want) < .06) DR.on[mode] = true; }
+  // ---- a bucket in a fist hangs plumb with its bail right under the fist. hero.js (odHang) hangs it before collide.js, which
+  // can then swing the arm out and drag the rigid bucket sideways into the leg: put it back under the fist after collide.
+  // A tip about his right axis (pouring) is kept. ----
+  const _bq = new THREE.Quaternion();
+  function hangBuckets() { const P = PROPS || window.__props; if (!P || !P.tools || window.__noBucketHang) return;
+    const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero); if (!H || !H.root) return; const act = HHref && HHref.act;
+    for (const nm of ['waterBucket', 'drainBucket']) { const o = P.tools[nm]; if (!o || !o.visible) continue; const side = o.parent === bones.RightHand ? 'Right' : o.parent === bones.LeftHand ? 'Left' : null; if (!side) continue;
+      if (H.bucketTilt) continue; // Outdoor tips it on purpose (scoop at the pond, pouring out): leave it to them
+      const hb = bones[side + 'Hand'], fa = bones[side + 'ForeArm']; const tipping = !!(act && /^(pour|fill)$/.test(act.step || ''));
+      // clear of his legs first (the arm takes the fist out): the bucket's side (radius ~0.17) plus a thigh (~0.08) from its axis
+      if (!tipping) { const f = V(Math.sin(H.root.rotation.y), 0, Math.cos(H.root.rotation.y)), r = V(-f.z, 0, f.x).multiplyScalar(side === 'Right' ? 1 : -1);
+        const c = palm(side).add(V(0, -.2, 0)); let need = 0; for (const [a, b] of [['UpLeg', 'Leg'], ['Leg', 'Foot']]) for (const L of ['Left', 'Right']) { const A = bones[L + a].getWorldPosition(V()), B = bones[L + b].getWorldPosition(V());
+          const ab = B.clone().sub(A); const t = Math.max(0, Math.min(1, c.clone().sub(A).dot(ab) / ab.lengthSq())); const q = A.addScaledVector(ab, t); const lat = c.clone().sub(q).setY(0).dot(r);
+          if (Math.abs(c.y - q.y) < .25) need = Math.max(need, .26 - lat); }
+        if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), 1); } }
+      // then hang it: plumb (his pouring tip about his right axis kept), the bail's middle at the fist
+      o.updateMatrixWorld(true); o.getWorldQuaternion(_bq); { const e = new THREE.Euler().setFromQuaternion(_bq, 'YXZ'); _bq.setFromEuler(new THREE.Euler(tipping ? e.x : 0, H.root.rotation.y, 0, 'YXZ')); }
+      hb.updateMatrixWorld(true); const h = hb.getWorldPosition(V()), fp = fa.getWorldPosition(V()); const pm = h.add(h.clone().sub(fp).normalize().multiplyScalar(.07)); // = hero.js odPalm
+      const g = o.userData.grip ? o.userData.grip.clone() : V(0, .35, 0); const ws = o.getWorldScale(V()).x; const pos = pm.sub(g.multiplyScalar(ws).applyQuaternion(_bq));
+      const M = new THREE.Matrix4().compose(pos, _bq, V(ws, ws, ws)); M.premultiply(hb.matrixWorld.clone().invert()); M.decompose(o.position, o.quaternion, o.scale); o.updateMatrixWorld(true); } }
+  function twoHands(dt) { try { hangBuckets(); } catch (e) { console.error('grab bucket', e); } try { doorDrive(dt); } catch (e) { console.error('grab door', e); } const P = PROPS || window.__props; if (!P || !P.tools) return; if (sweepDrive(dt)) return;
     for (const side of ['Left', 'Right']) { const other = side === 'Left' ? 'Right' : 'Left'; const ho = bones[other + 'Hand'], hs = bones[side + 'Hand']; let tool = null, nm = null;
       for (const k in P.tools) { const o = P.tools[k]; if (o && o.parent === ho && o.visible !== false && GRIP[k] && GRIP[k].two) { tool = o; nm = k; break; } }
       let busy = false; for (const ch of hs.children) if (ch.isObject3D && !ch.isBone && ch.visible && !/mixamorig/.test(ch.name)) busy = true; if (grip[side]) busy = true;
@@ -157,7 +213,7 @@ export function createGrab({ THREE, bones }) {
     if (typeof HH.stage === 'function') { HH.stage('grab', dt => { const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } try { twoHands(dt || 1 / 60); } catch (e) { console.error('grab two', e); } }); HH.__grabLate = true; return; }
     const inner = HH.update; HH.update = dt => { lateQ = []; const r = inner(dt); const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } try { twoHands(dt || 1 / 60); } catch (e) { console.error('grab two', e); } return r; }; HH.__grabLate = true; }
   const api = {
-    attach, late(fn) { lateQ.push(fn); }, twoW,
+    attach, late(fn) { lateQ.push(fn); }, twoW, dbg: api_dbg,
     gripPoint, toolGripHome, palmTarget, setProps(P) { PROPS = P; },
     wrapProps, toolPose, GRIP,
     buildFists, tick, channel: s => CH[s], get fist() { return fistK; },

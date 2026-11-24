@@ -275,7 +275,9 @@ export function createMotion({ hero, db, opts = {} }) {
     { const e = Math.exp(-yP * dt); for (let k = 0; k < 3; k++) { const j1 = offPV[k] + offP[k] * yP; offP[k] = e * (offP[k] + j1 * dt); offPV[k] = e * (offPV[k] - j1 * yP * dt); } } }
 
   // ---------- called by hero.js at the start of its post(): the pose that was on screen (after all IK) is what blends start from ----------
-  function pre() { for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; prevOut[b*4] = B.quaternion.x; prevOut[b*4+1] = B.quaternion.y; prevOut[b*4+2] = B.quaternion.z; prevOut[b*4+3] = B.quaternion.w; }
+  // blends continue from our own last output, not the on-screen pose: hero.js adds look / lean / IK on top of motion.js every frame,
+  // and starting a jump from the screen pose put that addition in twice (spine and neck snapped 10-12 deg at every clip jump)
+  function pre() { if (haveOut && !window.__mmPreScreen) return; for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; prevOut[b*4] = B.quaternion.x; prevOut[b*4+1] = B.quaternion.y; prevOut[b*4+2] = B.quaternion.z; prevOut[b*4+3] = B.quaternion.w; }
     const hp = HB[HIPS].position; prevOutH[0] = hp.x; prevOutH[1] = hp.y; prevOutH[2] = hp.z; haveOut = true; }
   // ---------- per frame, called by hero.js right after mixer.update ----------
   const traj = [null, null, null];
