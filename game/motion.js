@@ -132,6 +132,8 @@ export function createMotion({ hero, db, opts = {} }) {
         const dy = R[t*3+2] - y; F[o + 21 + j*2] = Math.sin(dy); F[o + 22 + j*2] = Math.cos(dy); }
       // generated (fal) clips are kept for starts, stops and turns; steady walking comes from real mocap (generated walking looks stiff)
       if (/^hy_/.test(c.name) && c.speed[f] > .55) ok = false;
+      // generated turn-backs pivot on wide, sliding, splayed legs (a bow-legged squat at every walk start): turns come from mocap, which steps
+      if (/^hy_turnback/.test(c.name)) ok = false;
       valid[gi] = ok ? 1 : 0; }
     c.fl = new Float32Array(n * 6); for (let f = 0; f < n; f++) for (let k = 0; k < 6; k++) c.fl[f*6 + k] = F[(g0 + f)*NF + k];
     g0 += n; }
@@ -159,7 +161,7 @@ export function createMotion({ hero, db, opts = {} }) {
   const S = { on: false, ci: 0, t: 0, char: new THREE.Vector3(), cyaw: 0, searchT: 0, lastSearchMs: 0, cost: 0, pruned: 0, settle: 0, prevSim: null, simV: new THREE.Vector3(), simAv: 0,
     jumps: 0, layer: false, stats: { searches: 0, ms: 0, maxMs: 0 } };
   const Qv = new Float32Array(NF), cur = new Float32Array(NB * 4), curH = new Float32Array(3);
-  const out = new Float32Array(NB * 4), outH = [0, 0, 0], prevOut = new Float32Array(NB * 4), prevOutH = new Float32Array(3); let haveOut = false; let wroteH = false, pureH = [0, .9, 0];
+  const out = new Float32Array(NB * 4), outH = [0, 0, 0], prevOut = new Float32Array(NB * 4), prevOut2 = new Float32Array(NB * 4), curP = new Float32Array(NB * 4), curPH = new Float32Array(3), lastDt = [1 / 60], haveOut2 = [false], prevOutH = new Float32Array(3); let haveOut = false; let wroteH = false, pureH = [0, .9, 0];
   const src = new Float32Array(NB * 4), srcH = new Float32Array(3), prevSrc = new Float32Array(NB * 4), prevSrcH = new Float32Array(3); let haveSrc = false;
   // inertialization offsets (rotation vectors + angular velocity per bone, hips position + velocity)
   const offX = new Float32Array(NB * 3), offV = new Float32Array(NB * 3), offP = new Float32Array(3), offPV = new Float32Array(3);
@@ -238,12 +240,17 @@ export function createMotion({ hero, db, opts = {} }) {
     Fb.parent.getWorldQuaternion(_pq); Fb.quaternion.copy(_pq.invert().multiply(endQ)); Fb.updateMatrixWorld(true); }
 
   // ---------- inertialization ----------
-  function inertialize(b, newQ, ni, hl) { yB[b] = damp(hl); // offset so that offset * newQ == last output, keep the output's angular velocity
+  function inertialize(b, newQ, ni, hl, vPrev) { yB[b] = damp(hl); // offset so that offset * newQ == last output, keep the output's angular velocity
     if (!haveOut) { offX[b*3] = offX[b*3+1] = offX[b*3+2] = 0; offV[b*3] = offV[b*3+1] = offV[b*3+2] = 0; return; }
     offV[b*3] = offV[b*3+1] = offV[b*3+2] = 0;
     const ox = prevOut[b*4], oy = prevOut[b*4+1], oz = prevOut[b*4+2], ow = prevOut[b*4+3];
     const nx = -newQ[ni], ny = -newQ[ni+1], nz = -newQ[ni+2], nw = newQ[ni+3];
-    const t = [0, 0, 0, 0]; qmul([ox, oy, oz, ow], 0, [nx, ny, nz, nw], 0, t, 0); qlog(t[0], t[1], t[2], t[3], offX, b*3); }
+    const t = [0, 0, 0, 0]; qmul([ox, oy, oz, ow], 0, [nx, ny, nz, nw], 0, t, 0); qlog(t[0], t[1], t[2], t[3], offX, b*3);
+    // keep the angular velocity too (a jump that only matches the pose still kicks: the bone takes the new clip's speed at once)
+    if (vPrev && haveOut2[0]) { const w1 = [0, 0, 0], w2 = [0, 0, 0], d = lastDt[0];
+      qmul(prevOut, b*4, [-prevOut2[b*4], -prevOut2[b*4+1], -prevOut2[b*4+2], prevOut2[b*4+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], w1, 0);
+      qmul(newQ, ni, [-vPrev[ni], -vPrev[ni+1], -vPrev[ni+2], vPrev[ni+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], w2, 0);
+      for (let k = 0; k < 3; k++) offV[b*3+k] = clamp((w1[k] - w2[k]) / d, -12, 12); } }
   // angle between q (at qi) and the constant-angular-velocity prediction from a (t-1) and b (t-2)
   function devAngle(q, qi, a, b, i) { const ib = [-b[i], -b[i+1], -b[i+2], b[i+3]], d = [0, 0, 0, 0], pr = [0, 0, 0, 0]; qmul(a, i, ib, 0, d, 0); qmul(d, 0, a, i, pr, 0);
     const dot = Math.abs(pr[0]*q[qi] + pr[1]*q[qi+1] + pr[2]*q[qi+2] + pr[3]*q[qi+3]) / Math.max(1e-9, Math.hypot(pr[0], pr[1], pr[2], pr[3])); return 2 * Math.acos(Math.min(1, dot)); }
@@ -336,12 +343,12 @@ export function createMotion({ hero, db, opts = {} }) {
       const ex = S.char.x - p.x, ez = S.char.z - p.z, el = Math.hypot(ex, ez), MAXD = .12; if (el > MAXD) { S.char.x = p.x + ex / el * MAXD; S.char.z = p.z + ez / el * MAXD; }
       const ea = wrapA(S.cyaw - yaw); if (Math.abs(ea) > .5) S.cyaw = yaw + Math.sign(ea) * .5;
       S.char.y = p.y;
-      sampleClip(c, S.t, cur, curH);
+      sampleClip(c, S.t, cur, curH); const jv = S.jumped && !window.__noJumpVel; if (jv) sampleClip(c, Math.max(0, S.t - dt * FPS * rate), curP, curPH);
       // into the hero's root frame (root sits at the simulation)
       const rel = S.cyaw - yaw; const rq = yawQ(rel); const t3 = new Float32Array(3); qrot(rq, 0, curH, 0, t3, 0);
       const ox = S.char.x - p.x, oz = S.char.z - p.z, c2 = Math.cos(-yaw), s2 = Math.sin(-yaw);
       curH[0] = t3[0] + ox*c2 + oz*s2; curH[1] = t3[1]; curH[2] = t3[2] - ox*s2 + oz*c2;
-      const hq = cur.slice(HIPS*4, HIPS*4 + 4); qmul(rq, 0, hq, 0, cur, HIPS*4);
+      const hq = cur.slice(HIPS*4, HIPS*4 + 4); qmul(rq, 0, hq, 0, cur, HIPS*4); if (jv) { const hp = curP.slice(HIPS*4, HIPS*4 + 4); qmul(rq, 0, hp, 0, curP, HIPS*4); }
       // layering: an action clip from hero.js keeps the upper body
       const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : null;
       // the upper body keeps the action only while carrying, or for the last moments of a one-off action (stands up stretching and walks
@@ -361,7 +368,7 @@ export function createMotion({ hero, db, opts = {} }) {
       else { kind = 0; src[b*4] = B.quaternion.x; src[b*4+1] = B.quaternion.y; src[b*4+2] = B.quaternion.z; src[b*4+3] = B.quaternion.w; sq = src; si = b*4; }
       if (kind === 0 && b === SPI && spineFix) { src.set(spineFix, b*4); }
       if (b === SPI && !!spineFix !== !!S.spFix) { if (srcKind[b] === kind) inertialize(b, sq, si, HL_SWITCH); S.spFix = !!spineFix; }
-      if (kind !== srcKind[b] || (kind === 1 && S.jumped)) { if (srcKind[b] !== -1) inertialize(b, sq, si, kind !== srcKind[b] ? HL_SWITCH : HL_JUMP); srcKind[b] = kind; }
+      if (kind !== srcKind[b] || (kind === 1 && S.jumped)) { if (srcKind[b] !== -1) inertialize(b, sq, si, kind !== srcKind[b] ? HL_SWITCH : HL_JUMP, kind === srcKind[b] && kind === 1 && S.jumped && !window.__noJumpVel ? curP : null); srcKind[b] = kind; }
       const o = [0, 0, 0, 0]; qexp(o, 0, offX[b*3], offX[b*3+1], offX[b*3+2]); qmul(o, 0, sq, si, out, b*4); }
     { const hb = HB[HIPS]; const hk = S.on ? 1 : 0; const hs = S.on ? curH : pureH;
       if (hk !== S.hipKind || (hk === 1 && S.jumped)) { if (S.hipKind != null && haveOut) { for (let k = 0; k < 3; k++) { offP[k] = prevOutH[k] - hs[k]; offPV[k] = 0; } yP = damp(hk !== S.hipKind ? HL_SWITCH : HL_JUMP); } S.hipKind = hk; }
@@ -370,7 +377,7 @@ export function createMotion({ hero, db, opts = {} }) {
     stepOffsets(dt);
     const anyOff = S.on || offActive();
     if (anyOff) { for (let b = 0; b < NB; b++) { const B = HB[b]; if (B) B.quaternion.set(out[b*4], out[b*4+1], out[b*4+2], out[b*4+3]); } HB[HIPS].position.set(outH[0], outH[1], outH[2]); outH[0] = HB[HIPS].position.x; outH[1] = HB[HIPS].position.y; outH[2] = HB[HIPS].position.z; wroteH = true; } else wroteH = false;
-    prevOut.set(out); prevOutH.set(outH); haveOut = true;
+    prevOut2.set(prevOut); haveOut2[0] = haveOut; lastDt[0] = dt; prevOut.set(out); prevOutH.set(outH); haveOut = true;
     root.updateMatrixWorld(true);
     // foot locking while the data says the foot is planted
     if (S.on && !window.__noFootLock) { const c = clips[S.ci], f = clamp(Math.round(S.t), 0, c.n - 1);
