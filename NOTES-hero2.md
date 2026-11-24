@@ -77,3 +77,8 @@ Comparisons: project files hero-v6/.
 - Lids: `PRIM=1,2 node lids.mjs G.glb GL.glb '{"L":[-0.0388,0.7415,0.047,0.031],"R":[0.0412,0.7415,0.047,0.031],"skin":[-0.06,0.735],"lash":[-0.0388,0.7535],"off":0.0016,"ymin":0.68,"pow":0.33,"flat":1}'` (PRIM = comma list of primitives to ray-cast; facescan.mjs takes PRIM too).
 - `HEADS=1024 node ktxtex.mjs GL.glb K.glb 2048 1024` (head base colour 1024), then quant + optim 0.65. Asset 5.3 MB base64.
 - Head box (pre-quant): x ±0.137, y 0.61..0.92, z -0.156..0.107 (old hero 99%: x ±0.127, top 0.99, z -0.160..0.112).
+
+### v6 face v4: head 1.5x (concept proportions) (2026-11-24 17:30 UTC)
+- Pavel saw no difference in the game: at the game camera the hero is ~65 px tall (home view) / ~190 px (closest zoom), the face only 8-30 px, and the body palette and proportions were the same as the old hero. Concept 6 reads by its big head (~22% of the height, ours was 14%).
+- The head is now 1.5x the boxed head: `bash pipeline/hero2/build-v6-head.sh 1.5 out.glb 0.60 -0.05` (run in the work dir with sh13.glb / hd-single.glb; lids are scaled with K). Pre-quant head box x ±0.206, y 0.60..1.045, z -0.248..0.147.
+- Gate on the same stand (master 827fed4 vs the same + this asset): P1 225 -> 214, head penetrations 11 -> 13 with the same max 3.1 cm, no new HARD.
