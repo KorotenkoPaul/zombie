@@ -516,18 +516,20 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
       sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
  {vec3 q=vCW-cC;vec2 dd=cDir;float u=dot(q.xz,dd);float v=-q.x*dd.y+q.z*dd.x;
   float inn=clamp((cS.x*.55-u)/(cS.x*1.4),0.,1.);              // 0 at the mouth .. 1 at the back
-  float r=length(vec2(v,q.y))*7.+cN(vec2(v,q.y)*3.)*1.4;        // growth rings round the hollow's axis
-  float ring=smoothstep(.35,.5,abs(fract(r)-.5));
-  float fib=cN(vec2(atan(q.y,v)*9.,u*2.5))*.6+cN(vec2(atan(q.y,v)*31.,u*7.))*.4; // fibres running in
-  float crack=smoothstep(.08,.0,abs(cN(vec2(atan(q.y,v)*4.,u*1.3))-.5));
-  vec3 c=mix(vec3(.2,.12,.07),vec3(.34,.22,.13),fib)*(.78+.3*ring)*(1.-.5*crack);
+  // Critic T21: no growth rings (they only show on a saw cut; round the axis they read as a painted disc on the back wall).
+  // Inside a hollow trunk the grain runs UP: torn vertical fibres, dark splits, soft rot patches.
+  float ha=atan(v,u);
+  float fib=cN(vec2(ha*14.,q.y*1.3))*.55+cN(vec2(ha*43.,q.y*4.))*.3+cN(vec2(ha*120.,q.y*9.))*.15;
+  float crack=smoothstep(.07,.0,abs(cN(vec2(ha*5.,q.y*.7))-.5));
+  float rot=smoothstep(.55,.8,cN(vec2(ha*3.,q.y*1.6)+7.));
+  vec3 c=mix(vec3(.13,.08,.05),vec3(.28,.18,.11),fib)*(1.-.6*crack)*mix(1.,.6,rot);
   diffuseColor.rgb=c*mix(1.,.15,pow(inn,.8));}`)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
  {vec3 q=vCW-cC;float u=dot(q.xz,cDir);float v=-q.x*cDir.y+q.z*cDir.x;float an=atan(q.y,v);
-  float hgt=cN(vec2(an*9.,u*2.5))*.6+cN(vec2(an*31.,u*7.))*.4-smoothstep(.08,0.,abs(cN(vec2(an*4.,u*1.3))-.5));
+  float ha=atan(v,u); float hgt=cN(vec2(ha*14.,q.y*1.3))*.55+cN(vec2(ha*43.,q.y*4.))*.3-smoothstep(.07,0.,abs(cN(vec2(ha*5.,q.y*.7))-.5))*1.2;
   vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition);float hx=dFdx(hgt),hy=dFdy(hgt);
   vec3 r1=cross(dpy,normal),r2=cross(normal,dpx);float det=dot(dpx,r1);
-  normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.06);}`)
+  normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.1);}`)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.3*smoothstep(-.6,1.2,u2);}');
     };
     cmat.customProgramCacheKey = () => 'hollow';
@@ -535,8 +537,10 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
     // lumps of rot, pushed inwards only so the cave never grows past the bark
     const cgeo = new THREE.SphereGeometry(1, MOB(o) ? 40 : 64, MOB(o) ? 26 : 40);
     { const pa = cgeo.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i);
-        const a = Math.atan2(y, z), k = 1 - 0.07 * Math.pow(0.5 + 0.5 * Math.sin(a * 11 + x * 2.2 + Math.sin(a * 3) * 1.5), 2) - 0.05 * (0.5 + 0.5 * Math.sin(a * 5 - x * 4 + 1.3)) * (0.5 + 0.5 * Math.sin(x * 7 + a * 2))
-          - 0.03 * Math.sin(x * 13 + a * 17) * Math.sin(a * 23);
+        // vertical ridges of torn heartwood and lumps of rot all round, deepest on the back wall facing the opening (T21)
+        const a = Math.atan2(z, x), bf = 0.6 + 0.6 * Math.min(1, Math.max(0, (0.2 - x) / 1.0)), w = Math.sin(y * 3.1) * 0.8 + y * 0.6;
+        const k = 1 - bf * (0.09 * Math.pow(0.5 + 0.5 * Math.sin(a * 9 + w), 3) + 0.05 * (0.5 + 0.5 * Math.sin(a * 4 + y * 5 + 1.3)) * (0.5 + 0.5 * Math.sin(y * 9 + a * 2))
+          + 0.03 * (0.5 + 0.5 * Math.sin(a * 23 + y * 2.3)) + 0.02 * Math.sin(a * 41 + y * 13) * Math.sin(y * 17 - a * 5));
         pa.setXYZ(i, x * k, y * (y < -0.6 ? 1 : k), z * k); }
       cgeo.computeVertexNormals(); }
     const cav = new THREE.Mesh(cgeo, cmat);

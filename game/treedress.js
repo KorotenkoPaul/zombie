@@ -247,7 +247,7 @@ uniform float tdCool;` + NOISE)
           if(tdFade>.01)hb=tdTri(tdHao,36./11.,vec3(7.3),wn,tdScale);
 #endif
           tdH=ha.r;float cav=ha.g*mix(1.,.6+.4*hb.g,tdFade);
-          float rel=tdRelief;
+          float rel=min(1.,tdRelief*(1.+1.2*tdLf)); // roots: furrows darker too (T22)
           diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.6,1.,cav),rel);
           diffuseColor.rgb*=mix(1.,.82+.36*hb.b,tdFade*rel*(1.-.6*tdLf));
           { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
@@ -352,13 +352,13 @@ uniform float tdCool;` + NOISE)
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
           if(brk>.01)dn=mix(dn,tdTriN(15./11.,vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
-          if(tdFade>.01)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.7*tdLf); // on roots the fine octave read as wood grain
+          if(tdFade>.01)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.3*tdLf); // on roots the fine octave read as wood grain
 #endif
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
           dn+=tdBD*tdBR*.9;                   // the callus roll round a beam
           dn*=1.+tdCo*.5;                     // collar: deeper squeezed folds
-          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7));
+          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf)); // roots: deeper relief (Critic T22: they read smooth up close)
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
