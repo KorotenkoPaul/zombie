@@ -104,11 +104,11 @@ export function createClimb() {
   }
   // top of the boards under a foot stepping off the bottom rung (a threshold board under the hatch ladder stands 3 cm above the
   // floor height: gate, soles 4.3 cm into the 332x24x9 board at the bottom of kh); the sole spans ~10 cm, so the highest of three probes
-  function floorTop(A, x, z, base) {
-    if (base == null) base = A.floorY; A.ft = A.ft || {}; const key = x.toFixed(2) + ',' + z.toFixed(2) + ',' + base.toFixed(2); if (A.ft[key] != null) return A.ft[key];
+  function floorTop(A, x, z) {
+    A.ft = A.ft || {}; const key = x.toFixed(2) + ',' + z.toFixed(2); if (A.ft[key] != null) return A.ft[key];
     const CD = window.__collide; let top = -1e9;
-    if (CD && CD.depthAt) { try { for (const dz of [-.06, 0, .06]) for (let y = base + .08; y > base - .03; y -= .004) { const d = CD.depthAt(x, y, z + dz); if ((typeof d === 'number' ? d : (d && d.depth) || 0) > .002) { top = Math.max(top, y); break; } } } catch (e) { top = -1e9; } }
-    return (A.ft[key] = top > -1e9 ? Math.min(top, base + .06) : base);
+    if (CD && CD.depthAt) { try { for (const dz of [-.06, 0, .06]) for (let y = A.floorY + .08; y > A.floorY - .03; y -= .004) { const d = CD.depthAt(x, y, z + dz); if ((typeof d === 'number' ? d : (d && d.depth) || 0) > .002) { top = Math.max(top, y); break; } } } catch (e) { top = -1e9; } }
+    return (A.ft[key] = top > -1e9 ? Math.min(top, A.floorY + .06) : A.floorY);
   }
   // where each limb wants to be when it rests on rung i
   function restTarget(A, k, i) {
@@ -128,9 +128,8 @@ export function createClimb() {
   // ---- over the top edge: s 0 = on the ladder (feet on the two top rungs, hands on the floor), 1 = standing up there ----
   function startOver(A, dir, feetTop, rootTop) {
     const L = A.limb; const h = L.LF.r > L.RF.r ? 'LF' : 'RF', l = h === 'LF' ? 'RF' : 'LF'; const zD = A.zDir;
-    const ff = k => { const side = (k[0] === 'L' ? -1 : 1) * zD; return V(A.lad.x + side * .11, 0, 0); };
+    const ff = k => { const side = (k[0] === 'L' ? -1 : 1) * zD; return V(A.lad.x + side * .11, A.o.yTop + M.footUp, 0); };
     const FF = { [h]: ff(h).setZ(A.edge - zD * .24), [l]: ff(l).setZ(A.P.z - zD * .02) };
-    for (const k of [h, l]) FF[k].y = Math.max(A.o.yTop, floorTop(A, FF[k].x, FF[k].z, A.o.yTop)) + M.ankFloor; // flat on the real boards (the deck's edge board stands 3 cm above yTop: gate, soles 3.7 cm into it)
     if (feetTop) { FF.LF = feetTop.LF.clone(); FF.RF = feetTop.RF.clone(); }
     const P = rootTop ? rootTop.clone() : A.P.clone();
     A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: 1.75, h, l, FF, P, ys: top(A, L[l].r), hold: 0, idle: false };
@@ -164,7 +163,7 @@ export function createClimb() {
       const hang = sh.clone().add(V(0, -.55, 0)).addScaledVector(out, .05); hang.z -= A.zDir * .03;
       const q = f.lerp(hang, e); q.addScaledVector(out, Math.sin(Math.PI * e) * .06); return q; }
     const [a, b, lift] = c.dir < 0 ? (k === c.h ? [.24, .54, .13] : [.46, .76, .18]) : (k === c.h ? [.2, .62, .13] : [.6, .95, .18]); // going down a foot leaves the floor only once the body is low enough to reach the rung
-    const e = sine((s - a) / (b - a)); const from = restTarget(A, k, L.r), to = c.FF[k]; c.ob = c.ob || {}; c.ob[k] = e > .97; // on the boards: the foot goes flat
+    const e = sine((s - a) / (b - a)); const from = restTarget(A, k, L.r), to = c.FF[k];
     // up first, then over the edge, then down onto the boards (a straight line clipped the floor's edge beam: gate, feet 5 cm into it)
     const eh = sine((e - .25) / .75), ev = sine(e / .75); /* gentle and overlapping (gate: foot and knee jumps stepping onto the boards) */ const q = from.clone().lerp(to, eh); q.y = lerp(from.y, to.y, ev) + Math.sin(Math.PI * e) * lift; return q;
   }
@@ -317,7 +316,8 @@ export function createClimb() {
       { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
         let L = A.mode === 'over' ? V(A.P.x, hd.y - .35, A.P.z - A.zDir * 1.6) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
         if (A.mode !== 'over') { L.y = Math.min(L.y, hd.y + .2); L.z = planeZ; }
-        if (A.lookS) A.lookS.lerp(L, 1 - Math.exp(-dt * 5)); else A.lookS = L.clone(); /* eased: the look point switched hands at each step and the neck jumped 30-50 degrees in a frame */ C.H.look = A.lookS.clone(); C.H.lookW = .35; A.lookPt = A.lookS.clone(); }
+        // the look DIRECTION is eased, not the point: a point a hand's width from the face swung the head 3-5 cm in a frame when it changed (next hand, climb -> over); the neck jumped 30-50 deg when it switched hands
+        { const u = L.clone().sub(hd); if (u.lengthSq() < 1e-8) u.set(0, 0, -A.zDir); u.normalize(); if (A.lookU) A.lookU.lerp(u, 1 - Math.exp(-dt * 5)).normalize(); else A.lookU = u; A.lookS = hd.clone().addScaledVector(A.lookU, .9); } C.H.look = A.lookS.clone(); C.H.lookW = .35; A.lookPt = A.lookS.clone(); }
     } else { tg = S.last && S.last.tg; hw = S.last && S.last.hw; }
     if (!tg) return;
     const W = S.W; const zDir = S.last.zDir;
@@ -327,7 +327,7 @@ export function createClimb() {
       const t = tg[s[0] + 'F']; const sx = (s === 'Left' ? -1 : 1) * zDir;
       C.ik2(B[s + 'UpLeg'], B[s + 'Leg'], B[s + 'Foot'], t, V(sx * .3, .55, -zDir), W, false);
       const F = B[s + 'Foot'], Tb = B[s + 'ToeBase'];
-      if (F && Tb) { const a = wp(F), toe = wp(Tb); const onFl = A && (A.mode === 'over' ? !!(A.C && A.C.ob && A.C.ob[s[0] + 'F']) : A.limb[s[0] + 'F'].r < 0 && !(A.step && A.step.move.some(m => m.k === s[0] + 'F'))); const dd = M.ankFloor - M.toeFloor; A.flE = A.flE || {}; const fk = s[0] + 'F'; A.flE[fk] = A.flE[fk] == null ? (onFl ? 1 : 0) : A.flE[fk] + ((onFl ? 1 : 0) - A.flE[fk]) * Math.min(1, dt * 6); const d = V(0, -M.footUp, -zDir * M.footH).lerp(V(0, -dd, -zDir * Math.sqrt(Math.max(0, M.footUp * M.footUp + M.footH * M.footH - dd * dd))), A.flE[fk]); /* flat on the boards, the ball on a rung (eased: no ankle snap at the step) */
+      if (F && Tb) { const a = wp(F), toe = wp(Tb); const onFl = A && A.mode !== 'over' && A.limb[s[0] + 'F'].r < 0 && !(A.step && A.step.move.some(m => m.k === s[0] + 'F')); const dd = M.ankFloor - M.toeFloor; A.flE = A.flE || {}; const fk = s[0] + 'F'; A.flE[fk] = A.flE[fk] == null ? (onFl ? 1 : 0) : A.flE[fk] + ((onFl ? 1 : 0) - A.flE[fk]) * Math.min(1, dt * 6); const d = V(0, -M.footUp, -zDir * M.footH).lerp(V(0, -dd, -zDir * Math.sqrt(Math.max(0, M.footUp * M.footUp + M.footH * M.footH - dd * dd))), A.flE[fk]); /* flat on the boards, the ball on a rung (eased: no ankle snap at the step) */
         // a real ankle: the toes point away from the calf side of the shin (the hip side), whatever the leg does when it folds deep
         // over the edge (gate: 'knee bent the wrong way' when the toes swung to the hip side of a near-level shin)
         const kn = wp(B[s + 'Leg']), hp = wp(B[s + 'UpLeg']); const sh = a.clone().sub(kn).normalize(); const o = hp.clone().sub(kn); o.addScaledVector(sh, -o.dot(sh));
