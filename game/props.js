@@ -1154,9 +1154,9 @@ export function buildProps(ctx) {
   place('slippers', slippers(), -2.95 + TX, BD, 2.32, { solid: false, ry: .2 });
   place('basket', basket(), -.28 + TX, BD, 1.33, { solid: false }); // under the right end of the reading table, between its legs
   /* chair left of the table middle and nearer it: the hero stands at the shut door bolt around x -0.1, z 2.55 (W7) */
-  const chairO = place('chair', chair(), -.74 + TX, BD, 2.26, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
+  const chairO = place('chair', chair(), -.74 + TX, BD, 2.26, { ry: Math.PI, seat: true }); chairO.userData.seat = true; /* GRAB: furniture he sits on (it slides with him: chairPull) */ out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
   const tbl = place('table', table(), -.35 + TX, BD, 1.37); const tTop = tbl.userData.floorY + .74;
-  const bk = book({ cover: M.covers[0] }); bk.position.set(-.33 + TX, tTop, 1.6 + TZ); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; bk.userData.noProxy = true; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
+  const bk = book({ cover: M.covers[0] }); bk.position.set(-.56 + TX, tTop, 1.62 + TZ); /* GRAB: at the near edge in front of the chair (it lay 80 cm from his shoulders: the book flew to his lap) */ bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; bk.userData.noProxy = true; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
   { const m = bake(mug(M.glazeBlue)); m.position.set(-.06 + TX, tTop, 1.35 + TZ); scene.add(m); const c = bake(candle()); c.position.set(-.62 + TX, tTop, 1.32 + TZ); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62 + TX, tTop, 1.6 + TZ); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
   // door in Tree's opening of the right wall (z 2.3..3.25, up to BD+2.0); hinge at the front (z≈3.2), opens into the room.
   // It rests open (~95°) along z≈3.2 so the way in stays clear; __props.door.setOpen(k) swings it (0 shut), setBolt(k) slides the bolt (1 locked).
@@ -1404,11 +1404,11 @@ export function buildProps(ctx) {
   // chair: chairPull(k) slides it back from the table by k * 0.2 m (0 = its home, where the seated pose is fitted).
   // Character: pull to 1 on the approach, ease back to 0 as the hips land (he scoots in), 1 again when he gets up.
   let chHome = null, chDir = null, chBox0 = null; const chairSt = { k: 0, to: 0, rate: 1 / .5 };
-  out.chairPull = (k, sec = .5) => { if (!chHome) { /* taken on first use, after the room shift */ chHome = chairO.position.clone(); const tb = placed.table; chDir = tb ? chHome.clone().sub(tb.userData.box.getCenter(V())).setY(0).normalize() : V(0, 0, 1); chBox0 = chairO.userData.box.clone(); }
-    chairSt.to = clamp01(k); chairSt.rate = 1 / Math.max(.05, sec); };
+  out.chairPull = (k, sec = .5) => { if (!chHome) { /* taken on first use, after the room shift */ chHome = chairO.position.clone(); const tb = placed.table; chDir = V(0, 0, -1).applyQuaternion(chairO.quaternion).setY(0).normalize(); /* GRAB: straight back along the chair's own axis, the way the seated hero slides with it (towards the table centre it went 9 cm sideways under him) */ chBox0 = chairO.userData.box.clone(); }
+    chairSt.to = Math.max(-1.25, Math.min(1, k)); /* GRAB: negative = scooted in under the table (k * 0.2 m), so the table top is within an arm's reach */ chairSt.rate = 1 / Math.max(.05, sec); };
   function tweens(dt) {
     for (const [o, m] of homing) { m.t = Math.min(1, m.t + dt / m.d); const e = m.t * m.t * (3 - 2 * m.t); o.position.copy(m.p).lerp(m.h.pos, e); o.quaternion.copy(m.q).slerp(m.h.quat, e); o.scale.setScalar(m.s + ((m.h.scale || 1) - m.s) * e); if (m.t >= 1) homing.delete(o); }
-    if (chairSt.k !== chairSt.to) { const d = chairSt.to - chairSt.k, st = chairSt.rate * dt; chairSt.k = Math.abs(d) <= st ? chairSt.to : chairSt.k + Math.sign(d) * st; const e = chairSt.k * chairSt.k * (3 - 2 * chairSt.k);
+    if (chairSt.k !== chairSt.to) { const d = chairSt.to - chairSt.k, st = chairSt.rate * dt; chairSt.k = Math.abs(d) <= st ? chairSt.to : chairSt.k + Math.sign(d) * st; const ak = Math.min(1, Math.abs(chairSt.k)), e = Math.sign(chairSt.k) * ak * ak * (3 - 2 * ak) * Math.max(1, Math.abs(chairSt.k));
       const off = chDir.clone().multiplyScalar(.2 * e); chairO.position.copy(chHome).add(off); chairO.updateMatrixWorld(true); chairO.userData.box.copy(chBox0).translate(off); }
   }
   out.chairO = chairO; out.bunk = bunk;
