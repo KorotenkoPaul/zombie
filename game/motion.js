@@ -129,9 +129,8 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let j = 0; j < 3; j++) { let t = f + TR[j]; if (t > n - 1) { if (!endStill) ok = false; t = n - 1; }
         loc(R[t*3], R[t*3+1], t2, 0); F[o + 15 + j*2] = t2[0]; F[o + 16 + j*2] = t2[1];
         const dy = R[t*3+2] - y; F[o + 21 + j*2] = Math.sin(dy); F[o + 22 + j*2] = Math.cos(dy); }
-      // generated turn-backs start on wide, splayed, sliding legs and their hips lag the body by 0.2 s at every walk start: starts and turns come from mocap
-      if (/^hy_turnback/.test(c.name)) ok = false;
-      valid[gi] = ok ? 1 : 0; }
+      // generated turn-backs: kept for turning back mid-walk, but not for starting from rest (wide splayed legs, hips lag the body by 0.2 s)
+      valid[gi] = ok ? (/^hy_turnback/.test(c.name) ? 2 : 1) : 0; }
     c.fl = new Float32Array(n * 6); for (let f = 0; f < n; f++) for (let k = 0; k < 6; k++) c.fl[f*6 + k] = F[(g0 + f)*NF + k];
     g0 += n; }
   // normalisation: one scale per feature group, times the group's weight
@@ -150,7 +149,7 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let k = 0; k < NF; k++) { const v = Qv[k]; const d = v < bmin[o+k] ? bmin[o+k] - v : v > bmax[o+k] ? v - bmax[o+k] : 0; lb += d*d; if (lb >= bestC) break; }
       if (lb >= bestC) { pruned++; continue; }
       const e = Math.min(total, (bl + 1) * BS);
-      for (let i = bl * BS; i < e; i++) { if (!valid[i]) continue; let c = 0; const fo = i * NF; for (let k = 0; k < NF; k++) { const d = Qv[k] - F[fo + k]; c += d*d; if (c >= bestC) break; } if (c < bestC) { bestC = c; bestI = i; } } }
+      for (let i = bl * BS; i < e; i++) { if (!valid[i] || (valid[i] === 2 && S.noTB)) continue; let c = 0; const fo = i * NF; for (let k = 0; k < NF; k++) { const d = Qv[k] - F[fo + k]; c += d*d; if (c >= bestC) break; } if (c < bestC) { bestC = c; bestI = i; } } }
     S.pruned = pruned / NBL; return [bestI, bestC]; }
 
   // ---------- runtime state ----------
@@ -211,7 +210,7 @@ export function createMotion({ hero, db, opts = {} }) {
     for (let j = 0; j < 3; j++) { const dx = traj[j].x - S.char.x, dz = traj[j].z - S.char.z; const lx = dx*cs + dz*sn, lz = -dx*sn + dz*cs; const dy = traj[j].yaw - S.cyaw;
       Qv[15 + j*2] = (lx - mean[15 + j*2]) * scale[15 + j*2]; Qv[16 + j*2] = (lz - mean[16 + j*2]) * scale[16 + j*2];
       Qv[21 + j*2] = (Math.sin(dy) - mean[21 + j*2]) * scale[21 + j*2]; Qv[22 + j*2] = (Math.cos(dy) - mean[22 + j*2]) * scale[22 + j*2]; } }
-  function curCost() { const g = gidx(); if (!valid[g]) return 1e9; let c = 0; for (let k = 0; k < NF; k++) { const d = Qv[k] - F[g*NF + k]; c += d*d; } return c; }
+  function curCost() { const g = gidx(); if (!valid[g] || (valid[g] === 2 && S.noTB)) return 1e9; let c = 0; for (let k = 0; k < NF; k++) { const d = Qv[k] - F[g*NF + k]; c += d*d; } return c; }
 
   // ---------- foot locking ----------
   const lock = [0, 1].map(() => ({ on: false, hold: false, w: 0, p: new THREE.Vector3(), shown: new THREE.Vector3() }));
@@ -251,14 +250,14 @@ export function createMotion({ hero, db, opts = {} }) {
     const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : '';
     const key = cn + '|' + (S.on ? 1 : 0) + (H.lad ? 1 : 0) + (H.fit ? 1 : 0) + (H.seated ? 1 : 0) + (H.inBed ? 1 : 0) + (H.swing ? 1 : 0) + (H.once ? 1 : 0) + '|' + (H.state || '');
     if (key !== FP.key) { FP.hot = .6; FP.key = key; } else FP.hot = Math.max(0, FP.hot - dt);
-    const off = !FP.on || window.__noPops;
+    const off = !FP.on || window.__noPops; const climbIK = !!(window.__climb && window.__climb.active && window.__climb.weight > .99); // climb IK: every limb is solved each frame from eased targets on the rungs; new pops are not taken (they dragged the hands 20-50 cm off the rungs), running offsets still ease out (zeroing them snapped a foot 30 cm)
     // a blow is meant to be sharp (hero.js repairs hammer, H.noPop = {side, until}): that arm is left out of the pop filter while it lasts
     const np = H.noPop && H.noPop.until > T0() ? H.noPop.side : null;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
     let any = false, hit = 0;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const i3 = b*3;
       const offB = off || (np && names[b] && new RegExp('^' + np + '(Arm|ForeArm|Hand)$').test(names[b]));
-      if (!offB && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
+      if (!offB && !climbIK && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) { const dv = devAngle(fRaw, b*4, fr1, fr2, b*4);
         if (dv > (FP.hot > 0 ? FP.thrHot : FP.thr)) { // start from what was on screen last frame
           const t = [0, 0, 0, 0]; qmul(fShown, b*4, [-fRaw[b*4], -fRaw[b*4+1], -fRaw[b*4+2], fRaw[b*4+3]], 0, t, 0); qlog(t[0], t[1], t[2], t[3], fX, i3); fV[i3] = fV[i3+1] = fV[i3+2] = 0; hit++; } }
       if (offB) { fX[i3] = fX[i3+1] = fX[i3+2] = 0; }
@@ -270,7 +269,10 @@ export function createMotion({ hero, db, opts = {} }) {
     if (any) root.updateMatrixWorld(true); }
   // hook the final pass after everything else in the hero's update (collide.js wraps HH.update too, possibly later: stay outermost)
   let fWrap = null;
-  function ensureFinal() { if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
+  // hero.js slots (HERO-RULES.md): the pop filter runs in 'pops', before the anatomical guard, instead of wrapping hero.update
+  let fStage = false;
+  function ensureFinal() { if (fStage) return; if (typeof hero.stage === 'function') { hero.stage('pops', dt => final(dt)); fStage = true; return; }
+    if (hero.update === fWrap || typeof hero.update !== 'function') return; const inner = hero.update, g = ++FP.gen;
     fWrap = dt => { inner(dt); if (g === FP.gen) final(dt); }; hero.update = fWrap; }
   function stepOffsets(dt) {
     for (let i = 0; i < NB * 3; i++) { const y = yB[(i / 3) | 0], e = Math.exp(-y * dt); const j1 = offV[i] + offX[i] * y; offX[i] = e * (offX[i] + j1 * dt); offV[i] = e * (offV[i] - j1 * y * dt); }
@@ -301,12 +303,12 @@ export function createMotion({ hero, db, opts = {} }) {
     if (wantOn) S.settle = .9; else S.settle = Math.max(0, S.settle - dt);
     const mmAct = !isBlocked && !window.__noMotion && (wantOn || (S.on && S.settle > 0 && !settled()));
     if (mmAct && !S.on) { // entering: start the character where the body is, find a frame for the current state
-      S.on = true; S.lockDelay = .3; S.char.set(p.x, p.y, p.z); S.cyaw = yaw; S.searchT = 0; S.forceSearch = true;
+      S.on = true; S.onT = 0; S.lockDelay = .3; S.char.set(p.x, p.y, p.z); S.cyaw = yaw; S.searchT = 0; S.forceSearch = true;
       // query from the current skeleton: feet / hips relative to the root (velocity unknown -> zero)
       predict(traj); buildQueryFromBody(traj); const [bi] = search(Qv, -1, 1e9); if (bi >= 0) { S.ci = where[bi*2]; S.t = where[bi*2+1]; } }
     if (!mmAct && S.on) { S.on = false; }
     S.layer = false;
-    if (S.on) {
+    if (S.on) { S.onT = (S.onT || 0) + dt; S.noTB = S.onT < .8;
       predict(traj);
       S.searchT -= dt;
       if (S.searchT <= 0 || S.forceSearch || S.t >= clips[S.ci].n - 2) { S.searchT = .1; S.forceSearch = false; const t0 = T0();
@@ -321,7 +323,7 @@ export function createMotion({ hero, db, opts = {} }) {
       const fi = Math.floor(t0); const dx = c.dr[fi*3] * adv, dz = c.dr[fi*3+1] * adv, dy = c.dr[fi*3+2] * adv; const cs = Math.cos(S.cyaw), sn = Math.sin(S.cyaw);
       S.char.x += dx*cs + dz*sn; S.char.z += -dx*sn + dz*cs; S.cyaw += dy;
       // pull toward the simulation (short half-life), never further than a hand's width away
-      const kp = 1 - Math.exp(-dt * Math.LN2 / .12), ky = 1 - Math.exp(-dt * Math.LN2 / .14);
+      const kp = 1 - Math.exp(-dt * Math.LN2 / (simSpd > .1 ? .12 : .18)) /* faster only while moving */, ky = 1 - Math.exp(-dt * Math.LN2 / .14);
       S.char.x += (p.x - S.char.x) * kp; S.char.z += (p.z - S.char.z) * kp; S.cyaw += wrapA(yaw - S.cyaw) * ky;
       const ex = S.char.x - p.x, ez = S.char.z - p.z, el = Math.hypot(ex, ez), MAXD = .12; if (el > MAXD) { S.char.x = p.x + ex / el * MAXD; S.char.z = p.z + ez / el * MAXD; }
       const ea = wrapA(S.cyaw - yaw); if (Math.abs(ea) > .5) S.cyaw = yaw + Math.sign(ea) * .5;
