@@ -299,8 +299,15 @@ export function createHero(ctx){
  // head look with human limits: the head never turns more than ~70 deg from the pelvis (neck + chest together),
  // whatever the clip or the look target asks; the turn is shared chest 25% / neck 35% / head 40%, so no owl turns
  const HEADMAX=1.22,LOOKMAX=1.05;
+ function pelvisFwdGeo(){const l=bones.LeftUpLeg,r=bones.RightUpLeg;if(!l||!r)return hipsFwd();const d=l.getWorldPosition(V()).sub(r.getWorldPosition(V()));const f=V(-d.z,0,d.x);/* (L-R) x up */const n=f.length();if(n<1e-4)return hipsFwd();f.multiplyScalar(1/n);if(f.dot(fwd(root.rotation.y))<-.2)f.negate();return f;}
+ // WALK: a neck turns ~60-70 deg at most. The look limit is against the pelvis, so a clip that already twists the chest plus the
+ // look could still wring the neck 75-80 deg (gate owl-head while walking). Saturate the neck+head twist about the neck axis.
+ function neckClamp(){const Nk=bones.Neck,Hd=bones.Head;if(!Nk||!Hd)return;const q=Nk.quaternion.clone().multiply(Hd.quaternion);let tw=2*Math.atan2(q.y,q.w);tw=wrapA(tw);
+  const MAX=.85;if(Math.abs(tw)<=MAX)return;Hd.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(YAX,-(tw-Math.sign(tw)*MAX)));Hd.updateMatrixWorld(true);}
  function lookAt(dt){const Hd=bones.Head,Nk=bones.Neck,Ch=bones.Spine2;if(!Hd||!Nk)return;if(window.__noLookClamp&&!H.look)return;
-  const hf=hipsFwd();const hy=Math.atan2(hf.x,hf.z);
+  /* WALK: the head is limited against where the pelvis really faces (hip joints), not the Hips bone axis: on walking frames that axis
+     is ~30 deg off, so the 70 deg limit let the head reach 100 deg from the pelvis (gate owl-head while walking) */
+  const hf=pelvisFwdGeo();const hy=Math.atan2(hf.x,hf.z);
   const hq=Hd.getWorldQuaternion(new THREE.Quaternion());const fw=V(0,0,1).applyQuaternion(hq);const hl=rotY(fw,-hy);const ah=Math.atan2(hl.x,hl.z),ap=Math.atan2(-hl.y,Math.hypot(hl.x,hl.z));
   let ty=0,tp=0;const w=H.look?H.lookW:0;
   if(H.look&&w>.01){const hp=Hd.getWorldPosition(V());const d=H.look.clone().sub(hp);const local=rotY(d,-hy);
@@ -1611,7 +1618,7 @@ export function createHero(ctx){
   // GRAB tick (lost in the 00:20 rollback): eases released tools onto their hooks and closes the fists round what they hold;
   // without it every blended release left the tool hanging in the air where the hand let go (the axe over the chopping block)
   try{const G=window.__grab;if(G&&G.tick)G.tick(dt,H);}catch(e){}
-  if(!H.inBed&&!H.bedB)lookAt(dt);duck(dt);runSlot('look',dt);runSlot('contacts',dt);}
+  if(!H.inBed&&!H.bedB){lookAt(dt);neckClamp();}duck(dt);runSlot('look',dt);runSlot('contacts',dt);}
 
  // ---------- overlay: an upper-body clip layered over whatever the legs do (stretch while walking off, scratch the head, sip...) ----------
  const UPPER=/^(Spine|Spine1|Spine2|Neck|Head|LeftShoulder|LeftArm|LeftForeArm|LeftHand|RightShoulder|RightArm|RightForeArm|RightHand)$/;
