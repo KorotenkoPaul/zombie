@@ -1053,7 +1053,7 @@ export function buildProps(ctx) {
   { const h = bake(hammer()); h.position.set(2.2, wb.userData.floorY + .9 + .018, 1.98); h.rotation.set(-Math.PI / 2, 0, -1.2); h.userData.live = true; scene.add(h); out.tools.benchHammer = h; h.userData.home = { parent: scene, pos: h.position.clone(), quat: h.quaternion.clone(), scale: 1 };
     const w = bake(wrench(.2)); w.position.set(3.25, wb.userData.floorY + .9 + .008, 2.0); w.rotation.set(-Math.PI / 2, 0, .5); scene.add(w); out.tools.benchWrench = w; w.userData.home = { parent: scene, pos: w.position.clone(), quat: w.quaternion.clone(), scale: 1 }; }
   place('wshelves', workshopShelves(.95), 4.4, WS + .95, 1.85, { ry: -Math.PI / 2, solid: false, wall: true });
-  const stl = place('stool', stool(), 1.85, WS, 2.6, { seat: true }); out.surfaces.stoolSeat = stl.userData.floorY + .48;
+  const stl = place('stool', stool(), 1.5, WS, 2.85, { seat: true }); /* moved off the vice: he stands there to saw (workshop thread) */ out.surfaces.stoolSeat = stl.userData.floorY + .48;
   place('wbarrel', barrel(.8), 1.55, WS, 1.55);
   place('wbucket', bucket(.36, true), 4.05, WS, 3.4);
   place('wrug', rug(1.6, .95, 'green', '#D9C99A'), 2.8, WS, 3.05, { solid: false });
