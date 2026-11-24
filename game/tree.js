@@ -273,16 +273,24 @@ export function buildTree(THREE, o) {
   // ground and carve irregular folds running out along each root, a few sharp cuts across them, and bark lumps, all
   // deep enough to read from the normal camera. Edges are split by a rule that depends only on the edge itself
   // (length + where its midpoint is), so neighbours always agree: no cracks, UV seams included. Phones: coarser.
+  let GR = null;
   if (o.model && o.rootDetail !== false) {
-    const MOBI = MOB(o), Lmax = MOBI ? 0.42 : 0.28, passes = 2;
-    const zoneW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (d - 2.3) / 0.8)) * Math.min(1, Math.max(0, (2.0 - y) / 0.8)) * Math.min(1, Math.max(0, (y + 0.6) / 0.4)) * Math.min(1, Math.max(0, (11 - d) / 2)); };
+    const MOBI = MOB(o), Lmax = MOBI ? 0.42 : 0.28, LmaxT = MOBI ? 0.3 : 0.2, passes = 2;
+    const rootW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (d - 2.3) / 0.8)) * Math.min(1, Math.max(0, (2.0 - y) / 0.8)) * Math.min(1, Math.max(0, (y + 0.6) / 0.4)) * Math.min(1, Math.max(0, (11 - d) / 2)); };
+    // the trunk itself (Pavel: too smooth from the normal view): long irregular cuts and bark plates, carved inwards only
+    // (the house's beams and landings sit against it), never round the hollow's mouth
+    const trunkW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); if (d > 3.6 || d < 0.3 || y < 0.2 || y > 9.8) return 0;
+      const an = Math.atan2(z - AZ, x - AX), nd = Math.max(0, 1 - Math.max(0, Math.abs(angDiff(an, doorAng)) - 0.5) / 0.35) * Math.max(0, Math.min(1, (door.y1 + 1.5 - y) / 0.6));
+      return (1 - nd) * Math.min(1, (y - 0.2) / 0.6) * Math.min(1, (9.8 - y) / 1.2) * Math.min(1, (3.6 - d) / 0.5); };
+    const zoneW = (x, y, z) => Math.max(rootW(x, y, z), trunkW(x, y, z));
     const n0 = P.length / 3, t0 = I.length / 3;
     for (let pass = 0; pass < passes; pass++) {
       const mid = new Map(), out = [];
       const split = (a, b) => { const k = a < b ? a * 4194304 + b : b * 4194304 + a; let m = mid.get(k); if (m !== undefined) return m;
         const ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2], bx = P[b * 3], by = P[b * 3 + 1], bz = P[b * 3 + 2];
         const mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
-        if (Math.hypot(ax - bx, ay - by, az - bz) <= Lmax || zoneW(mx, my, mz) <= 0) { mid.set(k, -1); return -1; }
+        const el = Math.hypot(ax - bx, ay - by, az - bz), wr = rootW(mx, my, mz), wt = trunkW(mx, my, mz);
+        if (!((wr > 0 && el > Lmax) || (wt > 0 && el > LmaxT))) { mid.set(k, -1); return -1; }
         m = P.length / 3; P.push(mx, my, mz); UV.push((UV[a * 2] + UV[b * 2]) / 2, (UV[a * 2 + 1] + UV[b * 2 + 1]) / 2); G.push((G[a] + G[b]) / 2); mid.set(k, m); return m; };
       for (let t = 0; t < I.length; t += 3) { const v = [I[t], I[t + 1], I[t + 2]], m = [split(v[0], v[1]), split(v[1], v[2]), split(v[2], v[0])], n = (m[0] >= 0) + (m[1] >= 0) + (m[2] >= 0);
         if (!n) { out.push(v[0], v[1], v[2]); continue; }
@@ -303,20 +311,34 @@ export function buildTree(THREE, o) {
     { const wm = new Map(); for (let i = 0; i < nv; i++) { const k = Math.round(P[i * 3] * 2e3) + ',' + Math.round(P[i * 3 + 1] * 2e3) + ',' + Math.round(P[i * 3 + 2] * 2e3); const j = wm.get(k);
         if (j === undefined) wm.set(k, i); else { Nn[j * 3] += Nn[i * 3]; Nn[j * 3 + 1] += Nn[i * 3 + 1]; Nn[j * 3 + 2] += Nn[i * 3 + 2]; Nn[i * 3] = -1e9; Nn[i * 3 + 1] = j; } }
       for (let i = 0; i < nv; i++) if (Nn[i * 3] === -1e9) { const j = Nn[i * 3 + 1]; Nn[i * 3] = Nn[j * 3]; Nn[i * 3 + 1] = Nn[j * 3 + 1]; Nn[i * 3 + 2] = Nn[j * 3 + 2]; } }
+    GR = new Float32Array(nv);
     const hsh = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
-    for (let i = 0; i < nv; i++) { const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], w = zoneW(x, y, z); if (w <= 0) continue;
+    for (let i = 0; i < nv; i++) { const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], w = rootW(x, y, z), wt = trunkW(x, y, z); if (w <= 0 && wt <= 0) continue;
       let nx = Nn[i * 3], ny = Nn[i * 3 + 1], nz = Nn[i * 3 + 2]; const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
       const d = Math.hypot(x - AX, z - AZ), an = Math.atan2(z - AZ, x - AX);
-      // folds: furrows running out along the root, wandering a little as they go
-      const f1 = Math.pow(Math.max(0, Math.cos(an * 34 + Math.sin(d * 1.3 + an * 3) * 1.4 + y * 2.2)), 3);
-      const f2 = Math.pow(Math.max(0, Math.cos(an * 71 - d * 0.8 + y * 3.1 + 1.7)), 6);
-      // cuts: a few narrow, deep, slanted splits across the bark, each only so long
-      const ck = Math.pow(Math.max(0, Math.cos(d * 4.1 + an * 9 + Math.sin(an * 5) * 2)), 40) * Math.max(0, Math.sin(an * 7 + d * 0.6 + 0.8) - 0.35) * 1.6;
-      // lumps: burls and swellings
-      const lp = Math.sin(x * 2.3 + Math.sin(z * 1.7)) * Math.sin(z * 2.1 + y * 1.9) * Math.sin(y * 2.7 + x * 1.1);
-      const big = Math.max(0, Math.sin(an * 4 + d * 0.9 + 2.2)) * Math.max(0, Math.sin(d * 1.6 - an * 2));
-      const up = 0.55 + 0.45 * Math.max(0, ny); // tops of the roots: the full form; their undersides sink into the soil anyway
-      const h = w * up * (-0.11 * f1 - 0.05 * f2 - 0.1 * ck + 0.06 * lp + 0.09 * big + (hsh(Math.round(x * 6), Math.round(z * 6)) - 0.5) * 0.012);
+      let h = 0;
+      if (w > 0) {
+        // roots, sized to read from the normal camera (~20 m): broad folds running out along the root, finer furrows,
+        // slanted cuts, burls and swellings
+        const f0 = Math.pow(Math.max(0, Math.cos(an * 16 + Math.sin(d * 0.9 + an * 2) * 1.6 + y * 1.4)), 2);
+        const f1 = Math.pow(Math.max(0, Math.cos(an * 34 + Math.sin(d * 1.3 + an * 3) * 1.4 + y * 2.2)), 3);
+        const f2 = Math.pow(Math.max(0, Math.cos(an * 71 - d * 0.8 + y * 3.1 + 1.7)), 6);
+        const ck = Math.pow(Math.max(0, Math.cos(d * 4.1 + an * 9 + Math.sin(an * 5) * 2)), 40) * Math.max(0, Math.sin(an * 7 + d * 0.6 + 0.8) - 0.35) * 1.6;
+        const lp = Math.sin(x * 2.3 + Math.sin(z * 1.7)) * Math.sin(z * 2.1 + y * 1.9) * Math.sin(y * 2.7 + x * 1.1);
+        const big = Math.max(0, Math.sin(an * 4 + d * 0.9 + 2.2)) * Math.max(0, Math.sin(d * 1.6 - an * 2));
+        const up = 0.55 + 0.45 * Math.max(0, ny);
+        h += w * up * (-0.2 * f0 - 0.1 * f1 - 0.05 * f2 - 0.18 * ck + 0.09 * lp + 0.16 * big + (hsh(Math.round(x * 6), Math.round(z * 6)) - 0.5) * 0.015);
+      }
+      if (wt > 0) {
+        // trunk: long splits that wander and stop, finer furrows between them, and the bark broken across into plates
+        const ph = an * 13 + 0.7 * Math.sin(y * 0.45 + an * 2) + 0.05 * y;
+        const cut = Math.pow(Math.max(0, Math.cos(ph)), 26) * Math.min(1, Math.max(0, (Math.sin(y * 0.55 + an * 4.3 + 1.1) - 0.05) * 2.5));
+        const fur = Math.pow(Math.max(0, Math.cos(an * 29 - y * 0.15 + Math.sin(y * 0.8 + an) * 0.6)), 4);
+        const plate = Math.pow(Math.max(0, Math.cos(y * 3.3 + an * 6 + Math.sin(an * 11) * 1.5)), 18) * (0.4 + 0.6 * fur);
+        const kd = Math.min(1, d / 1.4);
+        h += wt * kd * -(0.17 * cut + 0.055 * fur + 0.04 * plate + 0.012 * hsh(Math.round(an * 40), Math.round(y * 5)));
+      }
+      GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
       P[i * 3] += nx * h; P[i * 3 + 1] += ny * h; P[i * 3 + 2] += nz * h; }
     if (typeof window !== 'undefined') window.__rootDetail = { verts: P.length / 3 - n0, tris: I.length / 3 - t0 };
   }
@@ -324,6 +346,7 @@ export function buildTree(THREE, o) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
   g.setAttribute('glow', new THREE.Float32BufferAttribute(G, 1));
+  { const gr = new Float32Array(P.length / 3); if (GR) gr.set(GR.subarray(0, Math.min(GR.length, gr.length))); g.setAttribute('tdGr', new THREE.BufferAttribute(gr, 1)); } // groove depth (roots / trunk cuts)
   g.setIndex(I); g.computeVertexNormals();
   // critic T16: the thin, curling side shoots of the model wrap around the house like snakes. Cut every thin piece
   // (under ~0.5 m thick) in the house band around the trunk; the main limbs and the crown's twigs stay.
