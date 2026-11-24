@@ -40,8 +40,8 @@ body{position:fixed;inset:0;margin:0;background:#0B1020;color:#fff;font-family:v
 .ib:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .ib:disabled{opacity:.35}
 .ib.on{background:rgba(255,190,110,.45);border-color:rgba(255,210,150,.8)}
-/* hint sits bottom-centre and keeps clear of the button column on both sides, so it stays centred */
-.hint{position:fixed;left:50%;bottom:var(--sb);transform:translateX(-50%);box-sizing:border-box;width:max-content;max-width:min(520px,calc(100% - 2 * (var(--ib) + var(--gap) + max(var(--sl),var(--sr)))));background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:8px 12px;font-size:var(--fs);line-height:1.4;text-align:center;transition:opacity .6s;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.45)}
+/* hint sits top-centre under the clock row (the bottom of the home view is the pond and the roots), clear of the button columns */
+.hint{position:fixed;left:50%;top:calc(var(--st) + 52px);transform:translateX(-50%);box-sizing:border-box;width:max-content;max-width:min(520px,calc(100% - 2 * (var(--ib) + var(--gap) + max(var(--sl),var(--sr)))));background:var(--glass);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:8px 12px;font-size:var(--fs);line-height:1.4;text-align:center;transition:opacity .6s;pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.45)}
 .hint b{color:var(--amber)}
 .hint.off{opacity:0}
 .toast{position:fixed;left:50%;top:22%;max-width:88vw;transform:translate(-50%,-50%) scale(.85);opacity:0;font-weight:700;font-size:clamp(22px,6.4vmin,30px);line-height:1.2;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.75);transition:opacity .5s,transform .6s cubic-bezier(.2,1.3,.4,1);pointer-events:none}
@@ -108,6 +108,8 @@ await RAPIER.init();prog();
 const MOBILE=matchMedia('(pointer:coarse)').matches||/iPhone|iPad|Android/.test(navigator.userAgent);
 /* [PERF] the scene is drawn into the composer's own (non-MSAA) target, so canvas MSAA only smoothed the final full-screen copy: off on phones, same picture, less memory and bandwidth */
 const renderer=new THREE.WebGLRenderer({antialias:!MOBILE,powerPreference:'high-performance'});
+/* [PERF] no synchronous shader error checks (getProgramParameter/InfoLog on first use stall until the driver finishes compiling); ?debug turns them back on */
+renderer.debug.checkShaderErrors=/[?&]debug/.test(location.search);
 let PR=Math.min(MOBILE?2.2:2.5,devicePixelRatio||1);/* [PERF] top quality (phones 2.2: render-target memory); phones start lower and the governor climbs while frames keep vsync (perf.js) */renderer.setPixelRatio(PR);
 renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();const l=$('load');if(l){l.classList.remove('hide');$('loadTx').textContent='Перезапускаем картинку…';}setTimeout(()=>location.reload(),1500);});
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
@@ -917,7 +919,7 @@ function shoot(from,vel){const g=arrowGeo.clone();g.traverse(o=>{if(o.isMesh)o.c
 const eq=new RAPIER.EventQueue(true);
 
 // ================= time, weather =================
-let hour=19.3,dayNo=1,weather='clear',rainK=0,spawnLeft=0,spawnT=0,over=false,hintT=8,breaches=0;
+let hour=19.3,dayNo=1,weather='clear',rainK=0,spawnLeft=0,spawnT=0,over=false,hintT=6,breaches=0;
 // the hero's brain: needs, mood, choices, gait, lamps (game/brain.js); attaches only once hero.js offers HH.setBrain
 let BRAIN=null;if(HH.setBrain){try{const {createBrain}=await import(new URL(ASSET+'brain.js',document.baseURI).href);BRAIN=createBrain({HH,lights:LIGHTS,hour:()=>hour,isNight:h=>isNight(h)});window.__brain=BRAIN;}catch(e){console.error('brain',e);}}
 // the game opens at any hour, in the middle of whatever he is doing: random hour, needs to match, then a quick
@@ -976,12 +978,12 @@ const rig=createCameraRig({camera,dom:cv,scene,rooms:()=>ROOMS,limb:LIMB,
  onFollow:on=>{$('bF').classList.toggle('on',on);},
  onTap:(x,y)=>{const z=pickZombie(x,y);if(z)fireAt(z);else if(zombies.some(z=>z.alive))hint('Нажми на зомби — герой выстрелит в него.');}});
 // only the oak's leaf cards fade (near the camera, and in front of the focus when zoomed in); the house, bark, grass and ferns never do
-{const nf=()=>rig.nearFade(TREE.group,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);nf();setTimeout(nf,8000);}
+{const nf=()=>{rig.nearFade(TREE.group,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);/* [CAMERA] the forest's understory bushes too: on the forest trip they stood between the ◎ view and the hero */for(const n of ['forestUnderstory'])scene.traverse(o=>{if(o.name===n)rig.nearFade(o,2.2,mt=>mt.alphaTest>0&&!mt.transparent,.7);});};nf();setTimeout(nf,8000);}
 $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
 // ================= post & camera =================
-const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);if(MOBILE)bloom.enabled=false;{const OUTP=new OutputPass();ENV.foldGrade(OUTP);composer.addPass(OUTP);}/* the colour grade runs inside the output pass (env.js foldGrade) */
+const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);{/* [CAMERA] K4: one NaN/Inf pixel from any shader was blurred by bloom over the whole screen (black frames on desktop at night). The bright-pass now drops non-finite texels. */const hm=bloom.materialHighPassFilter;hm.fragmentShader=hm.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );','vec4 texel = texture2D( tDiffuse, vUv );\n\t\t\tif(any(isnan(texel))||any(isinf(texel))||!(abs(texel.r)+abs(texel.g)+abs(texel.b)<6e4))texel=vec4(0.0);');hm.needsUpdate=true;}if(MOBILE)bloom.enabled=false;{const OUTP=new OutputPass();ENV.foldGrade(OUTP);composer.addPass(OUTP);}/* the colour grade runs inside the output pass (env.js foldGrade) */
 // [PERF] shared quality governor + FPS readout (game/perf.js). Steps run cheapest-looking first and undo when the phone keeps up again.
 const PERF=createPerf({renderer,MOBILE});const DPR=PR;PERF.addStep('plankLod',()=>{PLOD.value=.5;},()=>{PLOD.value=1;},40);/* (Planks) board/slate fine detail only up close */
 // pixel ratio ladder: each step is one rung down (capped by the screen's own density)
@@ -1102,7 +1104,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  // --- physics ---
  /* [PERF] the physics world only steps while something can move (arrows, splinters, zombies, loose boards) or just changed;
    the house is fixed bodies and the hero's ray queries read the static query structure from the last step */
-  if(physWake>0)physWake--;if(!(arrows.length||spl.length||zombies.length||physWake>0||B.some(b=>b.loose)))acc=0;
+  if(physWake>0&&dt>0)physWake--;if(!(arrows.length||spl.length||zombies.length||physWake>0||B.some(b=>b.loose)))acc=0;
   acc+=dt*TS;while(acc>=world.timestep){world.step(eq);acc-=world.timestep;
   eq.drainCollisionEvents((h1,h2,started)=>{if(!started)return;for(const a of arrows){if(a.stuck)continue;const ah=a.col.handle;if(ah!==h1&&ah!==h2)continue;const other=world.getCollider(ah===h1?h2:h1);const lv=a.rb.linvel();const sp=Math.hypot(lv.x,lv.y,lv.z);
    const zz=other&&other.userData&&other.userData.zombie;
@@ -1159,6 +1161,10 @@ try{window.__grab&&window.__grab.attach(HH);}catch(e){console.error('grab attach
 // [PERF] the loading screen stays up until the heavy first work is done: every texture uploaded to the GPU, shaders linked
 // (parallel compile where the browser has it), collide.js built and two real frames drawn. Otherwise the first seconds after
 // it disappears are a frozen picture that ignores swipes.
+// [PERF] the rain height map (one top-down render + pixel readback, then wet-board shader hooks on the boards it found)
+// used to run ~3 s into play: a stall of a second or more on a phone (GPU sync + new shader variants). Built here instead,
+// behind the loading screen and before the shader prewarm below, so the wrapped board shaders are compiled with the rest.
+try{for(let i=0;i<200&&RAIN&&!RAIN.ready;i++)RAIN.update(0,0,0,scene.fog.color);}catch(e){console.warn('rain map',e);}
 // [PERF] ?perfx: material split, program sort and texture pre-upload (off while the white-boards report on iPhone is checked)
 const PERFX=/[?&]perfx/.test(location.search);
 // [PERF] a transparent double-sided material is drawn twice per frame by three.js (back faces, then front) and rebuilds
@@ -1178,7 +1184,13 @@ if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).c
  renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
 {const T0=performance.now();$('loadTx').textContent='Готовим картинку…';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
-  try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,4000))]);}catch(e){}renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
+  try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,15000))]);}catch(e){}
+  // one real draw of everything (hidden things shown, nothing culled) into the frame's own target: a compiled program is only
+  // linked and its uniforms read on first draw, and on iPhone (Metal) the pipeline for each draw state is built then too.
+  // Done here, behind the loading screen, instead of on the first zoom to the hero.
+  const cul=[];scene.traverse(o=>{if(o.frustumCulled){cul.push(o);o.frustumCulled=false;}});const sm=renderer.shadowMap.autoUpdate;
+  const lm=camera.layers.mask;camera.layers.enableAll();try{renderer.render(scene,camera);}catch(e){console.warn('prewarm draw',e);}camera.layers.mask=lm;for(const o of cul)o.frustumCulled=true;renderer.shadowMap.autoUpdate=sm;
+  renderer.setRenderTarget(rt0);for(const o of hid)o.visible=false;}
  PERF.startupMs=Math.round(performance.now()-T0);}
 // every shadow map is drawn during these hidden frames too, so the shadow/depth shader variants compile now and not when
 // the hero first walks up to a lamp
