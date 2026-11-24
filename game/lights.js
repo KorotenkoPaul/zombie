@@ -23,6 +23,8 @@ const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t
 const _v = new THREE.Vector3();
 
 // how a source wakes up and dies down (seconds), and how it flickers
+const GLOW = (() => { try { return new URLSearchParams(location.search).get('glow') === '1'; } catch (e) { return false; } })();
+const GLOW_K = { kitchen: 1.8, workshop: 1.6, oven: 1.3, bedroom: 1.1 }, GLOW_C = new THREE.Color(0xFFD9A0);
 const KINDS = {
   oil:      { on: .7,  off: .5,  flick: 'flame' },   // oil lanterns: catch, flare, settle
   electric: { on: .12, off: .08, flick: 'bulb' },    // dome lamp: quick, a small stutter
@@ -141,6 +143,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
 
   // a source: lights (with their full intensity), emissive materials (with full emissiveIntensity / opacity)
   function add(name, room, kind, pos, { lights = [], emis = [], opac = [], halo = null, haloSize = 1.5, extra = null, autoFn }) {
+    // ?glow=1 (critic L1, for Pavel to compare; not the default): the lit room closer to the photo's warmer, creamier glow.
+    // Kitchen and workshop lamps (and the oven) ~1.6-1.8x and creamier, reaching further; the bedroom only a touch, it stays cosy and dim.
+    const gk = GLOW && GLOW_K[name];
+    if (gk) for (const L of lights) { L.I *= gk; L.l.color.lerp(GLOW_C, .35); if (L.l.isPointLight && name !== 'bedroom') { L.l.distance *= 1.25; L.l.decay *= .85; } }
     let haloObj = null;
     if (ENV && ENV.addHalo) {
       // halos follow .intensity; an emissive-only lantern gets a light-less proxy so it still glows in the fog
