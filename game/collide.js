@@ -307,7 +307,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     const bp = bone.getWorldPosition(V()); const v1 = childPos.clone().sub(bp), v2 = goal.clone().sub(bp); if (v1.lengthSq() < 1e-8 || v2.lengthSq() < 1e-8) return; v1.normalize(); v2.normalize();
     const dq = new THREE.Quaternion().setFromUnitVectors(v1, v2); if (maxA > 0) { const ang = v1.angleTo(v2); if (ang > maxA) w = Math.min(w, maxA / ang); } if (w < 1) dq.slerp(new THREE.Quaternion(), 1 - w); bone.getWorldQuaternion(_q); bone.parent.getWorldQuaternion(_pq); bone.quaternion.copy(_pq.invert().multiply(dq.multiply(_q))); bone.updateMatrixWorld(true);
   }
-  const _q2 = new THREE.Quaternion();
+  const _q2 = new THREE.Quaternion(); let ikRef = 0;
   function ik2(A, Bb, C, target, leg) {
     if (!A || !Bb || !C) return; const endQ = C.getWorldQuaternion(new THREE.Quaternion());
     const a = A.getWorldPosition(V()), b = Bb.getWorldPosition(V()), c = C.getWorldPosition(V()); const l1 = a.distanceTo(b), l2 = b.distanceTo(c);
@@ -326,7 +326,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     const ca = clamp((l1 * l1 + dd * dd - l2 * l2) / (2 * l1 * dd), -1, 1), sa = Math.sqrt(1 - ca * ca); let pp = pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pp.lengthSq() < 1e-8) pp = V(0, 0, 1); pp.normalize();
     const knee = a.clone().addScaledVector(dir, ca * l1).addScaledVector(pp, sa * l1);
     // a correction of a few cm never swings the elbow / knee far: if the bend plane would jump (a pole flip), the limb is left as animated
-    if (knee.distanceTo(b) > Math.max(.15, 2.5 * target.distanceTo(c))) return;
+    if (knee.distanceTo(b) > Math.max(.15, 2.5 * target.distanceTo(c))) { ikRef++; return; }
     turnBone(A, b, knee); turnBone(Bb, C.getWorldPosition(V()), a.clone().addScaledVector(dir, dd));
     C.parent.getWorldQuaternion(_pq); C.quaternion.copy(_pq.invert().multiply(endQ)); C.updateMatrixWorld(true);
   }
@@ -431,6 +431,8 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       }
       // on a ladder the climb (climb.js) owns the hands on the rails (collide's hand pushes were jumps on the pull-up); a foot is still lifted out of a rung
       if (hero.lad) { pd[0] = pd[1] = 0; if (!(window.__colX && window.__colX.oldLad)) pd[2] = pd[3] = 0; anyP = pd.some(v => v > 0); }
+      // climb.js IK owns the feet too while it holds the ladder (balls of the feet stand on the rungs): lifting them out left the toes 4 cm off (gate ladder-grip)
+      { const CL = window.__climb; if (hero.lad && CL && CL.active && CL.weight > .5) { pd.fill(0); anyP = false; } }
       for (const c of [0, 1]) if (sumW[c] > 0) push[c].copy(sumN[c]).multiplyScalar(1 / sumW[c]).multiplyScalar(pd[c] + .001);
       // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall); a sole is
       // only lifted straight up out of a board (never moved sideways); arms and head give way. Walking into things is the walk graph's job.
@@ -478,10 +480,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       if (HBs.length) { let worst = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; if (task && (P.chain < 4 || P.p.y > lowY)) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > worst) worst = d; } }
         // grows quickly while the load is in the leg, never shrinks while he still carries it
         if (worst > .005) { heldAmt[c] = Math.min(task ? .09 : .15, heldAmt[c] + Math.min(worst + .01, .006)); st.held = (st.held || 0) + 1; } }
-      if (heldAmt[c] > 0) { const t = L.C.getWorldPosition(V()).addScaledVector(out, heldAmt[c]); ik2(L.A, L.B, L.C, t, false); } }
+      if (heldAmt[c] > 0) { const t = L.C.getWorldPosition(V()).addScaledVector(out, heldAmt[c]); ik2(L.A, L.B, L.C, t, false); L.C.getWorldPosition(anim[c]).sub(off.limb[c]); /* the contact pass below solves from here: from the bare animation it dropped the carried arm back 15 cm on every touching frame */ } }
   }
 
-  function finish(t0, it, worst) { const ms = performance.now() - t0; st.frames++; st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
+  function finish(t0, it, worst) { if (window.__colTrace) { const A = window.__A; window.__colTrace.push([A && A.out ? A.out.frames.length : frameNo, off.limb[2].toArray().map(v => +(v * 100).toFixed(1)), off.limb[3].toArray().map(v => +(v * 100).toFixed(1)), +(heldAmt[2] * 100).toFixed(1), +(heldAmt[3] * 100).toFixed(1), +hold[2].toFixed(2), +hold[3].toFixed(2), ikRef, it]); ikRef = 0; } const ms = performance.now() - t0; st.frames++; st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
   // wrap the hero's update: corrections go on after hero.js has posed the body, and come off before it runs again
   // HERO-RULES.md: the 'collide' slot of the pose pipeline (after contacts, before grab and the guard); the old wrap only without stages
   if (HH.stage) { if ((HH.SLOTS || []).includes('pre')) HH.stage('pre', () => pre()); HH.stage('collide', dt => post(dt)); } else { const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); }; }

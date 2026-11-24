@@ -774,6 +774,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // a job ended: book what it brought (hero.js may pass a result; a missing result counts as success)
   if (HH.onTaskEnd) HH.onTaskEnd((name, res) => {
     // log every chore end with how long he was at it (QA: early ends are the body's, not a brain decision)
+    // a request the body could not do (e.g. no free edge for 'ledge'): say so in the console, so a debug call is never silently "ignored"
+    if (cur && cur.cmd && cur.name === name && (res === false || (res && res.ok === false))) { try { console.warn('[brain] requested task "' + name + '" ended at once in the body (result ' + JSON.stringify(res) + '); the brain picks the next thing'); } catch (e) {} tr('cmdfail:' + name); }
     if (name !== 'switch' && name !== 'micro') { tr('end:' + name); const l = trace[trace.length - 1]; l.res = res === undefined ? 'none' : JSON.stringify(res); l.step = HH.H && HH.H.task; }
     // a job done also does a little for the soul: a walk in the forest eases boredom and curiosity, a meal cheers him up
     if (job && JOBS[job] && res !== false && !(res && res.ok === false)) { const e = JOBS[job].eff; for (const k of ['fun', 'curiosity', 'comfort']) if (e[k] && !(job === 'eat' && k === 'comfort')) need[k] = clamp(need[k] - e[k]); }
