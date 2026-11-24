@@ -5,8 +5,8 @@ d.createExtension(KHRTextureBasisu).setRequired(true);const NW=+(process.argv[5]
 const dec=async b=>{const {data,info}=await sharp(b).ensureAlpha().raw().toBuffer({resolveWithObject:true});return {data:new Uint8Array(data),width:info.width,height:info.height};};
 for(const m of d.getRoot().listMaterials()){
  for(const [t,kind] of [[m.getBaseColorTexture(),'base'],[m.getNormalTexture(),'normal']]){if(!t)continue;if(kind==='normal'&&NW){const w=await sharp(Buffer.from(t.getImage())).resize(NW,NW).webp({quality:90}).toBuffer();t.setImage(new Uint8Array(w)).setMimeType('image/webp').setURI('');console.log('normal webp',NW,(w.length/1024|0)+' KB');continue;}
-  const png=await sharp(Buffer.from(t.getImage())).resize(S,S).png().toBuffer();
+  const SS=m.getName()==='head'&&process.env.HEADS?+process.env.HEADS:S;const png=await sharp(Buffer.from(t.getImage())).resize(SS,SS).png().toBuffer();
   const opt=kind==='base'?{isUASTC:false,qualityLevel:255,compressionLevel:2,isSetKTX2SRGBTransferFunc:true}:{isUASTC:true,isNormalMap:true,enableRDO:true,rdoQualityLevel:1,needSupercompression:true,isSetKTX2SRGBTransferFunc:false};
   const k=await encodeToKTX2(new Uint8Array(png),{generateMipmap:true,isKTX2File:true,needSupercompression:true,imageDecoder:dec,...opt});
-  console.log(kind,S,(k.length/1024|0)+' KB');t.setImage(k).setMimeType('image/ktx2').setURI('');}}
+  console.log(m.getName(),kind,SS,(k.length/1024|0)+' KB');t.setImage(k).setMimeType('image/ktx2').setURI('');}}
 await io.write(process.argv[3],d);

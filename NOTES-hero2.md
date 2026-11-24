@@ -63,3 +63,15 @@ new Meshy v6 image-to-3d with `symmetry_mode:"on"` and a texture_prompt (smooth 
 (rig, transplant, slim, rmlids, `UMIN=.3 BT=.015 CAP=.03 CR=0 split-v6.mjs`, shrink 0.9/0.9, headfit, lids '{"L":[-0.0466,0.759,0.042,0.026],"R":[0.0365,0.7566,0.042,0.026],"skin":[-0.0466,0.732],"lash":[-0.046,0.792],...}')
 -> `facesmooth.mjs in out 0 0.06` (face skin: smooth normals, flat normal map, softened and lightened base colour; position smoothing (iters>0) erased the nose, so 0) -> ktx/quant/optim.
 Comparisons: project files hero-v6/.
+
+### v6 face v3: separate high-res head grafted at the neck (2026-11-24)
+- Head: Meshy image-to-3d from a bust render of concept 6 (soft smile, normal eyes with lids, smooth skin); unrigged, y-up, face +z, 23k verts.
+- `graft.mjs body.glb head.glb out.glb '{"s":0.205,"chinIn":-0.5,"chinOut":0.625,"zc":-0.024,"cut":0.6,"ycut":-0.7}'`
+  - cuts the body's Head/Neck-weighted triangles above y=cut and compacts the vertex buffers (orphan verts would count as probes in the gate sampler);
+  - scales the head uniformly (s), puts raw chin y=chinIn at y=chinOut, drops the bust shoulders below raw y=ycut;
+  - skins it Head 1 above the chin, smooth blend to Neck below;
+  - adds it to Mesh_0 as TWO primitives (x<0 / x>=0) with a material "head": hero.js picks the body as the LARGEST skinned mesh (sock/vest shader), so each head part must stay smaller than the body primitive (15.2k verts). Simplifying the head instead broke the face shading and the neck.
+- Body input: split-v6 output with hands 0.9 (`shrink.mjs sp13.glb sh13.glb 1.0 0.9`).
+- Lids: `PRIM=1,2 node lids.mjs G.glb GL.glb '{"L":[-0.0388,0.7415,0.047,0.031],"R":[0.0412,0.7415,0.047,0.031],"skin":[-0.06,0.735],"lash":[-0.0388,0.7535],"off":0.0016,"ymin":0.68,"pow":0.33,"flat":1}'` (PRIM = comma list of primitives to ray-cast; facescan.mjs takes PRIM too).
+- `HEADS=1024 node ktxtex.mjs GL.glb K.glb 2048 1024` (head base colour 1024), then quant + optim 0.65. Asset 5.3 MB base64.
+- Head box (pre-quant): x ±0.137, y 0.61..0.92, z -0.156..0.107 (old hero 99%: x ±0.127, top 0.99, z -0.160..0.112).
