@@ -875,7 +875,7 @@ window.__planks={meshes:{boards,beams,shingles:SHING},list:k=>PL.map((p,id)=>({i
  fresh:id=>PL[id]?freshAttr(PL[id].mesh).getX(PL[id].i):null,
  near:(x,y,z,r=.5,k)=>PL.map((p,id)=>[p,id]).filter(([p])=>(!k||p.kind===k)&&p.c.distanceTo(V(x,y,z))<r).map(([,id])=>id),
  wear:(x,y,z,a=.1)=>WEAR.stamp(x,y,z,a)&&(WEAR.tex.needsUpdate=true)};
-const bow=makeBow();heroBones.LeftHand.add(bow);bow.position.set(0,.07,.03);bow.rotation.set(0,0,0);bow.scale.setScalar(1/Math.max(.001,heroBones.LeftHand.getWorldScale(V()).x));
+const bow=makeBow();heroBones.LeftHand.add(bow);bow.position.set(0,.07,.03);bow.rotation.set(0,0,0);bow.scale.setScalar(1/Math.max(.001,heroBones.LeftHand.getWorldScale(V()).x));bow.visible=false;/* the old guard bow: hidden until a guard task (the game loop sets it each frame, but the QA stepper and watchers never run that loop and saw it in his hand and over his shoulder during chores) */
 function play(c,name,{loop=true,fade=.25,speed=1}={}){const a=c.actions[name];if(!a||c.cur===a)return a;a.reset();a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);a.clampWhenFinished=!loop;a.timeScale=speed;a.enabled=true;if(c.cur)c.cur.crossFadeTo(a,fade,false);a.play();c.cur=a;return a;}
 
 const WIN_NODE={'Забор кухни':'kwin','Забор мастерской':'wwin','Калитка':'gate'};
