@@ -128,7 +128,7 @@ export function createClimb() {
     A.phase = 0;
     // hands leave the floor as he gets up
     A.limb.LH.w = A.limb.RH.w = 1 - sstep(.78, 1, s);
-    if (c.dir > 0 && s >= 1) return 'off';
+    if (c.dir > 0 && s >= 1) { if (C.H.look === A.lookPt || C.H.look) { C.H.look = null; C.H.lookW = 0; } return 'off'; }
     if (c.dir < 0 && s <= 0) { A.mode = 'climb'; A.y = c.ys; A.C = null; A.limb.LH.w = A.limb.RH.w = 1; return null; }
     return null;
   }
@@ -285,7 +285,7 @@ export function createClimb() {
       // look at the hand that moves next (or between the hands); over the edge: ahead
       const nh = A.step && A.step.move.find(m => m.k[1] === 'H');
       { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
-        let L = A.mode === 'over' ? V(A.P.x, hd.y + .3, A.P.z - A.zDir * 1.6) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
+        let L = A.mode === 'over' ? V(A.P.x, hd.y - .35, A.P.z - A.zDir * 1.6) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
         if (A.mode !== 'over') { L.y = Math.min(L.y, hd.y + .2); L.z = planeZ; }
         if (A.lookS) A.lookS.lerp(L, 1 - Math.exp(-dt * 5)); else A.lookS = L.clone(); /* eased: the look point switched hands at each step and the neck jumped 30-50 degrees in a frame */ C.H.look = A.lookS.clone(); C.H.lookW = .35; A.lookPt = A.lookS.clone(); }
     } else { tg = S.last && S.last.tg; hw = S.last && S.last.hw; }
