@@ -26,7 +26,7 @@ export function createClimb() {
     C.root.updateMatrixWorld(true);
     M.thigh = wp(B.LeftUpLeg).distanceTo(wp(B.LeftLeg)); M.shin = wp(B.LeftLeg).distanceTo(wp(B.LeftFoot));
     M.leg = M.thigh + M.shin; M.upper = wp(B.LeftArm).distanceTo(wp(B.LeftForeArm)); M.fore = wp(B.LeftForeArm).distanceTo(wp(B.LeftHand));
-    M.footH = .117; M.footUp = .094; // ankle sits ~13 cm behind and 7.5 cm above the ball of the foot
+    M.footH = .117; M.footUp = .094; M.ankFloor = .136; M.toeFloor = .079; /* standing on the boards (gate, both heroes): ankle 13.6 cm, toe 7.9 cm above the floor */ // ankle sits ~13 cm behind and 7.5 cm above the ball of the foot
     M.hipW = Math.abs(wp(B.LeftUpLeg).x - wp(B.RightUpLeg).x) || .18;
   }
 
@@ -102,6 +102,14 @@ export function createClimb() {
       if (top > -1e9) A.palmY = Math.max(A.o.yTop + .04, Math.min(A.o.yTop + .12, top + .055)); }
     return A.palmY != null ? A.palmY : A.o.yTop + .04;
   }
+  // top of the boards under a foot stepping off the bottom rung (a threshold board under the hatch ladder stands 3 cm above the
+  // floor height: gate, soles 4.3 cm into the 332x24x9 board at the bottom of kh); the sole spans ~10 cm, so the highest of three probes
+  function floorTop(A, x, z) {
+    A.ft = A.ft || {}; const key = x.toFixed(2) + ',' + z.toFixed(2); if (A.ft[key] != null) return A.ft[key];
+    const CD = window.__collide; let top = -1e9;
+    if (CD && CD.depthAt) { try { for (const dz of [-.06, 0, .06]) for (let y = A.floorY + .08; y > A.floorY - .03; y -= .004) { const d = CD.depthAt(x, y, z + dz); if ((typeof d === 'number' ? d : (d && d.depth) || 0) > .002) { top = Math.max(top, y); break; } } } catch (e) { top = -1e9; } }
+    return (A.ft[key] = top > -1e9 ? Math.min(top, A.floorY + .06) : A.floorY);
+  }
   // where each limb wants to be when it rests on rung i
   function restTarget(A, k, i) {
     const s = k[0] === 'L' ? -1 : 1, zD = A.zDir;
@@ -112,7 +120,7 @@ export function createClimb() {
       // the palm (7 cm up the forearm line from the wrist) on the rung: the wrist sits back along the forearm from the rung
       const sh = C.bones[(k[0] === 'L' ? 'Left' : 'Right') + 'Arm']; const el = sh ? sh.getWorldPosition(V()).add(V(0, -.22, zD * .04)) : c.clone().add(V(0, -.3, zD * .25));
       const dir = c.clone().sub(el); if (dir.lengthSq() < 1e-6) dir.set(0, 1, -zD); dir.normalize(); return c.addScaledVector(dir, -.06); }// wrist just behind the rung at its height: the palm lies over the rung, fingers hooked over the front (no finger bones in this rig)
-    if (i < 0) { const f = A.limb[k].floor; if (f && A.up) return f.clone(); return V(A.lad.x + side * A.fx, A.floorY + M.footUp, A.o.cz - zD * .02); }
+    if (i < 0) { const f = A.limb[k].floor; if (f && A.up) return f.clone(); const fx = A.lad.x + side * A.fx, fz = A.o.cz - zD * .02; return V(fx, Math.max(A.floorY, floorTop(A, fx, fz)) + M.ankFloor, fz); } // a flat foot on the boards: the ankle as high as in the standing pose (footUp is the rung's ball-of-the-foot stance: the sole sank 4-5 cm)
     const c = rungP(A, i); const R = A.R[Math.min(i, A.R.length - 1)];
     return c.add(V(side * A.fx, R.r + .012 + M.footUp + ((A.tadj && A.tadj[k]) || 0), zD * (M.footH - .03))); // tadj: measured toe height trim per foot
   }
@@ -317,7 +325,7 @@ export function createClimb() {
       const t = tg[s[0] + 'F']; const sx = (s === 'Left' ? -1 : 1) * zDir;
       C.ik2(B[s + 'UpLeg'], B[s + 'Leg'], B[s + 'Foot'], t, V(sx * .3, .55, -zDir), W, false);
       const F = B[s + 'Foot'], Tb = B[s + 'ToeBase'];
-      if (F && Tb) { const a = wp(F), toe = wp(Tb); const d = V(0, -M.footUp, -zDir * M.footH);
+      if (F && Tb) { const a = wp(F), toe = wp(Tb); const onFl = A && A.mode !== 'over' && A.limb[s[0] + 'F'].r < 0 && !(A.step && A.step.move.some(m => m.k === s[0] + 'F')); const dd = M.ankFloor - M.toeFloor; A.flE = A.flE || {}; const fk = s[0] + 'F'; A.flE[fk] = A.flE[fk] == null ? (onFl ? 1 : 0) : A.flE[fk] + ((onFl ? 1 : 0) - A.flE[fk]) * Math.min(1, dt * 6); const d = V(0, -M.footUp, -zDir * M.footH).lerp(V(0, -dd, -zDir * Math.sqrt(Math.max(0, M.footUp * M.footUp + M.footH * M.footH - dd * dd))), A.flE[fk]); /* flat on the boards, the ball on a rung (eased: no ankle snap at the step) */
         // a real ankle: the toes point away from the calf side of the shin (the hip side), whatever the leg does when it folds deep
         // over the edge (gate: 'knee bent the wrong way' when the toes swung to the hip side of a near-level shin)
         const kn = wp(B[s + 'Leg']), hp = wp(B[s + 'UpLeg']); const sh = a.clone().sub(kn).normalize(); const o = hp.clone().sub(kn); o.addScaledVector(sh, -o.dot(sh));
