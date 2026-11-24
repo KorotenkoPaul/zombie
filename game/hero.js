@@ -892,7 +892,10 @@ export function createHero(ctx){
   // a full bucket is never inside his leg: the straight arm holds the fist out at the side, level with the hip, and the
   // heavy bucket hardly swings (frame by frame the rim went through the thigh at every step)
   if(!tilt){const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());const R=odPalm('Right');const d=R.clone().sub(hp);
-   const lat=d.dot(r),fw=d.dot(f);const want=R.clone().addScaledVector(r,Math.max(0,.32-lat)).addScaledVector(f,clamp(fw,-.06,.06)-fw);if(want.distanceTo(R)>.005)reachGrip('Right',want,1);}
+   const lat=d.dot(r),fw=d.dot(f);const want=R.clone().addScaledVector(r,Math.max(0,.32-lat)).addScaledVector(f,clamp(fw,-.06,.06)-fw);if(want.distanceTo(R)>.005)reachGrip('Right',want,1);
+   // the free left arm only balances the weight: a little out from the hip, relaxed and swinging, never a stiff wing
+   const l=r.clone().negate();const L=odPalm('Left');const dl=L.clone().sub(hp);const sw=clamp(bones.RightFoot.getWorldPosition(V()).sub(bones.LeftFoot.getWorldPosition(V())).dot(f)*.18,-.07,.07);
+   const nat=hp.clone().addScaledVector(l,.27).addScaledVector(f,.04+sw).add(V(0,-.1,0));if(dl.y>-.1||dl.dot(l)>.3)reachGrip('Left',L.lerp(nat,.75),1);}
   hb.updateWorldMatrix(true,false);
   const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(tilt,root.rotation.y,0,'YXZ'));const hs=(o.userData.home&&o.userData.home.scale)||1;
   const g=V(0,.35,0).multiplyScalar(hs).applyQuaternion(q);const pos=odPalm('Right').sub(g);
