@@ -317,7 +317,8 @@ export function createClimb() {
       { const hd = wp(B.Head); // eyes on the rungs ahead, a little above the head at most (no head thrown back)
         let L = A.mode === 'over' ? V(A.P.x, hd.y - .35, A.P.z - A.zDir * 1.6) : (nh ? A.limb[nh.k].toP : tg.LH.clone().lerp(tg.RH, .5)).clone();
         if (A.mode !== 'over') { L.y = Math.min(L.y, hd.y + .2); L.z = planeZ; }
-        if (A.lookS) A.lookS.lerp(L, 1 - Math.exp(-dt * 5)); else A.lookS = L.clone(); /* eased: the look point switched hands at each step and the neck jumped 30-50 degrees in a frame */ C.H.look = A.lookS.clone(); C.H.lookW = .35; A.lookPt = A.lookS.clone(); }
+        // the look DIRECTION is eased, not the point: a point a hand's width from the face swung the head 3-5 cm in a frame when it changed (next hand, climb -> over); the neck jumped 30-50 deg when it switched hands
+        { const u = L.clone().sub(hd); if (u.lengthSq() < 1e-8) u.set(0, 0, -A.zDir); u.normalize(); if (A.lookU) A.lookU.lerp(u, 1 - Math.exp(-dt * 5)).normalize(); else A.lookU = u; A.lookS = hd.clone().addScaledVector(A.lookU, .9); } C.H.look = A.lookS.clone(); C.H.lookW = .35; A.lookPt = A.lookS.clone(); }
     } else { tg = S.last && S.last.tg; hw = S.last && S.last.hw; }
     if (!tg) return;
     const W = S.W; const zDir = S.last.zDir;
