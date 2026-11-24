@@ -905,6 +905,8 @@ export function createHero(ctx){
  function dishesAction(o={}){const a={step:'go',t:0,T:0};const P=PP();const D=P&&P.dishes;const sinkP=PT('sink');
   if(!D||!D.take||!sinkP){a.update=()=>endTask({ok:false});return a;}
   const tapP=PT('tap')||sinkP.clone().add(V(0,.22,-.1));const shelfP=PT('dishShelf');
+  /* GRAB: the tap's cross-handle (8 cm beside the spout on the counter's x axis), the one nearer his right shoulder: the right hand turns it on and off */
+  const knobP=()=>{const W=P&&P.water;const k=W&&W.lever?W.lever(V()):null;return k&&k.add(V(0,.02,0));};/* the tap lever's ball on the front corner of the basin rim (props.js) */
   a.wL=0;a.wR=0;a.n=0;a.piece=null;let lk=null;
   const say=s=>{a.step=s;a.t=0;};const sh0=()=>bones.LeftArm.getWorldPosition(V());
   const face2=()=>{const f=fwd(root.rotation.y);return f;};
@@ -912,7 +914,7 @@ export function createHero(ctx){
   // what next: dry ones up to the shelf (at most 2 a visit), then the dirty ones
   function next(){const st=D.state();if(false&&st.rack>0&&(a.up||0)<2&&shelfP&&!(st.dirty>0&&Math.random()<.5)){/* the wall shelf is 0.8 m over his shoulder and 0.65 m past the counter: out of reach by hand, so the clean dishes stay stood in the plate rack (their place) */a.up=(a.up||0)+1;a.kind='shelf';say('reachR');return;}
    if(st.dirty>0&&a.n<4){a.kind='wash';say('reachR');return;}
-   if(a.tapOn){try{P.water.tap(false);}catch(e){}a.tapOn=false;}say('end');}
+   if(a.tapOn){say('tapoff');return;}/* GRAB: his hand turns it off */say('end');}
   const pieceAt=(c,q)=>{const p=a.piece;if(!p)return;const ob=p.show;if(ob.parent!==scene)scene.attach(ob);ob.position.copy(c);ob.quaternion.copy(q);ob.scale.setScalar(1);ob.visible=true;};
   // where a piece sits in the left hand: in front of him under the tap, tilted towards him
   const holdC=()=>{const f=face2();const r=V(-f.z,0,f.x);const c=tapP.clone();c.y=sinkP.y+.15;return c.addScaledVector(f,-.09).addScaledVector(r,-.02);};
@@ -923,7 +925,8 @@ export function createHero(ctx){
     const from=a.kind==='shelf'?'rack':'dirty';const st=D.state();if((from==='rack'?st.rack:st.dirty)<=0){next();return;}
     if(a.t>.7){const p=D.take(from);if(!p){next();return;}a.piece={...p,show:from==='rack'?p.clean:p.obj,from};a.n+=from==='dirty'?1:0;
      a.p0=a.piece.show.getWorldPosition(V());a.q0=a.piece.show.getWorldQuaternion(new THREE.Quaternion());AU(p.kind==='cup'?'cup':'plate',a.p0);say(a.kind==='shelf'?'lift':'totap');}return;}
-   if(a.step==='totap'){if(a.t>.3&&!a.tapOn){try{P.water.tap(true);}catch(e){}a.tapOn=true;}if(a.t>.8){say('scrub');a.dur=rnd(2.6,4);}return;}
+   if(a.step==='totap'){const kp=knobP();if(!a.tapOn&&a.t>.25&&(!kp||palmTo('Right',kp)<.04)){try{P.water.tap(true);}catch(e){}a.tapOn=true;a.tapT=a.t;a.tapAt=a.T;AU('tap',kp||tapP);}/* GRAB: on only at the touch of the hand on the handle (it used to run by itself) */if(a.t>(a.tapOn?Math.max(.8,a.tapT+.35):1.6)){say('scrub');a.dur=rnd(2.6,4);}return;}
+   if(a.step==='tapoff'){const kp=knobP();if(a.tapOn&&a.t>.25&&(!kp||palmTo('Right',kp)<.04||a.t>1.6)){try{P.water.tap(false);}catch(e){}a.tapOn=false;a.tapT=a.t;a.tapAt=a.T;}if(!a.tapOn&&a.t>a.tapT+.35&&(((a.wR||0)<.03&&(a.wL||0)<.03&&(a.kW||0)<.03)||a.t>a.tapT+2)){/* only once both hands have eased off (the next step drops them) */if(a.lvCb){const c=a.lvCb;a.lvCb=null;a.post=null;c();return;}say('end');}return;}
    if(a.step==='scrub'){if(a.t>a.dur*.6&&a.piece.show!==a.piece.clean){const ob=a.piece.obj;ob.visible=false;a.piece.show=a.piece.clean;}if(a.t>a.dur){say('torack');}return;}
    if(a.step==='torack'){if(a.t>.9){D.settle(a.piece.i,'rack');AU('plate',sinkP);a.piece=null;say('back');}return;}
    if(a.step==='lift'){if(a.t>1.1){say('shelf');}return;}
@@ -935,13 +938,15 @@ export function createHero(ctx){
    if(st==='reachR'){const from=a.kind==='shelf'?'rack':'dirty';const st2=D.state();const i=Array.from({length:4},(_,k)=>k).find(k=>D.where(k)===from);if(i!=null){const s=D.slot(i,from).pos;tR=s.clone().add(V(0,from==='dirty'?.05:.03,0));look=s;}
     if(a.kind==='wash')tL=holdC().addScaledVector(r,-.1).add(V(0,.07,0)).addScaledVector(f,-.06);/* waits up over the front of the basin: the elbow stays above the countertop */}
    else if(a.piece){const pc=a.piece.show;
-    if(st==='totap'){const k=smooth(0,.8,a.t);const c=a.p0.clone().lerp(holdC(),k);c.y+=Math.sin(k*Math.PI)*.06;const q=a.q0.clone().slerp(holdQ(),k);pieceAt(c,q);tL=k>.5?c.clone().addScaledVector(r,-.08):holdC().addScaledVector(r,-.1).add(V(0,.07,0)).addScaledVector(f,-.06);/* the left hand waits over the basin and joins once the piece is out of it, never down into the counter */tR=c.clone().addScaledVector(r,.07);look=c;}
+    if(st==='totap'){const k=smooth(0,.8,a.t);const c=a.p0.clone().lerp(holdC(),k);c.y+=Math.sin(k*Math.PI)*.06;const q=a.q0.clone().slerp(holdQ(),k);pieceAt(c,q);tL=k>.5?c.clone().addScaledVector(r,-.08):holdC().addScaledVector(r,-.1).add(V(0,.07,0)).addScaledVector(f,-.06);/* the left hand waits over the basin and joins once the piece is out of it, never down into the counter */tR=c.clone().addScaledVector(r,.07);look=c;
+     {const kp=knobP();a.tapK=0;if(kp&&(!a.tapOn||a.T<(a.tapAt??-9)+.3)){tR=kp;look=kp;a.tapK=1;}}/* GRAB: the right hand on the tap handle first, then back to the piece */}
     else if(st==='scrub'){const c=holdC();const w=Math.sin(a.t*1.3)*.15;const q=holdQ().multiply(new THREE.Quaternion().setFromAxisAngle(V(0,0,1),w));pieceAt(c,q);
      const n=V(0,1,0).applyQuaternion(q);const ph=a.t*2*Math.PI*1.6;const e1=V(1,0,0).applyQuaternion(q),e2=V(0,0,1).applyQuaternion(q);
      tR=c.clone().addScaledVector(n,.03).addScaledVector(e1,Math.cos(ph)*.035).addScaledVector(e2,Math.sin(ph)*.035);tL=c.clone().addScaledVector(r,-.08);look=c;}
     else if(st==='torack'){const sl=D.slot(a.piece.i,'rack');const k=smooth(0,.85,a.t);const c=holdC().lerp(sl.pos,k);c.y+=Math.sin(k*Math.PI)*.05;pieceAt(c,holdQ().slerp(sl.quat,k));const top=a.piece.kind==='cup'?.05:.085;/* the fingers on the edge: the side rim while it is flat, the top rim once it stands in the rack */tL=c.clone().addScaledVector(r,-.06*(1-k)).add(V(0,.02+(top-.02)*k,0));a.relL=tL.clone();look=sl.pos;}
     else if(st==='lift'||st==='shelf'){const sl=D.slot(a.piece.i,'shelf');const k=st==='lift'?smooth(0,1.1,a.t)*.6:.6+.4*smooth(0,.9,a.t);
      const mid=a.p0.clone().lerp(sl.pos,.5).add(V(0,.15,0)).addScaledVector(f,-.12);const c=k<.6?a.p0.clone().lerp(mid,smooth(0,.6,k)):mid.clone().lerp(sl.pos,smooth(.6,1,k));a.shelfC=c;a.shelfQ=a.q0.clone().slerp(sl.quat,k);a.shelfK=k;tR=c.clone().add(V(0,-.01,0));look=c;}}
+   if(st==='tapoff'){const kp=knobP();a.tapK=0;if(kp&&(a.tapOn||a.T<(a.tapAt??-9)+.3)){tR=kp;look=kp;a.tapK=1;}}
    if(st==='back'&&a.relL&&a.t<.3)tL=a.relL.clone().add(V(0,.1*smooth(0,.3,a.t),0)).addScaledVector(f,-.05*smooth(0,.3,a.t));/* let go off the top edge: up and back, never down through the plate */
    else if(st==='back'&&a.kind==='wash'){a.relL=null;tL=holdC().addScaledVector(r,-.08);}
    /* a hand with nothing to do goes back to the clip (weights ramp, the hand glides) */a.wR+=((tR?1:0)-a.wR)*Math.min(1,dt*3.5);a.wL+=((tL?1:0)-a.wL)*Math.min(1,dt*3.5);
@@ -951,11 +956,13 @@ export function createHero(ctx){
    const gl=(k,v,from)=>{if(!a[k])a[k]=from.clone();if(v){const g=a[k];let w=v;
      g.lerp(w,1-Math.exp(-dt*12));if(g.distanceTo(v)>.03)clear(g);}return a[k];};
    REACH_LEAN=st==='shelf'||st==='lift'?.65:.3;/* at the sink he leans a little towards the rack (a little more up to the shelf), never folds over it */
-   if(a.wR>.01){const t=gl('gR',tR||null,palmPt('Right'));reachGrip('Right',t,a.wR);}else a.gR=null;
+   if(!a.lsR){a.lsR={v:0};a.lsL={v:0};}if(a.wR>.01||a.lsR.v>.004){const t=gl('gR',tR||null,palmPt('Right'));reachGrip('Right',t,a.wR,a.lsR);}else{a.gR=null;a.lsR.v=0;}
+   {const G=window.__grab,LO=P.water&&P.water.leverObj;if(G&&LO){const kq=knobP();if(a.tapK&&a.wR>.6&&kq&&palmTo('Right',kq)<.05)G.hold('Right',LO,knobP);else G.free(LO);}}/* GRAB: the palm on the tap lever is a grip: collide leaves it there */
    /* up to the shelf the piece rides in the palm (where the hand really is), and only the last few cm go onto the shelf board */
    if((st==='lift'||st==='shelf')&&a.piece&&a.shelfC){const pp=palmPt('Right').add(V(0,.015,0));const e=smooth(.88,1,a.shelfK);pieceAt(pp.lerp(a.shelfC,e),a.shelfQ);}
-   if(a.wL>.01){const t=gl('gL',tL,palmPt('Left'));reachGrip('Left',t,a.wL);}else a.gL=null;REACH_LEAN=.6;};
-  a.leave=cb=>{if(a.piece){D.settle(a.piece.i,a.piece.from==='dirty'&&a.piece.show!==a.piece.clean?'dirty':a.piece.from==='rack'?'rack':'rack');a.piece=null;}if(a.tapOn){try{P.water.tap(false);}catch(e){}}a.post=null;cb();};
+   if(a.wL>.01||a.lsL.v>.004){const t=gl('gL',tL,palmPt('Left'));reachGrip('Left',t,a.wL,a.lsL);}else{a.gL=null;a.lsL.v=0;}
+   a.kW=(a.kW||0)+((a.tapK?1:0)-(a.kW||0))*Math.min(1,dt*5);if(a.kW>.01&&a.gR&&a.wR>.01){REACH_LEAN=0;reachGrip('Right',a.gR,a.wR*a.kW);}/* GRAB: the left hand's lean moved the right fist off the tap lever (10 cm down): the right arm once more, arm only */REACH_LEAN=.6;};
+  a.leave=cb=>{if(a.piece){D.settle(a.piece.i,a.piece.from==='dirty'&&a.piece.show!==a.piece.clean?'dirty':a.piece.from==='rack'?'rack':'rack');a.piece=null;}if(a.tapOn&&!a.lvCb&&a.step!=='go'&&a.step!=='approach'){a.lvCb=cb;say('tapoff');return;}/* GRAB: called away with the water running: his hand turns it off first */if(a.tapOn){try{P.water.tap(false);}catch(e){}}a.post=null;cb();};
   return a;}
  // KITCHEN B16: the crouch spot in front of the oven: behind the end of its open drop-door (42 cm) so knees and feet stay clear of it.
  // A short shuffle there (forward or back), facing the oven.
@@ -1128,15 +1135,18 @@ export function createHero(ctx){
   return best;}
  // ===== KITCHEN helpers (re-added on the rolled-back body, kitchen thread): reach with a small lean, palm/grip point on a target, a held
  // tool placed exactly, the stir. The integrator folds them into job() later.
- function reachTo(side,t,w){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
-  for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+PALM);if(ex<=.01)break;
+ function reachTo(side,t,w,ls){const sh=bones[side+'Arm'];if(!sh||!t)return;let tot=0;
+  if(ls){/* rate-limited lean (ls={v,ax} kept by the caller): a target switching to one in reach used to drop the whole lean in one frame (gate: sink, chest 12 cm) */let want=0,ax=null;const hp=bones.Hips.getWorldPosition(V());const ex=sh.getWorldPosition(V()).distanceTo(t)-(armLen*.92+PALM);const d=V(t.x-hp.x,0,t.z-hp.z);
+   if(ex>.01&&d.lengthSq()>1e-4){d.normalize();const fd=d.dot(fwd(root.rotation.y));if(fd>-.1){ax=V(0,1,0).cross(d).normalize();want=Math.min(REACH_LEAN,ex*3)*clamp(w,0,1)*smooth(-.1,.35,fd);}}
+   const v=(ls.v||0)+clamp(want-(ls.v||0),-.012,.012);ls.v=v;if(ax)ls.ax=ax;ax=ls.ax;if(ax&&v>.002){rotW(bones.Spine,ax,v*.45);rotW(bones.Spine1,ax,v*.35);rotW(bones.Spine2,ax,v*.2);}}
+  else for(let it=0;it<3;it++){const hp=bones.Hips.getWorldPosition(V());const s0=sh.getWorldPosition(V());const ex=s0.distanceTo(t)-(armLen*.92+PALM);if(ex<=.01)break;
    const d=V(t.x-hp.x,0,t.z-hp.z);if(d.lengthSq()<1e-4)break;d.normalize();if(d.dot(fwd(root.rotation.y))<-.1)break;/* never arch backwards to reach: the arm alone goes there */const ax=V(0,1,0).cross(d).normalize();const ang=Math.min(REACH_LEAN-tot,ex*3)*w;if(ang<=.005)break;tot+=ang;
    rotW(bones.Spine,ax,ang*.45);rotW(bones.Spine1,ax,ang*.35);rotW(bones.Spine2,ax,ang*.2);}
   const s1=sh.getWorldPosition(V());const tw=t.clone().sub(s1);const tl=tw.length();const wt=tl>PALM*1.5?s1.clone().addScaledVector(tw,(tl-PALM)/tl):t;/* the palm, not the wrist, on the point */
   armIK(side,wt,sidePole(side),clamp(w,0,1));}
  function palmTo(side,t){const G=window.__grab;const p=G&&G.gripPoint?G.gripPoint(side):bones[side+'Hand'].getWorldPosition(V());return p&&t?p.distanceTo(t):9;}
  const gripHome=n=>{const G=window.__grab;return G&&G.toolGripHome?G.toolGripHome(n):toolHome(n);};
- function reachGrip(side,t,w){const G=window.__grab;if(!G||!G.gripPoint){reachTo(side,t,w);return;}reachTo(side,G.palmTarget(side,t),w);
+ function reachGrip(side,t,w,ls){const G=window.__grab;if(!G||!G.gripPoint){reachTo(side,t,w,ls);return;}reachTo(side,G.palmTarget(side,t),w,ls);
   /* the fist's grip point, not the wrist, onto the point: a few corrections of the wrist target */if(w>.98)for(let i=0;i<3;i++){const e=t.clone().sub(G.gripPoint(side));if(e.length()<.004)break;armIK(side,bones[side+'Hand'].getWorldPosition(V()).add(e),sidePole(side),1);}}
  function holdToolAt(side,name,gp,tip,w,bw){const P=PP();const o=P&&P.tools&&P.tools[name];const G=window.__grab;const sp=G&&G.GRIP&&G.GRIP[name];const hb=bones[side+'Hand'];if(!o||!sp||o.parent!==hb)return false;
   const ua=V(...sp.a).applyQuaternion(o.quaternion).normalize();const gl=V(...sp.g).multiplyScalar(o.scale.x).applyQuaternion(o.quaternion).add(o.position);// tool axis + grip point in hand space
