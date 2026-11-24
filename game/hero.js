@@ -266,7 +266,9 @@ export function createHero(ctx){
  function kneeGuard(){const hf=hipsFwd();for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;
    const hp=U.getWorldPosition(V()),k=L.getWorldPosition(V()),a=F.getWorldPosition(V());const mid=hp.clone().add(a).multiplyScalar(.5);const off=k.clone().sub(mid);
    // the knee's forward is where that leg's toes point (the pelvis can be turned far from the root mid-turn; a flipped pelvis forward bent good knees backwards)
-   const T=bones[s+'ToeBase'];const tf=T?T.getWorldPosition(V()).sub(a):null;if(tf){tf.y=0;}const kf=tf&&tf.lengthSq()>1e-4?tf.normalize():hf;
+   const T=bones[s+'ToeBase'];const tf=T?T.getWorldPosition(V()).sub(a):null;if(tf){tf.y=0;}let kf=tf&&tf.lengthSq()>1e-4?tf.normalize():hf;
+   // kneeling: the shin lies on the boards and the toes point BACK; the knee still bends the way the pelvis faces (anatomical: left hip - right hip, x up)
+   {const pa=bones.LeftUpLeg.getWorldPosition(V()).sub(bones.RightUpLeg.getWorldPosition(V())).cross(V(0,1,0)).setY(0);if(pa.lengthSq()>1e-4&&kf.dot(pa.normalize())<-.2)kf=pa;}
    const leg=a.clone().sub(hp);if(leg.lengthSq()<1e-4)continue;const ld=leg.clone().normalize();const pf=kf.clone().sub(ld.clone().multiplyScalar(kf.dot(ld)));if(pf.lengthSq()<1e-4)continue;pf.normalize();
    const o=off.clone().sub(ld.clone().multiplyScalar(off.dot(ld)));if(o.length()<.02||o.dot(pf)>-.3*o.length())continue;
    ik2(U,L,F,a,pf.clone().add(o.normalize().multiplyScalar(.15)),1,true);}}
@@ -830,8 +832,14 @@ export function createHero(ctx){
   const done=()=>{play(IDLE(),{fade:.4});endTask({ok:true,on:GEAR.coat});};
   if(on)gearOn(a,{jacket:true},done);else gearOff(a,done,{});a.update=dt=>{stepTick(a,dt);};return a;};
  // house repairs: walk to the worn part (Brain passes opts.pos), kneel / stand and work there with the right tools
- const REPAIR={fix_shingle:{clip:'hy_shingle',tools:[['benchHammer','Right']],stand:.55,floorNail:true,def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
-  fix_board:{clip:'hy_nailboard',tools:[['benchHammer','Right']],stand:.5,floorNail:true,def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
+ const REPAIR={
+  /* a slate at the eave (Brain picks one within reach of a landing): he walks out only as far as the boards carry him (a hand's width
+     short of the edge), stands and hammers it; chest-high slates with the bent-over bench hammer, head-high ones with the arms up */
+  fix_shingle:{clip:pos=>!pos||!has('hy_standhammer')?'hy_shingle':pos.y-root.position.y>1.12&&has('hy_reachup')?'hy_reachup':'hy_standhammer',tools:[['benchHammer','Right']],stand:.55,
+   standFn:pos=>pos&&has('hy_standhammer')?safeStand(pos,.45):.55,roofNail:true,floorNail:!has('hy_standhammer'),def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
+  /* one knee down (real kneel + hammer mocap, spine bent ~60 deg over the board in the clip data): the nail is the board Brain picked, on the boards
+     ~0.55 m in front of his hips, where the bent-over shoulder reaches it; hammerPost puts the face on it */
+  fix_board:{clip:has('hy_kneelfloor')?'hy_kneelfloor':'hy_nailboard',tools:[['benchHammer','Right']],stand:has('hy_kneelfloor')?.55:.5,floorNail:true,kneel:has('hy_kneelfloor'),def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
   fix_wall:{clip:'hy_patchwall',tools:[['benchHammer','Right']],stand:.45,wall:true,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
   fix_rope:{clip:'hy_ropeknot',node:'gate',stand:.45,def:()=>N.gate&&N.gate.p.clone().add(V(0,.3,.6))},
   fix_hinge:{clip:'hy_oilhinge',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
@@ -839,9 +847,26 @@ export function createHero(ctx){
   fix_railing:{clip:'hy_railing',tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
   clear_roof:{clip:'hy_clearleaves',stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
   fix_chimney:{clip:'hy_chimney',stand:.45,def:()=>{const P=window.__props||P3;return P&&P.chimneyTop?P.chimneyTop.clone().setY(Math.min(P.chimneyTop.y,root.position.y+1.6)):null;}}};
- for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{const pos=o.pos?V(...o.pos):(R.def?R.def():null);
+ // the nail of a floor repair: the picked board, on its top, if he can reach it from where he knelt (else null: the old chest-relative spot)
+ function floorNailAt(p){const q=V(p[0]??p.x,p[1]??p.y,p[2]??p.z);const g=floorAt(q.x,Math.max(q.y,root.position.y)+.2,q.z,.5,.6);q.y=g!=null?g+.005:root.position.y+.005;
+  const ls=bones.LeftUpLeg.getWorldPosition(V()),rs=bones.RightUpLeg.getWorldPosition(V());const f=ls.clone().sub(rs).cross(V(0,1,0)).setY(0).normalize();const hp=bones.Hips.getWorldPosition(V());
+  const d=V(q.x-hp.x,0,q.z-hp.z);const ahead=d.dot(f),side=d.length()**2-ahead*ahead;H.dbgNail=[ahead,Math.sqrt(Math.max(0,side)),q.y-root.position.y,H.face,Math.atan2(q.x-root.position.x,q.z-root.position.z),root.rotation.x,root.rotation.y,Math.hypot(q.x-root.position.x,q.z-root.position.z)];if(Math.abs(q.y-root.position.y)>.12||ahead<.3||ahead>.8||side>.3*.3)return null;return q;}
+ // how close he can stand to a work point out over the edge: walk the line from where he is toward it, keep only boards at his own level
+ // (and a hand's width more beyond his toes), never inside a wall or under a beam; returns the stand-off for approachTo
+ function safeStand(pt,min,from){const p=from||root.position;const dx=pt.x-p.x,dz=pt.z-p.z,d=Math.hypot(dx,dz);if(d<1e-3)return min;const ux=dx/d,uz=dz/d;const C=window.__collide;
+  let ok=0;for(let t=0;t<=d-min+1e-6;t+=.05){let good=true;for(const e of [0,.22]){const x=p.x+ux*(t+e),z=p.z+uz*(t+e);const g=floorAt(x,p.y+.3,z,.45,.5);if(g==null||Math.abs(g-p.y)>.12){good=false;break;}}
+   if(good&&C&&C.depthAt){const x=p.x+ux*t,z=p.z+uz*t;for(const hy of [.4,1,1.5])if(C.depthAt(x,p.y+hy,z)>.01){good=false;break;}}if(!good)break;ok=t;}
+  return Math.max(min,d-ok);}
+ // a slate he can really hammer: from the landing next to it, standing where the boards end, it must lie within an arm and a hammer
+ // (stand-off <= 0.6 m) between chest and head height. Brain's pick is kept when it qualifies, else the most worn one nearby that does.
+ function pickSlate(o){const P=window.__planks;if(!P||!P.list||!o.pos)return;const want=V(...o.pos);
+  const ok=c=>{const q=V(...c.pos);const nn=nearNode(q);if(!nn||!N[nn])return null;const f=N[nn].p;const dy=q.y-f.y;if(dy<.75||dy>1.45)return null;const st=safeStand(q,.4,f);return st<=.6?st:null;};
+  if(ok({pos:o.pos})!=null)return;let best=null,bs=1e9;for(const c of P.list('shingle')){const d=Math.hypot(c.pos[0]-want.x,c.pos[1]-want.y,c.pos[2]-want.z);if(d>4)continue;if(ok(c)==null)continue;const sc=d*.3+(c.fresh||0)*2;if(sc<bs){bs=sc;best=c;}}
+  if(best){o.pos=best.pos.slice();o.target=best.id;}}
+ for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{if(k==='fix_shingle'&&has('hy_standhammer'))try{pickSlate(o);}catch(e){}const pos=o.pos?V(...o.pos):(R.def?R.def():null);
   const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));
-  return job({pt:()=>pos,node:pos?null:R.node,stand:R.stand,clip:R.clip,loop:true,dur:[18,35],tools:R.tools||[],post:hamr?(a,dt)=>hammerPost(a,dt,R.floorNail?(a.fn||(a.fn=(()=>{/* kneeling over the boards: the nail is on the floor just in front of his right knee */const ls=bones.LeftArm.getWorldPosition(V()),rs=bones.RightArm.getWorldPosition(V());const f=ls.clone().sub(rs).cross(V(0,1,0)).setY(0).normalize();/* the way his chest faces in the clip */const m=ls.add(rs).multiplyScalar(.5).setY(root.position.y+.02);return m.addScaledVector(f,.32).add(V(-f.z*.1,0,f.x*.1));})())):pos,R.wall?V(root.position.x-pos.x,0,root.position.z-pos.z).normalize():null):undefined,vary:hamr?false:undefined,
+  const clip=typeof R.clip==='function'?R.clip(o.pos?pos:null):R.clip;
+  return job({pt:()=>pos,node:pos?null:R.node,get stand(){return R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[18,35],tools:R.tools||[],post:hamr?(a,dt)=>hammerPost(a,dt,R.roofNail&&o.pos&&!R.floorNail?pos:R.floorNail?(a.fn||(a.fn=R.kneel&&pos&&floorNailAt(pos))||(a.fn=(()=>{/* kneeling over the boards: the nail is on the floor just in front of his right knee */const ls=bones.LeftArm.getWorldPosition(V()),rs=bones.RightArm.getWorldPosition(V());const f=ls.clone().sub(rs).cross(V(0,1,0)).setY(0).normalize();/* the way his chest faces in the clip */const m=ls.add(rs).multiplyScalar(.5).setY(root.position.y+.02);return m.addScaledVector(f,.32).add(V(-f.z*.1,0,f.x*.1));})())):pos,R.wall?V(root.position.x-pos.x,0,root.position.z-pos.z).normalize():R.roofNail&&o.pos&&!R.floorNail?V(root.position.x-pos.x,0,root.position.z-pos.z).normalize().multiplyScalar(.6).add(V(0,1,0)).normalize():null):undefined,vary:hamr?false:undefined,
    tick:(a,dt)=>{if(hamr&&!a.hmFar)return;/* GRAB: hammer hits come from the swing itself */if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});};
  // ===================== gear: a skinned coat that really follows the body, bow and quiver from the workshop wall =====================
  // the coat is cut from the body mesh itself (torso + arms, pushed out 1.5 cm along the normals) and shares the skeleton

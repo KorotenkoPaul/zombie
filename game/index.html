@@ -826,6 +826,8 @@ function makeBow(){const g=new THREE.Group();const curve=new THREE.CatmullRomCur
 // the hero lives in hero.js (body, navigation, daily life)
 const tableO=OBST.find(o=>o.n==='table');
 const heroMoves=await fetch(ASSET+'hero-moves.txt').then(r=>r.ok?r.json():null).catch(()=>null);
+// extra clip files (one per action family, so threads never fight over the big file): merged in, the main file wins on a name clash
+for(const f of ['hero-moves-repair.txt']){const x=await fetch(ASSET+f).then(r=>r.ok?r.json():null).catch(()=>null);if(x&&heroMoves)for(const k in x)if(!(k in heroMoves))heroMoves[k]=x[k];}
 const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{LC,WS,KT,BD,DK},sfx,OBST,chair:chairO,chairFace:Math.PI,bunk,bedHead:1,
  table:tableO?{x0:tableO.x0,x1:tableO.x1,z0:tableO.z0,z1:tableO.z1,top:BD+.765}:null,
  ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
