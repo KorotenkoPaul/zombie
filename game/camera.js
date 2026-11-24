@@ -635,7 +635,9 @@ export function createCameraRig(o) {
     if (extra.shake) camPos.add(extra.shake);
     focusU.value = camPos.distanceTo(cur.target);
     // leaves in front of the focus melt away when zoomed in (through the crown), fully gone below ~9 m, none from afar
-    cutU.value += ((1 - THREE.MathUtils.smoothstep(focusU.value, 9, 15)) - cutU.value) * damp(4, dt);
+    // (classic camera: zoomed in on the hero, every leaf card between him and the camera clears, at any distance)
+    const cutWant = Math.max(1 - THREE.MathUtils.smoothstep(focusU.value, 9, 15), CLASSIC ? THREE.MathUtils.smoothstep(1 - (zoomK - ZMIN) / (1 - ZMIN), 0.4, 0.85) : 0);
+    cutU.value += (cutWant - cutU.value) * damp(4, dt);
     camera.position.copy(camPos);
     camera.lookAt(cur.target);
   }
