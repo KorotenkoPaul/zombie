@@ -403,5 +403,14 @@
   "t0": 7.8,
   "t1": 11.0,
   "note": "Real mocap: walks forward down 3 steps of ~0.16 m and stops on the floor. Root drops 0.48 m."
+ },
+ "bootsoff_sit_R2": {
+  "src": "boots2",
+  "note": "bootsoff_sit_R toned down for the gate: the right leg lifts only ~55% as high (foot max 0.39 m, about mid-shin of the other leg), neck/head flexion capped (neckcap.mjs: neck<=42, head<=54 deg from vertical), trunk lean <=21 deg, head stays >=0.8 m from either foot and 0.3 m above the knee. Hands no longer reach the boot by themselves: drive them with grab."
+ },
+ "bootsoff_sit_L2": {
+  "src": "boots2",
+  "mirror": true,
+  "note": "Mirror of bootsoff_sit_R2 (left boot)."
  }
 }
