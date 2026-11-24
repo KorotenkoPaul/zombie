@@ -281,7 +281,7 @@ export function createClimb() {
     // going up: the body rises no higher than the hands that stay on their rungs can follow (rope ladder top: both hands on the
     // top rung, the body went on up and the arms ran out 10 cm)
     if (up && M.arm) { const so = A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9; for (const h of ['LH', 'RH']) { const mv = move.find(m => m.k === h); const r = mv ? mv.to : L[h].r; if (r < 0 || r >= nR) continue; const lim = top(A, r) + .015 - so + M.arm * .97; if (lim < y1) y1 = Math.max(y0, lim); } }
-    const T = hand ? A.T : A.T * .8;
+    const T = (hand ? A.T : A.T * .8) * (!up && move.some(m => m.k[1] === 'H' && L[m.k].r >= nR) ? 1.4 : 1); /* a palm coming off the boards drops ~50 cm: that first step down is slower (gate: hand 4 cm/frame² leaving bl_t) */
     const st = { move, u: A.carry || 0, T, y0, y1, ya: up ? (hand ? .22 : .1) : 0, yb: up ? 1 : .78 };
     A.carry = 0;
     return st;
