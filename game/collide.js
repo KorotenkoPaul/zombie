@@ -418,6 +418,8 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       }
       // on a ladder only hands and feet are corrected (moving the body or bending the head pops on the pull-up)
       if (hero.lad) { pd[0] = 0; pd[1] = 0; anyP = pd.some(v => v > 0); }
+      // climb.js IK owns the limbs on a ladder (palms wrap the rungs, balls of the feet stand on them): pushing them out of the rung they hold left hands 10 cm and toes 4 cm off it (gate ladder-grip)
+      { const CL = window.__climb; if (hero.lad && CL && CL.active && CL.weight > .5) { pd.fill(0); anyP = false; } }
       for (const c of [0, 1]) if (sumW[c] > 0) push[c].copy(sumN[c]).multiplyScalar(1 / sumW[c]).multiplyScalar(pd[c] + .001);
       // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall); a sole is
       // only lifted straight up out of a board (never moved sideways); arms and head give way. Walking into things is the walk graph's job.
