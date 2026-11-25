@@ -176,12 +176,12 @@ export function buildTree(THREE, o) {
         const fk = (d1 + sk) / d1; xr *= fk; zr *= fk; }
       // the photo's main roots reach ~1.5x further, diagonally to the bottom corners of the frame, and stand taller where
       // they leave the trunk (Ground's side-by-side). The front centre (ladder foot, path, pond) keeps its short roots.
-      let yo = yy;
+      let yo = yy, rs = 1;
       if (o.rootReach !== false) { /* the walk from the ladder foot to the woodpile/chopping block (Anim QA: he stepped over a 70 cm root): no stretching into it, no lift */ const pa = o.rootPath || [-4.9, 0.6, 3.5, 5.5], zin = (qx, qz) => Math.min(1, Math.max(0, Math.min(qx - pa[0], pa[1] - qx, qz - pa[2], pa[3] - qz) / 0.5 + 0.5)); const d2 = Math.hypot(xr, zr) || 1e-6, an = Math.atan2(zr, xr), offDoor = Math.min(1, Math.max(0, (Math.abs(angDiff(an, doorAng)) - 0.55) / 0.3)); /* the hollow landing sits on the roots there: leave them as they were */
         if (yy < 1.6 && d2 > 3.2) { const low = Math.min(1, (1.6 - yy) / 0.8), front = Math.max(0, Math.sin(an)), centre = Math.max(0, 1 - Math.abs(angDiff(an, Math.PI / 2)) / 0.55);
-          const kk = (o.rootReach ?? 0.6) * low * (0.4 + 0.6 * front) * (1 - 0.85 * centre) * offDoor, nd0 = 3.2 + (d2 - 3.2) * (1 + kk), px = AX + xr * nd0 / d2, pz = AZ + zr * nd0 / d2; const inP = Math.max(zin(px, pz), zin(AX + xr, AZ + zr)), nd = 3.2 + (d2 - 3.2) * (1 + kk * (1 - inP)); xr *= nd / d2; zr *= nd / d2; }
+          const kk = (o.rootReach ?? 0.6) * low * (0.4 + 0.6 * front) * (1 - 0.85 * centre) * offDoor, nd0 = 3.2 + (d2 - 3.2) * (1 + kk), px = AX + xr * nd0 / d2, pz = AZ + zr * nd0 / d2; const inP = Math.max(zin(px, pz), zin(AX + xr, AZ + zr)), nd = 3.2 + (d2 - 3.2) * (1 + kk * (1 - inP)); xr *= nd / d2; zr *= nd / d2; rs = nd / d2; }
         if (yy > -0.3 && yy < 1.5) { const d3 = Math.hypot(xr, zr), hump = Math.max(0, 1 - Math.abs(d3 - 3.1) / 2.4);
-          yo = yy + 0.32 * offDoor * (1 - zin(AX + xr, AZ + zr)) * hump * Math.min(1, (yy + 0.3) / 0.7) * Math.min(1, (1.5 - yy) / 0.5); } }
+          yo = yy + 0.32 * offDoor * (1 - zin(AX + xr, AZ + zr)) * hump * Math.min(1, (yy + 0.3) / 0.7) * Math.min(1, (1.5 - yy) / 0.5); } /* [TREE] a stretched root keeps its round body (photo: tall rounded roots out to the tips), not a flat ribbon: the crest rises with the stretch, the underside stays on the ground */ yo += (o.rootThick ?? 1.2) * (rs - 1) * Math.max(0, Math.min(yy + 0.15, 1.2)); }
       P.push(AX + xr, yo, AZ + zr);
       UV.push(su ? su.getX(i) : 0, su ? su.getY(i) : 0); G.push(0);
     }
@@ -238,6 +238,17 @@ export function buildTree(THREE, o) {
       const m = Math.max(arch(P[a * 3], P[a * 3 + 1], P[a * 3 + 2]), arch(P[b * 3], P[b * 3 + 1], P[b * 3 + 2]), arch(P[c * 3], P[c * 3 + 1], P[c * 3 + 2]));
       if (m < 1.0) continue; I.push(a, b, c);
     }
+    // autumn: a few dead twigs on the big limbs, bare grey and snapped off short (the photo's oak has small broken twigs
+    // between the leaf clumps). Part of the bark mesh: no new draw call, ~40 verts each.
+    if (o.deadTwigs !== false) { let tS = 7919; const tr = (a, b) => { tS = (tS * 16807) % 2147483647; return a + (b - a) * (tS / 2147483647); }; /* own seeded stream: the twigs must not shift the leaf layout's tr() */ const AVB = (o.avoidLeaves || []).concat(o.avoid || []), inAvT = (x, y, z) => AVB.some(b => x > b[0] - 0.6 && x < b[1] + 0.6 && y > b[2] - 0.6 && y < b[3] + 0.6 && z > b[4] - 0.6 && z < b[5] + 0.6);
+      const tc = []; for (let i = 0; i < P.length; i += 30) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ, d = Math.hypot(x, z); if (d > 3.8 && d < 9.5 && y > 6.5 && y < 16 && z > -2.5 && z < 4.2 && !inAvT(P[i], y, P[i + 2])) tc.push([P[i], y, P[i + 2], tr(0, 1)]); }
+      tc.sort((a, b) => a[3] - b[3]); const tw = [];
+      for (const c of tc) { if (tw.length >= (MOB(o) ? 8 : 14)) break; if (tw.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 1.6)) continue; tw.push(c); }
+      for (const c of tw) { const out = V(c[0] - AX, 0, c[2] - AZ).normalize(), dir = V(out.x + tr(-.5, .5), tr(.35, .9), out.z + tr(-.5, .5)).normalize(), L = tr(.45, .85), r0 = tr(.035, .055);
+        const b0 = V(c[0], c[1], c[2]).addScaledVector(dir, -0.08), side = V(-dir.z, 0, dir.x).normalize();
+        const kink = b0.clone().addScaledVector(dir, L * 0.55).addScaledVector(side, tr(-.08, .08)), tip = kink.clone().addScaledVector(dir.clone().addScaledVector(side, tr(-.35, .35)).normalize(), L * 0.45);
+        for (const tb of [tube([b0, kink, tip], 4, 5, t => r0 * (1 - 0.65 * t))].concat(tr(0, 1) < .5 ? [tube([kink.clone(), kink.clone().addScaledVector(V(tr(-.5, .5), .8, tr(-.5, .5)).normalize(), L * .35)], 2, 4, t => r0 * .5 * (1 - .6 * t))] : [])) {
+          const off = P.length / 3; P.push(...tb.P); UV.push(...tb.UV); for (let k = 0; k < tb.G.length; k++) G.push(0); for (const q of tb.I) I.push(q + off); } } }
     // leaves: clumps at the limb tips and a crown at the top, with gaps between them
     const cand = [];
     for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i] - AX, P[i + 2] - AZ), y = P[i + 1]; if ((d > 3.6 && y > 4.5 && (Math.abs(P[i] - AX) > 3 || y > 15)) || y > 15.5) cand.push([P[i], y, P[i + 2], d + y * 0.35]); }
@@ -526,13 +537,13 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
   // ---------- leaves: clumps of painted oak-leaf cards, facing outwards like the painted crown ----------
   const LA = o.avoidLeaves || [];
   const inB = (x, y, z, p) => LA.some(b => x > b[0] - p && x < b[1] + p && y > b[2] - p && y < b[3] + p && z > b[4] - p && z < b[5] + p);
-  const leafT = o.leafT; leafT.wrapS = leafT.wrapT = THREE.ClampToEdgeWrapping; leafT.repeat.set(1, 1);
+  const SPR = o.leafSprigT || null; /* [TREE] Pavel 2026-11-25: no flat planes, round clumps built of these same leaves, twice the foliage: each card is one sprig of ~7 leaves and many sprigs make a rounded clump */ const ROS = SPR && MOB(o) && o.leafRosT ? o.leafRosT : null; /* [PERF] phones: a rosette of four sprigs on one card (73% of its outline is leaf vs ~45%): the same leaves and clumps at about half the overdraw */ const leafT = ROS || SPR || o.leafT; leafT.wrapS = leafT.wrapT = THREE.ClampToEdgeWrapping; leafT.repeat.set(1, 1);
   // [PERF] phones: Lambert (per-pixel, no PBR) is a fraction of the fragment cost; the leaves are matte anyway
   const lmat = MOB(o) ? new THREE.MeshLambertMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide })
     : new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
   // soft, lit-from-above clumps: cards near the clump centre are darker (painted volume)
   lmat.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\n/* [ENV] per CARD, not per pixel: an oblique or too-near card goes whole (each at its own threshold), so no leaf is ever cut across */{vec4 cC=modelViewMatrix*instanceMatrix*vec4(0.,0.,0.,1.);vec3 cN=normalize(mat3(modelViewMatrix)*mat3(instanceMatrix)*vec3(0.,0.,1.));float cH=fract(sin(dot(instanceMatrix[3].xyz,vec3(12.99,78.23,37.71)))*4375.5);float th=mix(.24,.5,cH),dh=mix(1.6,3.2,fract(cH*7.31));/* shrinks smoothly towards its centre over a short band (no pop when the camera turns or zooms) */float cf=smoothstep(th-.07,th+.07,abs(dot(cN,normalize(-cC.xyz))))*smoothstep(dh-.5,dh+.5,-cC.z);mvPosition=cC+(mvPosition-cC)*cf;gl_Position=projectionMatrix*mvPosition;vFacing=step(.001,cf);vDep=1.;}');
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;attribute vec3 aCC;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\n'+(SPR ? '/* [TREE] clump normals: each sprig is lit as part of a round ball (out from its clump centre), so a clump shades like a volume, never as separate flat cards */{vec3 wp=(instanceMatrix*vec4(position,1.)).xyz;transformedNormal=normalize(normalMatrix*normalize(mix(normalize(mat3(instanceMatrix)*objectNormal),normalize(wp-aCC),.78)));}' : '')).replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\n/* [ENV] per CARD, not per pixel: an oblique or too-near card goes whole (each at its own threshold), so no leaf is ever cut across */{vec4 cC=modelViewMatrix*instanceMatrix*vec4(0.,0.,0.,1.);vec3 cN=normalize(mat3(modelViewMatrix)*mat3(instanceMatrix)*vec3(0.,0.,1.));float cH=fract(sin(dot(instanceMatrix[3].xyz,vec3(12.99,78.23,37.71)))*4375.5);float th='+(SPR ? 'mix(.13,.3,cH)' : 'mix(.24,.5,cH)')+',dh=mix(1.6,3.2,fract(cH*7.31));/* shrinks smoothly towards its centre over a short band (no pop when the camera turns or zooms) */float cf=smoothstep(th-.07,th+.07,abs(dot(cN,normalize(-cC.xyz))))*smoothstep(dh-.5,dh+.5,-cC.z);/* [TREE] orbiting to the back or sides, a big clump between the camera and the house hid it all: cards in the middle of the view that are nearer than the trunk go */{vec4 cp=projectionMatrix*cC;vec2 nd=abs(cp.xy/max(cp.w,.01));float ax=length(cameraPosition.xz-vec2('+AX.toFixed(2)+','+AZ.toFixed(2)+'));cf*=1.-(1.-smoothstep(.28,.48,max(nd.x*.85,nd.y)))*(1.-smoothstep(ax-5.,ax-2.5,-cC.z));}mvPosition=cC+(mvPosition-cC)*cf;gl_Position=projectionMatrix*mvPosition;vFacing=step(.001,cf);vDep=1.;}');
     // [WIND] leaves sway with the global wind (game/wind.js): each card drifts with its clump and flutters on its own
     const W = o.wind || window.__wind;
     if (W) {
@@ -551,21 +562,21 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
  transformed.z+=r2*(a*sin(position.x*7.+uWT*3.1+h*9.)+b*sin(position.y*6.+uWT*2.4+h*13.)+.5*(a+b)*sin((position.x+position.y)*9.+uWT*4.3))*.3;
  transformed+=windLocal(vec3(wv.x,wv.x*.15,wv.y)+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)})));}`);
     }
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\ndiffuseColor.a*=vFacing*vDep;\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <color_fragment>', '#include <color_fragment>\n'+(SPR ? '/* autumn sprigs: a warm-tinted card turns its leaves gold, orange or rust (the green sprig art only went olive under a plain multiply) */\n#ifdef USE_COLOR\n{vec3 ic=vColor.rgb;float w=smoothstep(.55,.9,ic.r-ic.b);float l=dot(diffuseColor.rgb,vec3(.3,.59,.11))/max(dot(ic,vec3(.3,.59,.11)),.01);diffuseColor.rgb=mix(diffuseColor.rgb,l*ic*1.7,w);}\n#endif' : '')).replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n'+(SPR ? 'normal*=faceDirection;/* clump normals face out on both sides of a card */' : '')).replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\ndiffuseColor.a*=vFacing*vDep;\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;\n/* [TREE] like the photo, the crown reads as layered leaves lit from the sky (sage tops, darker inside), not a near-black mass: a sky-fill term from the hemisphere light, stronger on upward-facing and outer (vShade) cards; it dims with the sky at night and under rain */\n#if NUM_HEMI_LIGHTS>0\n{vec3 up=normalize((viewMatrix*vec4(0.,1.,0.,0.)).xyz);float uf=.45+.55*max(dot(normal,up),0.);totalEmissiveRadiance+=diffuseColor.rgb*hemisphereLights[0].skyColor*('+(o.leafSky ?? 0.5).toFixed(2)+')*uf*vShade*vShade;}\n#endif\n/* [TREE] golden hour: a low warm sun shines through and along the leaves (they stayed noon-green next to the glowing bark and walls). Only a warm sun counts (noon white, blue night fill and rim: none), so it fades by itself under cloud, rain and at night */\n#if NUM_DIR_LIGHTS>0\n{vec3 vc=normalize(vViewPosition);for(int i=0;i<NUM_DIR_LIGHTS;i++){vec3 lc=directionalLights[i].color;float gw=smoothstep(.5,.85,(lc.r-lc.b)/max(lc.r,.001));vec3 L=directionalLights[i].direction;float fr=max(dot(normal,L),0.),bk=max(-dot(vc,L),0.);totalEmissiveRadiance+=diffuseColor.rgb*lc*gw*vShade*(.1*fr+.22*bk*bk);}}\n#endif');
   };
-  lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2'; /* [ENV] explicit key (SHADERS rule) */
+  lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2-gold-sky' + (SPR ? '-sprig' : ''); /* [ENV] explicit key (SHADERS rule) */
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
-  const total = MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
+  const total = SPR ? (MOB(o) ? (o.leafCards || (ROS ? 210 : 520)) : 2200) : MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
   // the photo keeps open sky behind the telescope deck (critic T26): no clump in the window above and behind it
   { const SW = o.skyWindow || [AX + 2.2, AX + 8, 9.6, 15.2, AZ - 13, AZ + 2.5];
     for (let i = leafSpots.length - 1; i >= 0; i--) { const p = leafSpots[i].p; if (p.x > SW[0] && p.x < SW[1] && p.y > SW[2] && p.y < SW[3] && p.z > SW[4] && p.z < SW[5]) leafSpots.splice(i, 1); } }
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
-  const qg = new THREE.CircleGeometry(0.5, MOB(o) ? 10 : 12); // round like the painted clump: no empty quad corners to shade // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
-  { const pa = qg.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i); pa.setZ(i, 0.28 * (0.5 - (x * x + y * y))); } qg.computeVertexNormals(); }
+  const qg = SPR ? (() => { /* the sprig's outline (convex hull of its leaves): no empty corners to shade */ const H = ROS ? [[.036,.604],[.324,.908],[.452,.951],[.628,.926],[.817,.831],[.929,.411],[.798,.152],[.666,.086],[.579,.08],[.214,.134],[.111,.227],[.047,.388]] : [[.019,.541],[.175,.824],[.565,1],[.583,1],[.856,.859],[.967,.662],[.977,.379],[.879,.053],[.631,0],[.28,.033],[.226,.061],[.021,.525]], pos = [0, 0, 0], uv = [.5, .5], ix = []; for (const [u, v] of H) { pos.push(u - .5, v - .5, 0); uv.push(u, v); } for (let i = 1; i <= H.length; i++) ix.push(0, i, i % H.length + 1); const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(ix); return g; })() : new THREE.CircleGeometry(0.5, MOB(o) ? 10 : 12); // round like the painted clump: no empty quad corners to shade // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
+  { const pa = qg.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i); pa.setZ(i, (SPR ? 0.2 : 0.28) * (0.5 - (x * x + y * y))); } qg.computeVertexNormals(); }
   let im = new THREE.InstancedMesh(qg, lmat, total);
-  const shade = new Float32Array(total);
+  const shade = new Float32Array(total), cc = new Float32Array(total * 3);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = V(1, 1, 1), col = new THREE.Color();
   let n = 0;
   for (const s of leafSpots) {
@@ -573,6 +584,20 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
     for (let i = 0; i < k && n < total; i++) {
       // points on a squashed sphere shell (more on top), facing out
       let dx, dy, dz; do { dx = rnd(-1, 1); dy = rnd(-0.45, 1); dz = rnd(-1, 1); } while (dx * dx + dy * dy + dz * dz > 1);
+      if (SPR) { /* sprigs: a few lumpy sub-balls per clump (irregular round shapes), filled through the volume; every sprig turned its own way */
+        const nb = s.sub || (s.sub = Array.from({ length: 2 + Math.floor(rnd(0, 2.99)) }, () => [rnd(-.6, .6) * s.s, rnd(-.15, .35) * s.s, rnd(-.6, .6) * s.s, s.s * rnd(.85, 1.15) + 0.7]));
+        const b = nb[Math.floor(rnd(0, nb.length - 0.001))], d0 = V(dx, dy, MOB(o) && dz < -0.2 ? -dz * 0.6 : dz), rr = MOB(o) ? rnd(0.72, 1) : Math.cbrt(rnd(0.12, 1)); d0.normalize(); /* [PERF] phones: the back of a clump is hidden by its front from the home view, so its sprigs go to the front half (same look, half the overdraw) */
+        const p = s.p.clone().add(V(b[0], b[1], b[2])).add(V(d0.x * b[3] * rr, d0.y * b[3] * rr * (d0.y < 0 ? 0.6 : 0.85), d0.z * b[3] * rr));
+        if (inB(p.x, p.y, p.z, 0.8)) continue;
+        const fw = V(0, 0.3, 1).multiplyScalar(0.75).addScaledVector(d0, 0.55).add(V(rnd(-1, 1), rnd(-.6, 1), rnd(-1, 1)).normalize().multiplyScalar(0.5)); /* mostly towards the home view (the camera never goes behind), each its own way */
+        q.setFromRotationMatrix(new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(rnd(-1, 1), 1, rnd(-1, 1)).normalize())).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rnd(0, 6.28))));
+        sc.setScalar(ROS ? rnd(3.9, 4.6) : MOB(o) ? rnd(2.5, 3.1) : rnd(2.3, 2.9)); m4.compose(p, q, sc); im.setMatrixAt(n, m4);
+        const c0 = s.p.clone().add(V(b[0], b[1] - b[3] * 0.25, b[2])); cc[n * 3] = c0.x; cc[n * 3 + 1] = c0.y; cc[n * 3 + 2] = c0.z;
+        const r = rnd(0.86, 1.1); col.setRGB(r, r * rnd(0.97, 1.04), r * rnd(0.9, 1.02));
+        if (rr > 0.8 && d0.y > -0.2 && rnd(0, 1) < 0.6) col.multiply(new THREE.Color(1.14, 1.12, 0.84));
+        { const smooth01 = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); }; const edge = rr > 0.8 && d0.y > -0.3 ? 0.12 : 0, trr = smooth01((p.x - AX) / 6) * smooth01((p.y - 13) / 5) * 0.2;
+          if (rnd(0, 1) < 0.17 + edge + trr) { const k = rnd(0, 1); if (k < 0.5) col.setRGB(1.5, 1.22, 0.42); else if (k < 0.85) col.setRGB(1.6, 0.98, 0.38); else col.setRGB(1.3, 0.68, 0.32); col.multiplyScalar(rnd(0.85, 1.05)); } }
+        im.setColorAt(n, col); shade[n] = (0.45 + 0.55 * rr) * (0.72 + 0.4 * Math.max(0, d0.y)); n++; continue; }
       // [PERF] phones: only the outer shell of each clump (inner cards are hidden but still shaded: overdraw)
       const dir = V(dx, dy, dz); const rr = MOB(o) ? rnd(0.8, 1.0) : Math.max(0.35, dir.length()); dir.normalize();
       const p = s.p.clone().add(V(dir.x * s.s * rr, dir.y * s.s * (dir.y < 0 ? 0.5 : 0.7) * rr, dir.z * s.s * rr)); // flatter underside: clumps don't droop
@@ -602,7 +627,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
     }
   }
   im.count = n;
-  qg.setAttribute('shade', new THREE.InstancedBufferAttribute(shade, 1));
+  qg.setAttribute('shade', new THREE.InstancedBufferAttribute(shade, 1)); qg.setAttribute('aCC', new THREE.InstancedBufferAttribute(cc, 3));
   im.castShadow = !MOB(o); im.receiveShadow = true; group.add(im);
 
   // ---------- phones: clump impostors (Optimization: the leaf cards were the biggest per-pixel cost) ----------
