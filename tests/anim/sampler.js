@@ -177,7 +177,9 @@ module.exports=function install(cfg){
   if(supOn)r.sup=sup;
   r.pen=pen.map(([d,ci,p])=>ci<0?0:[+(d*100).toFixed(2),ci,p]);
   // ground under each toe/ankle
-  r.gnd=[7,8,12,13].map(i=>{const p=V(r.b[i*3],r.b[i*3+1],r.b[i*3+2]);const u=floorUnder(p,.25,1.0);return u?+u[0].toFixed(4):null;});
+  // the hero's own floor follow takes the highest of the point and its 4 neighbours (+-7 cm): a gap between planks is not air
+  const GN4=[[0,0],[.07,0],[-.07,0],[0,.07],[0,-.07]];
+  r.gnd=[7,8,12,13].map(i=>{let best=null;for(const [dx,dz] of GN4){const p=V(r.b[i*3]+dx,r.b[i*3+1],r.b[i*3+2]+dz);const u=floorUnder(p,.25,1.0);if(u&&(best==null||u[0]>best))best=u[0];}return best==null?null:+best.toFixed(4);});
   // which objects moved this frame (topmost moved one only), and how far the nearer palm is from it
   {const pr=[];heroBones.LeftHand.getWorldPosition(HP[0]);heroBones.LeftForeArm.getWorldPosition(FA);HP[0].add(HP[0].clone().sub(FA).setLength(.07));
    heroBones.RightHand.getWorldPosition(HP[1]);heroBones.RightForeArm.getWorldPosition(FA);HP[1].add(HP[1].clone().sub(FA).setLength(.07));const hp=H.root.position;
