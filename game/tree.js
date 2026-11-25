@@ -241,17 +241,22 @@ export function buildTree(THREE, o) {
     // the workshop roof. Clumps on the camera-facing limb ends there (Env's side-by-side), clear of the rooms.
     { const AVL = o.avoidLeaves || [], inAv = (x, y, z, p) => AVL.some(b => x > b[0] - p && x < b[1] + p && y > b[2] - p && y < b[3] + p && z > b[4] - p && z < b[5] + p);
       const side = []; for (let i = 0; i < P.length; i += 3) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ;
-        if (y < 5.5 || y > 12.5 || z < -0.5) continue; if (!((x < (MOB(o) ? -3.5 : -4.2) && x > -10) || (x > 4.9 && x < 10.5))) continue; side.push([P[i], y, P[i + 2], Math.abs(x) + z * 0.6]); }
+        if (y < 5.5 || y > 12.5) continue;
+        /* never in front of the house (the photo never puts leaves over a room): left just behind the bedroom/kitchen wall line, inside the
+           phone frame (its left edge is x ~ AX-5.7 at the trunk); right behind the deck/workshop plane */
+        if (x < -4.9 && x > -8 && z > -3.8 && z < -1.2) side.push([P[i], y, P[i + 2], 10 - Math.abs(x)]);
+        else if (x > 4.9 && x < 10.5 && z > -3 && z < 0.4) side.push([P[i], y, P[i + 2], 10 - x]); }
       side.sort((a, b) => b[3] - a[3]); const got = [];
       for (const c of side) { if (got.length >= (o.sideClumps ?? 10)) break; if (inAv(c[0], c[1], c[2], 1.4)) continue;
         if ([...got, ...picked].some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.2)) continue; got.push(c); }
       for (const c of got) leafSpots.push({ p: V(c[0], c[1] + 0.2, c[2] + 0.2), s: rnd(1.6, 2.1) }); }
     // the photo has no sky between the two big limbs above the bedroom roof: one or two clumps behind the ridge close it
     { const hole = []; for (let i = 0; i < P.length; i += 3) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ;
-        if (x > -0.5 && x < 3.5 && y > 14 && y < 19.5 && z < 1 && z > -4) hole.push([P[i], y, P[i + 2], y - Math.abs(x - 1.5)]); }
+        if (x > -0.5 && x < 3 && y > 12.8 && y < 15.5 && z < -2.5 && z > -5.5) hole.push([P[i], y, P[i + 2], -Math.abs(y - 14) - Math.abs(x - 1.2)]); }
       hole.sort((a, b) => b[3] - a[3]); const hg = [];
       for (const c of hole) { if (hg.length >= 2) break; if (hg.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.4)) continue; hg.push(c); }
-      for (const c of hg) leafSpots.push({ p: V(c[0], c[1] + 0.4, c[2] - 0.3), s: rnd(2.0, 2.4) }); }
+      hg.push([AX + 1.7, 13.6, AZ - 3.1]); /* the gap right of the main stem, seen from the home view */
+      for (const c of hg) leafSpots.push({ p: V(c[0], c[1] + 0.2, c[2] - 0.3), s: rnd(2.0, 2.4) }); }
     // the crown: the photo's top is a full canopy of big clumps with only small sky gaps
     const top = [];
     for (let i = 0; i < P.length; i += 3) if (P[i + 1] > 15.2 && Math.abs(P[i] - AX) < 7.5) top.push([P[i], P[i + 1], P[i + 2]]);
