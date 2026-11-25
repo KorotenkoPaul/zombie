@@ -228,6 +228,7 @@ function makeMaterials(renderer) {
     staveDark: std({ map: texOf(staveCanvas('#9A6036', '#3A2010', 12)), roughness: .78 }),
     weave: std({ map: texOf(weaveCanvas(), { rep: 7 }), bumpMap: texOf(weaveCanvas(), { srgb: false, rep: 7 }), bumpScale: 1.2, roughness: .9 }),   // fine wicker, not big dots
     iron: metal(0x34383F, .65, .45, .6),
+    hoopIron: metal(0x3B3530, .55, .78, .35),   // barrel hoops: blackened forged iron gone dull and a little rusty, no gloss
     enamel: metal(0x4F5965, .35, .32, .9),
     enamelDark: metal(0x30353C, .4, .4, .6),
     steel: metal(0xB4BBC3, .9, .28, 1.1),
@@ -654,8 +655,13 @@ function sinkCounter() {
   bake(g); g.userData.info = { top: H }; return g;
 }
 function barrel(h = .78, mat) { const g = new THREE.Group(); const r0 = h * .3, b = h * .055; const pts = []; for (let i = 0; i <= 12; i++) { const y = i / 12 * h; pts.push([r0 + b * Math.sin(Math.PI * i / 12), y]); } pts.push([r0 - .02, h], [r0 - .02, h - .03], [0, h - .03]);
-  add(g, lathe([[0, 0], ...pts], 32), mat || M.stave); add(g, new THREE.CylinderGeometry(r0 - .02, r0 - .02, .01, 32), M.staveDark, 0, h - .03, 0);
-  for (const t of [.1, .3, .7, .9]) { const y = t * h, r = r0 + b * Math.sin(Math.PI * t) + .006; const tor = add(g, new THREE.TorusGeometry(r, .012, 6, 40), M.iron, 0, y, 0, Math.PI / 2); tor.scale.z = 1.8; } return bake(g); }
+  // [PROPS round] one flat facet per stave (14, matching the 14 joints in the stave texture), so the staves read as boards
+  // with crisp joints instead of one smooth glossy tube; the hoops are flat forged bands (rectangular section, 4 cm by 3 mm)
+  // lying on the bulge, not round black rubber rings. Fewer triangles than before (14 + 4x28 x 4 faces vs 32 + 4x40x6).
+  add(g, new THREE.LatheGeometry([[0, 0], ...pts].map(([r, y]) => new THREE.Vector2(r, y)), 14), mat || M.stave); add(g, new THREE.CylinderGeometry(r0 - .02, r0 - .02, .01, 14), M.staveDark, 0, h - .03, 0);
+  for (const t of [.1, .3, .7, .9]) { const y = t * h, hw = .02, rAt = q => r0 + b * Math.sin(Math.PI * q / h);   // same 14 facets as the staves: the band lies flat on every stave
+    const ra = rAt(y - hw) + .0035, rb2 = rAt(y + hw) + .0035;
+    add(g, new THREE.LatheGeometry([[ra - .004, y - hw], [ra, y - hw], [rb2, y + hw], [rb2 - .004, y + hw]].map(([r, yy]) => new THREE.Vector2(r, yy)), 14), M.hoopIron); } return bake(g); }
 // galvanised steel: zinc spangle (crystal flakes of slightly different grey), dull water lines, a rusty rim at the foot
 let _galv = null;
 function galvMat() { if (_galv) return _galv; let ls = 2468; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
@@ -672,8 +678,8 @@ function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 
     for (const s of [-1, 1]) add(g, new THREE.CylinderGeometry(.012, .012, .008, 10), M.iron, 0, ey, s * er, Math.PI / 2, 0, 0); }
   return bake(g); }
 const RUG_IMG = { check: 'rug-blue.jpg', orange: 'rug-orange.jpg', green: 'rug-green.jpg' };
-function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1 }); { const pg = new THREE.PlaneGeometry(w, d, 24, 16); pg.rotateX(-Math.PI / 2); const P = pg.attributes.position; const ph = R() * 6, fx = R() * w - w / 2;
-    for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i); let y = .006;
+function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1, color: kind === 'orange' ? 0xB2A496 : 0xffffff });   /* the orange rug glowed like a lit panel in the sun: wool is duller */ { const pg = new THREE.PlaneGeometry(w, d, 24, 16); pg.rotateX(-Math.PI / 2); const P = pg.attributes.position; const ph = R() * 6, fx = R() * w - w / 2;
+    for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i); let y = .014;   /* boards bow up to ~1 cm: at .006 a high board showed through the rug */
       y += .006 * Math.max(0, Math.sin(x * 9 + ph + z * 2)) * Math.max(0, 1 - Math.abs(x - fx) / (w * .3)); // a soft ruck where it was kicked
       y += .003 * Math.sin(x * 23 + z * 7 + ph) * Math.sin(z * 17);
       for (const [cx, cz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]]) { const dd = Math.hypot(x - cx, z - cz); if (dd < .16) y += .028 * Math.pow(1 - dd / .16, 2); } // corners curl up
@@ -713,7 +719,9 @@ function plankDoor(h = 1.9, w = .77) { const g = new THREE.Group(); const fr = n
   for (const y of [.35, h - .35]) W(leaf, w - .06, .12, .03, 0, y, .035, { mat: M.woodDark });
   W(leaf, .1, Math.hypot(w - .2, h - .9) , .028, 0, h / 2, .033, { mat: M.woodDark, rz: Math.atan2(w - .2, h - .9) }); // Z brace: worn shelter door
   for (const y of [.35, h - .35]) { add(leaf, rb(.2, .035, .008, .004), M.iron, w / 2 - .1, y, .052); for (const k of [0, 1, 2]) screw(leaf, w / 2 - .17 + k * .06, y, .056); }
-  knob(leaf, -w / 2 + .1, h * .46, .05, M.iron, .022);
+  // [PROPS round] a forged D-pull with two clenched straps instead of a black ball knob (it read as a plastic bead)
+  { const hx = -w / 2 + .1, hy = h * .46; add(leaf, new THREE.TorusGeometry(.042, .0065, 5, 12, Math.PI), M.hoopIron, hx, hy, .05, 0, Math.PI / 2, Math.PI / 2);
+    for (const s of [-1, 1]) add(leaf, rb(.022, .03, .005, .002), M.hoopIron, hx, hy + s * .042, .052); }
   // slide bolt: plate + sliding bar + knob, above the handle
   const by = h * .55; add(leaf, rb(.16, .045, .008, .003), M.iron, -w / 2 + .14, by, .054);
   const bar = new THREE.Group(); bar.position.set(-w / 2 + .14, by, .066); leaf.add(bar); bar.userData.live = true;
@@ -806,6 +814,7 @@ function workbench() {
   bake(g); g.userData.info = { top: H }; return g;
 }
 function stool(S = .48) { const g = new THREE.Group(); add(g, lathe([[0, 0], [.15, 0], [.165, .008], [.172, .024], [.166, .04], [.15, .048], [0, .048]], 32), M.wood, 0, S - .048, 0);
+  add(g, new THREE.CylinderGeometry(.152, .152, .002, 20), M.woodDark, 0, S + .0005, 0);   // [PROPS round] the seat's top: one slab of straight grain, worn dark by sitting (the lathe's UVs swirled the grain round the centre like an orange plastic lid)
   for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; const l = add(g, new THREE.CylinderGeometry(.022, .018, S - .03, 10), M.woodDark, Math.cos(a) * .12, (S - .03) / 2, Math.sin(a) * .12); l.rotation.set(Math.sin(a) * .13, 0, -Math.cos(a) * .13); }
   const ring = add(g, new THREE.TorusGeometry(.14, .011, 6, 28), M.woodDark, 0, .17, 0, Math.PI / 2); void ring; bake(g); g.userData.info = { seat: S }; return g; }
 // ---- tools: built with their handle along +y and the grip point at the origin region ----
