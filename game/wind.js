@@ -286,11 +286,11 @@ export function createWind(opt = {}) {
     applyFlash({ hemi, fog, sky, fogMats } = {}) {
       const f = flashV; if (f < 0.002) return;
       const c = W._fc || (W._fc = fog && fog.color.clone());
-      if (fog) { c.setRGB(0.72, 0.78, 0.92); fog.color.lerp(c, f * 0.55); }
-      if (hemi) hemi.intensity += f * 1.4;
+      if (fog) { c.setRGB(0.72, 0.78, 0.92); fog.color.lerp(c, f * 0.3); }
+      if (hemi) hemi.intensity += f * 1.0;   // [ENV] less flat wash (was fog .55, hemi 1.4: a milky grey frame); index.html adds the hard shadowed key light and lights the clouds
       if (sky && sky.hor) sky.hor.value.lerp(c, f * 0.6);
       if (fogMats) { const seen = new Set(); for (const m of fogMats) { const u = m.material && m.material.uniforms; const cv = u && u.col && u.col.value;
-        if (cv && cv.lerp && !seen.has(cv)) { seen.add(cv); cv.lerp(c, f * 0.6); } } }
+        if (cv && cv.lerp && !seen.has(cv)) { seen.add(cv); cv.lerp(c, f * 0.38); } } }
     },
     emit(k, e) { emit(k, e); },   // other wind-thread modules (housewind.js) raise events here too
     on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },

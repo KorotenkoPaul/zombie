@@ -471,7 +471,7 @@ function chair() {
 }
 function table() { const g = new THREE.Group(); W(g, .82, .04, .56, 0, .72, 0, { mat: M.woodLight, r: .019 }); for (const [x, z] of [[-.35, -.22], [.35, -.22], [-.35, .22], [.35, .22]]) W(g, .05, .7, .05, x, .35, z, { mat: M.woodDark, grain: 1 }); for (const sz of [-1, 1]) W(g, .66, .08, .025, 0, .66, sz * .22, { mat: M.woodDark }); for (const sx of [-1, 1]) W(g, .025, .08, .4, sx * .35, .66, 0, { mat: M.woodDark }); return bake(g); }
 function mug(mat = M.glazeBlue) { const g = new THREE.Group(); add(g, lathe([[0, .002], [.035, 0], [.04, .01], [.042, .09], [.038, .09], [.036, .012], [0, .012]], 20), mat); add(g, new THREE.TorusGeometry(.024, .007, 8, 16, Math.PI), mat, .042, .05, 0, 0, 0, -Math.PI / 2); return g; }
-function candle() { const g = new THREE.Group(); const fm = new THREE.MeshBasicMaterial({ color: 0xFFB050, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); const fl = new THREE.Mesh(lathe([[0, 0], [.007, .006], [.008, .016], [.004, .03], [0, .038]], 10), fm); fl.position.y = .107; fl.userData.live = true; g.add(fl); g.userData.flame = fm; add(g, lathe([[0, 0], [.05, 0], [.055, .012], [.03, .016], [0, .016]]), M.brass); add(g, new THREE.CylinderGeometry(.018, .018, .09, 14), M.linen, 0, .06, 0); return g; }
+function candle() { const g = new THREE.Group(); const fm = new THREE.MeshBasicMaterial({ color: 0xFFB050, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); const fl = new THREE.Mesh(lathe([[0, 0], [.007, .006], [.008, .016], [.004, .03], [0, .038]], 10), fm); fl.position.y = .107; fl.userData.live = true; g.add(fl); g.userData.flame = fm; add(g, lathe([[0, 0], [.05, 0], [.055, .012], [.03, .016], [0, .016]]), M.brass); { const wax = std2(0xEDE3CC); wax.roughness = .55; add(g, lathe([[0, .016], [.018, .016], [.018, .1], [.0165, .104], [.012, .1], [.005, .101], [0, .1]], 18), wax); for (const [a, l] of [[.4, .035], [2.3, .022], [4.1, .045]]) add(g, new THREE.CapsuleGeometry(.0035, l, 3, 6), wax, Math.cos(a) * .018, .1 - l / 2 - .004, Math.sin(a) * .018); add(g, new THREE.CylinderGeometry(.0012, .0012, .012, 4), std2(0x1A1410), 0, .106, 0, .15); add(g, new THREE.CylinderGeometry(.028, .03, .004, 16), wax, 0, .018, 0); } /* [bedroom round] wax with a melted dip, runs down the side, a burnt wick and a puddle in the dish (it was a linen-textured tube) */ return g; }
 
 // a book: covers on a hinge, page blocks and one page that can turn
 function book({ w = .145, h = .205, cover = M.covers[1], open = 1 } = {}) {
@@ -728,8 +728,8 @@ function pegRail() { const g = new THREE.Group(); W(g, .62, .075, .022, 0, 0, .0
 function herbBundle(seed, col) { const g = new THREE.Group(); let ls = seed; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
   const stem = std2(0x6E6A3C), leaf = std2(col);
   add(g, new THREE.CylinderGeometry(.0015, .0015, .1, 3), std2(0xC8B080), 0, -.05, 0); add(g, new THREE.CylinderGeometry(.014, .014, .02, 8), std2(0xC8B080), 0, -.1, 0);
-  const lg = new THREE.PlaneGeometry(.011, .026); lg.translate(0, -.013, 0); const lm = leaf.clone(); lm.side = THREE.DoubleSide; lm.roughness = .9; // dry leaf cards along each stem
-  for (let i = 0; i < 11; i++) { const a = LR() * 6.28, t = .04 + LR() * .16, L = .15 + LR() * .07; const s = add(g, new THREE.CylinderGeometry(.0015, .002, L, 3), stem, Math.sin(t) * L * .5 * Math.cos(a), -.1 - L / 2, Math.sin(t) * L * .5 * Math.sin(a), Math.sin(a) * t, 0, -Math.cos(a) * t);
+  const lg = new THREE.PlaneGeometry(.014, .032); lg.translate(0, -.016, 0); const lm = leaf.clone(); lm.side = THREE.DoubleSide; lm.roughness = .9; // dry leaf cards along each stem
+  for (let i = 0; i < 16; i++) { const a = LR() * 6.28, t = .04 + LR() * .18, L = .15 + LR() * .07; const s = add(g, new THREE.CylinderGeometry(.0015, .002, L, 3), stem, Math.sin(t) * L * .5 * Math.cos(a), -.1 - L / 2, Math.sin(t) * L * .5 * Math.sin(a), Math.sin(a) * t, 0, -Math.cos(a) * t);
     for (let k = 0; k < 6; k++) { const f = .3 + k * .13, y = -.1 - L * f, r = Math.sin(t) * L * f; const q = add(g, lg, lm, Math.cos(a) * r, y, Math.sin(a) * r, (LR() - .5) * 1.2, LR() * 6.28, Math.PI - (LR() - .5) * 1.4); q.castShadow = false; } }
   return g; }
 function jar(h, r, mat) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r * .9, 0], [r, r * .12], [r * 1.04, h * .12], [r * 1.04, h * .74], [r * .96, h * .82], [r * .78, h * .87], [r * .76, h * .9], [r * .76, h * .93], [0, h * .93]], 22), mat);
@@ -1021,8 +1021,8 @@ function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStanda
     splitwood: (() => { const c = canvas(128, 256, (g) => { g.fillStyle = '#C8955E'; g.fillRect(0, 0, 128, 256); for (let i = 0; i < 40; i++) { g.strokeStyle = Math.random() < .5 ? 'rgba(120,70,35,.35)' : 'rgba(240,200,150,.35)'; g.lineWidth = .5 + Math.random() * 2; g.beginPath(); let x = Math.random() * 128; g.moveTo(x, 0); for (let y = 0; y <= 256; y += 32) { x += (Math.random() - .5) * 5; g.lineTo(x, y); } g.stroke(); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 2, roughness: .9 }); })(), endgrain: endGrainMat(11, false),
     grille: s(0x8A7350, { roughness: 1 }), meat: s(0xA2343A, { roughness: .5 }), fat: s(0xEEDCCB, { roughness: .6 }), paper: s(0xD8C7A0, { roughness: .95 }), sack: s(0xB59B6E, { roughness: 1 }),
-    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x9A6038, { roughness: .78, ...leatherOf() }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
-    rope: s(0xB09A6A, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
+    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x4F4630, { roughness: 1, ...twillOf() }), leather: s(0x9A6038, { roughness: .78, ...leatherOf() }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
+    rope: s(0x6E5C3E, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
   return MX; }
 // a box between two points (legs, struts) and a tapered rod between two points
 function strut(parent, a, b, w, d, mat) { const dir = b.clone().sub(a); const m = add(parent, rb(w, dir.length(), d, Math.min(w, d) * .25), mat, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); m.quaternion.setFromUnitVectors(V(0, 1, 0), dir.normalize()); return m; }
@@ -1164,7 +1164,7 @@ function fridge() {
   add(piv, new THREE.PlaneGeometry(dw - .08, split - .17), M.ceramic, -dw / 2, .06 + (split - .07) / 2, -.001, 0, Math.PI, 0);
   add(piv, rb(dw - .1, .05, .06, .01), M.ceramic, -dw / 2, .55, -.03); add(piv, lathe([[0, 0], [.025, 0], [.025, .12], [.01, .16], [0, .16]], 12), M.glass, -dw / 2 + .12, .575, -.035);
   hd(piv, split - .3, split - .06, -dw + .065, .075);
-  bake(piv);
+  add(piv, rb(.1, .13, .002, .001), X.paper, -dw / 2 + .12, .8, .061, 0, 0, .06); add(piv, rb(.08, .06, .002, .001), std2(0xC9B98F), -dw / 2 + .2, .66, .061, 0, 0, -.1); for (const [mx2, my2, mc] of [[-dw / 2 + .12, .855, 0xA03028], [-dw / 2 + .2, .685, 0x2E5A8A], [-dw / 2 - .08, .9, 0xD8A830]]) add(piv, new THREE.CylinderGeometry(.011, .011, .008, 12), std2(mc), mx2, my2, .064, Math.PI / 2); for (let li = 0; li < 6; li++) add(piv, rb(.05 + (li % 3) * .01, .0025, .001, .0005), std2(0x3A3A52), -dw / 2 + .115 - (li % 2) * .006, .835 - li * .016, .0625, 0, 0, .06); add(piv, rb(.066, .046, .001, .0005), std2(0x5E4E3A), -dw / 2 + .2, .66, .0625, 0, 0, -.1); /* [kitchen round] a list and an old photo under magnets: the door was a blank beige slab at close zoom */ bake(piv);
   // meat: up to 6 pieces, half of them wrapped in butcher paper; setStock(n) shows the first n
   const meat = []; const spots = [[-.13, shelfY[0]], [.08, shelfY[0]], [-.12, shelfY[1]], [.1, lb], [-.1, lb], [.12, shelfY[1] + .0]];
   spots.forEach(([x, y], i) => { const p = new THREE.Group(); p.position.set(x, y + .006, z0 + t + .17 + (i % 2) * .05); p.rotation.y = rr(-.4, .4);
@@ -1258,16 +1258,16 @@ function repairLantern() { const g = new THREE.Group(); const L = lanternHousing
   g.userData.glow = { glass, flame }; return bake(g); }
 function jacket() { const X = mx(), g = new THREE.Group(); // origin = the hanging loop, the jacket faces +z
   add(g, new THREE.TorusGeometry(.014, .003, 4, 10), X.jacketDark, 0, -.012, 0);
-  const b = new THREE.Shape(); b.moveTo(-.07, 0); b.lineTo(.07, 0); b.quadraticCurveTo(.17, -.02, .2, -.07); b.lineTo(.215, -.7); b.lineTo(-.215, -.7); b.lineTo(-.2, -.07); b.quadraticCurveTo(-.17, -.02, -.07, 0);
-  add(g, EX(b, .08, .022), X.jacket, 0, -.03, 0); add(g, rb(.17, .06, .11, .02), X.jacketDark, 0, -.05, 0);
-  for (const s of [-1, 1]) { strut(g, V(s * .19, -.1, .0), V(s * .225, -.64, .035), .1, .085, X.jacket); add(g, rb(.1, .05, .09, .015), X.jacketDark, s * .227, -.63, .037); }
-  add(g, rb(.008, .62, .006, .002), X.jacketDark, 0, -.4, .062); for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(.008, .008, .006, 10), M.iron, .018, -.15 - i * .11, .065, Math.PI / 2);
-  for (const s of [-1, 1]) add(g, rb(.11, .03, .012, .004), X.jacketDark, s * .1, -.46, .065);
-  add(g, rb(.08, .09, .005, .002), X.patch, .1, -.28, .064, 0, 0, .15); add(g, rb(.06, .06, .005, .002), X.patch, -.23, -.4, .08, 0, -.2, .05); // patched elbow and chest: an old, mended coat
+  const lg = lathe([[.214, -.7], [.215, -.68], [.205, -.5], [.2, -.3], [.195, -.14], [.17, -.08], [.12, -.04], [.05, -.01], [0, 0]], 28); { const P = lg.attributes.position; for (let j = 0; j < P.count; j++) { const x = P.getX(j), y = P.getY(j), z = P.getZ(j), a = Math.atan2(z, x), d = Math.min(1, Math.max(0, (-y - .12) / .3)); const k = 1 + d * (.05 * Math.sin(a * 7 + y * 4) + .03 * Math.sin(a * 11 - y * 9)); P.setX(j, x * k); P.setZ(j, z * k * .38 + .03); } lg.computeVertexNormals(); } /* [kitchen round] a body with real volume: shoulders round the peg, a flattened tube with soft vertical folds (the extruded slab read as cardboard) */
+  add(g, lg, X.jacket, 0, -.03, 0); add(g, rb(.17, .06, .11, .02), X.jacketDark, 0, -.05, .03);
+  for (const s of [-1, 1]) { add(g, new THREE.CylinderGeometry(.04, .05, .5, 10), X.jacket, s * .2, -.36, .055, -.07, 0, s * .05); add(g, new THREE.CylinderGeometry(.053, .053, .05, 10), X.jacketDark, s * .212, -.6, .072, -.07, 0, s * .05); } /* sleeves hang as round tubes with a cuff */
+  add(g, rb(.008, .6, .006, .002), X.jacketDark, 0, -.41, .107); { const hm = add(g, new THREE.CylinderGeometry(.219, .219, .04, 28, 1, true), X.jacketDark, 0, -.71, .03); hm.scale.set(1, 1, .4); } /* hem band */ for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(.008, .008, .006, 10), M.iron, .018, -.15 - i * .11, .108, Math.PI / 2);
+  for (const s of [-1, 1]) add(g, rb(.11, .03, .012, .004), X.jacketDark, s * .1, -.46, .098, 0, s * .22, 0);
+  add(g, rb(.075, .085, .006, .003), X.patch, .1, -.28, .097, 0, .22, .15); add(g, rb(.055, .06, .006, .003), X.patch, -.2, -.42, .104, -.07, 0, .05); // patched elbow and chest: an old, mended coat
   g.userData.grip = V(0, -.05, .05); return bake(g); }
 function bowOnWall() { const X = mx(), g = new THREE.Group(); // in the y-z plane, bulging toward +z; origin at the grip
-  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); add(g, new THREE.TubeGeometry(c, 28, .015, 7), M.wood); /* scanned wood grain, not a flat brown tube */
-  add(g, new THREE.CylinderGeometry(.0025, .0025, 1.12, 4), std2(0xE8E2D0), 0, 0, .002); add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
+  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); { const tg = new THREE.TubeGeometry(c, 40, .017, 8), P = tg.attributes.position, q = V(); for (let i = 0; i < P.count; i++) { const y = P.getY(i), t = Math.min(1, Math.abs(y) / .56); q.copy(c.getPoint(Math.min(1, Math.max(0, (y + .56) / 1.12)))); const f = 1 - .6 * Math.pow(t, 1.4); P.setX(i, P.getX(i) * f * 1.25); P.setZ(i, q.z + (P.getZ(i) - q.z) * f * .7); } tg.computeVertexNormals(); add(g, tg, M.wood); } /* scanned wood grain; [gear round] limbs taper to the tips and are flat (wide across, thin in the draw), not one round rod */ for (const sy of [-1, 1]) add(g, new THREE.CylinderGeometry(.006, .009, .045, 8), std2(0x2A2018), 0, sy * .54, .003); add(g, new THREE.CylinderGeometry(.0013, .0013, 1.1, 4), std2(0xBFAF88), 0, 0, .002); /* dark horn tips with the string nocks; a thin waxed tan string (it read as a white cord) */ 
+  add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
 function quiver() { return fine(() => quiver0()); }
 function quiver0() { const X = mx(), g = new THREE.Group(); // origin at the strap ring on top
   add(g, lathe([[0, -.52], [.04, -.52], [.05, -.5], [.055, -.05], [.058, 0], [.05, 0], [.047, -.05], [0, -.05]], 16), X.leather);
@@ -1275,7 +1275,7 @@ function quiver0() { const X = mx(), g = new THREE.Group(); // origin at the str
   add(g, new THREE.TorusGeometry(.058, .006, 5, 16), std2(0x3E2618), 0, -.03, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .007, 5, 16), std2(0x3E2618), 0, -.5, 0, Math.PI / 2); // rim and base bands
   add(g, rb(.012, .44, .008, .003), std2(0x4A2E1C), 0, -.27, -.055); for (let i = 0; i < 18; i++) add(g, rb(.016, .003, .004, .001), std2(0xC8B48C), 0, -.06 - i * .024, -.06); // the back seam, laced with pale thread
   add(g, rb(.022, .5, .006, .002), std2(0x4A2E1C), .0, -.24, .058, .0, 0, .05); // the carrying strap down the front
-  for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025; add(g, new THREE.CylinderGeometry(.003, .003, .2, 4), std2(0xC9A875), x, .05, z); add(g, new THREE.PlaneGeometry(.025, .06), X.fletch, x, .12, z, 0, a, 0); }
+  for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025, h = .1 + (i % 3) * .015; add(g, new THREE.CylinderGeometry(.0032, .0032, .2, 6), std2(0x9C7E52), x, h - .07, z); for (let v = 0; v < 3; v++) { const va = a + v * 2.094; add(g, new THREE.PlaneGeometry(.011, .065), X.fletch, x + Math.cos(va) * .0085, h, z - Math.sin(va) * .0085, 0, va, 0); } add(g, new THREE.CylinderGeometry(.0042, .0036, .012, 6), std2(0x2A221A), x, h + .036, z); } /* [gear round] each arrow: a tan shaft, three feather vanes round it (one flat card read as a paper tag) and a dark nock */
   return bake(g); }
 // the meat sack (realism sweep: it was a smooth yellow blob with a red box stuck on it): coarse burlap with a visible weave,
 // lumpy where the cuts inside press out, gathered at the neck under a twine tie, and a dark blood-soaked patch at the bottom
@@ -1371,8 +1371,8 @@ export function buildProps(ctx) {
   place('fridge', fridge(), -1.43, KT, 1.38);
   place('picture', picture(.34, .26), -1.45, KT + 1.92, 1.06, { solid: false, wall: true });
   { const g = new THREE.Group(); /* photo round 2: herbs drying on a twine under the shelf, at both ends of the window (behind the counter's front edge: his head stays clear) */
-    add(g, new THREE.CylinderGeometry(.0015, .0015, .34, 3), std2(0xC8B080), -.27, 0, 0, 0, 0, Math.PI / 2);
-    for (const [x, sd, c] of [[-.4, 11, 0x5F6B3A], [-.3, 23, 0x7A7646], [-.19, 37, 0x6A6040]]) { const b = herbBundle(sd, c); b.position.set(x, 0, 0); b.rotation.y = sd; g.add(b); }
+    add(g, new THREE.CylinderGeometry(.0015, .0015, .34, 3), std2(0xC8B080), -.27, 0, 0, 0, 0, Math.PI / 2); for (const tx of [-.43, -.11]) add(g, new THREE.CylinderGeometry(.0015, .0015, .235, 3), std2(0xC8B080), tx, .117, 0); /* [kitchen round] the twine hangs from the shelf by two strings (it floated in front of the window) */
+    for (const [x, sd, c] of [[-.4, 11, 0x4A5630], [-.3, 23, 0x5E5C36], [-.19, 37, 0x56502F]]) { const b = herbBundle(sd, c); b.position.set(x, 0, 0); b.rotation.y = sd; g.add(b); }
     place('herbs', bake(g), -2.3, KT + 1.72, 1.17, { solid: false, wall: true }); }
   { const s = wallShelf(.86); const items = [[-.3, jar(.14, .05, M.glazeCream)], [-.17, jar(.11, .045, M.jarGlass)], [.3, mug(M.glazeCream)]]; /* the middle is the clean-dish spot (out.dishes) */ for (const [x, o] of items) { o.position.set(x, .018, .12); s.add(o); } bake(s); place('kshelf', s, -2.3, KT + 1.97, 1.04, { solid: false, wall: true }); }
   // kitchen eating spot (Brain: no carrying the plate up to the bedroom): the corner barrel wears a loose plank top, a stool beside it
@@ -1451,7 +1451,7 @@ export function buildProps(ctx) {
     for (const [w, h, x, y, rz, m] of [[.26, .19, -.08, .02, .04, M.plan], [.11, .15, .14, .05, -.08, M.paper], [.1, .13, .13, -.11, .06, M.paper], [.09, .12, -.25, -.04, -.05, M.paper]]) { const q = add(g, new THREE.PlaneGeometry(w, h), m, x, y, .004 + Math.abs(x) * .004, 0, 0, rz); q.castShadow = false;
       add(g, new THREE.SphereGeometry(.007, 6, 4), std2(0xA8382C), x - Math.sin(rz) * h * .42, y + h * .42, .012); }
     place('notes', bake(g), -.18, BD + .93, .975, { solid: false, wall: true }); } /* the photo's blue crock left of the bunk, in the corner by the back wall (off the hatch and bunk paths) */
-  { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const b = closedBook(bw, rr(.16, .22), .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12); s.add(b); x += bw + .003; } const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
+  { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const bh = rr(.16, .22), b = closedBook(bw, bh, .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12 + rr(-.012, .012)); if (i === 6) { const th = .3; b.rotation.z = th; b.position.set(x + bw / 2 * Math.cos(th) + bh * Math.sin(th) - .002, .018 + bw / 2 * Math.sin(th), .12); } s.add(b); x += bw + .003; } /* [bedroom round] uneven depths and the last book leaning back against the row (they stood like a row of tiles) */ const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
 
   // ---------- workshop ----------
   const wb = place('workbench', workbench(), 2.75, WS, 1.86); out.surfaces.benchTop = wb.userData.floorY + .9;
@@ -1588,7 +1588,7 @@ export function buildProps(ctx) {
   { // the stew pot loses its lid and gets a ladle; both are tools now
     let potO = null; st.children.forEach(c => { if (!potO && c.position && Math.abs(c.position.x - .19) < .001 && Math.abs(c.position.z - .13) < .001) potO = c; });
     if (potO) { potO.removeFromParent(); }
-    const pg = fine(() => { const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); } return bake(pg); });
+    const pg = fine(() => { const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); add(pg, new THREE.TorusGeometry(.087, .0035, 4, 28), std2(0x3E2412), 0, .0855, 0, Math.PI / 2); for (const [cx, cz, c, r] of [[.03, .02, 0, .3], [-.035, .03, 1, 1.1], [.01, -.04, 0, 2], [-.05, -.02, 2, .7], [.05, -.03, 1, 2.6], [-.01, .055, 2, 1.8], [.045, .045, 0, .9]]) add(pg, rb(.017, .011, .015, .004), [X.carrot, std2(0xC9B07A), std2(0x7A4428)][c], cx, .086, cz, .2, r, .15); /* [kitchen round] chunks of carrot, potato and meat in the stew and a dark film at the rim: it was one flat orange disc */ for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); } return bake(pg); });
     tool('pot', pg, st, .19, .93, .13); tool('ladle', fine(() => bake(ladle(.3))), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
     const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; stk.userData.live = true; fp.add(stk);
     const raw = new THREE.Color(0xA2343A), done = new THREE.Color(0x6A3A22);
@@ -1748,11 +1748,15 @@ export function buildProps(ctx) {
   out._quiltDbg = () => ({ qTop, qBot, m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V(), _cw = V();
   // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
+  const LT = [0, .25, .5, .75, 1];
   function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const dx = x - (q.ax + ex * t), dz = z - (q.az + ez * t), d = Math.sqrt(dx * dx + dz * dz); const yc = q.ay + (q.by - q.ay) * t;
       // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
-      const top = yc + q.r * q.f + .015;/* the legs thin (R42-2 box); chest and arms full, the sweater is thicker there (it came through in orange shards) */ const o = Math.max(0, d - q.r * .4); const dr = o < .06 ? 5 * o * o : .018 + .6 * (o - .06) + 9 * (o - .06) * (o - .06);/* R42-2: the cloth lies ON the limb and falls off it (it stood 25-30 cm over his legs like a box with straight sides) */
-      const h = top - dr - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
+      // R56-1: the highest point of the limb under the cloth, not only the one nearest in plan: a raised shin stands near upright, its
+      // plan is a dot and the nearest point could be the low ankle, so the knee and shin came up through the quilt as he swung his legs in
+      let hb = -1e9; for (let j = -1; j < LT.length; j++) { const tt = j < 0 ? t : LT[j]; const dx = x - (q.ax + ex * tt), dz = z - (q.az + ez * tt), d = Math.sqrt(dx * dx + dz * dz); const yc = q.ay + (q.by - q.ay) * tt;
+        const top = yc + q.r * q.f + .015;/* the legs thin (R42-2 box); chest and arms full, the sweater is thicker there (it came through in orange shards) */ const o = Math.max(0, d - q.r * .4); const dr = o < .06 ? 5 * o * o : .018 + .6 * (o - .06) + 9 * (o - .06) * (o - .06);/* R42-2: the cloth lies ON the limb and falls off it (it stood 25-30 cm over his legs like a box with straight sides) */
+        const h = top - dr; if (h > hb) hb = h; }
+      const h = hb - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
   // ---- BED (2026-11-24, Pavel: "the quilt just appears on top of him, he never covers himself"): the quilt's head flap folds over a
   // hinge across the bed. fold 0 = flat (a made bed), 1 = turned down onto the lower half. Character moves it with his hand on the
   // flap's free edge (quiltFold / quiltEdge), so it only ever moves where his hand takes it; quiltLive(s) refreshes it every frame.
@@ -1779,7 +1783,7 @@ export function buildProps(ctx) {
     else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
     press.shown = press.k; fold.shown = fold.a;
     if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
-      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f: q.f || 1 }); } } }
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } let f = q.f || 1; if (f < 1) { const sl = Math.abs(_cw.y - _cv.y) / Math.max(1e-4, _cv.distanceTo(_cw)); f += (1.05 - f) * Math.min(1, sl * 2.5); }/* R56-1: a leg that rises (knee up as he swings in) is covered at its full thickness: thinned, its trousers came up through the quilt at the hip; lying flat it stays thin (R42-2 box) */ cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f }); } } }
     const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
     for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
       let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }
