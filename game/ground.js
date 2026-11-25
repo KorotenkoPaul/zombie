@@ -794,9 +794,9 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const mat=swayMat(new THREE.MeshStandardMaterial({map:leafT,alphaTest:.5,side:THREE.DoubleSide,roughness:.85,vertexColors:true}),U,.025,'clamp(position.y,0.,1.5)');
   // [ENV] a card seen edge-on thins out and goes instead of smearing into a dark striped fin (its texture minified to a streak).
   // Geometric normal from screen derivatives of the view position (no texture reads involved).
-  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);s.fragmentShader=s.fragmentShader.replace('#include <alphatest_fragment>',
-   '{vec3 gnE=normalize(cross(dFdx(vViewPosition),dFdy(vViewPosition)));diffuseColor.a*=smoothstep(.05,.28,abs(dot(gnE,normalize(vViewPosition))));}\n#include <alphatest_fragment>');};
-   mat.customProgramCacheKey=()=>'groundBush-edgeFade1';}
+  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);NOFLIP(s);/* the back of a card shades with the bush's outward normal: flipped, it went near-black (dark crescents round the bushes at night) */s.fragmentShader=s.fragmentShader.replace('#include <alphatest_fragment>',
+   '{vec3 gnE=normalize(cross(dFdx(vViewPosition),dFdy(vViewPosition)));diffuseColor.a*=smoothstep(.3,.6,abs(dot(gnE,normalize(vViewPosition))));}/* fade near-edge-on cards sooner: their minified leaf texture cut by alphaTest gave stair-stepped fins */\n#include <alphatest_fragment>');};
+   mat.customProgramCacheKey=()=>'groundBush-edgeFade2';}
   const NB=MOBILE?24:40;(MOBILE?[mkBush(1,14)]:[mkBush(1,22),mkBush(2,16)]).forEach((bg,vi)=>{const im=new THREE.InstancedMesh(bg,mat,NB);im.name='groundBushes';/* [CAMERA] name used to fade them like oak leaves when they hide the hero */let n=0;
    const NS=MOBILE?3:5;// the first few frame the clearing on the left and right edges of the main view, like the photo
    for(let b=0;b<NB*40&&n<NB;b++){let x,z,r;
