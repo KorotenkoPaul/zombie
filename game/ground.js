@@ -603,7 +603,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     // night: darker open water inside a thin moonlit waterline, so its shape still reads through the blue mist
     c*=1.-.35*uNight*smoothstep(-.1,-.5,vD);
     // night: the open water catches the bright blue night sky above the clearing (a soft silver sheen), lighter than the mist around it
-    {float lane=.45+.9*vn(vec2(vW.x*.7+vW.z*.25,vW.z*2.6)+uT*.03);c+=vec3(.16,.26,.34)*uNight*(.12+.88*fr)*lane*.8*smoothstep(-.05,-.4,vD);}/* [ENV] broken by wind lanes: not a flat silver sheet */c+=uSky*vec3(.9,1.,1.1)*.7*uNight*smoothstep(.0,.012,dep)*smoothstep(.045,.018,dep);/* the moonlit waterline: a thin line where the drawn floor meets the water */
+    {float lane=.45+.9*vn(vec2(vW.x*.7+vW.z*.25,vW.z*2.6)+uT*.03);c+=vec3(.16,.26,.34)*uNight*(.12+.88*fr)*lane*.8*smoothstep(-.05,-.4,vD);}/* [ENV] broken by wind lanes: not a flat silver sheet */c+=uSky*vec3(.9,1.,1.1)*.55*uNight*smoothstep(.0,.006,dep)*smoothstep(.028,.01,dep)*(.35+.9*vn(vW.xz*2.7));/* right at the visible edge and broken along its length: a continuous ring a few cm inside the wet rim read as a drawn outline *//* the moonlit waterline: a thin line where the drawn floor meets the water */
     /* [ENV] rain: every drop's ring catches the sky on its crest (the ripple normal alone barely moved the dark water: in rain the pool read as a still black plate) */
     {float rg=clamp(length(waterRings(vW.xz))*2.4,0.,1.)*smoothstep(-.02,-.25,vD);c=mix(c,max(sky,uSky*.55)*1.1+uSky*.06,rg*.4);}
     ${refl?'':`/* [ENV] phones have no mirror: the lit windows, the trunk door and the lanterns glint in the water as warm wobbling patches, broken up by the ripples and rain rings */
