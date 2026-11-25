@@ -226,7 +226,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
 uniform sampler2D tDepth;uniform vec2 uRes;uniform float cNear,cFar,soft,softS;
 float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float sd=texture2D(tDepth,su).x;
  float sz=-perspectiveDepthToViewZ(sd,cNear,cFar);float fz=-perspectiveDepthToViewZ(gl_FragCoord.z,cNear,cFar);return clamp((sz-fz)/(range*softS),0.,1.);}`;
- let depthRT=null;const depthMat=new THREE.MeshBasicMaterial({colorWrite:false});
+ let depthRT=null;const depthMat=new THREE.MeshBasicMaterial({colorWrite:false});const aDepth=new WeakMap();
  if(SOFT){depthRT=new THREE.WebGLRenderTarget(4,4,{depthBuffer:true});depthRT.depthTexture=new THREE.DepthTexture(4,4);depthRT.depthTexture.type=THREE.UnsignedIntType;softU.tDepth.value=depthRT.depthTexture;}
  // wind (wind.js, window.__wind): fog noise drifts downwind and puffs lean/churn with the gusts
  const windU={drift:{value:new THREE.Vector2()},wdir:{value:new THREE.Vector2(1,0)},wlv:{value:0}};
@@ -360,6 +360,13 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
    if(depthRT.width!==w||depthRT.height!==h)depthRT.setSize(w,h);softU.uRes.value.copy(dbs);softU.cNear.value=camera.near;softU.cFar.value=camera.far;
    const hid=fogObjs().filter(o=>o&&o.visible);hid.forEach(o=>o.visible=false);const ov=scene.overrideMaterial,bg=scene.background,prev=renderer.getRenderTarget();
    const su=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;scene.background=null;renderer.setRenderTarget(depthRT);renderer.clear(false,true,false);renderer.render(scene,camera);
+   // [ENV] alpha-tested foliage (bushes, ferns, leaf cards) goes into the depth too, through its own leaf shape: left out, the
+   // mist sheets crossed a bush with a hard straight line; drawn as plain quads, they would cut square card edges. Desktop only
+   // (phones skip this whole pass), half resolution, every other frame; a colour-less basic material, so no lights, no new variants.
+   {const al=hid.filter(o=>o.isMesh&&!Array.isArray(o.material)&&o.material.alphaTest>0&&!o.material.transparent&&o.material.map&&o.name!=='pond');
+    if(al.length){scene.overrideMaterial=null;const cm=camera.layers.mask,ac=renderer.autoClear;camera.layers.set(12);renderer.autoClear=false;
+     const sw=al.map(o=>{const m=o.material;let d=aDepth.get(m);if(!d){d=new THREE.MeshBasicMaterial({colorWrite:false,map:m.map,alphaTest:m.alphaTest,side:m.side});aDepth.set(m,d);}o.layers.enable(12);o.visible=true;o.material=d;return m;});
+     renderer.render(scene,camera);al.forEach((o,i)=>{o.material=sw[i];o.layers.disable(12);o.visible=false;});camera.layers.mask=cm;renderer.autoClear=ac;}}
    renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;/* U.wind is driven by game/wind.js now */
   const fc=tmp.copy(P.fog);
   fogU.col.value.copy(fc).lerp(new THREE.Color(0x80B6D6),(.34+nightK*.3)*(1-mornK))/* [ENV] the photo's blue mist by day too */.lerp(dawnC,mornK*.45);const dusk=hour===undefined?0:smooth(17.3,19.5,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.36+eve*.64+mornK*.2+rainK*.2;/* [ENV] coordinator / photo: a dense blue mist lies over the roots by day as well (was .15 by day: no fog to speak of) */fogU.cam.value.copy(camera.position);
