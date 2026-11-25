@@ -2456,7 +2456,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // (Grab: the pail 35-60 cm and the axe 50-107 cm in the frame it changed parents)
  const LATE=[];let lateOn=0;function lateFn(f){LATE.push(f);lateReg();}
  let relookOn=0;function relookReg(){if(relookOn)return;relookOn=1;stage('look',()=>{if(act&&act.relook){try{act.relook();}catch(e){console.error('relook',e);}}});}
- function lateReg(){if(lateOn)return;lateOn=1;stage('guard',()=>{for(const f of LATE){try{f();}catch(e){console.error(e);}}try{quiverClear();}catch(e){}toolEase();});}
+ function lateReg(){if(lateOn)return;lateOn=1;stage('guard',()=>{for(const f of LATE){try{f();}catch(e){console.error(e);}}try{quiverClear();}catch(e){}toolEase();try{loadClear(0);}catch(e){}/* the swing again on the eased pose: a pail being eased from the hip into the fist went 3.4 cm through the shins (collide) */});}
  // the quiver on his back: the arrows clear his head whatever the body does (adult hero, walking out: fletching 7.7 cm in the head).
  // Each frame from its strap place on Spine2, pushed back (and a little down) by just what the head needs, eased
  const QV={base:null,par:null,x:0};
