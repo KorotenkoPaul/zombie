@@ -589,13 +589,13 @@ vec3 slate(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] sam
   vec3 mc=textureGrad(tMoss,vW.xz*1.7+vec2(vW.y*.7),wx.xz*1.7+vec2(wx.y*.7),wy.xz*1.7+vec2(wy.y*.7)).rgb;col=mix(col,mc*vec3(.36,.44,.3),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
-shingleMat.customProgramCacheKey=()=>'slate2';
+shingleMat.customProgramCacheKey=()=>'slate3';
 shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT},uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);vDn=1.;\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;vDn=-sign((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).y+1e-6);\n#endif')
   .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.018,.3*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;\n#endif\nvSeed=aRow;vFresh=aFresh;vLP=transformed;');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+SHING_GLSL)
-  .replace('#include <map_fragment>','diffuseColor.rgb*=slate(vLP,vSz,vSeed);')
+  .replace('#include <map_fragment>','diffuseColor.rgb*=slate(vLP,vSz,vSeed);\n/* [TREE] at night (the lights are moon-blue) the slate goes muted blue-grey like the photo: blue moonlight on the blue scan read electric blue. By day and in the golden hour the sun is white or warm, so nothing changes */\n#if NUM_DIR_LIGHTS>0\n{vec3 ls=vec3(0.);for(int i=0;i<NUM_DIR_LIGHTS;i++)ls+=directionalLights[i].color;float nb=smoothstep(.05,.35,(ls.b-ls.r)/max(ls.b,.001));float gy=dot(diffuseColor.rgb,vec3(.3,.59,.11));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(gy*1.35)*vec3(1.,1.,1.03),nb*.8);}\n#endif')
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=sRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=snArb(-vViewPosition,normal,sDH,faceDirection);');};
 const shingGeo=bevelBoxGeo();const sRow=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aRow',sRow);const sFresh=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aFresh',sFresh);
@@ -618,7 +618,7 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7
    const put=(mesh,cx,cy,cz,L,W,T,roll,seed)=>{const m=SM.clone().multiply(new THREE.Matrix4().makeTranslation(cx,cy,cz)).multiply(B0).multiply(new THREE.Matrix4().makeRotationX(roll)).multiply(new THREE.Matrix4().makeScale(L,W,T));
     if(mesh===beams){beamInst(m,'roof');dWx.setXY(beams.count-1,0,.2);return;}const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,seed);aWx.setXY(i,0,.3);boards.setColorAt(i,new THREE.Color().setScalar(rnd(.8,.95)));
     {const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'roof',c:p,q});}};
-   for(let z=-d/2+.13;z<d/2-.05;z+=.25)put(boards,0,-.19-.013,z+rnd(-.004,.004),sl-.02,rnd(.226,.243),.025,rnd(-.02,.02),rnd(0,97)+100);
+   const oe=Math.max(0,(s>0?ov-(gx1-x1):ov)-.05)/Math.cos(ang);/* [TREE] the honey sheathing is the room's ceiling: it stops at the wall line, so the eave overhang outside shows the dark slab underside (it glowed orange under every eave at night, lit like the room) */for(let z=-d/2+.13;z<d/2-.05;z+=.25)put(boards,-s*oe/2,-.19-.013,z+rnd(-.004,.004),sl-.02-oe,rnd(.226,.243),.025,rnd(-.02,.02),rnd(0,97)+100);
    for(let z=-d/2+.35;z<d/2;z+=.85)put(beams,0,-.19-.026-.07,z,sl-.1,.1,.14,0,0);
    boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
   // shingles: rows from the ridge down, each row overlapping the one below, staggered
