@@ -358,6 +358,24 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       splF.renderOrder = 3; splF.castShadow = false; splF.visible = false; OV.fireGroup.parent.add(splF);
       splDir = V(1, 0, 0).applyEuler(spl.rotation);
     }
+    // a bed of real coals under the logs (critic E14: the embers were a flat orange pane): 18 irregular lumps, each with a
+    // hot glowing underside and grey ash on its top, so the bed has depth and texture behind the glass. One mesh, vertex
+    // colours (unlit, scaled by the heat): one draw, no light.
+    let coals = null;
+    if (OV && OV.fireGroup && OV.fireGroup.parent) {
+      const gs = []; let sd = 7; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+      for (let i = 0; i < 34; i++) {
+        const r = .01 + rnd() * .013; const g = new THREE.IcosahedronGeometry(r, 0); g.scale(1 + rnd() * .5, .55 + rnd() * .3, 1 + rnd() * .4); g.rotateY(rnd() * 6.28);
+        const a = rnd() * 6.28, d = Math.sqrt(rnd()); g.translate(Math.cos(a) * d * .15, -.004 + rnd() * .014, Math.sin(a) * d * .055 + .03);   // heaped round and in front of the logs, so they show over the door's window sill
+        const pos = g.attributes.position, col = new Float32Array(pos.count * 3), cy = -.004, heat = .55 + rnd() * .45;
+        for (let v = 0; v < pos.count; v++) { const up = THREE.MathUtils.clamp((pos.getY(v) - cy) / .022, 0, 1);   // top: ash; underside and edges: glowing
+          const ash = up > .55 && ((v * 7 + i * 3) % 5) < 2 ? 1 : 0, glow = (1 - ash * .9) * (1 - up * .35) * heat; /* glowing all over, with grey ash flecks on the tops */ col[v * 3] = .16 * ash + 1.0 * glow; col[v * 3 + 1] = .15 * ash + .3 * glow * glow; col[v * 3 + 2] = .14 * ash + .05 * glow * glow * glow; }
+        g.setAttribute('color', new THREE.BufferAttribute(col, 3)); gs.push(g.index ? g.toNonIndexed() : g);
+      }
+      coals = new THREE.Mesh(mergeGeometries(gs, false), new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
+      coals.position.copy(OV.fireGroup.position); coals.castShadow = false; coals.visible = false; OV.fireGroup.parent.add(coals);
+    }
+    const s0Oven = () => ovenS && !ovenS.on;
     let ovenS = null;
     ovenS = add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: (k, f) => {
       if (ovenS && OV) { const L = ovenS.level, up = ovenS.on;
@@ -371,8 +389,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       const open = P3.oven ? P3.oven.open || 0 : 0; l.userData.open = open;
       // embers: as the fire dies the bed of coals keeps breathing (slow, uneven), until it is cold
       const emb = (ovenS && ovenS.on ? 0 : 1) * smooth(0, .25, k) * (1 - smooth(.3, .7, k)) * (.55 + .45 * noise(t * .5 + 3) * noise(t * 1.3 + 9));   // only while it dies: lighting, there are no coals yet
-      if (pm.fire) pm.fire.emissiveIntensity = 2.45 * k * (f || 1) + .9 * emb;
-      if (pm.ovenGlass) pm.ovenGlass.emissiveIntensity = .7 * k * (f || 1) + .25 * emb;
+      if (pm.fire) pm.fire.emissiveIntensity = .5 * k * (f || 1) + .12 * emb;   // the ash bed: dull; the coals heaped on it carry the glow
+      if (pm.ovenGlass) pm.ovenGlass.emissiveIntensity = .12 * k * (f || 1) + .04 * emb;   // dark glass: what glows is behind it (critic E14)
+      if (coals) { const hot = Math.max(emb, EMBERS && s0Oven() ? emberK * .9 : 0, (ovenS ? Math.pow(ovenS.level, 1.5) : k) * .85);
+        coals.visible = hot > .02; if (coals.visible) coals.material.color.setScalar((.3 + 3.2 * hot) * (.8 + .35 * noise(t * .7 + 11) * noise(t * 2.1 + 4))); }
       // firelight on the walls: with the door open the flames throw a restless light, so the lit patch drifts a few
       // centimetres on the boards (target wobble); shut, it only breathes with the fire
       const wob = .04 + .1 * open;
@@ -840,7 +860,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // One gain per room and platform brings both to the reference photo's room brightness (home view, one room lit with the
   // hero in it; mean luminance photo/desktop/phone: bedroom 89/80/68 (cosy, kept under the photo), kitchen 108/91/87, workshop 84/94/83).
   // (re-measured after the clear lantern glass and the bedroom lantern's move to its hook: kitchen and bedroom had dropped ~12%)
-  const ROOM_GAIN = MOBILE ? { bedroom: 2.8, kitchen: 1.5, workshop: 1.05 } : { bedroom: 1.2, kitchen: 1.35, workshop: .42 };
+  const ROOM_GAIN = MOBILE ? { bedroom: 2.8, kitchen: 1.7, workshop: 1.05 } : { bedroom: 1.2, kitchen: 1.35, workshop: .42 };
   const roomGain = r => { const o = window.__lgain; return (o && o[r] != null ? o[r] : ROOM_GAIN[r]) ?? 1; };
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
   // [PERF] a lamp's shadow map only needs redrawing when what it sees has moved, and the one thing that moves under a lamp

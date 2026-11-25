@@ -545,8 +545,14 @@ function stove() {
   // oven door on a hinge at its bottom edge
   const door = new THREE.Group(); door.userData.live = true; door.position.set(0, oy0 - .005, D / 2); g.add(door);
   const dh = oy1 - oy0 + .03, dw = Wd - .1;
-  add(door, rb(dw, dh, .035, .012, 3), M.enamel, 0, dh / 2, .0175);
-  add(door, rb(dw - .16, dh - .17, .012, .006), M.enamelDark, 0, dh / 2 - .015, .036);
+  // Lights (critic E14): the door is a frame round a real window. It was a solid slab with the glass laid on its face, so
+  // nothing inside the oven could ever be seen and the glass read as a painted orange panel. Opening = the glass (dw-.2 x dh-.21).
+  { const oy = dh / 2 - .015, oh = dh - .21, ow2 = dw - .2, top = oy + oh / 2, bot = oy - oh / 2, sw = (dw - ow2) / 2;
+    add(door, rb(dw, dh - top, .035, .012, 3), M.enamel, 0, (dh + top) / 2, .0175); add(door, rb(dw, bot, .035, .012, 3), M.enamel, 0, bot / 2, .0175);
+    for (const sx of [-1, 1]) add(door, rb(sw, oh + .002, .035, .006), M.enamel, sx * (dw - sw) / 2, oy, .0175);
+    const iw = .02;   // the dark inner bead round the window
+    for (const sy of [-1, 1]) add(door, rb(ow2 + 2 * iw, iw, .012, .004), M.enamelDark, 0, oy + sy * (oh + iw) / 2, .036);
+    for (const sx of [-1, 1]) add(door, rb(iw, oh, .012, .004), M.enamelDark, sx * (ow2 + iw) / 2, oy, .036); }
   add(door, new THREE.PlaneGeometry(dw - .2, dh - .21), M.ovenGlass, 0, dh / 2 - .015, .0425);
   add(door, new THREE.CylinderGeometry(.011, .011, dw - .14, 12), M.chrome, 0, dh - .05, .075, 0, 0, Math.PI / 2);
   for (const sx of [-1, 1]) add(door, new THREE.CylinderGeometry(.008, .008, .045, 8), M.chrome, sx * (dw / 2 - .1), dh - .05, .055, Math.PI / 2);
@@ -558,8 +564,8 @@ function stove() {
   g.userData.oven = {
     door, handle: () => door.localToWorld(V(0, dh - .05, .075)), flameMat, fireGroup: fire,
     setOpen(k) { openK = clamp01(k); door.rotation.x = openK * 1.45; }, get open() { return openK; },
-    setSpread(k) { flameU.uSpread.value = k; }, setHeat(k) { const em = Math.min(1, k * 6); /* a cold stove's coal bed is dead black, embers glow only while there is heat */ M.fire.emissiveIntensity = .25 * em + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 * em + .6 * k; heatK = k; },
-    flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; flameU.uT.value = t; flameU.uHeat.value = heatK; flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
+    setSpread(k) { flameU.uSpread.value = k; }, setHeat(k) { const em = Math.min(1, k * 6); /* a cold stove's coal bed is dead black, embers glow only while there is heat */ M.fire.emissiveIntensity = .06 * em + .45 * k; /* Lights: the bed under the coals is ash, a dull glow; the coals on it (lights.js) carry the heat */ M.ovenGlass.emissiveIntensity = .03 * em + .12 * k; /* Lights (critic E14): a glowing pane read as a painted orange rectangle; the pane stays dark glass and the fire and coals behind it show through */ heatK = k; },
+    flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; flameU.uT.value = t; flameU.uHeat.value = heatK; flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.06 + .45 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
   };
   return g;
 }
