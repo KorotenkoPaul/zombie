@@ -935,7 +935,7 @@ win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+
   // lining: sill, head and the two cheeks, from the frame back into the bark
   const L=D+sink,zc=D-L/2;bx(W+.07,.035,L,0,-H/2-.017,zc);bx(W+.07,.035,L,0,H/2+.017,zc);bx(.035,H,L,-W/2-.017,0,zc);bx(.035,H,L,W/2+.017,0,zc);
   const inner=new THREE.Mesh(mergeGeometries(parts),warm);inner.receiveShadow=true;g.add(inner);
-  const glow=TREE.bark.material.userData.doorGlow;inner.onBeforeRender=()=>{const v=glow?glow.value:0;warm.emissiveIntensity=.34*v;fl.visible=v>.05;wax.material.emissiveIntensity=.3*v;fl.scale.setScalar(.85+.15*Math.sin(performance.now()*.017)*Math.sin(performance.now()*.0031));};
+  const glow=TREE.bark.material.userData.doorGlow;inner.onBeforeRender=()=>{const v=glow?glow.value:0;warm.emissiveIntensity=.16*v;fl.visible=v>.05;wax.material.emissiveIntensity=.14*v;/* doorGlow runs ~3.4 since the brighter trunk door (lights 695189b): same window level as before */fl.scale.setScalar(.85+.15*Math.sin(performance.now()*.017)*Math.sin(performance.now()*.0031));};
   // glass, set back in the frame
   const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;gm.emissiveIntensity=.12;gm.opacity=.1;WINS.push({mat:gm,room:'trunk',g});
   const pane=new THREE.Mesh(new THREE.PlaneGeometry(W,H),gm);pane.position.z=D-.09;pane.renderOrder=2;g.add(pane);

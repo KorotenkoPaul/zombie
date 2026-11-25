@@ -23,6 +23,8 @@ const smooth = (a, b, x) => { const t = clamp01((x - a) / (b - a)); return t * t
 const _v = new THREE.Vector3();
 
 // how a source wakes up and dies down (seconds), and how it flickers
+// ?decklamp=1 (option for Pavel, not the default): an oil lantern on the lookout deck, lit by the hero when he goes out there in the dark
+const DECKLAMP = (() => { try { return new URLSearchParams(location.search).get('decklamp') === '1'; } catch (e) { return false; } })();
 const GLOW = (() => { try { return new URLSearchParams(location.search).get('glow') === '1'; } catch (e) { return false; } })();
 const GLOW_K = { kitchen: 1.8, workshop: 1.6, oven: 1.3, bedroom: 1.1 }, GLOW_C = new THREE.Color(0xFFD9A0);
 const KINDS = {
@@ -142,7 +144,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   }
 
   // a source: lights (with their full intensity), emissive materials (with full emissiveIntensity / opacity)
-  function add(name, room, kind, pos, { lights = [], emis = [], opac = [], halo = null, haloSize = 1.5, extra = null, autoFn }) {
+  function add(name, room, kind, pos, { lights = [], emis = [], opac = [], halo = null, haloSize = 1.5, haloTint = null, extra = null, autoFn }) {
     // ?glow=1 (critic L1, for Pavel to compare; not the default): the lit room closer to the photo's warmer, creamier glow.
     // Kitchen and workshop lamps (and the oven) ~1.6-1.8x and creamier, reaching further; the bedroom only a touch, it stays cosy and dim.
     const gk = GLOW && GLOW_K[name];
@@ -152,7 +154,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       // halos follow .intensity; an emissive-only lantern gets a light-less proxy so it still glows in the fog
       haloObj = halo || (lights[0] && lights[0].l) || Object.assign(new THREE.Object3D(), { intensity: 0 });
       if (!haloObj.parent) { haloObj.position.copy(pos); scene.add(haloObj); }
-      ENV.addHalo(haloObj, haloSize);
+      const spr = ENV.addHalo(haloObj, haloSize);
+      if (haloTint && spr && spr.material) spr.material.color.set(haloTint);
     }
     const s = { idx: src.size, name, room, kind, pos: pos.clone(), lights, emis, opac, haloObj, extra, autoFn, on: false, level: 0, manual: null, seed: Math.random() * 9, flare: 0 };
     src.set(name, s); return s;
@@ -177,7 +180,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     claimHousing(wPos, .3);
     const b = bulbMesh(wPos.clone().add(V(0, .05, 0)), .055, 0xFFF0C8);
     const emis = [[b, 6]]; if (pm.domeInner) { pm.domeInner.emissive = new THREE.Color(0xFFD9A0); emis.push([pm.domeInner, .9]); }
-    add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 14 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
+    // bounce: the bench and floor under the cone throw warm light back over the whole room (the photo's workshop is warm
+    // wall to wall; ours was a bright corner under the dome and a dark left half). Unshadowed, phones take it from the pool.
+    const wb = new THREE.PointLight(0xFFB066, 0, 3.4, 2); wb.position.copy(wPos).add(V(-1.0, -.7, .15)); scene.add(wb);
+    add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 14 }, { l: wb, I: MOBILE ? 2.9 : 2.6 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
@@ -227,6 +233,23 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       let bm = null; scene.traverse(o => { if (o.isMesh && o.material === b) bm = o; });
       for (const o of [hg, lastHang.chain, bm, l, l.target]) if (o) piv.attach(o);
       (window.__swing = window.__swing || []).push({ name: 'landing lantern', piv, len: lastHang.top.y - p.y + .1, mass: 1 }); }
+  }
+
+  // ---------- ?decklamp=1: an oil lantern on the lookout deck (the photo's deck boards and rail read warm-lit) ----------
+  // Hangs on an iron arm off the front-right rail post, just outside the rail (so it lights the rail and the deck's
+  // front as the camera sees them), by the telescope. Manual only: the hero lights it when he goes out on the
+  // deck in the dark and puts it out when he leaves (brain.js); it never goes out by itself. A downward cone like the
+  // landing lantern: it lights the boards, the rail and the telescope, not up into the leaves.
+  if (DECKLAMP) {
+    const p = V(3.95, DK + 1.15, 3.32); const l = new THREE.SpotLight(0xFFBA66, 0, 5.2, 1.2, .75, 1.5); l.position.copy(p);
+    l.target.position.copy(p).add(V(-.8, -3, -.9)); scene.add(l, l.target);
+    const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
+    if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;
+    add('decklamp', 'outside', 'oil', p, { lights: [{ l, I: 7 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: () => false });
+    if (lastHang) { const piv = new THREE.Group(); piv.position.copy(lastHang.top); scene.add(piv); piv.updateMatrixWorld(true);
+      let bm = null; scene.traverse(o => { if (o.isMesh && o.material === b) bm = o; });
+      for (const o of [hg, lastHang.chain, bm, l, l.target]) if (o) piv.attach(o);
+      (window.__swing = window.__swing || []).push({ name: 'deck lantern', piv, len: lastHang.top.y - p.y + .1, mass: 1 }); }
   }
 
   // ---------- oven fire (Props draws the fire; we own whether it burns) ----------
@@ -339,15 +362,16 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     doorLight = new THREE.Object3D(); doorLight.position.set(ax[0] + dd.x * r, LG + .75, ax[1] + dd.z * r);
     // the lantern-lit cave inside the hollow: a warm light deep in it lights the carved walls, the one at the mouth spills onto the platform
     const rIn = TREE.R(LG + .7) - 1.0;
-    const cave = new THREE.PointLight(0xFFBA66, 0, 3.6, 1.3); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave); doorCave = cave;
+    const cave = new THREE.PointLight(0xFF8A36, 0, 3.6, 1.3); cave.position.set(ax[0] + dd.x * rIn, LG + .85, ax[1] + dd.z * rIn); scene.add(cave); doorCave = cave;
     doorLight.position.set(ax[0] + dd.x * (r + .25), LG + .8, ax[1] + dd.z * (r + .25));
     const glow = TREE.bark && TREE.bark.material.userData.doorGlow;
     // the warm wedge that falls out of the doorway onto the landing, the roots and the path below it
-    const spill = new THREE.SpotLight(0xFFB862, 0, 9, .75, 1, 1.4);
+    const spill = new THREE.SpotLight(0xFFA04C, 0, 9, .75, 1, 1.4);
     spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
     spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
-    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 6.5, sway: .02 }, { l: spill, I: 9 }], haloSize: 2.4,
-      extra: (k, f) => { if (glow) glow.value = 1.6 * k * f; }, autoFn: c => c.lamps > .3 });
+    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 1.4, haloTint: 0xFF9E52,
+      // the photo's brightest warm spot at the foot of the tree (door moved down into view, ab2ddf4): a hotter hollow and spill
+      extra: (k, f) => { if (glow) glow.value = 3.4 * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
