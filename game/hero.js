@@ -2292,7 +2292,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const Ls=bones.LeftArm.getWorldPosition(V()),Rs=bones.RightArm.getWorldPosition(V());const piv=Ls.clone().add(Rs).multiplyScalar(.5).addScaledVector(d,.06).add(V(0,-.04,0));
   const tgt=c.clone().add(V(0,SPL_RH-.015,0));const q=tgt.clone().sub(piv);const qh=V(q.x,0,q.z).length();const rH=q.length();const thS=Math.atan2(q.y,qh);
   if(a.ph==='swing'){// the body is real mocap (hy_axechop, CMU: slow lift 1.2 s, fast drop 0.35 s, hit at 1.57 s of 1.9 s); the axe angle follows its phase
-   const C='hy_axechop',cd=has(C)?durOf(C):1.9;if(!a.clipOn&&has(C)){a.clipOn=1;play(C,{fade:.3});const A=actions[C];if(A)A.time=0;}
+   const C='hy_axechop',cd=has(C)?durOf(C):1.9;if(!a.clipOn&&has(C)){a.clipOn=1;a.cyc0=a.cyc||0;play(C,{fade:.3});const A=actions[C];if(A)A.time=0;}
    const A=has(C)?actions[C]:null;const u=A?(A.time%cd)/cd:a.pt/T.swing;if(a.lu!=null&&u<a.lu-.5){a.struck=0;a.cyc=(a.cyc||0)+1;}a.lu=u;
    const last=a.hit+1>=hits;const thT=1.5,UT=.63,US=.82;/* top of the backswing just past vertical: further back the hands went behind his head and the body guard pulled them off the handle (film) */let th;
    if(u<UT)th=thS+(thT-thS)*smooth(0,UT,u);else if(u<US){const k=(u-UT)/(US-UT);th=thT+(thS-.05-thT)*k*k*(2.2-1.2*k);/* fast through the drop, a touch less at the very end: it slammed from full speed to a dead stop in one frame (gate: fist 11 cm/frame²) */}else th=thS-.05;
@@ -2300,7 +2300,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     if(a.hit>=hits)splitRound(a,S,d,r);}
    if(u>US&&a.rd&&u<.95)th+=Math.sin((u-US)*60)*.025;/* stuck: rock the handle to free it */
    a.wl=Math.min(1,(a.wl??(a.w||0))+dt/.6);a.w=smooth(0,1,a.wl);H.squat=.04*a.w;/* eased in too: switched on at once it dropped the hips 4 cm in a frame *//* eased in: the linear ramp kicked the fists 10 cm/frame² at the start of the swing (gate) */
-   holdAxe(a,piv,d,r,th,rH,a.w);
+   {/* OUTDOOR (watcher R42-4): the first raise comes up from the axe hanging at his side; in the shoulders' middle plane the handle swung
+     level across his forehead on the way. Up over the right shoulder instead (a real splitter lifts it past his ear), back to the middle for the drop */
+    const k=(a.cyc||0)===(a.cyc0||0)?smooth(.02,.35,u)*(1-smooth(.4,UT,u)):0;holdAxe(a,k>.001?piv.clone().addScaledVector(r,.1*k).add(V(0,.02*k,0)):piv,d,r,th,rH,a.w,k>.001?th+(thT-th)*.75*k:null);}/* and the wrists cocked: the head of the axe comes up ahead of the hands, so the handle stands up past his ear while the fists go by his face (it lay level across his forehead) */
    if(a.hit>=hits&&u>.97){a.wl=null;a.pt=0;a.struck=0;a.clipOn=0;a.lu=null;a.ph='after';play(IDLE(),{fade:.6});}return;}
   if(a.ph==='after'){const u=a.pt/T.after;a.w=Math.max(0,1-smooth(0,.6,u));H.squat=.04*(1-u);axeRest(a,d,1);if(a.w>.01)holdAxe(a,piv,d,r,thS-.05+.3*smooth(0,.6,u),rH,a.w);
    if(u>=1){a.ri++;a.ph=a.plan[a.ri]!=null?'place':'done';a.pt=0;a.hit=0;}}}
@@ -2309,8 +2311,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   // squatting, the head is never in the ground: the handle leans forward until the head just rests on the earth
   let gy=0;try{gy=window.__ground.heightAt(gp.x,gp.z);}catch(e){}const room=gp.y-(gy+.07);if(AXE_G*-dn.y>room){const v=clamp(room/AXE_G,-.2,1);dn=d.clone().setY(0).normalize().multiplyScalar(Math.sqrt(1-v*v)).add(V(0,-v,0)).normalize();}axeWorld(gp.clone().addScaledVector(dn,AXE_G),dn,d.clone());}
  // both hands on the axe handle: right hand at the tool's grip, left hand at the handle's end; the blade faces the way it swings
- function holdAxe(a,piv,d,r,th,rH,w){const dir=d.clone().multiplyScalar(Math.cos(th)).add(V(0,Math.sin(th),0));const tan=d.clone().multiplyScalar(-Math.sin(th)).add(V(0,Math.cos(th),0));
-  const gR=piv.clone().addScaledVector(dir,rH-AXE_G);const gL=piv.clone().addScaledVector(dir,Math.max(.22,rH-.67)).addScaledVector(r,.01);
+ function holdAxe(a,piv,d,r,th,rH,w,thA){const dirG=d.clone().multiplyScalar(Math.cos(th)).add(V(0,Math.sin(th),0));if(thA==null)thA=th;const dir=d.clone().multiplyScalar(Math.cos(thA)).add(V(0,Math.sin(thA),0));const tan=d.clone().multiplyScalar(-Math.sin(thA)).add(V(0,Math.cos(thA),0));
+  const gR=piv.clone().addScaledVector(dirG,rH-AXE_G);const gL=gR.clone().addScaledVector(dir,-(rH-AXE_G-Math.max(.22,rH-.67))).addScaledVector(r,.01);/* thA: the handle's own angle (cocked wrists); the left fist stays on the handle below the right */
   odReach('Right',gR,w);odReach('Left',gL,w*.95);/* right first: its trunk lean moved the left shoulder and slid the left hand off the handle */
   // the axe goes where the right fist really is (contact first); while blending out it hangs from the fist
   const pR=odPalm('Right');const hang=V(0,-1,0).addScaledVector(d,.22).normalize();const dd=hang.lerp(dir,w).normalize();axeWorld(pR.clone().addScaledVector(dd,AXE_G),dd,tan.clone().negate().lerp(d,1-w));a.dbg=[gR,gL];a.axeLate={w,dd:dd.clone(),blade:tan.clone().negate().lerp(d,1-w)};
