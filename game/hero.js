@@ -599,7 +599,7 @@ export function createHero(ctx){
     const n=plate?plateN():null;
     if(n){/* PLATE: square to the wall (the hand straight in front of the right shoulder), turned to it while he steps, no squeeze past the door leaf or the frame */
      a.from=a.viaNode?p.clone():null;a.knob=sp.clone().addScaledVector(n,.035)/* the fingers on the rocker, the palm clear of the wall boards */;const st=sp.clone().addScaledVector(n,.36).add(V(-n.z,0,n.x).multiplyScalar(.17))/* the body left of the plate: it is in front of the right shoulder */;st.y=p.y;a.faceYaw=Math.atan2(-n.x,-n.z);let k=0;
-     const go=()=>{if(Math.hypot(st.x-root.position.x,st.z-root.position.z)>.12)play('30',{fade:.3,speed:1})/* steps, not a glide in the idle clip */;approachTo(a,st,0,()=>{if(Math.hypot(root.position.x-st.x,root.position.z-st.z)>.06&&++k<4)go();else{a.faceYaw=null;reach();}});};go();return;}
+     const go=()=>{if(Math.hypot(st.x-root.position.x,st.z-root.position.z)>.12)play('30',{fade:.3,speed:1})/* steps, not a glide in the idle clip */;approachTo(a,st,0,()=>{if(Math.hypot(root.position.x-st.x,root.position.z-st.z)>.06&&++k<4)go();else{a.faceYaw=null;reach();}});H.turnStep=false;/* the step owns the walk clip now: a turn-on-the-spot left over from before dropped it to idle as the turn lined up, and he glided the last 55 cm (gate, switch after the chair) */};go();return;}
     a.step='approach';a.t=0;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
     a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):sp.clone().add(V(0,-.15,0));
     const move=Math.max(0,Math.min(.9,d-(a.low?.45:.27)));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
@@ -667,7 +667,7 @@ export function createHero(ctx){
   // a short gesture in place (stretch, look around, scratch the head, inspect); ends by itself
   micro:(o={})=>{const a={step:'do',t:0};const c=o.clip&&has(o.clip)?o.clip:IDLE();const one=['hy_stretch','stretch_yawn','hy_inspect','hy_take','hy_drink'].includes(c);
    const dur=o.dur||(one?durOf(c):3);if(H.seated){a.update=()=>endTask();return a;}
-   const go0=(cl=c)=>{a.on=1;a.t=0;a.step='do';if(cl!==c)play(cl,{fade:.5});else if(one)once(c,{fade:.5});else play(c,{fade:.5});};
+   const go0=(cl=c)=>{a.on=1;a.t=0;a.step='do';H.state='work';/* a stretch or a scratch is an action, not standing about (gate: 6.5 s 'standing still between phases' over the whole stretch, the state stayed 'idle' when no walk came first) */if(cl!==c)play(cl,{fade:.5});else if(one)once(c,{fade:.5});else play(c,{fade:.5});};
    /* STRETCH (gate: a hand 7.8 cm into the shelf beside him): arms out and up need room; next to furniture he first steps to a free spot */
    const go=()=>{if(STRETCHES.includes(c)&&!armsFree(root.position,root.rotation.y,c)){const y=armsYaw(root.position,root.rotation.y,c);if(y!=null){a.faceYaw=y;a.noPush=true;approachTo(a,root.position.clone(),0,()=>go0(armsFree(root.position,root.rotation.y,c)?c:alt()));return;}/* turning on the spot is enough */
     a.step='seek';a.gen=stretchSpot(c);play(IDLE(),{fade:.4});return;}go0();};
@@ -1583,7 +1583,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    // stands close, faces the glass, rests a hand on the frame, leans in, turns an ear to the pane, holds still, shifts his weight
    const XL=lv.XL||0,XR=lv.XR||0;const G=(x,y,z,nx,nz,lo)=>({c:V(x+(x<0?XL:XR),y,z),n:V(nx,0,nz),lo});
    const GL=[G(-2.33,KT+1.5,1.04,0,1,KT+1.15),G(-4.37,KT+1.38,2.7,1,0,KT+1.0),G(-4.17,BD+1.2,2.4,1,0,BD+.8),G(3.575,WS+1.4,1.24,0,1,WS+1.05),G(4.57,WS+1.25,2.85,-1,0,WS+.85)];
-   const here=GL.filter(g=>Math.abs(g.c.y-1.3-root.position.y)<1.2);const ok=g=>{const q=g.c.clone().addScaledVector(g.n,.5);q.y=g.c.y-1.3;const t=q.clone();pushOut(t);return t.distanceTo(q)<.12&&floorAt(q.x,q.y+.3,q.z,.3,.6)!=null;};
+   const here=GL.filter(g=>Math.abs(g.c.y-1.3-root.position.y)<1.2);const ok=g=>{const q=g.c.clone().addScaledVector(g.n,.5);q.y=g.c.y-1.3;const t=q.clone();pushOut(t);return t.distanceTo(q)<.12&&floorAt(q.x,q.y+.3,q.z,.3,.6)!=null&&!['kh_t','bl_t','ll_t','kh_b','kl_b','ll_b'].some(k=>N[k]&&Math.hypot(N[k].p.x-q.x,N[k].p.z-q.z)<.75&&Math.abs(N[k].p.y-q.y)<.6);};/* never the spot at a ladder's head or foot (gate: off the kitchen ladder he stopped dead at the window right there, 0.48 -> 0.08 m/s; and he would stand in the way of the ladder) */
    const gl=pick(here.filter(ok))||pick(GL.filter(ok));const wn=gl?(nearNode(gl.c.clone().addScaledVector(gl.n,.6).setY(gl.c.y-1.3))||pick(WINDOWS)):pick(WINDOWS);
    if(!gl){const fw=()=>fwd(N[wn].face??0);return job({node:wn,slide:false,clip:IDLE(),loop:true,dur:[10,16],look:()=>bones.Head.getWorldPosition(V()).addScaledVector(fw(),3),lookW:.8});}
    /* listen_window (clip supplier, 7.8 s): leans in, ear to the glass, holds with weight shifts, eases out; the code then only adds the hand on the sill */
