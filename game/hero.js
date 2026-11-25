@@ -1284,7 +1284,10 @@ export function createHero(ctx){
     if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else relTool(hand,n);}
     if(a.rel&&a.t-a.tr>.4&&!(H.squat>0)){a.held.pop();a.rel=false;a.toBelt=null;a.t=0;a.rg=null;a.st=0;}}};
   const finish=()=>{a.ik=null;H.squat=0;if(a.putCb){const c=a.putCb;a.putCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
-  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
+  a.post=dt=>{const own=a.relook;a.relook=null;RGREC=[];try{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);}finally{a.reL=RGREC;RGREC=null;}
+   /* GRAB: the gaze (lookAt) turns the chest a quarter of the head's yaw AFTER this and carried a hand 10-20 cm off what it holds
+      (Leisure); the same reaches again once it is done, with no waist lean (a lean there tipped the body: worse totals) */
+   const job2=a.relook;if(a.reL.length||job2){relookReg();a.relook=()=>{if(job2)job2();if(!a.reL||!a.reL.length)return;const RL=REACH_LEAN;REACH_LEAN=0;try{for(const [sd,t,w] of a.reL)reachGrip(sd,t,w);}finally{REACH_LEAN=RL;}};}void own;};
   a.leave=cb=>{H.squat=0;if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;
    /* GRAB P1: cut short, the tools in his hands still go back by hand through the put step (carried home, set on the spot, or onto the belt), not flown off from where he stands */
    for(const h of ['Right','Left']){const n=H.hold[h]&&H.hold[h].tool;if(n&&!a.held.includes(n)&&tools.some(x=>x[0]===n))a.held.push(n);}
@@ -1375,7 +1378,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function reachGripN(side,t,w,lean,ls){const RL=REACH_LEAN;try{REACH_LEAN=lean;reachGrip(side,t,w,ls);/* ls={v,ax}: the rate-limited lean (no on/off flicker at the reach limit) */REACH_LEAN=0;const G=window.__grab;const c=smooth(0,1,w);/* GRAB: the re-aim fades in with the weight (it switched off at w .5: the palm dropped 7 cm in a frame putting the book down) */if(!G||!G.gripPoint||c<.001)return;const e=V();let a=t.clone();for(let i=0;i<2;i++){e.copy(t).sub(G.gripPoint(side));/* GRAB: always both passes (an 8 mm early-out switched frame to frame: hand stutter) */a.add(e.multiplyScalar(c));reachGrip(side,a,w*c);/* GRAB: the re-aim passes weigh w*c, so a fading reach fades as w (three full-w passes held the hand near the target until w ~.02, then it dropped 12 cm in a frame) */}}finally{REACH_LEAN=RL;}}
  function palmTo(side,t){const G=window.__grab;const p=G&&G.gripPoint?G.gripPoint(side):bones[side+'Hand'].getWorldPosition(V());return p&&t?p.distanceTo(t):9;}
  const gripHome=n=>{const G=window.__grab;return G&&G.toolGripHome?G.toolGripHome(n):toolHome(n);};
- function reachGrip(side,t,w,ls){const G=window.__grab;if(!G||!G.gripPoint){reachTo(side,t,w,ls);return;}reachTo(side,G.palmTarget(side,t),w,ls);
+ let RGREC=null;/* GRAB: the reaches a job's post makes this frame, replayed after the gaze has turned the chest */
+ function reachGrip(side,t,w,ls){if(RGREC&&t&&w>.01)RGREC.push([side,t.clone(),w]);const G=window.__grab;if(!G||!G.gripPoint){reachTo(side,t,w,ls);return;}reachTo(side,G.palmTarget(side,t),w,ls);
   /* the fist's grip point, not the wrist, onto the point: a few corrections of the wrist target */if(w>.98)for(let i=0;i<3;i++){const e=t.clone().sub(G.gripPoint(side));if(e.length()<.004)break;armIK(side,bones[side+'Hand'].getWorldPosition(V()).add(e),sidePole(side),1);}}
  function holdToolAt(side,name,gp,tip,w,bw){const P=PP();const o=P&&P.tools&&P.tools[name];const G=window.__grab;const sp=G&&G.GRIP&&G.GRIP[name];const hb=bones[side+'Hand'];if(!o||!sp||o.parent!==hb)return false;
   const ua=V(...sp.a).applyQuaternion(o.quaternion).normalize();const gl=V(...sp.g).multiplyScalar(o.scale.x).applyQuaternion(o.quaternion).add(o.position);// tool axis + grip point in hand space
