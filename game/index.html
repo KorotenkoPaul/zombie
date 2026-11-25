@@ -1120,10 +1120,15 @@ if(/[?&]plcull\b/.test(location.search)){/* P0: view copies made the house and t
    const is=a.itemSize,sa=a.array,da=d.array;for(let j=0;j<k;j++){const i=v.vis[j];for(let q=0;q<is;q++)da[j*is+q]=sa[i*is+q];}d.needsUpdate=true;v.ver.set(key,a.version);}
   v.n=n;v.k=k;};
  const prevB=scene.onBeforeRender,prevA=scene.onAfterRender;
- let depth=0;/* scene renders can nest (a pass rendering the scene from inside another render): only the outermost hides and restores */
- scene.onBeforeRender=function(r,sc,cam,...a){if(prevB)prevB.call(this,r,sc,cam,...a);depth++;if(window.__noPlCull){for(const v of VW)if(v.hid){v.S.visible=true;v.hid=false;v.D.count=0;}return;}
-  for(const v of VW){if(!v.hid&&!v.S.visible){v.D.count=0;continue;}try{update(v,cam);}catch(e){console.warn('plank cull off',e);window.__noPlCull=true;for(const w of VW)if(w.hid){w.S.visible=true;w.hid=false;w.D.count=0;}return;}v.D.count=v.k;v.S.visible=false;v.hid=true;}};
- scene.onAfterRender=function(...a){depth=Math.max(0,depth-1);if(depth===0)for(const v of VW){if(v.hid){v.S.visible=true;v.hid=false;}v.D.count=0;}if(prevA)prevA.apply(this,a);};
+ let depth=0,tOut=0;/* scene renders nest (the desktop pond/puddle Reflector and the warm-up draw render the scene from inside a render):
+   only the outermost render culls; an inner one gets the real meshes back for its own draw (its camera sees other parts), and they go hidden again after it */
+ const giveBack=()=>{for(const v of VW)if(v.hid){v.S.visible=true;v.hid=false;v.D.count=0;}};
+ scene.onBeforeRender=function(r,sc,cam,...a){if(prevB)prevB.call(this,r,sc,cam,...a);const now=performance.now();
+  if(depth>0&&now-tOut>1000){depth=0;giveBack();}/* a render that threw never reached onAfterRender */
+  depth++;if(depth>1){for(const v of VW)if(v.hid){v.S.visible=true;v.D.count=0;}return;}tOut=now;
+  if(window.__noPlCull)return;
+  for(const v of VW){if(!v.S.visible){v.D.count=0;continue;}try{update(v,cam);}catch(e){console.warn('plank cull off',e);window.__noPlCull=true;giveBack();return;}v.D.count=v.k;v.S.visible=false;v.hid=true;}};
+ scene.onAfterRender=function(...a){if(depth>1){depth--;for(const v of VW)if(v.hid){v.S.visible=false;v.D.count=v.k;}}else{depth=0;giveBack();for(const v of VW)v.D.count=0;}if(prevA)prevA.apply(this,a);};
  window.__plView=VW;}
 window.__planks={meshes:{boards,beams,shingles:SHING},part:id=>PL[id]/* [PROPS] housewear.js: the instance behind an id */,move:(id,m)=>{const p=PL[id];if(!p)return false;const b=B.find(b=>b.mesh===p.mesh&&b.i===p.i);if(!b||b.loose)return false;const q=new THREE.Quaternion(),c=V();m.decompose(c,q,V());b.rb.setTranslation({x:c.x,y:c.y,z:c.z},true);b.rb.setRotation({x:q.x,y:q.y,z:q.z,w:q.w},true);physWake=Math.max(physWake,3);return true;}/* [PROPS] housewear.js: a worn board's collider follows it */,list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
  setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,-1,1))/* below 0: worn, water-stained (housewear.js) */;A.needsUpdate=true;return true;},
