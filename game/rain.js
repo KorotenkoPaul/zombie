@@ -202,7 +202,18 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
   // through roofs, roof edges had few eave drips, and the wet test could not tell sheltered boards from open ones.
   function cellTop(ix, iz, x, z) { const g = groundH(x, z); let best = -99, n = 0; const tz0 = (NZ - 1 - iz) * SUB, tx0 = ix * SUB;
     for (let a = 0; a < SUB; a++) for (let b = 0; b < SUB; b++) { const y = hi[(tz0 + a) * HX + tx0 + b]; if (y > -50) { n++; if (y > best) best = y; } }
-    return n >= SUB * SUB * 0.25 && best > g ? best : g; }
+    return n >= SUB * SUB * 0.12 && best > g ? best : g; }
+  // [ENV] small holes in a roof or floor (the kitchen's ladder hatch, a narrow gap between boards: Props) read as open
+  // sky, so drops fell into the room and the wall-wet test soaked the shelves. A low cell with a built surface above it
+  // within 1 m on three of its four sides is enclosed: it takes the lower of the surfaces around it.
+  function fillHoles() {
+    const hi2 = (i, d, n) => { for (let k = 1; k <= 2; k++) { const j = i + d * k; if (j < 0 || j >= NX * NZ) return -99; if (kind[j] && hm[j] > hm[i] + 1.5) return hm[j]; } return -99; };
+    let n = 0;
+    for (let pass = 0; pass < 3; pass++) { const add = [];
+      for (let iz = 2; iz < NZ - 2; iz++) for (let ix = 2; ix < NX - 2; ix++) { const i = iz * NX + ix; if (kind[i]) continue;
+        const hs = [hi2(i, 1), hi2(i, -1), hi2(i, NX), hi2(i, -NX)].filter(h => h > -50); if (hs.length >= 3) add.push([i, Math.min(...hs)]); }
+      for (const [i, h] of add) { hm[i] = h; kind[i] = 1; } n += add.length; if (!add.length) break; }
+    R._holes = n; }
   function castDown(x, z) {
     if (hi) { const g = groundH(x, z), y = hiAt(x, z); return y != null && y > g ? y : g; }
     const bx = Math.floor((x - X0) / BS), bz = Math.floor((z - Z0) / BS); const g = groundH(x, z);
@@ -275,7 +286,7 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
         const t0 = performance.now(), budget = hi ? 1e9 : (MOBILE ? 3 : 5);
         for (; scan < NX * NZ && performance.now() - t0 < budget; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
           const y = hi ? cellTop(ix, iz, x, z) : castDown(x, z); hm[scan] = y; kind[scan] = y > groundH(x, z) + 0.6 ? 1 : 0; }
-        if (scan >= NX * NZ) { R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; for (const m of (window.__props && window.__props.wetMats) || []) topMats.add(m); /* [PROPS] all merged props: the per-pixel height test keeps the roofed ones dry */ wetBoards(topMats); }
+        if (scan >= NX * NZ) { fillHoles(); R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; for (const m of (window.__props && window.__props.wetMats) || []) topMats.add(m); /* [PROPS] all merged props: the per-pixel height test keeps the roofed ones dry */ wetBoards(topMats); }
         else return;
       }
       // drips keep going after the rain, thinning out as things dry (wetness dries over a couple of minutes)
