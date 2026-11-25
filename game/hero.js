@@ -1994,7 +1994,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    W.lv.copy(V(0,-.02,0).addScaledVector(out,-.09).addScaledVector(side,-W.sg*.05));};return W;}
   function chimneyW(){/* the stovepipe's hood over the cold stove: soot wiped off its front slope where the pipe leaves it (the pipe itself runs
     under the ceiling and up outside the bedroom wall, out of reach); right hand wipes, left steadies on the rim's edge */
-  const at=V(-3.25,KT,2.1);const p=V(-3.2,KT+1.5,1.53);return {p,n:V(0,0,1),fixed:true,circle:true,t:0,lv:V(-.3,-.06,.06),at};}
+  const at=V(-3.25,KT,2.13);/* 3 cm further back than first set: his hair brushed the hood's lower edge (watch R49-1) */const p=V(-3.2,KT+1.5,1.53);return {p,n:V(0,0,1),fixed:true,circle:true,t:0,lv:V(-.3,-.06,.06),at};}
  function wallNear(pt){let best=null;for(let i=0;i<16;i++){const a=i*Math.PI/8,d={x:Math.sin(a),y:0,z:Math.cos(a)};const r=new RAPIER.Ray({x:pt.x,y:pt.y,z:pt.z},d);
    const h=world.castRayAndGetNormal(r,1.4,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});const t=h?(h.toi??h.timeOfImpact):null;
    if(t!=null&&t>.05&&Math.abs(h.normal.y)<.4&&(!best||t<best.t))best={t,p:V(pt.x+d.x*t,pt.y,pt.z+d.z*t),n:V(h.normal.x,0,h.normal.z).normalize()};}return best;}
