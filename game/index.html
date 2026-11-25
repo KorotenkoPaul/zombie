@@ -981,11 +981,12 @@ win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+
   const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;gm.emissiveIntensity=.12;gm.opacity=.1;WINS.push({mat:gm,room:'trunk',g});
   const pane=new THREE.Mesh(new THREE.PlaneGeometry(W,H),gm);pane.position.z=D-.09;pane.renderOrder=2;g.add(pane);
   // the frame: jambs, a lintel and a deep sill that run past them, a cross bar in the glass
-  const fb=(w,h,d,x,y,z,rz=0)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),darkBoard);m.position.set(x,y,z);m.rotation.z=rz;m.userData.tint=2.15;/* photo: a honey-wood frame, not dark beams (lighter instance tint) */g.add(m);};
+  const FB=[],fb=(w,h,d,x,y,z,rz=0)=>{const b=new THREE.BoxGeometry(w,h,d);b.applyMatrix4(new THREE.Matrix4().makeRotationZ(rz).setPosition(x,y,z));FB.push(b);};/* photo: a honey-wood frame (own warm wood, not the dark beam board) */
   // the casing runs from the face right back into the bark, so the lit lining never shows from the side
   fb(.11,H+.16,L+.02,-W/2-.055,0,zc+.01,.012);fb(.11,H+.16,L+.02,W/2+.055,.005,zc+.005,-.01);fb(W+.2,.09,L,0,H/2+.08,zc-.01);fb(W+.2,.07,L,0,-H/2-.07,zc-.01);
   fb(W+.44,.12,.16,.01,H/2+.1,D-.03,.018);fb(W+.38,.075,.24,-.01,-H/2-.075,D+.01,-.012);
   fb(.035,H,.035,0,0,D-.085);fb(W,.035,.035,0,.02,D-.085);
+  {const fm=new THREE.Mesh(mergeGeometries(FB),(()=>{const m=boardMat.clone();const t=new THREE.Vector3(1.02,.68,.4);plankShader(m,{a:woodWallT,b:woodWallT,ta:t,tb:t,nails:0});return m;})());fm.castShadow=fm.receiveShadow=true;g.add(fm);}
   // the source: a stub of candle on the inner sill (it is lit with the hollow's lantern, and goes out with it)
   const wax=new THREE.Mesh(new THREE.CylinderGeometry(.028,.032,.09,10),new THREE.MeshStandardMaterial({color:0xE8D8B8,emissive:0xFF9A40,emissiveIntensity:.25,roughness:.7}));wax.position.set(-.15,-H/2+.045,.05);g.add(wax);
   const flame=new THREE.Mesh(new THREE.SphereGeometry(.016,8,6),new THREE.MeshBasicMaterial({color:0xFFC870}));flame.position.set(-.15,-H/2+.115,.05);const fl=new THREE.Group();fl.position.copy(flame.position);flame.position.set(0,.01,0);flame.geometry.scale(1,1.8,1);fl.add(flame);g.add(fl);
