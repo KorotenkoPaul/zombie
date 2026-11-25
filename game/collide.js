@@ -433,7 +433,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++; curDt = dt;
-    const _rn = () => Performance.prototype.now.call(performance), _s0 = _rn(); if (bigQ.length || cutting) cutBig(); const _s1 = _rn(); buildSome(1.5); const _s2 = _rn(); trackMoving(); const _s3 = _rn(); secs[0] = _s1 - _s0; secs[1] = _s2 - _s1; secs[2] = _s3 - _s2; if (trunk && slPre < trunk.SL.length) for (let q = 0; q < 3 && slPre < trunk.SL.length; q++, slPre++) if (!SLR[slPre]) { const sl = trunk.SL[slPre]; SLR[slPre] = sliceRows(sl, SLB[slPre] || (SLB[slPre] = sliceBox(sl))); } // trunk rows ahead of need, 3 slices a frame
+    const _rn = () => Performance.prototype.now.call(performance), _s0 = _rn(); if (bigQ.length || cutting) cutBig(); const _s1 = _rn(); buildSome(1.5); const _s2 = _rn(); trackMoving(); if (!navDone && !(frameNo % 15) && navReady()) navCheck(); const _s3 = _rn(); secs[0] = _s1 - _s0; secs[1] = _s2 - _s1; secs[2] = _s3 - _s2; if (trunk && slPre < trunk.SL.length) for (let q = 0; q < 3 && slPre < trunk.SL.length; q++, slPre++) if (!SLR[slPre]) { const sl = trunk.SL[slPre]; SLR[slPre] = sliceRows(sl, SLB[slPre] || (SLB[slPre] = sliceBox(sl))); } // trunk rows ahead of need, 3 slices a frame
     floorGuard(dt);
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 6);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGv[c].copy(gv[c]); gv[c].set(0, 0, 0); }
@@ -558,13 +558,18 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function navReport(r = .2) {
     const bad = []; for (const [a, b, t] of HH.E) { if (t === 'ladder') continue; const A = HH.N[a].p, B = HH.N[b].p; if (Math.abs(A.y - B.y) > .3) continue; /* stairs / slopes: the floors' own business */
       const y = Math.min(A.y, B.y) + .02, L = Math.hypot(B.x - A.x, B.z - A.z) || 1, ta = workNode(HH.N[a]) ? Math.min(.5, .25 / L) : 0, tb = workNode(HH.N[b]) ? Math.max(.5, 1 - .25 / L) : 1; const di = sweep(A.x, A.z, B.x, B.z, y, .09, ta, tb, .003, .25); if (di > .003) { bad.push([a + '-' + b, 'core', +(di * 100).toFixed(1), sweep.at]); continue; }
-      const d = sweep(A.x, A.z, B.x, B.z, y, r, ta, tb, .015); if (d > .015) bad.push([a + '-' + b, 'side', +(d * 100).toFixed(1), sweep.at]); } /* the body's core line (9 cm either side, from 25 cm up) must touch nothing: a rung or rail across it is thin (1-2 cm deep at best); the full width may graze a wall or a threshold up to 1.5 cm */
+      const d = sweep(A.x, A.z, B.x, B.z, y, r, ta, tb, .015, .33); if (d > .015) bad.push([a + '-' + b, 'side', +(d * 100).toFixed(1), sweep.at]); } /* the body's core line (9 cm either side, from 25 cm up) must touch nothing: a rung or rail across it is thin (1-2 cm deep at best); the full width may graze a wall or a threshold up to 1.5 cm, from the knee up (33 cm): a stone or root 20 cm off the line at ankle height is the feet's business (gamewalk plants them clear with footFree), not the body's (g_exit1-g_exit15) */
     return bad;
   }
 
   // nodes of the walk graph that stand too close to something solid move to the nearest spot with room for the body
   // (not ladder ends, seats or the tight approach spots: hero.js aligns those to the furniture itself)
-  const navMoved = [];
+  // Both run once every shape is really built: on the site the grids come from a worker and the big merged meshes are cut a slice a
+  // frame, and until then a shape is only its box (a box round the door frame, the rope ladder or a chair moved 'ledge' 21 cm and
+  // flagged 5 edges on every load that the tests, which build everything up front, never saw). Tests: right here, at load.
+  const navMoved = []; let navDone = false;
+  const navReady = () => !bigQ.length && !cutting && !pending.length && !inFlight.size && S.every(s => s.dead || s.kind !== 'vox' || s.ready);
+  function navCheck() { navDone = true;
   { const lad = new Set(); for (const [a, b, t] of HH.E) if (t === 'ladder') { lad.add(a); lad.add(b); }
     for (const k in HH.N) { const n = HH.N[k]; if (lad.has(k) || n.sit || n.seat != null || n.tight) continue; const p = n.p; if (clearance(p.x, p.y, p.z) <= .003) continue;
       let best = null; for (let r = .03; r <= .3 && !best; r += .03) for (let a = 0; a < 16; a++) { const x = p.x + Math.cos(a * Math.PI / 8) * r, z = p.z + Math.sin(a * Math.PI / 8) * r; if (clearance(x, p.y, z) <= .003) { best = [x, z]; break; } }
@@ -572,7 +577,8 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // the walk graph must not lead through anything solid (R43-2: a route through the kitchen ladder). Checked once at load, after the
   // nodes above were moved clear: an edge whose 20 cm body column (knee to head) crosses a ladder, post, rail or furniture is an error
   // (console + window.__navBad; the anim gate fails on it). Ladder edges climb through their own rungs by design and are skipped.
-  try { navMode = true; let bad; try { bad = navReport(.2); } finally { navMode = false; } window.__navBad = bad; if (bad.length) console.error('collide navReport: walk edges through solid things', JSON.stringify(bad)); } catch (e) { }
+  try { navMode = true; let bad; try { bad = navReport(.2); } finally { navMode = false; } window.__navBad = bad; if (bad.length) console.error('collide navReport: walk edges through solid things', JSON.stringify(bad)); } catch (e) { } }
+  if (navReady()) navCheck();
   // free(p): move a standing / walking spot (root on the floor) to the nearest place where the body has room:
   // legs, swinging arms and head clear of everything solid. hero.js calls it from pushOut (walking, approaching a job).
   const RAD = [[.35, .17], [.7, .22], [.95, .26], [1.25, .23]], fp = V();
@@ -608,6 +614,6 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function heldDepth() { skin(); const r = {}; for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const HBs = heldBoxes(L.C); if (!HBs.length) continue;
       let w = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > w) w = d; } } r[c === 2 ? 'L' : 'R'] = +(w * 100).toFixed(1); } return r; }
   const api = { trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
-    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), sweep, footFree, soleDepth: (x, y, z, dx = 0, dz = 1) => sole(x, y, z, dx, dz), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
+    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), sweep, footFree, soleDepth: (x, y, z, dx = 0, dz = 1) => sole(x, y, z, dx, dz), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => { while (bigQ.length || cutting) cutBig(1e9); buildSome(1e9); } };
   return api;
 }

@@ -115,7 +115,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     if (!want && ST.w === 0 && H.ground && !((H.squat || 0) > .02) && !H.fit && !H.seated && !H.inBed && !H.bedB && !H.bedC && !H.swing && !H.trans && !H.lad && !H.path.length && !H.slide
       && B.Hips.getWorldPosition(V()).y - pos.y > hipY - .06) learnRest(dt, pos, yaw);
     // feet far from their neutral spots: keep stepping until they are home (that is how a game character stops)
-    const far = s => { const f = ST.feet[s]; if (!f) return false; const n = neutral(s, pos, yaw); return Math.hypot(f.x - n.x, f.z - n.z) > .06 || !!ST.swing[s]; };
+    const far = s => { const f = ST.feet[s]; if (!f) return false; const n = neutral(s, pos, yaw); return Math.hypot(f.x - n.x, f.z - n.z) > .1 || !!ST.swing[s]; };
     if (want) ST.settled = false;
     // the pose underneath going down (a task's squat or kneel at the hatch, the stove, the woodpile): no settle step over it, the
     // legs go to the task now (a settle kept the hips at walking height-then-sinking for 0.3 s: knees 13-14 cm/frame²)
@@ -147,7 +147,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       // step length grows with speed; cadence = v / L, never slower than a brisk settle step
       L = clamp((.28 + .18 * v) * legLen / .72, .12, .55) * (want ? 1 : 0); ST.L = L;
       rate = v > .05 ? v / (2 * Math.max(L, .1)) : 0; // cycles per second
-      if (settling) rate = Math.max(rate, 1.9);
+      if (settling) rate = Math.max(rate, 1.3); // an unhurried settle: two 0.2 m steps at 1.9 read as leg jitter while the hands already reach (gate water, Leisure)
       if (want) rate = Math.max(rate, 1.2);
       ST.rate = ST.rate == null ? rate : ST.rate + (rate - ST.rate) * (1 - Math.exp(-dt * 6)); rate = ST.rate; // cadence eases (a stop switched it in one frame: knee 12-19 cm/frame²)
     }
@@ -189,7 +189,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
         if (!sw.to) sw.to = land; else sw.to.lerp(land, 1 - Math.exp(-dt * 10));
         if (ST.swing[s]) {
           const e = u * u * u * (u * (u * 6 - 15) + 10); // smootherstep: a clear push-off and landing, no step in acceleration
-          const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp((sw.L ??= L) / .3, .4, 1.2) /* the swing keeps the lift it started with: a stop mid-step (L -> 0) dropped the foot 4 cm in one frame */;
+          const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + (sw.from.y - (sw.y0 ??= pos.y) - ankY) * (1 - e) /* leaves from the height it stood at (a planted foot keeps its own height) */ + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp((sw.L ??= L) / .3, .4, 1.2) /* the swing keeps the lift it started with: a stop mid-step (L -> 0) dropped the foot 4 cm in one frame */;
           // the swing clears what it passes over (a root, a stone, a beam end): a little more lift while the sole would be in it
           { const C = window.__collide; ST.xl = ST.xl || { Left: 0, Right: 0 }; let need = 0;
             if (C && C.soleDepth && u > .05 && u < .95) { const sd = C.soleDepth(fp.x, fp.y - ankY + ST.xl[s], fp.z, f.x, f.z); if (sd > .004) need = Math.min(.12, ST.xl[s] + sd + .015); }
@@ -198,7 +198,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
           roll[s] = sw.quick != null ? 0 : u < .3 ? .35 * (1 - sm(u / .3)) : u > .75 ? -.22 * sm((u - .75) / .25) : 0; // toe-off peel ends early in the swing, the toes come up for the heel strike; continuous with the stance roll at both ends (it jumped .3 -> .45 rad at lift-off, and from any stance roll to .45 on a quick step)
         }
       }
-      if (!ST.swing[s]) { ST.feet[s + 'Shown'] = ST.feet[s].clone(); ST.feet[s + 'Shown'].y = pos.y + ankY; const pst = Math.min(1, p / Dt); /* a foot that landed from a quick step stands through its swing window: p/Dt went to 1.66 and the toes pitched 75 deg down and back (gate: 'knee bends forward' x71) */ roll[s] = pst < .15 ? -.22 * (1 - sm(pst / .15)) : pst > .7 ? .35 * sm((pst - .7) / .3) : 0; }
+      if (!ST.swing[s]) { /* a planted foot stays where it stands: the root's own bumps (a board edge, 6 cm up and down in 3 frames) lifted the planted foot with it (gate stoke/telescope foot jumps 12-14 cm/frame²); it follows a lasting change of floor height in ~0.3 s */ ST.feet[s].y += (pos.y + ankY - ST.feet[s].y) * (1 - Math.exp(-dt * 4)); if (Math.abs(ST.feet[s].y - pos.y - ankY) > .12) ST.feet[s].y = pos.y + ankY + Math.sign(ST.feet[s].y - pos.y - ankY) * .12; ST.feet[s + 'Shown'] = ST.feet[s].clone(); const pst = Math.min(1, p / Dt); /* a foot that landed from a quick step stands through its swing window: p/Dt went to 1.66 and the toes pitched 75 deg down and back (gate: 'knee bends forward' x71) */ roll[s] = pst < .15 ? -.22 * (1 - sm(pst / .15)) : pst > .7 ? .35 * sm((pst - .7) / .3) : 0; }
     }
     // ---------- save the pose underneath (for blending), then build ours from the bind pose ----------
     NAMES.forEach((n, i) => saved[i].copy(B[n].quaternion)); savedHip.copy(B.Hips.position);
