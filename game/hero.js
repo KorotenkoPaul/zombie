@@ -3067,7 +3067,16 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // EVENING, the vest: as it comes off it is in his right hand (folded), and he lays it on the upper bunk by hand (it used to vanish
 // from him and appear up there 0.6 s later)
 function vestToHand(){const pm=vestProp();if(!pm)return;vestPark(true);pm.visible=true;pm.updateMatrixWorld(true);VD.home={p:pm.position.clone(),q:pm.quaternion.clone()};/* where it will lie */
- root.updateMatrixWorld(true);const Hn=bones[VSD+'Hand'];const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(VSD):wp(Hn);{/* held out from the lap on the palm's outer side (in the lap it sat 4-5 cm into his thighs and belly: gate prop-through-body) */const hp=wp(bones.Hips);const o=palm.clone().sub(hp);o.y=0;if(o.lengthSq()>1e-6)o.normalize();pm.position.copy(palm).addScaledVector(o,.06).add(V(0,.03,0));/* held up on its edge, hanging from the fist like a folded garment (flat it lay across his thighs) */const ax=V(0,1,0).cross(o);if(ax.lengthSq()>1e-6){pm.updateMatrixWorld(true);pm.rotateOnWorldAxis(ax.normalize(),1.15);}}Hn.attach(pm);}
+ root.updateMatrixWorld(true);vestHeldPlace(pm,VSD);bones[VSD+'Hand'].attach(pm);}
+// the folded vest as a hand holds it: out from the lap on the palm's outer side, up on its edge, hanging from the fist like a folded garment
+// (in the lap it sat 4-5 cm into his thighs and belly; 6 cm out still touched one hero's belly while he turned to the stool: gate prop-through-body)
+function vestHeldPlace(pm,sd){root.updateMatrixWorld(true);const Hn=bones[sd+'Hand'];const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);const hp=wp(bones.Hips);const o=palm.clone().sub(hp);o.y=0;if(o.lengthSq()>1e-6)o.normalize();
+ pm.position.copy(palm).addScaledVector(o,.10).add(V(0,.03,0));const ax=V(0,1,0).cross(o);if(ax.lengthSq()>1e-6){pm.updateMatrixWorld(true);pm.rotateOnWorldAxis(ax.normalize(),1.15);}pm.updateMatrixWorld(true);}
+// picked up flat from the stool in the morning: the fingers shift it into that same hanging grip over a moment before he stands up with it
+// (held flat it swung through his knees and thighs as he stood: gate prop-through-body shins 4.9, hips 4.3 in hy_standup)
+const VRG={pm:null};function vestRegrip(pm,sd){const Hn=bones[sd+'Hand'];scene.attach(pm);const wp0=pm.position.clone(),wq0=pm.quaternion.clone();
+ vestHeldPlace(pm,sd);Hn.attach(pm);const p1=pm.position.clone(),q1=pm.quaternion.clone();scene.attach(pm);pm.position.copy(wp0);pm.quaternion.copy(wq0);pm.updateMatrixWorld(true);Hn.attach(pm);Object.assign(VRG,{pm,t:0,p0:pm.position.clone(),q0:pm.quaternion.clone(),p1,q1});}
+function vestRegripTick(dt){const R=VRG;if(!R.pm)return;if(!R.pm.parent||!/Hand$/.test(R.pm.parent.name)){R.pm=null;return;}R.t+=dt||1/60;const k=smooth(0,.4,R.t);R.pm.position.lerpVectors(R.p0,R.p1,k);R.pm.quaternion.slerpQuaternions(R.q0,R.q1,k);R.pm.updateMatrixWorld(true);if(R.t>=.4)R.pm=null;}
 const VSD='Left';/* the vest is folded in the left hand: the bedside stool is to his left (the right side is the boots' and the walk's) */
 const VD={on:false};
 function vestPutAway(next){const pm=BT.vestProp;if(!pm||!VD.home||!(pm.parent&&/Hand$/.test(pm.parent.name))){vestPark(true);next&&next();return;}Object.assign(VD,{on:true,t:0,pm,next,let:false,q0:null,drop:!(PP()&&PP().objects&&PP().objects.bedstool)});}
@@ -3093,7 +3102,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
  if(!VR.took&&w>.001){root.updateMatrixWorld(true);_hb.setFromObject(pm);const c=_hb.getCenter(V());c.y=_hb.max.y;const Hn=bones[sd+'Hand'];const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);
   VR.tg=c.add(wp(Hn).sub(palm)).add(V(0,.02,0));}
  if(VR.tg&&w>.001){if(VR.pick)bendReach(sd,VR.tg,w,st,1.2,true);else romArmIK(sd,VR.tg,sidePole(sd),w,null);H.noPop={side:sd,until:performance.now()+150};}
- if(!VR.took&&t>=T1){VR.took=true;root.updateMatrixWorld(true);bones[sd+'Hand'].attach(pm);AU('cloth',root.position);if(!VR.pick)overlay('hy_jacketon',{fade:.4,speed:1.2});
+ if(!VR.took&&t>=T1){VR.took=true;root.updateMatrixWorld(true);bones[sd+'Hand'].attach(pm);if(VR.pick)vestRegrip(pm,sd);AU('cloth',root.position);if(!VR.pick)overlay('hy_jacketon',{fade:.4,speed:1.2});
   if(!VR.pick)setTimeoutGame(.9,()=>{scene.attach(pm);pm.visible=false;vestShow(true);AU('zip',root.position);});}
  if(t>=T2){VR.on=false;VR.pick=false;const f=VR.then;VR.then=null;f&&f();}}
  const GT=[];function setTimeoutGame(t,f){GT.push({t,f});}function gtTick(dt){for(let i=GT.length-1;i>=0;i--){if((GT[i].t-=dt)<=0){const f=GT[i].f;GT.splice(i,1);f();}}}
@@ -3311,7 +3320,7 @@ function headSkin(){const ms=[];root.traverse(o=>{if(o.isSkinnedMesh&&o.visible&
  Object.assign(HLV,{key,L});return HLV;}
 function headLow(){const S=headSkin();let lo=1e9;for(const {m,ix} of S.L)for(const i of ix){m.getVertexPosition(i,_hlv);m.localToWorld(_hlv);const t=bedTopAt(_hlv.x,_hlv.z);if(t==null)continue;const g=_hlv.y-t;if(g<lo)lo=g;}
  if(lo>1e8){const h=wp(bones.Head);const t=bedTopAt(h.x,h.z);return t==null?.05:h.y-.1-t;}return lo;}
-stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(dt);vestPutTick(dt);handsOnBed(dt);});
+stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(dt);vestRegripTick(dt);vestPutTick(dt);handsOnBed(dt);});
  stage('grab',()=>{const c=H.bedC,B=FIT.bed;if(!c||!B)return;root.updateMatrixWorld(true);
   /* lying down he swings his legs in with the thighs about level, not both knees thrown ~20 cm over the hips (watcher r12 f2520-2544) */if(c.dir>0){const kw=smooth(.12,.25,c.u)*(1-smooth(.8,.95,c.u));if(kw>.001){for(const sd of ['Left','Right'])dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],wp(bones[sd+'UpLeg']).y+.08,kw);root.updateMatrixWorld(true);}}const hp=wp(bones.Hips),lr=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).setY(0).normalize();
   for(const sd of ['Left','Right']){const Hn=bones[sd+'Hand'];if(!Hn)continue;const ex=wp(Hn).y-(B.mat+.35);if(ex<=0)continue;
