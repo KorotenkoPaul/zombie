@@ -2260,7 +2260,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   ax.quaternion.setFromRotationMatrix(_odM);ax.position.copy(head);const hs=ax.userData.home&&ax.userData.home.scale;ax.scale.setScalar(hs||1);ax.visible=true;ax.updateMatrixWorld(true);}
  const AXE_G=.56;/* the right fist this far below the head along the handle */
  // ---- OUTDOOR: wood splitting (MAKE.splitwood) -------------------------------------------------------------------------
- const SPL_RH=.26,SPL_RR=.115,SPL_T={place:4.4,pre:1.2,swing:1.9,after:.9};
+ const SPL_RH=.26,SPL_RR=.115,SPL_PRE0=.5,SPL_T={place:4.4,pre:1.2,swing:1.9,after:.9};
  const SPLM={bark:new THREE.MeshStandardMaterial({color:0x5a4330,roughness:.95}),wood:new THREE.MeshStandardMaterial({color:0xcfa572,roughness:.85})};
  // a sawn round (bark round the side, pale end grain) and the half of one (flat split face)
  function roundMesh(){splGuard();const g=new THREE.Group();g.userData.splRound=1;const c=new THREE.Mesh(new THREE.CylinderGeometry(SPL_RR*.97,SPL_RR,SPL_RH,14),[SPLM.bark,SPLM.wood,SPLM.wood]);c.position.y=SPL_RH/2;g.add(c);c.castShadow=true;return g;}
@@ -2342,9 +2342,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
       in master too: the round was split where it lay); he faces it, 33 cm out in front of his hips (closer, his boots touched it and the shuffle back woke the walk legs), between his feet */
    if(a.pre==null){/* the nearest spot 37 cm off the round (34: shins 4 cm into it as he took it) that keeps his boots (and his way there) off the pallet */let v=V(a.r0.x-rp.x,0,a.r0.z-rp.z).normalize();
     if(S.pc){const inP=(x,z,m)=>{const dx=x-S.pc.x,dz=z-S.pc.z,D=S.pd;return Math.abs(dx*D.z-dz*D.x)<.29+m&&Math.abs(dx*D.x+dz*D.z)<S.pL/2+m;};let best=null,bd=1e9;
-     for(let k=0;k<16;k++){const an=k*Math.PI/8;const u=V(Math.sin(an),0,Math.cos(an));const q=a.r0.clone().addScaledVector(u,.37);q.y=rp.y;if(inP(q.x,q.z,.16))continue;{const q2=q.clone();pushOut(q2);if(Math.hypot(q2.x-q.x,q2.z-q.z)>.03)continue;}/* not in the block or anything else (pushed out of the block, the spot landed on the round) */let ok=true;for(let f=.15;f<.96;f+=.1)if(inP(lerp(rp.x,q.x,f),lerp(rp.z,q.z,f),.1)){ok=false;break;}
+     for(let k=0;k<16;k++){const an=k*Math.PI/8;const u=V(Math.sin(an),0,Math.cos(an));const q=a.r0.clone().addScaledVector(u,window.__splPre??SPL_PRE0);q.y=rp.y;if(inP(q.x,q.z,.16))continue;{const q2=q.clone();pushOut(q2);if(Math.hypot(q2.x-q.x,q2.z-q.z)>.03)continue;}/* not in the block or anything else (pushed out of the block, the spot landed on the round) */let ok=true;for(let f=.15;f<.96;f+=.1)if(inP(lerp(rp.x,q.x,f),lerp(rp.z,q.z,f),.1)){ok=false;break;}
       const c=Math.hypot(q.x-rp.x,q.z-rp.z)+(ok?0:5);if(c<bd){bd=c;best=u;}}if(best)v=best.negate();}
-    a.preF=Math.atan2(v.x,v.z);const q=a.r0.clone().addScaledVector(v,-.37);q.y=rp.y;pushOut(q);a.pre=Math.hypot(q.x-rp.x,q.z-rp.z)>.05||Math.abs(wrapA(a.preF-root.rotation.y))>.1?splSlide(q,a.preF,.7)+.1:0;}
+    a.preF=Math.atan2(v.x,v.z);const q=a.r0.clone().addScaledVector(v,-(window.__splPre??SPL_PRE0));q.y=rp.y;pushOut(q);a.pre=Math.hypot(q.x-rp.x,q.z-rp.z)>.05||Math.abs(wrapA(a.preF-root.rotation.y))>.1?splSlide(q,a.preF,.7)+.1:0;}
    if(!a.st1)H.face=a.preF;
    /* the squat waits for the motion-matched legs to finish their last step (they hold the lower body until settled: the first
       round squatted 1.1 s late, standing legs under a bent back, hips not below 0.68) */
@@ -2374,7 +2374,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    if(!rdLateOn){rdLateOn=1;lateFn(()=>{const A=act;const r2=A&&A.rd;if(!r2||!A.rOff||r2.parent!==bones.LeftHand)return;roundLock(A,r2);});}/* again after the pose guard moved the hand */
    if(rd.parent===bones.LeftHand&&a.rOff)roundLock(a,rd);
    /* the round on the ground before him: his boots and shins stay off it while he bends for it (full gate: feet 9 cm in it) */if(rd.parent===scene&&!a.placed&&t<1.3&&!S.pc)kneesClear(rd,dt,true);/* on the pallet his spot is chosen clear of it: the shuffle back pushed him 30 cm off the round (and woke the walk legs) */
-   if(t>=T.place){a.overTop=0;a.carD=null;a.pre=null;a.preW=0;a.rOff=null;a.rOff0=null;a.rW=null;a.ph='swing';a.pt=0;a.hit=0;a.lk=null;a.pk=0;a.placed=0;a.settle=null;a.st1=a.st1b=a.st2=a.st2b=0;a.axDn=0;a.axUp=0;a.lean=null;a.axT=null;a.axRel=0;}return;}
+   if(t>=T.place){a.overTop=0;a.carD=null;a.pre=null;a.preW=0;a.rOff=null;a.rOff0=null;a.rW=null;a.ph='swing';a.pt=0;a.hit=0;a.lk=null;a.pk=0;a.placed=0;a.settle=null;a.st1=a.st1b=a.st2=a.st2b=0;a.axDn=0;a.axUp=0;a.lean=null;a.axT=null;a.axF=null;a.axRel=0;}return;}
   // 2. the swing: angle th round a pivot just in front of the shoulders, in the vertical plane through the round
   const Ls=bones.LeftArm.getWorldPosition(V()),Rs=bones.RightArm.getWorldPosition(V());const piv=Ls.clone().add(Rs).multiplyScalar(.5).addScaledVector(d,.06).add(V(0,-.04,0));
   const tgt=c.clone().add(V(0,SPL_RH-.015,0));const q=tgt.clone().sub(piv);const qh=V(q.x,0,q.z).length();const rH=q.length();const thS=Math.atan2(q.y,qh);
@@ -2396,15 +2396,27 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // the axe at rest in the right hand: hanging head down along the leg, the blade forward (never sticking out sideways)
  // OUTDOOR (watcher R55-1): the round goes from the stack to the block in both hands, so the axe is first leant against the block
  // (head on the ground at its right side, the handle on its rim) and taken back up once the round stands on the block
- function axeLeanPose(c,d,r){let gy=c.y-.5;try{gy=window.__ground.heightAt(c.x+r.x*.37,c.z+r.z*.37);}catch(e){}const h=c.clone().addScaledVector(r,.37).addScaledVector(d,-.06);h.y=gy+.05;
-  const tp=c.clone().addScaledVector(r,.22).addScaledVector(d,-.14);tp.y=c.y-.03;const dir=h.clone().sub(tp).normalize();return {head:h,dir,blade:r.clone(),grip:h.clone().addScaledVector(dir,-AXE_G)};}
+ /* the axe leant on the block while he carries a round: head on the ground beside it, handle top on its rim. On the side of the block
+    with bare ground under the whole axe (Props moved the block next to an oak root: on its right the head lay 29 cm inside the root);
+    his right side first, then round toward the far side, never in front of him */
+ function axeLeanPose(c,d,r){const G=window.__ground;const gH=(x,z)=>{try{return G.heightAt(x,z);}catch(e){return c.y-.5;}};
+  const mk=u=>{const h=c.clone().addScaledVector(u,.37).addScaledVector(d,-.06);h.y=gH(h.x,h.z)+.05;const tp=c.clone().addScaledVector(u,.245).addScaledVector(d,-.12);tp.y=c.y-.025;const dir=h.clone().sub(tp).normalize();return {head:h,dir,blade:u.clone(),grip:h.clone().addScaledVector(dir,-AXE_G),tp};};
+  const bad=P=>{let m=0;for(let k=0;k<=4;k++){const q=P.head.clone().lerp(P.tp,k/4);const b=G&&G.barkTop?G.barkTop(q.x,q.z):null;if(b!=null)m=Math.max(m,b-(q.y-.04));}/* round the head (blade, poll and its width: 12 cm) */for(let k=0;k<8;k++){const an=k*Math.PI/4;const b2=G&&G.barkTop?G.barkTop(P.head.x+Math.cos(an)*.12,P.head.z+Math.sin(an)*.12):null;if(b2!=null)m=Math.max(m,b2-(P.head.y-.04));}return m;};
+  if(window.__oldAxeLean)return mk(r);let best=null,bs=1e9;
+  for(const an of [0,.35,-.35,.7,-.7,1.05,1.4,2.1,2.6,3.14,-2.6]){const u=r.clone().multiplyScalar(Math.cos(an)).addScaledVector(d,Math.sin(an));const P=mk(u);const sc=Math.max(0,bad(P))*10+Math.abs(an)*.05;if(sc<bs){bs=sc;best=P;}if(sc<.02)break;}
+  return best;}
  function axeHold(a,d,t){const L=a.lean;if(L&&a.axDn&&!a.axUp){axeWorld(L.head,L.dir,L.blade);return;}
   if(L&&a.axUp&&t!=null&&t-a.axUt<.4){const k=smooth(0,.4,t-a.axUt);const gp=odPalm('Right');const hang=V(0,-1,0).addScaledVector(d,.22).normalize();const dn=L.dir.clone().lerp(hang,k).normalize();axeWorld(gp.clone().addScaledVector(dn,AXE_G),dn,L.blade.clone().lerp(d,k));return;}
   axeRest(a,d,1);}
  function axeDown(a,c,d,r,rp,dt){if(!a.lean)a.lean=axeLeanPose(c,d,r);const L=a.lean;
-  if(a.axT==null){a.axT=0;const q=c.clone().addScaledVector(d,-.5);q.y=rp.y;a.axSl=Math.hypot(q.x-rp.x,q.z-rp.z)>.05?splSlide(q,Math.atan2(d.x,d.z),.7)+.05:0;}/* a step in to the block's side */
+  if(a.axT==null){a.axT=0;let q=c.clone().addScaledVector(d,-(window.__axIn??.6)),fc=Math.atan2(d.x,d.z);
+   if(window.__axeStepR){/* the lean may be round the block from his right (a root there): he steps to where it is at his right hand, facing the block's top (reaching across his body for it jerked his head 14 cm/frame²) */
+    for(let it=0;it<3;it++){const dd=V(c.x-q.x,0,c.z-q.z).normalize(),rr=V(-dd.z,0,dd.x);const q2=L.grip.clone().addScaledVector(rr,-.24).addScaledVector(dd,-.36);const o=V(q2.x-c.x,0,q2.z-c.z);const ol=o.length();if(ol<.6)o.multiplyScalar(.6/Math.max(ol,1e-3));q=c.clone().add(o);}
+    {const q2=q.clone();pushOut(q2);q=q2;}fc=Math.atan2(c.x-q.x,c.z-q.z);}
+   q.y=rp.y;a.axSl=Math.hypot(q.x-rp.x,q.z-rp.z)>.05||Math.abs(wrapA(fc-root.rotation.y))>.1?splSlide(q,fc,.7)+.05:0;a.axF=fc;}/* a step in to the block's side */
+  if(a.axF!=null)H.face=a.axF;
   a.axT+=dt;const t=a.axT-a.axSl;if(t<0){axeRest(a,d,1);return;}
-  H.squat=.14*smooth(0,.35,t)*(1-smooth(.75,1.05,t));const w=smooth(0,.4,t)*(1-smooth(.7,1.0,t));if(w>.01)odReach('Right',L.grip,w);
+  H.squat=.14*smooth(0,.35,t)*(1-smooth(.75,1.05,t));const w=smooth(0,.4,t)*(1-smooth(.7,1.0,t));if(w>.01){const RL=REACH_LEAN;if(!window.__axeLean)REACH_LEAN=0;/* the lean may be at his left front (a root on the block's right): the leaning reach across the body jerked his head 14 cm/frame² */try{odReach('Right',L.grip,w);}finally{REACH_LEAN=RL;}}
   const k=smooth(.3,.55,t);if(k<1){const gp=odPalm('Right');const m=smooth(.05,.45,t);const dn=V(0,-1,0).addScaledVector(d,.22).normalize().lerp(L.dir,m).normalize();const hd=gp.clone().addScaledVector(dn,AXE_G).lerp(L.head,k);axeWorld(hd,dn.lerp(L.dir,k).normalize(),d.clone().lerp(L.blade,m));}
   else{axeWorld(L.head,L.dir,L.blade);if(!a.axRel){a.axRel=1;AU('wood',L.head);}}
   if(t>1.05){a.axDn=1;a.pt=0;H.squat=0;}}
@@ -3395,6 +3407,16 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   if(s.k>=1){H.swing=null;s.then&&s.then();}}
 
  // ---------- per frame ----------
+
+ /* the floor under him on the ground: the ray's floor, the root tops / rendered ground under both soles (and the hips), the pond bank.
+    Shared by the floor follow and the freeze guard: when the guard used the bare ray (Ground's standAt follows the rendered patch, up
+    to 14-19 cm over the ray at the chopping block) it dropped him 15 cm in one frame every 1.5 s he stood still, and the follow lifted him back
+    (gate: splitwood whole-body jumps 14-18 cm/frame²) */
+ function groundFloor(f,p){
+   const G=window.__ground;if(f!=null&&G&&G.standAt&&p.y<2&&!window.__noRootStep){const hs=['Left','Right'].map(s=>{const a=bones[s+'Foot']?bones[s+'Foot'].getWorldPosition(V()):p;return G.standAt(a.x,a.z);});f=Math.max(f,Math.min(G.standAt(p.x,p.z),...hs));}
+   /* OUTDOOR: the pond lies in a hollow the floor ray never sees (flat at 0): on its bank he stood 7-16 cm in the air (film, filling the pail). Near the pond the soles stand on the sloping bank */
+   if(f!=null&&G&&G.standAt&&p.y<.3){const dx=p.x+1.4,dz=p.z-7.6,c=Math.cos(-.12),sn=Math.sin(-.12);if(Math.hypot((dx*c+dz*sn)/1.75,(-dx*sn+dz*c)/1.15)<1.7){const hs=['Left','Right'].map(s=>{const a=bones[s+'Foot']?bones[s+'Foot'].getWorldPosition(V()):p;return G.standAt(a.x,a.z);});const lo=Math.max(G.standAt(p.x,p.z),...hs);if(lo<f)f=lo;}}
+   return f;}
  // freeze guard: a finished one-off clip that nothing follows, a ladder clip with no ladder, or a body hanging above the floor
  // with nothing holding it there (no seat, bed, ladder, slide) -> recover in place and let the next task start
  const FZ={t:0,lt:0,ft:0,p:null,ct:-1,c:null};
@@ -3402,7 +3424,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   const still=FZ.p&&FZ.p.distanceTo(p)<.003&&nm===FZ.c&&Math.abs(tm-FZ.ct)<1e-4;FZ.p=p.clone();FZ.c=nm;FZ.ct=tm;
   const busy=H.seated||H.inBed||H.lad||H.slide||H.fit||H.wait||(H.path&&H.path.length);
   FZ.t=still&&!busy?FZ.t+dt:0;FZ.lt=(!H.lad&&/^43[57]$/.test(nm||''))?FZ.lt+dt:0;
-  /* LEISURE: a squat lowers the root under the boards he stands on: the ray from the root found the storey below (telescope, game style: root down 40 cm in one frame). Ray and check from the feet's level. (40 cm at f10921 was the ray down a plank gap at the telescope) */const sqF=H.squat||0;let fl=null;if(!busy&&!H.trans&&H.ground&&typeof floorAt==='function'){try{fl=floorAt(p.x,p.y+sqF,p.z,.32);/* and as the floor follow does: one ray down a gap between planks is not a drop when the boards around hold him */if(fl!=null)for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y+sqF,p.z+oz,.32);if(g2!=null&&g2>fl&&g2<=p.y+sqF+.03)fl=g2;}}catch(e){}}FZ.ft=(fl!=null&&p.y+sqF-fl>.1&&p.y+sqF-fl<.6)?FZ.ft+dt:0;
+  /* LEISURE: a squat lowers the root under the boards he stands on: the ray from the root found the storey below (telescope, game style: root down 40 cm in one frame). Ray and check from the feet's level. (40 cm at f10921 was the ray down a plank gap at the telescope) */const sqF=H.squat||0;let fl=null;if(!busy&&!H.trans&&H.ground&&typeof floorAt==='function'){try{fl=floorAt(p.x,p.y+sqF,p.z,.32);/* and as the floor follow does: one ray down a gap between planks is not a drop when the boards around hold him */if(fl!=null)for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y+sqF,p.z+oz,.32);if(g2!=null&&g2>fl&&g2<=p.y+sqF+.03)fl=g2;}if(!window.__oldFreezeFloor)fl=groundFloor(fl,p);}catch(e){}}FZ.ft=(fl!=null&&p.y+sqF-fl>.1&&p.y+sqF-fl<.6)?FZ.ft+dt:0;
   if(FZ.ft>1.5){p.y=fl-sqF;H.floorY=fl;FZ.ft=0;}
   if(FZ.t>6||FZ.lt>2.5){FZ.t=0;FZ.lt=0;console.warn('[hero] freeze guard: recover',H.task,nm,p.toArray().map(v=>+v.toFixed(2)));H.trans=false;H.lad=null;H.stk=null;H.once=null;
    play(IDLE(),{fade:.5});const n=H.task;if(n&&act){if(act.leave&&!act.left){act.left=true;try{act.leave(()=>{endTask(false);});}catch(e){endTask(false);}}else endTask(false);}}}
@@ -3601,9 +3623,7 @@ stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(d
    if(f!=null&&H.floorY!=null&&f<H.floorY-.006){for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y+sq,p.z+oz,.32);if(g2!=null&&g2>f&&g2<=H.floorY+.01)f=g2;}}
    /* WALK: on the ground the oak's roots are something to stand on: the body rises only when both soles (and the hips) are over a root;
       a single foot on a root is lifted by terrainFeet() with the knee bending, like stepping over it */
-   const G=window.__ground;if(f!=null&&G&&G.standAt&&p.y<2&&!window.__noRootStep){const hs=['Left','Right'].map(s=>{const a=bones[s+'Foot']?bones[s+'Foot'].getWorldPosition(V()):p;return G.standAt(a.x,a.z);});f=Math.max(f,Math.min(G.standAt(p.x,p.z),...hs));}
-   /* OUTDOOR: the pond lies in a hollow the floor ray never sees (flat at 0): on its bank he stood 7-16 cm in the air (film, filling the pail). Near the pond the soles stand on the sloping bank */
-   if(f!=null&&G&&G.standAt&&p.y<.3){const dx=p.x+1.4,dz=p.z-7.6,c=Math.cos(-.12),sn=Math.sin(-.12);if(Math.hypot((dx*c+dz*sn)/1.75,(-dx*sn+dz*c)/1.15)<1.7){const hs=['Left','Right'].map(s=>{const a=bones[s+'Foot']?bones[s+'Foot'].getWorldPosition(V()):p;return G.standAt(a.x,a.z);});const lo=Math.max(G.standAt(p.x,p.z),...hs);if(lo<f)f=lo;}}
+   f=groundFloor(f,p);
    if(f!=null&&f-(p.y+sq)<.3&&(p.y+sq)-f<.3){H.floorY=f;const d=f-sq-p.y;p.y+=clamp(d*(1-Math.exp(-dt*12)),-.9*dt,1.3*dt);}}
   // ===== MOTION HOOK: motion matching (game/motion.js) writes legs/hips (and the upper body unless an action clip plays) on top of the clip pose, before IK =====
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
@@ -3613,7 +3633,7 @@ stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(d
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
-  SOLE.seen=0;if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(H.ground&&!H.fit&&!H.squat&&(p.y>2?!window.__noBoardStep:!window.__noRootStep)){legIK(boardDy(g,dt),1);if(!window.__noHeelLift)heelLift();/* a foot lifted onto a root or a higher board under hips that stay: the heel comes up rather than the ankle folding (trip / firewood 45-54 deg) */}else{TF.Left=TF.Right=null;if(Math.abs(dy)>.004){legIK(dy,1);if(dy>.02&&!window.__noHeelLift)heelLift(smooth(.02,.12,dy));}}if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);if((H.squat||0)>.02&&!window.__noHeelLift)heelLift(smooth(.02,.12,H.squat));/* the held sole moved the ankle back under a bent shin (cook crouch: 115 -> 135 deg) */toeGuard(g,dt);}if(!H.inBed&&!H.bedB&&!H.bedC){kneeGuard();if(!loadClear.reg){loadClear.reg=1;lateFn(()=>loadClear(1/60));}/* in the guard stage, on the final pose */}/* BED: lying down the pelvis faces up, so its flat forward is meaningless and the guard flipped the knees (3 rad leg twist) */}
+  SOLE.seen=0;if(g!=null&&!H.lad){if(H.fit&&H.fit.dangle){legPlantOff();}/* LEISURE: legs hanging over an edge are never planted on the boards (Pavel's screenshot) */else if(H.fit&&H.fit.mode==='hold')legPlant(g,dt,H.bedB?1-H.bedB.W.leg:H.bedC?H.bedC.plant:1);else{legPlantOff();let dy=g-p.y;if(Math.abs(dy)>(H.squat?.5:.3)){if(H.ground&&!H.fit)H.floorY=p.y;dy=0;}if(H.ground&&!H.fit&&(!H.squat||(p.y<.6&&!window.__noSquatGround))&&(p.y>2?!window.__noBoardStep:!window.__noRootStep)){legIK(boardDy(g,dt),1);/* OUTDOOR: squatting on the ground too, each sole on the ground under it: both soles went to the body's floor (the lowest of hips and feet), sank 6 cm into the slope by the chopping block and popped back up 5 cm in one frame when the squat ended (gate: splitwood legs 10.6 cm/frame²) */if(!window.__noHeelLift)heelLift();/* a foot lifted onto a root or a higher board under hips that stay: the heel comes up rather than the ankle folding (trip / firewood 45-54 deg) */}else{TF.Left=TF.Right=null;if(Math.abs(dy)>.004){legIK(dy,1);if(dy>.02&&!window.__noHeelLift)heelLift(smooth(.02,.12,dy));}}if(H.ground&&!H.fit&&!window.__noSole)soleLock(g,dt);if((H.squat||0)>.02&&!window.__noHeelLift)heelLift(smooth(.02,.12,H.squat));/* the held sole moved the ankle back under a bent shin (cook crouch: 115 -> 135 deg) */toeGuard(g,dt);}if(!H.inBed&&!H.bedB&&!H.bedC){kneeGuard();if(!loadClear.reg){loadClear.reg=1;lateFn(()=>loadClear(1/60));}/* in the guard stage, on the final pose */}/* BED: lying down the pelvis faces up, so its flat forward is meaningless and the guard flipped the knees (3 rad leg twist) */}
   /* WALK: a sole lock that was not run this frame (seated, perched, on a ladder) is dropped, not kept at its old weight: standing up from the chair both feet jumped 11-13 cm to a stale lock spot */if(!SOLE.seen){for(const k of ['Left','Right']){SOLE[k].w=0;SOLE[k].on=false;}}bedHand();bedLegClear(dt);
   H.bucketTilt=false;/* OUTDOOR: set again by a task that tips a bucket on purpose this frame (grab.js leaves it unplumbed) */
   if(act&&act.post)act.post(dt);if(act&&act.post)soleRe();if(act&&act.fr)fridgePost(act);/* KITCHEN: the hand on the fridge handle / shelf */slungPost();lanternHang();{const G=window.__grab;const f=()=>{try{stowPost(dt);}catch(e){console.error('stow',e);STW=null;}};if(STW&&G&&G.late)G.late(f);else f();}/* GRAB: after collide.js, like the other hand holds */
