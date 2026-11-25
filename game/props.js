@@ -195,7 +195,10 @@ function boxUV(geo, grain, scale = 1 / .9) {
   }
   uv.needsUpdate = true; return geo;
 }
-function lathe(pts, seg = 16) { return new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), Math.min(seg, 16)); } // perf: 16 around is smooth at phone size
+let FINE = 0;   // [PROPS round] set while building things the hero holds up to the camera (pot, kettle, ladle, plate, lantern): rounder
+// fine(build): those few vessels get 24 sides and no size-based LOD reduction (a 20 cm pot came out a 10-sided prism)
+const fine = f => { FINE = 1; try { return f(); } finally { FINE = 0; } };
+function lathe(pts, seg = 16) { return new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), Math.min(seg, FINE ? 24 : 16)); } // perf: 16 around is smooth at phone size
 function add(parent, geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; }
 
 // ---------------- materials ----------------
@@ -344,7 +347,7 @@ function plainOf(m) {
 // is not built like a barrel. Rebuilt from the generator's own parameters; anything else passes through unchanged.
 const _lodWS = new THREE.Vector3();
 const _lodOK = new WeakMap();
-function lodGeo(o) { const g = o.geometry, P = g.parameters; if (!P || !g.attributes.position) return g; o.getWorldScale(_lodWS); const sa = [Math.abs(_lodWS.x), Math.abs(_lodWS.y), Math.abs(_lodWS.z)].sort((a, b) => a - b), sc = sa[1] || 1; const segs = (r, n, mn = 8) => Math.max(Math.min(mn, n), Math.min(n, Math.ceil(r * sc * 100)));
+function lodGeo(o) { const g = o.geometry, P = g.parameters; if (FINE || !P || !g.attributes.position) return g; o.getWorldScale(_lodWS); const sa = [Math.abs(_lodWS.x), Math.abs(_lodWS.y), Math.abs(_lodWS.z)].sort((a, b) => a - b), sc = sa[1] || 1; const segs = (r, n, mn = 8) => Math.max(Math.min(mn, n), Math.min(n, Math.ceil(r * sc * 100)));
   const T = THREE; let mk = null, n0 = 0, n1 = 0;
   switch (g.type) {
     case 'CylinderGeometry': n0 = P.radialSegments; n1 = segs(Math.max(P.radiusTop, P.radiusBottom), n0); mk = n => new T.CylinderGeometry(P.radiusTop, P.radiusBottom, P.height, n, P.heightSegments, P.openEnded, P.thetaStart, P.thetaLength); break;
@@ -670,8 +673,13 @@ function galvMat() { if (_galv) return _galv; let ls = 2468; const LR = () => { 
     for (let k = 0; k < 10; k++) { const y = h * (.2 + LR() * .6); g.fillStyle = `rgba(90,86,76,${.08 + LR() * .1})`; g.fillRect(0, y, w, 2 + LR() * 5); }
     const gr = g.createLinearGradient(0, 0, 0, h * .14); gr.addColorStop(0, 'rgba(120,62,30,.6)'); gr.addColorStop(1, 'rgba(120,62,30,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h * .14); });
   const t = texOf(c); t.flipY = false; const b = texOf(c, { srgb: false }); b.flipY = false; _galv = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: .4, metalness: .6, roughness: .55, envMap: M.env, envMapIntensity: .5 }); return _galv; }
-function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 = h * .5, r1 = h * .62; add(g, lathe([[0, 0], [r0, 0], [r1, h], [r1 - .012, h], [r0 - .012, .015], [0, .015]], 28), metal ? galvMat() : M.stave);
-  for (const t of metal ? [.97] : [.15, .8]) { const r = r0 + (r1 - r0) * t + .004; const tor = add(g, new THREE.TorusGeometry(r, metal ? .008 : .01, 6, 32), metal ? M.steel : M.iron, 0, h * t, 0, Math.PI / 2); if (!metal) tor.scale.z = 1.6; }
+function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 = h * .5, r1 = h * .62, NS = metal ? 28 : 12;
+  // [PROPS round] a pressed tin pail is round (the 16-facet cap made it a polygon), a coopered bucket has 12 flat staves; its hoops
+  // are flat forged bands lying on the staves, not round black rubber rings; the tin pail keeps its rolled wire rim
+  add(g, new THREE.LatheGeometry([[0, 0], [r0, 0], [r1, h], [r1 - .012, h], [r0 - .012, .015], [0, .015]].map(([x, y]) => new THREE.Vector2(x, y)), NS), metal ? galvMat() : M.stave);
+  if (metal) { const r = r1 + .002; add(g, new THREE.TorusGeometry(r, .006, 6, 28), M.steel, 0, h * .985, 0, Math.PI / 2); }
+  else for (const t of [.15, .8]) { const hw = .014, ya = h * t - hw, yb = h * t + hw, ra = r0 + (r1 - r0) * ya / h + .003, rb2 = r0 + (r1 - r0) * yb / h + .003;
+    add(g, new THREE.LatheGeometry([[ra - .003, ya], [ra, ya], [rb2, yb], [rb2 - .003, yb]].map(([x, y]) => new THREE.Vector2(x, y)), NS), M.hoopIron); }
   /* the bail: from two ears at the rim up to 7 cm over its middle, where the fist holds it (a full half-circle rose 19 cm over the rim and the
      fist, at the grip point, held it low by one side: the thin wire ran down into the water, watcher R20-3) */
   { const ey = h - .012, er = r1 + .008;/* ears just under the rolled rim, outside it: lower ears on the tapered wall put the arc inside the rim, through the water */ add(g, new THREE.TorusGeometry(er, .004, 6, 24, Math.PI), M.iron, 0, ey, 0, 0, Math.PI / 2, 0).scale.set(1, .085 / er, 1);
@@ -905,7 +913,7 @@ function telescope() {
   /* tripod tall enough for the hero's eye: eyepiece ~1.34 m (Grab); the legs stretch, the tube and brass keep their size */
   const g = new THREE.Group(); const top = 1.36, LK = top / 1.08;
   // aged brass (less candy-yellow than TB) and a dark lacquered tube body, like an old field telescope
-  const TB = new THREE.MeshStandardMaterial({ color: 0xB48C48, metalness: .9, roughness: .36, envMap: M.env, envMapIntensity: 1.1 }), LAC = new THREE.MeshStandardMaterial({ color: 0x1C2633, roughness: .3, metalness: .35, envMap: M.env, envMapIntensity: 1.2 });
+  const TB = new THREE.MeshStandardMaterial({ color: 0x8E7646, metalness: .78, roughness: .52, envMap: M.env, envMapIntensity: .7 }) /* [PROPS round] years out on the deck: tarnished, dull brass (in the sun it read as orange toy plastic) */, LAC = new THREE.MeshStandardMaterial({ color: 0x1C2633, roughness: .3, metalness: .35, envMap: M.env, envMapIntensity: 1.2 });
   for (let i = 0; i < 3; i++) { const l = new THREE.Group(); l.position.set(0, top, 0); l.rotation.y = i * Math.PI * 2 / 3 + .4; l.scale.set(1, LK, LK); g.add(l); W(l, .035, 1.16, .025, 0, -.55, .19, { mat: M.woodDark, grain: 1, r: .008, rx: -.33 }); add(l, rb(.04, .025, .035, .008), TB, 0, -.02, .02); add(l, rb(.022, .016, .13, .004), M.woodDark, 0, -.5, .105); add(l, new THREE.CylinderGeometry(.006, .006, .03, 6), TB, 0, -1.08, .38); }
   add(g, new THREE.CylinderGeometry(.065, .065, .014, 3), M.woodDark, 0, top - .5 * LK, 0); // spreader tray
   add(g, new THREE.CylinderGeometry(.05, .06, .05, 20), TB, 0, top, 0);
@@ -1073,8 +1081,13 @@ function logStack(slots, len, lo = false) {
   const g = new THREE.Group(); g.userData.live = true; const n = slots.length; const uC = { value: n }; const per = [[], [], []];
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   slots.forEach((s, i) => { q.setFromEuler(e.set(s.rx || 0, s.ry || 0, s.rz)); m.compose(V(s.x, s.y, s.z || 0), q, V(s.r, s.r, len * (s.l || 1)));
-    logParts(s.v, lo).forEach((pg, k) => { if (!pg) return; const c = pg.clone(); c.applyMatrix4(m); c.setAttribute('slot', new THREE.Float32BufferAttribute(new Float32Array(c.attributes.position.count).fill(i), 1)); per[k].push(c); }); });
-  logMats().forEach((mat, k) => { if (!per[k].length) return; const mm = maskMat(mat, 'slot', uC); const mesh = new THREE.Mesh(mergeGeometries(per[k], false), mm.mat); mesh.customDepthMaterial = mm.depth; mesh.customDistanceMaterial = mm.dist;
+    // [PROPS round] cordwood ends are not all one sticker-clean tone: some fresh and pale, most greyed by weather, a few dark
+    // and damp or reddish heartwood (vertex colour on the end-grain part only; same draws)
+    const tr = R(), tint = tr < .25 ? [1, .97, .92] : tr < .65 ? [.8, .77, .72] : tr < .85 ? [.62, .55, .48] : [.98, .84, .72], tv = rr(.92, 1.06);
+    logParts(s.v, lo).forEach((pg, k) => { if (!pg) return; const c = pg.clone(); c.applyMatrix4(m); const nV = c.attributes.position.count; c.setAttribute('slot', new THREE.Float32BufferAttribute(new Float32Array(nV).fill(i), 1));
+      if (k === 1) { const ca = new Float32Array(nV * 3); for (let j = 0; j < nV; j++) ca.set([tint[0] * tv, tint[1] * tv, tint[2] * tv], j * 3); c.setAttribute('color', new THREE.Float32BufferAttribute(ca, 3)); }
+      per[k].push(c); }); });
+  logMats().forEach((mat, k) => { if (!per[k].length) return; const mm = maskMat(mat, 'slot', uC); if (k === 1) mm.mat.vertexColors = true; const mesh = new THREE.Mesh(mergeGeometries(per[k], false), mm.mat); mesh.customDepthMaterial = mm.depth; mesh.customDistanceMaterial = mm.dist;
     mesh.castShadow = mesh.receiveShadow = true; mesh.userData.live = true; g.add(mesh); per[k].forEach(x => x.dispose()); });
   g.userData.logs = { max: n, count: n, slots, setCount(k) { k = Math.max(0, Math.min(n, Math.round(k))); uC.value = k; this.count = k; } };
   return g;
@@ -1211,7 +1224,8 @@ function jacket() { const X = mx(), g = new THREE.Group(); // origin = the hangi
 function bowOnWall() { const X = mx(), g = new THREE.Group(); // in the y-z plane, bulging toward +z; origin at the grip
   const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); add(g, new THREE.TubeGeometry(c, 28, .015, 7), M.wood); /* scanned wood grain, not a flat brown tube */
   add(g, new THREE.CylinderGeometry(.0025, .0025, 1.12, 4), std2(0xE8E2D0), 0, 0, .002); add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
-function quiver() { const X = mx(), g = new THREE.Group(); // origin at the strap ring on top
+function quiver() { return fine(() => quiver0()); }
+function quiver0() { const X = mx(), g = new THREE.Group(); // origin at the strap ring on top
   add(g, lathe([[0, -.52], [.04, -.52], [.05, -.5], [.055, -.05], [.058, 0], [.05, 0], [.047, -.05], [0, -.05]], 16), X.leather);
   add(g, new THREE.TorusGeometry(.057, .005, 5, 16), std2(0x3E2618), 0, -.25, 0, Math.PI / 2);
   add(g, new THREE.TorusGeometry(.058, .006, 5, 16), std2(0x3E2618), 0, -.03, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .007, 5, 16), std2(0x3E2618), 0, -.5, 0, Math.PI / 2); // rim and base bands
@@ -1231,7 +1245,10 @@ function burlapMat() { if (_burlap) return _burlap; let ls = 5151; const LR = ()
   });
   const t = texOf(c); t.repeat.set(4, 1); const b = texOf(c, { srgb: false }); b.repeat.set(4, 1); t.flipY = b.flipY = false;
   _burlap = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 1.4, roughness: 1 }); return _burlap; }
-function meatBag() { const X = mx(), g = new THREE.Group(); const lg = lathe([[0, 0], [.09, 0], [.13, .05], [.14, .14], [.11, .21], [.045, .255], [.04, .27], [.06, .3], [.05, .315], [0, .3]], 20);
+function meatBag() { return fine(() => meatBag0()); }
+function meatBag0() { const X = mx(), g = new THREE.Group(); const prof0 = [[0, 0], [.09, 0], [.13, .05], [.14, .14], [.11, .21], [.045, .255], [.04, .27], [.06, .3], [.05, .315], [0, .3]];
+  const prof = []; for (let i = 0; i < prof0.length - 1; i++) { const [a, b] = [prof0[i], prof0[i + 1]], n = i < 5 ? 4 : 1; for (let k = 0; k < n; k++) prof.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); } prof.push(prof0[prof0.length - 1]);   // more rows: the lumps were cut into flat facets
+  const lg = lathe(prof, 24);
   { const P = lg.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), a = Math.atan2(z, x), r = Math.hypot(x, z); const body = Math.max(0, Math.sin(Math.min(1, y / .24) * Math.PI));
       const k = 1 + body * (.09 * Math.sin(a * 3 + y * 20) + .06 * Math.sin(a * 5 - y * 31) + .04 * Math.cos(a * 2 + 1.3)) + (y > .255 ? .18 * Math.sin(a * 9) : 0); /* lumps of meat inside; the gathered neck frills */
       P.setX(i, x * k); P.setZ(i, z * k); P.setY(i, y - (y < .03 ? .0 : .012 * Math.sin(a * 2) * body)); void r; } lg.computeVertexNormals(); }
@@ -1239,12 +1256,18 @@ function meatBag() { const X = mx(), g = new THREE.Group(); const lg = lathe([[0
   add(g, new THREE.TorusGeometry(.043, .006, 5, 14), X.rope, 0, -.042, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .005, 5, 14), X.rope, 0, -.05, 0, Math.PI / 2 + .12);
   { const c = new THREE.CatmullRomCurve3([V(.04, -.045, .02), V(.07, -.07, .045), V(.075, -.12, .05)]); add(g, new THREE.TubeGeometry(c, 8, .004, 5), X.rope); } // the twine's loose end
   g.userData.grip = V(0, 0, 0); return bake(g); }
-function logArmful() { const X = mx(), g = new THREE.Group(); for (const [x, y, v] of [[-.06, 0, 3], [.06, 0, 4], [0, .1, 5]]) { const l = logPiece(.5, .065, v); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
-  for (const z of [-.14, .14]) add(g, new THREE.TorusGeometry(.12, .007, 5, 18), X.rope, 0, .04, z).scale.set(1.05, .95, 1); g.userData.grip = V(0, .05, 0); return bake(g); }
+function logArmful() { return fine(() => logArmful0()); }
+function logArmful0() { const X = mx(), g = new THREE.Group(); for (const [x, y, v] of [[-.06, 0, 3], [.06, 0, 4], [0, .1, 5]]) { const l = logPiece(.5, .065, v); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
+  // [PROPS round] two cords pulled tight round the bundle (they were round hoops standing off the logs like handles): each
+  // follows the hull of the three logs, so it lies on the bark and runs straight across the gaps
+  const PS = []; g.updateMatrixWorld(true); g.traverse(o => { if (!o.isMesh) return; const P = o.geometry.attributes.position, v = V(); for (let i = 0; i < P.count; i += 3) { v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); PS.push([v.x, v.y]); } });
+  for (const z of [-.14, .14]) { const pts = []; for (let i = 0; i < 40; i++) { const a = i / 40 * Math.PI * 2, dx = Math.cos(a), dy = Math.sin(a); let best = PS[0], bd = -9; for (const c of PS) { const d = c[0] * dx + c[1] * dy; if (d > bd) { bd = d; best = c; } } pts.push(V(best[0] + .006 * dx, best[1] + .006 * dy, z + .003 * Math.sin(a * 3))); }
+    add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 48, .0055, 5, true), X.rope); }
+  g.userData.grip = V(0, .05, 0); return bake(g); }
 function sawhorse() { const X = mx(), g = new THREE.Group(); const L = .95, H = .62;
   W(g, L, .08, .09, 0, H - .04, 0, { mat: M.wood });
   for (const sx of [-1, 1]) { for (const sz of [-1, 1]) strut(g, V(sx * (L / 2 - .1), H - .07, sz * .03), V(sx * (L / 2 - .05), 0, sz * .22), .055, .045, M.woodDark); W(g, .03, .06, .36, sx * (L / 2 - .075), .22, 0, { mat: M.wood }); }
-  W(g, 1.15, .035, .2, .1, H + .0175, 0, { mat: M.woodLight }); // the plank, sawn part way across near the end
+  W(g, 1.15, .035, .2, .1, H + .0175, 0, { mat: M.woodDark }); // the plank, sawn part way across near the end ([PROPS round] an old board off the pile, not glossy fresh orange pine)
   W(g, .22, .035, .2, .62, .02, .12, { mat: M.woodLight, ry: .6, rz: .05 }); // an off-cut on the ground
   // sawdust under the cut: a low heap of loose crumbs, not a flat painted disc (it is merged by bake: no extra draw calls)
   { const parts = []; for (let i = 0; i < 46; i++) { const a = rr(0, 6.28), d = Math.sqrt(R()) * .2, h = .012 * (1 - d / .2) + .002, q = new THREE.BoxGeometry(rr(.008, .018), rr(.003, .006), rr(.008, .018));
@@ -1296,7 +1319,7 @@ export function buildProps(ctx) {
 
   // ---------- kitchen (back wall z≈1.05, open front +z) ----------
   const st = place('stove', stove(), -3.25, KT, 1.4); out.oven = st.userData.oven;
-  const ket = bake(kettle()); ket.position.set(-.19, .91, .13); /* the front-left ring (kitchen thread): on the back ring the handle was 66 cm from the shorter hero's shoulder, out of reach over the stove */ st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
+  const ket = fine(() => bake(kettle())); ket.position.set(-.19, .91, .13); /* the front-left ring (kitchen thread): on the back ring the handle was 66 cm from the shorter hero's shoulder, out of reach over the stove */ st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
   { const pt = bake(pot()); pt.position.set(.19, .93, .13); st.add(pt); }
   place('krail', utensilRail(.5), -3.25, KT + 1.37, 1.56, { solid: false, wall: true }); // hangs from the front edge of the hood, over the stove
   place('hood', hood(Math.max(.2, (BD - .2) - (KT + 1.42) - .3)), -3.25, KT + 1.42, 1.32, { solid: false, wall: true });
@@ -1417,7 +1440,7 @@ export function buildProps(ctx) {
   PT.pantry = [pantry, V(0, .6, .3)];
   const cn = placed.counter, cTop = cn.userData.floorY + .9;
   tool('board', choppingBoard(), scene, -2.62, cTop, 1.4, [0, .05, 0]); tool('knife', knife(), scene, -2.6, cTop + .023, 1.33, [0, -.15, 0]);
-  const plateO = tool('plate', bake(plateOfFood()), st, .21, .915, .13); /* serving plate waits by the pan on the stove, front right (in reach; at the back he folded over the hot pan) */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
+  const plateO = tool('plate', fine(() => bake(plateOfFood())), st, .21, .915, .13); /* serving plate waits by the pan on the stove, front right (in reach; at the back he folded over the hot pan) */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
   // food on the plate: setFood(1) full, (.5) half eaten, (0) empty. (Meshes are merged per material, so we scale the food meshes down.)
   out.plate = { obj: plateO, setFood(k) { k = clamp01(k); for (const m of food) { m.visible = k > .02; m.scale.setScalar(.35 + .65 * k); } } }; out.plate.setFood(0);
   PT.board = [out.tools.board, V(0, .03, 0)]; PT.sink = [cn, V(.23, .76, .04)];
@@ -1511,8 +1534,8 @@ export function buildProps(ctx) {
   { // the stew pot loses its lid and gets a ladle; both are tools now
     let potO = null; st.children.forEach(c => { if (!potO && c.position && Math.abs(c.position.x - .19) < .001 && Math.abs(c.position.z - .13) < .001) potO = c; });
     if (potO) { potO.removeFromParent(); }
-    const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); }
-    tool('pot', bake(pg), st, .19, .93, .13); tool('ladle', bake(ladle(.3)), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
+    const pg = fine(() => { const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); } return bake(pg); });
+    tool('pot', pg, st, .19, .93, .13); tool('ladle', fine(() => bake(ladle(.3))), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
     const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; stk.userData.live = true; fp.add(stk);
     const raw = new THREE.Color(0xA2343A), done = new THREE.Color(0x6A3A22);
     // the pan: setMeat(true/false) puts a steak in it, setCook(0..1) browns it

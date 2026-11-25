@@ -33,6 +33,13 @@ export function createEnv(C){
  // The distance fog of index.html stays; on top of it a layer of fog that is thick at the ground and thins out ~2 m up,
  // so roots, grass and the bottom of the trunk sink into blue mist like in the reference. Strength follows how thick
  // index.html makes the distance fog (night/morning/rain thick, day thin), so no extra uniforms are needed.
+ /* [ENV] alpha to coverage for cut-out leaves (oak, forest, bushes, grass, ferns): r160 forces alpha=1 on opaque materials, so the
+    A2C flag alone does nothing. Materials with defines.A2C keep fragments down to half a pixel below the cut and write the
+    pixel's share of the cut as alpha; with MSAA the GPU turns that into sample coverage, so leaf edges are smoothed instead of
+    stair-stepped. The edge stays where the cut was (centred ramp). Without MSAA the GPU ignores it. */
+ THREE.ShaderChunk.alphatest_pars_fragment+='\n#ifdef A2C\nfloat a2cCov=1.0;\n#endif';
+ THREE.ShaderChunk.alphatest_fragment='#ifdef USE_ALPHATEST\n#ifdef A2C\n{float a2w=max(fwidth(diffuseColor.a),1e-3)*.75;a2cCov=smoothstep(alphaTest-a2w,alphaTest+a2w,diffuseColor.a);if(a2cCov<=0.0)discard;}\n#else\n\tif ( diffuseColor.a < alphaTest ) discard;\n#endif\n#endif';
+ THREE.ShaderChunk.opaque_fragment+='\n#if defined(A2C)&&defined(USE_ALPHATEST)\ngl_FragColor.a=a2cCov;\n#endif';
  THREE.ShaderChunk.fog_pars_vertex='#ifdef USE_FOG\nvarying float vFogDepth;\nvarying vec3 vFogW;\n#endif';
  THREE.ShaderChunk.fog_vertex='#ifdef USE_FOG\nvFogDepth=-mvPosition.z;\nvFogW=(inverse(viewMatrix)*mvPosition).xyz;\n#endif';
  THREE.ShaderChunk.fog_pars_fragment=`#ifdef USE_FOG
@@ -349,7 +356,11 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  let cutList=[],cutAge=1e9;const isCut=o=>{const m=o.material;if(!m||o===puffs)return false;const ms=Array.isArray(m)?m:[m];return ms.some(x=>x.alphaTest>0||x.transparent||x.isSpriteMaterial||x.isPointsMaterial||x.isLineBasicMaterial);};
  const fogObjs=()=>{if(cutAge++>120){cutAge=0;cutList=[];scene.traverse(o=>{if((o.isMesh||o.isPoints||o.isLine||o.isSprite)&&isCut(o))cutList.push(o);});}return [...sheets,puffs,env.backdrop,...(env.mist||[]),...cutList];};let frameN=0;const dbs=new THREE.Vector2();
  const wTmpC=new THREE.Color(),wTmpD=new THREE.Color(); let lastT=null;const wTmp=V();const dawnC=new THREE.Color(0xF0BFA0),rainC=new THREE.Color(0x8E9EA8);
- env.update=(s)=>{const {T,P,nightK,mornK,rainK,lampOn,camera,hour}=s;{const pd=window.__ground&&window.__ground.pond;if(pd)pondU.pond.value.set(pd.x,pd.z,pd.r||pd.radius||1.5);}const moonIll=s.moonIll===undefined?1:s.moonIll;
+ /* flag the cut-out foliage for A2C (see the chunks at the top); objects added later are caught by the rescan */
+ let a2cAge=1e9,a2cN=0;const a2cOn=!/[?&](msaa=0|a2c=0)/.test(location.search);
+ const a2cScan=()=>{if(!a2cOn||a2cAge++<(a2cN<30?100:900))return;a2cAge=0;a2cN++;scene.traverse(o=>{if(!o.isMesh)return;const ms=Array.isArray(o.material)?o.material:[o.material];for(const m of ms){if(!m||m.userData.a2c||!(m.alphaTest>0)||m.transparent||m.isShaderMaterial||!m.map||!m.depthWrite)continue;m.userData.a2c=1;m.alphaToCoverage=true;m.defines=Object.assign({},m.defines,{A2C:''});m.needsUpdate=true;}});};
+ window.__a2c=()=>{a2cAge=1e9;a2cScan();};
+ env.update=(s)=>{a2cScan();const {T,P,nightK,mornK,rainK,lampOn,camera,hour}=s;{const pd=window.__ground&&window.__ground.pond;if(pd)pondU.pond.value.set(pd.x,pd.z,pd.r||pd.radius||1.5);}const moonIll=s.moonIll===undefined?1:s.moonIll;
   {const W=window.__wind;const dt=lastT===null?0:Math.min(.1,Math.max(0,T-lastT));lastT=T;
    if(W&&W.sample){const w=W.sample(wTmp.set(0,1,0))||{};const x=w.x||0,z=w.z||0,sp=w.s!==undefined?w.s:Math.hypot(x,z);const L=Math.hypot(x,z)||1;
     windU.wdir.value.set(x/L,z/L);windU.wlv.value=Math.min(1.5,sp);windU.drift.value.x+=x*dt*1.6;windU.drift.value.y+=z*dt*1.6;}}
@@ -395,7 +406,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
  // stronger blue rim and a cooler lift in the shadows. Uniform tweaks only: no extra draw calls or passes.
- const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:1.2,sheet:3.4,mist:2.6,/* [ENV] photo night: one soft continuous bank round the roots (sheets), not white cotton puddles (puffs); less flat haze wall over the forest (mist bands) */fill:1.7,rim:1.6,moonRim:1.8,haze:.6,/* [ENV] photo check (Lights): the photo's night has a thick softly glowing blue bank round the roots and a hazier forest */lift:new THREE.Color(0x122c52)};env.phoneNightK=PH;
+ const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:1.2,sheet:3.4,mist:1.1,/* [ENV] photo night: one soft continuous bank round the roots (sheets), not white cotton puddles (puffs); less flat haze wall over the forest (mist bands) */fill:1.7,rim:1.6,moonRim:1.8,haze:.6,/* [ENV] photo check (Lights): the photo's night has a thick softly glowing blue bank round the roots and a hazier forest */lift:new THREE.Color(0x122c52)};env.phoneNightK=PH;
  const liftBase=env.gradePass.uniforms.lift.value.clone(),liftTmp=new THREE.Color();
  function phoneNight(eve,rainK){const k=eve;PH.cur=k;const f=x=>1+(x-1)*k;
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
