@@ -1503,7 +1503,7 @@ export function buildProps(ctx) {
     // putAway() moves one from the rack to the shelf; state() -> {dirty, rack, shelf}. Points: 'sink', 'rack', 'dishShelf'.
     const X = mx(); const dirtM = std2(0x6A4A2A), crumbM = std2(0x8A6A3A), stewM = X.stew;
     const mk = (kind, dirty) => { const g = new THREE.Group();
-      if (kind === 'plate') { add(g, lathe([[0, 0], [.07, 0], [.1, .012], [.104, .016], [.06, .006], [0, .006]], 24), M.ceramic); if (dirty) { const d = add(g, new THREE.CircleGeometry(.05, 12), dirtM, .01, .0075, -.005, -Math.PI / 2); d.scale.set(1, .7, 1); for (let i = 0; i < 4; i++) add(g, new THREE.SphereGeometry(.006, 5, 4), crumbM, rr(-.04, .05), .009, rr(-.04, .04)); } }
+      if (kind === 'plate') { add(g, lathe([[0, 0], [.07, 0], [.1, .012], [.104, .016], [.06, .006], [0, .006]], 24), M.ceramic); if (dirty) { const d = add(g, new THREE.SphereGeometry(.05, 14, 5, 0, Math.PI * 2, 0, Math.PI / 2), dirtM, .01, .0058, -.005); d.scale.set(1, .05, .7); /* a thin domed film of gravy, not a flat painted disc */ for (let i = 0; i < 4; i++) add(g, new THREE.SphereGeometry(.006, 5, 4), crumbM, rr(-.04, .05), .009, rr(-.04, .04)); } }
       else if (kind === 'bowl') { add(g, lathe([[0, 0], [.04, 0], [.065, .04], [.07, .06], [.064, .06], [.058, .042], [.036, .008], [0, .008]], 22), M.glazeBlue); if (dirty) add(g, new THREE.CircleGeometry(.045, 14), stewM, 0, .02, 0, -Math.PI / 2); }
       else { add(g, lathe([[0, 0], [.035, 0], [.04, .07], [.036, .07], [.031, .004], [0, .004]], 16), M.glazeCream); add(g, new THREE.TorusGeometry(.022, .005, 6, 12, Math.PI * 1.2), M.glazeCream, .042, .038, 0, 0, 0, -Math.PI * .6); if (dirty) add(g, new THREE.CircleGeometry(.03, 12), std2(0x3A2414), 0, .02, 0, -Math.PI / 2); }
       bake(g); g.userData.live = true; return g; };
@@ -1523,7 +1523,7 @@ export function buildProps(ctx) {
     const show = () => objs.forEach((o, i) => { for (const w of ['dirty', 'rack', 'shelf']) o[w].visible = loc[i] === w; });
     const count = w => loc.filter(l => l === w).length;
     out.dishes = { max: 4, state: () => ({ dirty: count('dirty'), rack: count('rack'), shelf: count('shelf') }),
-      setDirty(n) { n = Math.max(0, Math.min(4, Math.round(n))); while (count('dirty') < n) { const i = loc.indexOf('shelf') >= 0 ? loc.indexOf('shelf') : loc.indexOf('rack'); if (i < 0) break; loc[i] = 'dirty'; } while (count('dirty') > n) loc[loc.indexOf('dirty')] = 'shelf'; show(); return count('dirty'); },
+      setDirty(n) { n = Math.max(0, Math.min(4, Math.round(n))); while (count('dirty') < n) { const i = loc.indexOf('out') >= 0 ? loc.indexOf('out') : loc.indexOf('shelf') >= 0 ? loc.indexOf('shelf') : loc.indexOf('rack'); /* 'out' first: the plate he ate from is the one that goes in the basin */ if (i < 0) break; loc[i] = 'dirty'; } while (count('dirty') > n) loc[loc.indexOf('dirty')] = 'shelf'; show(); return count('dirty'); },
       wash() { const i = loc.indexOf('dirty'); if (i < 0) return -1; loc[i] = 'rack'; show(); return i; },
       putAway() { const i = loc.indexOf('rack'); if (i < 0) return -1; loc[i] = 'shelf'; show(); return i; },
       // by hand (Character / dishes): take(from) lifts one piece out of the basin ('dirty') or the rack ('rack'): {i, kind, obj: dirty look,
@@ -1532,7 +1532,7 @@ export function buildProps(ctx) {
       take(from = 'dirty') { const i = loc.indexOf(from); if (i < 0) return null; loc[i] = 'hand'; show(); return { i, kind: KIND[i], obj: objs[i].dirty, clean: objs[i].rack }; },
       settle(i, where) { for (const w of ['dirty', 'rack', 'shelf']) { const ob = objs[i][w], sl = ob.userData.slot; if (ob.parent !== sl.parent) sl.parent.add(ob); ob.position.copy(sl.pos); ob.rotation.copy(sl.rot); ob.scale.setScalar(1); } loc[i] = where; show(); },
       slot(i, where) { const ob = objs[i][where], sl = ob.userData.slot; sl.parent.updateMatrixWorld(true); const m = new THREE.Matrix4().compose(sl.pos, new THREE.Quaternion().setFromEuler(sl.rot), V(1, 1, 1)).premultiply(sl.parent.matrixWorld); const pos = V(), quat = new THREE.Quaternion(); m.decompose(pos, quat, V()); return { pos, quat }; },
-      where: i => loc[i],
+      where: i => loc[i], /* the serving plate is one of the shelf plates: while it is out (on the stove, in his hand) that plate is missing from the shelf, and after the meal it is the dirty one in the basin (a shelf plate no longer jumped into the sink) */ _plate() { const pv = plateO.visible, o = loc.indexOf('out'); if (pv && o < 0) { let i = loc.findIndex((l, k) => KIND[k] === 'plate' && l === 'shelf'); if (i < 0) i = loc.findIndex((l, k) => KIND[k] === 'plate' && l === 'rack'); if (i >= 0) { loc[i] = 'out'; show(); } } else if (!pv && o >= 0) { loc[o] = 'shelf'; show(); } },
       setState({ dirty = 0, rack: r = 0 } = {}) { for (let i = 0; i < 4; i++) loc[i] = i < dirty ? 'dirty' : i < dirty + r ? 'rack' : 'shelf'; show(); } };
     show(); PT.rack = [rack, V(0, .1, 0)]; PT.dishShelf = [ksh, V(.06, .1, .12)]; PT.sink = [cn, V(BX, .78, BZ)]; }
 
@@ -1776,7 +1776,7 @@ export function buildProps(ctx) {
     foldPt(qHinge + FL * sf, .012, fold.a, _fp);/* sf: how far along the flap the hand holds it (1 = its free edge) */ let X = _fp[0], Y = _fp[1]; if (press.cover && press.k > .001 && cb.length) Y += liftAt(X, zl, Y) * press.k; return bunk.localToWorld(V(X, Y, zl)); };
   out._quiltFoldDbg = () => ({ qxMax, qHinge, qFlat, a: fold.a });
   function pressQuilt(dt) {
-    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * (press.cover && press.on ? 6 : 1.5));/* covering: the cloth is over him at once (rising over 2 s it let the sweater through, items thread) */ if (press.fast > 0) press.fast -= dt;
+    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * (press.cover ? 6 : 1.5));/* the cover drops as fast as it rises: getting up, his legs went out through the slowly sinking box *//* covering: the cloth is over him at once (rising over 2 s it let the sweater through, items thread) */ if (press.fast > 0) press.fast -= dt;
     const cover = press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones()); coverT -= dt;
     const folded = Math.abs(fold.a - fold.shown) > 1e-3;
     if (cover) { if (!(coverT <= 0 || press.fast > 0 || folded || Math.abs(press.k - press.shown) >= .01)) return; }
@@ -1797,7 +1797,7 @@ export function buildProps(ctx) {
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
     out.oven.setHeat(heat); void cooking; /* lights.js owns the oven heat (passed in as heat) */ tAcc += dt; out.oven.flicker(tAcc);
-    tweens(dt); out.door.update(dt); out.fridge.update(dt); out.water.update(dt);
+    tweens(dt); out.dishes && out.dishes._plate(); out.door.update(dt); out.fridge.update(dt); out.water.update(dt);
     // the radio dial is a light source for lights.js (registered once lights.js is up)
     if (!out._radioLit && window.__lights && window.__lights.addSource) { out._radioLit = true; try { window.__lights.addSource('radio', { room: 'bedroom', kind: 'glow', pos: out.radio.knob(V()), mats: [[out.radio.dialMat, 1.2]], light: { I: .6, dist: 1.5 } }); } catch (e) { console.warn('radio light', e); } }
   };
