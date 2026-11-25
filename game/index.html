@@ -1025,6 +1025,8 @@ const tableO=OBST.find(o=>o.n==='table');
 const heroMoves=await PREF.moves;
 // extra clip files (one per action family, so threads never fight over the big file): merged in, the main file wins on a name clash
 for(const f of ['hero-moves-repair.txt']){const x=await PREF.repair;if(x&&heroMoves)for(const k in x)if(!(k in heroMoves))heroMoves[k]=x[k];}
+/* TIGHT SKIN (thread "Сделать героя как в нормальных играх"): ?rig=tight recomputes the hero's smeared auto-rig weights into game-style tight weights at load (game/reskin.js) */
+if(new URLSearchParams(location.search).get('rig')==='tight'){/* not in ?style=game yet: while walking, the sweater still shows through the vest's front edge in thin lines */try{const {tightSkin}=await import(new URL(ASSET+'reskin.js',document.baseURI).href);window.__reskin=tightSkin(heroG.scene,THREE);}catch(e){console.error('reskin',e);}}
 const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{LC,WS,KT,BD,DK},sfx,OBST,chair:chairO,chairFace:Math.PI,bunk,bedHead:1,
  table:tableO?{x0:tableO.x0,x1:tableO.x1,z0:tableO.z0,z1:tableO.z1,top:BD+.765}:null,
  ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
@@ -1035,6 +1037,10 @@ try{if(!/pose=off/.test(location.search)&&HH.stage){const PG=createPoseGuard({he
 // motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
 try{const {createClimb}=await import(new URL(ASSET+'climb.js',document.baseURI).href);if(HH.setClimb){window.__climb=createClimb();HH.setClimb(window.__climb);}}catch(e){console.error('climb',e);}
 try{const mdb=await PREF.mdb;if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
+/* HERO LOOK (thread "Сделать героя как в нормальных играх"): ?look=game draws a clean silhouette line round the hero (game/herolook.js) */
+if(/^(game)$/.test(new URLSearchParams(location.search).get('look')||'')||new URLSearchParams(location.search).get('style')==='game'){try{const {createHeroLook}=await import(new URL(ASSET+'herolook.js',document.baseURI).href);const HL=createHeroLook({THREE,root:HH.hero.root,camera,renderer});window.__herolook=HL;HH.stage('guard',()=>HL.update());}catch(e){console.error('herolook',e);}}
+/* GAME WALK (thread "Сделать героя как в нормальных играх"): ?walk=game puts the hero's walking on a clean game-style cycle (game/gamewalk.js), in the 'motion' slot after motion.js */
+if(/^(game)$/.test(new URLSearchParams(location.search).get('walk')||'')||new URLSearchParams(location.search).get('style')==='game'){try{const {createGameWalk}=await import(new URL(ASSET+'gamewalk.js',document.baseURI).href);const GW=createGameWalk({THREE,hero:HH});if(GW){window.__gamewalk=GW;HH.stage('motion',dt=>GW.update(dt));}}catch(e){console.error('gamewalk',e);}}
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
 // ---- age (round 3): wear paths seeded from his walking graph, then stamped wherever he actually walks; repair API for Brain
 {for(const [a,b,t] of HH.E||[]){if(t||!N[a]||!N[b])continue;const A=N[a].p,Bp=N[b].p;const n=Math.ceil(A.distanceTo(Bp)/.05);for(let k=0;k<=n;k++){const p=A.clone().lerp(Bp,k/n);WEAR.stamp(p.x,p.y,p.z,.03,.3);}}
