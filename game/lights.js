@@ -178,7 +178,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     claimHousing(wPos, .3);
     const b = bulbMesh(wPos.clone().add(V(0, .05, 0)), .055, 0xFFF0C8);
     const emis = [[b, 6]]; if (pm.domeInner) { pm.domeInner.emissive = new THREE.Color(0xFFD9A0); emis.push([pm.domeInner, .9]); }
-    add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 14 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
+    // bounce: the bench and floor under the cone throw warm light back over the whole room (the photo's workshop is warm
+    // wall to wall; ours was a bright corner under the dome and a dark left half). Unshadowed, phones take it from the pool.
+    const wb = new THREE.PointLight(0xFFB066, 0, 3.4, 2); wb.position.copy(wPos).add(V(-1.0, -.7, .15)); scene.add(wb);
+    add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 14 }, { l: wb, I: MOBILE ? 2.9 : 2.6 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
