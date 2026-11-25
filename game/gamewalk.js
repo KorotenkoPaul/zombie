@@ -37,7 +37,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
   // measurements in the bind pose (root at the origin, facing +Z)
   const bp = n => V().setFromMatrixPosition(bindWorld(B[n]));
   // the bind space is offset from the root (mesh node transform): heights are taken from the lowest sole vertex in the same space
-  let soleY = Infinity; root.traverse(o => { if (!o.isSkinnedMesh || !/boots|Mesh_0/.test(o.name + (o.parent ? o.parent.name : ''))) return; const P0 = o.geometry.attributes.position, v0 = V();
+  let soleY = Infinity; root.traverse(o => { if (!o.isSkinnedMesh || o.skeleton !== S && o !== sk) return; if (o.skeleton.boneInverses[0] !== S.boneInverses[0] && o !== sk) return; const P0 = o.geometry.attributes.position, v0 = V();
     for (let i = 0; i < P0.count; i += 3) { v0.fromBufferAttribute(P0, i).applyMatrix4(o.bindMatrix); if (v0.y < soleY) soleY = v0.y; } });
   if (!isFinite(soleY)) soleY = Math.min(bp('LeftFoot').y, bp('RightFoot').y) - .1;
   // the root may be scaled after load: bind lengths -> world lengths by the live/bind length of the thigh bone
