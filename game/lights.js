@@ -304,18 +304,44 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 8), bm); bulb.position.y = -.17; g.add(bulb);
     // a carried oil lantern lights a pool of ground ~3 m round him and the fog around it (the halo, and Environment's fog
     // puffs pick up the lowest lit halos). Indoors it is dimmer so it doesn't fight the room lamps.
-    const l = new THREE.PointLight(0xFFC373, 0, 3.8, 1.5); l.position.y = -.17; g.add(l);   // short reach: no shadow map, so it must not climb through the floors above
+    const l = new THREE.PointLight(0xFFB458, 0, 4.2, 1.5); l.position.y = -.17; g.add(l);   // short reach: no shadow map, so it must not climb through the floors above
     hand.bulbPos = bulb; hand.light = l; hand.bulb = bulb;
     const s0 = add('hand', 'outside', 'oil', V(), { lights: [{ l, I: 3.4 }], emis: [[bm, 5]], haloSize: 1.5, autoFn: () => false });
     hand.L = s0.lights[0];
+    // his own shadow from the lantern (no shadow map for it on any device): one soft dark decal on the ground from his
+    // feet away from the lantern, darkest at the feet. One draw call, a small quad, only while he carries it lit outside.
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 32; const x = cv.getContext('2d'), im = x.createImageData(128, 32);
+    for (let j = 0; j < 32; j++) for (let i = 0; i < 128; i++) {
+      const u = i / 127, w = (j - 15.5) / 15.5, wid = .45 + .55 * u;          // widens away from the feet
+      const a = Math.pow(1 - u, 1.4) * Math.exp(-(w * w) / (wid * wid) * 2.2) * Math.min(1, u * 9 + .35);
+      im.data[(j * 128 + i) * 4 + 3] = Math.round(255 * a);
+    }
+    x.putImageData(im, 0, 0); const tex = new THREE.CanvasTexture(cv);
+    const geo = new THREE.PlaneGeometry(1.7, .8); geo.rotateX(-Math.PI / 2); geo.translate(.85 - .12, 0, 0);
+    const sm = new THREE.MeshBasicMaterial({ color: 0x000000, map: tex, transparent: true, depthWrite: false, fog: false, opacity: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    hand.shadow = new THREE.Mesh(geo, sm); hand.shadow.renderOrder = 2; hand.shadow.visible = false; hand.shadow.userData.noHang = true; scene.add(hand.shadow);
   }
   function updateHand(dt) {
     const g = hand.g, hs = src.get('hand');
     if (!hand.attached) { if (hs && hs.manual) hs.manual = null; return; }     // nothing to light while nobody carries it
     hand.bulbPos.getWorldPosition(hs.pos);
-    // outdoors (below the house floors or out on the open ground) the lantern is the only light around: full strength
+    // outdoors (below the house floors or out on the open ground) the lantern is the only light around: full strength,
+    // enough for a warm pool on the dark grass and roots through the blue ground fog (at 4.2 the fog swallowed it)
     const outdoors = hs.pos.y < (LV.LC || 4.4) - .3 || hs.pos.z > 4.7; hand.outdoors = outdoors;
-    hand.L.I += ((outdoors ? 4.2 : 1.6) - hand.L.I) * Math.min(1, dt * 2);
+    hand.L.I += ((outdoors ? 7.5 : 1.6) - hand.L.I) * Math.min(1, dt * 2);
+    { const sh = hand.shadow, r = window.__dbg && window.__dbg.hero && window.__dbg.hero.root, k = outdoors ? hs.level : 0;
+      sh.visible = !!r && k > .02;
+      // only on something: the ground (or a root) right under his soles, or boards (collide grid). On a ladder it hides.
+      let fy = null;
+      if (sh.visible) { const G = window.__ground, C = window.__collide, p = r.position;
+        const gy = G && G.standAt ? G.standAt(p.x, p.z) : null;
+        if (gy != null && Math.abs(p.y - gy) < .2) fy = gy;
+        else if (C && C.depthAt && C.depthAt(p.x, p.y - .05, p.z) > .005) fy = p.y;
+        if (fy == null) sh.visible = false; }
+      if (sh.visible) { const dx = r.position.x - hs.pos.x, dz = r.position.z - hs.pos.z, d = Math.hypot(dx, dz) || 1;
+        sh.position.set(r.position.x, fy + .025, r.position.z); sh.rotation.y = Math.atan2(-dz, dx);
+        // a lantern held out to the side throws a long shadow; one held close in front a short one under him
+        sh.scale.set(.75 + Math.min(1, d / .45) * .55, 1, 1); sh.material.opacity = .62 * k; } }
     if (hand.fixed) { hand.g.quaternion.identity(); return; }
     // hangs from the fingers, stays upright and swings a little with the walk
     const pq = hand.attached.getWorldQuaternion(new THREE.Quaternion()).invert();

@@ -557,6 +557,17 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // legs, swinging arms and head clear of everything solid. hero.js calls it from pushOut (walking, approaching a job).
   const RAD = [[.35, .17], [.7, .22], [.95, .26], [1.25, .23]], fp = V();
   function room(x, y, z) { let worst = 0; for (const [hy, r] of RAD) for (let a = 0; a < 12; a++) { fp.set(x + Math.cos(a * Math.PI / 6) * r, y + hy, z + Math.sin(a * Math.PI / 6) * r); const d = probe(fp, 7, false); if (d > worst) { worst = d; if (worst > .02) return worst; } } return worst; }
+  // footFree(p, dir): a landing spot for one foot (gamewalk.js plants feet off the path at turns: chair legs, stones, beams). p = the
+  // ankle's ground point (y = floor), dir = optional walk direction (x,z) for the toe. Checks a sole (heel .07 back, toe .14 ahead, .045
+  // to each side) at 3 cm and 9 cm (ankle) height plus the shin at 25 cm; if blocked, moves p (in place, x/z only) to the nearest
+  // clear spot within 20 cm and returns the depth it had (0 = was clear). Floors are hero.js's: a sole within 6 cm of the floor is not 'in' it.
+  const _fs = V(), _fd = V();
+  function sole(x, y, z, dx, dz) { let worst = 0; const sx = -dz, sz = dx;
+    for (const [a, b, h] of [[-.07, 0, .03], [.14, 0, .03], [.05, .045, .03], [.05, -.045, .03], [0, 0, .09], [.03, 0, .25]]) { _fs.set(x + dx * a + sx * b, y + h, z + dz * a + sz * b); const d = probe(_fs, h > .2 ? 4 : 3, false); if (d > worst) worst = d; } return worst; }
+  function footFree(p, dir) { if (!on) return 0; _fd.set(dir ? dir.x : 0, 0, dir ? dir.z : 1); if (_fd.lengthSq() < 1e-6) _fd.set(0, 0, 1); _fd.normalize();
+    const d0 = sole(p.x, p.y, p.z, _fd.x, _fd.z); if (d0 <= .004) return 0;
+    for (let r = .03; r <= .2; r += .03) for (let a = 0; a < 12; a++) { const x = p.x + Math.cos(a * Math.PI / 6) * r, z = p.z + Math.sin(a * Math.PI / 6) * r; if (sole(x, p.y, z, _fd.x, _fd.z) <= .004) { p.x = x; p.z = z; st.footFree = (st.footFree || 0) + 1; return d0; } }
+    return d0; }
   const freeC = { x: 1e9, y: 0, z: 0, ox: 0, oz: 0 };
   function free(p) {
     if (!on) return p; if (Math.abs(p.x - freeC.x) < .015 && Math.abs(p.z - freeC.z) < .015 && Math.abs(p.y - freeC.y) < .05) { p.x += freeC.ox; p.z += freeC.oz; return p; }
@@ -577,6 +588,6 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function heldDepth() { skin(); const r = {}; for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const HBs = heldBoxes(L.C); if (!HBs.length) continue;
       let w = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > w) w = d; } } r[c === 2 ? 'L' : 'R'] = +(w * 100).toFixed(1); } return r; }
   const api = { trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
-    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
+    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), footFree, soleDepth: (x, y, z, dx = 0, dz = 1) => sole(x, y, z, dx, dz), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
   return api;
 }
