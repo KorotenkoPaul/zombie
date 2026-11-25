@@ -77,6 +77,7 @@ export function createGrab({ THREE, bones }) {
     wateringCan: { g: [-.01, .27, 0], a: [0, -1, 0], A: 'F', b: [1, 0, 0], B: 'T', tilt: 0, fwd: true },
     meatBag: { g: [0, -.02, 0], a: [0, -1, 0], A: 'F', b: [1, 0, 0], B: 'T', tilt: 0, fwd: true },
     bow: { g: [0, 0, .01], a: [0, 1, 0], A: 'T', b: [0, 0, 1], B: 'D', tilt: 0 },
+    quiver: { g: [0, -.22, 0], a: [0, 1, 0], A: 'T', b: [0, 0, 1], B: 'D', tilt: 0 }, // GRAB: the fist round the tube under the band, the strap ring up (it hangs from its peg by the ring)
   };
   for (const n of ['benchHammer']) GRIP[n] = GRIP.hammer;
   for (const n of ['wrenchBig', 'wrench1', 'wrench2', 'wrench3', 'wrench4', 'wrench5', 'wrenchLong', 'benchWrench', 'screwdriver1', 'screwdriver2', 'screwdriver3', 'pliers']) GRIP[n] = { g: null, a: [0, 1, 0], A: 'T', b: [1, 0, 0], B: 'F', tilt: .2 };
@@ -218,7 +219,9 @@ export function createGrab({ THREE, bones }) {
   function hangBuckets() { const P = PROPS || window.__props; if (!P || !P.tools || window.__noBucketHang) return;
     const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero); if (!H || !H.root) return; const act = HHref && HHref.act;
     for (const nm of ['waterBucket', 'drainBucket', 'wateringCan']) { const o = P.tools[nm]; if (!o || !o.visible) continue; const side = o.parent === bones.RightHand ? 'Right' : o.parent === bones.LeftHand ? 'Left' : null; if (!side) continue;
-      const can = nm === 'wateringCan'; if (can && act && act.step === 'work') continue; // the can (radius ~8 cm) only kept off his shins; it keeps its own grip pose, and while watering the clip holds it out
+      const can = nm === 'wateringCan'; if (can && act && act.step === 'work' && (window.__canWorkSkip || H.cur && H.cur._clip && H.cur._clip.name === 'hy_water')) continue; /* LEISURE: only while the watering clip holds it out: as the clip fades back to idle at the end of the work the can swung in through his shins (gate 7-8 cm) */
+      /* LEISURE: as much as the hand is on its reach to the table spot (take / put), the can is not held out off his thighs: 19 cm out it was held 13 cm past its spot and let go in the air (gate: hand jump 7.5 cm) */
+      const reachK = can && act && !window.__canClearPut && /^(put|take)$/.test(act.step || '') && act.rg ? Math.max(0, Math.min(1, act.rg[2])) : 0; // the can (radius ~8 cm) only kept off his shins; it keeps its own grip pose, and while watering the clip holds it out
       if (H.bucketTilt) continue; // Outdoor tips it on purpose (scoop at the pond, pouring out): leave it to them
       const hb = bones[side + 'Hand'], fa = bones[side + 'ForeArm']; const tipping = !!(act && /^(pour|fill)$/.test(act.step || ''));
       // clear of his legs first (the arm takes the fist out): the bucket's side (radius ~0.17) plus a thigh (~0.08) from its axis
@@ -226,7 +229,7 @@ export function createGrab({ THREE, bones }) {
         const c = palm(side).add(V(0, can ? -.12 : -.2, 0)); let need = 0; for (const [a, b] of [['UpLeg', 'Leg'], ['Leg', 'Foot']]) for (const L of ['Left', 'Right']) { const A = bones[L + a].getWorldPosition(V()), B = bones[L + b].getWorldPosition(V());
           const ab = B.clone().sub(A); const t = Math.max(0, Math.min(1, c.clone().sub(A).dot(ab) / ab.lengthSq())); const q = A.addScaledVector(ab, t); const lat = c.clone().sub(q).setY(0).dot(r);
           if (Math.abs(c.y - q.y) < .25) need = Math.max(need, (can ? .19 : .26) - lat); }
-        if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), 1); } }
+        { const hy = c.y + (can ? .12 : .2) - H.root.position.y, up = Math.max(0, Math.min(1, (hy - .8) / .2)); const k = reachK * up * up * (3 - 2 * up); need *= 1 - k * k * (3 - 2 * k); } /* and only once the fist is up at the table (above ~0.9 m): a put that starts from his side at knee height swept the can in across his shins (gate 7-8 cm) */ if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), 1); } }
       if (can) continue;
       // then hang it: plumb (his pouring tip about his right axis kept), the bail's middle at the fist
       o.updateMatrixWorld(true); o.getWorldQuaternion(_bq); { const e = new THREE.Euler().setFromQuaternion(_bq, 'YXZ'); _bq.setFromEuler(new THREE.Euler(tipping ? e.x : 0, H.root.rotation.y, 0, 'YXZ')); }
@@ -270,6 +273,13 @@ export function createGrab({ THREE, bones }) {
   const api = {
     attach, late(fn) { lateQ.push(fn); }, twoW, dbg: api_dbg,
     gripPoint, toolGripHome, palmTarget, setProps(P) { PROPS = P; },
+    // GRAB: ease a held tool from whatever pose it has in the fist back into its grip pose (after floorPick kept the can upright)
+    // GRAB: where a tool's grip point is right now (on his back, in a hand, on its peg)
+    toolGripNow(name, out = V()) { const P = PROPS || window.__props; const o = P && P.tools && P.tools[name]; if (!o) return null; const G0 = GRIP[name];
+      const g = G0 && G0.g ? V(...G0.g) : (o.userData.grip ? o.userData.grip.clone() : V()); o.updateMatrixWorld(true); return o.localToWorld(out.copy(g)); },
+    regrip(name, side, d = .35) { const P = PROPS || window.__props; const o = P && P.tools && P.tools[name]; const bone = bones[side + 'Hand']; if (!o || !bone || o.parent !== bone) return;
+      const tp = toolPose(name, side, o); if (!tp) return; const q0 = o.quaternion.clone(); const gl0 = tp.g.clone().multiplyScalar(o.scale.x).applyQuaternion(q0).add(o.position);
+      gtw.set(o, { q0, q1: tp.q.clone(), gl0, gl1: tp.at.clone(), g: tp.g.clone(), s: o.scale.x, t: 0, d, bone }); },
     wrapProps, toolPose, GRIP,
     buildFists, tick, channel: s => CH[s], get fist() { return fistK; },
     hold(side, obj, handle) { grip[side] = obj ? { obj, handle } : null; },

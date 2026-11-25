@@ -217,7 +217,7 @@ export function createClimb() {
     if (A.mode === 'over') { const r = overTick(A, dt, p); if (r === 'off') { S.act = null; S.wTarget = 0; S.fade = .35; } return r; }
     C.play('437', { speed: 0, fade: .3 });
     // take hold first: hands go to their rungs, the body settles, then the steps start
-    if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .45); const e = ease(A.grab); A.y = lerp(A.y0, A.up ? A.o.yBot : top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), e); placeRoot(A, p);
+    if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .36); const e = ease(A.grab); A.y = lerp(A.y0, A.up ? A.o.yBot : top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), e); placeRoot(A, p);
       if (A.p0) { p.x = lerp(A.p0.x, p.x, e); p.z = lerp(A.p0.z, p.z, e); } return null; } // from where the walk left him onto the ladder's line, eased (motion: root x snapped 4 cm and y 4 cm in one frame at every mount)
     if (A.mode === 'land') { // both feet on the floor: let go of the rungs, stand up
       A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1; /* the hands come down by IK (fading to the climb clip left both arms up at shoulder height while he stepped back: watch R28-3) */
