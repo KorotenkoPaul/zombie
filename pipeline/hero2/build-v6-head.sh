@@ -9,6 +9,8 @@ F=0.5 node skintone.mjs G.glb Gt.glb | cut -c1-120
 [ -n "$BOOTS" ] && node bootlift.mjs Gt.glb Gt.glb "$BOOTS"
 [ -n "$BACKW" ] && node backweights.mjs Gt.glb Gt.glb "$BACKW"
 [ -n "$VESTK" ] && node vesttone.mjs Gt.glb Gt.glb "$VESTK"
+[ -n "$VESTE" ] && node vestedge.mjs Gt.glb Gt.glb "$VESTE"
+[ -n "$VESTA" ] && node vestarm.mjs Gt.glb Gt.glb "$VESTA"
 [ -n "$BOOTS2" ] && node bootlift.mjs Gt.glb Gt.glb "$BOOTS2"
 [ -n "$SLEEVE" ] && node sleeves.mjs Gt.glb Gt.glb "$SLEEVE"
 [ -n "$UNDERV" ] && node undervest.mjs Gt.glb Gt.glb "$UNDERV" | tail -2

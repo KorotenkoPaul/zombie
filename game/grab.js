@@ -219,7 +219,9 @@ export function createGrab({ THREE, bones }) {
   function hangBuckets() { const P = PROPS || window.__props; if (!P || !P.tools || window.__noBucketHang) return;
     const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero); if (!H || !H.root) return; const act = HHref && HHref.act;
     for (const nm of ['waterBucket', 'drainBucket', 'wateringCan']) { const o = P.tools[nm]; if (!o || !o.visible) continue; const side = o.parent === bones.RightHand ? 'Right' : o.parent === bones.LeftHand ? 'Left' : null; if (!side) continue;
-      const can = nm === 'wateringCan'; if (can && act && act.step === 'work') continue; // the can (radius ~8 cm) only kept off his shins; it keeps its own grip pose, and while watering the clip holds it out
+      const can = nm === 'wateringCan'; if (can && act && act.step === 'work') continue;
+      /* LEISURE: as much as the hand is on its reach to the table spot (take / put), the can is not held out off his thighs: 19 cm out it was held 13 cm past its spot and let go in the air (gate: hand jump 7.5 cm) */
+      const reachK = can && act && !window.__canClearPut && /^(put|take)$/.test(act.step || '') && act.rg ? Math.max(0, Math.min(1, act.rg[2])) : 0; // the can (radius ~8 cm) only kept off his shins; it keeps its own grip pose, and while watering the clip holds it out
       if (H.bucketTilt) continue; // Outdoor tips it on purpose (scoop at the pond, pouring out): leave it to them
       const hb = bones[side + 'Hand'], fa = bones[side + 'ForeArm']; const tipping = !!(act && /^(pour|fill)$/.test(act.step || ''));
       // clear of his legs first (the arm takes the fist out): the bucket's side (radius ~0.17) plus a thigh (~0.08) from its axis
@@ -227,7 +229,7 @@ export function createGrab({ THREE, bones }) {
         const c = palm(side).add(V(0, can ? -.12 : -.2, 0)); let need = 0; for (const [a, b] of [['UpLeg', 'Leg'], ['Leg', 'Foot']]) for (const L of ['Left', 'Right']) { const A = bones[L + a].getWorldPosition(V()), B = bones[L + b].getWorldPosition(V());
           const ab = B.clone().sub(A); const t = Math.max(0, Math.min(1, c.clone().sub(A).dot(ab) / ab.lengthSq())); const q = A.addScaledVector(ab, t); const lat = c.clone().sub(q).setY(0).dot(r);
           if (Math.abs(c.y - q.y) < .25) need = Math.max(need, (can ? .19 : .26) - lat); }
-        if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), 1); } }
+        need *= 1 - reachK * reachK * (3 - 2 * reachK); if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), 1); } }
       if (can) continue;
       // then hang it: plumb (his pouring tip about his right axis kept), the bail's middle at the fist
       o.updateMatrixWorld(true); o.getWorldQuaternion(_bq); { const e = new THREE.Euler().setFromQuaternion(_bq, 'YXZ'); _bq.setFromEuler(new THREE.Euler(tipping ? e.x : 0, H.root.rotation.y, 0, 'YXZ')); }
