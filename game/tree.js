@@ -567,7 +567,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
   lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2-gold-sky' + (SPR ? '-sprig2' : ''); /* [ENV] explicit key (SHADERS rule) */
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
-  const total = SPR ? (MOB(o) ? (o.leafCards || (ROS ? 680 : 520)) : 4200) : MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
+  const total = SPR ? (MOB(o) ? (o.leafCards || (ROS ? 480 : 520)) : 4200) : MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
   // the photo keeps open sky behind the telescope deck (critic T26): no clump in the window above and behind it
   { const SW = o.skyWindow || [AX + 2.2, AX + 8, 9.6, 15.2, AZ - 13, AZ + 2.5];
     for (let i = leafSpots.length - 1; i >= 0; i--) { const p = leafSpots[i].p; if (p.x > SW[0] && p.x < SW[1] && p.y > SW[2] && p.y < SW[3] && p.z > SW[4] && p.z < SW[5]) leafSpots.splice(i, 1); } if (SPR) { /* [TREE] Pavel: at least twice the foliage, visible from the home view: a second ring of clumps grows out of the crown (outwards and up from the trunk axis), so the crown gets bigger and fuller, not just more layers inside */
@@ -589,7 +589,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
       let dx, dy, dz; do { dx = rnd(-1, 1); dy = rnd(-0.45, 1); dz = rnd(-1, 1); } while (dx * dx + dy * dy + dz * dz > 1);
       if (SPR) { /* sprigs: a few lumpy sub-balls per clump (irregular round shapes), filled through the volume; every sprig turned its own way */
         const nb = s.sub || (s.sub = Array.from({ length: 2 + Math.floor(rnd(0, 2.99)) }, () => [rnd(-.6, .6) * s.s, rnd(-.15, .35) * s.s, rnd(-.6, .6) * s.s, s.s * rnd(.85, 1.15) + (ROS ? 1.1 : 0.7)]));
-        const b = nb[Math.floor(rnd(0, nb.length - 0.001))], d0 = V(dx, dy, MOB(o) && dz < -0.2 ? -dz * 0.6 : dz), rr = MOB(o) ? rnd(0.8, 1) : Math.cbrt(rnd(0.12, 1)); d0.normalize(); /* [PERF] phones: the back of a clump is hidden by its front from the home view, so its sprigs go to the front half (same look, half the overdraw) */
+        const b = nb[Math.floor(rnd(0, nb.length - 0.001))], d0 = V(dx, dy, MOB(o) && dz < 0.1 ? Math.abs(dz) * 0.6 + 0.1 : dz), rr = MOB(o) ? rnd(0.8, 1) : Math.cbrt(rnd(0.12, 1)); d0.normalize(); /* [PERF] phones: the back of a clump is hidden by its front from the home view, so its sprigs go to the front half (same look, half the overdraw) */
         const p = s.p.clone().add(V(b[0], b[1], b[2])).add(V(d0.x * b[3] * rr, d0.y * b[3] * rr * (d0.y < 0 ? 0.6 : 0.85), d0.z * b[3] * rr));
         if (inB(p.x, p.y, p.z, 0.8)) continue;
         const fw = V(0, 0.3, 1).multiplyScalar(0.75).addScaledVector(d0, 0.55).add(V(rnd(-1, 1), rnd(-.6, 1), rnd(-1, 1)).normalize().multiplyScalar(0.5)); /* mostly towards the home view (the camera never goes behind), each its own way */
