@@ -108,3 +108,7 @@ Comparisons: project files hero-v6/.
   - Fix: heroclothes.js builds the vest's span around the torso axis (72 angle bins: its top and hem, notches filled by a max/min filter over ±2 bins). Body torso vertices on the back half that lie between hem and top take the vest's leather while it is on (kx.z, uniform uVestOn, set by vestShow through window.__clothes.vestOn).
   - Vest texels brighter than .82 in mustard hue are recoloured to the mean leather.
   - Tried and dropped: hiding body triangles under the vest with drawRange. It left black slits between the flaps and the chest strip, and the zigzags were not coincident triangles.
+- Hair vs concept 6 (11:20 UTC 2026-11-25): the generated head's hair texels averaged sRGB (93,45,31), a deep maroon that read as near-black red in the game. Concept 6 is a warm chocolate brown.
+  - hairgrade.py, through hairstep.mjs (build step HAIRG='{"t":[116,80,62],"g":1.2}' after CLOTHF), gives the hair family (dark, saturated, red over green: hair, brows, lashes, irises) the target hue. Each texel keeps its brightness relative to the hair median, with contrast ^1.2 so the locks read, and a soft mask keeps the hairline smooth.
+  - Irises came out a little orange. They need their own zone if that matters.
+  - Current full build: add CLOTHF='{}' HAIRG='{"t":[116,80,62],"g":1.2}' to the line above.
