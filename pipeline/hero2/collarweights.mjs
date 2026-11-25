@@ -19,6 +19,9 @@ for(const nm of ['Mesh_0','vest','undershirt']){const n=nd(nm);if(!n)continue;co
  for(let i=0;i<P.length/3;i++){const x=P[i*3],y=P[i*3+1],z=P[i*3+2];const m=mask(x,y,z);if(m<=0)continue;const f=field(x,y,z);if(!f)continue;
   const cur={};for(let k=0;k<4;k++)if(W[i*4+k]>0){const b=JN[J[i*4+k]];cur[b]=(cur[b]||0)+W[i*4+k];}
   const mix={};for(const b of new Set([...Object.keys(cur),...Object.keys(f)]))mix[b]=(1-m)*(cur[b]||0)+m*(f[b]||0);
+  /* a point that was mostly the head's stays so (just ahead of the next bone): the body's Head/Neck points are what the animation
+     gate samples for 'head' support in bed (without them it read a 40 cm gap under the head) */
+  const dom=o=>Object.entries(o).sort((a,b)=>b[1]-a[1])[0][0];const d0=dom(cur);if(/Head|Neck/.test(d0)){const d1=dom(mix);if(d1!==d0)mix[d0]=mix[d1]*1.05;}
   const top=Object.entries(mix).filter(([b])=>JN.includes(b)).sort((a,b)=>b[1]-a[1]).slice(0,4);const s=top.reduce((a,c)=>a+c[1],0);
   for(let k=0;k<4;k++){if(top[k]){J[i*4+k]=JN.indexOf(top[k][0]);W[i*4+k]=top[k][1]/s;}else{J[i*4+k]=0;W[i*4+k]=0;}}ch++;}
  p.getAttribute('JOINTS_0').setArray(J);p.getAttribute('WEIGHTS_0').setArray(W);console.log(nm,'collar reweighted',ch);}

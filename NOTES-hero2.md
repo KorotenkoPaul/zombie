@@ -118,7 +118,7 @@ Comparisons: project files hero-v6/.
 - `VESTA='{}'` vestarm.mjs: LeftArm/RightArm weight on the vest capped at 0.25, the rest to the Shoulder: the armhole rides on the shoulder, no strap spikes when he reaches.
 - `KNEEW='{}'` kneeweights.mjs: around each knee the UpLeg/Leg share follows a smooth ramp along the leg (±0.2 x leg length; 0.16 x leg length radius). With heroclothes.js rotating that band about the knee joint (?knee=0 off) the deep-crouch knee stays round instead of a flat wedge.
 - Current build: add `KNEEW='{}' VESTA='{}' VESTE='{}'` to the big31 command (= big38).
-- Since critic 24: also `COLLW='{}'` (= big44).
+- Since critic 24: also `COLLW='{}'` (= big45).
 ## Vest over the body: collar teeth and hem (critic 24)
 
 The vest is the body's own triangles a few mm further out, so wherever a coarse triangle tilts (back of the collar, the hem when
