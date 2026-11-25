@@ -198,8 +198,8 @@ export function createWind(opt = {}) {
         if (!dawn) fb.tried = false;
         if (dawn && !fb.on && !fb.tried && hour < 6.4) { fb.tried = true;
           if (R() < 0.6 + 0.35 * U.uWet.value) { /* most mornings, nearly always after a wet night */ fb.on = true; fb.front = -SPAN; if (mode === 'calm' && !forced) { mode = 'breeze'; target = rr(0.25, 0.4); spellLeft = rr(90, 160); } emit('fogbank', { on: true }); } }
-        if (fb.on) { fb.front += dt * (0.35 + base * 0.6); fb.k += ((hour < 7.6 ? 1 : 0) - fb.k) * Math.min(1, dt / (hour < 7.6 ? 20 : 40));
-          if (hour >= 9 || (hour > 7.6 && fb.k < 0.02)) { fb.on = false; fb.k = 0; fb.front = -1e4; emit('fogbank', { on: false }); } }
+        if (fb.on) { fb.front += dt * (0.35 + base * 0.6); fb.k += ((hour < 7.3 ? 1 : 0) - fb.k) * Math.min(1, dt / (hour < 7.3 ? 20 : 26));   // [ENV] burns off from 7.3 h, mostly gone by ~8.2 (it lingered as a milky veil past 8.5 h)
+          if (hour >= 9 || (hour > 7.3 && fb.k < 0.02)) { fb.on = false; fb.k = 0; fb.front = -1e4; emit('fogbank', { on: false }); } }
         U.uFogBank.value.set ? U.uFogBank.value.set(fb.front, fb.k) : (U.uFogBank.value[0] = fb.front, U.uFogBank.value[1] = fb.k);
       }
       if (hour != null) { if (lastHr != null && hour < lastHr - 12) dayN++; lastHr = hour; hourNow = hour;
@@ -343,7 +343,7 @@ export function createWind(opt = {}) {
         const px = Math.sin(t) * 13 * r * (0.75 + 0.25 * Math.cos(t)), py = -Math.cos(t) * 26; i ? x.lineTo(px, py) : x.moveTo(px, py); }
       x.fill(); x.strokeStyle = 'rgba(90,70,40,.55)'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(0, 30); x.lineTo(0, -24); x.stroke();
       const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-      const geo = new THREE.PlaneGeometry(0.09, 0.11);
+      const geo = new THREE.PlaneGeometry(0.17, 0.21);   // [ENV] was 9x11 cm: from the home view (~35 m) a falling leaf was 1-2 px, never seen; now about the size of the oak's own leaves
       const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
       const im = new THREE.InstancedMesh(geo, mat, N); im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       const cols = [0xC8902C, 0xD8A838, 0xB86A26, 0xA8742E, 0x8C9A3C, 0xC0502A]; /* autumn: orange, gold, rust, one green in six */
@@ -367,7 +367,7 @@ export function createWind(opt = {}) {
       let cap = N;
       fall = dt => {
         const s0 = W.level();
-        acc += dt * (0.12 + 0.8 * s0 * s0);                     // a few leaves are always in the air; more as the wind grows
+        acc += dt * (0.2 + 0.8 * s0 * s0);   // [ENV] calm autumn: a leaf about every 5 s (was 8)                     // a few leaves are always in the air; more as the wind grows
         // a gust reaching the crown shakes a handful loose at once
         { const g = W.gustAt(0, 0); if (!gIn && g > 0.2) { gIn = true; acc += 2 + Math.min(5, g * 5); } else if (gIn && g < 0.08) gIn = false; }
         while (acc >= 1) { acc -= 1; if (L.reduce((n, l) => n + (l.on ? 1 : 0), 0) >= cap) { acc = 0; break; } const l = L.find(l => !l.on); if (!l) break;
