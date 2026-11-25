@@ -24,6 +24,9 @@ const _v = new THREE.Vector3();
 
 // how a source wakes up and dies down (seconds), and how it flickers
 // ?decklamp=1 (option for Pavel, not the default): an oil lantern on the lookout deck, lit by the hero when he goes out there in the dark
+// ?embers=1 (an option for Pavel): when he goes to bed at night he banks the stove, and the coals glow low in the dark
+// kitchen through the night, dying out by morning (~7 game hours). Off by default: the base game is unchanged.
+const EMBERS = (() => { try { return new URLSearchParams(location.search).get('embers') === '1'; } catch (e) { return false; } })();
 const DECKLAMP = (() => { try { return new URLSearchParams(location.search).get('decklamp') === '1'; } catch (e) { return false; } })();
 const GLOW = (() => { try { return new URLSearchParams(location.search).get('glow') === '1'; } catch (e) { return false; } })();
 const GLOW_K = { kitchen: 1.8, workshop: 1.6, oven: 1.3, bedroom: 1.1 }, GLOW_C = new THREE.Color(0xFFD9A0);
@@ -138,6 +141,23 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     chain(top, tip); lastHang = { top: tip.clone(), chain: lastChain }; return 'bracket';
   }
 
+  // oil lanterns: no bulb. A small oil font with a burner collar on the lantern's floor and a little flame over the wick that
+  // exists only while it burns (by day a cream sphere in the glass read as a plastic egg). The font joins the housing's
+  // iron body draw when there is one. Returns the flame's material (opacity follows the lamp) and the meshes to carry along.
+  const flameGeo = (() => { const pts = [[0, 0], [.008, .005], [.012, .016], [.0105, .027], [.006, .041], [0, .056]].map(([x, y]) => new THREE.Vector2(x, y)); return new THREE.LatheGeometry(pts, 8); })();
+  const fontM = new THREE.MeshStandardMaterial({ color: 0x5A4A32, metalness: .55, roughness: .5 });
+  function oilFlame(pos, hg) {
+    const fg = new THREE.CylinderGeometry(.034, .04, .042, 10).translate(0, -.077, 0);
+    const col = new THREE.CylinderGeometry(.011, .017, .016, 8).translate(0, -.048, 0);
+    const wick = new THREE.CylinderGeometry(.0028, .0028, .012, 5).translate(0, -.035, 0);
+    const font = new THREE.Mesh(bakeGeo([new THREE.Mesh(fg), new THREE.Mesh(col), new THREE.Mesh(wick)]), fontM); font.position.copy(pos); font.castShadow = false; scene.add(font); font.updateMatrixWorld(true);
+    const keep = [];
+    if (!(hg && fuse(hg, font))) keep.push(font); else scene.remove(font);
+    const m = new THREE.MeshBasicMaterial({ color: 0xFFD889, transparent: true, opacity: 0, depthWrite: false, toneMapped: false });
+    const fl = new THREE.Mesh(flameGeo, m); fl.position.copy(pos).add(V(0, -.033, 0)); fl.visible = false; fl.castShadow = false; scene.add(fl); keep.push(fl);
+    const extra = (k, f) => { fl.visible = k > .02; if (fl.visible) { const a = 1.25 * (.85 + .15 * f); fl.scale.set(a, 1.3 * (.7 + .3 * Math.min(1, k)) * (.9 + .2 * f), a); } };
+    return { m, keep, extra, fl };
+  }
   function bulbMesh(pos, r, col = 0xFFE0A0) {
     const m = new THREE.MeshStandardMaterial({ color: col, emissive: 0xFFAE45, emissiveIntensity: 0, roughness: .4 });
     const b = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 7), m); b.position.copy(pos); scene.add(b); return m;
@@ -166,8 +186,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   {
     const l = new THREE.PointLight(0xFFC373, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     const panes = claimHousing(kPos);
-    const b = bulbMesh(kPos, .07);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 5.2 : 4.6 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .45 });
+    const fo = oilFlame(kPos, null);
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 5.2 : 4.6 }], emis: panes.map(m => [m, .42]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -209,8 +229,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
     const hg = housing(bPos); lastHang = null; hang(bPos, .23, true); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
-    const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    const fo = oilFlame(bPos, hg);
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: panes.map(m => [m, .42]), opac: [[fo.m, 1]], extra: fo.extra,
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -228,13 +248,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // can't shine up through the boards into the kitchen and make it look lit (no shadow map on this one)
     const p = V(-.62, LC + 1.25, 3.84); const l = new THREE.SpotLight(0xFFC373, 0, 5.5, 1.1, .7, 1.6); l.position.copy(p);
     l.target.position.copy(p).add(V(0, -3, .2)); scene.add(l, l.target);
-    const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
+    const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;
-    add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: c => c.lamps > .6 });
+    const fo = oilFlame(p, hg);
+    add('landing', 'outside', 'oil', p, { lights: [{ l, I: 5 }], emis: panes.map(m => [m, .42]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .6 });
     // [WIND] the whole lantern (body, bulb, light, chain) hangs from one pivot at the chain's top: game/housewind.js swings it
     if (lastHang) { const piv = new THREE.Group(); piv.position.copy(lastHang.top); scene.add(piv); piv.updateMatrixWorld(true);
-      let bm = null; scene.traverse(o => { if (o.isMesh && o.material === b) bm = o; });
-      for (const o of [hg, lastHang.chain, bm, l, l.target]) if (o) piv.attach(o);
+      for (const o of [hg, lastHang.chain, ...fo.keep, l, l.target]) if (o) piv.attach(o);
       (window.__swing = window.__swing || []).push({ name: 'landing lantern', piv, len: lastHang.top.y - p.y + .1, mass: 1 }); }
   }
 
@@ -246,12 +266,12 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   if (DECKLAMP) {
     const p = V(3.95, DK + 1.15, 3.32); const l = new THREE.SpotLight(0xFFBA66, 0, 5.2, 1.2, .75, 1.5); l.position.copy(p);
     l.target.position.copy(p).add(V(-.8, -3, -.9)); scene.add(l, l.target);
-    const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p); const b = bulbMesh(p, .065);
+    const hg = housing(p); lastHang = null; hang(p); const panes = claimHousing(p);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;
-    add('decklamp', 'outside', 'oil', p, { lights: [{ l, I: 7 }], emis: [[b, 5], ...panes.map(m => [m, .6])], autoFn: () => false });
+    const fo = oilFlame(p, hg);
+    add('decklamp', 'outside', 'oil', p, { lights: [{ l, I: 7 }], emis: panes.map(m => [m, .42]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: () => false });
     if (lastHang) { const piv = new THREE.Group(); piv.position.copy(lastHang.top); scene.add(piv); piv.updateMatrixWorld(true);
-      let bm = null; scene.traverse(o => { if (o.isMesh && o.material === b) bm = o; });
-      for (const o of [hg, lastHang.chain, bm, l, l.target]) if (o) piv.attach(o);
+      for (const o of [hg, lastHang.chain, ...fo.keep, l, l.target]) if (o) piv.attach(o);
       (window.__swing = window.__swing || []).push({ name: 'deck lantern', piv, len: lastHang.top.y - p.y + .1, mass: 1 }); }
   }
 
@@ -678,7 +698,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       w.sp.position.set(w.x0 + Math.sin(w.age * 2.2 + w.ph) * .03 * a, w.y0 + a * .38, w.z0 + Math.cos(w.age * 1.7 + w.ph) * .02 * a);
       w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); w.sp.visible = w.sp.material.opacity > .004; }
   }
-  let cookT = 0, t = 0, frame = 0;
+  let cookT = 0, t = 0, frame = 0, emberK = 0, wasAsleep = false;
   // Phone and desktop light a room differently (phones: four pooled half-space cones, no point shadows; desktop: omni
   // lights and bloom), so the same lamp read ~40% too bright on desktop in the workshop and 25-45% too dark on phones.
   // One gain per room and platform brings both to the reference photo's room brightness (home view, one room lit with the
@@ -881,6 +901,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
 
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
     t += dt; frame++;
+    if (EMBERS) {
+      const sl = (task === 'sleep' || asleep) && dayK < .5;
+      if (sl && !wasAsleep) emberK = Math.max(emberK, 1);
+      wasAsleep = sl; emberK = Math.min(Math.max(0, emberK - dt / 420), 1 - smooth(.4, .9, dayK));   // 7 game hours (1 game hour = 60 s), gone by full day
+    }
     samplePose();
     // cooking, or stoking (the log goes in while the little door is open): the fire is fed
     const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
@@ -901,6 +926,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       if (s.kind === 'oil' || s.kind === 'candle') k = s.level * (1 + s.flare * .35 * Math.max(0, Math.sin(t * 31 + s.seed)));
       else if (s.kind === 'electric' && s.flare > .85) k *= (Math.sin(t * 90) > 0 ? 1 : .35);
       else if (s.kind === 'fire') k = s.level * s.level * (3 - 2 * s.level);
+      if (EMBERS && s.name === 'oven') k = Math.max(k, emberK * .3);   // banked coals: a low, breathing glow (extra() turns it into embers)
       // lockdown: he turns the wicks down / the bulb to a glow, so little light shows from outside (never off: Pavel)
       if (lockK > 0 && (s.name === 'kitchen' || s.name === 'bedroom' || s.name === 'workshop')) k *= 1 - .65 * lockK;
       let f = k > 0 ? flick(s, T) : 0;
@@ -1121,7 +1147,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
-    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances, rimU, AO, GAO, heroBlob }),
+    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances, rimU, AO, GAO, heroBlob, emberK: () => emberK }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,
     set: (n, on) => { const s = src.get(n); if (!s) return false; s.manual = !!on; setOn(s, !!on); return true; },
