@@ -17,7 +17,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   const rnd = (a = 0, b = 1) => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return a + (b - a) * (((t ^ t >>> 14) >>> 0) / 4294967296); };
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
   const UP = V(0, 1, 0);
-  const crackMat = new THREE.MeshBasicMaterial({ color: 0xDDE6EA, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide });
+  // lit, not basic: an unlit pale line glowed white at night like a spider web drawn on the glass. A real crack only catches
+  // light that falls on it, so it is dark at night and pale by day
+  const crackMat = new THREE.MeshStandardMaterial({ color: 0xD6DEE2, roughness: .3, metalness: 0, transparent: true, opacity: .4, depthWrite: false, side: THREE.DoubleSide });
   const nodes = []; for (const k in N) { const n = N[k]; if (n && n.p && n.seat == null) nodes.push(n.p); }
   const nearNode = p => { let b = null, bd = 1e9; for (const q of nodes) { const d = Math.hypot(q.x - p.x, q.z - p.z) + Math.abs(q.y - p.y) * 2; if (d < bd) { bd = d; b = q; } } return b; };
 
@@ -47,6 +49,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
       for (let a = -1; a <= 1; a += .5) for (const sd of [-1, 1]) for (const o of [.08, .2, .35]) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9).addScaledVector(ax[th], sd * o);
         if (C && C.depthAt && C.depthAt(q.x, q.y, q.z) > .005) return false;
         for (const bx of furn) if (bx.containsPoint(q)) return false; } }
+    // a floor board running under a counter or a bed: the lifted end would push into the furniture, and he could not kneel there
+    if (floor) for (let a = -1, Li = sz.indexOf(Math.max(...sz)); a <= 1; a += .5) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .95); q.y = c.y + .08;
+      for (const bx of furn) if (q.x > bx.min.x - .05 && q.x < bx.max.x + .05 && q.z > bx.min.z - .05 && q.z < bx.max.z + .05 && q.y > bx.min.y - .05 && q.y < bx.max.y) return false; }
     if (floor && solid) for (const a of [-.45, 0, .45]) { q.copy(c).addScaledVector(ax[sz.indexOf(Math.max(...sz))], a * Math.max(...sz)); if (solid(q.x, c.y + .03, q.z)) return false; }
     if (floor && C && C.depthAt) for (let a = -1, Li = sz.indexOf(Math.max(...sz)); a <= 1; a += .5) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9); const top = c.y + .03; for (const h of [.02, .1, .3]) if (C.depthAt(q.x, top + h, q.z) > .005) return false; }   // merged furniture and rugs are not in the boxes
     for (let a = -1; a <= 1; a += .5) for (let w = -1; w <= 1; w += 1) {
@@ -218,8 +223,12 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
       for (let j = 1; j < poly.length - 1; j++) for (const q of [poly[0], poly[j], poly[j + 1]]) pos.push(q[0], q[1], zf(q));
       if (k !== gone) for (const q of [[ix, iy], pt(a0, r1), pt(a1, r1)]) pos.push(q[0], q[1], zf(q) * .5);   // inner shard (one is gone: a hole)
       // the fracture faces catch the light: thin pale lines along each crack, a few mm proud
-      const line = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l * .0011, ny = dx / l * .0011; for (const q of [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] - nx, a[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]]) crk.push(q[0], q[1], .002); };
-      line([ix, iy], pt(a0, e0)); line(pt(a0, r1), pt(a1, r1));
+      const line = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l * .0008, ny = dx / l * .0008; for (const q of [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] - nx, a[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]]) crk.push(q[0], q[1], .002); };
+      // [PROPS round] a real crack wanders and forks; straight spokes and a full ring read as a cobweb drawn on the glass
+      const jag = (a, b, amp) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, n = Math.max(2, Math.ceil(l / .018)), px = -dy / l, py = dx / l; let prev = a, off = 0;
+        for (let i = 1; i <= n; i++) { off = i === n ? 0 : off * .5 + rnd(-amp, amp); const q = [a[0] + dx * i / n + px * off, a[1] + dy * i / n + py * off]; line(prev, q); prev = q;
+          if (i < n && rnd() < .12) { const fa = Math.atan2(dy, dx) + rnd(.5, 1.1) * (rnd() < .5 ? -1 : 1), fl = rnd(.012, .035); line(q, [q[0] + Math.cos(fa) * fl, q[1] + Math.sin(fa) * fl]); } } };
+      jag([ix, iy], pt(a0, e0), .0035); if (rnd() < .45) jag(pt(a0, r1), pt(a0 + (a1 - a0) * rnd(.35, .7), r1 * rnd(.9, 1.15)), .002);
     }
     for (const [a0, a1, b0, b1] of [[-pw / 2, 0, -ph / 2, 0], [0, pw / 2, -ph / 2, 0], [-pw / 2, 0, 0, ph / 2], [0, pw / 2, 0, ph / 2]]) {   // the three whole panes
       if ((a0 < 0) === (qx < 0) && (b0 < 0) === (qy < 0)) continue; pos.push(a0, b0, 0, a1, b0, 0, a1, b1, 0, a0, b0, 0, a1, b1, 0, a0, b1, 0); }
@@ -259,6 +268,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
       const a = rnd(0, Math.PI * 2), x = at.x + Math.sin(a) * r, z = at.z + Math.cos(a) * r, yaw = rnd(0, Math.PI);
       const g = floorAt ? floorAt(x, y0 + .3, z, .45, .5, true) : y0; if (g == null || Math.abs(g - y0) > .06) { dbg('floor0'); continue; }
       const ux = Math.cos(yaw), uz = -Math.sin(yaw); let ok = true;
+      // all four corners on boards too: checking only the centre line let a board hang half over the floor edge (or a hatch)
+      for (const [e, sd] of [[-.5, -.5], [-.5, .5], [.5, -.5], [.5, .5]]) { if (!ok || !floorAt) break; const px = x + ux * len * e + uz * w * sd, pz = z + uz * len * e - ux * w * sd;
+        const gg = floorAt(px, g + .3, pz, .45, .5, true); if (gg == null || Math.abs(gg - g) > .02) { ok = false; dbg('corner'); } }
       for (const e of [-.5, 0, .5]) { const px = x + ux * len * e, pz = z + uz * len * e;
         const gg = floorAt ? floorAt(px, g + .3, pz, .45, .5, true) : g; if (gg == null || Math.abs(gg - g) > .02) { ok = false; dbg('floorE'); break; }
         if (Math.hypot(px - at.x, pz - at.z) < .6 || segD(px, g, pz) < .45 || nodes.some(q => Math.abs(q.y - g) < .4 && Math.hypot(q.x - px, q.z - pz) < .5)) { ok = false; dbg('path'); break; }

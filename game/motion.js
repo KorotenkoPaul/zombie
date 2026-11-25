@@ -267,7 +267,7 @@ export function createMotion({ hero, db, opts = {} }) {
     // the game walk (gamewalk.js, ?style=game) plants each foot in the world and solves the legs to it: a 'pop' it makes in a thigh or a
     // shin is the leg reaching its next planned ankle, and easing that bone from last frame's angle took the planted foot off its spot
     // (stage trace, style=game trip: the pop filter alone added 8 cm/frame² to a standing foot). Lower-body bones take no new pops then.
-    const gwPlant = !!(window.__gamewalk && window.__gamewalk.S && window.__gamewalk.S.w > .01);
+    const gwPlant = !!(window.__gamewalk && window.__gamewalk.S && window.__gamewalk.S.w > .01) || !!H.feetIK; H.feetIK = 0; /* LEISURE: an action that holds the soles on their spot by leg IK this frame (stretch) sets H.feetIK: the same as the game walk's plant, a leg 'pop' is the IK keeping the foot still against the clip's shuffle (easing it moved the planted foot 11 cm) */
     // a snap spread over a chain (spine, spine1, spine2, neck, head each 8-12 deg in one frame) stays under the per-bone limit but
     // throws the head 25-30 cm: deviations are summed down the chain and a chain over the limit is caught as a whole
     for (let b = 0; b < NB; b++) { fDv[b] = -1; fHit[b] = 0; const B = HB[b]; if (!B) continue;
@@ -355,7 +355,7 @@ export function createMotion({ hero, db, opts = {} }) {
       const ea = wrapA(S.cyaw - yaw); if (Math.abs(ea) > .5) S.cyaw = yaw + Math.sign(ea) * .5;
       S.char.y = p.y;
       sampleClip(c, S.t, cur, curH);
-      if (S.jumped && pathing) { const back = Math.max(adv, .2); sampleClip(c, Math.max(0, S.t - back), curPrev, curPrevH); S.jvel = { q: curPrev, dt: back / FPS, dtOut: S.lastDt || dt }; } else S.jvel = null; // on a route only: at a work spot (approach slides, stops) a jump hands over as before
+      if (S.jumped && (pathing || (Math.abs(S.simAv || 0) > .3 && !window.__noRestJv))) { const back = Math.max(adv, .2); sampleClip(c, Math.max(0, S.t - back), curPrev, curPrevH); S.jvel = { q: curPrev, dt: back / FPS, dtOut: S.lastDt || dt }; } else S.jvel = null; // WALK: also on a turn on the spot off the route (at a work spot: every jump froze the legs for a frame, the gate's 5 Hz foot/head jitter in cook/store/sweep/switch, P1 jitter 24 -> 11 there)
       // into the hero's root frame (root sits at the simulation)
       const curH0 = [curH[0], curH[1], curH[2]];
       const rel = S.cyaw - yaw; const rq = yawQ(rel); const t3 = new Float32Array(3); qrot(rq, 0, curH, 0, t3, 0);
@@ -421,6 +421,9 @@ export function createMotion({ hero, db, opts = {} }) {
 
   // timing check: n full searches against random database frames as queries (Date.now: works under a frozen performance.now)
   function bench(n = 400) { let pr = 0; const t0 = Date.now(); for (let i = 0; i < n; i++) { const g = (Math.random() * total) | 0; for (let k = 0; k < NF; k++) Qv[k] = F[g*NF + k] + (Math.random() - .5) * .3; search(Qv, -1, 1e9); pr += S.pruned; } return { msPerSearch: (Date.now() - t0) / n, pruned: pr / n }; }
-  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
+  // snap(): a teleport (the QA spawn) drops the inertialization still easing out of the cut-off clip, and the foot locks (a walk's
+  // standing-hips offset carried 38 cm into the seated reading pose and pulled the root off the chair for a few frames)
+  function snap() { offX.fill(0); offV.fill(0); offP.fill(0); offPV.fill(0); haveOut = haveOut2 = false; S.hipKind = null; srcKind.fill(-1); for (const L of lock) { L.on = L.hold = false; L.w = 0; } }
+  const api = { pre, post, bench, snap, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
   return api;
 }
