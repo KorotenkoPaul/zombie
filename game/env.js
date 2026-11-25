@@ -283,17 +283,21 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // ================= mist between the distant trunks =================
  // curved bands of slow noise mist at several depths behind and beside the oak: the forest fades out layer by layer like the painting.
  // Bands face inwards; they thin out near the top and bottom and where they cross the camera side, cost is a few full-screen layers.
- const mistU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},drift:windU.drift};
+ const mistU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},drift:windU.drift,rain:{value:0}};
  const mistMat=new THREE.ShaderMaterial({defines:FOGDEF,uniforms:mistU,transparent:true,depthWrite:false,fog:false,side:THREE.DoubleSide,
   vertexShader:`varying vec2 vUv;varying vec3 vW;void main(){vUv=uv;vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
-  fragmentShader:`uniform float t,op;uniform vec3 col;uniform vec2 drift;varying vec2 vUv;varying vec3 vW;${FOG_NOISE}
+  fragmentShader:`uniform float t,op,rain;uniform vec3 col;uniform vec2 drift;varying vec2 vUv;varying vec3 vW;${FOG_NOISE}
    void main(){float ang=atan(vW.z,vW.x);vec2 p=vec2(ang*9.+drift.x*.02,vW.y*.22)+vec2(t*.012,0.);
     float n=fbm(p+vec2(fbm(p*1.7+t*.01),0.)*1.3);float a=smoothstep(.35,.8,n)*smoothstep(0.,.25,vUv.y)*smoothstep(1.,.45,vUv.y)*op;
-    gl_FragColor=vec4(col*(.9+.3*n),a);}`});
+    /* [ENV] rain far away: soft grey veils falling between the distant trunks (the rain streaks only exist round the oak, so the
+       forest looked dry); tall thin noise moving down ~9 m/s, gathered into gusty sheets. Same draw, two more texture reads. */
+    float sx=ang*length(vW.xz);float rn=texture2D(tNoise,vec2(sx*.04+vW.y*.006,vW.y*.005+t*.045)).g;float rg=texture2D(tNoise,vec2(sx*.005-t*.006,.37)).r;
+    float ra=rain*(.05+.3*smoothstep(.45,.85,rn)*smoothstep(.3,.7,rg))*smoothstep(0.,.08,vUv.y)*smoothstep(1.,.75,vUv.y);
+    gl_FragColor=vec4(mix(col*(.9+.3*n),col*1.12+.04,ra/(a+ra+1e-4)),min(1.,a+ra));}`});
  const mistBands=[];(MOBILE?[[30,9,.5],[52,12,.6]]:[[24,8,.42],[36,10,.5],[52,13,.6]]).forEach(([rad,h,k])=>{
   const g=new THREE.CylinderGeometry(rad,rad,h,40,1,true,Math.PI*.45,Math.PI*1.1);g.translate(0,h/2-.5,0);
   const m=new THREE.Mesh(g,mistMat.clone());m.material.uniforms=Object.assign({},mistU,{op:{value:.5}});m.renderOrder=3;m.userData.k=k;m.frustumCulled=false;scene.add(m);mistBands.push(m);});
- env.mist=mistBands;
+ env.mist=mistBands;env.lampPts=puffU.lp;/* the 6 lowest lit lamps (world xyz, w = strength), for rain.js */
 
  // ================= fireflies =================
  // a few soft yellow-green lights that wander low between the roots and the forest edge and blink slowly (dusk and night)
@@ -382,7 +386,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   const fc=tmp.copy(P.fog);
   fogU.col.value.copy(fc).lerp(new THREE.Color(0x80B6D6),(.34+nightK*.3)*(1-mornK))/* [ENV] the photo's blue mist by day too */.lerp(dawnC,mornK*.12);const dusk=hour===undefined?0:smooth(17.3,19.5,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.36+eve*.64+mornK*.2+rainK*.2;/* [ENV] coordinator / photo: a dense blue mist lies over the roots by day as well (was .15 by day: no fog to speak of) */fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k*(1+.3*(1-eve));m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
-  puffU.op.value=.38*dens*(1+.7*(1-eve));/* [ENV] day: the billows over the roots read like the photo's mist (night unchanged) */for(const m of mistBands)m.material.uniforms.op.value=m.userData.k*(.25+.75*Math.min(1,dens));
+  puffU.op.value=.38*dens*(1+.7*(1-eve))*(1-.45*rainK);/* [ENV] heavy rain beats the low cotton billows down (the wet ground and puddles show); the far haze thickens instead *//* [ENV] day: the billows over the roots read like the photo's mist (night unchanged) */for(const m of mistBands)m.material.uniforms.op.value=m.userData.k*(.25+.75*Math.min(1,dens));
   {const L=halos.filter(h=>h.l.intensity>.05).map(h=>{h.l.getWorldPosition(tmpV);return [tmpV.x,tmpV.y,tmpV.z,Math.min(1,h.l.intensity/5)*h.size/1.6];}).sort((a,b)=>a[1]-b[1]);
    for(let i=0;i<6;i++){const v=puffU.lp.value[i];const l=L[i];if(l)v.set(l[0],l[1],l[2],l[3]*.9);else v.set(0,-99,0,0);}}
   bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
@@ -397,8 +401,8 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   // rain: wetness lags the rain, forest bark goes dark and glossy, fog turns grey-blue and thick, colours go muted
   {const W=window.__wind;if(W&&W.wet)env.wet.value=W.wet();/* one wetness for everyone: Wind's (soaks in ~8 s, dries over ~2 min, real time) */else{const w=env.wet.value;env.wet.value=rainK>w?Math.min(rainK,w+.006):Math.max(rainK,w-.0008);}}
   const wt=env.wet.value;barkMat.roughness=1-wt*.55;barkMat.color.setRGB(.6*(1-wt*.35),.55*(1-wt*.35),.5*(1-wt*.3));
-  if(rainK>0){fogU.col.value.lerp(rainC,rainK*.7);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
-  ffU.on.value=eve*(1-rainK);if(env.fireflies)env.fireflies.visible=ffU.on.value>.01;/* by day the points are fully transparent: don't draw them */const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.3);g.satW.value=1.2+eve*.08;g.con.value=1.08+eve*.05-rainK*.06;/* rain: greyer, flatter, like looking through wet air */
+  mistU.rain.value=rainK;if(rainK>0){fogU.col.value.lerp(rainC,rainK*.7);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
+  ffU.on.value=eve*Math.max(0,1-rainK*2.5);/* [ENV] fireflies hide from real rain (a drizzle keeps a few) */if(env.fireflies)env.fireflies.visible=ffU.on.value>.01;/* by day the points are fully transparent: don't draw them */const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.3);g.satW.value=1.2+eve*.08;g.con.value=1.08+eve*.05-rainK*.06;/* rain: greyer, flatter, like looking through wet air */
   warmBounce(eve,rainK,nightK);
   if(env.interiorOn){inProbe.sh.coefficients[0].x=eve*env.interiorK;}/* .y = warm tint inside, set by lights.js */
   if(MOBILE){phoneNight(eve,rainK);foldLights();}else{litForest();fogU.trunkK.value=.8-.35*eve;puffU.frontK.value=.35+.35*eve;/* [ENV] day: mist over the roots in front too; night unchanged (.45 / .7) */}
