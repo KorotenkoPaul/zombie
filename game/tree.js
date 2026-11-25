@@ -206,18 +206,21 @@ export function buildTree(THREE, o) {
     // the bark's radius all round the hollow (17 bins, -1.6..1.6 rad from the door): the cave is clipped against the bark on
     // its own side only. One global minimum (the thin flank on one side) cut the cave's far wall away where the bark is thick,
     // and the night sky showed through the trunk (Lights, after the door moved right of the ladder)
-    const RA = new Array(17).fill(9);
-    for (let i = 0; i < P.length; i += 3) { const y = P[i + 1]; if (y < door.y0 - 0.1 || y > door.y1 + 0.5) continue;
-      const dx = P[i] - AX, dz = P[i + 2] - AZ, sd = angDiff(Math.atan2(dz, dx), doorAng); if (Math.abs(sd) < 0.3 || Math.abs(sd) > 1.7) continue;
-      const k = Math.round((sd + 1.6) / 0.2); if (k < 0 || k > 16) continue; RA[k] = Math.min(RA[k], Math.hypot(dx, dz)); }
-    for (let k = 0; k < 17; k++) if (RA[k] >= 9) RA[k] = 99;
-    ARCH = { cx: ccx, cz: ccz, dx: ddx, dz: ddz, rs: rs < 9 ? rs : 0, ra: RA };
     const arch = (x, y, z) => {
       const rx = x - ccx, rz = z - ccz, u = rx * ddx + rz * ddz, v = -rx * ddz + rz * ddx;
       if (u < 0.2 || u > 3) return 99;
       const da = Math.abs(v) / (door.w / 2), vy = (y - door.y0) / (door.y1 - door.y0);
       if (vy < 0 || vy > 1) return 99; if (vy < 0.62) return da; return Math.hypot(da, (vy - 0.62) / 0.38 * 1.05);
     };
+    const RA = new Array(17).fill(9);
+    for (let i = 0; i < P.length; i += 3) { const y = P[i + 1]; if (y < door.y0 - 0.1 || y > door.y1 + 0.5) continue;
+      const dx = P[i] - AX, dz = P[i + 2] - AZ, sd = angDiff(Math.atan2(dz, dx), doorAng); if (Math.abs(sd) > 1.7) continue;
+      // critic T25: the bins next to the door were left unclipped (99), so beside and above the arch the lit shell poked out
+      // through the bark as an orange crescent. Measure them too, skipping only the bark at the opening itself.
+      if (Math.abs(sd) < 0.3 && arch(P[i], y, P[i + 2]) < 1.25) continue;
+      const k = Math.round((sd + 1.6) / 0.2); if (k < 0 || k > 16) continue; RA[k] = Math.min(RA[k], Math.hypot(dx, dz)); }
+    for (let k = 0; k < 17; k++) if (RA[k] >= 9) { let m = 9; for (let j = 1; j < 17 && m >= 9; j++) m = Math.min(RA[Math.max(0, k - j)], RA[Math.min(16, k + j)]); RA[k] = m < 9 ? m : 99; }
+    ARCH = { cx: ccx, cz: ccz, dx: ddx, dz: ddz, rs: rs < 9 ? rs : 0, ra: RA };
     for (let i = 0; i < P.length / 3; i++) { const m = arch(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]); if (m < 1.5 && m > 0.9) G[i] = (1 - (m - 0.9) / 0.6) * 0.5; }
     const n3 = si ? si.count : sp.count;
     for (let t = 0; t < n3; t += 3) {
@@ -465,8 +468,8 @@ export function buildTree(THREE, o) {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vAW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvAW=(modelMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vAW;uniform vec2 aC;uniform vec2 aD;uniform vec3 aY;')
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
-{vec2 r=vAW.xz-aC;float u=dot(r,aD),v=-r.x*aD.y+r.y*aD.x,da=abs(v)/(aY.z*.5),vy=(vAW.y-aY.x)/(aY.y-aY.x);
- if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.62?da:length(vec2(da,(vy-.62)/.38*1.05)))<1.)discard;}`);
+{vec2 r=vAW.xz-aC;float u=dot(r,aD),v=-r.x*aD.y+r.y*aD.x,da=abs(v)/(aY.z*.45),vy=(vAW.y-aY.x)/(aY.y-aY.x);
+ if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.62?da:length(vec2(da,(vy-.62)/.38*1.16)))<1.)discard;}`);
     }
   };
   mat.userData.doorGlow = { value: 0 };
@@ -633,16 +636,16 @@ vec3 objectTangent=vec3(tangent.xyz);
     const dirx = Math.cos(doorAng), dirz = Math.sin(doorAng);
     const A = 1.55, B = hh * 0.95, Cl = Math.max(1.0, door.w * 1.0), off = Rm - 1.25;
     const cx = AX + dirx * off, cz = AZ + dirz * off, cy = door.y0 + hh * 0.38;
-    const U = { doorGlow: mat.userData.doorGlow, cAx: { value: new THREE.Vector2(AX, AZ) }, cDir: { value: new THREE.Vector2(dirx, dirz) }, cR: { value: Rm - 0.04 }, cRs: { value: ARCH && ARCH.rs ? ARCH.rs - 0.08 : 99 }, cRa: { value: ARCH && ARCH.ra ? ARCH.ra.map(v => v - 0.08) : new Array(17).fill(99) }, cW: { value: door.w * 0.5 + 0.12 },
+    const U = { doorGlow: mat.userData.doorGlow, cAx: { value: new THREE.Vector2(AX, AZ) }, cDir: { value: new THREE.Vector2(dirx, dirz) }, cR: { value: Rm - 0.04 }, cRs: { value: ARCH && ARCH.rs ? ARCH.rs - 0.08 : 99 }, cRa: { value: ARCH && ARCH.ra ? ARCH.ra.map(v => v - 0.08) : new Array(17).fill(99) }, cW: { value: door.w * 0.5 + 0.12 }, /* critic T25: only the shell seen through the arch may pass the bark; a straight lateral band let it poke out beside and above the arch as an orange crescent */ cY: { value: new THREE.Vector3(door.y0, door.y1, door.w * 0.47) },
       cC: { value: new THREE.Vector3(cx, cy, cz) }, cS: { value: new THREE.Vector3(A, B, Cl) } };
     const clip = sh => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvCW=(modelMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-varying vec3 vCW;uniform float doorGlow;uniform vec2 cAx;uniform vec2 cDir;uniform float cR;uniform float cRs;uniform float cRa[17];uniform float cW;uniform vec3 cC;uniform vec3 cS;
+varying vec3 vCW;uniform float doorGlow;uniform vec2 cAx;uniform vec2 cDir;uniform float cR;uniform float cRs;uniform float cRa[17];uniform float cW;uniform vec3 cY;uniform vec3 cC;uniform vec3 cS;
 float cH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i),cH(i+vec2(1,0)),f.x),mix(cH(i+vec2(0,1)),cH(i+vec2(1,1)),f.x),f.y);}`)
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{vec2 r=vCW.xz-cAx;if(dot(r,cDir)>cR)discard;float lat=-r.x*cDir.y+r.y*cDir.x;float an=atan(lat,dot(r,cDir));float fk=clamp((an+1.6)/.2,0.,16.);int k0=int(floor(fk));int k1=min(k0+1,16);float rr=mix(cRa[k0],cRa[k1],fk-float(k0));if(length(r)>min(rr,99.)&&abs(lat)>cW)discard;}');
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{vec2 r=vCW.xz-cAx;if(dot(r,cDir)>cR)discard;float lat=-r.x*cDir.y+r.y*cDir.x;float an=atan(lat,dot(r,cDir));float fk=clamp((an+1.6)/.2,0.,16.);int k0=int(floor(fk));int k1=min(k0+1,16);float rr=mix(cRa[k0],cRa[k1],fk-float(k0));float cvy=(vCW.y-cY.x)/(cY.y-cY.x),cda=abs(lat)/cY.z;bool inA=cvy<.62?cda<1.:length(vec2(cda,(cvy-.62)/.38*1.1))<1.;if(length(r)>min(rr,99.)&&!inA)discard;}');
     };
     const cmat = new THREE.MeshStandardMaterial({ color: 0x6E4A32, roughness: 1, side: THREE.BackSide });
     cmat.onBeforeCompile = sh => {
@@ -666,7 +669,7 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
   normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.1);}`)
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*2.3*(.35+.65*smoothstep(-1.,1.,u2));}');
     };
-    cmat.customProgramCacheKey = () => 'hollow';
+    cmat.customProgramCacheKey = () => 'hollow2';
     // rough, uneven walls (critic N4: a smooth dome reads as plastic): ridges of wood fibre running into the trunk and
     // lumps of rot, pushed inwards only so the cave never grows past the bark
     const cgeo = new THREE.SphereGeometry(1, MOB(o) ? 40 : 64, MOB(o) ? 26 : 40);
@@ -685,7 +688,7 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
  {vec3 q=vCW-cC;float inn=clamp((cS.x*.55-dot(q.xz,cDir))/(cS.x*1.4),0.,1.);float n=cN(vCW.xz*9.)*.6+cN(vCW.xz*31.)*.4;
   diffuseColor.rgb=mix(vec3(.13,.085,.05),vec3(.24,.16,.09),n)*mix(1.,.3,inn);}`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.25;'); };
-    fmat.customProgramCacheKey = () => 'hollowfloor';
+    fmat.customProgramCacheKey = () => 'hollowfloor2';
     const fy = door.y0 + 0.03, k = Math.sqrt(Math.max(0, 1 - ((fy - cy) / B) ** 2));
     const fl = new THREE.Mesh(new THREE.CircleGeometry(1, 32), fmat); fl.rotation.x = -Math.PI / 2; fl.scale.set(A * k, Cl * k, 1);
     const flg = new THREE.Group(); flg.position.set(cx, fy, cz); flg.rotation.y = -doorAng; flg.add(fl); fl.receiveShadow = true; group.add(flg);

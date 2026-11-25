@@ -27,15 +27,26 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   const M = new THREE.Matrix4(), P = V(), Q = new THREE.Quaternion(), S = V();
   // nothing lies on or against it: a lifted board under a rug or a chest, a warped one behind the tool board would cut into them
   let boxes = null;
+  const furn = [];
   function propBoxes() {
-    if (boxes) return boxes; boxes = []; const skip = new Set(Object.values(planks.meshes || {})); let root = planks.meshes.boards; while (root.parent) root = root.parent;
+    if (boxes) return boxes; boxes = []; furn.length = 0; const skip = new Set(Object.values(planks.meshes || {})); let root = planks.meshes.boards; while (root.parent) root = root.parent;
     const b = new THREE.Box3(), sz = V();
     root.traverse(o => { if (!o.isMesh || skip.has(o) || o.isSkinnedMesh || !o.geometry) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); b.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
       b.getSize(sz); if (sz.x > 3 || sz.z > 3 || sz.y > 3 || b.max.y < 2) return; boxes.push(b.clone()); });
+    // the props are baked into big merged meshes (skipped above), so a bunk or a shelf unit was not in the list at all:
+    // each placed prop keeps its own world box (props.js place())
+    // (used for wall boards only: the floor test already has its own furniture and rug checks)
+    const PO = window.__props && window.__props.objects; if (PO) for (const g of Object.values(PO)) { const pb = g && g.userData && g.userData.box; if (pb && pb.max.y >= 2 && !pb.isEmpty()) furn.push(pb.clone()); }
     return boxes;
   }
   function clear(c, ax, sz, pad, floor) {
     const B = propBoxes(), q = V(), C = window.__collide;
+    // a wall board: nothing standing against either face along its length (a bunk, a shelf unit: merged furniture is not in
+    // the boxes). A warped board behind the upper bunk pushed into its mattress, and he could never reach it to mend it.
+    if (floor === false) { const th = sz.indexOf(Math.min(...sz)), Li = sz.indexOf(Math.max(...sz));
+      for (let a = -1; a <= 1; a += .5) for (const sd of [-1, 1]) for (const o of [.08, .2, .35]) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9).addScaledVector(ax[th], sd * o);
+        if (C && C.depthAt && C.depthAt(q.x, q.y, q.z) > .005) return false;
+        for (const bx of furn) if (bx.containsPoint(q)) return false; } }
     if (floor && solid) for (const a of [-.45, 0, .45]) { q.copy(c).addScaledVector(ax[sz.indexOf(Math.max(...sz))], a * Math.max(...sz)); if (solid(q.x, c.y + .03, q.z)) return false; }
     if (floor && C && C.depthAt) for (let a = -1, Li = sz.indexOf(Math.max(...sz)); a <= 1; a += .5) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9); const top = c.y + .03; for (const h of [.02, .1, .3]) if (C.depthAt(q.x, top + h, q.z) > .005) return false; }   // merged furniture and rugs are not in the boxes
     for (let a = -1; a <= 1; a += .5) for (let w = -1; w <= 1; w += 1) {
@@ -77,7 +88,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
         if (Math.abs(long.y) > .97 && Math.abs(sz[L] - .94) < .03 && sz[Wd] < .14) { ok = hd < 1.6 && dy > .3 && dy < .7; mode = 'post'; }
         else if (Math.abs(long.y) < .1 && sz[Wd] < .1 && sz[L] > .6 && sz[L] < 4) { ok = hd < 1.6 && dy > .4 && dy < 1.05; mode = 'brace'; }
       } else if (kind === 'shingle') ok = hd < 1.5 && dy > .75 && dy < 1.3;
-      if (ok && (mode === 'floor' || mode === 'wall' || mode === 'post' || mode === 'brace') && !clear(c, ax, sz, mode === 'floor' ? .04 : .07, mode === 'floor')) ok = false;
+      if (ok && (mode === 'floor' || mode === 'wall' || mode === 'post' || mode === 'brace') && !clear(c, ax, sz, mode === 'floor' ? .04 : .07, mode === 'floor' ? true : mode === 'wall' ? false : undefined)) ok = false;
       if (!ok) continue;
       parts.set(it.id, { id: it.id, kind, mode, mesh: pl.mesh, i: pl.i, home: M.clone(), c, ax, sz, L, Wd, T, n: n.clone(), d: 0, vis: 0, sgn: rnd() < .5 ? -1 : 1, sgn2: rnd() < .5 ? -1 : 1 });
     }
