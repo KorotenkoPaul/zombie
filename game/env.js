@@ -241,18 +241,18 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  const windU={drift:{value:new THREE.Vector2()},wdir:{value:new THREE.Vector2(1,0)},wlv:{value:0}};
  // the pond (ground.js, __ground.pond) stays clear of the ground fog: Pavel wants the water visible from the home view
  const pondU={pond:{value:new THREE.Vector3(0,-999,0)}};
- const fogU={tNoise:{value:fogNoise},t:U.t,col:{value:new THREE.Color(0x8FB8CC)},op:{value:.5},cam:{value:V()},trunkK:{value:.45},...softU,...windU,...pondU};
+ const fogU={tNoise:{value:fogNoise},t:U.t,col:{value:new THREE.Color(0x8FB8CC)},op:{value:.5},cam:{value:V()},trunkK:{value:.45},rootK:{value:0},...softU,...windU,...pondU};
  const FOGDEF=MOBILE?{FBM_OCT:3}:{};// phones: one octave less in the fog noise (the sheets run it 5x per pixel)
  const sheetMat=new THREE.ShaderMaterial({defines:FOGDEF,transparent:true,depthWrite:false,fog:false,uniforms:fogU,
   vertexShader:`varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
-  fragmentShader:`uniform float t,op,trunkK;uniform vec3 col,cam,pond;uniform vec2 drift;varying vec3 vW;${FOG_NOISE}${SOFT_GLSL}
+  fragmentShader:`uniform float t,op,trunkK,rootK;uniform vec3 col,cam,pond;uniform vec2 drift;varying vec3 vW;${FOG_NOISE}${SOFT_GLSL}
    void main(){vec2 p=(vW.xz-drift)*.075+vec2(vW.y*1.7,0.);vec2 q=nz2(p+vec2(t*.018,t*.007));
     vec2 r=nz2(p+3.*q+vec2(1.7,9.2)+t*.02);float d=fbm(p+3.4*r);
-    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK,1.,smoothstep(5.,10.,length(vW.xz)))*mix(.1,1.,smoothstep(pond.z+.2,pond.z+2.2,length(vW.xz-pond.xy)));
+    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK*mix(1.,smoothstep(.4,.75,d)*1.4,rootK),1.,smoothstep(5.+1.5*rootK,10.+2.*rootK,length(vW.xz)))*/* [ENV] Ground/photo night: near the oak's feet the bank breaks into patches in the hollows, root tops and moss show */mix(.1,1.,smoothstep(pond.z+.2,pond.z+2.2,length(vW.xz-pond.xy)));
     float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6)*smoothstep(.35,1.8,cam.y-vW.y);/* a sheet near eye height reads as a hard horizontal line: it fades out as the camera comes down to it */gl_FragColor=vec4(col*(.82+.4*d),a);}`});
  const sheets=[];(MOBILE?[[.3,1.1],[.9,.85]]:[[.25,1],[.7,.8],[1.3,.6]]).forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.CircleGeometry(97,40).rotateX(-Math.PI/2)/* the sheets fade out by r 95: a disc, not a 200 m square */,sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
- const PB=MOBILE?12:22;/* low billows at the root feet (photo: fog in soft heaps between the roots, moss showing) */const PN=(MOBILE?46:80)+PB;const puffU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},night:{value:1},frontK:{value:.7},...softU,...windU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())},...pondU};
+ const PB=MOBILE?12:22;/* low billows at the root feet (photo: fog in soft heaps between the roots, moss showing) */const PN=(MOBILE?46:80)+PB;const puffU={tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},night:{value:1},frontK:{value:.7},rootK:fogU.rootK,...softU,...windU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())},...pondU};
  const pg=new THREE.InstancedBufferGeometry();{/* an ellipse just around where the puff has any alpha (x .5, y .4 of the quad) instead of the full quad: ~35% less to rasterise */
   const eg=new THREE.CircleGeometry(.5/Math.cos(Math.PI/12),12),ep=eg.attributes.position,eu=eg.attributes.uv;for(let i=0;i<ep.count;i++){const y=ep.getY(i)*.82;ep.setY(i,y);eu.setXY(i,ep.getX(i)+.5,y+.5);}pg.copy(eg);}pg.instanceCount=PN;
  {const a=new Float32Array(PN*4),b=new Float32Array(PN*4);for(let i=0;i<PN;i++){let ang=rr(0,6.28),r=rr(3.5,34);if(i<PN*.35){ang=rr(.2,2.9);r=rr(7,14);}else if(i<PN*.55){ang=rr(3.6,5.9);r=rr(6,13);}// a ring just outside the roots: the big roots stay visible above the fog (photo)
@@ -261,13 +261,13 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
    a.set([Math.cos(ang)*r,y,Math.sin(ang)*r-.6,sz],i*4);b.set([rr(0,100),rr(.6,1.4)*(R()<.5?-1:1),va,rr(0,6.28)],i*4);}
   pg.setAttribute('iA',new THREE.InstancedBufferAttribute(a,4));pg.setAttribute('iB',new THREE.InstancedBufferAttribute(b,4));}
  const puffMat=new THREE.ShaderMaterial({defines:FOGDEF,transparent:true,depthWrite:false,fog:false,uniforms:puffU,
-  vertexShader:`attribute vec4 iA,iB;uniform float t,wlv,frontK;uniform vec2 wdir;uniform vec3 pond;varying vec2 vUv;varying float vS,vA;varying float vFade;varying vec3 vW;varying float vWy;
+  vertexShader:`attribute vec4 iA,iB;uniform float t,wlv,frontK,rootK;uniform vec2 wdir;uniform vec3 pond;varying vec2 vUv;varying float vS,vA;varying float vFade;varying vec3 vW;varying float vWy;
    void main(){vUv=uv;vS=iB.x;float bl=step(1.,iB.z);vA=iB.z-bl;
     // slow orbit around the oak plus a lazy wobble
     float ang=(t*.01*iB.y+iB.w)*(1.-bl);float c=cos(ang),s=sin(ang);vec3 cpos=vec3(c*iA.x-s*iA.z,iA.y,s*iA.x+c*iA.z);
     cpos.xz+=wdir*wlv*(1.2+.8*sin(t*.3+iB.x))*(1.-bl*.8);cpos.x+=sin(t*.05+iB.x)*1.2*(1.-bl*.75);cpos.z+=cos(t*.04+iB.x*1.7)*(1.-bl*.75);cpos.y+=sin(t*.07+iB.x)*.15;
-    vec4 mv=viewMatrix*vec4(cpos,1.);vW=cpos+vec3(0.,iA.w*.3,0.);float sz=iA.w*(1.+.08*sin(t*.11+iB.x));mv.xy+=position.xy*vec2(sz*1.6,sz);vWy=(inverse(viewMatrix)*mv).y;
-    vFade=smoothstep(2.,8.,-mv.z);
+    vec4 mv=viewMatrix*vec4(cpos,1.);vW=cpos+vec3(0.,iA.w*.3,0.);float sz=iA.w*(1.+.08*sin(t*.11+iB.x));mv.xy+=position.xy*vec2(sz*1.6,sz*(1.-.35*rootK*bl));vWy=(inverse(viewMatrix)*mv).y;
+    vFade=smoothstep(2.,8.,-mv.z);/* [ENV] night: the root-foot billows lie lower and thinner, other puffs open up near the trunk (Ground: root tops and moss read, as in the photo) */vFade*=1.-rootK*mix(.5*smoothstep(7.5,4.5,length(cpos.xz)),.45,bl);
     // keep the trunk base and roots clear: puffs between the camera side and the trunk fade out (fog stays around and behind them, as in the photo)
     float front=smoothstep(-2.,3.,cpos.z)*smoothstep(9.,5.,abs(cpos.x))*smoothstep(15.,10.,length(cpos.xz));vFade*=1.-front*frontK*(1.-bl);vFade*=1.-smoothstep(9.,6.,length(cpos.xz))*frontK*.6*(1.-bl);/* Ground: within ~8 m of the trunk the fog lies low in patches (billows), the roots and moss read */vFade*=smoothstep(pond.z+.3,pond.z+2.3,length(cpos.xz-pond.xy)-iA.w*.45);/* the pond stays clear (puff edge 2 m off the water) */vFade=mix(vFade,smoothstep(1.,4.,-mv.z),bl);gl_Position=projectionMatrix*mv;}`,
   fragmentShader:`uniform float t,op,wlv;uniform vec3 col;uniform vec4 lp[6];varying vec2 vUv;varying float vS,vA,vFade;varying vec3 vW;varying float vWy;${FOG_NOISE}${SOFT_GLSL}
@@ -334,7 +334,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     // (hue ~20 -> ~30 deg) and the warm glow added on the bright ones is gold
     x.g+=(x.r-x.g)*.14*wk*night;x+=vec3(.045,.035,0.)*wk*hi0(l)*night;x=mix(x,x*vec3(.9,.98,1.2),ck*.4*night);x=mix(x,vec3(l)*vec3(.92,1.,1.1),ck*.25*night);x*=1.+.14*ck*night*(1.-smoothstep(.3,.7,l));/* the photo's night blues are lighter: lift the cold mid/darks, not the warm rooms *//* cold darks less saturated (the photo's night blues are muted, not deep teal) */
     // night greens (oak leaves, grass, moss) muted toward the photo's dark blue-teal instead of bright leaf green
-    float gk=clamp((x.g-max(x.r,x.b))*4.,0.,1.);x=mix(x,vec3(l)*vec3(.8,1.02,1.12),gk*.3*night);
+    float gk=clamp((x.g-max(x.r,x.b))*4.,0.,1.);x=mix(x,vec3(l)*vec3(.8,1.02,1.12),gk*.3*night);{float gkN=clamp((x.g-max(x.r,x.b))*10.,0.,1.);x=mix(x,vec3(dot(x,vec3(.3,.59,.11)))*vec3(.86,1.06,1.04),gkN*.75*night);}/* [ENV] photo night crown: leaf green measured ~half as saturated as ours (sat .25 vs .5, same hue and lightness) */
     // autumn daylight: leaf greens lean a little to yellow-olive (night keeps the blue-teal above)
     x.r+=(x.g-x.r)*.24*gk*(1.-night);x.b*=1.-.15*gk*(1.-night);
     x=(x-.5)*con+.5;
@@ -394,7 +394,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
   bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
   {const dark=wTmpD.setRGB(.13,.2,.2).lerp(wTmpC.copy(P.fog).multiplyScalar(.3),eve);for(const m of farRings){const u=m.material.uniforms;u.col.value.copy(dark).lerp(P.fog,u.k.value*.35);u.haze.value.copy(P.fog).lerp(P.hor,.08);/* [ENV] nearly the scene fog: the ring bottoms no longer glow white by day */}}
   for(const h of halos){const on=h.l.intensity>.05;h.s.visible=on;if(on){h.l.getWorldPosition(h.s.position);const k=Math.min(1,h.l.intensity/6);h.s.material.opacity=k*.85;h.s.scale.setScalar(h.size*(.85+k*.3));}}
-  env.shroomGlow.value=eve*1.8;
+  env.shroomGlow.value=eve*1.8;fogU.rootK.value=eve;
   // dusk: thicken the distance fog once the lamps are on (the painting's 19:20 look); index.html sets near/far each frame before this
   if(scene.fog&&scene.fog.isFog&&mornK>0){const f=scene.fog;f.color.lerp(dawnC,mornK*.08);f.far+=mornK*24;f.near+=mornK*6;}
   if(scene.fog&&scene.fog.isFog){const f=scene.fog;f.far=Math.max(f.near+34,f.far-eve*(1-nightK)*26);}
@@ -452,9 +452,9 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // outside keeps it. No new uniform in every material: a LightProbe carries the strength (lightProbe[0].x) and its own
  // irradiance term is dropped, so the probe is a pure parameter. The mask uses the world position from the fog chunk (vFogW).
  const inProbe=new THREE.LightProbe();inProbe.name='envInteriorK';
- env.setInterior=rooms=>{env.interiorBoxes=rooms;/* [HERO] read by hero.js: no breath vapour indoors */const box=rooms.map(r=>`k=max(k,ib(p,vec3(${r[0].toFixed(3)},${r[2].toFixed(3)},${r[4].toFixed(3)}),vec3(${r[1].toFixed(3)},${r[3].toFixed(3)},${r[5].toFixed(3)})));`).join('');
+ env.setInterior=rooms=>{env.interiorBoxes=rooms;/* [HERO] read by hero.js: no breath vapour indoors */const box=rooms.map((r,i)=>`{float q=ib(p,vec3(${r[0].toFixed(3)},${r[2].toFixed(3)},${r[4].toFixed(3)}),vec3(${r[1].toFixed(3)},${r[3].toFixed(3)},${r[5].toFixed(3)}));k=max(k,q);kw=max(kw,q*${i<3?`lightProbe[1][${i}]`:'1.'});}`).join('');/* [LIGHTS] kw: per-room share of the warm tint (lightProbe[1].xyz = rooms 0..2): warm only in the room the hero is in or a lamp lights; an empty dark room keeps the cool moonlit fill, so from outside it no longer reads lamp-lit */
   const c=THREE.ShaderChunk;c.lights_fragment_begin=c.lights_fragment_begin.replace('irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );','')
-   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.;'+box+'irradiance*=1.-k*lightProbe[0].x;/* [LIGHTS] inside, the moon-blue fill turns warm (no brighter on screen: warm reads brighter after the grade, so it is scaled down): lightProbe[0].y = how much */irradiance=mix(irradiance,vec3(dot(irradiance,vec3(.3,.59,.11)))*vec3(.66,.5,.37),k*lightProbe[0].y);}\n#endif');
+   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.,kw=0.;'+box+'irradiance*=1.-k*lightProbe[0].x;/* [LIGHTS] inside, the moon-blue fill turns warm (no brighter on screen: warm reads brighter after the grade, so it is scaled down): lightProbe[0].y = how much */irradiance=mix(irradiance,vec3(dot(irradiance,vec3(.3,.59,.11)))*mix(vec3(.5,.53,.58),vec3(.66,.5,.37),kw),k*lightProbe[0].y);/* [LIGHTS] same dimming for every room (luminance of both tints ~.53); kw only picks warm vs a cool moonlit grey */}\n#endif');
   c.lights_pars_begin=c.lights_pars_begin+'\nfloat ib(vec3 p,vec3 a,vec3 b){vec3 d=min(p-a,b-p);return smoothstep(-.13,-.06,min(d.x,min(d.y,d.z)));}';
   scene.add(inProbe);env.interiorOn=true;};env.interiorK=.75;/* share of the fill cut inside at full night (Lights: ~25% left) */
  // desktop: the forest impostors are unlit too; give them what a lit leaf card would get from the scene's lights (same as foldLights)
