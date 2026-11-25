@@ -79,7 +79,9 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     // the ladder foot: hand the legs back to motion matching well before climb.js mounts (it places the root on the ladder,
     // and planted feet then snapped the knees)
     if (ladderSoon()) return false;
-    return H.path.length > 0 && !H.slide;
+    if (H.path.length > 0 && !H.slide) return true;
+    // the last bit up to a work spot (approachTo, slideTo: 0.3-1.2 m): real steps too, MM glided there on two standing feet
+    const sl = H.slide; return !!(sl && sl.k < 1 && Math.hypot(sl.x, sl.z) > .3);
   }
   function neutral(s, pos, yaw) { return pos.clone().addScaledVector(rightOf(yaw), footX[s] * .85).setY(pos.y + ankY); }
   function update(dt) {
@@ -103,14 +105,24 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       if (ST.ph < 0) ST.ph += 1;
     }
     ST.w = clamp(ST.w + (tw ? dt / .3 : -dt / .3), 0, 1);
-    if (ST.w <= 0) { ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; return; }
-    const v = want ? Math.max(ST.v, H.v || 0) : 0;
-    // step length grows with speed; cadence = v / L, never slower than a brisk settle step
-    const L = clamp((.28 + .18 * v) * legLen / .72, .12, .55) * (want ? 1 : 0);
-    let rate = v > .05 ? v / (2 * Math.max(L, .1)) : 0; // cycles per second
-    if (settling) rate = Math.max(rate, 1.9);
-    if (want) rate = Math.max(rate, 1.2);
-    ST.rate = ST.rate == null ? rate : ST.rate + (rate - ST.rate) * (1 - Math.exp(-dt * 6)); rate = ST.rate; // cadence eases (a stop switched it in one frame: knee 12-19 cm/frame²)
+    if (ST.w <= 0) { ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; ST.L = null; ST.va = null; return; }
+    // fading out (a ladder ahead, a task takes the legs): the gait goes on as it was while the blend hands him over; a stop
+    // in the middle of it (step length and cadence to 0) moved the landing spots and the hips in the same 0.3 s (knee 8 cm/frame²)
+    let v, L, rate;
+    if (tw) ST.walking = want; // what he was doing when the fade began: a walk is cut off mid-stride, a settle has finished
+    if (!tw && ST.walking && ST.L != null) { v = ST.v; L = ST.L; rate = ST.rate; }
+    else {
+      v = want ? Math.max(ST.v, H.v || 0) : 0;
+      // step length grows with speed; cadence = v / L, never slower than a brisk settle step
+      L = clamp((.28 + .18 * v) * legLen / .72, .12, .55) * (want ? 1 : 0); ST.L = L;
+      rate = v > .05 ? v / (2 * Math.max(L, .1)) : 0; // cycles per second
+      if (settling) rate = Math.max(rate, 1.9);
+      if (want) rate = Math.max(rate, 1.2);
+      ST.rate = ST.rate == null ? rate : ST.rate + (rate - ST.rate) * (1 - Math.exp(-dt * 6)); rate = ST.rate; // cadence eases (a stop switched it in one frame: knee 12-19 cm/frame²)
+    }
+    // the walk's body motion (bounce, sway, knee bend, lean) dies out over ~0.3 s: v went to 0 in one frame at a stop, and the
+    // hips dropped 2 cm at once
+    ST.va = ST.va == null ? v : (v > ST.va ? v : ST.va + (v - ST.va) * (1 - Math.exp(-dt * 7)));
     const ph0 = ST.ph; ST.ph = (ST.ph + rate * dt) % 1;
     const T = rate > 0 ? 1 / rate : 1;
     const f = fwdOf(yaw), r = rightOf(yaw);
@@ -145,7 +157,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     // ---------- save the pose underneath (for blending), then build ours from the bind pose ----------
     NAMES.forEach((n, i) => saved[i].copy(B[n].quaternion)); savedHip.copy(B.Hips.position);
     for (const n of NAMES) B[n].quaternion.copy(REST[n].q);
-    const amp = clamp(v / 1.0, 0, 1.3);
+    const amp = clamp(ST.va / 1.0, 0, 1.3);
     const fL = ST.feet.LeftShown.clone().sub(pos).dot(f), fR = ST.feet.RightShown.clone().sub(pos).dot(f);
     const stride = Math.max(.15, L * 1.2);
     const legDiff = 1.2 * Math.tanh((fL - fR) / stride / 1.2); // +1: left foot forward (soft limit: a hard clamp kinked the pelvis and arms)
