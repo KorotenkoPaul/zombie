@@ -92,6 +92,17 @@ import { buildProps } from './props.js';
 import { createCameraRig, createDOF } from './camera.js';
 import { createPerf } from './perf.js';
 import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
+/* [PERF] spot lights: every lit pixel ran the full lighting of all 6 lamp spots, with 17-tap shadow lookups for the 2 that cast,
+   even by day when every lamp is off (black) and at night outside each lamp's cone. A spot whose light can't reach the pixel
+   (getSpotLightInfo: outside the cone, out of range or black) now skips its shadow lookup and shading. It added exactly nothing
+   there, so the picture is the same (A/B, see NOTES-perf). Same light count, so no shader recompiles when lamps go on or off.
+   ?nospotskip turns it off. */
+{const C=THREE.ShaderChunk,a='getSpotLightInfo( spotLight, geometryPosition, directLight );',
+  re='RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );';
+ const t=C.lights_fragment_begin,i=t.indexOf('#if ( NUM_SPOT_LIGHTS > 0 )'),j=t.indexOf(a,i),k=t.indexOf(re,j),e=t.indexOf('#pragma unroll_loop_end',i);
+ window.__lfbOrig=t;
+ if(!/[?&]nospotskip/.test(location.search)&&i>=0&&j>i&&k>j&&k<e)C.lights_fragment_begin=t.slice(0,j)+a+'\n\t\tif ( directLight.visible ) {'+t.slice(j+a.length,k)+re+'\n\t\t}'+t.slice(k+re.length);
+ window.__lfbSkip=C.lights_fragment_begin;}
 
 const $=id=>document.getElementById(id);
 const rnd=(a,b)=>a+Math.random()*(b-a);

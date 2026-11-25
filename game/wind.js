@@ -74,7 +74,7 @@ vec3 windRope(vec3 p,float t,float len){vec2 w=windSwayS(p,1.1)*.05*len*t*t*(1.-
 // ax = the trunk axis (x,z). Still near the trunk and the house; the far limbs and the top of the crown move a few cm,
 // ~15 cm in a strong gust. Leaf cards add the same offset at their centre, so they stay on their branch.
 vec3 windBranch(vec3 p,vec2 ax){float d=length(p.xz-ax);float a=.09*max(smoothstep(5.5,10.,d),smoothstep(14.,19.,p.y));
- float s=windStrength(p);vec2 dd=uWind.xy,q=vec2(-dd.y,dd.x);float ph=uWT*.7-dot(p.xz,dd)*.12,sh=.1+.6*s;
+ vec2 dd=uWind.xy,q=vec2(-dd.y,dd.x);/* [ENV] heavy limbs lag a gust: they feel it as if ~6 m further downwind (~0.7 s late), the leaves at once */float s=windStrength(p+vec3(dd.x,0.,dd.y)*6.);float ph=uWT*.7-dot(p.xz,dd)*.12,sh=.1+.6*s;
  vec2 o=dd*(.4*s*s+sin(ph)*sh*.6)+q*sin(ph*1.37+1.)*sh*.3;return vec3(o.x,0.,o.y)*a;}
 vec3 windLocal(vec3 w){
 #ifdef USE_INSTANCING
