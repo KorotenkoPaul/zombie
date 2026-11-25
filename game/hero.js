@@ -486,14 +486,18 @@ export function createHero(ctx){
   const da=wrapA(want-root.rotation.y);
   // ===== MOTION HOOK: with motion matching the stop is a human one (constant deceleration over the last step), no creeping =====
   const ladNext=motion&&nxt&&nxt.t==='ladder';// MOTION HOOK: slow down over the last steps to the ladder foot (to ~.4 m/s, the approach pace), not at it
-  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*1.6*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):ladNext?clamp(Math.sqrt(.16+2*1.6*Math.max(0,toT-.32))/H.walkV,0,1):1);let align=smooth(-.55,.75,Math.cos(da));/* WALK: just off a ladder the rungs are right in front of him: turn on the spot first (the first step used to go into the ladder) */if(H.ladOff){if(Math.hypot(p.x-H.ladOff.x,p.z-H.ladOff.z)<.3){if(Math.cos(da)<.75){if(window.__noPivot){align=0;}else{/* once he has turned his back on the rungs he steps out while still turning (he stood 0.7 s turning on the spot: robot at the ladder exit) */const lf=H.ladOff.f;const away=lf==null?0:smooth(.35,-.3,Math.cos(root.rotation.y-lf));align=Math.min(align,away);H.pivot=1;}}}else H.ladOff=null;}// a person steps out while still turning, not after
-  H.v+=clamp(vmax*align-H.v,-3.2*dt,(H.v<.5?3.2:2.4)*dt);
+  const vmax=H.walkV*(isLast?(motion?clamp(Math.sqrt(2*(H.hopS?2.6:1.6)*Math.max(0,toT-.03))/H.walkV,0,1):clamp(toT/.42,.35,1)):ladNext?clamp(Math.sqrt(.16+2*1.6*Math.max(0,toT-.32))/H.walkV,0,1):1);let align=smooth(-.55,.75,Math.cos(da));/* WALK: just off a ladder the rungs are right in front of him: turn on the spot first (the first step used to go into the ladder) */if(H.ladOff){if(Math.hypot(p.x-H.ladOff.x,p.z-H.ladOff.z)<.3){if(Math.cos(da)<.75){if(window.__noPivot){align=0;}else{/* once he has turned his back on the rungs he steps out while still turning (he stood 0.7 s turning on the spot: robot at the ladder exit) */const lf=H.ladOff.f;const away=lf==null?0:smooth(.35,-.3,Math.cos(root.rotation.y-lf));align=Math.min(align,away);H.pivot=1;}}}else H.ladOff=null;}// a person steps out while still turning, not after
+  /* WALK: a short hop (under 1.5 m) that starts facing away (> 80 deg): he steps off a third of the way into the turn, the step going
+     toward where he is heading while the body finishes turning (it was a full spin on the spot, then the walk: 0.4-0.8 m in 0.9-1.4 s, gate slow) */
+  if(!window.__noHop){if(H.hopP!==H.path){H.hopP=H.path;H.hop=null;let L=0,c=p;for(const x of H.path){if(x.t==='ladder'){L=9;break;}const q=N[x.node].p;L+=Math.hypot(q.x-c.x,q.z-c.z);c=q;}H.hopS=L<1.5;if(Math.abs(da)>1.4&&!H.ladOff&&H.hopS)H.hop={a0:Math.abs(da)};}
+   if(H.hop){if(Math.abs(da)<.15)H.hop=null;else{align=Math.max(align,.35+.65*smooth(H.hop.a0*.85,H.hop.a0*.45,Math.abs(da)));}}}
+  H.v+=clamp((H.hop&&Math.abs(da)>.7?Math.min(vmax*align,.36):vmax*align)-H.v,-(H.hopS?4:3.2)*dt,(H.hopS?4:H.v<.5?3.2:2.4)*dt);
   stuckCheck(dt);
   // turn rate depends on speed: on the spot it takes small steps
   const rate=lerp(4.2,3.8,clamp(H.v/H.walkV,0,1))*(gait.turn||1)*(H.pivot?1.35:1);/* off the ladder foot: a quick pivot on the planted foot, not a slow shuffle round */
   // turning has inertia: angular speed ramps up and down, so there is never a snap in heading
-  const wav=clamp(da*3,-rate,rate);{const ac=H.pivot?15:11;H.pivot=0;H.av=(H.av||0)+clamp(wav-(H.av||0),-ac*dt,ac*dt);}root.rotation.y+=H.av*dt;H.face=root.rotation.y;
-  const dir=fwd(root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;/* WALK: the push off walls and roots eases in and out (it switched on at full rate when the route left a tight node: the path bent 50 deg in one frame at the forest fork, 545 deg/s) */{const on=!(N[step.node].tight&&toT<.9);H.pw=clamp((H.pw??1)+(on?3:-3)*dt,0,1);if(H.pw>0){const q=p.clone();pushOut(q);const m=.6*dt*H.pw;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}}
+  const wav=clamp(da*3,-rate,rate);{const ac=H.pivot||H.hop?15:11;H.pivot=0;H.av=(H.av||0)+clamp(wav-(H.av||0),-ac*dt,ac*dt);}root.rotation.y+=H.av*dt;H.face=root.rotation.y;
+  const dir=fwd(H.hop?want:root.rotation.y);p.x+=dir.x*H.v*dt;p.z+=dir.z*H.v*dt;/* WALK: the push off walls and roots eases in and out (it switched on at full rate when the route left a tight node: the path bent 50 deg in one frame at the forest fork, 545 deg/s) */{const on=!(N[step.node].tight&&toT<.9);H.pw=clamp((H.pw??1)+(on?3:-3)*dt,0,1);if(H.pw>0){const q=p.clone();pushOut(q);const m=.6*dt*H.pw;p.x+=clamp(q.x-p.x,-m,m);p.z+=clamp(q.z-p.z,-m,m);}}
   const moving=H.v>.06||Math.abs(da)>.25;
   // MOTION HOOK: with motion matching a one-off action clip (stretching, a gesture) keeps playing on the upper body while he walks off
   /* WALK: a work clip (bent over the oven, stirring) that was still running kept the upper body hunched for up to 2 s of walking: it may only finish a short gesture (0.4 s) */
@@ -2058,13 +2062,13 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const hipI=bones.Hips?S.bones.indexOf(bones.Hips):-1;const P=g0.attributes.position,Nn=g0.attributes.normal,J=g0.attributes.skinIndex,W=g0.attributes.skinWeight,ix=g0.index;if(!ix||!Nn)return null;
   const g4=(A,i)=>[A.getX(i),A.getY(i),A.getZ(i),A.getW(i)];const domJ=i=>{const w=g4(W,i),j=g4(J,i);let b=-1,bw=-1;for(let k=0;k<4;k++){if(w[k]>bw){bw=w[k];b=j[k];}}return b;};
   const ok=new Uint8Array(P.count);for(let i=0;i<P.count;i++){const j=domJ(i);ok[i]=keep.has(j)&&!(j===hipI&&P.getY(i)<.02)?1:0;}
-  const pos=new Float32Array(P.count*3);for(let i=0;i<P.count;i++){pos[i*3]=P.getX(i)+Nn.getX(i)*.022;pos[i*3+1]=P.getY(i)+Nn.getY(i)*.022;pos[i*3+2]=P.getZ(i)+Nn.getZ(i)*.022;}
+  /* pushed out along the normal averaged over every copy of a point: split vertices (uv seams) each went their own way and the shell tore into cracks with the sweater showing through (watch R59-1) */const NA=new Map(),nk=i=>Math.round(P.getX(i)*1e4)+','+Math.round(P.getY(i)*1e4)+','+Math.round(P.getZ(i)*1e4);for(let i=0;i<P.count;i++){const k=nk(i);const a=NA.get(k)||[0,0,0];a[0]+=Nn.getX(i);a[1]+=Nn.getY(i);a[2]+=Nn.getZ(i);NA.set(k,a);}const pos=new Float32Array(P.count*3);for(let i=0;i<P.count;i++){const a=NA.get(nk(i)),l=Math.hypot(a[0],a[1],a[2])||1;pos[i*3]=P.getX(i)+a[0]/l*.022;pos[i*3+1]=P.getY(i)+a[1]/l*.022;pos[i*3+2]=P.getZ(i)+a[2]/l*.022;}
   const tri=[];for(let t=0;t<ix.count;t+=3){const a=ix.getX(t),b=ix.getX(t+1),c=ix.getX(t+2);if(ok[a]&&ok[b]&&ok[c])tri.push(a,b,c);}
   const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('normal',Nn);g.setAttribute('skinIndex',J);g.setAttribute('skinWeight',W);g.setIndex(tri);
-  const mat=new THREE.MeshStandardMaterial({color:0x56603F,roughness:.95,metalness:0,transparent:true,opacity:1});
+  const mat=new THREE.MeshStandardMaterial({color:0x56603F,roughness:.95,metalness:0,transparent:true,opacity:1});/* a 2 cm shell over the body: where he bends, the sweater and vest underneath came through it as orange and brown streaks (watch R59-1); depth-only nudge 25 mm toward the eye, screen xy unchanged */mat.onBeforeCompile=sh=>{sh.vertexShader=sh.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\n{vec4 q=mvPosition;q.xyz+=normalize(-q.xyz)*.025;vec4 c=projectionMatrix*q;gl_Position.z=c.z/c.w*gl_Position.w;}');};mat.customProgramCacheKey=()=>'heroCoatZ';
   const m=new THREE.SkinnedMesh(g,mat);m.name='coat';m.position.copy(sk.position);m.quaternion.copy(sk.quaternion);m.scale.copy(sk.scale);m.bind(S,sk.bindMatrix);m.castShadow=true;m.frustumCulled=false;m.visible=false;sk.parent.add(m);
   return {m,mat,on:false,k:0};})();
- function coatTick(dt){if(!COAT)return;const want=COAT.on?1:0;COAT.k+=clamp(want-COAT.k,-dt/.6,dt/.6);COAT.m.visible=COAT.k>.01;COAT.mat.opacity=COAT.k;COAT.mat.transparent=COAT.k<.99;COAT.mat.depthWrite=COAT.k>.5;}
+ function coatTick(dt){if(!COAT)return;const want=COAT.on?1:0;COAT.k+=clamp(want-COAT.k,-dt/.6,dt/.6);COAT.m.visible=COAT.k>.01;COAT.mat.opacity=COAT.k;COAT.mat.transparent=COAT.k<.99;COAT.mat.depthWrite=COAT.k>.5;/* the vest is under it once it is fully on (it came through at the bends) */if(!COAT.v){COAT.v=[];root.traverse(o=>{if(o.isMesh&&o.name==='vest')COAT.v.push(o);});}for(const o of COAT.v)o.material.visible=COAT.k<.99;}
  const GEAR={coat:false,bow:false,lantern:false};
  const PP=()=>window.__props||P3;
  // WORKSHOP HOOK ("Сделать работу в мастерской естественной"): saw, sharpen and fixlamp are job()s in game/workshop.js; they write only the hands (job post)
@@ -2188,7 +2192,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(!bkeOn){bkeOn=1;lateFn(()=>{for(const [ob,m] of BKE){if(ob.parent!==bones.Spine2){BKE.delete(ob);continue;}m.t=Math.min(1,m.t+1/60/m.d);const e=smooth(0,1,m.t);ob.position.copy(m.p0).lerp(m.p1,e);ob.quaternion.copy(m.q0).slerp(m.q1,e);if(m.t>=1)BKE.delete(ob);}});}}
  function gearOn(a,o,then){const seq=[];
   if(o.jacket&&!GEAR.coat&&COAT)seq.push(next=>{/* GRAB: the right hand goes to the jacket on the peg before it leaves the peg */a.cr=[{hand:'Right',at:()=>gripHome('jacket'),k0:0,k1:.13,hold:.03,k2:.42,lin:1}];visit(a,peg('jacketPeg'),.45,'hy_jacketon',[[.14,()=>{try{PP().setHere&&PP().setHere('jacket',false);}catch(e){}COAT.on=true;GEAR.coat=true;}],[.55,()=>AU('zip')]]/* no rigid jacket in the hand: it leaves the peg at the touch and settles on the body (skinned coat fades in) */,()=>{a.cr=null;next();});});
-  if(o.bow&&!GEAR.bow)seq.push(next=>{/* GRAB: the left hand goes to the bow's grip on its peg before it takes it (it was taken from 30-60 cm off) */a.cr=[{hand:'Left',at:()=>gripHome('bow'),k0:.1,k1:.33,hold:.04,k2:.62,lin:1}];bowVisit(a,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',quiverSpot(),[0,0,-.18]);onBackEase('bow',V(-.02,.03,-.18),[0,0,.55]);/* OUTDOOR: slung across the back, both hands free for the ladder (Pavel: bow on the back); GRAB: it settles there from the hand */GEAR.bow=true;}]],()=>{a.cr=null;next();});});
+  if(o.bow&&!GEAR.bow)seq.push(next=>{/* GRAB: the left hand goes to the bow's grip on its peg before it takes it (it was taken from 30-60 cm off) */a.cr=[{hand:'Left',at:()=>gripHome('bow'),k0:.1,k1:.33,hold:.04,k2:.62,lin:1},{hand:'Right',at:()=>{const k=a.t/Math.max(.3,a.clipDur||1.2);return bones.Hips.getWorldPosition(V()).add(V(-.24,.3-.38*smooth(.5,.84,k),.14).applyQuaternion(bones.Hips.getWorldQuaternion(new THREE.Quaternion())));},k0:.3,k1:.42,hold:.3,k2:.88,lin:1,lean:0}/* GRAB (watch R58-2): the free right arm stays bent at his side while the left slings the bow; the clip flung it straight out sideways, a near T-pose */];bowVisit(a,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',quiverSpot(),[0,0,-.18]);onBackEase('bow',V(-.02,.03,-.18),[0,0,.55]);/* OUTDOOR: slung across the back, both hands free for the ladder (Pavel: bow on the back); GRAB: it settles there from the hand */GEAR.bow=true;}]],()=>{a.cr=null;next();});});
   if(o.lantern&&!GEAR.lantern&&hasTool('lantern'))seq.push(next=>lanternBench(a,true,next));
   const run=i=>{if(a.leaving)return;if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  /* OUTDOOR: the lantern off the bench and back by hand, at bench height: the palm goes to the bail, closes, and the lantern comes
@@ -2210,8 +2214,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   H.look=S.home;H.lookW=.7*(1-smooth(1,1.4,t));if(S.did===+!!S.take)lanternPlumb();/* in the fist (taken, or not yet set down) *//* hanging from its bail as it comes off the bench, not lying on its side in the fist */}
  function gearOff(a,then){const seq=[];
   if(GEAR.lantern)seq.push(next=>lanternBench(a,false,next));
-  if(GEAR.bow)seq.push(next=>bowVisit(a,'hy_bowhang',[[.2,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}/* off the back into the hand first */}],[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.4});}catch(e){}GEAR.bow=false;}]],next));
-  if(GEAR.coat)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],next));
+  if(GEAR.bow)seq.push(next=>{/* GRAB: the left hand takes the bow to its peg: on the grip spot as it lets go */a.cr=[{hand:'Left',at:()=>gripHome('bow'),k0:.42,k1:.68,hold:.03,k2:.93,lin:1}];bowVisit(a,'hy_bowhang',[[.2,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}/* off the back into the hand first */}],[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.4});}catch(e){}GEAR.bow=false;}]],()=>{a.cr=null;next();});});
+  if(GEAR.coat)seq.push(next=>{/* GRAB: the right hand hangs the jacket on its peg: there as it appears on the peg */a.cr=[{hand:'Right',at:()=>gripHome('jacket'),k0:.45,k1:.69,hold:.04,k2:.95,lin:1}];visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],()=>{a.cr=null;next();});});
   const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  /* OUTDOOR: the lantern on a water run (Lights: at night he went to the pond in the dark). The take and the put-back are the
     right hand's (hy_take at the bench); the bucket is the right hand's too, so in between the lantern goes over into the LEFT
@@ -3171,13 +3175,23 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function bootOn(sd){const B=BT.side[sd];if(!B)return;B.spot=null;const pm=B.prop;bootWorld(B,_bbm);const P_=V(),Q_=new THREE.Quaternion(),S_=V();_bbm.decompose(P_,Q_,S_);bootTween(pm,P_,Q_,.25,()=>{pm.visible=false;bootShow(sd,true);});}
  // the vest: off seated and laid folded at the foot end of the mattress; on again standing
  function hasVest(){bootInit();return !!(VEST||BT.dv);}
+ // the vest folded like real clothes, not squashed flat (coordinator: it looked fake, the back sank into the stool and the collar
+ // stood up): laid on its back, the sides turned in over the middle, then the shoulders folded down onto the hem. Each fold is a
+ // half turn of that part of the cloth about its crease, so the side that ends up on top still faces up and is drawn. The pile
+ // stands on y=0 (the stool top) and is centred on its footprint
+ function vestFold(pos,n,bb){const c=bb.getCenter(V()),W=bb.max.x-bb.min.x,Hh=bb.max.y-bb.min.y,D=bb.max.z-bb.min.z;const a=W/4,t=.022*Math.max(W,Hh)/2,c1=1.5*t,c2=3.5*t;
+  let mnY=1e9;for(let i=0;i<n;i++){let u=pos[i*3]-c.x,v=pos[i*3+1]-c.y;const z=(pos[i*3+2]-c.z)/(D/2);let h=t*smooth(-.35,.35,z);/* back panel below, front above */
+   if(u>a){u=2*a-u;h=2*c1-h;}else if(u<-a){u=-2*a-u;h=2*c1-h;}/* the sides over the middle */
+   if(v>0){v=-v;h=2*c2-h;}/* the top half down onto the bottom */
+   h+=t*.25*Math.sin(u*9.1+v*5.3)*Math.sin(v*7.7);/* soft, not machined */
+   pos[i*3]=u*.92;pos[i*3+1]=h;pos[i*3+2]=-(v+Hh/4)*.8;if(h<mnY)mnY=h;}
+  for(let i=0;i<n;i++)pos[i*3+1]-=mnY;}
  function vestProp(){if(BT.vestProp||!hasVest())return BT.vestProp;if(!VEST){const D=BT.dv;const P=D.geo.attributes.position;const pos=P.array;const c=D.bb.getCenter(V());
-   for(let i=0;i<P.count;i++){const x=pos[i*3]-c.x,y=pos[i*3+1]-c.y,z=pos[i*3+2]-c.z;pos[i*3]=x*.55;pos[i*3+1]=z*.35+.025;pos[i*3+2]=-y*.45;}D.geo.computeVertexNormals();
+   vestFold(pos,P.count,D.bb);D.geo.computeVertexNormals();
    const pm=new THREE.Mesh(D.geo,D.mat);pm.castShadow=true;pm.visible=false;pm.name='vestFolded';scene.add(pm);return BT.vestProp=pm;}
   const g=VEST.geometry;const m=(Array.isArray(VEST.material)?VEST.material[0]:VEST.material).clone();
   const P=g.attributes.position;const pos=new Float32Array(P.count*3);const bb=new THREE.Box3();for(let i=0;i<P.count;i++){const q=V(P.getX(i),P.getY(i),P.getZ(i)).applyMatrix4(VEST.bindMatrix);pos.set([q.x,q.y,q.z],i*3);bb.expandByPoint(q);}
-  const c=bb.getCenter(V());// folded: flattened to a low pile, laid on its back on the quilt
-  for(let i=0;i<P.count;i++){const x=pos[i*3]-c.x,y=pos[i*3+1]-c.y,z=pos[i*3+2]-c.z;pos[i*3]=x*.55;pos[i*3+1]=z*.35+.025;pos[i*3+2]=-y*.45;}
+  vestFold(pos,P.count,bb);
   const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(pos,3));if(g.attributes.uv)sg.setAttribute('uv',g.attributes.uv);sg.setIndex(g.index);sg.computeVertexNormals();/* [HERO LOOK] the folded vest keeps the worn vest's leather (heroclothes.js attributes, same material) */if(g.attributes.kp){for(const a of ['kp','kn','kx'])sg.setAttribute(a,g.attributes[a]);}
   const pm=new THREE.Mesh(sg,g.attributes.kp?VEST.material:m);pm.castShadow=true;pm.visible=false;pm.name='vestFolded';scene.add(pm);return BT.vestProp=pm;}
  function vestPark(on){const pm=vestProp();if(!pm)return;if(on){const sp=vestSpot();pm.position.copy(sp.p);pm.rotation.set(0,sp.yaw,0);pm.scale.setScalar(BT.sc||1);}pm.visible=on;}
@@ -3310,7 +3324,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   // getting up he pushes the quilt off as he rises: it follows his body for the first moments, then settles flat
   /* BED: lying down the cover starts as his legs come over the mattress, so they slide in UNDER the quilt (it rose over him only after he lay down, he sank into it) */if(c.dir>0&&!c.qon&&u>.3&&(u>.75||!FIT.bed||['Left','Right'].every(sd=>!bones[sd+'Leg']||wp(bones[sd+'Leg']).z<FIT.bed.z1-.02))){c.qon=true;bedPress(true);}/* R56-1: only once both knees are over the mattress: the quilt can't reach past its hem, so a knee still out over the edge stood up through its top as it rose */
   {const P=window.__props||P3;if(P&&P.quiltLive)P.quiltLive(.1);}
-  if(c.dir<0&&!c.qoff&&u>.5){c.qoff=true;bedPress(false);}/* the legs are out from under it first */
+  if(c.dir<0&&!c.qoff&&(u>.5||FIT.bed&&['Left','Right'].some(sd=>bones[sd+'Leg']&&wp(bones[sd+'Leg']).z>FIT.bed.z1-.12))){c.qoff=true;bedPress(false);}/* as soon as a knee nears the edge: the raised quilt's hanging side stood in their way and the legs went out through it (morning) *//* the legs are out from under it first */
   bedClipGuard();
   if(c.t>=c.dur){H.bedC=null;c.then&&c.then();}}
  // the Fal bed clips were made on a low bed: played on the bunk they kicked both legs up toward the upper bunk and, getting up, rolled

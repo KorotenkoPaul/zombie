@@ -175,11 +175,17 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   nails.instanceMatrix.setUsage(THREE.DynamicDrawUsage); nails.setColorAt(0, new THREE.Color(1, 1, 1));
   const born = new Float32Array(NMAX); let nNext = 0, gameT = 0, nailCT = 0;
   const NEW = new THREE.Color(.95, .95, .98), OLD = new THREE.Color(.34, .3, .26), tc = new THREE.Color();
-  function nail(pos, nrm) {
+  // A nail driven at the first blow goes in while the board is still lifted / sprung out: it rides with the part from then on
+  // (kept in the part's own unscaled frame), so when the blows press the board home its heads end flush, not floating 1-2 cm up.
+  const nOwner = new Array(NMAX).fill(null), _rf = new THREE.Matrix4(), _rt = V(), _rq = new THREE.Quaternion(), _rs = V();
+  const rigOf = (p, out) => { pose(p, p.vis).decompose(_rt, _rq, _rs); return out.compose(_rt, _rq, _rs.set(1, 1, 1)); };
+  function nail(pos, nrm, owner) {
     if (!pos) return -1; const p = pos.isVector3 ? pos : V(...pos), n = nrm ? (nrm.isVector3 ? nrm.clone() : V(...nrm)).normalize() : UP.clone();
     const i = nNext; nNext = (nNext + 1) % NMAX; if (nails.count < NMAX) nails.count++;
+    if (nOwner[i]) { const o = nOwner[i]; o.nl = o.nl.filter(e => e.i !== i); nOwner[i] = null; }
     Q.setFromUnitVectors(UP, n); const tw = new THREE.Quaternion().setFromAxisAngle(UP, rnd(0, 6.28)); Q.multiply(tw);
     M.compose(p, Q, S.set(1, 1, 1)); nails.setMatrixAt(i, M); nails.instanceMatrix.needsUpdate = true;
+    if (owner && owner.home && owner.mode !== 'shingle') { (owner.nl = owner.nl || []).push({ i, L: rigOf(owner, new THREE.Matrix4()).invert().multiply(M) }); nOwner[i] = owner; }
     born[i] = gameT; nails.setColorAt(i, NEW); nails.instanceColor.needsUpdate = true; return i;
   }
   // the frame of any house part (for nails at its ends)
@@ -318,6 +324,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   // a worn board also looks it: water-stained, greyer, more weathered (the plank shader's 'fresh' run below 0), the whole board
   const ROT = { floor: .9, wall: .8, post: .7, brace: .7, shingle: .6 };
   function apply(p) { const m = pose(p, p.vis); p.mesh.setMatrixAt(p.i, m); dirty.add(p.mesh); p.cur = V().setFromMatrixPosition(m);
+    if (p.nl && p.nl.length) { rigOf(p, _rf); for (const e of p.nl) nails.setMatrixAt(e.i, M.multiplyMatrices(_rf, e.L)); dirty.add(nails); }
     if (planks.move && p.mode !== 'shingle') planks.move(p.id, m);   // the physics board goes with it: feet, hands and rays meet the board where it is
     if (!(p.fr > 0)) { setFresh0(p.id, -ROT[p.mode] * p.vis); p.fr = 0; } }
 
@@ -365,8 +372,10 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
     const toward = away.clone().negate();
     if (p.mode === 'floor') { const u = long.clone().multiplyScalar(long.dot(away) >= 0 ? -1 : 1), n = thin.y > 0 ? thin.clone() : thin.clone().negate(); return [p.c.clone().addScaledVector(u, hl - .08).addScaledVector(n, ht), n]; }
     if (p.mode === 'wall') { const u = long.clone().multiplyScalar(p.sgn), n = thin.dot(away) >= 0 ? thin.clone().negate() : thin.clone(); return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(n, ht), n]; }   // his side of it
-    if (p.mode === 'post') { const hw = Math.min(p.sz[p.Wd], p.sz[p.T]) / 2; return [p.c.clone().addScaledVector(UP, hl - .05).addScaledVector(toward, hw), toward]; }
-    if (p.mode === 'brace') { const u = long.clone().multiplyScalar(p.sgn), hw = p.sz[p.Wd] / 2; return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(toward, hw), toward]; }
+    // post / brace: the face of the timber that looks most toward him (not 'toward' itself: on a square post that pointed into a corner and the nail sat 1 cm inside the wood)
+    const faceTo = () => { const a = [p.Wd, p.T].map(k => [k, p.ax[k].dot(toward)]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0]; return [p.ax[a[0]].clone().multiplyScalar(Math.sign(a[1]) || 1), p.sz[a[0]] / 2]; };
+    if (p.mode === 'post') { const [fn, hw] = faceTo(); return [p.c.clone().addScaledVector(UP, hl - .05).addScaledVector(fn, hw), fn]; }
+    if (p.mode === 'brace') { const u = long.clone().multiplyScalar(p.sgn), [fn, hw] = faceTo(); return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(fn, hw), fn]; }
     if (p.mode === 'shingle') { const lu = Math.abs(long.y) > Math.abs(wid.y); const up = (lu ? long : wid).clone(), hu = (lu ? p.sz[p.L] : p.sz[p.Wd]) / 2; if (up.y < 0) up.negate(); const n = thin.y > 0 ? thin.clone() : thin.clone().negate(); return [p.c.clone().addScaledVector(up, -hu * .85).addScaledVector(n, ht), n]; }
     return [p.c.clone(), UP.clone()];
   }
@@ -390,7 +399,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
     rope: d => { if (fray && d != null) fray.d = d; return fray ? fray.d : null; },
     hit: k => { if (!ready) init(); const p = k ? hit(k) : event(); return p ? p.id : null; },
     snap: () => { for (const p of parts.values()) { p.vis = p.d; apply(p); } for (const m of dirty) m.instanceMatrix.needsUpdate = true; dirty.clear(); },
-    nails, nail: (pos, nrm, id) => { if (id != null) nailedBy.add(id); return nail(pos, nrm); },
+    nails, nail: (pos, nrm, id) => { if (id != null) nailedBy.add(id); return nail(pos, nrm, id != null ? parts.get(id) : null); },
     nailPart: id => nailPart(id),
     windows: () => panes.map((p, i) => ({ i, room: p.room, cracked: p.d > 0, pos: p.at.toArray().map(v => +v.toFixed(2)) })),
     crack: (i, on = true) => { const p = panes[i]; if (!p) return false; setPane(p, on ? 1 : 0); p.work = 0; return true; },

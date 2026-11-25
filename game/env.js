@@ -233,15 +233,17 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const SOFT_GLSL=`
 #include <packing>
 uniform sampler2D tDepth;uniform vec2 uRes;uniform float cNear,cFar,soft,softS;
-float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float sd=texture2D(tDepth,su).x;
- float sz=-perspectiveDepthToViewZ(sd,cNear,cFar);float fz=-perspectiveDepthToViewZ(gl_FragCoord.z,cNear,cFar);return clamp((sz-fz)/(range*softS),0.,1.);}`;
+float softK1(vec2 su,float fz,float range){float sz=-perspectiveDepthToViewZ(texture2D(tDepth,su).x,cNear,cFar);return clamp((sz-fz)/(range*softS),0.,1.);}
+float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes,o=1.25/uRes;float fz=-perspectiveDepthToViewZ(gl_FragCoord.z,cNear,cFar);if(softS<.5)return softK1(su,fz,range);/* phones (the shared fog pass, softS .22): one tap */
+ /* [ENV] 4 taps around the pixel: the half-res depth of leaf cards made a stair-stepped unfogged band around the bushes (Ground) */
+ float k=.25*(softK1(su+vec2(o.x,o.y),fz,range)+softK1(su+vec2(-o.x,o.y),fz,range)+softK1(su+vec2(o.x,-o.y),fz,range)+softK1(su-o,fz,range));return k*k*(3.-2.*k);}`;
  let depthRT=null;const depthMat=new THREE.MeshBasicMaterial({colorWrite:false});const aDepth=new WeakMap();
  if(SOFT){depthRT=new THREE.WebGLRenderTarget(4,4,{depthBuffer:true});depthRT.depthTexture=new THREE.DepthTexture(4,4);depthRT.depthTexture.type=THREE.UnsignedIntType;softU.tDepth.value=depthRT.depthTexture;}
  // wind (wind.js, window.__wind): fog noise drifts downwind and puffs lean/churn with the gusts
  const windU={drift:{value:new THREE.Vector2()},wdir:{value:new THREE.Vector2(1,0)},wlv:{value:0}};
  // the pond (ground.js, __ground.pond) stays clear of the ground fog: Pavel wants the water visible from the home view
  const pondU={pond:{value:new THREE.Vector3(0,-999,0)}};
- const fogU={tNoise:{value:fogNoise},t:U.t,col:{value:new THREE.Color(0x8FB8CC)},op:{value:.5},cam:{value:V()},trunkK:{value:.45},rootK:{value:0},...softU,...windU,...pondU};
+ const GOLD_MIST=new THREE.Color(0xE2B08C),BANK_C=new THREE.Color(0x5A9CC8);const fogU={tNoise:{value:fogNoise},t:U.t,col:{value:new THREE.Color(0x8FB8CC)},op:{value:.5},cam:{value:V()},trunkK:{value:.45},rootK:{value:0},...softU,...windU,...pondU};
  const FOGDEF=MOBILE?{FBM_OCT:3}:{};// phones: one octave less in the fog noise (the sheets run it 5x per pixel)
  const sheetMat=new THREE.ShaderMaterial({defines:FOGDEF,transparent:true,depthWrite:false,fog:false,uniforms:fogU,
   vertexShader:`varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
@@ -293,13 +295,31 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     float n=fbm(p+vec2(fbm(p*1.7+t*.01),0.)*1.3);float a=smoothstep(.35,.8,n)*smoothstep(0.,.25,vUv.y)*smoothstep(1.,.45,vUv.y)*op;
     /* [ENV] rain far away: soft grey veils falling between the distant trunks (the rain streaks only exist round the oak, so the
        forest looked dry); tall thin noise moving down ~9 m/s, gathered into gusty sheets. Same draw, two more texture reads. */
-    float sx=ang*length(vW.xz);float rn=texture2D(tNoise,vec2(sx*.04+vW.y*.006,vW.y*.005+t*.045)).g;float rg=texture2D(tNoise,vec2(sx*.005-t*.006,.37)).r;
-    float ra=rain*(.05+.3*smoothstep(.45,.85,rn)*smoothstep(.3,.7,rg))*smoothstep(0.,.08,vUv.y)*smoothstep(1.,.75,vUv.y);
+    float ra=0.;if(rain>.001){/* [ENV] perf: the rain veils' two reads only in rain (uniform branch: same path for every pixel) */float sx=ang*length(vW.xz);float rn=texture2D(tNoise,vec2(sx*.04+vW.y*.006,vW.y*.005+t*.045)).g;float rg=texture2D(tNoise,vec2(sx*.005-t*.006,.37)).r;
+    ra=rain*(.05+.3*smoothstep(.45,.85,rn)*smoothstep(.3,.7,rg))*smoothstep(0.,.08,vUv.y)*smoothstep(1.,.75,vUv.y);}
     gl_FragColor=vec4(mix(col*(.9+.3*n),col*1.12+.04,ra/(a+ra+1e-4)),min(1.,a+ra));}`});
  const mistBands=[];(MOBILE?[[30,9,.5],[52,12,.6]]:[[24,8,.42],[36,10,.5],[52,13,.6]]).forEach(([rad,h,k])=>{
   const g=new THREE.CylinderGeometry(rad,rad,h,40,1,true,Math.PI*.45,Math.PI*1.1);g.translate(0,h/2-.5,0);
   const m=new THREE.Mesh(g,mistMat.clone());m.material.uniforms=Object.assign({},mistU,{op:{value:.5}});m.renderOrder=3;m.userData.k=k;m.frustumCulled=false;scene.add(m);mistBands.push(m);});
- env.mist=mistBands;env.lampPts=puffU.lp;/* the 6 lowest lit lamps (world xyz, w = strength), for rain.js */
+ // [ENV] photo night: a soft luminous blue fog bank lies low in the near corners of the home view (bottom-left and -right on
+ // phone and desktop), clear of the pond (-1.4,7.6), the root tops and the hero's paths. Camera-facing, flattened soft
+ // ellipses with drifting noise, faded into the ground by the soft-depth test; dusk/night only, thinner in rain.
+ const bankU={tNoise:{value:fogNoise},t:U.t,col:{value:new THREE.Color()},op:{value:0},...softU,...windU};
+ const BANK=[[-3.8,8.8,2.2],[-5.6,4.0,2.8],[3.9,8.2,2.4],[5.8,3.4,2.8],[-4.9,6.4,2.6],[5.1,5.9,2.6],[-5.6,8.6,3.],[6.0,7.4,3.],[-10.5,6.2,4.6],[10.8,5.4,4.6],[-11.8,9.4,4.],[12.2,8.8,4.]];/* x, z, size: home-view bottom corners (phone ~(-4.1,9.4)/(4.7,8.9), desktop ~(+-12, 9)) */
+ const bg=new THREE.InstancedBufferGeometry();bg.copy(new THREE.PlaneGeometry(1,1));bg.instanceCount=BANK.length;
+ {const a=new Float32Array(BANK.length*4);BANK.forEach((b,i)=>a.set([b[0],b[2]*.12,b[1],b[2]],i*4));bg.setAttribute('iA',new THREE.InstancedBufferAttribute(a,4));}
+ const bankMat=new THREE.ShaderMaterial({uniforms:bankU,transparent:true,depthWrite:false,fog:false,
+  vertexShader:`attribute vec4 iA;uniform float t;uniform vec2 drift;varying vec2 vUv;varying vec3 vW;varying float vS;
+   void main(){vS=iA.w;vec3 c=iA.xyz+vec3(drift.x,0.,drift.y)*.15;vec4 mv=viewMatrix*vec4(c,1.);mv.xy+=position.xy*vec2(iA.w*1.9,iA.w*.85);vUv=uv;
+    vW=c+vec3(position.x*iA.w*1.9,position.y*iA.w*.85,0.);gl_Position=projectionMatrix*mv;}`,
+  fragmentShader:`uniform float t,op;uniform vec3 col;varying vec2 vUv;varying vec3 vW;varying float vS;${FOG_NOISE}${SOFT_GLSL}
+   void main(){vec2 q=vUv*2.-1.;float r=length(q*vec2(1.,1.15));float n=fbm(vW.xz*.23+vec2(t*.01,0.)+vS)*.6+fbm(vW.xz*.6-vec2(0.,t*.013))*.4;
+    float a=smoothstep(1.,.2,r)*smoothstep(.12,.5,n+.3*(1.-r))*smoothstep(-.98,-.35,q.y)*op*softK(1.2);
+    /* keep the pond, the oak's feet and the path to the ladder clear */a*=smoothstep(1.25,1.9,length((vW.xz-vec2(-1.4,7.6))/vec2(1.75,1.15)))*smoothstep(4.6,6.6,length(vW.xz-vec2(0.,1.)));if(a<.004)discard;
+    gl_FragColor=vec4(col*(.9+.35*n),a);}`});
+ bankMat.customProgramCacheKey=()=>'envCornerBank1';
+ const bank=new THREE.Mesh(bg,bankMat);bank.frustumCulled=false;bank.renderOrder=6;scene.add(bank);env.cornerBank=bank;
+ env.mist=[...mistBands,bank];env.lampPts=puffU.lp;/* the 6 lowest lit lamps (world xyz, w = strength), for rain.js */
 
  // ================= fireflies =================
  // a few soft yellow-green lights that wander low between the roots and the forest edge and blink slowly (dusk and night)
@@ -339,7 +359,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     x.r+=(x.g-x.r)*.24*gk*(1.-night);x.b*=1.-.15*gk*(1.-night);
     x=(x-.5)*con+.5;
     // split toning: cold teal shadows, warm highlights (lamp light pops against the blue night)
-    float sh=1.-smoothstep(0.,.45,l),hi=smoothstep(.45,1.,l);x+=lift*sh*(.6+.6*night);x=mix(x,x*warm*1.15,hi*.45*night);
+    float sh=1.-smoothstep(0.,.45,l),hi=smoothstep(.45,1.,l);x+=lift*sh*(.6+.6*night);x=mix(x,x*warm*1.15,hi*.45*night);{float mk=clamp((x.r-x.g)*25.,0.,1.)*clamp((x.b-x.g)*25.+.3,0.,1.)*night*(1.-smoothstep(.25,.45,l));x.b=mix(x.b,x.g*.9,mk*.8);}/* [ENV] night bark: the blue lift and fog on dark red-brown wood made it lilac-pink (hue ~345); the photo's trunk is brown (hue ~10) or blue, never magenta: dark warm pixels drop their blue to below green */
     x=mix(x,x*vec3(1.08,1.0,.88),morn*.6*smoothstep(.3,.8,l));/* [ENV] dawn: warm only in the lit parts; the shadows and the mist stay cool (a warm lift in the shadows turned the whole morning into brown smog) */
     vec2 d=vUv-.5;x*=1.-vig*dot(d,d)*2.2;`;
  env.gradePass=new ShaderPass({uniforms:{tDiffuse:{value:null},sat:{value:1.22},satW:{value:1.22},con:{value:1.08},lift:{value:new THREE.Color(0x0c1e36)},warm:{value:new THREE.Color(0xFFE2A8)},vig:{value:.32},night:{value:1},morn:{value:0},gOn:{value:1}},
@@ -386,9 +406,9 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
      renderer.render(scene,camera);al.forEach((o,i)=>{o.material=sw[i];o.layers.disable(12);o.visible=false;});camera.layers.mask=cm;renderer.autoClear=ac;}}
    renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;/* U.wind is driven by game/wind.js now */
   const fc=tmp.copy(P.fog);
-  fogU.col.value.copy(fc).lerp(new THREE.Color(0x80B6D6),(.34+nightK*.3)*(1-mornK))/* [ENV] the photo's blue mist by day too */.lerp(dawnC,mornK*.12);const dusk=hour===undefined?0:smooth(17.3,19.5,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.36+eve*.64+mornK*.2+rainK*.2;/* [ENV] coordinator / photo: a dense blue mist lies over the roots by day as well (was .15 by day: no fog to speak of) */fogU.cam.value.copy(camera.position);
+  fogU.col.value.copy(fc).lerp(new THREE.Color(0x80B6D6),(.34+nightK*.3)*(1-mornK))/* [ENV] the photo's blue mist by day too */.lerp(dawnC,mornK*.12);{const gk=hour===undefined?0:smooth(17.4,18.05,hour)*(1-smooth(18.45,19.1,hour))*(1-rainK);if(gk>0)fogU.col.value.lerp(GOLD_MIST,gk*.42);}/* [ENV] golden hour: the low sun lights the mist warm (it stayed day-blue until it turned dusk-blue) */const dusk=hour===undefined?0:smooth(17.3,19.5,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.36+eve*.64+mornK*.2*(hour===undefined?1:1-smooth(7.4,8.6,hour))/* [ENV] the extra morning mist burns off with the bank (wind.js, from 7.3 h) */+rainK*.2;/* [ENV] coordinator / photo: a dense blue mist lies over the roots by day as well (was .15 by day: no fog to speak of) */fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k*(1+.3*(1-eve));m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
-  puffU.op.value=.38*dens*(1+.7*(1-eve))*(1-.45*rainK);/* [ENV] heavy rain beats the low cotton billows down (the wet ground and puddles show); the far haze thickens instead *//* [ENV] day: the billows over the roots read like the photo's mist (night unchanged) */for(const m of mistBands)m.material.uniforms.op.value=m.userData.k*(.25+.75*Math.min(1,dens));
+  puffU.op.value=.38*dens*(1+.7*(1-eve))*(1-.45*rainK);/* [ENV] heavy rain beats the low cotton billows down (the wet ground and puddles show); the far haze thickens instead *//* [ENV] day: the billows over the roots read like the photo's mist (night unchanged) */for(const m of mistBands)m.material.uniforms.op.value=m.userData.k*(.25+.75*Math.min(1,dens));bankU.op.value=.8*Math.max(nightK,dusk*.6)*(1-.4*rainK);bankU.col.value.copy(fogU.col.value).multiplyScalar(1.12).lerp(BANK_C,.35*nightK);bank.visible=bankU.op.value>.01;
   {const L=halos.filter(h=>h.l.intensity>.05).map(h=>{h.l.getWorldPosition(tmpV);return [tmpV.x,tmpV.y,tmpV.z,Math.min(1,h.l.intensity/5)*h.size/1.6];}).sort((a,b)=>a[1]-b[1]);
    for(let i=0;i<6;i++){const v=puffU.lp.value[i];const l=L[i];if(l)v.set(l[0],l[1],l[2],l[3]*.9);else v.set(0,-99,0,0);}}
   bgU.fogc.value.copy(P.fog);bgU.hor.value.copy(P.hor);bgU.night.value=eve;
