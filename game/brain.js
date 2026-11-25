@@ -387,8 +387,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (!node || !HH.route || !H.node) return false;
     let r; try { r = HH.route(H.node, node) || []; } catch (e) { return false; }
     const ns = [H.node, ...r.map(st => st.node)];
-    for (let i = 1; i < ns.length; i++) if ((ns[i - 1] === 'bdoor' && ns[i] === 'ledge') || (ns[i - 1] === 'ledge' && ns[i] === 'bdoor')) return true;
-    return false;
+    return ns.includes('bdoor') && ns.includes('ledge');   // a door node between them (Walk/Collide) keeps this true
   }
   function roomsOnWay(node) {
     if (!node || !HH.route || !H.node) return [];
