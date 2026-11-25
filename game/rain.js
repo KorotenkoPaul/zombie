@@ -84,7 +84,7 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
     for (let iz = 1; iz < NZ - 1; iz++) for (let ix = 1; ix < NX - 1; ix++) { const i = iz * NX + ix; if (!kind[i]) continue;
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const j = i + dx + dz * NX; if (hm[i] - hm[j] > 0.8) edges.push([ix, iz, dx, dz, hm[i], hm[j]]); } }
     for (let i = edges.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [edges[i], edges[j]] = [edges[j], edges[i]]; }
-    const NE = Math.min(edges.length, MOBILE ? 26 : 52);
+    const NE = Math.min(edges.length, MOBILE ? 48 : 110);   // [ENV] more: with the roofs now in the map an eave line drips all along (was 26/52 dots, unseen)
     // drops from the leaf tips: big slow drops falling out of the crown for a while after the rain (onto whatever is below)
     const tips = []; if (crown && crown.isInstancedMesh) { const m4 = new THREE.Matrix4(), v = V(0, 0, 0);
       for (let i = 0; i < crown.count; i += 5) { crown.getMatrixAt(i, m4); v.setFromMatrixPosition(m4); if (v.y > 4 && v.y < 13 && v.x > X0 && v.x < X0 + W && v.z > Z0 && v.z < Z0 + D) tips.push(v.toArray()); } }
@@ -101,8 +101,8 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
     drips = new THREE.Mesh(quadGeo(NDr, { aR: rA, aQ: rB }), mk(`attribute vec4 aR,aQ;varying float vA;varying vec2 vUv;
       void main(){float age=fract(uT/aQ.x+aR.w*5.);const float H=.55;float on=step(aQ.z,uDK);
        float grow=smoothstep(0.,H,age);float tf=max(0.,age-H)*aQ.x;float y=4.9*tf*tf;on*=step(y,aQ.y);
-       vec3 p=aR.xyz-vec3(0.,y+grow*.012,0.);vec4 v=viewMatrix*vec4(p,1.);float st=1.+min(3.,tf*14.);
-       v.xy+=vec2(position.x*.0065*(.5+.5*grow),(position.y-.5)*.016*st);vUv=vec2(position.x,position.y*2.-1.);
+       vec3 p=aR.xyz-vec3(0.,y+grow*.012,0.);vec4 v=viewMatrix*vec4(p,1.);float st=1.+min(3.+5.*uK,tf*14.*(1.+uK));/* [ENV] in a real rain a falling drip reads as a short bright string */
+       v.xy+=vec2(position.x*(.0065+.004*uK)*(.5+.5*grow),(position.y-.5)*.016*st);vUv=vec2(position.x,position.y*2.-1.);
        vA=on*.8*smoothstep(1.,3.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
       `varying float vA;varying vec2 vUv;void main(){float a=smoothstep(1.,.3,length(vUv))*vA;if(a<.01)discard;gl_FragColor=vec4(uCol*1.3,a);}`));
     drips.frustumCulled = false; drips.renderOrder = 8; drips.visible = drops.visible; scene.add(drips); drips.matrixAutoUpdate = false;
@@ -197,6 +197,12 @@ varying float vY;void main(){gl_FragColor=packDepthToRGBA(clamp((vY-(${YLO.toFix
   }
   // world -> texel: screen x = world x, screen y (row 0 at the bottom) = from z = Z0 + D down to Z0
   function hiAt(x, z) { const ix = Math.floor((x - X0) / W * HX), iz = Math.floor((Z0 + D - z) / D * HZ); if (ix < 0 || iz < 0 || ix >= HX || iz >= HZ) return null; const y = hi[iz * HX + ix]; return y > -50 ? y : null; }
+  // [ENV] a cell's top = the highest texel in it, not the one under its centre: the centre texel often fell in a gap
+  // between shingle rows or deck boards, so the map was striped (whole rows of roof read as open sky). Drops then fell
+  // through roofs, roof edges had few eave drips, and the wet test could not tell sheltered boards from open ones.
+  function cellTop(ix, iz, x, z) { const g = groundH(x, z); let best = -99, n = 0; const tz0 = (NZ - 1 - iz) * SUB, tx0 = ix * SUB;
+    for (let a = 0; a < SUB; a++) for (let b = 0; b < SUB; b++) { const y = hi[(tz0 + a) * HX + tx0 + b]; if (y > -50) { n++; if (y > best) best = y; } }
+    return n >= SUB * SUB * 0.25 && best > g ? best : g; }
   function castDown(x, z) {
     if (hi) { const g = groundH(x, z), y = hiAt(x, z); return y != null && y > g ? y : g; }
     const bx = Math.floor((x - X0) / BS), bz = Math.floor((z - Z0) / BS); const g = groundH(x, z);
@@ -233,7 +239,11 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
  vec3 nv=normalize(vNormal);
 #endif
  vec3 wn=normalize((vec4(nv,0.)*viewMatrix).xyz);float up=smoothstep(.55,.9,wn.y);
- float wet=uWetB*ex*(.3+.7*up);float film=up*ex*smoothstep(.55,.72,wbN(vWW.xz*1.6))*smoothstep(.55,.95,uWetB);
+ float wet=uWetB*ex*(.3+.7*up);
+ /* [ENV] walls: wind-driven rain soaks the exposed side boards in dark vertical streaks (they stayed bone dry: a wall is never the top surface); an eave or a deck above that reaches out past the wall keeps it dry */
+ {vec2 ho=(vWW.xz+wn.xz*.55-uBoxB.xy)/uBoxB.zw;float topO=(ho.x<0.||ho.y<0.||ho.x>1.||ho.y>1.)?-99.:texture2D(uHB,ho).r;float side=1.-smoothstep(.3,.6,abs(wn.y));
+  float sk=wbN(vec2(dot(vWW.xz,vec2(wn.z,-wn.x))*9.,vWW.y*.7))*.7+wbN(vec2(dot(vWW.xz,vec2(wn.z,-wn.x))*23.,vWW.y*2.1))*.3;
+  wet=max(wet,uWetB*side*smoothstep(.45,.1,topO-vWW.y)*(.3+.7*smoothstep(.35,.7,sk)));}float film=up*ex*smoothstep(.55,.72,wbN(vWW.xz*1.6))*smoothstep(.55,.95,uWetB);
  diffuseColor.rgb*=1.-.34*wet-.12*film;roughnessFactor=mix(roughnessFactor,.22,wet*.9);roughnessFactor=mix(roughnessFactor,.04,film);}`);   /* after Planks' own roughness (theirs is set right after roughnessmap) */
       };
       m.customProgramCacheKey = wk; m.needsUpdate = true; }
@@ -264,7 +274,7 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
         // rays (fallback only): a few ms per frame at most, so building the map never shows as a hitch
         const t0 = performance.now(), budget = hi ? 1e9 : (MOBILE ? 3 : 5);
         for (; scan < NX * NZ && performance.now() - t0 < budget; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
-          const y = castDown(x, z); hm[scan] = y; kind[scan] = y > groundH(x, z) + 0.6 ? 1 : 0; }
+          const y = hi ? cellTop(ix, iz, x, z) : castDown(x, z); hm[scan] = y; kind[scan] = y > groundH(x, z) + 0.6 ? 1 : 0; }
         if (scan >= NX * NZ) { R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; wetBoards(topMats); }
         else return;
       }

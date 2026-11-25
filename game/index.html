@@ -175,10 +175,10 @@ const hemi=new THREE.HemisphereLight(0xC9DAF5,0x4A5233,.7);scene.add(hemi);const
 const sun=new THREE.DirectionalLight(0xFFE2B5,2.6);sun.castShadow=true;sun.shadow.mapSize.set(MOBILE?1024:2048,MOBILE?1024:2048);
 Object.assign(sun.shadow.camera,{left:-12,right:12,top:14,bottom:-4,near:1,far:120});sun.shadow.bias=-.0003;sun.shadow.normalBias=.04;sun.shadow.radius=3;
 scene.add(sun);sun.target.position.set(0,5,1);scene.add(sun.target);
-const skyU={top:{value:new THREE.Color()},hor:{value:new THREE.Color()},sunDir:{value:V(0,1,0)},sunCol:{value:new THREE.Color()},star:{value:0},t:{value:0},tN:{value:null},moonDir:{value:V(0,1,0)},moonK:{value:0},cloudK:{value:0},glowK:{value:0}};
+const skyU={top:{value:new THREE.Color()},hor:{value:new THREE.Color()},sunDir:{value:V(0,1,0)},sunCol:{value:new THREE.Color()},star:{value:0},t:{value:0},tN:{value:null},moonDir:{value:V(0,1,0)},moonK:{value:0},flash:{value:0},flDir:{value:V(0,.3,-1)},cloudK:{value:0},glowK:{value:0}};
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(220,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:skyU,
  vertexShader:`varying vec3 vD;void main(){vD=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
- fragmentShader:`uniform vec3 top,hor,sunDir,sunCol,moonDir;uniform float star,t,cloudK,glowK,moonK;uniform sampler2D tN;varying vec3 vD;float h(vec3 p){return fract(sin(dot(p,vec3(12.9,78.2,37.7)))*43758.5);}
+ fragmentShader:`uniform vec3 top,hor,sunDir,sunCol,moonDir,flDir;uniform float star,t,cloudK,glowK,moonK,flash;uniform sampler2D tN;varying vec3 vD;float h(vec3 p){return fract(sin(dot(p,vec3(12.9,78.2,37.7)))*43758.5);}
  void main(){float y=max(vD.y,0.);vec3 c=mix(hor,top,pow(y,.5));float s=max(dot(vD,sunDir),0.);
   // [ENV] dawn/dusk: a wide warm glow around the low sun, then two thin cloud layers (baked noise, 3 reads) lit from the sun side
   float lowSun=smoothstep(.35,-.05,sunDir.y)*smoothstep(-.35,-.02,sunDir.y);c+=sunCol*pow(s,4.)*.35*glowK*lowSun;
@@ -191,10 +191,14 @@ scene.add(new THREE.Mesh(new THREE.SphereGeometry(220,32,16),new THREE.ShaderMat
   if(cloudK>.001){vec2 p=vD.xz/(vD.y+.18);vec2 n1=texture2D(tN,p*.09+vec2(t*.0012,t*.0004)).rg;float n2=texture2D(tN,p*.23+n1*.35-vec2(t*.002,0.)).r;float n3=texture2D(tN,p*.6+n2*.2+vec2(0.,t*.003)).g;
    float d=n1.r*.55+n2*.32+n3*.13;float cov=smoothstep(.4,.66,d)*cloudK*smoothstep(.0,.16,vD.y);
    float lit=pow(s,3.)*lowSun;vec3 cc=mix(mix(hor,top,.35)*.62,hor*1.05,smoothstep(.55,.85,d))+sunCol*lit*(.9-.5*smoothstep(.55,.9,d))*glowK;/* [ENV] at night the clouds are darker than the sky with silver moonlit edges (they were invisible: same blue as the sky) */cc=mix(cc,cc*.7+vec3(.55,.65,.8)*(pow(mo,3.)*.35+.05)*(1.-smoothstep(.5,.85,d))*1.4,moonK);
+   /* [ENV] lightning lights the storm clouds from inside: brightest toward the strike, thin cloud glows, dense cores stay darker */
+   if(flash>.002){float fd=max(dot(normalize(vec3(vD.x,max(vD.y,.05),vD.z)),flDir),0.);cc+=vec3(.6,.72,1.)*flash*(.1+.9*pow(fd,6.)+.3*pow(fd,2.))*(1.15-.6*smoothstep(.5,.85,d));}
    c=mix(c,cc,cov*.85);stars*=1.-cov;}
+  if(flash>.002){float fd=max(dot(vD,flDir),0.);c+=vec3(.6,.68,.85)*flash*(.06+.5*pow(fd,8.))*smoothstep(-.05,.2,vD.y);}
   c+=vec3(stars);/* [ENV] dither: the dark night gradient banded in 8 bits on phones */c*=1.+(h(vec3(gl_FragCoord.xy,fract(t)))-.5)*.035;gl_FragColor=vec4(c,1.);}`})));
 // [ENV] the moon has phases: one step of the cycle per night (8 nights round), starting from a random phase. moonIll = lit fraction.
 let MOON0=Math.random();let moonIll=1;window.__moon={ill:()=>moonIll,setPhase:f=>{MOON0=((f-dayNo/8)%1+1)%1;}};/* setPhase(.5)=full, 0=new */const moonU={ph:{value:Math.PI}};
+const FL_C=new THREE.Color(.82,.88,1.);
 const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.ShaderMaterial({uniforms:moonU,fog:false,
  vertexShader:`varying vec3 vN,vO;void main(){vN=normalize(normalMatrix*normal);vO=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
  fragmentShader:`uniform float ph;varying vec3 vN,vO;float mh(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);float n=dot(i,vec3(1.,57.,113.));vec4 a=fract(sin(vec4(n,n+1.,n+57.,n+58.))*43758.5),b=fract(sin(vec4(n,n+1.,n+57.,n+58.)+113.)*43758.5);a=mix(a,b,f.z);a.xy=mix(a.xy,a.zw,f.y);return mix(a.x,a.y,f.x);}void main(){vec3 L=vec3(sin(ph),0.,-cos(ph));float d=smoothstep(-.06,.12,dot(normalize(vN),L));
@@ -203,7 +207,7 @@ const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.ShaderMate
 // ================= ground, forest, fog, grading: see env.js =================
 const ENVM=await import(new URL(ASSET+'env.js',document.baseURI).href);const ENV=ENVM.createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});skyU.tN.value=ENV.noiseTex;
 // one global wind for leaves, grass, ferns, bushes and ropes (game/wind.js): calm spells, breezes, rolling gusts
-const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).createWind({THREE,legacy:ENV.U.wind});window.__wind=WIND;window.__weather=WIND.weather;/* [WIND] weather state for Brain/Sound */
+const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).createWind({THREE,legacy:ENV.U.wind});window.__wind=WIND;window.__weather=WIND.weather;/* [WIND] weather state for Brain/Sound */try{WIND.on('lightning',e=>{if(e&&e.dir&&!e.unseen)skyU.flDir.value.set(e.dir[0],.28,e.dir[1]).normalize();});}catch(e){}/* [ENV] the flash comes from the strike's side of the sky */
 
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
@@ -555,11 +559,11 @@ vec3 slate(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] sam
  vec2 off=vec2(sH(sd+.7),sH(sd+1.9))*5.;
  vec2 uv=(top>.5?m.xz:(an.x>an.z?m.zy:m.xy))/.9+off;
  vec3 tx=texture2D(tSlate,uv).rgb;float lum=dot(tx,vec3(.3,.6,.1));
- vec3 col=pow(tx,vec3(1.1))*vec3(.66);
+ vec3 col=pow(tx,vec3(1.1))*vec3(.95);
  // the scan is quite blue (mean 89,104,120) and the night ambient is blue too: keep only a hint of the blue-grey so the roof
  // reads dark slate under the moon, not saturated blue
  /* [PROPS roof round] the photo's slate is a cool blue-grey with paler weathered faces, not charcoal: brighter, more of the scan's blue kept */
- col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,.62)*vec3(.97,1.,1.04);
+ col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,.85)*vec3(.88,1.,1.15);/* [TREE, 2026-11-25] lighter and bluer: at night the roofs read near-black vs the photo's blue slate */
  // each slate its own tone: some bluer, some greener-grey, some rust-brown stained, a few pale weathered
  float t=sH(sd+2.2);col*=mix(vec3(.8,.8,.84),vec3(1.1,1.06,1.0),t);
  if(sH(sd+7.)<.12)col*=vec3(1.18,1.02,.86);
@@ -608,7 +612,7 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
-  const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.38,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
+  const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.38,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.userData.tint=1.75;/* photo: weathered lighter roof edge, not a black band (own instance tint; other beams unchanged) */slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
   // inside the room the roof is not a dark slab: honey sheathing boards run down the slope over chunky rafters (instances, no new calls)
   {slab.updateMatrix();const SM=g.matrixWorld.clone().multiply(slab.matrix);const ex=V(1,0,0),ey=V(0,0,1),ez=V(0,-1,0);const B0=new THREE.Matrix4().makeBasis(ex,ey,ez);if(B0.determinant()<0)B0.makeBasis(ex,ey.clone().negate(),ez);
    const put=(mesh,cx,cy,cz,L,W,T,roll,seed)=>{const m=SM.clone().multiply(new THREE.Matrix4().makeTranslation(cx,cy,cz)).multiply(B0).multiply(new THREE.Matrix4().makeRotationX(roll)).multiply(new THREE.Matrix4().makeScale(L,W,T));
@@ -642,7 +646,7 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7
  for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<gx1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
   if(inTrunk(xx,y+hg/2,gz,.05))continue;board(V(xx,y+hg/2+.02,gz),hg+.04,.305,.05,new THREE.Euler(0,rnd(-.03,.03),Math.PI/2),{tint:rnd(.93,1.07),wall:true});}
  // gable trim boards on the front like the photo's dark fascia
- for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
+ for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.userData.tint=1.9;t.castShadow=true;g.add(t);}
  meshesToBeams(g);bakeStatic(g); SHING.instanceMatrix.needsUpdate=true;sRow.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
  world.createCollider(RAPIER.ColliderDesc.cuboid((x1-x0)/2,h*.45,(z1-z0)/2).setTranslation((x0+x1)/2,y+h*.45,(z0+z1)/2));}
 function post(x,y0,y1,z){board(V(x,(y0+y1)/2,z),y1-y0,.2,.2,new THREE.Euler(0,0,Math.PI/2),{dark:true});}
@@ -1219,8 +1223,8 @@ if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=M
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return 1/60;}// a day of 24 minutes, 1 game hour = 1 real minute (Pavel 2026-11-23)
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
-const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0x8F9BB4,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xAAB5C4,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
- [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xADB4BC,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xD8A07E,0x6E86A2,0xFFA468,1.6,.76,1.02],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
+const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0x8F9BB4,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xAAB5C4,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xB2BCC2,0xFFE0B0,2.6,.75,1.05],
+ [13,0x3F7BC4,0xC8DEF2,0xBEC4C3,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xADB4BC,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xD8A07E,0x6E86A2,0xFFA468,1.6,.76,1.02],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
 function pal0(h){h=((h%24)+24)%24;let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=clamp((h-a[0])/(b[0]-a[0]),0,1);const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 // [ENV] the palette is linear between keys and then averaged over +-0.4 h: no ease-in/ease-out stall at every key and no
 // sudden speed-up between them (dawn and dusk change at an even pace, no pops when time runs fast)
@@ -1372,7 +1376,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.visible=rayMat.uniforms.o.value>.002;/* [ENV] skip the three big additive planes when they add nothing (night, rain) */rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour,moonIll});
- WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
+ WIND.update({dt,T,rainK,hour});/* [ENV] update first: the flash lit the frame after its own (one frame late, the first, brightest flicker was lost) */WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */{/* [ENV] the flash is a hard cold light with shadows (it was a flat grey wash): the shadowed key light (the moon's direction, so the shadow map stays valid) jumps; the sky shader lights the clouds toward the strike */const f=WIND.flash?WIND.flash():0;skyU.flash.value=f*(1-dayK*.6);if(f>.002){sun.intensity+=f*1.8*(1-dayK*.5);sun.color.lerp(FL_C,f*.85);/* a flash is a cold crisp white light: the warm night grade lets go, contrast up, colour down */const g=ENV.gradePass&&ENV.gradePass.uniforms;if(g){g.night.value*=1-.65*f;g.con.value+=.14*f;g.sat.value*=1-.4*f;}}}FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
  RAIN.update(dt,T,rainK,scene.fog.color);if(RAIN.ready&&!RAIN._warm){RAIN._warm=1;/* [PERF] the splash and drip meshes are built once the rain map is ready (after the loading screen's shader prewarm): compile their shaders now, quietly, instead of as a hitch at the first rain */const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);/* same output target as the real draw, so the program keys match */for(const m of [RAIN.mesh.splash,RAIN.mesh.drips])if(m)try{renderer.compile(m,camera,scene);}catch(e){}renderer.setRenderTarget(rt0);}
  if(HWEAR)HWEAR.update(dt);
  if(AUDIO)AUDIO.update(dt);
