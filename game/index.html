@@ -795,7 +795,13 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  {const c0=at(0,D.y0+.03,.14);for(let k=-2;k<=2;k++){const a=c0.clone().addScaledVector(sideV,k*.205),b=a.clone().addScaledVector(out,-.95);piece(b,a,.19,.05,'board');}}
  boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
 // left low landing
-floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
+floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});/* photo: a short ladder down to the small left platform (the barrel had no way up there). A plain nailed wooden ladder from its
+   outer edge up to the rim of the centre landing; not a climb route (not in __ladders), so the hero's paths do not change */
+{const B=V(-3.36,LL,1.18),T=V(-3.2,LC+.62,1.24),ex=T.clone().sub(B).normalize(),ez=V(0,0,1).sub(ex.clone().multiplyScalar(ex.z)).normalize(),ey=ez.clone().cross(ex).normalize(),eu=new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,ez)),L=B.distanceTo(T);
+ for(const sd of [-1,1])board(B.clone().add(T).multiplyScalar(.5).addScaledVector(ez,sd*.23),L,.075,.05,eu,{tint:rnd(.7,.8)});
+ const ru=new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ez,ey.clone().negate(),ex));
+ for(let y=LL+.3;y<LC-.05;y+=.3){const t=(y-B.y)/(T.y-B.y);board(B.clone().lerp(T,t).addScaledVector(ey,.058),.56,.045,.07,ru,{tint:rnd(.8,.95)});}}
+brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
 // center landing (half disc around the trunk front) + gate over the ground ladder
 floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-1.0,3.0,frontZ(-1.0,3.0)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(-.15,1.3,frontZ(-.15,1.3)-.08),V(-.05,LC-.13,3.45),.15);/* critic T19: kept left of the hollow's mouth */
 if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
