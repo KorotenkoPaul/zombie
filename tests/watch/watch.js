@@ -51,7 +51,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
     const R=window.__camera&&window.__camera.rig;
     if(R&&R.set){if(__th.rig&&__th.rig.cine)__th.rig.cine(false);R.set({target:c.clone(),yaw:W.yaw,pitch,dist:Math.max(dist,1.5),snap:true});for(let i=0;i<4;i++)R.update(.25,{});if(window.__camera.dof)window.__camera.dof(false);}
     const cam=__qaCamera;if(window.__watchCam){cam.position.set(...window.__watchCam);cam.lookAt(c);if(cam.fov!==50){cam.fov=50;cam.updateProjectionMatrix();}}else cam.position.set(c.x+Math.sin(W.yaw)*Math.cos(pitch)*dist,c.y+Math.sin(pitch)*dist,c.z+Math.cos(W.yaw)*Math.cos(pitch)*dist),cam.lookAt(c);
-    if(!window.__watchCam&&cam.fov&&dist<1.6){cam.fov=Math.min(75,50*1.6/dist);cam.updateProjectionMatrix();}else if(cam.fov!==50){cam.fov=50;cam.updateProjectionMatrix();}
+    /* close smart camera: pull the near plane in, else it cuts hands and sleeves into 'hollow' shapes (R33-1, R43-1 were this) */if(!window.__watchCam&&dist<1.6&&cam.near>.02){cam.near=.02;cam.updateProjectionMatrix();}if(!window.__watchCam&&cam.fov&&dist<1.6){cam.fov=Math.min(75,50*1.6/dist);cam.updateProjectionMatrix();}else if(cam.fov!==50){cam.fov=50;cam.updateProjectionMatrix();}
     if(window.__watchFast&&!W.hid){W.hid=1;scene.traverse(o=>{if(o.isInstancedMesh&&o.count>500&&/canopy|forest/i.test(o.name||'')||(o.isInstancedMesh&&o.count>2500))o.visible=false;});}
     const far0=cam.far;if(window.__watchFast){cam.far=18;cam.updateProjectionMatrix();}
     cam.updateMatrixWorld();__noRender(false);if(window.__watchFast)__realRender.call(__renderer,scene,cam);else __qaComposer.render();__noRender(true);if(window.__watchFast){cam.far=far0;cam.updateProjectionMatrix();}
