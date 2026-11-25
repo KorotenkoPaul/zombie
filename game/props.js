@@ -518,11 +518,11 @@ function stove() {
   const flameGeo = lathe([[0, 0], [.022, .01], [.028, .035], [.02, .07], [.008, .1], [0, .115]], 10);
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xFFA040, transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false });
   // perf: the six flames are one mesh; each vertex carries its flame's spot, speed and phase and the flicker runs in the vertex shader
-  const flameU = { uT: { value: 0 }, uHeat: { value: 0 } }; const flames = [];
+  const flameU = { uT: { value: 0 }, uHeat: { value: 0 }, uSpread: { value: 1 } };   // uSpread (Lights): how far the fire has spread from the kindling at the left (0..1) const flames = [];
   { const fg = flameGeo.index ? flameGeo.toNonIndexed() : flameGeo; const gs = []; for (let i = 0; i < 6; i++) { const q = fg.clone(); const n = q.attributes.position.count; const fl = new Float32Array(n * 4); const fx = -.13 + i * .052 + rr(-.01, .01), fz = rr(-.03, .03), k = rr(.7, 1.3), ph = R() * 6.28;
       for (let v = 0; v < n; v++) fl.set([fx, fz, k, ph], v * 4); q.setAttribute('fl', new THREE.Float32BufferAttribute(fl, 4)); gs.push(q); }
-    flameMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, flameU); sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 fl; uniform float uT, uHeat;').replace('#include <begin_vertex>',
-      'float fn = sin(uT * 9. * fl.z + fl.w) * .5 + sin(uT * 23. * fl.z + fl.w * 2.) * .3; vec3 transformed = position * vec3(1. + fn * .12, (.6 + uHeat * .7) * (1. + fn * .35), 1. + fn * .12); float fa = sin(uT * 5. + fl.w) * .12; transformed.xy = mat2(cos(fa), sin(fa), -sin(fa), cos(fa)) * transformed.xy; transformed.x += fl.x; transformed.z += fl.y;'); };
+    flameMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, flameU); sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 fl; uniform float uT, uHeat, uSpread;').replace('#include <begin_vertex>',
+      'float fn = sin(uT * 9. * fl.z + fl.w) * .5 + sin(uT * 23. * fl.z + fl.w * 2.) * .3; vec3 transformed = position * vec3(1. + fn * .12, (.6 + uHeat * .7) * (1. + fn * .35), 1. + fn * .12); float fa = sin(uT * 5. + fl.w) * .12; transformed.xy = mat2(cos(fa), sin(fa), -sin(fa), cos(fa)) * transformed.xy; float thr = clamp((fl.x + .14) / .3, 0., 1.) * .8; transformed *= smoothstep(thr, thr + .2, uSpread); transformed.x += fl.x; transformed.z += fl.y;'); };   /* Lights: the flames catch one by one from the kindling (left) across the logs, and go out in the same order backwards */
     flameMat.customProgramCacheKey = () => 'ovenFlames'; const fm = new THREE.Mesh(mergeGeometries(gs, false), flameMat); fm.frustumCulled = false; fm.userData.live = true; fire.add(fm); }
   // baking tray with buns on the rack
   { const tr = new THREE.Group(); tr.position.set(0, oy0 + .206, .02); g.add(tr); add(tr, rb(ow * .78, .012, D * .55, .004), M.iron, 0, .006, 0); for (let i = 0; i < 4; i++) { const b = add(tr, new THREE.SphereGeometry(.035, 14, 8, 0, 6.283, 0, Math.PI / 2), M.bread, -.13 + i * .087, .012, rr(-.03, .03)); b.scale.y = .7; } }
@@ -554,7 +554,7 @@ function stove() {
   g.userData.oven = {
     door, handle: () => door.localToWorld(V(0, dh - .05, .075)), flameMat, fireGroup: fire,
     setOpen(k) { openK = clamp01(k); door.rotation.x = openK * 1.45; }, get open() { return openK; },
-    setHeat(k) { M.fire.emissiveIntensity = .25 + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 + .6 * k; heatK = k; },
+    setSpread(k) { flameU.uSpread.value = k; }, setHeat(k) { M.fire.emissiveIntensity = .25 + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 + .6 * k; heatK = k; },
     flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; flameU.uT.value = t; flameU.uHeat.value = heatK; flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
   };
   return g;

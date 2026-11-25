@@ -34,7 +34,7 @@ const KINDS = {
   oil:      { on: .7,  off: .5,  flick: 'flame' },   // oil lanterns: catch, flare, settle
   electric: { on: .12, off: .08, flick: 'bulb' },    // dome lamp: quick, a small stutter
   candle:   { on: 1.0, off: .35, flick: 'candle' },
-  fire:     { on: 4.5, off: 14,  flick: 'fire' },    // oven: the fire takes, the embers die slowly
+  fire:     { on: 9,   off: 14,  flick: 'fire' },    // oven: the kindling catches, the fire spreads over the logs (~9 s); the embers die slowly
   door:     { on: 1.5, off: 1.5, flick: 'flame' },
   glow:     { on: .4,  off: .3,  flick: 'bulb' },     // a radio dial, an indicator: emissive only
 };
@@ -322,11 +322,33 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       patch.position.copy(d0).addScaledVector(fwd, .42 + .62).setY(KT + .028);   // above the kitchen rug (it lies over the boards here)
       patch.name = 'ovenFloorGlow'; patch.renderOrder = 2; patch.visible = false; patch.userData.noHang = true; scene.add(patch);
     }
-    add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: (k, f) => {
+    // lighting it: a pine splinter (kindling) laid across the left log catches first and burns down from its tip while the
+    // flames spread from it across the logs one by one (Props' flame shader: uSpread), and the light grows with the fire;
+    // going out, the flames drop out in reverse until only the coals breathe, then cool
+    const OV = P3 && P3.oven; let spl = null, splM = null, splF = null, splDir = null;
+    if (OV && OV.fireGroup && OV.fireGroup.parent) {
+      splM = new THREE.MeshStandardMaterial({ color: 0xC9A570, roughness: .9, emissive: 0xFF6A1E, emissiveIntensity: 0 });
+      spl = new THREE.Mesh(new THREE.BoxGeometry(.2, .007, .012).translate(.1, 0, 0), splM);   // origin at the held (unburnt) end: it burns down toward it
+      spl.position.copy(OV.fireGroup.position).add(V(.08, .07, .035)); spl.rotation.set(0, Math.PI + .2, -.22);   // laid over the logs from the right, the tip down among the left flames, where the fire starts
+      spl.castShadow = false; spl.visible = false; OV.fireGroup.parent.add(spl);
+      // its burning tip: a small flame where the wood is being eaten (the stick itself only chars)
+      splF = new THREE.Mesh(flameGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.4, .55), transparent: true, depthWrite: false, toneMapped: false }));
+      splF.renderOrder = 3; splF.castShadow = false; splF.visible = false; OV.fireGroup.parent.add(splF);
+      splDir = V(1, 0, 0).applyEuler(spl.rotation);
+    }
+    let ovenS = null;
+    ovenS = add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: (k, f) => {
+      if (ovenS && OV) { const L = ovenS.level, up = ovenS.on;
+        if (OV.setSpread) OV.setSpread(up ? smooth(.04, .7, L) : smooth(.22, .72, L));
+        if (spl) { const burn = up ? smooth(.02, .5, L) : 1; spl.visible = up && burn < .98;
+          splF.visible = spl.visible;
+          if (spl.visible) { spl.scale.x = 1 - burn * .85; splM.emissiveIntensity = .12 * smooth(0, .05, L);
+            const fk = smooth(0, .04, L) * (1 - smooth(.35, .5, L)) * (.85 + .3 * noise(t * 8));
+            splF.position.copy(spl.position).addScaledVector(splDir, .2 * spl.scale.x - .004); splF.scale.set(.9 * fk, 1.1 * fk, .9 * fk); } } }
       // index.html passes this level to props.update(), which calls oven.setHeat once per frame
       const open = P3.oven ? P3.oven.open || 0 : 0; l.userData.open = open;
       // embers: as the fire dies the bed of coals keeps breathing (slow, uneven), until it is cold
-      const emb = smooth(0, .25, k) * (1 - smooth(.3, .7, k)) * (.55 + .45 * noise(t * .5 + 3) * noise(t * 1.3 + 9));
+      const emb = (ovenS && ovenS.on ? 0 : 1) * smooth(0, .25, k) * (1 - smooth(.3, .7, k)) * (.55 + .45 * noise(t * .5 + 3) * noise(t * 1.3 + 9));   // only while it dies: lighting, there are no coals yet
       if (pm.fire) pm.fire.emissiveIntensity = 2.45 * k * (f || 1) + .9 * emb;
       if (pm.ovenGlass) pm.ovenGlass.emissiveIntensity = .7 * k * (f || 1) + .25 * emb;
       // firelight on the walls: with the door open the flames throw a restless light, so the lit patch drifts a few
@@ -1212,7 +1234,9 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // them back to the clock (open by day, half drawn at night). __brain.locked does the same on its own.
     curtains: on => { curForce = !!on; return curForce; },
     onChange: cb => listeners.push(cb),
-    level: n => src.has(n) ? src.get(n).level : 0,
+    // the oven's 'level' is its heat (Props' coal bed and flame height, Wind's chimney smoke, the kettle's steam): lighting,
+    // the kindling burns for a while before any coals form (heat lags the fire); going out, the coals keep their heat longest
+    level: n => { const s = src.get(n); if (!s) return 0; if (s.kind !== 'fire') return s.level; return s.on ? Math.pow(s.level, 1.5) : Math.pow(s.level, .8); },
     // hand lantern: attachHand(bone, offset?) shows it in the hero's hand (then set('hand', true) lights it);
     // detachHand() hides it again (and puts it out)
     // attachHand(bone): if that hand already holds Props' lantern, the light and flame go inside it (no second lantern);
