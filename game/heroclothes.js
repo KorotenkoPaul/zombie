@@ -97,7 +97,7 @@ export function dressHero({ THREE, root }) {
     /* under the green jacket (hero.js COAT: the body's own torso and arm triangles pushed out 2 cm, hem flattened at y -0.06) the
        body's torso and arms are not drawn: at the bends they came through it as orange specks and a zigzag band (watch r59/r62) */
     if (mesh === meshes.body) { const kc = new Float32Array(cnt); for (let i = 0; i < cnt; i++) { let m = -1, mb = 0; for (let c = 0; c < 4; c++) { const w = GC(SW, i, c); if (w > m) { m = w; mb = GC(SI, i, c); } }
-        const b = bn[mb] || ''; kc[i] = P.getY(i) > .5 ? 1 /* the collar band: the coat's collar covers it */ : /^(Spine|Spine1|Spine2|LeftShoulder|RightShoulder|LeftArm|RightArm|LeftForeArm|RightForeArm)$/.test(b) || (/^(Hips|LeftUpLeg|RightUpLeg)$/.test(b) && P.getY(i) > -.05) ? 1 : 0; }
+        const b = bn[mb] || ''; kc[i] = P.getY(i) > .5 ? (P.getZ(i) < -.06 && Math.abs(P.getX(i)) < .1 ? 2 /* back of the collar, see the vest below */ : 1) /* the collar band: the coat's collar covers it */ : /^(Spine|Spine1|Spine2|LeftShoulder|RightShoulder|LeftArm|RightArm|LeftForeArm|RightForeArm)$/.test(b) || (/^(Hips|LeftUpLeg|RightUpLeg)$/.test(b) && P.getY(i) > -.05) ? 1 : 0; }
       g.setAttribute('kc', new THREE.BufferAttribute(kc, 1)); }
     g.setAttribute('kp', new THREE.BufferAttribute(kp, 3)); g.setAttribute('kn', new THREE.BufferAttribute(kn, 3)); g.setAttribute('kx', new THREE.BufferAttribute(kx, 3));
   }
@@ -147,7 +147,7 @@ float hcTwill(float t,float s){return .5+.5*sin(6.28318*(s+t)/.0024);}
         // test and showed through as dark teeth / sweater patches. Depth-only nudge of the vest 12 mm toward the eye (screen xy unchanged).
         .replace('#include <project_vertex>', '#include <project_vertex>\n' + (cls === 1 ? '{vec4 q=mvPosition;q.xyz+=normalize(-q.xyz)*'+(+(new URLSearchParams(location.search).get('vestz')||.012)).toFixed(4)+';vec4 c=projectionMatrix*q;gl_Position.z=c.z/c.w*gl_Position.w;}' : ''));
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uVestOn;varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;' + (cls === 0 ? 'uniform float uCoatOn;varying float vKc;' : '') + GLSL_NOISE + '\nfloat hcHgt=0.;float hcAmp=0.;float hcRough=-1.;')
-        .replace('#include <map_fragment>', '#include <map_fragment>\n' + (cls === 0 ? 'bool hcCoat=uCoatOn>.5&&vKc>.5;\n' : '') + '{' +
+        .replace('#include <map_fragment>', '#include <map_fragment>\n' + (cls === 0 ? 'bool hcCoat=uCoatOn>.5&&vKc>.5;\n/* behind the neck, while the vest is on, the body\'s collar band (saw-toothed against the neck) is not drawn: the vest\'s smoothed collar and the neck skin show */if(uVestOn>.5&&uCoatOn<.5&&vKc>1.5)discard;\n' : '') + '{' +
           `vec3 sc=pow(max(diffuseColor.rgb,vec3(0.)),vec3(1./2.2));float mx=max(sc.r,max(sc.g,sc.b)),mn=min(sc.r,min(sc.g,sc.b)),sat=mx>0.?(mx-mn)/mx:0.;
 float fw=length(fwidth(vKp));vec3 an=abs(normalize(vKn));vec2 tw=an.xy/(an.x+an.y+1e-4);
 float cls=vKx.x;` +
