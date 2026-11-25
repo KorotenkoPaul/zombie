@@ -183,6 +183,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // bounce: the bench and floor under the cone throw warm light back over the whole room (the photo's workshop is warm
     // wall to wall; ours was a bright corner under the dome and a dark left half). Unshadowed, phones take it from the pool.
     const wb = new THREE.PointLight(0xFFB066, 0, 3.4, 2); wb.position.copy(wPos).add(V(-1.0, -.7, .15)); scene.add(wb);
+    // phones: light bounced off the bench and floor travels UP (walls, pegboard, the hero's body and face), so its pool cone
+    // looks up and stops at the ceiling; a down cone lit only the floor under the bench and left him and the walls dark
+    wb.userData.poolUp = WS + 3.3;
     add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 11.5 }, { l: wb, I: MOBILE ? 2.9 : 2.6 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
@@ -876,9 +879,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       v.getWorldPosition(l.position); l.color.copy(v.color); l.distance = v.distance; l.decay = v.decay;
       if (v.isSpotLight) { v.target.getWorldPosition(l.target.position); l.angle = v.angle; l.penumbra = v.penumbra; }
       else {
-        l.target.position.copy(l.position).y -= 1; l.angle = Math.PI / 2 * .97; l.penumbra = .3;
-        const fy = pool.clip.has(v) ? pool.clip.get(v)() : null;
-        if (fy != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, l.position.y - fy + .06));
+        const up = v.userData.poolUp;
+        l.target.position.copy(l.position).y += up != null ? 1 : -1; l.angle = Math.PI / 2 * .97; l.penumbra = .3;
+        const fy = up != null ? null : pool.clip.has(v) ? pool.clip.get(v)() : null;
+        if (up != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, up - l.position.y + .06));   // ceiling clip (the cone looks up)
+        else if (fy != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, l.position.y - fy + .06));
       }
       l.intensity = v.intensity * sl.w;
     }
@@ -943,7 +948,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
-    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances }),
+    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances, rimU }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,
     set: (n, on) => { const s = src.get(n); if (!s) return false; s.manual = !!on; setOn(s, !!on); return true; },
