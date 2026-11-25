@@ -334,7 +334,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     // (hue ~20 -> ~30 deg) and the warm glow added on the bright ones is gold
     x.g+=(x.r-x.g)*.14*wk*night;x+=vec3(.045,.035,0.)*wk*hi0(l)*night;x=mix(x,x*vec3(.9,.98,1.2),ck*.4*night);x=mix(x,vec3(l)*vec3(.92,1.,1.1),ck*.25*night);x*=1.+.14*ck*night*(1.-smoothstep(.3,.7,l));/* the photo's night blues are lighter: lift the cold mid/darks, not the warm rooms *//* cold darks less saturated (the photo's night blues are muted, not deep teal) */
     // night greens (oak leaves, grass, moss) muted toward the photo's dark blue-teal instead of bright leaf green
-    float gk=clamp((x.g-max(x.r,x.b))*4.,0.,1.);x=mix(x,vec3(l)*vec3(.8,1.02,1.12),gk*.3*night);
+    float gk=clamp((x.g-max(x.r,x.b))*4.,0.,1.);x=mix(x,vec3(l)*vec3(.8,1.02,1.12),gk*.3*night);{float gkN=clamp((x.g-max(x.r,x.b))*10.,0.,1.);x=mix(x,vec3(dot(x,vec3(.3,.59,.11)))*vec3(.86,1.06,1.04),gkN*.75*night);}/* [ENV] photo night crown: leaf green measured ~half as saturated as ours (sat .25 vs .5, same hue and lightness) */
     // autumn daylight: leaf greens lean a little to yellow-olive (night keeps the blue-teal above)
     x.r+=(x.g-x.r)*.24*gk*(1.-night);x.b*=1.-.15*gk*(1.-night);
     x=(x-.5)*con+.5;
