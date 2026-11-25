@@ -327,7 +327,7 @@ export function createClimb() {
     if (!A && C.bones.LeftFoot && C.bones.RightFoot) S.ft = { LF: C.bones.LeftFoot.getWorldPosition(V()), RF: C.bones.RightFoot.getWorldPosition(V()) }; /* the feet as the earlier stages left them (foot locks): the mount starts from there */
     S.fr = (S.fr || 0) + 1; if (!A && C.bones.LeftLeg && C.bones.RightLeg) { S.kn = { Left: C.bones.LeftLeg.getWorldPosition(V()).sub(C.bones.LeftUpLeg.getWorldPosition(V())), Right: C.bones.RightLeg.getWorldPosition(V()).sub(C.bones.RightUpLeg.getWorldPosition(V())) }; /* from the hip */ S.knF = S.fr; if (C.bones.LeftHand && C.bones.RightHand) S.hq0 = { Left: C.bones.LeftHand.quaternion.clone(), Right: C.bones.RightHand.quaternion.clone() }; } /* and the knees: the climb clip's first frame swung them 8-10 cm (gate: knee jump at the climb start, kl_b / ll_b) */
     if (A) { if (A.age == null) { A.age = 0; A.kn0 = S.kn && S.knF === S.fr - 1 ? S.kn : null; } else A.age += dt; }
-    if (S.W <= .001 && !A) { S.last = null; return; }
+    if (S.W <= .001 && !A) { S.last = null; if (S.gwOff) { S.gwOff = false; window.__noGameWalk = false; } return; }
     const B = C.bones, root = C.root, wp = b => b.getWorldPosition(V());
     root.updateMatrixWorld(true);
     let tg, hw;
@@ -381,6 +381,9 @@ export function createClimb() {
     // legs: knees forward between the rungs and a little out, then the ball of the foot onto the rung
     // once the climb has ended the walk owns the legs at once (frozen foot targets while he walked off bent the ankles: gate foot-bend near the ladders)
     // just after the climb: the feet go over to the walk from where the IK left them, eased (they snapped there in one frame: foot 4.5 cm/frame² stepping off)
+    /* the game-style walk (gamewalk.js, ?style=game) plants its feet where the pose under the IK has them: on the first frame after the climb that is still the
+       climb clip's (feet 30-50 cm off), so it stepped from there at full speed (feet 6-8 cm/frame² right after the ladder). It waits until the feet are handed back */
+    { const hold = !!A || (W > .01 && !!S.last.fo); if (hold && !S.gwOff && !window.__noGameWalk) { S.gwOff = true; window.__noGameWalk = true; } else if (!hold && S.gwOff) { S.gwOff = false; window.__noGameWalk = false; } }
     if (!A && tg && W > .01 && S.last.fo) for (const s of ['Left', 'Right']) { const k = s[0] + 'F', F = B[s + 'Foot']; if (!F || !S.last.fo[k]) continue; const raw = wp(F); const t = S.last.fo[k].clone().lerp(raw, 1 - W); C.ik2(B[s + 'UpLeg'], B[s + 'Leg'], F, t, V((s === 'Left' ? -1 : 1) * zDir * .3, .55, -zDir), 1, false); }
     if (A) for (const s of ['Left', 'Right']) {
       let t = tg[s[0] + 'F']; const sx = (s === 'Left' ? -1 : 1) * zDir;
