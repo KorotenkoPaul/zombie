@@ -77,6 +77,7 @@ export function createGrab({ THREE, bones }) {
     wateringCan: { g: [-.01, .27, 0], a: [0, -1, 0], A: 'F', b: [1, 0, 0], B: 'T', tilt: 0, fwd: true },
     meatBag: { g: [0, -.02, 0], a: [0, -1, 0], A: 'F', b: [1, 0, 0], B: 'T', tilt: 0, fwd: true },
     bow: { g: [0, 0, .01], a: [0, 1, 0], A: 'T', b: [0, 0, 1], B: 'D', tilt: 0 },
+    quiver: { g: [0, -.22, 0], a: [0, 1, 0], A: 'T', b: [0, 0, 1], B: 'D', tilt: 0 }, // GRAB: the fist round the tube under the band, the strap ring up (it hangs from its peg by the ring)
   };
   for (const n of ['benchHammer']) GRIP[n] = GRIP.hammer;
   for (const n of ['wrenchBig', 'wrench1', 'wrench2', 'wrench3', 'wrench4', 'wrench5', 'wrenchLong', 'benchWrench', 'screwdriver1', 'screwdriver2', 'screwdriver3', 'pliers']) GRIP[n] = { g: null, a: [0, 1, 0], A: 'T', b: [1, 0, 0], B: 'F', tilt: .2 };
@@ -270,6 +271,13 @@ export function createGrab({ THREE, bones }) {
   const api = {
     attach, late(fn) { lateQ.push(fn); }, twoW, dbg: api_dbg,
     gripPoint, toolGripHome, palmTarget, setProps(P) { PROPS = P; },
+    // GRAB: ease a held tool from whatever pose it has in the fist back into its grip pose (after floorPick kept the can upright)
+    // GRAB: where a tool's grip point is right now (on his back, in a hand, on its peg)
+    toolGripNow(name, out = V()) { const P = PROPS || window.__props; const o = P && P.tools && P.tools[name]; if (!o) return null; const G0 = GRIP[name];
+      const g = G0 && G0.g ? V(...G0.g) : (o.userData.grip ? o.userData.grip.clone() : V()); o.updateMatrixWorld(true); return o.localToWorld(out.copy(g)); },
+    regrip(name, side, d = .35) { const P = PROPS || window.__props; const o = P && P.tools && P.tools[name]; const bone = bones[side + 'Hand']; if (!o || !bone || o.parent !== bone) return;
+      const tp = toolPose(name, side, o); if (!tp) return; const q0 = o.quaternion.clone(); const gl0 = tp.g.clone().multiplyScalar(o.scale.x).applyQuaternion(q0).add(o.position);
+      gtw.set(o, { q0, q1: tp.q.clone(), gl0, gl1: tp.at.clone(), g: tp.g.clone(), s: o.scale.x, t: 0, d, bone }); },
     wrapProps, toolPose, GRIP,
     buildFists, tick, channel: s => CH[s], get fist() { return fistK; },
     hold(side, obj, handle) { grip[side] = obj ? { obj, handle } : null; },
