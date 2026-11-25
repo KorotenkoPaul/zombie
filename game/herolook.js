@@ -32,7 +32,9 @@ export function createHeroLook({ THREE, root, camera, renderer, opts = {} }) {
       const armOrHead = i => { let m = -1, mb = 0; for (let c = 0; c < 4; c++) { const w = [SW.getX, SW.getY, SW.getZ, SW.getW][c].call(SW, i); if (w > m) { m = w; mb = [SI.getX, SI.getY, SI.getZ, SI.getW][c].call(SI, i); } } return /Arm|Hand|Head/.test(bn[mb]); };
       const P0 = g.attributes.position, c3 = new THREE.Vector3(), t3 = new THREE.Vector3();
       const high = (a, b, c) => { c3.set(0, 0, 0); for (const i of [a, b, c]) c3.add(t3.fromBufferAttribute(P0, i).applyMatrix4(src.bindMatrix)); c3.multiplyScalar(1 / 3); return c3.y > yC && !armOrHead(a); };
-      const I = g.index.array, keep = []; for (let t = 0; t < I.length; t += 3) if (!(torso(I[t]) && torso(I[t + 1]) && torso(I[t + 2])) && !high(I[t], I[t + 1], I[t + 2])) keep.push(I[t], I[t + 1], I[t + 2]);
+      // nor the hands: the proxy's low-poly mitten does not match the real fingers and read as a black lump on them in close-ups
+      const hand = i => { let m = -1, mb = 0; for (let c = 0; c < 4; c++) { const w = [SW.getX, SW.getY, SW.getZ, SW.getW][c].call(SW, i); if (w > m) { m = w; mb = [SI.getX, SI.getY, SI.getZ, SI.getW][c].call(SI, i); } } return /Hand/.test(bn[mb]); };
+      const I = g.index.array, keep = []; for (let t = 0; t < I.length; t += 3) if (!(torso(I[t]) && torso(I[t + 1]) && torso(I[t + 2])) && !high(I[t], I[t + 1], I[t + 2]) && !(hand(I[t]) || hand(I[t + 1]) || hand(I[t + 2]))) keep.push(I[t], I[t + 1], I[t + 2]);
       g.setIndex(keep); }
     const m = new THREE.MeshBasicMaterial({ color: P.color, side: THREE.BackSide, fog: true });
     m.onBeforeCompile = sh => { sh.uniforms.uOW = uOW; sh.vertexShader = 'uniform float uOW;\n' + sh.vertexShader.replace('#include <project_vertex>',

@@ -258,7 +258,7 @@ function makeMaterials(renderer) {
     darkInside: std({ color: 0x15100D, roughness: 1, side: THREE.BackSide }),
     fire: std({ color: 0x2A120A, emissive: 0xFF6A1E, emissiveIntensity: 1.2, roughness: 1 }),
     ovenGlass: std({ color: 0x2A160C, emissive: 0xFF7A2A, emissiveIntensity: .8, roughness: .1, metalness: 0, envMap: env, envMapIntensity: 1.2, transparent: true, opacity: .55, depthWrite: false }),
-    covers: [0x8E3B2E, 0x2F5D7C, 0x4E6B3A, 0xB2803A, 0x6B4A7A, 0x9C5B2E, 0x3E4C5E].map(c => std({ color: c, roughness: .7 })),
+    covers: [0x8E3B2E, 0x2F5D7C, 0x4E6B3A, 0xB2803A, 0x6B4A7A, 0x9C5B2E, 0x3E4C5E].map(c => std({ color: c, roughness: .85, ...bookClothOf() })), /* book cloth: a fine weave, rubbed pale at the edges and corners (were flat plastic colours) */
     cans: [['#B8442E', '#E9D7A8'], ['#3F6E9A', '#F0E6CC'], ['#6E8F4A', '#F3E2B0'], ['#C99A3A', '#5A3A22']].map(([a, b]) => std({ map: texOf(labelCanvas(a, b)), metalness: .5, roughness: .4, envMap: env, envMapIntensity: .8 })),
   };
   // linen (pillows, bolster, lampshade): a real weave with slubs, soft washed-out stains and a faint ticking stripe,
@@ -915,6 +915,24 @@ function twillOf() { if (_twill) return _twill; let ls = 3131; const LR = () => 
     for (let k = -h; k < w; k += 3) { g.strokeStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.15 + LR() * .2})`; g.lineWidth = 1; g.beginPath(); g.moveTo(k, 0); g.lineTo(k + h, h); g.stroke(); }
     for (let k = 0; k < 25; k++) { const x = LR() * w, y = LR() * h, r = 6 + LR() * 16; const gr = g.createRadialGradient(x, y, 0, x, y, r); const pale = LR() < .5; gr.addColorStop(0, pale ? 'rgba(255,250,235,.25)' : 'rgba(40,36,28,.14)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
   const t = texOf(c); t.repeat.set(9, 9); const b = texOf(c, { srgb: false }); b.repeat.set(9, 9); _twill = { map: t, bumpMap: b, bumpScale: 1.2 }; return _twill; }
+// leather (quiver, bow grip, diary): was a flat brown at roughness .7 and read as plastic close up. Pebbled grain, fine
+// creases, darker worn patches and paler scuffs, with the same pattern as a bump map so the grain catches the light.
+let _bcloth = null;
+function bookClothOf() { if (_bcloth) return _bcloth; let ls = 9191; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#DADADA'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.1 + LR() * .14})`; g.fillRect(0, y, w, 1); }
+    for (let x = 0; x < w; x += 2) { g.fillStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.08 + LR() * .12})`; g.fillRect(x, 0, 1, h); } // the weave
+    const e = g.createLinearGradient(0, 0, w, 0); e.addColorStop(0, 'rgba(255,250,235,.45)'); e.addColorStop(.06, 'rgba(255,250,235,0)'); e.addColorStop(.94, 'rgba(255,250,235,0)'); e.addColorStop(1, 'rgba(255,250,235,.45)'); g.fillStyle = e; g.fillRect(0, 0, w, h);
+    const f = g.createLinearGradient(0, 0, 0, h); f.addColorStop(0, 'rgba(255,250,235,.4)'); f.addColorStop(.05, 'rgba(255,250,235,0)'); f.addColorStop(.95, 'rgba(255,250,235,0)'); f.addColorStop(1, 'rgba(255,250,235,.4)'); g.fillStyle = f; g.fillRect(0, 0, w, h); // edges rubbed pale
+    for (let k = 0; k < 14; k++) { const x = LR() * w, y = LR() * h, r = 8 + LR() * 26; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, LR() < .5 ? 'rgba(40,30,20,.18)' : 'rgba(255,245,225,.16)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  const t = texOf(c); const b = texOf(c, { srgb: false }); _bcloth = { map: t, bumpMap: b, bumpScale: .9 }; return _bcloth; }
+let _leather = null;
+function leatherOf() { if (_leather) return _leather; let ls = 7171; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#E8E8E8'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 2600; k++) { const x = LR() * w, y = LR() * h, r = .6 + LR() * 1.4; g.fillStyle = `rgba(${LR() < .55 ? '140,140,140' : '255,255,255'},${.06 + LR() * .1})`; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill(); } // pebble grain
+    for (let k = 0; k < 30; k++) { g.strokeStyle = `rgba(90,90,90,${.1 + LR() * .15})`; g.lineWidth = .6 + LR() * .8; g.beginPath(); let x = LR() * w, y = LR() * h; g.moveTo(x, y); for (let j = 0; j < 4; j++) { x += (LR() - .5) * 26; y += (LR() - .3) * 10; g.lineTo(x, y); } g.stroke(); } // creases
+    for (let k = 0; k < 18; k++) { const x = LR() * w, y = LR() * h, r = 12 + LR() * 34; const gr = g.createRadialGradient(x, y, 0, x, y, r); const pale = LR() < .4; gr.addColorStop(0, pale ? 'rgba(255,245,225,.14)' : 'rgba(40,30,20,.12)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  const t = texOf(c); t.repeat.set(2, 2); const b = texOf(c, { srgb: false }); b.repeat.set(2, 2); _leather = { map: t, bumpMap: b, bumpScale: .9 }; return _leather; }
 function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, ...o });
   /* terracotta: fired-clay mottling, white salt bloom up by the rim, a darker damp band at the foot, scuffs (was a flat orange) */
   const tc = canvas(256, 128, (g, w, h) => { g.fillStyle = '#B5623C'; g.fillRect(0, 0, w, h);
@@ -935,7 +953,7 @@ function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStanda
     splitwood: (() => { const c = canvas(128, 256, (g) => { g.fillStyle = '#C8955E'; g.fillRect(0, 0, 128, 256); for (let i = 0; i < 40; i++) { g.strokeStyle = Math.random() < .5 ? 'rgba(120,70,35,.35)' : 'rgba(240,200,150,.35)'; g.lineWidth = .5 + Math.random() * 2; g.beginPath(); let x = Math.random() * 128; g.moveTo(x, 0); for (let y = 0; y <= 256; y += 32) { x += (Math.random() - .5) * 5; g.lineTo(x, y); } g.stroke(); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 2, roughness: .9 }); })(), endgrain: endGrainMat(11, false),
     grille: s(0x8A7350, { roughness: 1 }), meat: s(0xA2343A, { roughness: .5 }), fat: s(0xEEDCCB, { roughness: .6 }), paper: s(0xD8C7A0, { roughness: .95 }), sack: s(0xB59B6E, { roughness: 1 }),
-    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x6A4128, { roughness: .7 }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
+    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x9A6038, { roughness: .78, ...leatherOf() }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
     rope: s(0xB09A6A, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
   return MX; }
 // a box between two points (legs, struts) and a tapered rod between two points
@@ -1174,11 +1192,14 @@ function jacket() { const X = mx(), g = new THREE.Group(); // origin = the hangi
   add(g, rb(.08, .09, .005, .002), X.patch, .1, -.28, .064, 0, 0, .15); add(g, rb(.06, .06, .005, .002), X.patch, -.23, -.4, .08, 0, -.2, .05); // patched elbow and chest: an old, mended coat
   g.userData.grip = V(0, -.05, .05); return bake(g); }
 function bowOnWall() { const X = mx(), g = new THREE.Group(); // in the y-z plane, bulging toward +z; origin at the grip
-  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); add(g, new THREE.TubeGeometry(c, 28, .015, 7), std2(0x6B4528));
+  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); add(g, new THREE.TubeGeometry(c, 28, .015, 7), M.wood); /* scanned wood grain, not a flat brown tube */
   add(g, new THREE.CylinderGeometry(.0025, .0025, 1.12, 4), std2(0xE8E2D0), 0, 0, .002); add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
 function quiver() { const X = mx(), g = new THREE.Group(); // origin at the strap ring on top
   add(g, lathe([[0, -.52], [.04, -.52], [.05, -.5], [.055, -.05], [.058, 0], [.05, 0], [.047, -.05], [0, -.05]], 16), X.leather);
   add(g, new THREE.TorusGeometry(.057, .005, 5, 16), std2(0x3E2618), 0, -.25, 0, Math.PI / 2);
+  add(g, new THREE.TorusGeometry(.058, .006, 5, 16), std2(0x3E2618), 0, -.03, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .007, 5, 16), std2(0x3E2618), 0, -.5, 0, Math.PI / 2); // rim and base bands
+  add(g, rb(.012, .44, .008, .003), std2(0x4A2E1C), 0, -.27, -.055); for (let i = 0; i < 18; i++) add(g, rb(.016, .003, .004, .001), std2(0xC8B48C), 0, -.06 - i * .024, -.06); // the back seam, laced with pale thread
+  add(g, rb(.022, .5, .006, .002), std2(0x4A2E1C), .0, -.24, .058, .0, 0, .05); // the carrying strap down the front
   for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025; add(g, new THREE.CylinderGeometry(.003, .003, .2, 4), std2(0xC9A875), x, .05, z); add(g, new THREE.PlaneGeometry(.025, .06), X.fletch, x, .12, z, 0, a, 0); }
   return bake(g); }
 // the meat sack (realism sweep: it was a smooth yellow blob with a red box stuck on it): coarse burlap with a visible weave,
@@ -1605,7 +1626,7 @@ export function buildProps(ctx) {
   function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
       const dx = x - (q.ax + ex * t), dz = z - (q.az + ez * t), d = Math.sqrt(dx * dx + dz * dz); const yc = q.ay + (q.by - q.ay) * t;
       // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
-      const top = yc + q.r + .03; const o = Math.max(0, d - q.r * .4); const dr = o < .08 ? 4 * o * o : .0256 + .64 * (o - .08) + 6 * (o - .08) * (o - .08);
+      const top = yc + q.r * .75 + .015; const o = Math.max(0, d - q.r * .4); const dr = o < .06 ? 5 * o * o : .018 + .6 * (o - .06) + 9 * (o - .06) * (o - .06);/* R42-2: the cloth lies ON the limb and falls off it (it stood 25-30 cm over his legs like a box with straight sides) */
       const h = top - dr - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
   // ---- BED (2026-11-24, Pavel: "the quilt just appears on top of him, he never covers himself"): the quilt's head flap folds over a
   // hinge across the bed. fold 0 = flat (a made bed), 1 = turned down onto the lower half. Character moves it with his hand on the

@@ -14,6 +14,7 @@ const LIMITS={
  slideCm:2.5,      // planted foot drifting more than this during one contact
  jitterMm:1.5,     // RMS of the high-frequency part of a joint path while seated / idle
  jitterHz:5,       // ... and it must oscillate (direction reversals) at least this often
+ jitterWorkMm:6,   // above this RMS a working hand is doing strokes (scrub/stir/saw), not shaking
  turnRateDeg:240,  // heading change of the walking direction per second
  crabDeg:40,       // body facing vs walking direction
  detour:1.35,      // walked length / straight distance for one walk
@@ -83,14 +84,20 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    else if(c){if(i-c.i0>=6&&c.max*100>lim.slideCm)add('foot-slide',c.im,{bone:s+'Foot',value:+(c.max*100).toFixed(1),unit:'cm drift while planted',limit:lim.slideCm,dur:+((i-c.i0)*lim.dt).toFixed(2),from:F[c.i0].f,to:F[i-1].f});c=null;}}}
  // ---- 5. jitter while seated / idle / working in place ----
  const W=30;const JB=['HeadTop_End','LeftHand','RightHand','LeftFoot','RightFoot','LeftLeg','RightLeg'];
- for(let i0=0;i0+W<F.length;i0+=W){const seg=F.slice(i0,i0+W);if(seg.some(f=>f.fl.includes('P')||f.fl.includes('L')||f.fl.includes('W')||f.tag!==seg[0].tag))continue;
+ // sliding 30-frame windows (step 5), one issue per burst per bone: the verdict does not depend on where a burst falls against a fixed block grid
+ const JL={};// bone -> [issue, last window start]
+ for(let i0=0;i0+W<F.length;i0+=5){const seg=F.slice(i0,i0+W);if(seg.some(f=>f.fl.includes('P')||f.fl.includes('L')||f.fl.includes('W')||f.tag!==seg[0].tag))continue;
   const still=seg.every((f,k)=>k===0||len(sub(f.root,seg[k-1].root))<.002);if(!still)continue;
   for(const n of JB){let ss=0,c=0;for(let k=3;k<W-3;k++){const p=bone(seg[k],n);let m=[0,0,0];for(let j=-3;j<=3;j++){const q=bone(seg[k+j],n);m[0]+=q[0]/7;m[1]+=q[1]/7;m[2]+=q[2]/7;}const r=len(sub(p,m));ss+=r*r;c++;}
    const rms=Math.sqrt(ss/c)*1000;
    // real jitter oscillates: count direction reversals of the per-frame step (steps > 0.25 mm) on the main axis
    let rev=0;for(const ax of [0,1,2]){let prev=0,r=0;for(let k=1;k<W;k++){const d=bone(seg[k],n)[ax]-bone(seg[k-1],n)[ax];if(Math.abs(d)<.00025)continue;const sg=Math.sign(d);if(prev&&sg!==prev)r++;prev=sg;}rev=Math.max(rev,r);}
    const hz=rev/2/(W*lim.dt);
-   if(rms>lim.jitterMm&&hz>=lim.jitterHz)add('jitter',i0+W/2,{bone:n,value:+rms.toFixed(1),unit:'mm RMS (7-frame high-pass)',hz:+hz.toFixed(1),limit:lim.jitterMm,dur:W*lim.dt,from:seg[0].f,to:seg[W-1].f});}}
+   // a hand working a tool (scrub, stir, saw: cm-sized strokes at 5-10 Hz) is deliberate motion, not jitter; small shakes still count
+   const deliberate=/Hand/.test(n)&&seg[0].state==='work'&&rms>lim.jitterWorkMm;
+   if(rms>lim.jitterMm&&hz>=lim.jitterHz&&!deliberate){const L=JL[n];
+    if(L&&i0-L[1]<=W){L[1]=i0;L[0].to=seg[W-1].f;L[0].dur=+((L[0].to-L[0].from+1)*lim.dt).toFixed(2);if(rms>L[0].value){L[0].value=+rms.toFixed(1);L[0].hz=+hz.toFixed(1);}}
+    else{add('jitter',i0+W/2,{bone:n,value:+rms.toFixed(1),unit:'mm RMS (7-frame high-pass)',hz:+hz.toFixed(1),limit:lim.jitterMm,dur:W*lim.dt,from:seg[0].f,to:seg[W-1].f});JL[n]=[iss[iss.length-1],i0];}}}}
  // ---- 6. walks: sharp turns, crab-walking, detours ----
  const walks=[];let w=null;for(let i=1;i<F.length;i++){const mv=F[i].fl.includes('P')&&!F[i].fl.includes('L');if(mv&&!w)w={i0:i};if(!mv&&w){w.i1=i-1;walks.push(w);w=null;}}
  for(const wk of walks){const pts=F.slice(wk.i0,wk.i1+1).map(f=>f.root);if(pts.length<10)continue;let L=0;for(let k=1;k<pts.length;k++)L+=Math.hypot(pts[k][0]-pts[k-1][0],pts[k][2]-pts[k-1][2]);
