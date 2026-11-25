@@ -2863,7 +2863,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     const fa=f.x*sd.x+f.z*sd.z;const fl=Math.hypot(f.x,f.z)*Math.hypot(sd.x,sd.z)||1;const dd=fa/fl;if(dd>.45&&rayFree(hp,sd,.25,6,.25))want=smooth(.45,.85,dd)*(1-smooth(9,10,h))*smooth(6.2,6.8,h);}
    FACE.sunW=want;
    // breath vapour: cold (feels < 7.5 C: late evening, night, dawn, wind or rain) and open sky over his head
-   const cold=st&&st.feels!=null?st.feels<7.5:false;FACE.out=cold&&!H.inBed&&rayFree(hp,V(0,1,0),.3,5,.35);}
+   const cold=st&&st.feels!=null?st.feels<7.5:false;const IB=window.__env&&window.__env.interiorBoxes;const indoor=!!(IB&&IB.some(r=>hp.x>r[0]-.3&&hp.x<r[1]+.3&&hp.z>r[4]-.3&&hp.z<r[5]+.3&&hp.y>r[2]-.35&&hp.y<r[3]+.4));/* the rooms (index.html ROOMS via env.setInterior): the roof is not in the collide grid */
+   FACE.out=cold&&!H.inBed&&!indoor&&rayFree(hp,V(0,1,0),.3,5,.35);}
   FACE.sun+=((FACE.sunW||0)-FACE.sun)*Math.min(1,dt*2);
   const smT=(t==='telescope'||t==='radio')&&act&&act.step==='work'?.55+.15*Math.sin(actT*.7):0;FACE.sm+=(smT-FACE.sm)*Math.min(1,dt*(smT>FACE.sm?1.2:2));
   breathTick(dt);}
@@ -3056,7 +3057,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // the folded vest lies on the floor in front of the bed edge, between his boots and a little further out: he sets it down there by
  // hand sitting (the upper bunk and the ladder were out of a seated arm's reach) and picks it up from there in the morning
  function vestSpot(){{const P=PP();const st=P&&P.objects&&P.objects.bedstool;if(st&&P.surfaces&&P.surfaces.bedStool){/* on the bedside stool: in a seated arm's reach (the floor is not: the pose guard will not fold his back that far) */return {p:V(st.position.x,P.surfaces.bedStool+.002,st.position.z-.05),yaw:.5};}}const B=FIT.bed;const hd=B.headDir||1;const ed=N.bededge;const fl=(ed&&ed.floor)??floorTop(BD);const x=ed?ed.p.x:(B.x0+B.x1)/2;return {p:V(x-.14*hd,fl+.012,B.z1+.36),yaw:-.3};}/* in front of his RIGHT foot (his right is the foot end, -headDir): at +x it was across his body, the lean became a side bend the guard took back and the hand flew up 60 cm */
- function vestShow(on){BT.vestOn=on;if(VEST)VEST.visible=on;else if(BT.vestU)BT.vestU.value=on?0:1;}
+ /* v6: 'undershirt' (pipeline/hero2/undervest.mjs) is an inner sweater shell that closes the cracks of the vest-shaped body; drawn only while the vest is off */
+ const USH=root.getObjectByName('undershirt');if(USH)USH.traverse(o=>{if(o.isMesh){o.visible=false;o.castShadow=false;}});
+ function vestShow(on){BT.vestOn=on;if(VEST)VEST.visible=on;else if(BT.vestU)BT.vestU.value=on?0:1;if(USH)USH.traverse(o=>{if(o.isMesh)o.visible=!on;});}
  // instant state (spawned in bed, reset): no clips
  function undress(off,quiet){bootInit();for(const sd of ['Left','Right']){const B=BT.side[sd];if(!B)continue;for(let i=BTW.length-1;i>=0;i--)if(BTW[i].pm===B.prop)BTW.splice(i,1);if(off){bootShow(sd,false);bootPark(sd);}else{B.prop.visible=false;scene.attach(B.prop);bootShow(sd,true);}}
   if(hasVest()){vestShow(!off);vestPark(off);}if(!quiet)AU(off?'unzip':'zip',root.position);}
