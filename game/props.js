@@ -226,7 +226,7 @@ function makeMaterials(renderer) {
     woodRed: std({ ...wt('#A85E34', '#5E2E16', '#D48A52', 1), roughness: .7 }),        // tool handles
     stave: std({ map: texOf(staveCanvas('#B87842', '#4A2A14', 14)), roughness: .75 }),
     staveDark: std({ map: texOf(staveCanvas('#9A6036', '#3A2010', 12)), roughness: .78 }),
-    weave: std({ map: texOf(weaveCanvas(), { rep: 7 }), roughness: .9 }),   // fine wicker, not big dots
+    weave: std({ map: texOf(weaveCanvas(), { rep: 7 }), bumpMap: texOf(weaveCanvas(), { srgb: false, rep: 7 }), bumpScale: 1.2, roughness: .9 }),   // fine wicker, not big dots
     iron: metal(0x34383F, .65, .45, .6),
     enamel: metal(0x4F5965, .35, .32, .9),
     enamelDark: metal(0x30353C, .4, .4, .6),
@@ -440,7 +440,15 @@ function slippers() { const g = new THREE.Group();
     const cap = add(s, capG, M.felt, 0, .02, .055); cap.scale.set(.052, .045, .075); const hole = add(s, new THREE.CircleGeometry(1, 18), lining, 0, .0215, -.02, -Math.PI / 2); hole.scale.set(.04, .05, 1);
     add(s, new THREE.TorusGeometry(.045, .006, 6, 20, Math.PI), M.felt, 0, .022, -.02, -Math.PI / 2, 0, 0).scale.set(1, 1.15, 1); }
   return bake(g); }
-function basket() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.17, 0], [.2, .05], [.22, .3], [.215, .34], [.2, .34], [.19, .06], [0, .06]], 28), M.weave); add(g, new THREE.TorusGeometry(.218, .018, 8, 32), M.weave, 0, .34, 0, Math.PI / 2);
+function basket() { const g = new THREE.Group();
+  // real wicker relief (close zoom: the flat dotted texture read as printed): the outer wall is cut into 1.6 cm rows of strands
+  // that go over and under 18 upright stakes, so each strand bulges out between the stakes, row by row offset
+  { const prof = [[0, 0], [.17, 0], [.2, .05]]; for (let y = .06; y <= .3001; y += .008) prof.push([.2 + (y - .05) / .25 * .02, y]); prof.push([.215, .34], [.2, .34], [.19, .06], [0, .06]);
+    const lg = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 72); const P = lg.attributes.position; /* lathe() caps at 16 around: too few for the stakes */
+    for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), r = Math.hypot(x, z); if (y < .055 || y > .305 || r < .195) continue; const a = Math.atan2(z, x);
+      const row = Math.floor((y - .055) / .016), fy = ((y - .055) / .016) % 1, ph = a * 9 / Math.PI + (row % 2) * 1; // 18 stakes
+      const k = 1 + .028 * Math.max(0, Math.sin(ph * Math.PI)) * Math.sin(fy * Math.PI) - .012 * (fy < .12 || fy > .88 ? 1 : 0); P.setX(i, x * k); P.setZ(i, z * k); }
+    lg.computeVertexNormals(); add(g, lg, M.weave); } add(g, new THREE.TorusGeometry(.218, .018, 8, 32), M.weave, 0, .34, 0, Math.PI / 2);
   // a checked cloth thrown over the contents: humped over what is inside, sagging over the rim in soft folds (was a smooth white dome)
   { const cg = new THREE.PlaneGeometry(.52, .52, 26, 26); cg.rotateX(-Math.PI / 2); const P = cg.attributes.position;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), a = Math.atan2(z, x); let y;
