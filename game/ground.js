@@ -69,6 +69,26 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const d1=CELL,d2=CELL*1.4142;
   for(let z=0;z<GS;z++)for(let x=0;x<GS;x++){const i=z*GS+x;let d=dist[i];if(x>0)d=Math.min(d,dist[i-1]+d1);if(z>0){d=Math.min(d,dist[i-GS]+d1);if(x>0)d=Math.min(d,dist[i-GS-1]+d2);if(x<GS-1)d=Math.min(d,dist[i-GS+1]+d2);}dist[i]=d;}
   for(let z=GS-1;z>=0;z--)for(let x=GS-1;x>=0;x--){const i=z*GS+x;let d=dist[i];if(x<GS-1)d=Math.min(d,dist[i+1]+d1);if(z<GS-1){d=Math.min(d,dist[i+GS]+d1);if(x<GS-1)d=Math.min(d,dist[i+GS+1]+d2);if(x>0)d=Math.min(d,dist[i+GS-1]+d2);}dist[i]=d;}}
+ // WALK (exact): the bark's top SURFACE, rasterised from the root/trunk triangles on a 10 cm grid (the vertex-max map
+ // above is ~25 cm coarse and misses between vertices: feet floated up to 37 cm or sank up to 58 cm on the big roots)
+ const TS=320,TC=GE*2/TS,topS=new Float32Array(TS*TS).fill(-99);
+ {const w=new THREE.Vector3();
+  for(const o of obstacles)o.traverse(m=>{if(!m.isMesh||m.isInstancedMesh||!m.geometry)return;const p=m.geometry.attributes.position;if(!p)return;m.updateWorldMatrix(true,false);
+   const P=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){w.fromBufferAttribute(p,i).applyMatrix4(m.matrixWorld);P[i*3]=w.x;P[i*3+1]=w.y;P[i*3+2]=w.z;}
+   const idx=m.geometry.index?m.geometry.index.array:null;const nt=(idx?idx.length:p.count)/3;
+   for(let t=0;t<nt;t++){const i0=idx?idx[t*3]:t*3,i1=idx?idx[t*3+1]:t*3+1,i2=idx?idx[t*3+2]:t*3+2;
+    const ax=P[i0*3],ay=P[i0*3+1],az=P[i0*3+2],bx=P[i1*3],by=P[i1*3+1],bz=P[i1*3+2],cx=P[i2*3],cy=P[i2*3+1],cz=P[i2*3+2];
+    const x0=Math.min(ax,bx,cx),x1=Math.max(ax,bx,cx),z0=Math.min(az,bz,cz),z1=Math.max(az,bz,cz);if(x1<=-GE||x0>=GE||z1<=-GE||z0>=GE)continue;
+    if(Math.min(ay,by,cy)>groundH0((ax+bx+cx)/3,(az+bz+cz)/3)+1.1)continue;
+    const den=(bz-cz)*(ax-cx)+(cx-bx)*(az-cz);if(Math.abs(den)<1e-7)continue;
+    const gx0=Math.max(0,Math.ceil((x0+GE)/TC-.5)),gx1=Math.min(TS-1,Math.floor((x1+GE)/TC-.5)),gz0=Math.max(0,Math.ceil((z0+GE)/TC-.5)),gz1=Math.min(TS-1,Math.floor((z1+GE)/TC-.5));
+    for(let gz=gz0;gz<=gz1;gz++){const zc=(gz+.5)*TC-GE;for(let gx=gx0;gx<=gx1;gx++){const xc=(gx+.5)*TC-GE;
+     const l1=((bz-cz)*(xc-cx)+(cx-bx)*(zc-cz))/den,l2=((cz-az)*(xc-cx)+(ax-cx)*(zc-cz))/den,l3=1-l1-l2;if(l1<-1e-4||l2<-1e-4||l3<-1e-4)continue;
+     const y=l1*ay+l2*by+l3*cy;const g0=groundH0(xc,zc);if(y>g0+1.1)continue;const k=gz*TS+gx;if(y>topS[k])topS[k]=y;}}}});}
+ // top of the wood under (x,z) in world y, or null where there is none (nearest-cell inside a root, bilinear where all 4 are wood)
+ G.barkTop=(x,z)=>{const fx=(x+GE)/TC-.5,fz=(z+GE)/TC-.5;const ix=Math.floor(fx),iz=Math.floor(fz);if(ix<0||iz<0||ix>=TS-1||iz>=TS-1)return null;
+  const a=topS[iz*TS+ix],b=topS[iz*TS+ix+1],c=topS[(iz+1)*TS+ix],d=topS[(iz+1)*TS+ix+1];const tx=fx-ix,tz=fz-iz;
+  if(a>-90&&b>-90&&c>-90&&d>-90)return (a*(1-tx)+b*tx)*(1-tz)+(c*(1-tx)+d*tx)*tz;const n=topS[Math.round(fz)*TS+Math.round(fx)];return n>-90?n:null;};
  // distance from (x,z) to the nearest root/trunk, in metres (99 = far away / outside the map)
  const rootD=(x,z)=>{if(Math.abs(x)>=GE-CELL||Math.abs(z)>=GE-CELL)return 99;const fx=(x+GE)/CELL-.5,fz=(z+GE)/CELL-.5;const ix=Math.max(0,Math.floor(fx)),iz=Math.max(0,Math.floor(fz));const tx=fx-ix,tz=fz-iz;
   const a=dist[iz*GS+ix],b=dist[iz*GS+ix+1],c=dist[(iz+1)*GS+ix],d=dist[(iz+1)*GS+ix+1];return (a*(1-tx)+b*tx)*(1-tz)+(c*(1-tx)+d*tx)*tz-CELL*.5;};
@@ -82,10 +102,16 @@ export function createGround(C){const __before=new Set(C.scene.children);
  // what the RENDERED floor is at (x,z): the near patch is a coarse grid on phones (64 cm cells), so small things placed
  // at the exact groundH float over the hollows and sink into the bumps; this follows the patch triangles instead
  const PS=MOBILE?48:128,PC=32/PS;
- const meshH=(x,z)=>{const fx=(x+16)/PC,fz=(z+16)/PC;const ix=Math.floor(fx),iz=Math.floor(fz);if(ix<0||iz<0||ix>=PS||iz>=PS)return groundH(x,z);
+ // reads the real vertex heights of the near patch (32 m) and, outside it, of the big coarse floor (260 m), and
+ // interpolates them over the same triangles the GPU draws
+ const gridH=(mesh,size,S,x,z)=>{const p=mesh.geometry.attributes.position.array;const C=size/S,h=size/2;const fx=(x+h)/C,fz=(z+h)/C;const ix=Math.floor(fx),iz=Math.floor(fz);
+  if(ix<0||iz<0||ix>=S||iz>=S)return null;const tx=fx-ix,tz=fz-iz,W=S+1,oy=mesh.position.y;const Y=(i,j)=>p[((j)*W+(i))*3+1]+oy;
+  const ha=Y(ix,iz),hb=Y(ix,iz+1),hc=Y(ix+1,iz+1),hd=Y(ix+1,iz);return tx+tz<=1?ha+(hd-ha)*tx+(hb-ha)*tz:hc+(hb-hc)*(1-tx)+(hd-hc)*(1-tz);};
+ const meshH=(x,z)=>{let h=null;if(G.groundPatch)h=gridH(G.groundPatch,32,PS,x,z);if(h==null&&G.ground)h=gridH(G.ground,260,MOBILE?40:150,x,z);
+  if(h!=null)return h;const fx=(x+16)/PC,fz=(z+16)/PC;const ix=Math.floor(fx),iz=Math.floor(fz);if(ix<0||iz<0||ix>=PS||iz>=PS)return groundH(x,z);
   const tx=fx-ix,tz=fz-iz,X=-16+ix*PC,Z=-16+iz*PC;const ha=groundH(X,Z),hb=groundH(X,Z+PC),hc=groundH(X+PC,Z+PC),hd=groundH(X+PC,Z);
   return tx+tz<=1?ha+(hd-ha)*tx+(hb-ha)*tz:hc+(hb-hc)*(1-tx)+(hd-hc)*(1-tz);};G.meshH=meshH;
- G.standAt=(x,z)=>{const g=groundH(x,z),r=G.rootTop(x,z);return r>.02?Math.max(g,groundH0(x,z)+r):g;};// WALK: what a sole stands on: the ground or the top of a root
+ G.standAt=(x,z)=>{const g=meshH(x,z),t=G.barkTop(x,z);return t!=null?Math.max(g,t):g;};/* the RENDERED floor (phone patch cells are ~67 cm: the exact groundH floated or sank feet by up to 6 cm) */// WALK: what a sole stands on: the ground or the top of a root
  // ---- soil mounds: wherever the underside of a root sits above the ground, the earth is heaped up to meet it and
  // slopes gently away (~20 cm per metre), so no root hangs in the air at any zoom. Only right at the wood (<1 m),
  // so the paths the hero walks stay flat.

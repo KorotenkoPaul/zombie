@@ -411,6 +411,14 @@ export function buildTree(THREE, o) {
       }
       GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
       P[i * 3] += nx * h; P[i * 3 + 1] += ny * h; P[i * 3 + 2] += nz * h; }
+    // the big twisting folds (model pass above) shade dark in their troughs too, so the fluted trunk reads from the home view
+    // like the photo's, not as a flat brown wall (same phase as the folds; off near the hollow)
+    if (o.folds !== false) for (let i = 0; i < nv; i++) { const x = P[i * 3] - AX, y = P[i * 3 + 1], z = P[i * 3 + 2] - AZ, d0 = Math.hypot(x, z);
+      if (d0 < 0.3 || d0 > 3.6 || y < -0.4 || y > 12.5) continue; const an = Math.atan2(z, x);
+      const nearDoor = Math.max(0, 1 - Math.max(0, Math.abs(angDiff(an, doorAng)) - 0.45) / 0.35) * Math.max(0, Math.min(1, (door.y1 + 1.4 - y) / 0.6));
+      const w = (1 - nearDoor) * Math.min(1, (y + 0.4) / 0.8) * Math.min(1, (12.5 - y) / 1.5) * Math.min(1, (3.6 - d0) / 0.6);
+      const ph = 5 * an + 0.22 * y + 0.9 * Math.sin(2 * an + 0.35 * y), gr = Math.pow(Math.max(0, Math.cos(ph)), 1.6);
+      GR[i] = Math.max(GR[i], (o.foldShade ?? 0.7) * w * gr); }
     if (typeof window !== 'undefined') window.__rootDetail = { verts: P.length / 3 - n0, tris: I.length / 3 - t0 };
   }
   const g = new THREE.BufferGeometry();
@@ -549,6 +557,9 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
   const total = MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
+  // the photo keeps open sky behind the telescope deck (critic T26): no clump in the window above and behind it
+  { const SW = o.skyWindow || [AX + 2.2, AX + 8, 9.6, 15.2, AZ - 13, AZ + 2.5];
+    for (let i = leafSpots.length - 1; i >= 0; i--) { const p = leafSpots[i].p; if (p.x > SW[0] && p.x < SW[1] && p.y > SW[2] && p.y < SW[3] && p.z > SW[4] && p.z < SW[5]) leafSpots.splice(i, 1); } }
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
   const qg = new THREE.CircleGeometry(0.5, MOB(o) ? 10 : 12); // round like the painted clump: no empty quad corners to shade // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
