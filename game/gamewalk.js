@@ -46,11 +46,12 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
   const legLen = (bp('LeftUpLeg').distanceTo(bp('LeftLeg')) + bp('LeftLeg').distanceTo(bp('LeftFoot'))) * SC;
   const footX = { Left: (bp('LeftFoot').x - bp('Hips').x) * SC, Right: (bp('RightFoot').x - bp('Hips').x) * SC };
   const sideSign = { Left: Math.sign(bp('LeftUpLeg').x - bp('Hips').x) || 1, Right: Math.sign(bp('RightUpLeg').x - bp('Hips').x) || -1 };
+  const upOff = (bp('Hips').y - (bp('LeftUpLeg').y + bp('RightUpLeg').y) / 2) * SC;
   const hipW = Math.abs(bp('LeftUpLeg').x - bp('RightUpLeg').x) / 2 * SC;
   // foot world orientation in the bind pose, relative to the root
   const footRestQ = {}; for (const s of ['Left', 'Right']) { const q = Q(); bindWorld(B[s + 'Foot']).decompose(V(), q, V()); footRestQ[s] = q; }
   const headRest = Q(); bindWorld(B.Head).decompose(V(), headRest, V());
-  const P = Object.assign({ duty: .6, lift: .075, bob: .012, sway: .014, pelvisYaw: .9, chestCounter: .65, arm: .55, elbow: .38, elbowFwd: .35, abd: .14, lean: .06, kneeBend: .03 }, opts);
+  const P = Object.assign({ duty: .6, lift: .075, bob: .012, sway: .014, pelvisYaw: .9, chestCounter: .65, arm: .55, elbow: .38, elbowFwd: .35, abd: .14, lean: .06, kneeBend: .03, passOut: .03 }, opts);
   // ---------- state ----------
   const ST = { w: 0, ph: 0, on: false, feet: { Left: null, Right: null }, swing: { Left: null, Right: null }, prevYaw: null, av: 0, v: 0, settle: 0, prevPos: null };
   const _v = V(), _q = Q(), _q2 = Q(), _m = new THREE.Matrix4();
@@ -68,11 +69,19 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     const knee = a.clone().addScaledVector(dir, ca * l1).addScaledVector(pp, sa * l1); aim(A, Bb, knee.sub(a)); aim(Bb, C, a.clone().addScaledVector(dir, dd).sub(Bb.getWorldPosition(V())));
   }
   const holding = s => { const h = B[s + 'Hand']; for (const c of h.children) if (!c.isBone && c.visible !== false) return true; return !!(H.hold && H.hold[s]); };
+  function ladderSoon() { if (H.lad || (H.path[0] && H.path[0].t === 'ladder')) return true;
+    if (H.path.length > 1 && H.path[1].t === 'ladder' && hero.N && hero.N[H.path[0].node]) { const q = hero.N[H.path[0].node].p; if (Math.hypot(q.x - root.position.x, q.z - root.position.z) < 1.2) return true; }
+    return false; }
   function active() {
     if (window.__noGameWalk) return false;
     const lad = H.lad || (H.path[0] && H.path[0].t === 'ladder');
     if (lad || H.fit || H.inBed || H.bedB || H.bedC || H.seated || H.swing || H.trans || (H.squat || 0) > .02 || !H.ground) return false;
-    return H.path.length > 0 && !H.slide;
+    // the ladder foot: hand the legs back to motion matching well before climb.js mounts (it places the root on the ladder,
+    // and planted feet then snapped the knees)
+    if (ladderSoon()) return false;
+    if (H.path.length > 0 && !H.slide) return true;
+    // the last bit up to a work spot (approachTo, slideTo: 0.3-1.2 m): real steps too, MM glided there on two standing feet
+    const sl = H.slide; return !!(sl && sl.k < 1 && Math.hypot(sl.x, sl.z) > .3);
   }
   function neutral(s, pos, yaw) { return pos.clone().addScaledVector(rightOf(yaw), footX[s] * .85).setY(pos.y + ankY); }
   function update(dt) {
@@ -83,7 +92,9 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     const want = active();
     // feet far from their neutral spots: keep stepping until they are home (that is how a game character stops)
     const far = s => { const f = ST.feet[s]; if (!f) return false; const n = neutral(s, pos, yaw); return Math.hypot(f.x - n.x, f.z - n.z) > .06 || !!ST.swing[s]; };
-    const settling = !want && ST.w > 0 && (far('Left') || far('Right')) && H.ground && !H.fit && !H.lad && !H.seated;
+    if (want) ST.settled = false;
+    const settling = !want && !ST.settled && ST.w > 0 && !ladderSoon() && !window.__noGameWalk && (far('Left') || far('Right')) && H.ground && !H.fit && !H.lad && !H.seated;
+    if (!want && !settling && ST.w > 0) ST.settled = true; // one settle per stop: after it the idle underneath owns him (an idle turn moved the neutral spots and he kept re-stepping at 83%)
     const tw = want || settling ? 1 : 0;
     if (tw && ST.w === 0) { // entering: plant both feet where the pose underneath has them
       root.updateMatrixWorld(true);
@@ -93,14 +104,25 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       ST.ph = dl < dr ? P.duty - .001 : P.duty - .501;
       if (ST.ph < 0) ST.ph += 1;
     }
-    ST.w = clamp(ST.w + (tw ? dt / .18 : -dt / .22), 0, 1);
-    if (ST.w <= 0) { ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; return; }
-    const v = want ? Math.max(ST.v, H.v || 0) : 0;
-    // step length grows with speed; cadence = v / L, never slower than a brisk settle step
-    const L = clamp((.28 + .18 * v) * legLen / .72, .12, .55) * (want ? 1 : 0);
-    let rate = v > .05 ? v / (2 * Math.max(L, .1)) : 0; // cycles per second
-    if (settling) rate = Math.max(rate, 1.9);
-    if (want) rate = Math.max(rate, 1.2);
+    ST.w = clamp(ST.w + (tw ? dt / .3 : -dt / .3), 0, 1);
+    if (ST.w <= 0) { ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; ST.L = null; ST.va = null; return; }
+    // fading out (a ladder ahead, a task takes the legs): the gait goes on as it was while the blend hands him over; a stop
+    // in the middle of it (step length and cadence to 0) moved the landing spots and the hips in the same 0.3 s (knee 8 cm/frame²)
+    let v, L, rate;
+    if (tw) ST.walking = want; // what he was doing when the fade began: a walk is cut off mid-stride, a settle has finished
+    if (!tw && ST.walking && ST.L != null) { v = ST.v; L = ST.L; rate = ST.rate; }
+    else {
+      v = want ? Math.max(ST.v, H.v || 0) : 0;
+      // step length grows with speed; cadence = v / L, never slower than a brisk settle step
+      L = clamp((.28 + .18 * v) * legLen / .72, .12, .55) * (want ? 1 : 0); ST.L = L;
+      rate = v > .05 ? v / (2 * Math.max(L, .1)) : 0; // cycles per second
+      if (settling) rate = Math.max(rate, 1.9);
+      if (want) rate = Math.max(rate, 1.2);
+      ST.rate = ST.rate == null ? rate : ST.rate + (rate - ST.rate) * (1 - Math.exp(-dt * 6)); rate = ST.rate; // cadence eases (a stop switched it in one frame: knee 12-19 cm/frame²)
+    }
+    // the walk's body motion (bounce, sway, knee bend, lean) dies out over ~0.3 s: v went to 0 in one frame at a stop, and the
+    // hips dropped 2 cm at once
+    ST.va = ST.va == null ? v : (v > ST.va ? v : ST.va + (v - ST.va) * (1 - Math.exp(-dt * 7)));
     const ph0 = ST.ph; ST.ph = (ST.ph + rate * dt) % 1;
     const T = rate > 0 ? 1 / rate : 1;
     const f = fwdOf(yaw), r = rightOf(yaw);
@@ -121,10 +143,11 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
         // landing: where the root will be at contact, half a stance ahead of it, at the foot's own side
         const tl = (1 - u) * (1 - Dt) * T; const yl = yaw + ST.av * tl * .5;
         const land = V(pos.x, pos.y, pos.z).addScaledVector(fwdOf(yl), v * tl + L * Dt * .5).addScaledVector(rightOf(yl), footX[s] * .85); land.y = pos.y + ankY;
-        sw.to = land;
+        // the landing spot eases toward its new prediction: when he stops mid-step it jumped from a stride ahead to the neutral stance
+        if (!sw.to) sw.to = land; else sw.to.lerp(land, 1 - Math.exp(-dt * 10));
         if (ST.swing[s]) {
-          const e = u < .5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2; // ease in-out: a clear push-off and a clear landing
-          const fp = sw.from.clone().lerp(land, e); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp(L / .3, .4, 1.2);
+          const e = u * u * u * (u * (u * 6 - 15) + 10); // smootherstep: a clear push-off and landing, no step in acceleration
+          const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp(L / .3, .4, 1.2);
           ST.feet[s + 'Shown'] = fp; lift[s] = u;
           roll[s] = u < .25 ? .45 * (1 - u / .25) : u > .8 ? -.25 * (u - .8) / .2 : 0; // toe-off, then the toes up for the heel strike
         }
@@ -134,14 +157,20 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     // ---------- save the pose underneath (for blending), then build ours from the bind pose ----------
     NAMES.forEach((n, i) => saved[i].copy(B[n].quaternion)); savedHip.copy(B.Hips.position);
     for (const n of NAMES) B[n].quaternion.copy(REST[n].q);
-    const amp = clamp(v / 1.0, 0, 1.3);
+    const amp = clamp(ST.va / 1.0, 0, 1.3);
     const fL = ST.feet.LeftShown.clone().sub(pos).dot(f), fR = ST.feet.RightShown.clone().sub(pos).dot(f);
     const stride = Math.max(.15, L * 1.2);
-    const legDiff = clamp((fL - fR) / stride, -1.2, 1.2); // +1: left foot forward
+    const legDiff = 1.2 * Math.tanh((fL - fR) / stride / 1.2); // +1: left foot forward (soft limit: a hard clamp kinked the pelvis and arms)
     // hips: bounce (low at contact), sway over the standing foot, height from the leg length
     const bounce = -Math.cos(4 * Math.PI * (ST.ph - .02)) * P.bob * amp;
     const swayS = Math.sin(2 * Math.PI * (ST.ph - Dt / 2 + .25)); // toward the left foot while it stands
     const hipPos = V(pos.x, pos.y + hipY - P.kneeBend * Math.min(1, amp + .3) + bounce, pos.z).addScaledVector(r, swayS * P.sway * sideSign.Left * Math.min(1, amp + .2)).addScaledVector(f, P.lean * .25 * amp);
+    // reach: a foot far behind at toe-off (or far ahead at heel strike) is out of the leg's reach from the walking hip height,
+    // and the IK clamped it short and let go a frame later (gate: 'jump' 13-15 cm/frame² on the knees). The hips sink just
+    // enough that both planned ankles are within 97% of the leg, so the legs never snap straight.
+    { let drop = 0; for (const s of ['Left', 'Right']) { const t = ST.feet[s + 'Shown']; const hj = hipPos.clone().addScaledVector(r, sideSign[s] * hipW); hj.y -= upOff;
+        const hd = Math.hypot(t.x - hj.x, t.z - hj.z), R = legLen * .97; const allowed = hd < R ? Math.sqrt(R * R - hd * hd) : 0; drop = Math.max(drop, (hj.y - t.y) - allowed); }
+      ST.drop = (ST.drop || 0) + (Math.max(0, drop) - (ST.drop || 0)) * (1 - Math.exp(-dt * 18)); hipPos.y -= ST.drop; }
     // the hips' local position from the world target (hips' parent is the armature)
     B.Hips.position.copy(B.Hips.parent.worldToLocal(hipPos.clone()));
     root.updateMatrixWorld(true);
