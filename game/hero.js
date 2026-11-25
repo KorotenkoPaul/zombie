@@ -1712,20 +1712,23 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    // take the weight and stay there while he sits; getting up is the same backwards.
    const SIT=1.7,UP=1.5;const seatY=()=>a.e.y+SEAT_CLEAR;
    const palms=w=>{if(w<.01){a.ik=null;return;}const f=a.e.f,r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());
-    const py=a.e.y+.065;/* the wrist a palm's thickness up: at +3 cm the hands sank 4-6 cm into the boards (gate) */a.ik=[['Left',V(hp.x,py,hp.z).addScaledVector(r,-.24).addScaledVector(f,-.04),w],['Right',V(hp.x,py,hp.z).addScaledVector(r,.24).addScaledVector(f,-.04),w]];};
+    const G=window.__grab;/* LEISURE (Pavel: real contact): the palms rest ON THE THIGHS, two thirds of the way to the knee. Measured: seated on
+       the edge his arms cannot reach the boards beside the hips (the palms hung 10-14 cm over them, one over the drop) */
+    const at=(s)=>{const U=bones[s+'UpLeg'],L=bones[s+'Leg'];const hj=U.getWorldPosition(V()),kn=L.getWorldPosition(V());const q=hj.lerp(kn,window.__LTK??.35).add(V(0,window.__LTY??.075,0));if(G&&G.palm){const off=G.palm(s,V()).sub(bones[s+'Hand'].getWorldPosition(V()));q.sub(off);}return q;};
+    a.pw=w;a.ik=[['Left',at('Left'),w],['Right',at('Right'),w]];a.at=at;};
    // the legs hang over the drop: thighs along the boards to the edge, knees bent, shins down, a lazy swing (watcher P2: the clip held
    // them nearly straight, sticking out forward at knee height)
    const legsHang=w=>{if(w<.01||!a.e)return;const f=V(a.e.f.x,0,a.e.f.z).normalize();const T=a.T||0;
     for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const hp=U.getWorldPosition(V()),kn=L.getWorldPosition(V()),an=F.getWorldPosition(V());
      const th=hp.distanceTo(kn),sh=kn.distanceTo(an);const lat=kn.clone().sub(hp);lat.addScaledVector(f,-lat.dot(f));lat.y=0;if(lat.length()>.12)lat.setLength(.12);
      const K=hp.clone().addScaledVector(f,th*.96).add(lat).add(V(0,-.04,0));const sw=Math.sin(T*1.25+(s==='Left'?0:2.1))*.07;
-     const A=K.clone().add(V(0,-sh*.97,0)).addScaledVector(f,.05+sw);ik2(U,L,F,A,f.clone().add(V(0,.3,0)).normalize(),w,true);
+     const arc=Math.sin(Math.PI*clamp(w,0,1));/* on the way over the edge (sitting down, getting up) the feet swing out and up round the rim board, never through it (gate: feet and shins 6 cm into it) */const A=K.clone().add(V(0,-sh*.97+arc*(window.__LAU??.12),0)).addScaledVector(f,.05+sw+arc*(window.__LAF??.12));ik2(U,L,F,A,f.clone().add(V(0,.3,0)).normalize(),Math.max(w,arc*.9),true);
      {/* a relaxed hanging foot: toes ~30 deg pointed from his standing ankle angle (gate: 55 deg, or flexed up as the clip swung) */const T2=bones[s+'ToeBase'];if(T2){F.updateMatrixWorld(true);const k2=L.getWorldPosition(V()),a2=F.getWorldPosition(V()),t2=T2.getWorldPosition(V());const sd=a2.clone().sub(k2).normalize();const pp=f.clone().addScaledVector(sd,-f.dot(sd));if(pp.lengthSq()>1e-6){pp.normalize();const an=50*Math.PI/180;const d=sd.clone().multiplyScalar(Math.cos(an)).addScaledVector(pp,Math.sin(an));turnBone(F,t2,a2.clone().addScaledVector(d,t2.distanceTo(a2)),w);}}}}};
-   a.post=()=>{if(a.ik)ikList(a.ik);legsHang(a.lw||0);};
+   a.post=()=>{legsHang(a.lw||0);/* the legs first, then the palms on the thighs where the legs now are */if(a.ik&&a.at){const put=()=>{/* the back inside the pose guard's range first: it runs last and straightened a 17 deg over-bent Spine, which lifted both palms 8-20 cm off the thighs */const PG=window.__poseGuard;if(PG&&PG.fit&&!window.__poseOff){for(const n of ['Spine','Spine1','Spine2'])if(bones[n])PG.fit(bones[n]);if(PG.fitSpine)PG.fitSpine();root.updateMatrixWorld(true);}a.ik=[['Left',a.at('Left'),a.pw],['Right',a.at('Right'),a.pw]];ikList(a.ik);};put();const G=window.__grab;if(G&&G.late)G.late(put);/* again after the head turn and collide.js have moved the chest */}};
    a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
     if(a.step==='sit'){const k=smooth(0,SIT,a.t);H.fit.y=lerp(a.hy0,seatY(),k);a.lw=smooth(SIT*.35,SIT,a.t);if(!a.cl&&a.t>SIT*.35){a.cl=1;play(has('cm_dangle')?'cm_dangle':'hy_dangle',{fade:SIT*.6});}
      palms(smooth(.1,.55,k)*lerp(1,.85,smooth(SIT,SIT+.5,a.t)));if(a.t>SIT+.5){a.step='work';a.t=0;}return;}
-    if(a.step==='work'){a.T+=dt;a.lw=1;/* palms stay on the boards beside the hips (the clip's hands hovered in front of the belly) */palms(.85);H.look=root.position.clone().add(V(Math.sin(a.T*.2)*5,.4+Math.sin(a.T*.11)*.5,0)).addScaledVector(a.e.f,6);H.lookW=.8;
+    if(a.step==='work'){a.T+=dt;a.lw=1;/* palms stay on the thighs (the clip's hands hovered in front of the belly) */palms(.95);H.look=root.position.clone().add(V(Math.sin(a.T*.2)*5,.4+Math.sin(a.T*.11)*.5,0)).addScaledVector(a.e.f,6);H.lookW=.8;
      if(a.T>dur){a.step='up';a.t=0;}return;}
     if(a.step==='up'){const k=smooth(.35,UP+.35,a.t);a.lw=1-smooth(0,.6,k);palms(lerp(.85,1,smooth(0,.35,a.t))*(1-smooth(.75,1,k)));if(!a.cl2&&a.t>.45){a.cl2=1;play(IDLE(),{fade:UP*.7});}
      H.fit.y=lerp(seatY(),a.hy0,k);if(a.t>UP+.4){a.ik=null;H.fit=null;H.ground=true;H.floorY=a.e.y;endTask();}}};
@@ -3532,11 +3535,11 @@ stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(d
   if(H.inBed)bedPress(false);
   Object.assign(H,{path:[],then:null,wait:null,swing:null,bedB:null,edgeHold:null,lad:null,slide:null,once:null,trans:false,seated:null,inBed:false,fit:null,ground:true,v:0,av:0,look:null,lookW:0,pending:null,linger:0,turnStep:false});
   act=null;H.task=null;legPlantOff();}
- function spawn(task,o={}){resetBody();H.squat=0;H.sqJob=false;/* a knee bend (GRAB squat, oven) cut short never carries over into the new start: it kept the root 4.5 cm low for a whole task (gate: foot-bend on every walk) */task=task||'read';
+ function spawn(task,o={}){resetBody();H.squat=0;H.sqJob=false;H.state='idle';H.walkV=0;H.pivot=0;H.onceWalk=0;try{if(motion&&motion.snap)motion.snap();}catch(e){}/* a walk cut off by the spawn: its state, speed and motion matching's easing carried over (gate: 41 cm root dip at the next task's start) *//* a knee bend (GRAB squat, oven) cut short never carries over into the new start: it kept the root 4.5 cm low for a whole task (gate: foot-bend on every walk) */task=task||'read';
   /* GRAB: a fresh start drops what the cut-off task had stowed or slung for a ladder (the water bucket came back into his hand in the next task) */try{const P=PP();for(const n in slung){if(!slung[n])continue;slung[n]=0;const t=P&&P.tools&&P.tools[n];if(t&&t.parent&&t.parent!==bones.RightHand&&t.parent!==bones.LeftHand)try{P.release(n);}catch(e){}}H.stowed=null;H.stowPre=null;STW=null;}catch(e){}
   /* GRAB: a fresh start (a teleport, not a move): the oven and fridge doors a cut-off task left down are shut with it (the hand gate keeps them from closing by themselves) */try{const P=PP();for(const k of ['oven','fridge']){const q=P&&P[k];if(q&&q.open>0){q.openTo&&q.openTo(0);(q.setOpenRaw||q.setOpen)(0);}}}catch(e){}
   if(task==='read'&&!o.walking){const s=N.chair;root.position.set(s.p.x,s.floor,s.p.z);root.rotation.y=s.face;H.face=s.face;H.seated=s;H.node='chair_app';H.task='read';H.ground=false;
-   H.fit={mode:'hold',base:s.floor,y:s.seat+SEAT_CLEAR};play(READ,{fade:0});act=MAKE.read({seated:true});act.name='read';lastAct=['read'];actDur=rnd(25,40);return;}
+   H.fit={mode:'hold',base:s.floor,y:s.seat+SEAT_CLEAR};play(READ,{fade:0});for(const k in actions){const x=actions[k];if(k!==READ&&x&&x.isRunning&&x.isRunning())x.stop();}/* a teleport: the clip it cut off (idle mid-fade) still weighed 0.6 and pulled the hips 41 cm off the seat for a moment */act=MAKE.read({seated:true});act.name='read';lastAct=['read'];actDur=rnd(25,40);return;}
   if(task==='sleep'&&!o.walking&&N.bedlie){const li=N.bedlie,ed=N.bededge;root.position.set(li.p.x,floorTop(BD),li.p.z);root.rotation.y=0;H.face=0;H.node='bed_app';H.ground=false;H.inBed=true;try{undress(true,true);}catch(e){}
    H.edgeRoot=V(ed.p.x,root.position.y,ed.p.z);H.fit={mode:'hold',base:floorTop(BD),y:li.seat+LIE_CLEAR};play(SLEEPB,{fade:0});H.task='sleep';act=MAKE.sleep({inBed:true});act.name='sleep';
    {const P=window.__props||P3;if(P&&P.quiltFold)P.quiltFold(0);}H.wait={t:.05,then:()=>bedPress(true)};return;}
