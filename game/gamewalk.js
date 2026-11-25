@@ -50,7 +50,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
   // foot world orientation in the bind pose, relative to the root
   const footRestQ = {}; for (const s of ['Left', 'Right']) { const q = Q(); bindWorld(B[s + 'Foot']).decompose(V(), q, V()); footRestQ[s] = q; }
   const headRest = Q(); bindWorld(B.Head).decompose(V(), headRest, V());
-  const P = Object.assign({ duty: .6, lift: .075, bob: .018, sway: .014, pelvisYaw: .9, chestCounter: .65, arm: .55, elbow: .38, elbowFwd: .35, abd: .14, lean: .06, kneeBend: .02 }, opts);
+  const P = Object.assign({ duty: .6, lift: .075, bob: .012, sway: .014, pelvisYaw: .9, chestCounter: .65, arm: .55, elbow: .38, elbowFwd: .35, abd: .14, lean: .06, kneeBend: .03 }, opts);
   // ---------- state ----------
   const ST = { w: 0, ph: 0, on: false, feet: { Left: null, Right: null }, swing: { Left: null, Right: null }, prevYaw: null, av: 0, v: 0, settle: 0, prevPos: null };
   const _v = V(), _q = Q(), _q2 = Q(), _m = new THREE.Matrix4();
@@ -97,7 +97,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     if (ST.w <= 0) { ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; return; }
     const v = want ? Math.max(ST.v, H.v || 0) : 0;
     // step length grows with speed; cadence = v / L, never slower than a brisk settle step
-    const L = clamp((.22 + .16 * v) * legLen / .72, .12, .5) * (want ? 1 : 0);
+    const L = clamp((.28 + .18 * v) * legLen / .72, .12, .55) * (want ? 1 : 0);
     let rate = v > .05 ? v / (2 * Math.max(L, .1)) : 0; // cycles per second
     if (settling) rate = Math.max(rate, 1.9);
     if (want) rate = Math.max(rate, 1.2);
