@@ -12,6 +12,8 @@ F=0.5 node skintone.mjs G.glb Gt.glb | cut -c1-120
 [ -n "$BOOTS2" ] && node bootlift.mjs Gt.glb Gt.glb "$BOOTS2"
 [ -n "$SLEEVE" ] && node sleeves.mjs Gt.glb Gt.glb "$SLEEVE"
 [ -n "$UNDERV" ] && node undervest.mjs Gt.glb Gt.glb "$UNDERV" | tail -2
+[ -n "$CLOTHF" ] && node clothfix.mjs Gt.glb Gt.glb "$CLOTHF" | tail -1
+[ -n "$HAIRG" ] && node hairstep.mjs Gt.glb Gt.glb "$HAIRG" | tail -1
 L=$(python3 -c "
 K=$K;CO=$CO;ZC=$ZC
 f=lambda x,y:[round(x*K,4),round(CO+(y-0.625)*K,4)]
