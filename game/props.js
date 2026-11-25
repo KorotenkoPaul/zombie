@@ -1155,7 +1155,15 @@ function pencil() { const g = new THREE.Group(); add(g, new THREE.CylinderGeomet
 function whetstone() { const X = mx(), g = new THREE.Group(); W(g, .24, .035, .085, 0, .0175, 0, { mat: M.woodDark }); add(g, rb(.2, .022, .055, .004), X.stoneDark, 0, .046, 0); add(g, rb(.2, .022, .055, .004), X.stone, 0, .067, 0);
   add(g, lathe([[0, 0], [.025, 0], [.025, .06], [.008, .075], [.004, .1], [0, .1]], 12), M.brass, .16, 0, .02); return bake(g); }
 function repairLantern() { const g = new THREE.Group(); const L = lanternHousing(.01); L.scale.setScalar(.75); L.position.y = .09; g.add(L); add(g, new THREE.TorusGeometry(.075, .004, 6, 18, Math.PI), M.iron, 0, .17, 0);
-  add(g, new THREE.CylinderGeometry(.004, .004, .02, 6), M.linen, 0, .03, 0); g.userData.grip = V(0, .245, 0); return bake(g); }
+  add(g, new THREE.CylinderGeometry(.004, .004, .02, 6), M.linen, 0, .03, 0); g.userData.grip = V(0, .245, 0);
+  // the carried lantern (Lights: in his hand at night it read unlit - pale cold glass, no flame): its own glass, which warms
+  // with the hand light's level, and a candle whose flame shows while it burns (props update polls __lights 'hand')
+  const glass = M.glass.clone(); glass.emissive = new THREE.Color(0xFF9A40); glass.emissiveIntensity = 0; glass.userData.keep = true;
+  L.traverse(o => { if (o.isMesh && o.material === M.glass) o.material = glass; });
+  add(g, new THREE.CylinderGeometry(.016, .018, .05, 10), std2(0xE8D8B8), 0, .028, 0);
+  const flame = new THREE.Mesh(lathe([[0, 0], [.009, .006], [.011, .016], [.006, .03], [0, .038]], 8), new THREE.MeshBasicMaterial({ color: 0xFFC466 }));
+  flame.position.set(0, .053, 0); flame.visible = false; flame.userData.live = true; g.add(flame);
+  g.userData.glow = { glass, flame }; return bake(g); }
 function jacket() { const X = mx(), g = new THREE.Group(); // origin = the hanging loop, the jacket faces +z
   add(g, new THREE.TorusGeometry(.014, .003, 4, 10), X.jacketDark, 0, -.012, 0);
   const b = new THREE.Shape(); b.moveTo(-.07, 0); b.lineTo(.07, 0); b.quadraticCurveTo(.17, -.02, .2, -.07); b.lineTo(.215, -.7); b.lineTo(-.215, -.7); b.lineTo(-.2, -.07); b.quadraticCurveTo(-.17, -.02, -.07, 0);
@@ -1200,7 +1208,10 @@ function sawhorse() { const X = mx(), g = new THREE.Group(); const L = .95, H = 
   for (const sx of [-1, 1]) { for (const sz of [-1, 1]) strut(g, V(sx * (L / 2 - .1), H - .07, sz * .03), V(sx * (L / 2 - .05), 0, sz * .22), .055, .045, M.woodDark); W(g, .03, .06, .36, sx * (L / 2 - .075), .22, 0, { mat: M.wood }); }
   W(g, 1.15, .035, .2, .1, H + .0175, 0, { mat: M.woodLight }); // the plank, sawn part way across near the end
   W(g, .22, .035, .2, .62, .02, .12, { mat: M.woodLight, ry: .6, rz: .05 }); // an off-cut on the ground
-  add(g, new THREE.CircleGeometry(.22, 14), X.sawdust, .5, .004, .02, -Math.PI / 2).scale.set(1, .7, 1);
+  // sawdust under the cut: a low heap of loose crumbs, not a flat painted disc (it is merged by bake: no extra draw calls)
+  { const parts = []; for (let i = 0; i < 46; i++) { const a = rr(0, 6.28), d = Math.sqrt(R()) * .2, h = .012 * (1 - d / .2) + .002, q = new THREE.BoxGeometry(rr(.008, .018), rr(.003, .006), rr(.008, .018));
+      q.rotateY(rr(0, 3)); q.translate(.5 + Math.cos(a) * d, h * R(), .02 + Math.sin(a) * d * .7); parts.push(q); }
+    add(g, mergeGeometries(parts), X.sawdust, 0, 0, 0); }
   return bake(g); }
 // the axe head: forged iron gone dark, rust blooming round the eye and along the top and bottom, hammer marks, and a
 // bright honed bevel with fine scratches along the bit (it was flat black). Extrude UVs are in metres: repeat maps the head.
@@ -1501,7 +1512,13 @@ export function buildProps(ctx) {
     const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.traverse(o => { if (o.isMesh && Array.isArray(o.material)) o.material = o.material.map(m => m === mx().endgrain ? endGrainMat(5, true) : m); }); /* the block's top: axe scars */ cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(cb); cb.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: y0, n: 'chopblock' });
     const ax = axe(); tool('axe', ax, scene, x + .05, y0 + .42 + .03, z, [0, .8, -2.25]); PT.chopblock = [cb, V(0, 0, .21)];
-    const ch = new THREE.Group(); for (let i = 0; i < 7; i++) { const w = W(ch, rr(.04, .08), .012, rr(.02, .04), rr(-.35, .35), .006, rr(-.35, .35), { mat: mx().splitwood, ry: rr(0, 3), r: .004 }); void w; } ch.position.set(x, y0, z); scene.add(ch); } // wood chips around it
+    // wood chips round it, each on the ground under it (the soil slopes here): thrown mostly to the front, where the
+    // rounds were split; none on the root beside the block (it would float on, or sink into, the bark)
+    const ch = new THREE.Group(); const SA = window.__ground && window.__ground.standAt; let nc = 0;
+    for (let i = 0; i < 60 && nc < 16; i++) { const a = rr(-.6, 2.4), d = rr(.26, .7), cx = Math.cos(a) * d, cz = Math.sin(a) * d, gy = ghY(x + cx, z + cz);
+      if (SA && SA(x + cx, z + cz) > gy + .015) continue;
+      W(ch, rr(.035, .09), rr(.008, .016), rr(.018, .04), cx, gy - y0 + .005, cz, { mat: R() < .7 ? mx().splitwood : M.woodDark, ry: rr(0, 3), rz: rr(-.15, .15), r: .003 }); nc++; }
+    ch.position.set(x, y0, z); scene.add(ch); }
   { const x = -3.6, z = 1.95; const sh = sawhorse(); sh.position.set(x, ghY(x, z), z); sh.rotation.y = Math.PI / 2; scene.add(sh); sh.name = 'sawhorse'; placed.sawhorse = sh; sh.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(sh); sh.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'sawhorse' });
     tool('plankSaw', handSaw(), sh, .45, .62 + .035 + .13, .24, [0, Math.PI / 2, -.6]); PT.sawhorse = [sh, V(.45, .7, 0)]; }
@@ -1625,7 +1642,7 @@ export function buildProps(ctx) {
         const dx = (X - c.x) / .55, dz = (z - c.z) / .22, d = Math.sqrt(dx * dx + dz * dz); if (d <= 1.35) Y -= (d < 1 ? (1 - d * d) * .055 : -Math.sin((d - 1) / .35 * Math.PI) * .008) * k; }
       a[i] = X; a[i + 1] = Y; }
     P.needsUpdate = true; quiltMesh.geometry.computeVertexNormals(); quiltMesh.geometry.computeBoundingSphere(); }
-  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { if (out._atlas) out._atlas.poll(dt); { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
+  out.update = (dt, { reading = false, cooking = false, heat = 0 } = {}) => { { const lt = out.tools && out.tools.lantern, gw = lt && lt.userData.glow, LG = window.__lights; if (gw && LG && LG.get) { let k = 0; try { const h = LG.get('hand'); k = h ? (h.level || 0) : 0; } catch (e) { } if (Math.abs(k - (gw.k || 0)) > .01 || (k > .02) !== gw.flame.visible) { gw.k = k; gw.glass.emissiveIntensity = 1.1 * k; gw.flame.visible = k > .02; } if (gw.flame.visible) { const t = performance.now() * .001; gw.flame.scale.set(1, .85 + .15 * Math.sin(t * 17) * Math.sin(t * 7.3), 1); } } } if (out._atlas) out._atlas.poll(dt); { const st = window.__th && window.__th.state; if (st && (out._nmT = (out._nmT || 0) - dt) <= 0) { out._nmT = 1; let hr = 12; try { hr = st().hour; } catch (e) {} const day = Math.min(1, Math.max(0, Math.min(hr - 5.5, 20.5 - hr) / 1.5)); for (const m of NIGHT_METALS) m.envMapIntensity = m.userData.env0 * (.12 + .88 * day); } } /* metals: the env map is a daylight room, so at night their reflection fades instead of glowing */ if (out._toolProxyTick) out._toolProxyTick();
     steam(dt, heat); pressQuilt(dt);
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
