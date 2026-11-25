@@ -141,7 +141,11 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const an=Math.atan2(v,u);const wob=1+(vnoise(Math.cos(an)*1.4+5,Math.sin(an)*1.4+2)-.5)*.32;return (r-wob)*(POND.rx+POND.rz)*.5;};
  const PTRACK=[[1.4,7.2],[.9,7.6],[.5,7.7]];
  const ptrackD=(x,z)=>segD(PTRACK,x,z)-(.19+(vnoise(x*2.1+8,z*2.1)-.5)*.14);
- const trackD=(x,z)=>Math.min(pathMain(x,z),exitD(x,z),ptrackD(x,z));
+ // ---- the way to the chopping block (Props, -3.95, 4.05): recorded from his splitwood walk; a faint narrow track round the
+ // roots and a trampled patch where he stands to split (he goes there most days)
+ const CHOP=[[0,4.9],[-.45,4.85],[-1.4,5.0],[-2.7,4.85],[-3.9,4.6],[-4.6,4.42]];
+ const chopD=(x,z)=>Math.min(segD(CHOP,x,z)-(.15+(vnoise(x*2.3+3,z*2.3)-.5)*.12),Math.hypot(x+4.62,z-4.4)-(.45+(vnoise(x*3.1,z*3.1+6)-.5)*.2));
+ const trackD=(x,z)=>Math.min(pathMain(x,z),exitD(x,z),ptrackD(x,z),chopD(x,z));
  // everything that keeps off the paths keeps off the water and its bare muddy rim too (and the ground shader paints that rim as wet earth)
  const pathD=(x,z)=>Math.min(trackD(x,z),pondD(x,z)-.3);
  G.pondD=pondD;G.trackD=trackD;
