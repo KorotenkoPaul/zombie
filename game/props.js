@@ -686,7 +686,7 @@ function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 
     for (const s of [-1, 1]) add(g, new THREE.CylinderGeometry(.012, .012, .008, 10), M.iron, 0, ey, s * er, Math.PI / 2, 0, 0); }
   return bake(g); }
 const RUG_IMG = { check: 'rug-blue.jpg', orange: 'rug-orange.jpg', green: 'rug-green.jpg' };
-function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1, color: kind === 'orange' ? 0xB2A496 : 0xffffff });   /* the orange rug glowed like a lit panel in the sun: wool is duller */ { const pg = new THREE.PlaneGeometry(w, d, 24, 16); pg.rotateX(-Math.PI / 2); const P = pg.attributes.position; const ph = R() * 6, fx = R() * w - w / 2;
+function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1, color: kind === 'orange' ? 0xCDC2BC : 0xffffff });   /* the orange rug glowed like a lit panel in the sun: wool is duller; [photo round] but the photo's rug is a light peach, not brick red: a lighter, slightly cool tint */ { const pg = new THREE.PlaneGeometry(w, d, 24, 16); pg.rotateX(-Math.PI / 2); const P = pg.attributes.position; const ph = R() * 6, fx = R() * w - w / 2;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i); let y = .014;   /* boards bow up to ~1 cm: at .006 a high board showed through the rug */
       y += .006 * Math.max(0, Math.sin(x * 9 + ph + z * 2)) * Math.max(0, 1 - Math.abs(x - fx) / (w * .3)); // a soft ruck where it was kicked
       y += .003 * Math.sin(x * 23 + z * 7 + ph) * Math.sin(z * 17);
@@ -698,6 +698,14 @@ function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrad
 function wallShelf(w, { brackets = true, mat = M.woodLight } = {}) { const g = new THREE.Group(); W(g, w, .035, .24, 0, 0, .12, { mat }); if (brackets) for (const s of [-1, 1]) { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.18, 0); sh.quadraticCurveTo(.06, -.04, 0, -.17); sh.lineTo(0, 0); const e = new THREE.ExtrudeGeometry(sh, { depth: .03, bevelEnabled: true, bevelSize: .004, bevelThickness: .004, bevelSegments: 2 }); add(g, e, M.woodDark, s * (w / 2 - .08) - .015, -.018, .01, 0, -Math.PI / 2, 0); } return g; }
 // a jar that reads as a jar up close: shoulder and neck, a ridged screw lid, contents behind glass, a paper label
 const JAR_FILL = [0x8E2A2A, 0xB8862E, 0x6E7A2E, 0xC8642A]; let jarN = 0;
+// photo: a round blue-glazed stoneware crock with a lid stands on the floor left of the bunk. Glaze stops short of the
+// foot (raw cream clay shows at the base, as on real dipped stoneware) and a raised cream slip ring circles the shoulder.
+function crock() { const g = new THREE.Group();
+  add(g, lathe([[0, .004], [.09, 0], [.105, .012], [.107, .03], [0, .03]], 22), M.glazeCream);
+  add(g, lathe([[0, .03], [.107, .03], [.128, .09], [.135, .15], [.124, .21], [.098, .25], [.086, .262], [.088, .275], [.074, .275], [.07, .262], [0, .262]], 22), M.glazeBlue);
+  add(g, new THREE.TorusGeometry(.127, .005, 4, 22), M.glazeCream, 0, .205, 0, Math.PI / 2, 0, 0);
+  add(g, lathe([[0, .262], [.08, .262], [.083, .268], [.07, .282], [.03, .29], [.018, .292], [.02, .308], [.012, .314], [0, .315]], 22), M.glazeBlue);
+  return g; }
 function jar(h, r, mat) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r * .9, 0], [r, r * .12], [r * 1.04, h * .12], [r * 1.04, h * .74], [r * .96, h * .82], [r * .78, h * .87], [r * .76, h * .9], [r * .76, h * .93], [0, h * .93]], 22), mat);
   if (mat === M.jarGlass) { add(g, new THREE.CylinderGeometry(r * .92, r * .92, h * .66, 16), std2(JAR_FILL[jarN++ % JAR_FILL.length]), 0, h * .38, 0); }
   add(g, new THREE.CylinderGeometry(r * .82, r * .82, h * .1, 22), M.steel, 0, h * .97, 0); add(g, new THREE.TorusGeometry(r * .82, h * .012, 4, 22), M.steel, 0, h * .93, 0, Math.PI / 2);
@@ -922,7 +930,7 @@ function telescope() {
   /* tripod tall enough for the hero's eye: eyepiece ~1.34 m (Grab); the legs stretch, the tube and brass keep their size */
   const g = new THREE.Group(); const top = 1.36, LK = top / 1.08;
   // aged brass (less candy-yellow than TB) and a dark lacquered tube body, like an old field telescope
-  const TB = new THREE.MeshStandardMaterial({ color: 0x8E7646, metalness: .78, roughness: .52, envMap: M.env, envMapIntensity: .7 }) /* [PROPS round] years out on the deck: tarnished, dull brass (in the sun it read as orange toy plastic) */, LAC = new THREE.MeshStandardMaterial({ color: 0x1C2633, roughness: .3, metalness: .35, envMap: M.env, envMapIntensity: 1.2 });
+  const TB = new THREE.MeshStandardMaterial({ color: 0xA08C62, metalness: .9, roughness: .34, envMap: M.env, envMapIntensity: .85 }) /* [photo round] polished brass fittings that catch the light like the photo's; low saturation so the sun never turns it orange plastic */, LAC = new THREE.MeshStandardMaterial({ color: 0x75623F, roughness: .46, metalness: .85, envMap: M.env, envMapIntensity: .8 }) /* the photo's tube is brass all over: a darker, hand-worn brass body between the bright fittings (the navy lacquer read as black stripes) */;
   for (let i = 0; i < 3; i++) { const l = new THREE.Group(); l.position.set(0, top, 0); l.rotation.y = i * Math.PI * 2 / 3 + .4; l.scale.set(1, LK, LK); g.add(l); W(l, .035, 1.16, .025, 0, -.55, .19, { mat: M.woodDark, grain: 1, r: .008, rx: -.33 }); add(l, rb(.04, .025, .035, .008), TB, 0, -.02, .02); add(l, rb(.022, .016, .13, .004), M.woodDark, 0, -.5, .105); add(l, new THREE.CylinderGeometry(.006, .006, .03, 6), TB, 0, -1.08, .38); }
   add(g, new THREE.CylinderGeometry(.065, .065, .014, 3), M.woodDark, 0, top - .5 * LK, 0); // spreader tray
   add(g, new THREE.CylinderGeometry(.05, .06, .05, 20), TB, 0, top, 0);
@@ -1407,6 +1415,7 @@ export function buildProps(ctx) {
   out.switches = {}; out.switchN = {};
   place('blamp', bracketLantern(), .18, BD + 1.65, 1.95, { solid: false, wall: true });
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
+  place('crock', bake(crock()), -3.52, BD, 1.24, { ry: .5 }); /* the photo's blue crock left of the bunk, in the corner by the back wall (off the hatch and bunk paths) */
   { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const b = closedBook(bw, rr(.16, .22), .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12); s.add(b); x += bw + .003; } const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
 
   // ---------- workshop ----------
