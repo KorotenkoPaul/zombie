@@ -1900,7 +1900,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    /* never a one-frame teleport of the fist (QA: 83 cm/frame2 on the kitchen-ladder railing, an elbow flip near full reach): against the
       motion of the last two frames the wrist may deviate at most 8 cm per frame (the blow itself stays well inside that) */
    {const hp=hb.getWorldPosition(V());const fresh=S.lt!=null&&Math.abs(a.T-S.lt-dt)<1e-3;S.lt=a.T;
-    if(fresh&&S.p1&&S.T1&&!window.__noClamp){const pred=S.p1.clone().add(T).sub(S.T1);/* where the fist would be if it only followed the blow's own target */const dv=hp.clone().sub(pred);if(dv.length()>.08){poseAt(pred.add(dv.setLength(.08)));hp.copy(hb.getWorldPosition(V()));}}
+    if(fresh&&S.p1&&S.T1&&!window.__noClamp){/* GRAB: on frames that reuse the blow's key poses no hand turn (Qh) was made this frame: the clamp keeps the turn the hand has now (poseAt multiplied by null: 'grab late TypeError _x' every frame of fix_wall) */if(!Qh)Qh=hb.getWorldQuaternion(new THREE.Quaternion());const pred=S.p1.clone().add(T).sub(S.T1);/* where the fist would be if it only followed the blow's own target */const dv=hp.clone().sub(pred);if(dv.length()>.08){poseAt(pred.add(dv.setLength(.08)));hp.copy(hb.getWorldPosition(V()));}}
     else if(!fresh){S.p1=null;}S.p1=hp;S.T1=T.clone();S.wp=hp.clone();}};
   /* after look / collide have moved the chest (grab.js late slot), else right here */
   const G=window.__grab;if(G&&G.late)G.late(solve);else solve();
@@ -3316,6 +3316,24 @@ stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(d
   /* lying down he swings his legs in with the thighs about level, not both knees thrown ~20 cm over the hips (watcher r12 f2520-2544) */if(c.dir>0){const kw=smooth(.12,.25,c.u)*(1-smooth(.8,.95,c.u));if(kw>.001){for(const sd of ['Left','Right'])dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],wp(bones[sd+'UpLeg']).y+.08,kw);root.updateMatrixWorld(true);}}const hp=wp(bones.Hips),lr=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).setY(0).normalize();
   for(const sd of ['Left','Right']){const Hn=bones[sd+'Hand'];if(!Hn)continue;const ex=wp(Hn).y-(B.mat+.35);if(ex<=0)continue;
    const t=hp.clone().addScaledVector(lr,sd==='Left'?.27:-.27);t.y=B.mat+.1;t.z=Math.min(t.z,B.z1-.1);armIK(sd,t,sidePole(sd),clamp(ex/.12,0,1));}});
+ // lying down / in bed / getting up: heels and calves ride ON the mattress, the leg lifted at the hip over its edge, never through it
+ // (gate hy_bedlie: the right ankle 10-13 cm under the mattress top while the legs swung in, the calf through the front edge)
+ const LOB={Left:{w:0,a:0,t:null},Right:{w:0,a:0,t:null},key:null,S:null};const _lov=new THREE.Vector3();
+ function legBedSkin(){const ms=[];root.traverse(o=>{if(o.isSkinnedMesh&&o.visible&&o.skeleton&&!/shadow|eyelid|mouth/i.test(o.name))ms.push(o);});const key=ms.map(m=>m.uuid).join();if(LOB.key===key)return LOB.S;
+  const S={Left:[],Right:[]};for(const sd of ['Left','Right']){const want=new Set(['Leg','Foot','ToeBase'].map(n=>bones[sd+n]).filter(Boolean));
+   for(const sk of ms){const bi=new Set(sk.skeleton.bones.map((b,i)=>want.has(b)?i:-1).filter(i=>i>=0));if(!bi.size)continue;const SI=sk.geometry.attributes.skinIndex,SW=sk.geometry.attributes.skinWeight;if(!SI||!SW)continue;const ix=[];
+    for(let i=0;i<SI.count;i++){let bw=-1,bb=-1;for(let k=0;k<4;k++){const w=GCMP(SW,i,k);if(w>bw){bw=w;bb=GCMP(SI,i,k);}}if(bi.has(bb))ix.push(i);}
+    if(ix.length>=20){const st=Math.max(1,Math.floor(ix.length/220));S[sd].push({m:sk,ix:ix.filter((_,j)=>j%st===0)});}}}
+  LOB.key=key;LOB.S=S;return S;}
+ function legLow(sd){const S=legBedSkin()[sd];let lo=1e9;const CD=window.__collide&&window.__collide.depthAt?window.__collide:null;for(const {m,ix} of S)for(const i of ix){m.getVertexPosition(i,_lov);m.localToWorld(_lov);const t=bedTopAt(_lov.x,_lov.z);if(t==null)continue;let g=_lov.y-t;if(g<-.16)continue;/* hanging below the edge in front of it: that is the floor side, not on the bed */if(CD){const d=CD.depthAt(_lov.x,_lov.y,_lov.z);if(d>0)g=Math.min(g,-d-.005);}/* the bed's solid edge is squarer than its drawn rounded top */if(g<lo)lo=g;}return lo>1e8?null:lo;}
+ stage('grab',dt=>{const c=H.bedC,B=FIT.bed;const on=!!B&&((H.inBed&&!c)||(c&&c.dir>0&&c.u>.15)||(c&&c.dir<0&&c.u<.85));
+  if(!B||!bones.LeftUpLeg)return;root.updateMatrixWorld(true);const lat=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).normalize();
+  for(const sd of ['Left','Right']){const L=LOB[sd],U=bones[sd+'UpLeg'];L.w=on?Math.min(1,L.w+dt*4):Math.max(0,L.w-dt*4);if(L.w<.01){L.a=0;L.t=null;continue;}
+   const q0=U.quaternion.clone();const app=a=>{U.quaternion.copy(q0);rotW(U,lat,a);root.updateMatrixWorld(true);};
+   app(L.a);const g0=legLow(sd);app(L.a+.04);const g1=legLow(sd);U.quaternion.copy(q0);root.updateMatrixWorld(true);
+   let want=L.a;const tgt=-.005;/* a soft mattress gives ~1 cm under a heel */
+   if(g0!=null&&g1!=null){const sl=(g1-g0)/.04;if(Math.abs(sl)>.05){if(g0<tgt)want=L.a+Math.min(.5,Math.max(-.5,(tgt-g0)/sl));else if(g0>tgt+.02)want=L.a-Math.sign(sl)*Math.min(Math.abs(L.a),(g0-tgt-.01)/Math.abs(sl));}}else want=0;
+   want=Math.max(-.7,Math.min(.7,want));const up=g0!=null&&g0<tgt;/* out of the mattress at once (the heel crosses the edge in ~6 frames), back down gently */L.t=L.t==null||up?want:L.t+(want-L.t)*Math.min(1,dt*6);const rt=up?6:1.5;L.a+=Math.max(-rt*dt,Math.min(rt*dt,L.t-L.a));app(L.a*L.w);}});
  function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt);}catch(e){console.error('hero slot '+slot,e);}}}
  function update(dt){if(dt<=0)return;FRN++;runSlot('pre',dt);const r=updateCore(dt);runSlot('collide',dt);runSlot('grab',dt);runSlot('pops',dt);runSlot('guard',dt);if(INV.on)invCheck(dt);return r;}
  // HERO-RULES 3, live: ?inv in the URL (or HH.inv.on=true) checks the final pose every frame (geometry only, no bone axes)

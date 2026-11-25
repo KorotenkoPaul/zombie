@@ -53,7 +53,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
   const headRest = Q(); bindWorld(B.Head).decompose(V(), headRest, V());
   const P = Object.assign({ duty: .6, lift: .075, bob: .012, sway: .014, pelvisYaw: .9, chestCounter: .65, arm: .55, elbow: .38, elbowFwd: .35, abd: .14, lean: .06, kneeBend: .03, passOut: .03 }, opts);
   // ---------- state ----------
-  const ST = { w: 0, ph: 0, on: false, feet: { Left: null, Right: null }, swing: { Left: null, Right: null }, prevYaw: null, av: 0, v: 0, settle: 0, prevPos: null };
+  const ST = { vx: 0, vz: 0, w: 0, ph: 0, on: false, feet: { Left: null, Right: null }, swing: { Left: null, Right: null }, prevYaw: null, av: 0, v: 0, settle: 0, prevPos: null };
   const _v = V(), _q = Q(), _q2 = Q(), _m = new THREE.Matrix4();
   const up = V(0, 1, 0);
   const saved = NAMES.map(() => Q()); const savedHip = V(); const out = NAMES.map(() => Q()); const outHip = V();
@@ -87,13 +87,16 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
   function update(dt) {
     if (!(dt > 0)) return; dt = Math.min(dt, .05);
     const pos = root.position, yaw = root.rotation.y;
-    if (ST.prevPos) { const sp = Math.hypot(pos.x - ST.prevPos.x, pos.z - ST.prevPos.z) / dt; ST.v += (Math.min(sp, 2.5) - ST.v) * (1 - Math.exp(-dt * 14)); ST.av += (wrapA(yaw - ST.prevYaw) / dt - ST.av) * (1 - Math.exp(-dt * 10)); }
+    if (ST.prevPos) { const sp = Math.hypot(pos.x - ST.prevPos.x, pos.z - ST.prevPos.z) / dt; ST.v += (Math.min(sp, 2.5) - ST.v) * (1 - Math.exp(-dt * 14)); { const k = 1 - Math.exp(-dt * 14), cl = sp > 2.5 ? 2.5 / sp : 1; ST.vx += ((pos.x - ST.prevPos.x) / dt * cl - ST.vx) * k; ST.vz += ((pos.z - ST.prevPos.z) / dt * cl - ST.vz) * k; } ST.av += (wrapA(yaw - ST.prevYaw) / dt - ST.av) * (1 - Math.exp(-dt * 10)); }
     ST.prevPos = pos.clone(); ST.prevYaw = yaw;
     const want = active();
     // feet far from their neutral spots: keep stepping until they are home (that is how a game character stops)
     const far = s => { const f = ST.feet[s]; if (!f) return false; const n = neutral(s, pos, yaw); return Math.hypot(f.x - n.x, f.z - n.z) > .06 || !!ST.swing[s]; };
     if (want) ST.settled = false;
-    const settling = !want && !ST.settled && ST.w > 0 && !ladderSoon() && !window.__noGameWalk && (far('Left') || far('Right')) && H.ground && !H.fit && !H.lad && !H.seated;
+    // the pose underneath going down (a task's squat or kneel at the hatch, the stove, the woodpile): no settle step over it, the
+    // legs go to the task now (a settle kept the hips at walking height-then-sinking for 0.3 s: knees 13-14 cm/frame²)
+    const crouch = !want && ((H.squat || 0) > .02 || B.Hips.getWorldPosition(V()).y - pos.y < hipY - .06); // a squat lowers the root itself
+    const settling = !want && !crouch && !ST.settled && ST.w > 0 && !ladderSoon() && !window.__noGameWalk && (far('Left') || far('Right')) && H.ground && !H.fit && !H.lad && !H.seated;
     if (!want && !settling && ST.w > 0) ST.settled = true; // one settle per stop: after it the idle underneath owns him (an idle turn moved the neutral spots and he kept re-stepping at 83%)
     const tw = want || settling ? 1 : 0;
     if (tw && ST.w === 0) { // entering: plant both feet where the pose underneath has them
@@ -123,6 +126,12 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     // the walk's body motion (bounce, sway, knee bend, lean) dies out over ~0.3 s: v went to 0 in one frame at a stop, and the
     // hips dropped 2 cm at once
     ST.va = ST.va == null ? v : (v > ST.va ? v : ST.va + (v - ST.va) * (1 - Math.exp(-dt * 7)));
+    const Dt0 = P.duty;
+    // a standing foot left further behind than a stance takes it (he speeds up from a standstill, a turn): the cadence picks up
+    // so its swing comes sooner. Without this the planted foot got 40-50 cm behind and went home in a 0.22 s quick step
+    // (gate: 'jump' 13 cm/frame² on the foot at nearly every walk start)
+    if (want && v > .2) { const f0 = fwdOf(yaw); let back = 0; for (const s of ['Left', 'Right']) if (!ST.swing[s] && ST.feet[s]) back = Math.max(back, -ST.feet[s].clone().sub(pos).dot(f0));
+      const half = v * Dt0 / Math.max(rate, .5) * .5; if (back > half + .03) rate *= clamp(1 + (back - half - .03) / .12, 1, 2); }
     const ph0 = ST.ph; ST.ph = (ST.ph + rate * dt) % 1;
     const T = rate > 0 ? 1 / rate : 1;
     const f = fwdOf(yaw), r = rightOf(yaw);
@@ -135,14 +144,19 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       if (crossedSwing && !ST.swing[s]) ST.swing[s] = { from: ST.feet[s].clone() };
       if (ST.swing[s] && crossedLand) { ST.feet[s] = ST.swing[s].to ? ST.swing[s].to.clone() : ST.feet[s]; ST.swing[s] = null; }
       // a planted foot left far behind by a sharp turn or a push: it goes now (people do not do the splits)
-      if (!ST.swing[s] && ST.feet[s].distanceTo(V(pos.x, ST.feet[s].y, pos.z)) > legLen * .75) { ST.swing[s] = { from: ST.feet[s].clone(), quick: 0 }; }
+      if (!ST.swing[s] && !ST.swing[s === 'Left' ? 'Right' : 'Left'] && ST.feet[s].distanceTo(V(pos.x, ST.feet[s].y, pos.z)) > legLen * (want ? .75 : .42)) { // stopping: a foot left 30 cm out comes home now (the hips sank 20 cm to reach it)
+         ST.swing[s] = { from: ST.feet[s].clone(), quick: 0 }; }
       if (ST.swing[s]) {
         const sw = ST.swing[s]; let u;
-        if (sw.quick != null) { sw.quick += dt / .22; u = clamp(sw.quick, 0, 1); if (u >= 1) { ST.feet[s] = sw.to.clone(); ST.swing[s] = null; } }
+        if (sw.quick != null) { sw.quick += dt / .3; u = clamp(sw.quick, 0, 1); if (u >= 1) { ST.feet[s] = sw.to.clone(); ST.swing[s] = null; } }
         else u = clamp((p >= Dt ? p - Dt : p + 1 - Dt) / (1 - Dt), 0, 1);
-        // landing: where the root will be at contact, half a stance ahead of it, at the foot's own side
+        // landing: where the root will be at contact, half a stance's travel ahead of it (v·duty·T/2: the foot then leaves as
+        // far behind as it landed ahead; L·duty/2 landed it 13 cm ahead and left it 37 cm behind, and the hips sank 13 cm to reach)
         const tl = (1 - u) * (1 - Dt) * T; const yl = yaw + ST.av * tl * .5;
-        const land = V(pos.x, pos.y, pos.z).addScaledVector(fwdOf(yl), v * tl + L * Dt * .5).addScaledVector(rightOf(yl), footX[s] * .85); land.y = pos.y + ankY;
+        const vs = ST.v > 1e-3 ? v / ST.v : 0; // the real direction of travel: a step back (the walk clip run backwards) or sideways put the feet ahead of a body going the other way (hips sank 24 cm)
+        const land = V(pos.x, pos.y, pos.z).add(V(ST.vx * vs, 0, ST.vz * vs).multiplyScalar(tl + Dt * T * .5)).addScaledVector(rightOf(yl), footX[s] * .85); land.y = pos.y + ankY;
+        // a landing in furniture (the bunk's front edge, a chair leg, a ground stone, the bench): the nearest clear spot within 20 cm
+        { const C = window.__collide; if (C && C.footFree) { const g = V(land.x, pos.y, land.z); C.footFree(g, fwdOf(yaw)); land.x = g.x; land.z = g.z; } }
         // the landing spot eases toward its new prediction: when he stops mid-step it jumped from a stride ahead to the neutral stance
         if (!sw.to) sw.to = land; else sw.to.lerp(land, 1 - Math.exp(-dt * 10));
         if (ST.swing[s]) {
@@ -152,7 +166,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
           roll[s] = u < .25 ? .45 * (1 - u / .25) : u > .8 ? -.25 * (u - .8) / .2 : 0; // toe-off, then the toes up for the heel strike
         }
       }
-      if (!ST.swing[s]) { ST.feet[s + 'Shown'] = ST.feet[s].clone(); ST.feet[s + 'Shown'].y = pos.y + ankY; const pst = p / Dt; roll[s] = pst < .12 ? -.25 * (1 - pst / .12) : pst > .8 ? .3 * (pst - .8) / .2 : 0; }
+      if (!ST.swing[s]) { ST.feet[s + 'Shown'] = ST.feet[s].clone(); ST.feet[s + 'Shown'].y = pos.y + ankY; const pst = Math.min(1, p / Dt); /* a foot that landed from a quick step stands through its swing window: p/Dt went to 1.66 and the toes pitched 75 deg down and back (gate: 'knee bends forward' x71) */ roll[s] = pst < .12 ? -.25 * (1 - pst / .12) : pst > .8 ? .3 * (pst - .8) / .2 : 0; }
     }
     // ---------- save the pose underneath (for blending), then build ours from the bind pose ----------
     NAMES.forEach((n, i) => saved[i].copy(B[n].quaternion)); savedHip.copy(B.Hips.position);
@@ -202,7 +216,8 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       if (layer || holding(s)) { // keep the arm the action / the held thing needs: its local pose from underneath
         for (const n of ['Shoulder', 'Arm', 'ForeArm', 'Hand']) B[s + n].quaternion.copy(saved[NAMES.indexOf(s + n)]); B[s + 'Shoulder'].updateMatrixWorld(true); continue;
       }
-      const sw = (s === 'Left' ? -legDiff : legDiff) * P.arm * Math.min(1, amp + .15); // forward when the other foot is forward
+      ST.armK = ST.armK || { Left: 1, Right: 1 };
+      const sw = (s === 'Left' ? -legDiff : legDiff) * P.arm * Math.min(1, amp + .15) * ST.armK[s]; // forward when the other foot is forward
       const side = r.clone().multiplyScalar(sideSign[s]);
       const dUA = V(0, -1, 0).applyAxisAngle(r, 0).addScaledVector(f, Math.tan(clamp(sw, -1, 1))).addScaledVector(side, Math.tan(P.abd)).normalize();
       // the upper arm hangs from the shoulder in the swing direction (the shortest turn from the bind pose keeps the palm toward the thigh)
@@ -211,6 +226,10 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       const ax = dUA.clone().cross(f).normalize();
       const dFA = dUA.clone().applyAxisAngle(ax, el);
       aim(B[s + 'ForeArm'], B[s + 'Hand'], dFA);
+      // walking along a counter or the bunk: the swing narrows while the hand (8 cm ahead along its swing, 4 cm out) would be
+      // in something (gate collide: right hand 6.6 cm into the kitchen counter)
+      { const C = window.__collide; let hit = false; if (C && C.depthAt) { const h = B[s + 'Hand'].getWorldPosition(V()).addScaledVector(f, Math.sign(sw) * .08).addScaledVector(side, .04); hit = C.depthAt(h.x, h.y, h.z) > 0; }
+        const tk = hit ? .25 : 1; ST.armK[s] += (tk - ST.armK[s]) * (1 - Math.exp(-dt * (hit ? 12 : 2))); }
     }
     // ---------- blend with the pose underneath ----------
     const w = smooth(ST.w);
