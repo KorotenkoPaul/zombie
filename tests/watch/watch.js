@@ -17,7 +17,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
 (async()=>{fs.mkdirSync(OUT,{recursive:true});
  const want=arg('tasks',null);const list=want?want.split(',').map(t=>ALL.find(a=>a[0]===t)||[t,10]):ALL;
  const hero=arg('hero','old');
- const {b,p,errs}=await open({seed:SEED,vp:{width:SZ,height:SZ}});
+ const {b,p,errs}=await open({seed:SEED,vp:{width:SZ,height:SZ},query:arg('query','')});
  if(hero!=='old')console.log('note: --hero new needs ?hero=new support in lib; using default');
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  await p.evaluate(()=>__qa.start());await p.evaluate(f=>{window.__watchFast=f;},FAST);if(FIXCAM)await p.evaluate(c=>{window.__watchCam=c;},FIXCAM.split(',').map(Number));const JS=arg('js',null);if(JS)await p.evaluate(JS);
