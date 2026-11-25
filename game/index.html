@@ -449,6 +449,44 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  sm.render=(L,sc,cam)=>{const held=[];const D=L.filter(due);if(D.length>1){D.sort((a,b)=>(waitN.get(b)||0)-(waitN.get(a)||0)||(a===sun?-1:b===sun?1:0));
    const go=D[0]===sun?[sun]:[D[0]];for(const l of D){if(go.includes(l)){waitN.set(l,0);continue;}l.shadow.needsUpdate=false;held.push(l);waitN.set(l,(waitN.get(l)||0)+1);}}
   for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{draw(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
+/* [PERF] chunked draw ranges: the bark (43k tris), the merged house props (propsStatic, ~66k), the forest trunks (18k) and the
+   ground litter (8.5k) are single meshes, so even
+   zoomed in on one room the whole of them was drawn (~340k tris at the closest zoom vs ~355k at home). Their triangles are
+   re-ordered once into 1 m x 1.5 m world cells (x first, then y; the vertices stay as they are); each frame the main pass draws
+   only the index range from the first to the last cell whose box (+0.5 m for the wind sway) is inside the camera's view.
+   Exact frustum culling, so the picture can't change; still one draw call per mesh; shadow passes and raycasts see the
+   whole mesh (the range is reset after each draw). ?nochunk or __noChunk=true turns it off. */
+{const _pm=new THREE.Matrix4(),_fr=new THREE.Frustum(),_v=new THREE.Vector3();const CX=1,CY=1.5,MG=.5;
+ const chunkify=m=>{const g=m.geometry;if(m.userData.chunks||m.isInstancedMesh||m.isSkinnedMesh||g.groups.length>1||(g.morphAttributes&&g.morphAttributes.position))return 0;
+  const pa=g.attributes.position,ix=g.index?g.index.array:null,n=(ix?ix.length:pa.count)/3|0;if(n<2000)return 0;
+  m.updateMatrixWorld(true);const mw=m.matrixWorld,kx=new Int32Array(n),ky=new Int32Array(n),bb=new Float32Array(n*6);
+  for(let t=0;t<n;t++){let x0=1e9,y0=1e9,z0=1e9,x1=-1e9,y1=-1e9,z1=-1e9;for(let k=0;k<3;k++){_v.fromBufferAttribute(pa,ix?ix[t*3+k]:t*3+k).applyMatrix4(mw);
+    if(_v.x<x0)x0=_v.x;if(_v.x>x1)x1=_v.x;if(_v.y<y0)y0=_v.y;if(_v.y>y1)y1=_v.y;if(_v.z<z0)z0=_v.z;if(_v.z>z1)z1=_v.z;}
+   kx[t]=Math.floor((x0+x1)/2/CX);ky[t]=Math.floor((y0+y1)/2/CY);bb.set([x0,y0,z0,x1,y1,z1],t*6);}
+  const ord=Array.from({length:n},(_,i)=>i).sort((a,b)=>kx[a]-kx[b]||ky[a]-ky[b]||a-b);
+  const vc=pa.count,NI=vc>65535?Uint32Array:Uint16Array,out=new NI(n*3),ch=[];let cur=null;
+  for(let i=0;i<n;i++){const t=ord[i];for(let k=0;k<3;k++)out[i*3+k]=ix?ix[t*3+k]:t*3+k;
+   if(!cur||cur.kx!==kx[t]||cur.ky!==ky[t]){cur={kx:kx[t],ky:ky[t],s:i*3,c:0,b:new THREE.Box3(new THREE.Vector3(1e9,1e9,1e9),new THREE.Vector3(-1e9,-1e9,-1e9))};ch.push(cur);}
+   cur.c+=3;const o=t*6;cur.b.expandByPoint(_v.set(bb[o],bb[o+1],bb[o+2]));cur.b.expandByPoint(_v.set(bb[o+3],bb[o+4],bb[o+5]));}
+  for(const c of ch)c.b.expandByScalar(MG);
+  if(g.index&&g.index.array.length===out.length&&g.index.array.constructor===NI){g.index.array.set(out);g.index.needsUpdate=true;}else g.setIndex(new THREE.BufferAttribute(out,1));
+  const st={ch,last:new THREE.Matrix4(),lc:null,r0:0,r1:n*3};m.userData.chunks=st;
+  const ob=m.onBeforeRender,oa=m.onAfterRender;
+  m.onBeforeRender=function(r,sc,cam,geo){ob.apply(this,arguments);if(window.__noChunk||!cam||!cam.isPerspectiveCamera)return;
+   _pm.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);
+   if(st.lc!==cam||!_pm.equals(st.last)){st.lc=cam;st.last.copy(_pm);_fr.setFromProjectionMatrix(_pm);let a=-1,b=-1;
+    for(let i=0;i<ch.length;i++)if(_fr.intersectsBox(ch[i].b)){if(a<0)a=i;b=i;}
+    st.r0=a<0?0:ch[a].s;st.r1=a<0?0:ch[b].s+ch[b].c;}
+   geo.setDrawRange(st.r0,st.r1-st.r0);};
+  m.onAfterRender=function(r,sc,cam,geo){oa.apply(this,arguments);geo.setDrawRange(0,Infinity);};
+  return n;};
+ const NOCH=/[?&]nochunk/.test(location.search);let tries=0;
+ const done=window.__chunked={};
+ const go=()=>{const ps=scene.getObjectByName('propsStatic');const C=[];if(TREE&&TREE.bark)C.push(['bark',TREE.bark]);if(ps)ps.children.forEach((m,i)=>C.push(['props'+i,m]));
+  for(const nm of ['forestTrunks','litter']){const m=scene.getObjectByName(nm);if(m)C.push([nm,m]);}
+  for(const [k,m] of C)if(!(k in done)&&m.isMesh)done[k]=chunkify(m);
+  if((!ps||!('forestTrunks' in done)||!('litter' in done))&&++tries<900)requestAnimationFrame(go);};
+ if(!NOCH)requestAnimationFrame(go);}
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
 // `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
