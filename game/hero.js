@@ -3171,13 +3171,23 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function bootOn(sd){const B=BT.side[sd];if(!B)return;B.spot=null;const pm=B.prop;bootWorld(B,_bbm);const P_=V(),Q_=new THREE.Quaternion(),S_=V();_bbm.decompose(P_,Q_,S_);bootTween(pm,P_,Q_,.25,()=>{pm.visible=false;bootShow(sd,true);});}
  // the vest: off seated and laid folded at the foot end of the mattress; on again standing
  function hasVest(){bootInit();return !!(VEST||BT.dv);}
+ // the vest folded like real clothes, not squashed flat (coordinator: it looked fake, the back sank into the stool and the collar
+ // stood up): laid on its back, the sides turned in over the middle, then the shoulders folded down onto the hem. Each fold is a
+ // half turn of that part of the cloth about its crease, so the side that ends up on top still faces up and is drawn. The pile
+ // stands on y=0 (the stool top) and is centred on its footprint
+ function vestFold(pos,n,bb){const c=bb.getCenter(V()),W=bb.max.x-bb.min.x,Hh=bb.max.y-bb.min.y,D=bb.max.z-bb.min.z;const a=W/4,t=.022*Math.max(W,Hh)/2,c1=1.5*t,c2=3.5*t;
+  let mnY=1e9;for(let i=0;i<n;i++){let u=pos[i*3]-c.x,v=pos[i*3+1]-c.y;const z=(pos[i*3+2]-c.z)/(D/2);let h=t*smooth(-.35,.35,z);/* back panel below, front above */
+   if(u>a){u=2*a-u;h=2*c1-h;}else if(u<-a){u=-2*a-u;h=2*c1-h;}/* the sides over the middle */
+   if(v>0){v=-v;h=2*c2-h;}/* the top half down onto the bottom */
+   h+=t*.25*Math.sin(u*9.1+v*5.3)*Math.sin(v*7.7);/* soft, not machined */
+   pos[i*3]=u*.92;pos[i*3+1]=h;pos[i*3+2]=-(v+Hh/4)*.8;if(h<mnY)mnY=h;}
+  for(let i=0;i<n;i++)pos[i*3+1]-=mnY;}
  function vestProp(){if(BT.vestProp||!hasVest())return BT.vestProp;if(!VEST){const D=BT.dv;const P=D.geo.attributes.position;const pos=P.array;const c=D.bb.getCenter(V());
-   for(let i=0;i<P.count;i++){const x=pos[i*3]-c.x,y=pos[i*3+1]-c.y,z=pos[i*3+2]-c.z;pos[i*3]=x*.55;pos[i*3+1]=z*.35+.025;pos[i*3+2]=-y*.45;}D.geo.computeVertexNormals();
+   vestFold(pos,P.count,D.bb);D.geo.computeVertexNormals();
    const pm=new THREE.Mesh(D.geo,D.mat);pm.castShadow=true;pm.visible=false;pm.name='vestFolded';scene.add(pm);return BT.vestProp=pm;}
   const g=VEST.geometry;const m=(Array.isArray(VEST.material)?VEST.material[0]:VEST.material).clone();
   const P=g.attributes.position;const pos=new Float32Array(P.count*3);const bb=new THREE.Box3();for(let i=0;i<P.count;i++){const q=V(P.getX(i),P.getY(i),P.getZ(i)).applyMatrix4(VEST.bindMatrix);pos.set([q.x,q.y,q.z],i*3);bb.expandByPoint(q);}
-  const c=bb.getCenter(V());// folded: flattened to a low pile, laid on its back on the quilt
-  for(let i=0;i<P.count;i++){const x=pos[i*3]-c.x,y=pos[i*3+1]-c.y,z=pos[i*3+2]-c.z;pos[i*3]=x*.55;pos[i*3+1]=z*.35+.025;pos[i*3+2]=-y*.45;}
+  vestFold(pos,P.count,bb);
   const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(pos,3));if(g.attributes.uv)sg.setAttribute('uv',g.attributes.uv);sg.setIndex(g.index);sg.computeVertexNormals();/* [HERO LOOK] the folded vest keeps the worn vest's leather (heroclothes.js attributes, same material) */if(g.attributes.kp){for(const a of ['kp','kn','kx'])sg.setAttribute(a,g.attributes[a]);}
   const pm=new THREE.Mesh(sg,g.attributes.kp?VEST.material:m);pm.castShadow=true;pm.visible=false;pm.name='vestFolded';scene.add(pm);return BT.vestProp=pm;}
  function vestPark(on){const pm=vestProp();if(!pm)return;if(on){const sp=vestSpot();pm.position.copy(sp.p);pm.rotation.set(0,sp.yaw,0);pm.scale.setScalar(BT.sc||1);}pm.visible=on;}
