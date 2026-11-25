@@ -17,7 +17,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   const rnd = (a = 0, b = 1) => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return a + (b - a) * (((t ^ t >>> 14) >>> 0) / 4294967296); };
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
   const UP = V(0, 1, 0);
-  const crackMat = new THREE.MeshBasicMaterial({ color: 0xDDE6EA, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide });
+  // lit, not basic: an unlit pale line glowed white at night like a spider web drawn on the glass. A real crack only catches
+  // light that falls on it, so it is dark at night and pale by day
+  const crackMat = new THREE.MeshStandardMaterial({ color: 0xD6DEE2, roughness: .3, metalness: 0, transparent: true, opacity: .4, depthWrite: false, side: THREE.DoubleSide });
   const nodes = []; for (const k in N) { const n = N[k]; if (n && n.p && n.seat == null) nodes.push(n.p); }
   const nearNode = p => { let b = null, bd = 1e9; for (const q of nodes) { const d = Math.hypot(q.x - p.x, q.z - p.z) + Math.abs(q.y - p.y) * 2; if (d < bd) { bd = d; b = q; } } return b; };
 
@@ -173,11 +175,17 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   nails.instanceMatrix.setUsage(THREE.DynamicDrawUsage); nails.setColorAt(0, new THREE.Color(1, 1, 1));
   const born = new Float32Array(NMAX); let nNext = 0, gameT = 0, nailCT = 0;
   const NEW = new THREE.Color(.95, .95, .98), OLD = new THREE.Color(.34, .3, .26), tc = new THREE.Color();
-  function nail(pos, nrm) {
+  // A nail driven at the first blow goes in while the board is still lifted / sprung out: it rides with the part from then on
+  // (kept in the part's own unscaled frame), so when the blows press the board home its heads end flush, not floating 1-2 cm up.
+  const nOwner = new Array(NMAX).fill(null), _rf = new THREE.Matrix4(), _rt = V(), _rq = new THREE.Quaternion(), _rs = V();
+  const rigOf = (p, out) => { pose(p, p.vis).decompose(_rt, _rq, _rs); return out.compose(_rt, _rq, _rs.set(1, 1, 1)); };
+  function nail(pos, nrm, owner) {
     if (!pos) return -1; const p = pos.isVector3 ? pos : V(...pos), n = nrm ? (nrm.isVector3 ? nrm.clone() : V(...nrm)).normalize() : UP.clone();
     const i = nNext; nNext = (nNext + 1) % NMAX; if (nails.count < NMAX) nails.count++;
+    if (nOwner[i]) { const o = nOwner[i]; o.nl = o.nl.filter(e => e.i !== i); nOwner[i] = null; }
     Q.setFromUnitVectors(UP, n); const tw = new THREE.Quaternion().setFromAxisAngle(UP, rnd(0, 6.28)); Q.multiply(tw);
     M.compose(p, Q, S.set(1, 1, 1)); nails.setMatrixAt(i, M); nails.instanceMatrix.needsUpdate = true;
+    if (owner && owner.home && owner.mode !== 'shingle') { (owner.nl = owner.nl || []).push({ i, L: rigOf(owner, new THREE.Matrix4()).invert().multiply(M) }); nOwner[i] = owner; }
     born[i] = gameT; nails.setColorAt(i, NEW); nails.instanceColor.needsUpdate = true; return i;
   }
   // the frame of any house part (for nails at its ends)
@@ -221,8 +229,12 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
       for (let j = 1; j < poly.length - 1; j++) for (const q of [poly[0], poly[j], poly[j + 1]]) pos.push(q[0], q[1], zf(q));
       if (k !== gone) for (const q of [[ix, iy], pt(a0, r1), pt(a1, r1)]) pos.push(q[0], q[1], zf(q) * .5);   // inner shard (one is gone: a hole)
       // the fracture faces catch the light: thin pale lines along each crack, a few mm proud
-      const line = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l * .0011, ny = dx / l * .0011; for (const q of [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] - nx, a[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]]) crk.push(q[0], q[1], .002); };
-      line([ix, iy], pt(a0, e0)); line(pt(a0, r1), pt(a1, r1));
+      const line = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l * .0008, ny = dx / l * .0008; for (const q of [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] - nx, a[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]]) crk.push(q[0], q[1], .002); };
+      // [PROPS round] a real crack wanders and forks; straight spokes and a full ring read as a cobweb drawn on the glass
+      const jag = (a, b, amp) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, n = Math.max(2, Math.ceil(l / .018)), px = -dy / l, py = dx / l; let prev = a, off = 0;
+        for (let i = 1; i <= n; i++) { off = i === n ? 0 : off * .5 + rnd(-amp, amp); const q = [a[0] + dx * i / n + px * off, a[1] + dy * i / n + py * off]; line(prev, q); prev = q;
+          if (i < n && rnd() < .12) { const fa = Math.atan2(dy, dx) + rnd(.5, 1.1) * (rnd() < .5 ? -1 : 1), fl = rnd(.012, .035); line(q, [q[0] + Math.cos(fa) * fl, q[1] + Math.sin(fa) * fl]); } } };
+      jag([ix, iy], pt(a0, e0), .0035); if (rnd() < .45) jag(pt(a0, r1), pt(a0 + (a1 - a0) * rnd(.35, .7), r1 * rnd(.9, 1.15)), .002);
     }
     for (const [a0, a1, b0, b1] of [[-pw / 2, 0, -ph / 2, 0], [0, pw / 2, -ph / 2, 0], [-pw / 2, 0, 0, ph / 2], [0, pw / 2, 0, ph / 2]]) {   // the three whole panes
       if ((a0 < 0) === (qx < 0) && (b0 < 0) === (qy < 0)) continue; pos.push(a0, b0, 0, a1, b0, 0, a1, b1, 0, a0, b0, 0, a1, b1, 0, a0, b1, 0); }
@@ -312,6 +324,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   // a worn board also looks it: water-stained, greyer, more weathered (the plank shader's 'fresh' run below 0), the whole board
   const ROT = { floor: .9, wall: .8, post: .7, brace: .7, shingle: .6 };
   function apply(p) { const m = pose(p, p.vis); p.mesh.setMatrixAt(p.i, m); dirty.add(p.mesh); p.cur = V().setFromMatrixPosition(m);
+    if (p.nl && p.nl.length) { rigOf(p, _rf); for (const e of p.nl) nails.setMatrixAt(e.i, M.multiplyMatrices(_rf, e.L)); dirty.add(nails); }
     if (planks.move && p.mode !== 'shingle') planks.move(p.id, m);   // the physics board goes with it: feet, hands and rays meet the board where it is
     if (!(p.fr > 0)) { setFresh0(p.id, -ROT[p.mode] * p.vis); p.fr = 0; } }
 
@@ -359,8 +372,10 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
     const toward = away.clone().negate();
     if (p.mode === 'floor') { const u = long.clone().multiplyScalar(long.dot(away) >= 0 ? -1 : 1), n = thin.y > 0 ? thin.clone() : thin.clone().negate(); return [p.c.clone().addScaledVector(u, hl - .08).addScaledVector(n, ht), n]; }
     if (p.mode === 'wall') { const u = long.clone().multiplyScalar(p.sgn), n = thin.dot(away) >= 0 ? thin.clone().negate() : thin.clone(); return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(n, ht), n]; }   // his side of it
-    if (p.mode === 'post') { const hw = Math.min(p.sz[p.Wd], p.sz[p.T]) / 2; return [p.c.clone().addScaledVector(UP, hl - .05).addScaledVector(toward, hw), toward]; }
-    if (p.mode === 'brace') { const u = long.clone().multiplyScalar(p.sgn), hw = p.sz[p.Wd] / 2; return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(toward, hw), toward]; }
+    // post / brace: the face of the timber that looks most toward him (not 'toward' itself: on a square post that pointed into a corner and the nail sat 1 cm inside the wood)
+    const faceTo = () => { const a = [p.Wd, p.T].map(k => [k, p.ax[k].dot(toward)]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]))[0]; return [p.ax[a[0]].clone().multiplyScalar(Math.sign(a[1]) || 1), p.sz[a[0]] / 2]; };
+    if (p.mode === 'post') { const [fn, hw] = faceTo(); return [p.c.clone().addScaledVector(UP, hl - .05).addScaledVector(fn, hw), fn]; }
+    if (p.mode === 'brace') { const u = long.clone().multiplyScalar(p.sgn), [fn, hw] = faceTo(); return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(fn, hw), fn]; }
     if (p.mode === 'shingle') { const lu = Math.abs(long.y) > Math.abs(wid.y); const up = (lu ? long : wid).clone(), hu = (lu ? p.sz[p.L] : p.sz[p.Wd]) / 2; if (up.y < 0) up.negate(); const n = thin.y > 0 ? thin.clone() : thin.clone().negate(); return [p.c.clone().addScaledVector(up, -hu * .85).addScaledVector(n, ht), n]; }
     return [p.c.clone(), UP.clone()];
   }
@@ -384,7 +399,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
     rope: d => { if (fray && d != null) fray.d = d; return fray ? fray.d : null; },
     hit: k => { if (!ready) init(); const p = k ? hit(k) : event(); return p ? p.id : null; },
     snap: () => { for (const p of parts.values()) { p.vis = p.d; apply(p); } for (const m of dirty) m.instanceMatrix.needsUpdate = true; dirty.clear(); },
-    nails, nail: (pos, nrm, id) => { if (id != null) nailedBy.add(id); return nail(pos, nrm); },
+    nails, nail: (pos, nrm, id) => { if (id != null) nailedBy.add(id); return nail(pos, nrm, id != null ? parts.get(id) : null); },
     nailPart: id => nailPart(id),
     windows: () => panes.map((p, i) => ({ i, room: p.room, cracked: p.d > 0, pos: p.at.toArray().map(v => +v.toFixed(2)) })),
     crack: (i, on = true) => { const p = panes[i]; if (!p) return false; setPane(p, on ? 1 : 0); p.work = 0; return true; },

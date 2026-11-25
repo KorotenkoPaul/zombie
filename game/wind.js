@@ -100,7 +100,7 @@ vec2 waterSlope(vec3 p){float s=windStrength(p);vec2 d=uWind.xy;
 vec3 waterNormal(vec3 p){vec2 sl=waterSlope(p);return normalize(vec3(-sl.x,1.,-sl.y));}`;
 
 export function createWind(opt = {}) {
-  let seed = opt.seed || 9071;
+  let seed = opt.seed || (1 + Math.floor(Math.random() * 2147483645));   // [ENV] was a fixed 9071: every session had the very same weather (first rain always day 2, 15:00). The QA harness seeds Math.random, so tests stay repeatable
   const R = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const rr = (a, b) => a + R() * (b - a);
 
@@ -127,7 +127,7 @@ export function createWind(opt = {}) {
   // morning fog bank: on most mornings a light breeze carries a bank of mist in from the forest, it rolls through the
   // clearing along the wind and lifts as the sun comes up. fogBank = {front (m along dir), k 0..1}
   const fb = { front: -1e4, k: 0, on: false, tried: false };
-  let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(18, 54), rainKind = 'none', rainHr = null;
+  const cl = { k: 0, grey: 0, hr: null, day: -1 }; let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(3, 36), rainKind = 'none', rainHr = null;
   // three kinds of rain: a fine drizzle (light, long, no wind change), a proper rain, and a rare storm (windy, heavy,
   // distant thunder and lightning lighting up the fog)
   const RAIN = { drizzle: { p: 0.45, dur: [270, 630], amt: 0.35 }, rain: { p: 0.4, dur: [180, 450], amt: 0.75 }, storm: { p: 0.15, dur: [225, 500], amt: 1 } };   // real s (x1.5 for the 24-min day)
@@ -137,7 +137,7 @@ export function createWind(opt = {}) {
       rainKind = kind; rainLeft = rr(...RAIN[kind].dur);
       if (!forced) { if (kind === 'storm') { mode = 'windy'; target = rr(0.75, 0.95); spellLeft = rainLeft; nextStrike = rr(6, 20); }
         else if (kind === 'rain' && mode === 'calm') { mode = 'breeze'; target = rr(...MODES.breeze.base); spellLeft = rainLeft * 0.6; } } }
-    else { rainWait = rr(18, 54); rainKind = 'none'; }
+    else { rainWait = rr(14, 46); rainKind = 'none'; if (R() < 0.5) cl.grey = rr(1.5, 5); }   // [ENV] after a rain the sky often stays grey a while
     if (!quiet) emit('rain', { on, kind: rainKind });
   }
   // lightning: a storm strikes every 15-50 s, kilometres away. Each strike is two or three quick flickers (W.flash()),
@@ -205,6 +205,11 @@ export function createWind(opt = {}) {
       if (hour != null) { if (lastHr != null && hour < lastHr - 12) dayN++; lastHr = hour; hourNow = hour;
         // the evening settles: soon after sunset the current spell gives way (mostly to calm, see pickNext)
         if (evening() && eveDone !== dayN && !rainOn && !forced) { eveDone = dayN; spellLeft = Math.min(spellLeft, rr(8, 30)); } }
+      // [ENV] cloud cover 0..1: the sky clouds over in the last ~2 game hours before a rain, clears slowly after it, and
+      // some dry spells are simply overcast (after a rain, or a grey day from the morning)
+      if (hour != null) { const h0 = cl.hr ?? hour; let dh = hour - h0; if (dh < -12) dh += 24; if (dh < 0 || dh > 2) dh = 0; cl.hr = hour; cl.grey -= dh;
+        if (hour >= 6 && hour < 7 && cl.day !== dayN) { cl.day = dayN; if (R() < 0.28) cl.grey = rr(3, 9); } }
+      { const want = rainOn ? 1 : Math.max(Math.min(1, Math.max(0, 1 - rainWait / 2)) * 0.9, cl.grey > 0 ? 0.75 : 0); cl.k += (want - cl.k) * Math.min(1, dt / (want > cl.k ? 45 : 70)); }
       // rain spells
       if (rainOn) { rainLeft -= dt; if (rainLeft <= 0) setRain(false); } else { /* game hours: from the clock when index gives it, else the old 20 s per hour */ let dh = dt / 20; if (hour != null) { dh = rainHr == null ? 0 : hour - rainHr; if (dh < -12) dh += 24; if (dh < 0 || dh > 2) dh = 0; rainHr = hour; } rainWait -= dh; if (rainWait <= 0) setRain(true); }
       // lightning and thunder
@@ -277,6 +282,7 @@ export function createWind(opt = {}) {
     setRain(on, kind) { setRain(!!on, false, kind); },
     // how hard it rains now (index.html eases rainK towards this): 0, drizzle .35, rain .75, storm 1
     rainAmt() { return rainOn ? RAIN[rainKind].amt : 0; },
+    cloud() { return cl.k; },   // [ENV] 0 clear .. 1 fully overcast (rain), eased
     rainKind() { return rainKind; },
     // lightning flash 0..1 right now (W.applyFlash lights the scene with it); strike(distKm) for tests
     flash() { return flashV; },
@@ -286,17 +292,20 @@ export function createWind(opt = {}) {
     applyFlash({ hemi, fog, sky, fogMats } = {}) {
       const f = flashV; if (f < 0.002) return;
       const c = W._fc || (W._fc = fog && fog.color.clone());
-      if (fog) { c.setRGB(0.72, 0.78, 0.92); fog.color.lerp(c, f * 0.55); }
-      if (hemi) hemi.intensity += f * 1.4;
+      if (fog) { c.setRGB(0.72, 0.78, 0.92); fog.color.lerp(c, f * 0.3); }
+      if (hemi) hemi.intensity += f * 1.0;   // [ENV] less flat wash (was fog .55, hemi 1.4: a milky grey frame); index.html adds the hard shadowed key light and lights the clouds
       if (sky && sky.hor) sky.hor.value.lerp(c, f * 0.6);
       if (fogMats) { const seen = new Set(); for (const m of fogMats) { const u = m.material && m.material.uniforms; const cv = u && u.col && u.col.value;
-        if (cv && cv.lerp && !seen.has(cv)) { seen.add(cv); cv.lerp(c, f * 0.6); } } }
+        if (cv && cv.lerp && !seen.has(cv)) { seen.add(cv); cv.lerp(c, f * 0.38); } } }
     },
     emit(k, e) { emit(k, e); },   // other wind-thread modules (housewind.js) raise events here too
     on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
-    gust(amp) { startGust(amp); },
+    // [ENV] gust(amp) starts a gust; gust() with no argument only READS how windy it is (0..1). Brain and housewear call
+    // w.gust() as a getter every frame, which restarted the gust at the edge each frame: gusts never reached the tree.
+    gust(amp) { if (amp === undefined) return W.strength(); startGust(amp); },
+    strength() { return Math.max(0, Math.min(1, W.level() / 1.5)); },
 
     // a small tiling noise texture (fbm baked once): one or two texture reads instead of 4-5 octaves of procedural
     // noise per pixel. Shared by the fog layers (fogbank.js; Environment may use it too): __wind.noiseTexture(THREE)
@@ -480,7 +489,7 @@ export function createWind(opt = {}) {
       const st = rainOn ? rainKind : fb.k > 0.25 ? 'mist' : (forced || mode) === 'calm' ? 'calm' : 'clear';
       return { state: st, intensity: +(rainOn ? amt : st === 'mist' ? fb.k : Math.min(1, lv)).toFixed(2), wind: forced || mode, windLevel: +lv.toFixed(2), gust: gustIn, rain: rainKind, rainAmt: amt, wet: +wet.toFixed(2),
         mist: +fb.k.toFixed(2), storm: rainOn && rainKind === 'storm', stillEvening: evening() && mode === 'calm' && !rainOn,
-        sinceThunder: Math.min(9999, +(T - lastThunder).toFixed(1)), temp: +temp.toFixed(1), feels: +feels.toFixed(1), cold: feels < 6 };
+        sinceThunder: Math.min(9999, +(T - lastThunder).toFixed(1)), cloud: +cl.k.toFixed(2), overcast: !rainOn && cl.k > 0.5, temp: +temp.toFixed(1), feels: +feels.toFixed(1), cold: feels < 6 };
     },
     on: (k, f) => W.on(k, f), setRain: (on, kind) => W.setRain(on, kind), strike: d => W.strike(d), set: m => W.set(m)
   };

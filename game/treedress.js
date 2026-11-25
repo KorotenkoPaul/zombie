@@ -434,13 +434,14 @@ uniform float tdCool;` + NOISE)
       branchHook(sh, AX, AZ);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
-        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}')
+        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.8+.4*f+.18*(g-.5)*clamp(1.-length(fwidth(tdP))*55.*.45,0.,1.);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}')
         // a cushion of moss is a pile of tiny stems, not a smooth skin: a fine fuzzy bump on the lit side (critic: the patches
         // on the roots read as flat green felt from the close zoom)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
- { float hgt=td_n(tdP*160.)*.6+td_n(tdP*47.)*.4; vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition); float hx=dFdx(hgt),hy=dFdy(hgt);
+ { float px=length(fwidth(tdP)); float aF=clamp(1.-px*160.*.45,0.,1.), aM=clamp(1.-px*47.*.45,0.,1.); /* fade the stems once they are smaller than a pixel: aliased, they drew black hatching */
+   float hgt=(td_n(tdP*160.)-.5)*.6*aF+(td_n(tdP*47.)-.5)*.4*aM+.5; vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition); float hx=dFdx(hgt),hy=dFdy(hgt);
    vec3 r1=cross(dpy,normal),r2=cross(normal,dpx); float det=dot(dpx,r1); normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.35);
-   diffuseColor.rgb*=.78+.4*hgt; }`)
+   diffuseColor.rgb*=.86+.26*hgt; }`)
         // weather (same uniforms as the bark): soaked moss deeper and greener, hoar frost on the tops of the cushions on cold nights.
         // Only the green instances (moss), not the brown soil lumps that share this mesh.
         .replace('#include <color_fragment>', `#include <color_fragment>
@@ -452,14 +453,14 @@ uniform float tdCool;` + NOISE)
         .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost;');
       sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost;
     };
-    mat.customProgramCacheKey = () => 'tdMossCushion2'; /* SHADERS rule: own key */
+    mat.customProgramCacheKey = () => 'tdMossCushion3'; /* SHADERS rule: own key */
     const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
     for (let k = 0; k < NUP * 4 && n < NUP; k++) {
       const s = (k % 3 === 2 ? limbs : roots)(); if (!s) continue;
-      const { p } = s; if (blocked(p.x, p.y, p.z, 0.15) || nearDoor(p.x, p.y, p.z)) continue;
+      const { p } = s; if (blocked(p.x, p.y, p.z, 0.28) || nearDoor(p.x, p.y, p.z)) continue;
       // grow in small colonies: keep a sample only if the big moss noise is high here (matches the shader patches loosely)
       if (Math.sin(p.x * 1.3 + p.z * 0.9) + Math.sin(p.y * 1.7 - p.x * 0.6) < -0.3) continue;
       // a colony of a few small domed cushions, not one wide flat sheet (critic: a 0.5 m flat patch read as green felt laid on
@@ -467,10 +468,10 @@ uniform float tdCool;` + NOISE)
       const tA = V(1, 0, 0).cross(s.n); if (tA.lengthSq() < 1e-4) tA.set(0, 0, 1); tA.normalize(); const tB = s.n.clone().cross(tA);
       for (let j = 0, m = 2 + Math.floor(R() * 3); j < m && n < NUP; j++) {
         const a = rr(0, 6.28), d = j ? rr(0.05, 0.15) : 0, q = p.clone().addScaledVector(tA, Math.cos(a) * d).addScaledVector(tB, Math.sin(a) * d);
-        const sz = rr(0.045, 0.11) * (j ? 0.8 : 1) * (p.y > 3 ? 0.8 : 1);
+        const sz = rr(0.045, 0.11) * (j ? 0.8 : 1) * (p.y > 3 ? 0.8 : 1); if (j && blocked(q.x, q.y, q.z, 0.12 + sz)) continue; /* [house exterior round] a colony member under a floor's edge poked up through the board ends as a flat green disc */
         M4.compose(q.addScaledVector(s.n, -sz * 0.2), orient(s.n, rr(0, 6.28)), S.set(sz * rr(1, 1.35), sz * rr(0.45, 0.65), sz * rr(0.85, 1.15)));
         im.setMatrixAt(n, M4);
-        const v = rr(0.85, 1.15); col.setRGB(0.05 * v, 0.075 * v * rr(0.95, 1.08), 0.022 * v); im.setColorAt(n, col); n++; }
+        const v = rr(0.85, 1.15); col.setRGB(0.085 * v, 0.125 * v * rr(0.95, 1.08), 0.03 * v); im.setColorAt(n, col); n++; } /* sunlit cushion moss is a lively yellow-green (it read as a dark sponge close up) */
     }
     // roofs: moss creeps over the shingles in a few patches, mostly low on the slope near the eaves and against the trunk
     const roofs = C.roofs; const qi = new THREE.Quaternion(), pi = V(), si = V(), nrm = V();
@@ -482,10 +483,14 @@ uniform float tdCool;` + NOISE)
         // patchy: a low-frequency mask in world space, denser on the back (shady, -z) half and near the trunk
         const patch = Math.sin(pi.x * 2.1 + pi.z * 1.3) + Math.sin(pi.z * 2.7 - pi.y * 1.9) + (pi.z < AZ + 1.6 ? 0.5 : -0.4) + (radial(pi.x, pi.z) < 3 ? 0.4 : 0);
         if (patch < 0.6 || R() < 0.35) continue;
-        const p = pi.clone().addScaledVector(nrm, si.y * 0.5).add(V(rr(-0.08, 0.08), 0, rr(-0.08, 0.08)));
-        const sz = rr(0.07, 0.15);
-        M4.compose(p, orient(nrm, rr(0, 6.28)), S.set(sz * rr(1.2, 1.9), sz * 0.3, sz * rr(1, 1.4))); im.setMatrixAt(n, M4);
-        const v = rr(0.8, 1.2); col.setRGB(0.055 * v, 0.08 * v, 0.025 * v); im.setColorAt(n++, col);
+        // [PROPS roof round] moss roots in the damp step where this slate's butt edge lies on the one below, as a short row of
+        // small domed cushions along that edge (the flat 15-30 cm ovals on the open slate read as green blots painted on)
+        const dn = V(1, 0, 0).applyQuaternion(qi); if (dn.y > 0) dn.negate(); const ed = nrm.clone().cross(dn).normalize();
+        const base = pi.clone().addScaledVector(dn, si.x * 0.5 + 0.012).addScaledVector(nrm, -si.y * 0.1);
+        for (let j = 0, m = 1 + Math.floor(R() * 3); j < m && n < NUP + Math.round(110 * MUL); j++) {
+          const p = base.clone().addScaledVector(ed, rr(-0.45, 0.45) * si.z), sz = rr(0.028, 0.055);
+          M4.compose(p, orient(nrm, rr(0, 6.28)), S.set(sz * rr(1.1, 1.6), sz * 0.55, sz * rr(0.9, 1.2))); im.setMatrixAt(n, M4);
+          const v = rr(0.8, 1.2); col.setRGB(0.07 * v, 0.1 * v, 0.03 * v); im.setColorAt(n++, col); }
       }
     }
     // plank landings and the deck: moss along the back (north) edges and the board ends, where water stays longest
@@ -497,9 +502,9 @@ uniform float tdCool;` + NOISE)
         if (p.z > AZ + 2.2 && R() < 0.8) continue; // mostly the back / trunk side
         if (Math.sin(p.x * 3.1 + p.z * 2.3) + Math.sin(p.z * 1.7 - p.x * 2.2) < 0.2) continue;
         if (R() < 0.55) continue; // only a thin creep of moss at the board ends
-        const sz = rr(0.035, 0.07);
-        M4.compose(p, orient(UP, rr(0, 6.28)), S.set(sz * rr(1.2, 2.0), sz * 0.22, sz * rr(0.8, 1.2))); im.setMatrixAt(n, M4);
-        const v = rr(0.8, 1.2); col.setRGB(0.05 * v, 0.075 * v, 0.024 * v); im.setColorAt(n++, col);
+        const sz = rr(0.022, 0.04), ax = rr(0, 6.28); /* [house exterior round] a few small domes, not one flat squashed disc (read as a green blot painted on the board) */
+        for (let j = 0, m = 2 + Math.floor(R() * 2); j < m && n < N; j++) { const q = p.clone().add(V(Math.cos(ax) * (j - (m - 1) / 2) * sz * 1.5, -sz * .12, Math.sin(ax) * (j - (m - 1) / 2) * sz * 1.5)), z = sz * rr(.7, 1.1); M4.compose(q, orient(UP, rr(0, 6.28)), S.set(z * rr(1, 1.3), z * .6, z * rr(.85, 1.1))); im.setMatrixAt(n, M4);
+        const v = rr(0.8, 1.2); col.setRGB(0.06 * v, 0.088 * v, 0.026 * v); im.setColorAt(n++, col); }
       }
     }
     // the house grown into the tree: where a post, beam or landing board meets the trunk, moss creeps over the joint -
@@ -819,14 +824,14 @@ uniform float tdCool;` + NOISE)
     // surface. A cap under an overhang (something solid well above it) is left out: it could never be seen.
     const tSnap = performance.now();
     // (a) the bark: the final carved triangles (TREE.tris) bucketed by 0.3 m cells, low ones only; a vertical ray is a 2D point-in-triangle test
-    const CS = 0.3, cells = new Map(), ck = (i, j) => i * 4096 + j;
+    const CS = 0.3, cells = new Map(), ck = (i, j) => i * 4096 + j; const T = (() => { const bk = TREE.bark, bg = bk && bk.geometry, pa = bg && bg.attributes.position; if (!pa) return TREE.tris; bk.updateMatrixWorld(true); const ix = bg.index ? bg.index.array : null, n = ix ? ix.length : pa.count, o = new Float32Array(n * 3), v = new THREE.Vector3(); for (let i = 0; i < n; i++) { v.fromBufferAttribute(pa, ix ? ix[i] : i).applyMatrix4(bk.matrixWorld); o[i * 3] = v.x; o[i * 3 + 1] = v.y; o[i * 3 + 2] = v.z; } return o; })(), nT = T.length / 9; // the bark AS DRAWN (index after the thin-shoot cut): TREE.tris still holds triangles the mesh no longer draws, and caps snapped onto them floated (Ground: caps on the root bark)
     for (let t = 0; t < nT; t++) { const i = t * 9; const y0 = Math.min(T[i + 1], T[i + 4], T[i + 7]); if (y0 > 2.2) continue;
       const x0 = Math.min(T[i], T[i + 3], T[i + 6]), x1 = Math.max(T[i], T[i + 3], T[i + 6]), z0 = Math.min(T[i + 2], T[i + 5], T[i + 8]), z1 = Math.max(T[i + 2], T[i + 5], T[i + 8]);
       for (let a = Math.floor(x0 / CS); a <= Math.floor(x1 / CS); a++) for (let b = Math.floor(z0 / CS); b <= Math.floor(z1 / CS); b++) { const k = ck(a, b); let L = cells.get(k); if (!L) cells.set(k, L = []); L.push(t); } }
-    const barkTop = (x, z, yMax) => { const L = cells.get(ck(Math.floor(x / CS), Math.floor(z / CS))); if (!L) return null; let best = null;
+    const barkTop = (x, z, yMax, up) => { const L = cells.get(ck(Math.floor(x / CS), Math.floor(z / CS))); if (!L) return null; let best = null;
       for (const t of L) { const i = t * 9; const ax = T[i], az = T[i + 2], bx = T[i + 3], bz = T[i + 5], cx = T[i + 6], cz = T[i + 8];
         const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(d) < 1e-9) continue; const u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d, v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d, w = 1 - u - v;
-        if (u < 0 || v < 0 || w < 0) continue; const y = u * T[i + 1] + v * T[i + 4] + w * T[i + 7]; if (y <= yMax && (best === null || y > best)) best = y; }
+        if (u < 0 || v < 0 || w < 0) continue; if (up && (T[i + 5] - T[i + 2]) * (T[i + 6] - T[i]) - (T[i + 3] - T[i]) * (T[i + 8] - T[i + 2]) <= 0) continue; /* only a top face can carry a cap: a root's underside skin (back face from above) left them 5 cm over the drawn top */ const y = u * T[i + 1] + v * T[i + 4] + w * T[i + 7]; if (y <= yMax && (best === null || y > best)) best = y; }
       return best; };
     // (b) the ground as drawn: the ground mesh's own grid (bilinear), not groundH (its fine noise is not in the 128-cell mesh)
     let gridH = null;
@@ -838,10 +843,10 @@ uniform float tdCool;` + NOISE)
           return (H[b * n + a] * (1 - tx) + H[b * n + a + 1] * tx) * (1 - tz) + (H[(b + 1) * n + a] * (1 - tx) + H[(b + 1) * n + a + 1] * tx) * tz; }; } }
     const snap = (p, maxUp = 0.45) => {
       const over = barkTop(p.x, p.z, 9); if (over !== null && over > p.y + maxUp) return null;   // under an overhang: never seen
-      const bt = barkTop(p.x, p.z, p.y + maxUp), gh = gridH ? gridH(p.x, p.z) : null;
+      const bt = barkTop(p.x, p.z, p.y + maxUp, true), gh = gridH ? gridH(p.x, p.z) : null;
       const y = Math.max(bt ?? -1e9, gh ?? -1e9); if (y < -1e8 || y < p.y - 0.35) return null; p.y = y - 0.008; return p; };
     let ns = 0;
-    for (let k = 0; k < 200 && ns < NSM - NBASE * 3; k++) {
+    for (let k = 0; k < 500 && ns < NSM - NBASE * 3; k++) {
       const s0 = onRoots(); if (!s0) break; const p0 = s0.p; if (p0.z < AZ - 0.5 && R() < 0.75) continue; if (blocked(p0.x, p0.y + 0.2, p0.z, 0.1) || nearDoor(p0.x, p0.y, p0.z)) continue;
       const cnt = 2 + Math.floor(R() * 4);
       for (let j = 0; j < cnt && ns < NSM; j++) {

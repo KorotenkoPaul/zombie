@@ -195,7 +195,10 @@ function boxUV(geo, grain, scale = 1 / .9) {
   }
   uv.needsUpdate = true; return geo;
 }
-function lathe(pts, seg = 16) { return new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), Math.min(seg, 16)); } // perf: 16 around is smooth at phone size
+let FINE = 0;   // [PROPS round] set while building things the hero holds up to the camera (pot, kettle, ladle, plate, lantern): rounder
+// fine(build): those few vessels get 24 sides and no size-based LOD reduction (a 20 cm pot came out a 10-sided prism)
+const fine = f => { FINE = 1; try { return f(); } finally { FINE = 0; } };
+function lathe(pts, seg = 16) { return new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), Math.min(seg, FINE ? 24 : 16)); } // perf: 16 around is smooth at phone size
 function add(parent, geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; }
 
 // ---------------- materials ----------------
@@ -226,8 +229,9 @@ function makeMaterials(renderer) {
     woodRed: std({ ...wt('#A85E34', '#5E2E16', '#D48A52', 1), roughness: .7 }),        // tool handles
     stave: std({ map: texOf(staveCanvas('#B87842', '#4A2A14', 14)), roughness: .75 }),
     staveDark: std({ map: texOf(staveCanvas('#9A6036', '#3A2010', 12)), roughness: .78 }),
-    weave: std({ map: texOf(weaveCanvas(), { rep: 7 }), roughness: .9 }),   // fine wicker, not big dots
+    weave: std({ map: texOf(weaveCanvas(), { rep: 7 }), bumpMap: texOf(weaveCanvas(), { srgb: false, rep: 7 }), bumpScale: 1.2, roughness: .9 }),   // fine wicker, not big dots
     iron: metal(0x34383F, .65, .45, .6),
+    hoopIron: metal(0x3B3530, .55, .78, .35),   // barrel hoops: blackened forged iron gone dull and a little rusty, no gloss
     enamel: metal(0x4F5965, .35, .32, .9),
     enamelDark: metal(0x30353C, .4, .4, .6),
     steel: metal(0xB4BBC3, .9, .28, 1.1),
@@ -258,7 +262,7 @@ function makeMaterials(renderer) {
     darkInside: std({ color: 0x15100D, roughness: 1, side: THREE.BackSide }),
     fire: std({ color: 0x2A120A, emissive: 0xFF6A1E, emissiveIntensity: 1.2, roughness: 1 }),
     ovenGlass: std({ color: 0x2A160C, emissive: 0xFF7A2A, emissiveIntensity: .8, roughness: .1, metalness: 0, envMap: env, envMapIntensity: 1.2, transparent: true, opacity: .55, depthWrite: false }),
-    covers: [0x8E3B2E, 0x2F5D7C, 0x4E6B3A, 0xB2803A, 0x6B4A7A, 0x9C5B2E, 0x3E4C5E].map(c => std({ color: c, roughness: .7 })),
+    covers: [0x8E3B2E, 0x2F5D7C, 0x4E6B3A, 0xB2803A, 0x6B4A7A, 0x9C5B2E, 0x3E4C5E].map(c => std({ color: c, roughness: .85, ...bookClothOf() })), /* book cloth: a fine weave, rubbed pale at the edges and corners (were flat plastic colours) */
     cans: [['#B8442E', '#E9D7A8'], ['#3F6E9A', '#F0E6CC'], ['#6E8F4A', '#F3E2B0'], ['#C99A3A', '#5A3A22']].map(([a, b]) => std({ map: texOf(labelCanvas(a, b)), metalness: .5, roughness: .4, envMap: env, envMapIntensity: .8 })),
   };
   // linen (pillows, bolster, lampshade): a real weave with slubs, soft washed-out stains and a faint ticking stripe,
@@ -303,7 +307,7 @@ const ATL = (() => {
       if (s.u1 - s.u0 > 6 || s.v1 - s.v0 > 6) return false; /* a long repeated strip stays on its own texture */ s.gs.push({ g, a }); return true; },
     mat() { if (!mat) { mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, side: THREE.DoubleSide }); mat.userData.atlas = true;
         mat.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float vmet; varying float vMet;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMet = vmet;');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;'); };
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;\n//#include <metalnessmap_fragment>'); }; /* the commented include stays as the anchor rain.js's wet hook inserts after (it found none: merged props never got wet) */
         mat.customProgramCacheKey = () => 'atlasV'; } return mat; },
     // tile size: the texture's own pixels per repeat, at most 512
     build() { if (!src.size) return; const L = [...src.values()].filter(s => s.gs.length);
@@ -336,14 +340,14 @@ function plainOf(m) {
   const env = m.envMap || ENV0; const side = m.side === THREE.BackSide ? THREE.BackSide : THREE.DoubleSide; const key = `vc|${side}`; /* one material for env-lit and plain colours: on rough parts the reflection is negligible */
   if (!PLAINV.has(key)) { const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 1, envMap: env || null, envMapIntensity: .9, side }); /* metalness and env reflections kept per band (Critic P8: enamel and the fridge went dark without them) */ pm.userData.plainV = true;
     pm.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float vmet; varying float vMet;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMet = vmet;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;'); };
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMet;').replace('#include <roughnessmap_fragment>', 'float roughnessFactor = roughness * clamp(vColor.a, .04, 1.);').replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vMet;\n//#include <metalnessmap_fragment>'); }; /* anchor for rain.js's wet hook, as in the atlas */
     pm.customProgramCacheKey = () => 'plainV'; PLAINV.set(key, pm); }
   return PLAINV.get(key); }
 // perf: round parts get as many sides as their real size needs (about one side per 6-7 mm of radius, at least 8), so a 4 cm jar
 // is not built like a barrel. Rebuilt from the generator's own parameters; anything else passes through unchanged.
 const _lodWS = new THREE.Vector3();
 const _lodOK = new WeakMap();
-function lodGeo(o) { const g = o.geometry, P = g.parameters; if (!P || !g.attributes.position) return g; o.getWorldScale(_lodWS); const sa = [Math.abs(_lodWS.x), Math.abs(_lodWS.y), Math.abs(_lodWS.z)].sort((a, b) => a - b), sc = sa[1] || 1; const segs = (r, n, mn = 8) => Math.max(Math.min(mn, n), Math.min(n, Math.ceil(r * sc * 100)));
+function lodGeo(o) { const g = o.geometry, P = g.parameters; if (FINE || !P || !g.attributes.position) return g; o.getWorldScale(_lodWS); const sa = [Math.abs(_lodWS.x), Math.abs(_lodWS.y), Math.abs(_lodWS.z)].sort((a, b) => a - b), sc = sa[1] || 1; const segs = (r, n, mn = 8) => Math.max(Math.min(mn, n), Math.min(n, Math.ceil(r * sc * 100)));
   const T = THREE; let mk = null, n0 = 0, n1 = 0;
   switch (g.type) {
     case 'CylinderGeometry': n0 = P.radialSegments; n1 = segs(Math.max(P.radiusTop, P.radiusBottom), n0); mk = n => new T.CylinderGeometry(P.radiusTop, P.radiusBottom, P.height, n, P.heightSegments, P.openEnded, P.thetaStart, P.thetaLength); break;
@@ -440,13 +444,21 @@ function slippers() { const g = new THREE.Group();
     const cap = add(s, capG, M.felt, 0, .02, .055); cap.scale.set(.052, .045, .075); const hole = add(s, new THREE.CircleGeometry(1, 18), lining, 0, .0215, -.02, -Math.PI / 2); hole.scale.set(.04, .05, 1);
     add(s, new THREE.TorusGeometry(.045, .006, 6, 20, Math.PI), M.felt, 0, .022, -.02, -Math.PI / 2, 0, 0).scale.set(1, 1.15, 1); }
   return bake(g); }
-function basket() { const g = new THREE.Group(); add(g, lathe([[0, 0], [.17, 0], [.2, .05], [.22, .3], [.215, .34], [.2, .34], [.19, .06], [0, .06]], 28), M.weave); add(g, new THREE.TorusGeometry(.218, .018, 8, 32), M.weave, 0, .34, 0, Math.PI / 2);
+function basket() { const g = new THREE.Group();
+  // real wicker relief (close zoom: the flat dotted texture read as printed): the outer wall is cut into 1.6 cm rows of strands
+  // that go over and under 18 upright stakes, so each strand bulges out between the stakes, row by row offset
+  { const prof = [[0, 0], [.17, 0], [.2, .05]]; for (let y = .06; y <= .3001; y += .008) prof.push([.2 + (y - .05) / .25 * .02, y]); prof.push([.215, .34], [.2, .34], [.19, .06], [0, .06]);
+    const lg = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 72); const P = lg.attributes.position; /* lathe() caps at 16 around: too few for the stakes */
+    for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), r = Math.hypot(x, z); if (y < .055 || y > .305 || r < .195) continue; const a = Math.atan2(z, x);
+      const row = Math.floor((y - .055) / .016), fy = ((y - .055) / .016) % 1, ph = a * 9 / Math.PI + (row % 2) * 1; // 18 stakes
+      const k = 1 + .028 * Math.max(0, Math.sin(ph * Math.PI)) * Math.sin(fy * Math.PI) - .012 * (fy < .12 || fy > .88 ? 1 : 0); P.setX(i, x * k); P.setZ(i, z * k); }
+    lg.computeVertexNormals(); add(g, lg, M.weave); } add(g, new THREE.TorusGeometry(.218, .018, 8, 32), M.weave, 0, .34, 0, Math.PI / 2);
   // a checked cloth thrown over the contents: humped over what is inside, sagging over the rim in soft folds (was a smooth white dome)
   { const cg = new THREE.PlaneGeometry(.52, .52, 26, 26); cg.rotateX(-Math.PI / 2); const P = cg.attributes.position;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), a = Math.atan2(z, x); let y;
       if (r < .2) y = .345 + .07 * (1 - Math.pow(r / .2, 2)) + .01 * Math.sin(x * 40) * Math.sin(z * 33);
       else { const o = r - .2; y = .345 - Math.min(.13, o * 1.4) + .012 * Math.sin(a * 7 + 1) * Math.min(1, o / .05); const k = (.226 + o * .3) / r; /* a short skirt over the rim, never down to the floor */ P.setX(i, x * k); P.setZ(i, z * k); } P.setY(i, y); }
-    cg.computeVertexNormals(); const tm = new THREE.MeshStandardMaterial({ map: texOf(towelCanvas()), roughness: .95, side: THREE.DoubleSide, color: 0xD6CCBC }); /* a washed, sun-faded check */ tm.map.repeat.set(2, 2); add(g, cg, tm, 0, 0, 0, 0, .4, 0); }
+    cg.computeVertexNormals(); const tm = new THREE.MeshStandardMaterial({ map: texOf(towelCanvas()), roughness: .95, side: THREE.DoubleSide, color: 0xBDB2A2 }); /* a washed, sun-faded check (dulled again: at closest zoom it read as a fresh picnic cloth) */ tm.map.repeat.set(2, 2); add(g, cg, tm, 0, 0, 0, 0, .4, 0); }
   return bake(g); }
 function chair() {
   const g = new THREE.Group(); const S = .46, w = .44, d = .42;
@@ -459,7 +471,7 @@ function chair() {
 }
 function table() { const g = new THREE.Group(); W(g, .82, .04, .56, 0, .72, 0, { mat: M.woodLight, r: .019 }); for (const [x, z] of [[-.35, -.22], [.35, -.22], [-.35, .22], [.35, .22]]) W(g, .05, .7, .05, x, .35, z, { mat: M.woodDark, grain: 1 }); for (const sz of [-1, 1]) W(g, .66, .08, .025, 0, .66, sz * .22, { mat: M.woodDark }); for (const sx of [-1, 1]) W(g, .025, .08, .4, sx * .35, .66, 0, { mat: M.woodDark }); return bake(g); }
 function mug(mat = M.glazeBlue) { const g = new THREE.Group(); add(g, lathe([[0, .002], [.035, 0], [.04, .01], [.042, .09], [.038, .09], [.036, .012], [0, .012]], 20), mat); add(g, new THREE.TorusGeometry(.024, .007, 8, 16, Math.PI), mat, .042, .05, 0, 0, 0, -Math.PI / 2); return g; }
-function candle() { const g = new THREE.Group(); const fm = new THREE.MeshBasicMaterial({ color: 0xFFB050, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); const fl = new THREE.Mesh(lathe([[0, 0], [.007, .006], [.008, .016], [.004, .03], [0, .038]], 10), fm); fl.position.y = .107; fl.userData.live = true; g.add(fl); g.userData.flame = fm; add(g, lathe([[0, 0], [.05, 0], [.055, .012], [.03, .016], [0, .016]]), M.brass); add(g, new THREE.CylinderGeometry(.018, .018, .09, 14), M.linen, 0, .06, 0); return g; }
+function candle() { const g = new THREE.Group(); const fm = new THREE.MeshBasicMaterial({ color: 0xFFB050, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }); const fl = new THREE.Mesh(lathe([[0, 0], [.007, .006], [.008, .016], [.004, .03], [0, .038]], 10), fm); fl.position.y = .107; fl.userData.live = true; g.add(fl); g.userData.flame = fm; add(g, lathe([[0, 0], [.05, 0], [.055, .012], [.03, .016], [0, .016]]), M.brass); { const wax = std2(0xEDE3CC); wax.roughness = .55; add(g, lathe([[0, .016], [.018, .016], [.018, .1], [.0165, .104], [.012, .1], [.005, .101], [0, .1]], 18), wax); for (const [a, l] of [[.4, .035], [2.3, .022], [4.1, .045]]) add(g, new THREE.CapsuleGeometry(.0035, l, 3, 6), wax, Math.cos(a) * .018, .1 - l / 2 - .004, Math.sin(a) * .018); add(g, new THREE.CylinderGeometry(.0012, .0012, .012, 4), std2(0x1A1410), 0, .106, 0, .15); add(g, new THREE.CylinderGeometry(.028, .03, .004, 16), wax, 0, .018, 0); } /* [bedroom round] wax with a melted dip, runs down the side, a burnt wick and a puddle in the dish (it was a linen-textured tube) */ return g; }
 
 // a book: covers on a hinge, page blocks and one page that can turn
 function book({ w = .145, h = .205, cover = M.covers[1], open = 1 } = {}) {
@@ -510,14 +522,14 @@ function stove() {
   const flameGeo = lathe([[0, 0], [.022, .01], [.028, .035], [.02, .07], [.008, .1], [0, .115]], 10);
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xFFA040, transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false });
   // perf: the six flames are one mesh; each vertex carries its flame's spot, speed and phase and the flicker runs in the vertex shader
-  const flameU = { uT: { value: 0 }, uHeat: { value: 0 } }; const flames = [];
+  const flameU = { uT: { value: 0 }, uHeat: { value: 0 }, uSpread: { value: 1 } };   // uSpread (Lights): how far the fire has spread from the kindling at the left (0..1) const flames = [];
   { const fg = flameGeo.index ? flameGeo.toNonIndexed() : flameGeo; const gs = []; for (let i = 0; i < 6; i++) { const q = fg.clone(); const n = q.attributes.position.count; const fl = new Float32Array(n * 4); const fx = -.13 + i * .052 + rr(-.01, .01), fz = rr(-.03, .03), k = rr(.7, 1.3), ph = R() * 6.28;
       for (let v = 0; v < n; v++) fl.set([fx, fz, k, ph], v * 4); q.setAttribute('fl', new THREE.Float32BufferAttribute(fl, 4)); gs.push(q); }
-    flameMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, flameU); sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 fl; uniform float uT, uHeat;').replace('#include <begin_vertex>',
-      'float fn = sin(uT * 9. * fl.z + fl.w) * .5 + sin(uT * 23. * fl.z + fl.w * 2.) * .3; vec3 transformed = position * vec3(1. + fn * .12, (.6 + uHeat * .7) * (1. + fn * .35), 1. + fn * .12); float fa = sin(uT * 5. + fl.w) * .12; transformed.xy = mat2(cos(fa), sin(fa), -sin(fa), cos(fa)) * transformed.xy; transformed.x += fl.x; transformed.z += fl.y;'); };
+    flameMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, flameU); sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 fl; uniform float uT, uHeat, uSpread;').replace('#include <begin_vertex>',
+      'float fn = sin(uT * 9. * fl.z + fl.w) * .5 + sin(uT * 23. * fl.z + fl.w * 2.) * .3; vec3 transformed = position * vec3(1. + fn * .12, (.6 + uHeat * .7) * (1. + fn * .35), 1. + fn * .12); float fa = sin(uT * 5. + fl.w) * .12; transformed.xy = mat2(cos(fa), sin(fa), -sin(fa), cos(fa)) * transformed.xy; float thr = clamp((fl.x + .14) / .3, 0., 1.) * .8; transformed *= smoothstep(thr, thr + .2, uSpread); transformed.x += fl.x; transformed.z += fl.y;'); };   /* Lights: the flames catch one by one from the kindling (left) across the logs, and go out in the same order backwards */
     flameMat.customProgramCacheKey = () => 'ovenFlames'; const fm = new THREE.Mesh(mergeGeometries(gs, false), flameMat); fm.frustumCulled = false; fm.userData.live = true; fire.add(fm); }
-  // baking tray with buns on the rack
-  { const tr = new THREE.Group(); tr.position.set(0, oy0 + .206, .02); g.add(tr); add(tr, rb(ow * .78, .012, D * .55, .004), M.iron, 0, .006, 0); for (let i = 0; i < 4; i++) { const b = add(tr, new THREE.SphereGeometry(.035, 14, 8, 0, 6.283, 0, Math.PI / 2), M.bread, -.13 + i * .087, .012, rr(-.03, .03)); b.scale.y = .7; } }
+  // an empty baking tray on the rack (critic P2 pass 22: buns sat in it all night over the embers; nobody bakes here, so it is empty) - rr calls kept so the random stream below stays the same
+  { const tr = new THREE.Group(); tr.position.set(0, oy0 + .206, .02); g.add(tr); add(tr, rb(ow * .78, .012, D * .55, .004), M.iron, 0, .006, 0); for (let i = 0; i < 4; i++) rr(-.03, .03); }
   for (let i = 0; i < 7; i++) add(g, new THREE.CylinderGeometry(.004, .004, D - .1, 6), M.steel, -ow / 2 + .04 + i * (ow - .08) / 6, oy0 + .2, .02, Math.PI / 2);
   // cooktop, backsplash, burners
   add(g, rb(Wd + .02, .035, D + .02, .01), M.enamelDark, 0, top - .0175, 0);
@@ -533,8 +545,14 @@ function stove() {
   // oven door on a hinge at its bottom edge
   const door = new THREE.Group(); door.userData.live = true; door.position.set(0, oy0 - .005, D / 2); g.add(door);
   const dh = oy1 - oy0 + .03, dw = Wd - .1;
-  add(door, rb(dw, dh, .035, .012, 3), M.enamel, 0, dh / 2, .0175);
-  add(door, rb(dw - .16, dh - .17, .012, .006), M.enamelDark, 0, dh / 2 - .015, .036);
+  // Lights (critic E14): the door is a frame round a real window. It was a solid slab with the glass laid on its face, so
+  // nothing inside the oven could ever be seen and the glass read as a painted orange panel. Opening = the glass (dw-.2 x dh-.21).
+  { const oy = dh / 2 - .015, oh = dh - .21, ow2 = dw - .2, top = oy + oh / 2, bot = oy - oh / 2, sw = (dw - ow2) / 2;
+    add(door, rb(dw, dh - top, .035, .012, 3), M.enamel, 0, (dh + top) / 2, .0175); add(door, rb(dw, bot, .035, .012, 3), M.enamel, 0, bot / 2, .0175);
+    for (const sx of [-1, 1]) add(door, rb(sw, oh + .002, .035, .006), M.enamel, sx * (dw - sw) / 2, oy, .0175);
+    const iw = .02;   // the dark inner bead round the window
+    for (const sy of [-1, 1]) add(door, rb(ow2 + 2 * iw, iw, .012, .004), M.enamelDark, 0, oy + sy * (oh + iw) / 2, .036);
+    for (const sx of [-1, 1]) add(door, rb(iw, oh, .012, .004), M.enamelDark, sx * (ow2 + iw) / 2, oy, .036); }
   add(door, new THREE.PlaneGeometry(dw - .2, dh - .21), M.ovenGlass, 0, dh / 2 - .015, .0425);
   add(door, new THREE.CylinderGeometry(.011, .011, dw - .14, 12), M.chrome, 0, dh - .05, .075, 0, 0, Math.PI / 2);
   for (const sx of [-1, 1]) add(door, new THREE.CylinderGeometry(.008, .008, .045, 8), M.chrome, sx * (dw / 2 - .1), dh - .05, .055, Math.PI / 2);
@@ -546,8 +564,8 @@ function stove() {
   g.userData.oven = {
     door, handle: () => door.localToWorld(V(0, dh - .05, .075)), flameMat, fireGroup: fire,
     setOpen(k) { openK = clamp01(k); door.rotation.x = openK * 1.45; }, get open() { return openK; },
-    setHeat(k) { M.fire.emissiveIntensity = .25 + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 + .6 * k; heatK = k; },
-    flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; flameU.uT.value = t; flameU.uHeat.value = heatK; flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
+    setSpread(k) { flameU.uSpread.value = k; }, setHeat(k) { const em = Math.min(1, k * 6); /* a cold stove's coal bed is dead black, embers glow only while there is heat */ M.fire.emissiveIntensity = .06 * em + .45 * k; /* Lights: the bed under the coals is ash, a dull glow; the coals on it (lights.js) carry the heat */ M.ovenGlass.emissiveIntensity = .03 * em + .12 * k; /* Lights (critic E14): a glowing pane read as a painted orange rectangle; the pane stays dark glass and the fire and coals behind it show through */ heatK = k; },
+    flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; flameU.uT.value = t; flameU.uHeat.value = heatK; flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.06 + .45 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
   };
   return g;
 }
@@ -641,13 +659,18 @@ function sinkCounter() {
   add(lst, new THREE.CylinderGeometry(.006, .008, .07, 10), M.chrome, 0, .035, 0); add(lst, new THREE.SphereGeometry(.014, 12, 10), M.ceramic, 0, .074, 0);
   g.userData.lever = lst;
   // on the counter: cutting board with bread, jar, canister
-  add(g, lathe([[0, 0], [.06, 0], [.075, .05], [.07, .13], [.045, .17], [.04, .19], [0, .19]], 22), M.glazeCream, -.38, H, -.2); add(g, lathe([[0, 0], [.048, 0], [.05, .01], [.03, .03], [0, .034]], 16), M.glazeCream, -.38, H + .19, -.2);
-  add(g, lathe([[0, 0], [.045, 0], [.047, .11], [.035, .12], [0, .12]], 18), M.glazeBlue, -.12, H, -.2);
+  add(g, lathe([[0, 0], [.06, 0], [.075, .05], [.07, .13], [.045, .17], [.04, .19], [0, .19]], 22), M.glazeCream, -.43, H, -.22); add(g, lathe([[0, 0], [.048, 0], [.05, .01], [.03, .03], [0, .034]], 16), M.glazeCream, -.43, H + .19, -.22);
+  add(g, lathe([[0, 0], [.045, 0], [.047, .11], [.035, .12], [0, .12]], 18), M.glazeBlue, -.45, H, -.05);
   bake(g); g.userData.info = { top: H }; return g;
 }
 function barrel(h = .78, mat) { const g = new THREE.Group(); const r0 = h * .3, b = h * .055; const pts = []; for (let i = 0; i <= 12; i++) { const y = i / 12 * h; pts.push([r0 + b * Math.sin(Math.PI * i / 12), y]); } pts.push([r0 - .02, h], [r0 - .02, h - .03], [0, h - .03]);
-  add(g, lathe([[0, 0], ...pts], 32), mat || M.stave); add(g, new THREE.CylinderGeometry(r0 - .02, r0 - .02, .01, 32), M.staveDark, 0, h - .03, 0);
-  for (const t of [.1, .3, .7, .9]) { const y = t * h, r = r0 + b * Math.sin(Math.PI * t) + .006; const tor = add(g, new THREE.TorusGeometry(r, .012, 6, 40), M.iron, 0, y, 0, Math.PI / 2); tor.scale.z = 1.8; } return bake(g); }
+  // [PROPS round] one flat facet per stave (14, matching the 14 joints in the stave texture), so the staves read as boards
+  // with crisp joints instead of one smooth glossy tube; the hoops are flat forged bands (rectangular section, 4 cm by 3 mm)
+  // lying on the bulge, not round black rubber rings. Fewer triangles than before (14 + 4x28 x 4 faces vs 32 + 4x40x6).
+  add(g, new THREE.LatheGeometry([[0, 0], ...pts].map(([r, y]) => new THREE.Vector2(r, y)), 14), mat || M.stave); add(g, new THREE.CylinderGeometry(r0 - .02, r0 - .02, .01, 14), M.staveDark, 0, h - .03, 0);
+  for (const t of [.1, .3, .7, .9]) { const y = t * h, hw = .02, rAt = q => r0 + b * Math.sin(Math.PI * q / h);   // same 14 facets as the staves: the band lies flat on every stave
+    const ra = rAt(y - hw) + .0035, rb2 = rAt(y + hw) + .0035;
+    add(g, new THREE.LatheGeometry([[ra - .004, y - hw], [ra, y - hw], [rb2, y + hw], [rb2 - .004, y + hw]].map(([r, yy]) => new THREE.Vector2(r, yy)), 14), M.hoopIron); } return bake(g); }
 // galvanised steel: zinc spangle (crystal flakes of slightly different grey), dull water lines, a rusty rim at the foot
 let _galv = null;
 function galvMat() { if (_galv) return _galv; let ls = 2468; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
@@ -656,16 +679,21 @@ function galvMat() { if (_galv) return _galv; let ls = 2468; const LR = () => { 
     for (let k = 0; k < 10; k++) { const y = h * (.2 + LR() * .6); g.fillStyle = `rgba(90,86,76,${.08 + LR() * .1})`; g.fillRect(0, y, w, 2 + LR() * 5); }
     const gr = g.createLinearGradient(0, 0, 0, h * .14); gr.addColorStop(0, 'rgba(120,62,30,.6)'); gr.addColorStop(1, 'rgba(120,62,30,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h * .14); });
   const t = texOf(c); t.flipY = false; const b = texOf(c, { srgb: false }); b.flipY = false; _galv = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: .4, metalness: .6, roughness: .55, envMap: M.env, envMapIntensity: .5 }); return _galv; }
-function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 = h * .5, r1 = h * .62; add(g, lathe([[0, 0], [r0, 0], [r1, h], [r1 - .012, h], [r0 - .012, .015], [0, .015]], 28), metal ? galvMat() : M.stave);
-  for (const t of metal ? [.97] : [.15, .8]) { const r = r0 + (r1 - r0) * t + .004; const tor = add(g, new THREE.TorusGeometry(r, metal ? .008 : .01, 6, 32), metal ? M.steel : M.iron, 0, h * t, 0, Math.PI / 2); if (!metal) tor.scale.z = 1.6; }
+function bucket(h = .36, metal = false) { const g = new THREE.Group(); const r0 = h * .5, r1 = h * .62, NS = metal ? 28 : 12;
+  // [PROPS round] a pressed tin pail is round (the 16-facet cap made it a polygon), a coopered bucket has 12 flat staves; its hoops
+  // are flat forged bands lying on the staves, not round black rubber rings; the tin pail keeps its rolled wire rim
+  add(g, new THREE.LatheGeometry([[0, 0], [r0, 0], [r1, h], [r1 - .012, h], [r0 - .012, .015], [0, .015]].map(([x, y]) => new THREE.Vector2(x, y)), NS), metal ? galvMat() : M.stave);
+  if (metal) { const r = r1 + .002; add(g, new THREE.TorusGeometry(r, .006, 6, 28), M.steel, 0, h * .985, 0, Math.PI / 2); }
+  else for (const t of [.15, .8]) { const hw = .014, ya = h * t - hw, yb = h * t + hw, ra = r0 + (r1 - r0) * ya / h + .003, rb2 = r0 + (r1 - r0) * yb / h + .003;
+    add(g, new THREE.LatheGeometry([[ra - .003, ya], [ra, ya], [rb2, yb], [rb2 - .003, yb]].map(([x, y]) => new THREE.Vector2(x, y)), NS), M.hoopIron); }
   /* the bail: from two ears at the rim up to 7 cm over its middle, where the fist holds it (a full half-circle rose 19 cm over the rim and the
      fist, at the grip point, held it low by one side: the thin wire ran down into the water, watcher R20-3) */
   { const ey = h - .012, er = r1 + .008;/* ears just under the rolled rim, outside it: lower ears on the tapered wall put the arc inside the rim, through the water */ add(g, new THREE.TorusGeometry(er, .004, 6, 24, Math.PI), M.iron, 0, ey, 0, 0, Math.PI / 2, 0).scale.set(1, .085 / er, 1);
     for (const s of [-1, 1]) add(g, new THREE.CylinderGeometry(.012, .012, .008, 10), M.iron, 0, ey, s * er, Math.PI / 2, 0, 0); }
   return bake(g); }
 const RUG_IMG = { check: 'rug-blue.jpg', orange: 'rug-orange.jpg', green: 'rug-green.jpg' };
-function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1 }); { const pg = new THREE.PlaneGeometry(w, d, 24, 16); pg.rotateX(-Math.PI / 2); const P = pg.attributes.position; const ph = R() * 6, fx = R() * w - w / 2;
-    for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i); let y = .006;
+function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrade(texOf(rugCanvas(kind)), RUG_IMG[kind]); if (kind === 'check') t.repeat.set(w / .7, d / .7); const m = new THREE.MeshStandardMaterial({ map: t, roughness: 1, color: kind === 'orange' ? 0xCDC2BC : 0xffffff });   /* the orange rug glowed like a lit panel in the sun: wool is duller; [photo round] but the photo's rug is a light peach, not brick red: a lighter, slightly cool tint */ { const pg = new THREE.PlaneGeometry(w, d, 24, 16); pg.rotateX(-Math.PI / 2); const P = pg.attributes.position; const ph = R() * 6, fx = R() * w - w / 2;
+    for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i); let y = .014;   /* boards bow up to ~1 cm: at .006 a high board showed through the rug */
       y += .006 * Math.max(0, Math.sin(x * 9 + ph + z * 2)) * Math.max(0, 1 - Math.abs(x - fx) / (w * .3)); // a soft ruck where it was kicked
       y += .003 * Math.sin(x * 23 + z * 7 + ph) * Math.sin(z * 17);
       for (const [cx, cz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]]) { const dd = Math.hypot(x - cx, z - cz); if (dd < .16) y += .028 * Math.pow(1 - dd / .16, 2); } // corners curl up
@@ -676,6 +704,34 @@ function rug(w, d, kind, fringe) { const g = new THREE.Group(); const t = upgrad
 function wallShelf(w, { brackets = true, mat = M.woodLight } = {}) { const g = new THREE.Group(); W(g, w, .035, .24, 0, 0, .12, { mat }); if (brackets) for (const s of [-1, 1]) { const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(.18, 0); sh.quadraticCurveTo(.06, -.04, 0, -.17); sh.lineTo(0, 0); const e = new THREE.ExtrudeGeometry(sh, { depth: .03, bevelEnabled: true, bevelSize: .004, bevelThickness: .004, bevelSegments: 2 }); add(g, e, M.woodDark, s * (w / 2 - .08) - .015, -.018, .01, 0, -Math.PI / 2, 0); } return g; }
 // a jar that reads as a jar up close: shoulder and neck, a ridged screw lid, contents behind glass, a paper label
 const JAR_FILL = [0x8E2A2A, 0xB8862E, 0x6E7A2E, 0xC8642A]; let jarN = 0;
+// photo: a round blue-glazed stoneware crock with a lid stands on the floor left of the bunk. Glaze stops short of the
+// foot (raw cream clay shows at the base, as on real dipped stoneware) and a raised cream slip ring circles the shoulder.
+function crock() { const g = new THREE.Group();
+  add(g, lathe([[0, .004], [.09, 0], [.105, .012], [.107, .03], [0, .03]], 22), M.glazeCream);
+  add(g, lathe([[0, .03], [.107, .03], [.128, .09], [.135, .15], [.124, .21], [.098, .25], [.086, .262], [.088, .275], [.074, .275], [.07, .262], [0, .262]], 22), M.glazeBlue);
+  add(g, new THREE.TorusGeometry(.127, .005, 4, 22), M.glazeCream, 0, .205, 0, Math.PI / 2, 0, 0);
+  add(g, lathe([[0, .262], [.08, .262], [.083, .268], [.07, .282], [.03, .29], [.018, .292], [.02, .308], [.012, .314], [0, .315]], 22), M.glazeBlue);
+  return g; }
+// ---- lived-in details (photo round 2): small things a person who lives here collects ----
+// peg rail with a hand-knitted scarf and a canvas shoulder bag hanging off the pegs (bedroom wall by the bunk)
+function pegRail() { const g = new THREE.Group(); W(g, .62, .075, .022, 0, 0, .011, { mat: M.woodDark, r: .006 });
+  for (const x of [-.22, 0, .22]) { add(g, new THREE.CylinderGeometry(.009, .011, .07, 8), M.woodDark, x, 0, .056, Math.PI / 2 - .25, 0, 0); add(g, new THREE.SphereGeometry(.014, 8, 6), M.woodDark, x, .008, .09); }
+  const knit = std2(0x8C3A32), knitL = std2(0xB8A27A); // a red scarf with a cream stripe, folded over the left peg
+  for (const [dx, len, dz] of [[-.035, .5, .045], [.03, .42, .058]]) { add(g, new THREE.BoxGeometry(.13, len, .014, 1, 6, 1), knit, -.22 + dx, -len / 2 + .015, dz, .04, 0, dx * 1.2);
+    for (const k of [.3, .82]) add(g, new THREE.BoxGeometry(.132, .03, .015), knitL, -.22 + dx, -len * k + .015, dz, .04, 0, dx * 1.2);
+    for (let i = 0; i < 8; i++) add(g, new THREE.CylinderGeometry(.003, .002, .05, 3), knit, -.22 + dx - .058 + i * .0165, -len + .015 - .02, dz); }
+  const canv = std2(0x9C8C6C), strap = std2(0x5A4632); // the bag on the right peg: a soft sack body, flap and strap
+  { const b = add(g, new THREE.SphereGeometry(.13, 12, 9), canv, .22, -.29, .06); b.scale.set(.85, 1, .3); add(g, new THREE.BoxGeometry(.2, .1, .012), canv, .22, -.2, .125, -.12, 0, 0);
+    add(g, new THREE.TorusGeometry(.12, .008, 4, 14, Math.PI), strap, .22, -.16, .07, 0, 0, 0); add(g, new THREE.BoxGeometry(.02, .035, .006), strap, .22, -.24, .13); }
+  return g; }
+// a bunch of herbs hung upside down to dry: twine tie at the top, stems fanning down into dry leafy heads
+function herbBundle(seed, col) { const g = new THREE.Group(); let ls = seed; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const stem = std2(0x6E6A3C), leaf = std2(col);
+  add(g, new THREE.CylinderGeometry(.0015, .0015, .1, 3), std2(0xC8B080), 0, -.05, 0); add(g, new THREE.CylinderGeometry(.014, .014, .02, 8), std2(0xC8B080), 0, -.1, 0);
+  const lg = new THREE.PlaneGeometry(.014, .032); lg.translate(0, -.016, 0); const lm = leaf.clone(); lm.side = THREE.DoubleSide; lm.roughness = .9; // dry leaf cards along each stem
+  for (let i = 0; i < 16; i++) { const a = LR() * 6.28, t = .04 + LR() * .18, L = .15 + LR() * .07; const s = add(g, new THREE.CylinderGeometry(.0015, .002, L, 3), stem, Math.sin(t) * L * .5 * Math.cos(a), -.1 - L / 2, Math.sin(t) * L * .5 * Math.sin(a), Math.sin(a) * t, 0, -Math.cos(a) * t);
+    for (let k = 0; k < 6; k++) { const f = .3 + k * .13, y = -.1 - L * f, r = Math.sin(t) * L * f; const q = add(g, lg, lm, Math.cos(a) * r, y, Math.sin(a) * r, (LR() - .5) * 1.2, LR() * 6.28, Math.PI - (LR() - .5) * 1.4); q.castShadow = false; } }
+  return g; }
 function jar(h, r, mat) { const g = new THREE.Group(); add(g, lathe([[0, 0], [r * .9, 0], [r, r * .12], [r * 1.04, h * .12], [r * 1.04, h * .74], [r * .96, h * .82], [r * .78, h * .87], [r * .76, h * .9], [r * .76, h * .93], [0, h * .93]], 22), mat);
   if (mat === M.jarGlass) { add(g, new THREE.CylinderGeometry(r * .92, r * .92, h * .66, 16), std2(JAR_FILL[jarN++ % JAR_FILL.length]), 0, h * .38, 0); }
   add(g, new THREE.CylinderGeometry(r * .82, r * .82, h * .1, 22), M.steel, 0, h * .97, 0); add(g, new THREE.TorusGeometry(r * .82, h * .012, 4, 22), M.steel, 0, h * .93, 0, Math.PI / 2);
@@ -705,7 +761,9 @@ function plankDoor(h = 1.9, w = .77) { const g = new THREE.Group(); const fr = n
   for (const y of [.35, h - .35]) W(leaf, w - .06, .12, .03, 0, y, .035, { mat: M.woodDark });
   W(leaf, .1, Math.hypot(w - .2, h - .9) , .028, 0, h / 2, .033, { mat: M.woodDark, rz: Math.atan2(w - .2, h - .9) }); // Z brace: worn shelter door
   for (const y of [.35, h - .35]) { add(leaf, rb(.2, .035, .008, .004), M.iron, w / 2 - .1, y, .052); for (const k of [0, 1, 2]) screw(leaf, w / 2 - .17 + k * .06, y, .056); }
-  knob(leaf, -w / 2 + .1, h * .46, .05, M.iron, .022);
+  // [PROPS round] a forged D-pull with two clenched straps instead of a black ball knob (it read as a plastic bead)
+  { const hx = -w / 2 + .1, hy = h * .46; add(leaf, new THREE.TorusGeometry(.042, .0065, 5, 12, Math.PI), M.hoopIron, hx, hy, .05, 0, Math.PI / 2, Math.PI / 2);
+    for (const s of [-1, 1]) add(leaf, rb(.022, .03, .005, .002), M.hoopIron, hx, hy + s * .042, .052); }
   // slide bolt: plate + sliding bar + knob, above the handle
   const by = h * .55; add(leaf, rb(.16, .045, .008, .003), M.iron, -w / 2 + .14, by, .054);
   const bar = new THREE.Group(); bar.position.set(-w / 2 + .14, by, .066); leaf.add(bar); bar.userData.live = true;
@@ -714,6 +772,15 @@ function plankDoor(h = 1.9, w = .77) { const g = new THREE.Group(); const fr = n
   add(fr, rb(.035, .04, .03, .004), M.iron, -w / 2 - .03, by, .06); // keeper on the latch-side post
   bake(fr); bake(leaf);
   g.userData.door = { piv, bar, w, h, barX: -w / 2 + .14 };
+  return g; }
+// an oil lantern on a forged wall bracket; the wall is at local +x .192 (plate with two nails, arm, diagonal brace, hook)
+function bracketLantern() { const g = new THREE.Group(); g.add(lanternHousing(.025)); const wx = .192, ay = .245;
+  add(g, rb(.02, .17, .06, .004), M.iron, wx, ay - .05, 0);
+  for (const y of [ay + .01, ay - .11]) add(g, new THREE.CylinderGeometry(.006, .006, .012, 6), M.iron, wx - .012, y, 0, 0, 0, Math.PI / 2);
+  add(g, new THREE.BoxGeometry(wx - .01, .014, .012), M.iron, wx / 2, ay, 0);                              // the arm
+  add(g, new THREE.TorusGeometry(.012, .004, 5, 10), M.iron, 0, ay - .006, 0, 0, Math.PI / 2, 0);              // hook at its tip
+  const b0 = V(wx - .01, ay - .12, 0), b1 = V(wx * .45, ay, 0), bd = b1.clone().sub(b0);
+  const br = add(g, new THREE.BoxGeometry(.01, bd.length(), .01), M.iron, (b0.x + b1.x) / 2, (b0.y + b1.y) / 2, 0); br.rotation.z = -Math.atan2(bd.x, bd.y);
   return g; }
 function switchPlate() { const g = new THREE.Group(); add(g, rb(.08, .12, .012, .006), M.ceramic, 0, 0, .006); add(g, rb(.018, .035, .02, .004), M.ceramic, 0, 0, .014); return g; }
 
@@ -789,7 +856,7 @@ function workbench() {
   { const b = new THREE.Group(); b.position.set(.35, H, -.18); g.add(b); W(b, .16, .05, .1, 0, .025, 0, { mat: M.woodDark, r: .006 }); for (let i = 0; i < 10; i++) add(b, new THREE.CylinderGeometry(.002, .002, .05, 5), M.steel, rr(-.06, .06), .05, rr(-.035, .035), rr(-.6, .6), 0, Math.PI / 2 + rr(-.3, .3)); }
   { const p = new THREE.Group(); p.position.set(-.5, H, -.15); p.rotation.y = .4; g.add(p); W(p, .22, .05, .06, 0, .025, 0, { mat: M.woodRed, r: .012 }); add(p, rb(.12, .04, .05, .015), M.iron, -.01, .065, 0); add(p, new THREE.SphereGeometry(.02, 10, 8), M.woodRed, .07, .07, 0); }
   // curled shavings from the plane
-  { const sm = std2(0xE6B87A); for (let i = 0; i < 9; i++) { const s = add(g, new THREE.TorusGeometry(rr(.012, .02), rr(.002, .004), 4, 10, rr(3, 5.5)), sm, -.38 + rr(-.08, .1), H + .012, -.1 + rr(-.08, .1), Math.PI / 2 + rr(-.4, .4), rr(0, 6), 0); s.scale.z = rr(1.5, 2.5); } }
+  { const sm = std2(0xD8BC8E); sm.side = THREE.DoubleSide; sm.roughness = .8; for (let i = 0; i < 9; i++) { const r0 = rr(.009, .014), L = rr(.06, .11), wd = rr(.012, .02), pg = new THREE.PlaneGeometry(L, wd, 18, 1), P = pg.attributes.position; for (let j = 0; j < P.count; j++) { const u = (P.getX(j) + L / 2) / L, th = u * L / r0, r = r0 * (1 + .9 * (1 - u)); P.setXYZ(j, r * Math.sin(th), P.getY(j) + u * wd * .6, r * Math.cos(th)); } pg.computeVertexNormals(); add(g, pg, sm, -.38 + rr(-.08, .1), H + .016, -.1 + rr(-.08, .1), Math.PI / 2 + rr(-.4, .4), rr(0, 6), 0); } } /* [workshop round] thin, wide plane shavings rolled into loose spirals (round tori read as macaroni) */
   // more bench clutter like the photo: offcut blocks, tape measure, a carpenter's pencil, a C-clamp at the front edge
   for (const [x, z, w, h, a] of [[.22, .16, .2, .05, .3], [.3, .2, .12, .04, -.2], [.26, .17, .09, .09, .5]]) W(g, w, h, .07, x, H + h / 2 + (h > .06 ? .0 : 0), z, { mat: M.woodLight, ry: a, r: .006 });
   { const t = new THREE.Group(); t.position.set(.72, H, .16); t.rotation.y = -.4; g.add(t); add(t, rb(.07, .07, .035, .012), M.gripYellow, 0, .018, 0, Math.PI / 2); add(t, new THREE.CylinderGeometry(.012, .012, .036, 12), M.iron, 0, .036, 0); add(t, rb(.12, .002, .018, .0008), M.gripYellow, .09, .002, .0); }
@@ -798,6 +865,7 @@ function workbench() {
   bake(g); g.userData.info = { top: H }; return g;
 }
 function stool(S = .48) { const g = new THREE.Group(); add(g, lathe([[0, 0], [.15, 0], [.165, .008], [.172, .024], [.166, .04], [.15, .048], [0, .048]], 32), M.wood, 0, S - .048, 0);
+  add(g, new THREE.CylinderGeometry(.152, .152, .002, 20), M.woodDark, 0, S + .0005, 0);   // [PROPS round] the seat's top: one slab of straight grain, worn dark by sitting (the lathe's UVs swirled the grain round the centre like an orange plastic lid)
   for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; const l = add(g, new THREE.CylinderGeometry(.022, .018, S - .03, 10), M.woodDark, Math.cos(a) * .12, (S - .03) / 2, Math.sin(a) * .12); l.rotation.set(Math.sin(a) * .13, 0, -Math.cos(a) * .13); }
   const ring = add(g, new THREE.TorusGeometry(.14, .011, 6, 28), M.woodDark, 0, .17, 0, Math.PI / 2); void ring; bake(g); g.userData.info = { seat: S }; return g; }
 // ---- tools: built with their handle along +y and the grip point at the origin region ----
@@ -815,7 +883,7 @@ function wrench(len = .26) {
   add(g, EX(roundRect(hw * .45, len * .5, hw * .2), t * .3, .001), M.chrome, 0, 0, t * .45);
   g.userData.grip = V(0, -len * .05, 0); return g;
 }
-function hammer() { const g = new THREE.Group(); add(g, lathe([[0, -.15], [.014, -.15], [.017, -.12], [.015, 0], [.012, .1], [.014, .14], [0, .14]], 14), M.woodRed); add(g, rb(.12, .035, .035, .008), M.iron, .02, .155, 0); add(g, new THREE.CylinderGeometry(.022, .02, .035, 16), M.iron, .085, .155, 0, 0, 0, Math.PI / 2);
+function hammer() { const g = new THREE.Group(); add(g, lathe([[0, -.15], [.014, -.15], [.017, -.12], [.015, 0], [.012, .1], [.014, .14], [0, .14]], 14), M.woodRed); add(g, rb(.12, .035, .035, .008), M.iron, .02, .155, 0); add(g, new THREE.CylinderGeometry(.022, .02, .035, 16), M.iron, .085, .155, 0, 0, 0, Math.PI / 2); add(g, new THREE.CircleGeometry(.0205, 16), M.steel, .1035, .155, 0, 0, Math.PI / 2, 0); /* [workshop round] a bright struck face on the black head */
   for (const s of [-1, 1]) add(g, new THREE.TorusGeometry(.05, .008, 6, 12, Math.PI * .45), M.iron, -.03, .115, s * .009, 0, 0, Math.PI * .55); g.userData.grip = V(0, -.07, 0); return g; }
 function screwdriver(mat, len = .2) { const g = new THREE.Group(); const hl = len * .45; add(g, lathe([[0, 0], [.012, 0], [.016, hl * .2], [.016, hl * .8], [.011, hl], [0, hl]], 16), mat, 0, -hl, 0); add(g, new THREE.CylinderGeometry(.0035, .0035, len - hl, 8), M.steel, 0, (len - hl) / 2, 0); add(g, rb(.009, .012, .002, .0008), M.steel, 0, len - hl + .004, 0); g.userData.grip = V(0, -hl / 2, 0); return g; }
 function pliers() { const g = new THREE.Group(); for (const s of [-1, 1]) { const h = new THREE.Group(); h.rotation.z = s * .12; g.add(h); add(h, rb(.012, .11, .008, .003), M.steel, 0, .03, 0); add(h, new THREE.CylinderGeometry(.009, .007, .1, 10), M.gripRed, s * -.004, -.07, 0); add(h, rb(.012, .06, .01, .004), M.steel, 0, .11, 0, 0, 0, -s * .14); } add(g, new THREE.CylinderGeometry(.012, .012, .016, 14), M.steel, 0, .085, 0, Math.PI / 2); g.userData.grip = V(0, -.07, 0); return g; }
@@ -888,7 +956,7 @@ function telescope() {
   /* tripod tall enough for the hero's eye: eyepiece ~1.34 m (Grab); the legs stretch, the tube and brass keep their size */
   const g = new THREE.Group(); const top = 1.36, LK = top / 1.08;
   // aged brass (less candy-yellow than TB) and a dark lacquered tube body, like an old field telescope
-  const TB = new THREE.MeshStandardMaterial({ color: 0xB48C48, metalness: .9, roughness: .36, envMap: M.env, envMapIntensity: 1.1 }), LAC = new THREE.MeshStandardMaterial({ color: 0x1C2633, roughness: .3, metalness: .35, envMap: M.env, envMapIntensity: 1.2 });
+  const TB = new THREE.MeshStandardMaterial({ color: 0xA08C62, metalness: .9, roughness: .34, envMap: M.env, envMapIntensity: .85 }) /* [photo round] polished brass fittings that catch the light like the photo's; low saturation so the sun never turns it orange plastic */, LAC = new THREE.MeshStandardMaterial({ color: 0x75623F, roughness: .46, metalness: .85, envMap: M.env, envMapIntensity: .8 }) /* the photo's tube is brass all over: a darker, hand-worn brass body between the bright fittings (the navy lacquer read as black stripes) */;
   for (let i = 0; i < 3; i++) { const l = new THREE.Group(); l.position.set(0, top, 0); l.rotation.y = i * Math.PI * 2 / 3 + .4; l.scale.set(1, LK, LK); g.add(l); W(l, .035, 1.16, .025, 0, -.55, .19, { mat: M.woodDark, grain: 1, r: .008, rx: -.33 }); add(l, rb(.04, .025, .035, .008), TB, 0, -.02, .02); add(l, rb(.022, .016, .13, .004), M.woodDark, 0, -.5, .105); add(l, new THREE.CylinderGeometry(.006, .006, .03, 6), TB, 0, -1.08, .38); }
   add(g, new THREE.CylinderGeometry(.065, .065, .014, 3), M.woodDark, 0, top - .5 * LK, 0); // spreader tray
   add(g, new THREE.CylinderGeometry(.05, .06, .05, 20), TB, 0, top, 0);
@@ -915,6 +983,24 @@ function twillOf() { if (_twill) return _twill; let ls = 3131; const LR = () => 
     for (let k = -h; k < w; k += 3) { g.strokeStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.15 + LR() * .2})`; g.lineWidth = 1; g.beginPath(); g.moveTo(k, 0); g.lineTo(k + h, h); g.stroke(); }
     for (let k = 0; k < 25; k++) { const x = LR() * w, y = LR() * h, r = 6 + LR() * 16; const gr = g.createRadialGradient(x, y, 0, x, y, r); const pale = LR() < .5; gr.addColorStop(0, pale ? 'rgba(255,250,235,.25)' : 'rgba(40,36,28,.14)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
   const t = texOf(c); t.repeat.set(9, 9); const b = texOf(c, { srgb: false }); b.repeat.set(9, 9); _twill = { map: t, bumpMap: b, bumpScale: 1.2 }; return _twill; }
+// leather (quiver, bow grip, diary): was a flat brown at roughness .7 and read as plastic close up. Pebbled grain, fine
+// creases, darker worn patches and paler scuffs, with the same pattern as a bump map so the grain catches the light.
+let _bcloth = null;
+function bookClothOf() { if (_bcloth) return _bcloth; let ls = 9191; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#DADADA'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.1 + LR() * .14})`; g.fillRect(0, y, w, 1); }
+    for (let x = 0; x < w; x += 2) { g.fillStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.08 + LR() * .12})`; g.fillRect(x, 0, 1, h); } // the weave
+    const e = g.createLinearGradient(0, 0, w, 0); e.addColorStop(0, 'rgba(255,250,235,.45)'); e.addColorStop(.06, 'rgba(255,250,235,0)'); e.addColorStop(.94, 'rgba(255,250,235,0)'); e.addColorStop(1, 'rgba(255,250,235,.45)'); g.fillStyle = e; g.fillRect(0, 0, w, h);
+    const f = g.createLinearGradient(0, 0, 0, h); f.addColorStop(0, 'rgba(255,250,235,.4)'); f.addColorStop(.05, 'rgba(255,250,235,0)'); f.addColorStop(.95, 'rgba(255,250,235,0)'); f.addColorStop(1, 'rgba(255,250,235,.4)'); g.fillStyle = f; g.fillRect(0, 0, w, h); // edges rubbed pale
+    for (let k = 0; k < 14; k++) { const x = LR() * w, y = LR() * h, r = 8 + LR() * 26; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, LR() < .5 ? 'rgba(40,30,20,.18)' : 'rgba(255,245,225,.16)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  const t = texOf(c); const b = texOf(c, { srgb: false }); _bcloth = { map: t, bumpMap: b, bumpScale: .9 }; return _bcloth; }
+let _leather = null;
+function leatherOf() { if (_leather) return _leather; let ls = 7171; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#E8E8E8'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 2600; k++) { const x = LR() * w, y = LR() * h, r = .6 + LR() * 1.4; g.fillStyle = `rgba(${LR() < .55 ? '140,140,140' : '255,255,255'},${.06 + LR() * .1})`; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill(); } // pebble grain
+    for (let k = 0; k < 30; k++) { g.strokeStyle = `rgba(90,90,90,${.1 + LR() * .15})`; g.lineWidth = .6 + LR() * .8; g.beginPath(); let x = LR() * w, y = LR() * h; g.moveTo(x, y); for (let j = 0; j < 4; j++) { x += (LR() - .5) * 26; y += (LR() - .3) * 10; g.lineTo(x, y); } g.stroke(); } // creases
+    for (let k = 0; k < 18; k++) { const x = LR() * w, y = LR() * h, r = 12 + LR() * 34; const gr = g.createRadialGradient(x, y, 0, x, y, r); const pale = LR() < .4; gr.addColorStop(0, pale ? 'rgba(255,245,225,.14)' : 'rgba(40,30,20,.12)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  const t = texOf(c); t.repeat.set(2, 2); const b = texOf(c, { srgb: false }); b.repeat.set(2, 2); _leather = { map: t, bumpMap: b, bumpScale: .9 }; return _leather; }
 function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, ...o });
   /* terracotta: fired-clay mottling, white salt bloom up by the rim, a darker damp band at the foot, scuffs (was a flat orange) */
   const tc = canvas(256, 128, (g, w, h) => { g.fillStyle = '#B5623C'; g.fillRect(0, 0, w, h);
@@ -929,14 +1015,14 @@ function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStanda
     for (let i = 0; i < 25; i++) { g.fillStyle = `rgba(120,60,30,${.2 + Math.random() * .35})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 5); } });
   MX = { terracotta: s(0xffffff, { roughness: 1, map: texOf(tc), bumpMap: texOf(tc, { srgb: false }), bumpScale: .8 }), soil: s(0x3A2A1E, { roughness: 1 }), leaf: s(0x557F3C, { roughness: .6, side: THREE.DoubleSide }), leafDark: s(0x36572A, { roughness: .65, side: THREE.DoubleSide }),
     carrot: s(0xFFFFFF, { roughness: .6, ...vegSkin('carrot') }), onion: s(0xC8964E, { roughness: .45 }), potato: s(0xFFFFFF, { roughness: .9, ...vegSkin('potato') }), stone: s(0xF0EEE8, { ...gritOf(), roughness: .9 }), stoneDark: s(0xC8C4BC, { ...gritOf(), roughness: .85 }),
-    straw: s(0xC9A45A, { roughness: 1 }), zinc: s(0xffffff, { metalness: .3, roughness: .62, envMap: M.env, envMapIntensity: .45, map: texOf(zc), bumpMap: texOf(zc, { srgb: false }), bumpScale: .6 }), bark: (() => { const c = canvas(256, 256, (g) => { g.fillStyle = '#4E3A2A'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 70; i++) { const x0 = Math.random() * 256; g.strokeStyle = Math.random() < .6 ? 'rgba(28,18,10,.8)' : 'rgba(120,96,70,.55)'; g.lineWidth = 1 + Math.random() * 3; g.beginPath(); let x = x0; g.moveTo(x, -5); for (let y = 0; y <= 260; y += 16) { x += (Math.random() - .5) * 6; g.lineTo(x, y); } g.stroke(); }
+    straw: s(0xC9A45A, { roughness: 1 }), zinc: s(0xffffff, { metalness: .25, roughness: .74, envMap: M.env, envMapIntensity: .35, map: texOf(zc), bumpMap: texOf(zc, { srgb: false }), bumpScale: .6 }), bark: (() => { const c = canvas(256, 256, (g) => { g.fillStyle = '#4E3A2A'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 70; i++) { const x0 = Math.random() * 256; g.strokeStyle = Math.random() < .6 ? 'rgba(28,18,10,.8)' : 'rgba(120,96,70,.55)'; g.lineWidth = 1 + Math.random() * 3; g.beginPath(); let x = x0; g.moveTo(x, -5); for (let y = 0; y <= 260; y += 16) { x += (Math.random() - .5) * 6; g.lineTo(x, y); } g.stroke(); }
       for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${90 + Math.random() * 60},${70 + Math.random() * 40},${50 + Math.random() * 30},.35)`; g.fillRect(Math.random() * 256, Math.random() * 256, 2 + Math.random() * 5, 6 + Math.random() * 14); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 3, roughness: 1, side: THREE.DoubleSide }); })(),
     splitwood: (() => { const c = canvas(128, 256, (g) => { g.fillStyle = '#C8955E'; g.fillRect(0, 0, 128, 256); for (let i = 0; i < 40; i++) { g.strokeStyle = Math.random() < .5 ? 'rgba(120,70,35,.35)' : 'rgba(240,200,150,.35)'; g.lineWidth = .5 + Math.random() * 2; g.beginPath(); let x = Math.random() * 128; g.moveTo(x, 0); for (let y = 0; y <= 256; y += 32) { x += (Math.random() - .5) * 5; g.lineTo(x, y); } g.stroke(); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 2, roughness: .9 }); })(), endgrain: endGrainMat(11, false),
     grille: s(0x8A7350, { roughness: 1 }), meat: s(0xA2343A, { roughness: .5 }), fat: s(0xEEDCCB, { roughness: .6 }), paper: s(0xD8C7A0, { roughness: .95 }), sack: s(0xB59B6E, { roughness: 1 }),
-    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x6A4128, { roughness: .7 }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
-    rope: s(0xB09A6A, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
+    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x4F4630, { roughness: 1, ...twillOf() }), leather: s(0x9A6038, { roughness: .78, ...leatherOf() }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
+    rope: s(0x6E5C3E, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
   return MX; }
 // a box between two points (legs, struts) and a tapered rod between two points
 function strut(parent, a, b, w, d, mat) { const dir = b.clone().sub(a); const m = add(parent, rb(w, dir.length(), d, Math.min(w, d) * .25), mat, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); m.quaternion.setFromUnitVectors(V(0, 1, 0), dir.normalize()); return m; }
@@ -1038,8 +1124,13 @@ function logStack(slots, len, lo = false) {
   const g = new THREE.Group(); g.userData.live = true; const n = slots.length; const uC = { value: n }; const per = [[], [], []];
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler();
   slots.forEach((s, i) => { q.setFromEuler(e.set(s.rx || 0, s.ry || 0, s.rz)); m.compose(V(s.x, s.y, s.z || 0), q, V(s.r, s.r, len * (s.l || 1)));
-    logParts(s.v, lo).forEach((pg, k) => { if (!pg) return; const c = pg.clone(); c.applyMatrix4(m); c.setAttribute('slot', new THREE.Float32BufferAttribute(new Float32Array(c.attributes.position.count).fill(i), 1)); per[k].push(c); }); });
-  logMats().forEach((mat, k) => { if (!per[k].length) return; const mm = maskMat(mat, 'slot', uC); const mesh = new THREE.Mesh(mergeGeometries(per[k], false), mm.mat); mesh.customDepthMaterial = mm.depth; mesh.customDistanceMaterial = mm.dist;
+    // [PROPS round] cordwood ends are not all one sticker-clean tone: some fresh and pale, most greyed by weather, a few dark
+    // and damp or reddish heartwood (vertex colour on the end-grain part only; same draws)
+    const tr = R(), tint = tr < .25 ? [1, .97, .92] : tr < .65 ? [.8, .77, .72] : tr < .85 ? [.62, .55, .48] : [.98, .84, .72], tv = rr(.92, 1.06);
+    logParts(s.v, lo).forEach((pg, k) => { if (!pg) return; const c = pg.clone(); c.applyMatrix4(m); const nV = c.attributes.position.count; c.setAttribute('slot', new THREE.Float32BufferAttribute(new Float32Array(nV).fill(i), 1));
+      if (k === 1) { const ca = new Float32Array(nV * 3); for (let j = 0; j < nV; j++) ca.set([tint[0] * tv, tint[1] * tv, tint[2] * tv], j * 3); c.setAttribute('color', new THREE.Float32BufferAttribute(ca, 3)); }
+      per[k].push(c); }); });
+  logMats().forEach((mat, k) => { if (!per[k].length) return; const mm = maskMat(mat, 'slot', uC); if (k === 1) mm.mat.vertexColors = true; const mesh = new THREE.Mesh(mergeGeometries(per[k], false), mm.mat); mesh.customDepthMaterial = mm.depth; mesh.customDistanceMaterial = mm.dist;
     mesh.castShadow = mesh.receiveShadow = true; mesh.userData.live = true; g.add(mesh); per[k].forEach(x => x.dispose()); });
   g.userData.logs = { max: n, count: n, slots, setCount(k) { k = Math.max(0, Math.min(n, Math.round(k))); uC.value = k; this.count = k; } };
   return g;
@@ -1073,7 +1164,7 @@ function fridge() {
   add(piv, new THREE.PlaneGeometry(dw - .08, split - .17), M.ceramic, -dw / 2, .06 + (split - .07) / 2, -.001, 0, Math.PI, 0);
   add(piv, rb(dw - .1, .05, .06, .01), M.ceramic, -dw / 2, .55, -.03); add(piv, lathe([[0, 0], [.025, 0], [.025, .12], [.01, .16], [0, .16]], 12), M.glass, -dw / 2 + .12, .575, -.035);
   hd(piv, split - .3, split - .06, -dw + .065, .075);
-  bake(piv);
+  add(piv, rb(.1, .13, .002, .001), X.paper, -dw / 2 + .12, .8, .061, 0, 0, .06); add(piv, rb(.08, .06, .002, .001), std2(0xC9B98F), -dw / 2 + .2, .66, .061, 0, 0, -.1); for (const [mx2, my2, mc] of [[-dw / 2 + .12, .855, 0xA03028], [-dw / 2 + .2, .685, 0x2E5A8A], [-dw / 2 - .08, .9, 0xD8A830]]) add(piv, new THREE.CylinderGeometry(.011, .011, .008, 12), std2(mc), mx2, my2, .064, Math.PI / 2); for (let li = 0; li < 6; li++) add(piv, rb(.05 + (li % 3) * .01, .0025, .001, .0005), std2(0x3A3A52), -dw / 2 + .115 - (li % 2) * .006, .835 - li * .016, .0625, 0, 0, .06); add(piv, rb(.066, .046, .001, .0005), std2(0x5E4E3A), -dw / 2 + .2, .66, .0625, 0, 0, -.1); /* [kitchen round] a list and an old photo under magnets: the door was a blank beige slab at close zoom */ bake(piv);
   // meat: up to 6 pieces, half of them wrapped in butcher paper; setStock(n) shows the first n
   const meat = []; const spots = [[-.13, shelfY[0]], [.08, shelfY[0]], [-.12, shelfY[1]], [.1, lb], [-.1, lb], [.12, shelfY[1] + .0]];
   spots.forEach(([x, y], i) => { const p = new THREE.Group(); p.position.set(x, y + .006, z0 + t + .17 + (i % 2) * .05); p.rotation.y = rr(-.4, .4);
@@ -1109,12 +1200,13 @@ function pantryShelf(h = 1.45) { const g = new THREE.Group(), X = mx(); const w 
   const ys = [.05, .05 + (h - .07) * .27, .05 + (h - .07) * .52, .05 + (h - .07) * .76, h - .015]; for (const y of ys) W(g, w - .06, .025, d - .01, 0, y, d / 2 + .004, { mat: M.woodLight });
   const top = i => ys[i] + .0125;
   for (const [x, s] of [[-.1, 1], [.11, .85]]) { const sk = add(g, lathe([[0, 0], [.08, 0], [.1, .05], [.1, .15], [.075, .21], [.03, .24], [.045, .27], [0, .27]], 16), X.sack, x, top(0), .13); sk.scale.set(s, s, s * .9); add(g, new THREE.TorusGeometry(.035, .006, 5, 12), X.rope, x, top(0) + .235 * s, .13, Math.PI / 2); }
-  [-.17, -.08, .01].forEach((x, i) => { const c = can(.11, .038, M.cans[i]); c.position.set(x, top(1), .14); g.add(c); }); { const c = can(.11, .038, M.cans[3]); c.position.set(-.125, top(1) + .11, .14); g.add(c); }
-  [[-.16, .14, .05, M.jarGlass], [-.05, .12, .045, M.glazeCream], [.06, .1, .04, M.jarGlass]].forEach(([x, hh, r, m]) => { const j = jar(hh, r, m); j.position.set(x, top(2), .14); g.add(j); });
+  /* GRAB: the can and jar he takes stand at the shelf's left end (-x), the only end he can reach past the woodpile; the stacked can rests on the two that stay */
+  [.13, -.08, .01].forEach((x, i) => { const c = can(.11, .038, M.cans[i]); c.position.set(x, top(1), .14); g.add(c); }); { const c = can(.11, .038, M.cans[3]); c.position.set(-.035, top(1) + .11, .14); g.add(c); }
+  [[.165, .14, .05, M.jarGlass], [-.05, .12, .045, M.glazeCream], [.06, .1, .04, M.jarGlass]].forEach(([x, hh, r, m]) => { const j = jar(hh, r, m); j.position.set(x, top(2), .14); g.add(j); });
   [[-.15, .07, .05, M.cans[1]], [-.04, .07, .05, M.cans[2]]].forEach(([x, hh, r, m]) => { const c = can(hh, r, m); c.position.set(x, top(3), .14); g.add(c); });
   { const b = lathe([[0, 0], [.035, 0], [.035, .15], [.014, .2], [.012, .23], [0, .23]], 14); add(g, b, M.jarGlass, .1, top(3), .14); }
-  const tc = can(.11, .038, M.cans[0]); tc.position.set(.13, top(1), .15); bake(tc); tc.userData.live = true; g.add(tc); tools.supplyCan = tc;
-  const tj = jar(.13, .045, M.glazeCream); tj.position.set(.16, top(2), .15); bake(tj); tj.userData.live = true; g.add(tj); tools.supplyJar = tj;
+  const tc = can(.11, .038, M.cans[0]); tc.position.set(-.17, top(1), .15); bake(tc); tc.userData.live = true; g.add(tc); tools.supplyCan = tc;
+  const tj = jar(.13, .045, M.glazeCream); tj.position.set(-.16, top(2), .15); bake(tj); tj.userData.live = true; g.add(tj); tools.supplyJar = tj;
   bake(g); g.userData.tools = tools; return g; }
 function crate(w = .36, h = .4, d = .36) { const g = new THREE.Group(); for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { W(g, w - .02, .1, .018, 0, .065 + i * .125, s * (d / 2 - .009), { mat: i === 1 && s > 0 ? M.woodRed : M.wood }); W(g, .018, .1, d - .036, s * (w / 2 - .009), .065 + i * .125, 0, { mat: M.wood }); }
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) W(g, .04, h - .02, .04, sx * (w / 2 - .025), (h - .02) / 2, sz * (d / 2 - .025), { mat: M.woodDark, grain: 1 });
@@ -1166,20 +1258,24 @@ function repairLantern() { const g = new THREE.Group(); const L = lanternHousing
   g.userData.glow = { glass, flame }; return bake(g); }
 function jacket() { const X = mx(), g = new THREE.Group(); // origin = the hanging loop, the jacket faces +z
   add(g, new THREE.TorusGeometry(.014, .003, 4, 10), X.jacketDark, 0, -.012, 0);
-  const b = new THREE.Shape(); b.moveTo(-.07, 0); b.lineTo(.07, 0); b.quadraticCurveTo(.17, -.02, .2, -.07); b.lineTo(.215, -.7); b.lineTo(-.215, -.7); b.lineTo(-.2, -.07); b.quadraticCurveTo(-.17, -.02, -.07, 0);
-  add(g, EX(b, .08, .022), X.jacket, 0, -.03, 0); add(g, rb(.17, .06, .11, .02), X.jacketDark, 0, -.05, 0);
-  for (const s of [-1, 1]) { strut(g, V(s * .19, -.1, .0), V(s * .225, -.64, .035), .1, .085, X.jacket); add(g, rb(.1, .05, .09, .015), X.jacketDark, s * .227, -.63, .037); }
-  add(g, rb(.008, .62, .006, .002), X.jacketDark, 0, -.4, .062); for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(.008, .008, .006, 10), M.iron, .018, -.15 - i * .11, .065, Math.PI / 2);
-  for (const s of [-1, 1]) add(g, rb(.11, .03, .012, .004), X.jacketDark, s * .1, -.46, .065);
-  add(g, rb(.08, .09, .005, .002), X.patch, .1, -.28, .064, 0, 0, .15); add(g, rb(.06, .06, .005, .002), X.patch, -.23, -.4, .08, 0, -.2, .05); // patched elbow and chest: an old, mended coat
+  const lg = lathe([[.214, -.7], [.215, -.68], [.205, -.5], [.2, -.3], [.195, -.14], [.17, -.08], [.12, -.04], [.05, -.01], [0, 0]], 28); { const P = lg.attributes.position; for (let j = 0; j < P.count; j++) { const x = P.getX(j), y = P.getY(j), z = P.getZ(j), a = Math.atan2(z, x), d = Math.min(1, Math.max(0, (-y - .12) / .3)); const k = 1 + d * (.05 * Math.sin(a * 7 + y * 4) + .03 * Math.sin(a * 11 - y * 9)); P.setX(j, x * k); P.setZ(j, z * k * .38 + .03); } lg.computeVertexNormals(); } /* [kitchen round] a body with real volume: shoulders round the peg, a flattened tube with soft vertical folds (the extruded slab read as cardboard) */
+  add(g, lg, X.jacket, 0, -.03, 0); add(g, rb(.17, .06, .11, .02), X.jacketDark, 0, -.05, .03);
+  for (const s of [-1, 1]) { add(g, new THREE.CylinderGeometry(.04, .05, .5, 10), X.jacket, s * .2, -.36, .055, -.07, 0, s * .05); add(g, new THREE.CylinderGeometry(.053, .053, .05, 10), X.jacketDark, s * .212, -.6, .072, -.07, 0, s * .05); } /* sleeves hang as round tubes with a cuff */
+  add(g, rb(.008, .6, .006, .002), X.jacketDark, 0, -.41, .107); { const hm = add(g, new THREE.CylinderGeometry(.219, .219, .04, 28, 1, true), X.jacketDark, 0, -.71, .03); hm.scale.set(1, 1, .4); } /* hem band */ for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(.008, .008, .006, 10), M.iron, .018, -.15 - i * .11, .108, Math.PI / 2);
+  for (const s of [-1, 1]) add(g, rb(.11, .03, .012, .004), X.jacketDark, s * .1, -.46, .098, 0, s * .22, 0);
+  add(g, rb(.075, .085, .006, .003), X.patch, .1, -.28, .097, 0, .22, .15); add(g, rb(.055, .06, .006, .003), X.patch, -.2, -.42, .104, -.07, 0, .05); // patched elbow and chest: an old, mended coat
   g.userData.grip = V(0, -.05, .05); return bake(g); }
 function bowOnWall() { const X = mx(), g = new THREE.Group(); // in the y-z plane, bulging toward +z; origin at the grip
-  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); add(g, new THREE.TubeGeometry(c, 28, .015, 7), std2(0x6B4528));
-  add(g, new THREE.CylinderGeometry(.0025, .0025, 1.12, 4), std2(0xE8E2D0), 0, 0, .002); add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
-function quiver() { const X = mx(), g = new THREE.Group(); // origin at the strap ring on top
+  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); { const tg = new THREE.TubeGeometry(c, 40, .017, 8), P = tg.attributes.position, q = V(); for (let i = 0; i < P.count; i++) { const y = P.getY(i), t = Math.min(1, Math.abs(y) / .56); q.copy(c.getPoint(Math.min(1, Math.max(0, (y + .56) / 1.12)))); const f = 1 - .6 * Math.pow(t, 1.4); P.setX(i, P.getX(i) * f * 1.25); P.setZ(i, q.z + (P.getZ(i) - q.z) * f * .7); } tg.computeVertexNormals(); add(g, tg, M.wood); } /* scanned wood grain; [gear round] limbs taper to the tips and are flat (wide across, thin in the draw), not one round rod */ for (const sy of [-1, 1]) add(g, new THREE.CylinderGeometry(.006, .009, .045, 8), std2(0x2A2018), 0, sy * .54, .003); add(g, new THREE.CylinderGeometry(.0013, .0013, 1.1, 4), std2(0xBFAF88), 0, 0, .002); /* dark horn tips with the string nocks; a thin waxed tan string (it read as a white cord) */ 
+  add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
+function quiver() { return fine(() => quiver0()); }
+function quiver0() { const X = mx(), g = new THREE.Group(); // origin at the strap ring on top
   add(g, lathe([[0, -.52], [.04, -.52], [.05, -.5], [.055, -.05], [.058, 0], [.05, 0], [.047, -.05], [0, -.05]], 16), X.leather);
   add(g, new THREE.TorusGeometry(.057, .005, 5, 16), std2(0x3E2618), 0, -.25, 0, Math.PI / 2);
-  for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025; add(g, new THREE.CylinderGeometry(.003, .003, .2, 4), std2(0xC9A875), x, .05, z); add(g, new THREE.PlaneGeometry(.025, .06), X.fletch, x, .12, z, 0, a, 0); }
+  add(g, new THREE.TorusGeometry(.058, .006, 5, 16), std2(0x3E2618), 0, -.03, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .007, 5, 16), std2(0x3E2618), 0, -.5, 0, Math.PI / 2); // rim and base bands
+  add(g, rb(.012, .44, .008, .003), std2(0x4A2E1C), 0, -.27, -.055); for (let i = 0; i < 18; i++) add(g, rb(.016, .003, .004, .001), std2(0xC8B48C), 0, -.06 - i * .024, -.06); // the back seam, laced with pale thread
+  add(g, rb(.022, .5, .006, .002), std2(0x4A2E1C), .0, -.24, .058, .0, 0, .05); // the carrying strap down the front
+  for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025, h = .1 + (i % 3) * .015; add(g, new THREE.CylinderGeometry(.0032, .0032, .2, 6), std2(0x9C7E52), x, h - .07, z); for (let v = 0; v < 3; v++) { const va = a + v * 2.094; add(g, new THREE.PlaneGeometry(.011, .065), X.fletch, x + Math.cos(va) * .0085, h, z - Math.sin(va) * .0085, 0, va, 0); } add(g, new THREE.CylinderGeometry(.0042, .0036, .012, 6), std2(0x2A221A), x, h + .036, z); } /* [gear round] each arrow: a tan shaft, three feather vanes round it (one flat card read as a paper tag) and a dark nock */
   return bake(g); }
 // the meat sack (realism sweep: it was a smooth yellow blob with a red box stuck on it): coarse burlap with a visible weave,
 // lumpy where the cuts inside press out, gathered at the neck under a twine tie, and a dark blood-soaked patch at the bottom
@@ -1193,7 +1289,10 @@ function burlapMat() { if (_burlap) return _burlap; let ls = 5151; const LR = ()
   });
   const t = texOf(c); t.repeat.set(4, 1); const b = texOf(c, { srgb: false }); b.repeat.set(4, 1); t.flipY = b.flipY = false;
   _burlap = new THREE.MeshStandardMaterial({ map: t, bumpMap: b, bumpScale: 1.4, roughness: 1 }); return _burlap; }
-function meatBag() { const X = mx(), g = new THREE.Group(); const lg = lathe([[0, 0], [.09, 0], [.13, .05], [.14, .14], [.11, .21], [.045, .255], [.04, .27], [.06, .3], [.05, .315], [0, .3]], 20);
+function meatBag() { return fine(() => meatBag0()); }
+function meatBag0() { const X = mx(), g = new THREE.Group(); const prof0 = [[0, 0], [.09, 0], [.13, .05], [.14, .14], [.11, .21], [.045, .255], [.04, .27], [.06, .3], [.05, .315], [0, .3]];
+  const prof = []; for (let i = 0; i < prof0.length - 1; i++) { const [a, b] = [prof0[i], prof0[i + 1]], n = i < 5 ? 4 : 1; for (let k = 0; k < n; k++) prof.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]); } prof.push(prof0[prof0.length - 1]);   // more rows: the lumps were cut into flat facets
+  const lg = lathe(prof, 24);
   { const P = lg.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), a = Math.atan2(z, x), r = Math.hypot(x, z); const body = Math.max(0, Math.sin(Math.min(1, y / .24) * Math.PI));
       const k = 1 + body * (.09 * Math.sin(a * 3 + y * 20) + .06 * Math.sin(a * 5 - y * 31) + .04 * Math.cos(a * 2 + 1.3)) + (y > .255 ? .18 * Math.sin(a * 9) : 0); /* lumps of meat inside; the gathered neck frills */
       P.setX(i, x * k); P.setZ(i, z * k); P.setY(i, y - (y < .03 ? .0 : .012 * Math.sin(a * 2) * body)); void r; } lg.computeVertexNormals(); }
@@ -1201,12 +1300,18 @@ function meatBag() { const X = mx(), g = new THREE.Group(); const lg = lathe([[0
   add(g, new THREE.TorusGeometry(.043, .006, 5, 14), X.rope, 0, -.042, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .005, 5, 14), X.rope, 0, -.05, 0, Math.PI / 2 + .12);
   { const c = new THREE.CatmullRomCurve3([V(.04, -.045, .02), V(.07, -.07, .045), V(.075, -.12, .05)]); add(g, new THREE.TubeGeometry(c, 8, .004, 5), X.rope); } // the twine's loose end
   g.userData.grip = V(0, 0, 0); return bake(g); }
-function logArmful() { const X = mx(), g = new THREE.Group(); for (const [x, y, v] of [[-.06, 0, 3], [.06, 0, 4], [0, .1, 5]]) { const l = logPiece(.5, .065, v); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
-  for (const z of [-.14, .14]) add(g, new THREE.TorusGeometry(.12, .007, 5, 18), X.rope, 0, .04, z).scale.set(1.05, .95, 1); g.userData.grip = V(0, .05, 0); return bake(g); }
+function logArmful() { return fine(() => logArmful0()); }
+function logArmful0() { const X = mx(), g = new THREE.Group(); for (const [x, y, v] of [[-.06, 0, 3], [.06, 0, 4], [0, .1, 5]]) { const l = logPiece(.5, .065, v); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
+  // [PROPS round] two cords pulled tight round the bundle (they were round hoops standing off the logs like handles): each
+  // follows the hull of the three logs, so it lies on the bark and runs straight across the gaps
+  const PS = []; g.updateMatrixWorld(true); g.traverse(o => { if (!o.isMesh) return; const P = o.geometry.attributes.position, v = V(); for (let i = 0; i < P.count; i += 3) { v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); PS.push([v.x, v.y]); } });
+  for (const z of [-.14, .14]) { const pts = []; for (let i = 0; i < 40; i++) { const a = i / 40 * Math.PI * 2, dx = Math.cos(a), dy = Math.sin(a); let best = PS[0], bd = -9; for (const c of PS) { const d = c[0] * dx + c[1] * dy; if (d > bd) { bd = d; best = c; } } pts.push(V(best[0] + .006 * dx, best[1] + .006 * dy, z + .003 * Math.sin(a * 3))); }
+    add(g, new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 48, .0055, 5, true), X.rope); }
+  g.userData.grip = V(0, .05, 0); return bake(g); }
 function sawhorse() { const X = mx(), g = new THREE.Group(); const L = .95, H = .62;
   W(g, L, .08, .09, 0, H - .04, 0, { mat: M.wood });
   for (const sx of [-1, 1]) { for (const sz of [-1, 1]) strut(g, V(sx * (L / 2 - .1), H - .07, sz * .03), V(sx * (L / 2 - .05), 0, sz * .22), .055, .045, M.woodDark); W(g, .03, .06, .36, sx * (L / 2 - .075), .22, 0, { mat: M.wood }); }
-  W(g, 1.15, .035, .2, .1, H + .0175, 0, { mat: M.woodLight }); // the plank, sawn part way across near the end
+  W(g, 1.15, .035, .2, .1, H + .0175, 0, { mat: M.woodDark }); // the plank, sawn part way across near the end ([PROPS round] an old board off the pile, not glossy fresh orange pine)
   W(g, .22, .035, .2, .62, .02, .12, { mat: M.woodLight, ry: .6, rz: .05 }); // an off-cut on the ground
   // sawdust under the cut: a low heap of loose crumbs, not a flat painted disc (it is merged by bake: no extra draw calls)
   { const parts = []; for (let i = 0; i < 46; i++) { const a = rr(0, 6.28), d = Math.sqrt(R()) * .2, h = .012 * (1 - d / .2) + .002, q = new THREE.BoxGeometry(rr(.008, .018), rr(.003, .006), rr(.008, .018));
@@ -1258,13 +1363,17 @@ export function buildProps(ctx) {
 
   // ---------- kitchen (back wall z≈1.05, open front +z) ----------
   const st = place('stove', stove(), -3.25, KT, 1.4); out.oven = st.userData.oven;
-  const ket = bake(kettle()); ket.position.set(-.19, .91, .13); /* the front-left ring (kitchen thread): on the back ring the handle was 66 cm from the shorter hero's shoulder, out of reach over the stove */ st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
+  const ket = fine(() => bake(kettle())); ket.position.set(-.19, .91, .13); /* the front-left ring (kitchen thread): on the back ring the handle was 66 cm from the shorter hero's shoulder, out of reach over the stove */ st.add(ket); out.tools.kettle = ket; ket.userData.home = { parent: st, pos: ket.position.clone(), quat: ket.quaternion.clone() };
   { const pt = bake(pot()); pt.position.set(.19, .93, .13); st.add(pt); }
   place('krail', utensilRail(.5), -3.25, KT + 1.37, 1.56, { solid: false, wall: true }); // hangs from the front edge of the hood, over the stove
   place('hood', hood(Math.max(.2, (BD - .2) - (KT + 1.42) - .3)), -3.25, KT + 1.42, 1.32, { solid: false, wall: true });
   place('counter', sinkCounter(), -2.3, KT, 1.38);
   place('fridge', fridge(), -1.43, KT, 1.38);
   place('picture', picture(.34, .26), -1.45, KT + 1.92, 1.06, { solid: false, wall: true });
+  { const g = new THREE.Group(); /* photo round 2: herbs drying on a twine under the shelf, at both ends of the window (behind the counter's front edge: his head stays clear) */
+    add(g, new THREE.CylinderGeometry(.0015, .0015, .34, 3), std2(0xC8B080), -.27, 0, 0, 0, 0, Math.PI / 2); for (const tx of [-.43, -.11]) add(g, new THREE.CylinderGeometry(.0015, .0015, .235, 3), std2(0xC8B080), tx, .117, 0); /* [kitchen round] the twine hangs from the shelf by two strings (it floated in front of the window) */
+    for (const [x, sd, c] of [[-.4, 11, 0x4A5630], [-.3, 23, 0x5E5C36], [-.19, 37, 0x56502F]]) { const b = herbBundle(sd, c); b.position.set(x, 0, 0); b.rotation.y = sd; g.add(b); }
+    place('herbs', bake(g), -2.3, KT + 1.72, 1.17, { solid: false, wall: true }); }
   { const s = wallShelf(.86); const items = [[-.3, jar(.14, .05, M.glazeCream)], [-.17, jar(.11, .045, M.jarGlass)], [.3, mug(M.glazeCream)]]; /* the middle is the clean-dish spot (out.dishes) */ for (const [x, o] of items) { o.position.set(x, .018, .12); s.add(o); } bake(s); place('kshelf', s, -2.3, KT + 1.97, 1.04, { solid: false, wall: true }); }
   // kitchen eating spot (Brain: no carrying the plate up to the bedroom): the corner barrel wears a loose plank top, a stool beside it
   const kbar = place('kbarrel', barrel(.78), -4.02, KT, 3.33);
@@ -1273,7 +1382,9 @@ export function buildProps(ctx) {
   const kst = place('kstool', stool(), -3.40, KT, 3.33, { seat: true }); /* 62 cm from the barrel: he sits half turned (face +.87 rad), legs past the barrel's left, chest turned to the plate */ out.surfaces.kitchenTable = { top: kbar.userData.floorY + .815, seat: kst.userData.floorY + .48, table: 'eatTable', stool: 'eatSeat', face: -Math.PI / 2 + .87 };
   place('kbucket', bucket(.34), -4.22, KT, 3.86); /* corner behind the barrel (was under the stool) */
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
-  place('klamp', bake(lanternHousing(Math.max(.05, (BD - .15) - (KT + 1.95) - .2))), -2.15, KT + 1.95, 1.95, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
+  // [PROPS] the kitchen lantern hangs on a wall bracket on the right wall just past the fridge, wick ~1.58 m over the floor, so he
+  // lights it with a match from his hand (it hung from the ceiling over the walk line in front of the counter, 32 cm out of reach)
+  place('klamp', bake(bracketLantern()), -.93 - .192, KT + 1.64, 1.92, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
 
   // ---------- bedroom ----------
   // layout: bunk, reading table and chair sit 25 cm toward +x so the walk from the bedroom ladder top passes the bunk's end post
@@ -1282,7 +1393,7 @@ export function buildProps(ctx) {
   place('slippers', slippers(), -2.95 + TX, BD, 2.32, { solid: false, ry: .2 });
   place('basket', basket(), -.28 + TX, BD, 1.33, { solid: false }); // under the right end of the reading table, between its legs
   /* chair left of the table middle and nearer it: the hero stands at the shut door bolt around x -0.1, z 2.55 (W7) */
-  const chairO = place('chair', chair(), -.74 + TX, BD, 2.26, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
+  const chairO = place('chair', chair(), -.74 + TX, BD, 2.26, { ry: Math.PI, seat: true }); chairO.userData.seat = true; /* GRAB: furniture he sits on (it slides with him: chairPull) */ out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
   const tbl = place('table', table(), -.35 + TX, BD, 1.37); const tTop = tbl.userData.floorY + .74;
   const bk = book({ cover: M.covers[0] }); bk.position.set(-.33 + TX, tTop, 1.6 + TZ); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; bk.userData.noProxy = true; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
   { const m = bake(mug(M.glazeBlue)); m.position.set(-.06 + TX, tTop, 1.35 + TZ); scene.add(m); const c = bake(candle()); c.position.set(-.62 + TX, tTop, 1.32 + TZ); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.585 + TX, tTop, 1.61 + TZ); /* 3.5 cm right: room for the watering can at the table's end */ for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
@@ -1325,13 +1436,22 @@ export function buildProps(ctx) {
     apply(); }
   place('hooks', bake(coatHooks()), .17, BD + 1.6, .97, { solid: false, wall: true });
   { const b = closedBook(.035, .2, .15, M.covers[4]); b.rotation.set(0, .6, Math.PI / 2); b.position.set(.25, 1.07 + .045 + .15 + .03, .12); bunk.add(b); }
-  // light switch: flush on the solid wall just inside the room, beside the door opening (the opening is z 2.3..3.25),
-  // ~15 cm past the frame at 1.15 m (Pavel: it used to float in the opening). hero.js reads out.switches for the 'switch' task.
-  // On the latch side (z 2.15): the door is hinged at z 3.25 and its open leaf stands into the room at z ~3.2, so a plate at z 3.5
-  // was behind the open door (gate: he squeezed into the leaf and the frame, 3-5 cm, to reach it).
-  { const s = switchPlate(); s.position.set(.372, BD + 1.15, 2.15); s.rotation.y = -Math.PI / 2; scene.add(s); out.switches = { bedroom: s.position.clone() }; out.switchN = { bedroom: new THREE.Vector3(0, 0, 1).applyQuaternion(s.quaternion).setY(0).normalize() }; }
+  // bedroom lantern: there is no electricity in this world, so no wall switch (it used to switch a lamp hung out of reach under
+  // the ceiling). An oil lantern hangs on a forged wall bracket just inside the door, on the latch side (where the switch was),
+  // with the wick at ~1.58 m over the floor: he lights it with a match like the others and pinches it out before sleep.
+  // The bracket: a wall plate with two nails, an arm out over the lantern, a diagonal brace, the lantern's ring on the arm's hook.
+  // lights.js builds only the wick, flame and light at out.lights.bedroomLamp.pos (own: true); hero.js reaches the lamp
+  // itself now that out.switches has no 'bedroom'.
+  out.switches = {}; out.switchN = {};
+  place('blamp', bracketLantern(), .18, BD + 1.65, 1.95, { solid: false, wall: true });
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
-  { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const b = closedBook(bw, rr(.16, .22), .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12); s.add(b); x += bw + .003; } const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
+  place('crock', bake(crock()), -3.52, BD, 1.24, { ry: .5 });
+  place('pegrail', bake(pegRail()), -3.8, BD + 1.5, 1.0, { solid: false, wall: true }); /* photo round 2: the bare wall left of the bunk, above the crock (nothing walks there) */
+  { const g = new THREE.Group(); /* notes and a hand-drawn map pinned above the reading table */
+    for (const [w, h, x, y, rz, m] of [[.26, .19, -.08, .02, .04, M.plan], [.11, .15, .14, .05, -.08, M.paper], [.1, .13, .13, -.11, .06, M.paper], [.09, .12, -.25, -.04, -.05, M.paper]]) { const q = add(g, new THREE.PlaneGeometry(w, h), m, x, y, .004 + Math.abs(x) * .004, 0, 0, rz); q.castShadow = false;
+      add(g, new THREE.SphereGeometry(.007, 6, 4), std2(0xA8382C), x - Math.sin(rz) * h * .42, y + h * .42, .012); }
+    place('notes', bake(g), -.18, BD + .93, .975, { solid: false, wall: true }); } /* the photo's blue crock left of the bunk, in the corner by the back wall (off the hatch and bunk paths) */
+  { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const bh = rr(.16, .22), b = closedBook(bw, bh, .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12 + rr(-.012, .012)); if (i === 6) { const th = .3; b.rotation.z = th; b.position.set(x + bw / 2 * Math.cos(th) + bh * Math.sin(th) - .002, .018 + bw / 2 * Math.sin(th), .12); } s.add(b); x += bw + .003; } /* [bedroom round] uneven depths and the last book leaning back against the row (they stood like a row of tiles) */ const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
 
   // ---------- workshop ----------
   const wb = place('workbench', workbench(), 2.75, WS, 1.86); out.surfaces.benchTop = wb.userData.floorY + .9;
@@ -1340,12 +1460,17 @@ export function buildProps(ctx) {
   // a hammer and a wrench lying on the bench, ready to be picked up
   { const h = bake(hammer()); h.position.set(2.2, wb.userData.floorY + .9 + .018, 1.98); h.rotation.set(-Math.PI / 2, 0, -1.2); h.userData.live = true; scene.add(h); out.tools.benchHammer = h; h.userData.home = { parent: scene, pos: h.position.clone(), quat: h.quaternion.clone(), scale: 1 };
     const w = bake(wrench(.2)); w.position.set(3.25, wb.userData.floorY + .9 + .008, 2.0); w.rotation.set(-Math.PI / 2, 0, .5); scene.add(w); out.tools.benchWrench = w; w.userData.home = { parent: scene, pos: w.position.clone(), quat: w.quaternion.clone(), scale: 1 }; }
+  { const g = new THREE.Group(), T = wb.userData.floorY + .9 + .018; /* photo round 2: back corner of the bench, clear of his work spots: a jar of nails and a coffee can of brushes and pencils */
+    const j = jar(.11, .042, M.jarGlass); j.position.set(-.12, 0, 0); g.add(j); add(g, new THREE.CylinderGeometry(.036, .036, .06, 10), std2(0x6C6A66), -.12, .035, 0);
+    const c = can(.12, .045, M.cans[2]); g.add(c);
+    for (const [dx, dz, h, col, tip] of [[-.015, .01, .2, 0xB0832E, 0x2A2420], [.012, -.008, .19, 0x8E3226, 0x2A2420], [.0, .016, .22, 0x6B4A2C, 0xD8C8A0], [.018, .012, .17, 0x34546E, 0x3A3028]]) { const t = .1 * Math.sign(dx || .5); add(g, new THREE.CylinderGeometry(.004, .004, h, 5), std2(col), dx + Math.sin(t) * h * .5, .06 + h * .5, dz, 0, 0, -t); add(g, new THREE.CylinderGeometry(.006, .004, .03, 5), std2(tip), dx + Math.sin(t) * (h + .01), .06 + h + .012, dz, 0, 0, -t); }
+    g.position.set(3.44, T, 1.64); scene.add(g); }
   place('wshelves', workshopShelves(.95), 4.4, WS + .95, 1.85, { ry: -Math.PI / 2, solid: false, wall: true });
   const stl = place('stool', stool(), 1.5, WS, 2.85, { seat: true }); /* moved off the vice: he stands there to saw (workshop thread) */ out.surfaces.stoolSeat = stl.userData.floorY + .48;
   place('wbarrel', barrel(.8), 1.55, WS, 1.55);
   place('wbucket', bucket(.36, true), 4.05, WS, 3.4);
   place('wrug', rug(1.6, .95, 'green', '#D9C99A'), 2.8, WS, 3.05, { solid: false });
-  place('wlamp', bake(domeShade(1.1)), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
+  place('wlamp', bake(domeShade(1.2)), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
 
   // ---------- deck and landings ----------
@@ -1368,8 +1493,8 @@ export function buildProps(ctx) {
   const pantry = place('pantry', pantryShelf(1.25), -4.372, KT + .56, 1.33, { ry: Math.PI / 2, wall: true, solid: false }); for (const [k, o] of Object.entries(pantry.userData.tools)) { homeOf(o); out.tools[k] = o; }
   PT.pantry = [pantry, V(0, .6, .3)];
   const cn = placed.counter, cTop = cn.userData.floorY + .9;
-  tool('board', choppingBoard(), scene, -2.62, cTop, 1.4, [0, .05, 0]); tool('knife', knife(), scene, -2.6, cTop + .023, 1.33, [0, -.15, 0]);
-  const plateO = tool('plate', bake(plateOfFood()), st, .21, .915, .13); /* serving plate waits by the pan on the stove, front right (in reach; at the back he folded over the hot pan) */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
+  tool('board', choppingBoard(), scene, -2.65, cTop, 1.51, [0, .05, 0]); tool('knife', knife(), scene, -2.63, cTop + .023, 1.46, [0, -.15, 0]);
+  const plateO = tool('plate', fine(() => bake(plateOfFood())), st, .21, .915, .13); /* serving plate waits by the pan on the stove, front right (in reach; at the back he folded over the hot pan) */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
   // food on the plate: setFood(1) full, (.5) half eaten, (0) empty. (Meshes are merged per material, so we scale the food meshes down.)
   out.plate = { obj: plateO, setFood(k) { k = clamp01(k); for (const m of food) { m.visible = k > .02; m.scale.setScalar(.35 + .65 * k); } } }; out.plate.setFood(0);
   PT.board = [out.tools.board, V(0, .03, 0)]; PT.sink = [cn, V(.23, .76, .04)];
@@ -1378,7 +1503,7 @@ export function buildProps(ctx) {
     // putAway() moves one from the rack to the shelf; state() -> {dirty, rack, shelf}. Points: 'sink', 'rack', 'dishShelf'.
     const X = mx(); const dirtM = std2(0x6A4A2A), crumbM = std2(0x8A6A3A), stewM = X.stew;
     const mk = (kind, dirty) => { const g = new THREE.Group();
-      if (kind === 'plate') { add(g, lathe([[0, 0], [.07, 0], [.1, .012], [.104, .016], [.06, .006], [0, .006]], 24), M.ceramic); if (dirty) { const d = add(g, new THREE.CircleGeometry(.05, 12), dirtM, .01, .0075, -.005, -Math.PI / 2); d.scale.set(1, .7, 1); for (let i = 0; i < 4; i++) add(g, new THREE.SphereGeometry(.006, 5, 4), crumbM, rr(-.04, .05), .009, rr(-.04, .04)); } }
+      if (kind === 'plate') { add(g, lathe([[0, 0], [.07, 0], [.1, .012], [.104, .016], [.06, .006], [0, .006]], 24), M.ceramic); if (dirty) { const d = add(g, new THREE.SphereGeometry(.05, 14, 5, 0, Math.PI * 2, 0, Math.PI / 2), dirtM, .01, .0058, -.005); d.scale.set(1, .05, .7); /* a thin domed film of gravy, not a flat painted disc */ for (let i = 0; i < 4; i++) add(g, new THREE.SphereGeometry(.006, 5, 4), crumbM, rr(-.04, .05), .009, rr(-.04, .04)); } }
       else if (kind === 'bowl') { add(g, lathe([[0, 0], [.04, 0], [.065, .04], [.07, .06], [.064, .06], [.058, .042], [.036, .008], [0, .008]], 22), M.glazeBlue); if (dirty) add(g, new THREE.CircleGeometry(.045, 14), stewM, 0, .02, 0, -Math.PI / 2); }
       else { add(g, lathe([[0, 0], [.035, 0], [.04, .07], [.036, .07], [.031, .004], [0, .004]], 16), M.glazeCream); add(g, new THREE.TorusGeometry(.022, .005, 6, 12, Math.PI * 1.2), M.glazeCream, .042, .038, 0, 0, 0, -Math.PI * .6); if (dirty) add(g, new THREE.CircleGeometry(.03, 12), std2(0x3A2414), 0, .02, 0, -Math.PI / 2); }
       bake(g); g.userData.live = true; return g; };
@@ -1387,7 +1512,7 @@ export function buildProps(ctx) {
     const BX = .23, BZ = .04, BY = .9 - .2;
     const inSink = [[BX - .06, BY + .1 * Math.cos(.4) + .004, BZ - .06, [0, 0, Math.PI / 2 - .4]], [BX + .05, BY + .002, BZ + .08, [0, 0, .05]], [BX + .07, BY + .002, BZ - .1, [0, 0, 0]], [BX - .03, BY + .045, BZ + .13, [0, 0, Math.PI / 2]]];
     // drying rack on the counter between the board and the basin (counter local)
-    const rack = new THREE.Group(); rack.position.set(-.085, .9, .11); cn.add(rack); rack.userData.live = true;
+    const rack = new THREE.Group(); rack.position.set(-.085, .9, .19); cn.add(rack); rack.userData.live = true;
     { const rg = new THREE.Group(); W(rg, .17, .012, .21, 0, .006, 0, { mat: M.woodLight, r: .004 }); for (const z of [-.08, .08]) { W(rg, .17, .02, .02, 0, .022, z, { mat: M.woodLight, r: .005 }); for (let i = 0; i < 6; i++) add(rg, new THREE.CylinderGeometry(.004, .004, .1, 6), M.woodLight, -.075 + i * .03, .07, z); } bake(rg); rack.add(rg); }
     const inRack = [[-.06, .112, 0, [0, 0, Math.PI / 2]], [-.03, .112, 0, [0, 0, Math.PI / 2]], [.0, .074, 0, [0, 0, Math.PI / 2]], [.055, .074, -.02, [Math.PI, 0, 0]]];
     // the shelf over the window: plates stacked, the cup in the bowl
@@ -1398,7 +1523,7 @@ export function buildProps(ctx) {
     const show = () => objs.forEach((o, i) => { for (const w of ['dirty', 'rack', 'shelf']) o[w].visible = loc[i] === w; });
     const count = w => loc.filter(l => l === w).length;
     out.dishes = { max: 4, state: () => ({ dirty: count('dirty'), rack: count('rack'), shelf: count('shelf') }),
-      setDirty(n) { n = Math.max(0, Math.min(4, Math.round(n))); while (count('dirty') < n) { const i = loc.indexOf('shelf') >= 0 ? loc.indexOf('shelf') : loc.indexOf('rack'); if (i < 0) break; loc[i] = 'dirty'; } while (count('dirty') > n) loc[loc.indexOf('dirty')] = 'shelf'; show(); return count('dirty'); },
+      setDirty(n) { n = Math.max(0, Math.min(4, Math.round(n))); while (count('dirty') < n) { const i = loc.indexOf('out') >= 0 ? loc.indexOf('out') : loc.indexOf('shelf') >= 0 ? loc.indexOf('shelf') : loc.indexOf('rack'); /* 'out' first: the plate he ate from is the one that goes in the basin */ if (i < 0) break; loc[i] = 'dirty'; } while (count('dirty') > n) loc[loc.indexOf('dirty')] = 'shelf'; show(); return count('dirty'); },
       wash() { const i = loc.indexOf('dirty'); if (i < 0) return -1; loc[i] = 'rack'; show(); return i; },
       putAway() { const i = loc.indexOf('rack'); if (i < 0) return -1; loc[i] = 'shelf'; show(); return i; },
       // by hand (Character / dishes): take(from) lifts one piece out of the basin ('dirty') or the rack ('rack'): {i, kind, obj: dirty look,
@@ -1407,7 +1532,7 @@ export function buildProps(ctx) {
       take(from = 'dirty') { const i = loc.indexOf(from); if (i < 0) return null; loc[i] = 'hand'; show(); return { i, kind: KIND[i], obj: objs[i].dirty, clean: objs[i].rack }; },
       settle(i, where) { for (const w of ['dirty', 'rack', 'shelf']) { const ob = objs[i][w], sl = ob.userData.slot; if (ob.parent !== sl.parent) sl.parent.add(ob); ob.position.copy(sl.pos); ob.rotation.copy(sl.rot); ob.scale.setScalar(1); } loc[i] = where; show(); },
       slot(i, where) { const ob = objs[i][where], sl = ob.userData.slot; sl.parent.updateMatrixWorld(true); const m = new THREE.Matrix4().compose(sl.pos, new THREE.Quaternion().setFromEuler(sl.rot), V(1, 1, 1)).premultiply(sl.parent.matrixWorld); const pos = V(), quat = new THREE.Quaternion(); m.decompose(pos, quat, V()); return { pos, quat }; },
-      where: i => loc[i],
+      where: i => loc[i], /* the serving plate is one of the shelf plates: while it is out (on the stove, in his hand) that plate is missing from the shelf, and after the meal it is the dirty one in the basin (a shelf plate no longer jumped into the sink) */ _plate() { const pv = plateO.visible, o = loc.indexOf('out'); if (pv && o < 0) { let i = loc.findIndex((l, k) => KIND[k] === 'plate' && l === 'shelf'); if (i < 0) i = loc.findIndex((l, k) => KIND[k] === 'plate' && l === 'rack'); if (i >= 0) { loc[i] = 'out'; show(); } } else if (!pv && o >= 0) { loc[o] = 'shelf'; show(); } },
       setState({ dirty = 0, rack: r = 0 } = {}) { for (let i = 0; i < 4; i++) loc[i] = i < dirty ? 'dirty' : i < dirty + r ? 'rack' : 'shelf'; show(); } };
     show(); PT.rack = [rack, V(0, .1, 0)]; PT.dishShelf = [ksh, V(.06, .1, .12)]; PT.sink = [cn, V(BX, .78, BZ)]; }
 
@@ -1420,12 +1545,12 @@ export function buildProps(ctx) {
     const H0 = .3, r0 = H0 * .5, r1 = H0 * .62;
     const mkB = (metal, mat) => { const g = new THREE.Group(); const b = bucket(H0, metal); g.add(b); const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 28), mat); disc.rotation.x = -Math.PI / 2; disc.renderOrder = 2; disc.userData.live = true; g.add(disc); g.userData.water = { disc, level: 0 }; g.userData.grip = V(0, H0 + .05, 0); return g; };
     // shelf + supply bucket with a spigot and a hose down to the tap
-    const shX = -1.9, shY = KT + 1.28, shZ = 1.03, shD = .42;
-    { const sh = new THREE.Group(); W(sh, .3, .035, shD, 0, 0, shD / 2, { mat: M.woodLight }); for (const s of [-1, 1]) { const b = new THREE.Shape(); b.moveTo(0, 0); b.lineTo(.3, 0); b.quadraticCurveTo(.1, -.06, 0, -.26); b.lineTo(0, 0); add(sh, EX(b, .03, .004), M.woodDark, s * .11, -.018, .0, 0, -Math.PI / 2, 0); } bake(sh); sh.position.set(shX, shY, shZ); scene.add(sh); }
+    const shX = -2.47, shY = cTop + .062, shZ = 1.04, shD = .26, shR = 3 * Math.PI / 4; // [PROPS] a low stand on the counter's back left, bail ~1.33 m over the floor: in his reach (Integrator: fetchwater)
+    { const sh = new THREE.Group(); W(sh, shD + .03, .025, shD + .03, 0, .0675, 0, { mat: M.woodLight, r: .004 }); for (const s of [-1, 1]) W(sh, .045, .055, shD, s * .11, .0275, 0, { mat: M.woodDark, r: .004 }); bake(sh); sh.position.set(shX, cTop, shZ + .22); sh.rotation.y = .12; scene.add(sh); }
     const wb = mkB(true, wm); { const sp = new THREE.Group(); add(sp, new THREE.CylinderGeometry(.011, .011, .05, 10), M.brass, 0, 0, .025, Math.PI / 2); add(sp, rb(.012, .03, .012, .003), M.brass, 0, .02, .04); sp.position.set(0, .04, r0 + .01); wb.add(sp); bake(sp); }
-    tool('waterBucket', wb, scene, shX, shY + .018, shZ + .22);
-    const tapW = cn.localToWorld(V(.23, .9 + .015, -.23)); const spW = V(shX, shY + .018 + .04, shZ + .22 + r0 + .06);
-    { const c = new THREE.CatmullRomCurve3([spW, V(spW.x - .02, spW.y - .2, spW.z + .03), V(tapW.x + .05, tapW.y + .02, tapW.z - .02), tapW.clone().add(V(.02, .01, -.04))].map(q => q.clone().sub(spW))); const hm = add(scene, new THREE.TubeGeometry(c, 24, .008, 6), std2(0x2A2A2A), spW.x, spW.y, spW.z); hm.castShadow = false; }
+    tool('waterBucket', wb, scene, shX, shY + .018, shZ + .22, [0, shR, 0]);
+    const tapW = cn.localToWorld(V(.23, .9 + .015, -.23)); const spW = V(shX + Math.sin(shR) * (r0 + .06), shY + .018 + .04, shZ + .22 + Math.cos(shR) * (r0 + .06));
+    { const c = new THREE.CatmullRomCurve3([spW, V(spW.x + .05, cTop + .014, spW.z - .03), V(tapW.x - .07, tapW.y, tapW.z - .02), tapW.clone().add(V(-.01, .01, -.04))].map(q => q.clone().sub(spW))); const hm = add(scene, new THREE.TubeGeometry(c, 24, .008, 6), std2(0x2A2A2A), spW.x, spW.y, spW.z); hm.castShadow = false; }
     // drain bucket in the bay
     const db = mkB(false, dm); tool('drainBucket', db, cn, .23, .08, .04);
     // tap stream and drips
@@ -1463,8 +1588,8 @@ export function buildProps(ctx) {
   { // the stew pot loses its lid and gets a ladle; both are tools now
     let potO = null; st.children.forEach(c => { if (!potO && c.position && Math.abs(c.position.x - .19) < .001 && Math.abs(c.position.z - .13) < .001) potO = c; });
     if (potO) { potO.removeFromParent(); }
-    const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); }
-    tool('pot', bake(pg), st, .19, .93, .13); tool('ladle', bake(ladle(.3)), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
+    const pg = fine(() => { const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); add(pg, new THREE.TorusGeometry(.087, .0035, 4, 28), std2(0x3E2412), 0, .0855, 0, Math.PI / 2); for (const [cx, cz, c, r] of [[.03, .02, 0, .3], [-.035, .03, 1, 1.1], [.01, -.04, 0, 2], [-.05, -.02, 2, .7], [.05, -.03, 1, 2.6], [-.01, .055, 2, 1.8], [.045, .045, 0, .9]]) add(pg, rb(.017, .011, .015, .004), [X.carrot, std2(0xC9B07A), std2(0x7A4428)][c], cx, .086, cz, .2, r, .15); /* [kitchen round] chunks of carrot, potato and meat in the stew and a dark film at the rim: it was one flat orange disc */ for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); } return bake(pg); });
+    tool('pot', pg, st, .19, .93, .13); tool('ladle', fine(() => bake(ladle(.3))), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
     const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; stk.userData.live = true; fp.add(stk);
     const raw = new THREE.Color(0xA2343A), done = new THREE.Color(0x6A3A22);
     // the pan: setMeat(true/false) puts a steak in it, setCook(0..1) browns it
@@ -1489,8 +1614,8 @@ export function buildProps(ctx) {
   tool('broom', broom(), scene, -1.02, floorAt(-1.02, BD, 1.0), 1.0, [0, Math.PI / 2, .1]); /* GRAB: 6 cm further off the bunk's corner post (his fist brushed it taking the broom) */
   // bedside stool in front of the bunk's head end (bed thread): at night he lays his folded vest on it and in the morning takes it back, both sitting on the bed edge (the floor is out of a seated arm's reach)
   { const bs = place('bedstool', stool(.38), -2.4 + TX + .31, BD, 1.71 + .8, { ry: .4 }); out.surfaces.bedStool = bs.userData.floorY + .38; }
-  const plantO = place('plant', plant(), -.88, BD, 1.36); /* in front of the crate nightstand, off the kitchen hatch and the oak limb */ PT.plant = [plantO, V(0, .3, 0)];
-  tool('wateringCan', wateringCan(), scene, -.44, tTop, 1.39, [0, Math.PI, 0]); /* on the reading table's left end between the candle and the book pile, the spout out over its end toward the plant: from the floor the handle (26 cm up) was out of reach, the palm stopped 17 cm short in a full squat and the ankles bent 60 deg (gate); up here he takes it standing */
+  const plantO = place('plant', plant(), .26, BD, 1.66); /* on the floor at the reading table's right front corner, by the side wall: in front of the crate nightstand it stood where he crouches to tune the radio (watcher R45-1: knee and thigh through the leaves) */ PT.plant = [plantO, V(0, .3, 0)];
+  tool('wateringCan', wateringCan(), scene, -.44, tTop, 1.39, [0, 0, 0]); /* on the reading table's left end between the candle and the book pile, the spout along the table toward the plant at its right front corner (out over the left end it was in his face crouched at the radio): from the floor the handle (26 cm up) was out of reach, the palm stopped 17 cm short in a full squat and the ankles bent 60 deg (gate); up here he takes it standing */
   // diary + pencil sit beside the reading book, a forearm in from the edge (they used to lie 42 cm deep, past an arm's reach from the chair side)
   tool('diary', diary(), scene, -.16 + TX, tTop, 1.5 + TZ, [0, .22, 0]); tool('pencil', pencil(), scene, -.05 + TX, tTop, 1.53 + TZ, [0, .5, 0]);
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
@@ -1498,18 +1623,32 @@ export function buildProps(ctx) {
   { const bt = wb.userData.floorY + .9; const ws = whetstone(); ws.position.set(2.72, bt, 2.14); ws.rotation.y = .03; /* at the front edge: the hero's arm reaches only the front 25 cm of this deep bench (workshop thread) */ scene.add(ws); PT.whetstone = [ws, V(0, .08, 0)];
     tool('lantern', repairLantern(), scene, 2.55, bt, 2.07); /* front edge, in reach (workshop thread) */ PT.nails = [wb, V(.35, .95, -.18)]; PT.bench = [wb, V(0, .92, .1)]; }
   const peg = (x, y, z, ry) => { const p = new THREE.Group(); add(p, new THREE.CylinderGeometry(.014, .016, .09, 10), M.woodDark, 0, 0, .045, Math.PI / 2); add(p, new THREE.SphereGeometry(.02, 10, 8), M.woodDark, 0, 0, .09); add(p, rb(.06, .1, .015, .005), M.woodDark, 0, 0, .0075); p.position.set(x, y, z); p.rotation.y = ry; scene.add(p); return p; };
-  { const pj = peg(4.575, WS + 1.72, 3.72, -Math.PI / 2); const jk = jacket(); tool('jacket', jk, scene, 4.575 - .07, WS + 1.72 - .005, 3.72, [0, -Math.PI / 2, 0]); jk.position.x = 4.575 - .06 - .02; PT.jacketPeg = [pj, V(0, 0, .09)]; }
+  { /* GRAB: the peg at 1.5 m, where his hand reaches the collar (at 1.72 m it hung 20 cm over his fingertips) */ const pj = peg(4.575, WS + 1.52, 3.72, -Math.PI / 2); const jk = jacket(); tool('jacket', jk, scene, 4.575 - .07, WS + 1.52 - .005, 3.72, [0, -Math.PI / 2, 0]); jk.position.x = 4.575 - .06 - .02; PT.jacketPeg = [pj, V(0, 0, .09)]; }
   { const pb = [peg(.925, WS + 1.82, 2.1, Math.PI / 2), peg(.925, WS + 1.1, 2.1, Math.PI / 2)]; tool('bow', bowOnWall(), scene, .925 + .1, WS + 1.45, 2.1, [0, 0, 0]); PT.bowPeg = [pb[0], V(0, 0, .09)];
     const pq = peg(.925, WS + 1.62, 1.72, Math.PI / 2); tool('quiver', quiver(), scene, .925 + .1, WS + 1.62, 1.72, [0, 0, -.12]); PT.quiverPeg = [pq, V(0, 0, .09)]; }
   // gear hanging at home: setHere(name, false) hides it (he has it on / with him), true shows it on its peg again
-  out.setHere = (name, on) => { const o = out.tools[name]; if (o) o.visible = !!on; };
+  out.setHere = (name, on) => { const o = out.tools[name]; if (!o) return; if (o.userData.fm) { fading.delete(o); fadeSet(o, on ? 1 : 0); } else o.visible = !!on; };
+  // GRAB: toolFade(name, to, sec) fades a tool in or out on its own copy of the materials (the jacket in the hand while the worn coat fades the other way)
+  const fading = new Map();
+  out.toolFade = (name, to, sec = .6, from = null) => { const o = out.tools[name]; if (!o) return; if (!o.userData.fm) { const fm = []; o.traverse(m => { if (!m.isMesh) return; const one = x => { const c = x.clone(); c.onBeforeCompile = x.onBeforeCompile; if (x.customProgramCacheKey) c.customProgramCacheKey = x.customProgramCacheKey; fm.push(c); return c; }; m.material = Array.isArray(m.material) ? m.material.map(one) : one(m.material); }); o.userData.fm = fm; o.userData.fk = 1; }
+    if (from != null) o.userData.fk = from; fading.set(o, { to, rate: 1 / Math.max(.05, sec) }); fadeSet(o, o.userData.fk); };
+  const fadeSet = (o, k) => { o.userData.fk = k; for (const m of o.userData.fm) { m.opacity = k; m.transparent = k < .99; m.depthWrite = k > .5; } o.visible = k > .01; };
   // --- things he carries in from outside: hidden until grabbed, hidden again on release
   for (const [k, f] of [['meatBag', meatBag], ['logArmful', logArmful]]) { const o = f(); o.visible = false; tool(k, o, scene, 0, -50, 0); o.userData.home.hide = true; }
   // --- outside at the foot of the oak: a big log pile and a sawhorse with a half-sawn plank and the saw in the cut
-  { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01, z); lp.rotation.y = .5; scene.add(lp); lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
+  { const x = -4.45, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01 + .075, z); lp.rotation.y = .5; scene.add(lp); /* [ground round] raised onto two old beams: real firewood is kept off the wet ground */
+    { const sl = new THREE.Group(); for (const sz of [-.24, .24]) W(sl, 1.32, .08, .085, 0, .04, sz, { mat: M.woodDark, r: .012, ry: rr(-.03, .03) }); sl.position.set(x, ghY(x, z) - .012, z); sl.rotation.y = .5; scene.add(sl);
+      // a leaf rake dropped by the far end of the pile, tines down on the little heap of oak leaves it raked together
+      const lw = new THREE.Vector3(-1.15, 0, .32).applyAxisAngle(V(0, 1, 0), .5).add(V(x, 0, z)); const hx = lw.x, hz = lw.z;
+      const rk = new THREE.Group(); add(rk, new THREE.CylinderGeometry(.013, .015, 1.45, 7), std2(0x5E4A36), .725, .05, 0, 0, 0, Math.PI / 2); add(rk, new THREE.BoxGeometry(.03, .025, .4), M.woodDark, 0, .05, 0);
+      for (let i = 0; i < 12; i++) add(rk, new THREE.CylinderGeometry(.003, .003, .06, 3), M.woodDark, -.01, .022, -.18 + i * .0327, 0, 0, -.35);
+      rk.position.set(hx + .05, ghY(hx, hz) + .03, hz); rk.rotation.set(0, 2.2, -.04); scene.add(rk);
+      const lf = new THREE.Group(); const LC = [0x4A3420, 0x5A3E22, 0x3E2E1C, 0x4E4626, 0x3A3220, 0x5E3A1E]; const lsh = new THREE.Shape(); { const P = []; for (let k = 0; k <= 12; k++) { const t = k / 12 * Math.PI, w = Math.sin(t) * (.016 + .006 * Math.cos(t * 7)); P.push([w, -Math.cos(t) * .03]); } lsh.moveTo(0, -.03); P.forEach(([w, y]) => lsh.lineTo(w, y)); for (let k = P.length - 1; k >= 0; k--) lsh.lineTo(-P[k][0], P[k][1]); } const lg = new THREE.ShapeGeometry(lsh, 1); lg.rotateX(-Math.PI / 2); lg.rotateX(Math.PI / 2); // a lobed oak-leaf outline
+      for (let i = 0; i < 170; i++) { const a = rr(0, 6.28), d = R() * .3, lx = Math.cos(a) * d, lz = Math.sin(a) * d * .8, h = .13 * Math.pow(1 - d / .3, 1.5) * (.4 + .6 * R()); const q = add(lf, lg, std2(LC[i % 6]), lx, ghY(hx + lx, hz + lz) + h + .006, lz, -Math.PI / 2 + rr(-.4, .4), rr(-.4, .4), rr(0, 6.28)); q.castShadow = false; }
+      lf.position.set(hx, 0, hz); scene.add(lf); } lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(lp); lp.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'logpile' }); PT.logpile = [lp, V(0, .9, .2)]; }
   { // chopping block (a sawn round standing on end) with the axe bitten into its top, beside the log pile
-    const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.traverse(o => { if (o.isMesh && Array.isArray(o.material)) o.material = o.material.map(m => m === mx().endgrain ? endGrainMat(5, true) : m); }); /* the block's top: axe scars */ cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
+    const x = -3.95, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.traverse(o => { if (o.isMesh && Array.isArray(o.material)) o.material = o.material.map(m => m === mx().endgrain ? endGrainMat(5, true) : m); }); /* the block's top: axe scars */ cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(cb); cb.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: y0, n: 'chopblock' });
     const ax = axe(); tool('axe', ax, scene, x + .05, y0 + .42 + .03, z, [0, .8, -2.25]); PT.chopblock = [cb, V(0, 0, .21)];
     // wood chips round it, each on the ground under it (the soil slopes here): thrown mostly to the front, where the
@@ -1519,6 +1658,12 @@ export function buildProps(ctx) {
       if (SA && SA(x + cx, z + cz) > gy + .015) continue;
       W(ch, rr(.035, .09), rr(.008, .016), rr(.018, .04), cx, gy - y0 + .005, cz, { mat: R() < .7 ? mx().splitwood : M.woodDark, ry: rr(0, 3), rz: rr(-.15, .15), r: .003 }); nc++; }
     ch.position.set(x, y0, z); scene.add(ch); }
+  { // [ground round] the split wood from the block: quartered pieces thrown in a loose heap beside it, ready for the armful
+    const x = -4.56, z = 4.02, y0 = ghY(x, z); const kh = new THREE.Group();
+    for (let i = 0; i < 9; i++) { const l = rr(.3, .38), lay = i < 5 ? 0 : 1; const sp = new THREE.Group(); W(sp, .07, .06, l, 0, 0, 0, { mat: mx().splitwood, r: .006 }); W(sp, .005, .062, l, -.036, 0, 0, { mat: M.woodDark, r: .002 });
+      sp.position.set(lay ? rr(-.12, .12) : -.2 + i * .1, .03 + lay * .065, rr(-.05, .05)); sp.rotation.set(0, rr(-.35, .35), rr(-.4, .4)); kh.add(sp); }
+    kh.position.set(x, y0, z); kh.rotation.y = .3; scene.add(kh); kh.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(kh); kh.userData.box = b; kh.name = 'kindling'; placed.kindling = kh;
+    OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: y0, n: 'kindling' }); }
   { const x = -3.6, z = 1.95; const sh = sawhorse(); sh.position.set(x, ghY(x, z), z); sh.rotation.y = Math.PI / 2; scene.add(sh); sh.name = 'sawhorse'; placed.sawhorse = sh; sh.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(sh); sh.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'sawhorse' });
     tool('plankSaw', handSaw(), sh, .45, .62 + .035 + .13, .24, [0, Math.PI / 2, -.6]); PT.sawhorse = [sh, V(.45, .7, 0)]; }
@@ -1540,11 +1685,12 @@ export function buildProps(ctx) {
   // chair: chairPull(k) slides it back from the table by k * 0.2 m (0 = its home, where the seated pose is fitted).
   // Character: pull to 1 on the approach, ease back to 0 as the hips land (he scoots in), 1 again when he gets up.
   let chHome = null, chDir = null, chBox0 = null; const chairSt = { k: 0, to: 0, rate: 1 / .5 };
-  out.chairPull = (k, sec = .5) => { if (!chHome) { /* taken on first use, after the room shift */ chHome = chairO.position.clone(); const tb = placed.table; chDir = tb ? chHome.clone().sub(tb.userData.box.getCenter(V())).setY(0).normalize() : V(0, 0, 1); chBox0 = chairO.userData.box.clone(); }
-    chairSt.to = clamp01(k); chairSt.rate = 1 / Math.max(.05, sec); };
+  out.chairPull = (k, sec = .5) => { if (!chHome) { /* taken on first use, after the room shift */ chHome = chairO.position.clone(); const tb = placed.table; chDir = V(0, 0, -1).applyQuaternion(chairO.quaternion).setY(0).normalize(); /* GRAB: straight back along the chair's own axis, the way the seated hero slides with it (towards the table centre it went 9 cm sideways under him) */ chBox0 = chairO.userData.box.clone(); }
+    chairSt.to = Math.max(-1.25, Math.min(1, k)); /* GRAB: negative = scooted in under the table (k * 0.2 m), so the table top is within an arm's reach */ chairSt.rate = 1 / Math.max(.05, sec); };
   function tweens(dt) {
+    for (const [o, f] of fading) { const d = f.to - o.userData.fk, st = f.rate * dt; fadeSet(o, Math.abs(d) <= st ? f.to : o.userData.fk + Math.sign(d) * st); if (o.userData.fk === f.to) fading.delete(o); }
     for (const [o, m] of homing) { m.t = Math.min(1, m.t + dt / m.d); const e = m.t * m.t * (3 - 2 * m.t); o.position.copy(m.p).lerp(m.h.pos, e); o.quaternion.copy(m.q).slerp(m.h.quat, e); o.scale.setScalar(m.s + ((m.h.scale || 1) - m.s) * e); if (m.t >= 1) homing.delete(o); }
-    if (chairSt.k !== chairSt.to) { const d = chairSt.to - chairSt.k, st = chairSt.rate * dt; chairSt.k = Math.abs(d) <= st ? chairSt.to : chairSt.k + Math.sign(d) * st; const e = chairSt.k * chairSt.k * (3 - 2 * chairSt.k);
+    if (chairSt.k !== chairSt.to) { const d = chairSt.to - chairSt.k, st = chairSt.rate * dt; chairSt.k = Math.abs(d) <= st ? chairSt.to : chairSt.k + Math.sign(d) * st; const ak = Math.min(1, Math.abs(chairSt.k)), e = Math.sign(chairSt.k) * ak * ak * (3 - 2 * ak) * Math.max(1, Math.abs(chairSt.k));
       const off = chDir.clone().multiplyScalar(.2 * e); chairO.position.copy(chHome).add(off); chairO.updateMatrixWorld(true); chairO.userData.box.copy(chBox0).translate(off); }
   }
   out.chairO = chairO; out.bunk = bunk;
@@ -1592,21 +1738,25 @@ export function buildProps(ctx) {
   const COVER_SEG = [['Hips', 'Spine1', .15], ['Spine1', 'Spine2', .16], ['Spine2', 'Neck', .13], ['LeftUpLeg', 'RightUpLeg', .12],
     ['LeftUpLeg', 'LeftLeg', .105], ['RightUpLeg', 'RightLeg', .105], ['LeftLeg', 'LeftFoot', .085], ['RightLeg', 'RightFoot', .085],
     ['LeftFoot', 'LeftToeBase', .09], ['RightFoot', 'RightToeBase', .09],
-    ['LeftShoulder', 'LeftArm', .075], ['RightShoulder', 'RightArm', .075], ['LeftArm', 'LeftForeArm', .06], ['RightArm', 'RightForeArm', .06]];/* forearms and hands stay out (on top of the quilt), they tented it into peaks */
+    ['LeftShoulder', 'LeftArm', .075], ['RightShoulder', 'RightArm', .075], ['LeftArm', 'LeftForeArm', .06], ['RightArm', 'RightForeArm', .06], ['LeftForeArm', 'LeftHand', .06, 1], ['RightForeArm', 'RightHand', .06, 1]];/* R54-1: a forearm and fist lying low beside him (under the hips' height) are covered too: the fist stood out through the quilt's side. Up on his chest or stomach they stay out on top *//* forearms and hands stay out (on top of the quilt), they tented it into peaks */
   let coverBones = null, coverT = 0; const cb = [];
   function findCoverBones() { if (coverBones) return coverBones; if (!press.at) return null; const at = bunk.localToWorld(press.at.clone()); let sk = null, best = 1e9;
     const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
     const byName = {}; for (const bn of sk.bones) byName[bn.name.replace(/^.*[:_]/, '').replace(/^mixamorig/, '')] = bn;
-    const list = []; for (const [a, b, r] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r }); return (coverBones = list.length >= 8 ? list : null); }
+    const list = []; for (const [a, b, r, low] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r, f: /Leg|Foot|Toe/.test(a + b) ? .75 : 1.05, low: !!low, hips: byName.Hips }); return (coverBones = list.length >= 8 ? list : null); }
   out._quiltDbg = () => ({ qTop, qBot, m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V(), _cw = V();
   // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
+  const LT = [0, .25, .5, .75, 1];
   function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const dx = x - (q.ax + ex * t), dz = z - (q.az + ez * t), d = Math.sqrt(dx * dx + dz * dz); const yc = q.ay + (q.by - q.ay) * t;
       // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
-      const top = yc + q.r * .75 + .015; const o = Math.max(0, d - q.r * .4); const dr = o < .06 ? 5 * o * o : .018 + .6 * (o - .06) + 9 * (o - .06) * (o - .06);/* R42-2: the cloth lies ON the limb and falls off it (it stood 25-30 cm over his legs like a box with straight sides) */
-      const h = top - dr - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
+      // R56-1: the highest point of the limb under the cloth, not only the one nearest in plan: a raised shin stands near upright, its
+      // plan is a dot and the nearest point could be the low ankle, so the knee and shin came up through the quilt as he swung his legs in
+      let hb = -1e9; for (let j = -1; j < LT.length; j++) { const tt = j < 0 ? t : LT[j]; const dx = x - (q.ax + ex * tt), dz = z - (q.az + ez * tt), d = Math.sqrt(dx * dx + dz * dz); const yc = q.ay + (q.by - q.ay) * tt;
+        const top = yc + q.r * q.f + .015;/* the legs thin (R42-2 box); chest and arms full, the sweater is thicker there (it came through in orange shards) */ const o = Math.max(0, d - q.r * .4); const dr = o < .06 ? 5 * o * o : .018 + .6 * (o - .06) + 9 * (o - .06) * (o - .06);/* R42-2: the cloth lies ON the limb and falls off it (it stood 25-30 cm over his legs like a box with straight sides) */
+        const h = top - dr; if (h > hb) hb = h; }
+      const h = hb - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
   // ---- BED (2026-11-24, Pavel: "the quilt just appears on top of him, he never covers himself"): the quilt's head flap folds over a
   // hinge across the bed. fold 0 = flat (a made bed), 1 = turned down onto the lower half. Character moves it with his hand on the
   // flap's free edge (quiltFold / quiltEdge), so it only ever moves where his hand takes it; quiltLive(s) refreshes it every frame.
@@ -1626,14 +1776,14 @@ export function buildProps(ctx) {
     foldPt(qHinge + FL * sf, .012, fold.a, _fp);/* sf: how far along the flap the hand holds it (1 = its free edge) */ let X = _fp[0], Y = _fp[1]; if (press.cover && press.k > .001 && cb.length) Y += liftAt(X, zl, Y) * press.k; return bunk.localToWorld(V(X, Y, zl)); };
   out._quiltFoldDbg = () => ({ qxMax, qHinge, qFlat, a: fold.a });
   function pressQuilt(dt) {
-    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * 1.5); if (press.fast > 0) press.fast -= dt;
+    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * (press.cover ? 6 : 1.5));/* the cover drops as fast as it rises: getting up, his legs went out through the slowly sinking box *//* covering: the cloth is over him at once (rising over 2 s it let the sweater through, items thread) */ if (press.fast > 0) press.fast -= dt;
     const cover = press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones()); coverT -= dt;
     const folded = Math.abs(fold.a - fold.shown) > 1e-3;
     if (cover) { if (!(coverT <= 0 || press.fast > 0 || folded || Math.abs(press.k - press.shown) >= .01)) return; }
     else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
     press.shown = press.k; fold.shown = fold.a;
     if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
-      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r }); } } }
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } let f = q.f || 1; if (f < 1) { const sl = Math.abs(_cw.y - _cv.y) / Math.max(1e-4, _cv.distanceTo(_cw)); f += (1.05 - f) * Math.min(1, sl * 2.5); }/* R56-1: a leg that rises (knee up as he swings in) is covered at its full thickness: thinned, its trousers came up through the quilt at the hip; lying flat it stays thin (R42-2 box) */ cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f }); } } }
     const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
     for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
       let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }
@@ -1647,7 +1797,7 @@ export function buildProps(ctx) {
     out.book.update(dt);
     if (reading) { pageT -= dt; if (pageT <= 0) { out.book.turn(1); pageT = rr(5, 9); } }
     out.oven.setHeat(heat); void cooking; /* lights.js owns the oven heat (passed in as heat) */ tAcc += dt; out.oven.flicker(tAcc);
-    tweens(dt); out.door.update(dt); out.fridge.update(dt); out.water.update(dt);
+    tweens(dt); out.dishes && out.dishes._plate(); out.door.update(dt); out.fridge.update(dt); out.water.update(dt);
     // the radio dial is a light source for lights.js (registered once lights.js is up)
     if (!out._radioLit && window.__lights && window.__lights.addSource) { out._radioLit = true; try { window.__lights.addSource('radio', { room: 'bedroom', kind: 'glow', pos: out.radio.knob(V()), mats: [[out.radio.dialMat, 1.2]], light: { I: .6, dist: 1.5 } }); } catch (e) { console.warn('radio light', e); } }
   };
@@ -1669,10 +1819,11 @@ export function buildProps(ctx) {
   // ---------- light sources (computed before the static merge below, from the real positions) for lights.js: world positions + the emissive materials to switch ----------
   // each: { pos: Vector3 (world), obj, mats: [materials whose emissive/opacity show the source is on] }
   { const wp = (o, x = 0, y = 0, z = 0) => { o.updateMatrixWorld(true); return o.localToWorld(V(x, y, z)); };
-    const st = placed.stove, kl = placed.klamp, wl = placed.wlamp;
+    const st = placed.stove, kl = placed.klamp, wl = placed.wlamp, bl = placed.blamp;
     out.lights = {
       oven: { pos: wp(st, 0, .3, .05), obj: st, mats: [M.fire, M.ovenGlass, out.oven.flameMat], setHeat: out.oven.setHeat },
       kitchenLamp: { pos: wp(kl, 0, 0, 0), obj: kl, mats: [M.glass] },
+      bedroomLamp: { pos: wp(bl, 0, 0, 0), obj: bl, mats: [M.glass], own: true },
       workshopLamp: { pos: wp(wl, 0, .06, 0), obj: wl, mats: [wl.userData.inner] },
       candle: { pos: wp(candleObj, 0, .13, 0), obj: candleObj, mats: [candleObj.userData.flame] },
     };
@@ -1684,7 +1835,7 @@ export function buildProps(ctx) {
   // perf: phones get a stricter shadow budget (only furniture-sized parts cast)
   const MOB = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); const CAST_R = MOB ? .35 : .2; out.mobile = MOB;
   const NOMERGE = /[?&]nomerge/.test(location.search); /* debug: keep every prop as built (support checks) */
-  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp']); /* stove merged too: its door, fire and pots are live */
+  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp', 'blamp']); /* stove merged too: its door, fire and pots are live */
     const roots = []; for (let i = nScene0; i < scene.children.length; i++) { const o = scene.children[i]; if (KEEP.has(o.name) || o.userData.live || o.userData.book || Object.values(out.tools).includes(o)) continue; roots.push(o); }
     const by = new Map(); const kill = []; const MST = out._mergeStats = {}; out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
@@ -1698,7 +1849,7 @@ export function buildProps(ctx) {
       if (by.has(kn)) { by.get(kn).gs.push(...e.gs); by.delete(k); } else e.cast = false; }
     // and a small non-casting remainder of a material that also casts joins the casting mesh (one draw instead of two; a few extra shadow triangles)
     for (const [k, e] of [...by]) { if (e.cast) continue; const ks = k.slice(0, -1) + 's'; if (ks === k || !by.has(ks)) continue; /* ks === k: a small casting group just demoted above is its own 's' key; merging it into itself deleted it (the galvanised workshop bucket vanished) */ let n = 0; for (const g of e.gs) n += g.attributes.position.count / 3; if (n > 1500) continue; by.get(ks).gs.push(...e.gs); by.delete(k); }
-    const sg = new THREE.Group(); sg.name = 'propsStatic'; for (const { mat, cast, gs } of by.values()) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = cast; m.receiveShadow = true; sg.add(m); gs.forEach(x => x.dispose()); } scene.add(sg); out.staticGroup = sg; }
+    const sg = new THREE.Group(); sg.name = 'propsStatic'; for (const { mat, cast, gs } of by.values()) { const m = new THREE.Mesh(mergeGeometries(gs, false), mat); m.castShadow = cast; m.receiveShadow = true; sg.add(m); gs.forEach(x => x.dispose()); } scene.add(sg); out.staticGroup = sg; out.wetMats = sg.children.map(m => m.material).filter(m => m && m.isMeshStandardMaterial && !m.transparent); /* rain.js wets these too (per pixel, only where the sky reaches): its 7x7 footprint probe missed some merged outdoor parts (kindling, deck basket) */ }
   { const ws = V(); for (let i = nScene0; i < scene.children.length; i++) { const r = scene.children[i]; if (r === out.staticGroup) continue; r.updateMatrixWorld(true);
       r.traverse(o => { if (!o.isMesh || !o.castShadow || o.isInstancedMesh) return; if (!o.geometry.boundingSphere) o.geometry.computeBoundingSphere(); o.getWorldScale(ws); if (o.geometry.boundingSphere.radius * Math.max(ws.x, ws.y, ws.z) < CAST_R) o.castShadow = false; }); } }
   // perf: the same merge inside every object that stays separate (kept furniture, live objects, tools): static parts by material

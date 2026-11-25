@@ -34,6 +34,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const mine = o => { while (o) { if (o === root) return true; o = o.parent; } return false; };
   const visible = o => { while (o) { if (!o.visible) return false; o = o.parent; } return true; };
   const solidMat = o => { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (!m) return false; if (m.transparent && m.opacity < .6) return false; if (m.alphaTest > 0) return false; /* cut-out leaves and bushes */ if (m.depthWrite === false || m.blending === THREE.AdditiveBlending) return false; return true; };
+  // plants bend: not walls. By name, or (unnamed instanced ground plants: the reeds by the pond and round the roots were 1.4 m solid
+  // boxes, so the walk to the chopping block went 'through' them at 30 cm) by their material's program key or their __ground slot
+  const PLANT = /grass|foliage|leaf|leaves|fern|moss|weed|reed/i;
+  const softKey = o => { try { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (m && m.customProgramCacheKey && PLANT.test(String(m.customProgramCacheKey()).split('-')[0]) /* the key's own name: 'groundStone-moss2' is a stone */) return true;
+    const G = window.__ground; if (G) for (const k in G) if (G[k] === o && PLANT.test(k)) return true; } catch (e) { } return false; };
   const label = o => { const parts = []; let x = o; while (x && x !== scene) { if (x.name && !/^(Mesh|Object|Group|Scene)?_?\d*$/.test(x.name)) parts.push(x.name); x = x.parent; } return parts.reverse().join('/') || o.geometry.type; };
 
   // ---------- where the hero can be: the walk graph's box, padded ----------
@@ -94,7 +99,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (!o.isMesh || o.isSkinnedMesh || mine(o) || !solidMat(o)) return; const t = o.geometry.type;
     if (/Plane|Circle|Shape|Ring/.test(t)) return;
     if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-    const name = label(o); if (/grass|foliage|leaf|leaves|fern|moss|weed|reed/i.test(name)) { skipped['soft ' + name.replace(/#\d+$/, '')] = 1; return; } // plants bend: not walls
+    const name = label(o); if (PLANT.test(name) || softKey(o)) { skipped['soft ' + name.replace(/#\d+$/, '')] = 1; return; } // plants bend: not walls
     if (o.isInstancedMesh) {
       if (o.count > 1500) { skipped['inst ' + name] = o.count; return; }
       for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, mi); m4.multiplyMatrices(o.matrixWorld, mi); wb.copy(o.geometry.boundingBox).applyMatrix4(m4); if (!wb.intersectsBox(REG)) continue; { const sz = wb.getSize(V()); const big = [sz.x, sz.y, sz.z].filter(v => v > 1.8).length; if (big >= 2 && !/plank|board|beam|floor|deck/i.test(name)) { skipped['big inst ' + name] = (skipped['big inst ' + name] || 0) + 1; continue; } } /* bushes / tree crowns as one big box are not walls */ add(o, o.geometry, m4, name + '#' + i, i); }
@@ -280,7 +285,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function probe(p, part, lying, list, nt = true) { const GR = window.__grab; let a = list; const noTight = !list && window.__colNoTight;
     if (!a) { const kk = key(Math.floor(p.x / CS), Math.floor(p.y / CS), Math.floor(p.z / CS)); a = G.get(kk); } let best = 0;
     if (a) for (const n of a) {
-      const s = S[n]; if (s.dead) continue; if (!list && !refresh(s)) continue; if (!noTight) { const t = s.t; if (p.x < t[0] || p.y < t[1] || p.z < t[2] || p.x > t[3] || p.y > t[4] || p.z > t[5]) continue; } if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;
+      const s = S[n]; if (s.dead) continue; if (!list && !refresh(s)) continue; if (navMode && OPENS.test(s.name)) continue; if (!noTight) { const t = s.t; if (p.x < t[0] || p.y < t[1] || p.z < t[2] || p.x > t[3] || p.y > t[4] || p.z > t[5]) continue; } if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;
       // POSE (poses thread): asleep, hero.js lays the body on the measured mattress itself; the bed's voxels (mattress, quilt mound,
       // pillow, all one 'bunkbed' grid) pushed the root up ~20-50 cm and made the head twitch on the pillow every ~0.3 s
       if (s.cls >= 2 && lying && hero.inBed && !hero.bedB) continue;
@@ -433,7 +438,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++; curDt = dt;
-    const _rn = () => Performance.prototype.now.call(performance), _s0 = _rn(); if (bigQ.length || cutting) cutBig(); const _s1 = _rn(); buildSome(1.5); const _s2 = _rn(); trackMoving(); const _s3 = _rn(); secs[0] = _s1 - _s0; secs[1] = _s2 - _s1; secs[2] = _s3 - _s2; if (trunk && slPre < trunk.SL.length) for (let q = 0; q < 3 && slPre < trunk.SL.length; q++, slPre++) if (!SLR[slPre]) { const sl = trunk.SL[slPre]; SLR[slPre] = sliceRows(sl, SLB[slPre] || (SLB[slPre] = sliceBox(sl))); } // trunk rows ahead of need, 3 slices a frame
+    const _rn = () => Performance.prototype.now.call(performance), _s0 = _rn(); if (bigQ.length || cutting) cutBig(); const _s1 = _rn(); buildSome(1.5); const _s2 = _rn(); trackMoving(); if (!navDone && !(frameNo % 15) && navReady()) navCheck(); const _s3 = _rn(); secs[0] = _s1 - _s0; secs[1] = _s2 - _s1; secs[2] = _s3 - _s2; if (trunk && slPre < trunk.SL.length) for (let q = 0; q < 3 && slPre < trunk.SL.length; q++, slPre++) if (!SLR[slPre]) { const sl = trunk.SL[slPre]; SLR[slPre] = sliceRows(sl, SLB[slPre] || (SLB[slPre] = sliceBox(sl))); } // trunk rows ahead of need, 3 slices a frame
     floorGuard(dt);
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 6);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGv[c].copy(gv[c]); gv[c].set(0, 0, 0); }
@@ -541,18 +546,44 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
 
   // ---------- nav: clearance of the walk graph for the body (a 0.2 m wide column from knee to head height) ----------
   function clearance(x, y, z, r = .2) { let worst = 0; const p = V(); for (const hy of [.35, .7, 1.0, 1.3]) for (let a = 0; a < 8; a++) { p.set(x + Math.cos(a * Math.PI / 4) * r, y + hy, z + Math.sin(a * Math.PI / 4) * r); const d = probe(p, 7, false); if (d > worst) worst = d; } return worst; }
+  // sweep(): the body walking from (ax,az) to (bx,bz) on the floor y, as a solid slab: every 3 cm along the way, 5 points across
+  // (-r..r) and every 6 cm from 15 cm to 1.35 m up. The old 8-point ring at 4 heights slipped between a ladder's rails and rungs
+  // (5-7 cm boards; R43-2: stoke walked through the kitchen ladder and the walk graph check saw nothing). t0/t1: the part of the line
+  // checked (an approach may end close to the work). Returns the deepest point's depth (m) and where, or 0.
+  const _sw = V();
+  function sweep(ax, az, bx, bz, y, r = .18, t0 = 0, t1 = 1, stopAt = 1e9, hmin = .15) { const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz) || 1e-6, ux = -dz / L, uz = dx / L;
+    const n = Math.max(1, Math.ceil(L * (t1 - t0) / .03)); let worst = 0;
+    for (let i = 0; i <= n; i++) { const t = t0 + (t1 - t0) * i / n, cx = ax + dx * t, cz = az + dz * t;
+      for (let k = -2; k <= 2; k++) { const o = r * k / 2; for (let h = hmin; h <= 1.36; h += .06) { _sw.set(cx + ux * o, y + h, cz + uz * o); const d = probe(_sw, 7, false); if (d > worst) { worst = d; sweep.at = [+_sw.x.toFixed(2), +_sw.y.toFixed(2), +_sw.z.toFixed(2), k, +h.toFixed(2)]; if (worst > stopAt) return worst; } } } }
+    return worst; }
+  // things that open and shut (the door leaf, the hatch lid, shutters) are not in the walk graph's way: hero.js opens them
+  let navMode = false; const OPENS = /door|hatch|lid|shutter/i;
+  // the last 25 cm before a work spot (a node he faces something from: window, seat, stove) may be close to the thing he works at
+  const workNode = n => !!(n && (n.face != null || n.seat != null || n.sit || n.tight));
   function navReport(r = .2) {
-    const bad = []; for (const [a, b, t] of HH.E) { if (t === 'ladder') continue; const A = HH.N[a].p, B = HH.N[b].p; for (let k = 0; k <= 12; k++) { const q = A.clone().lerp(B, k / 12); const d = clearance(q.x, q.y, q.z, r); if (d > .01) { bad.push([a + '-' + b, k, +(d * 100).toFixed(1)]); break; } } }
+    const bad = []; for (const [a, b, t] of HH.E) { if (t === 'ladder') continue; const A = HH.N[a].p, B = HH.N[b].p; if (Math.abs(A.y - B.y) > .3) continue; /* stairs / slopes: the floors' own business */
+      const y = Math.min(A.y, B.y) + .02, L = Math.hypot(B.x - A.x, B.z - A.z) || 1, ta = workNode(HH.N[a]) ? Math.min(.5, .25 / L) : 0, tb = workNode(HH.N[b]) ? Math.max(.5, 1 - .25 / L) : 1; const di = sweep(A.x, A.z, B.x, B.z, y, .09, ta, tb, .003, .25); if (di > .003) { bad.push([a + '-' + b, 'core', +(di * 100).toFixed(1), sweep.at]); continue; }
+      const d = sweep(A.x, A.z, B.x, B.z, y, r, ta, tb, .015, .33); if (d > .015) bad.push([a + '-' + b, 'side', +(d * 100).toFixed(1), sweep.at]); } /* the body's core line (9 cm either side, from 25 cm up) must touch nothing: a rung or rail across it is thin (1-2 cm deep at best); the full width may graze a wall or a threshold up to 1.5 cm, from the knee up (33 cm): a stone or root 20 cm off the line at ankle height is the feet's business (gamewalk plants them clear with footFree), not the body's (g_exit1-g_exit15) */
     return bad;
   }
 
   // nodes of the walk graph that stand too close to something solid move to the nearest spot with room for the body
   // (not ladder ends, seats or the tight approach spots: hero.js aligns those to the furniture itself)
-  const navMoved = [];
+  // Both run once every shape is really built: on the site the grids come from a worker and the big merged meshes are cut a slice a
+  // frame, and until then a shape is only its box (a box round the door frame, the rope ladder or a chair moved 'ledge' 21 cm and
+  // flagged 5 edges on every load that the tests, which build everything up front, never saw). Tests: right here, at load.
+  const navMoved = []; let navDone = false;
+  const navReady = () => !bigQ.length && !cutting && !pending.length && !inFlight.size && S.every(s => s.dead || s.kind !== 'vox' || s.ready);
+  function navCheck() { navDone = true;
   { const lad = new Set(); for (const [a, b, t] of HH.E) if (t === 'ladder') { lad.add(a); lad.add(b); }
     for (const k in HH.N) { const n = HH.N[k]; if (lad.has(k) || n.sit || n.seat != null || n.tight) continue; const p = n.p; if (clearance(p.x, p.y, p.z) <= .003) continue;
       let best = null; for (let r = .03; r <= .3 && !best; r += .03) for (let a = 0; a < 16; a++) { const x = p.x + Math.cos(a * Math.PI / 8) * r, z = p.z + Math.sin(a * Math.PI / 8) * r; if (clearance(x, p.y, z) <= .003) { best = [x, z]; break; } }
       if (best) { navMoved.push([k, +(best[0] - p.x).toFixed(3), +(best[1] - p.z).toFixed(3)]); p.x = best[0]; p.z = best[1]; } } }
+  // the walk graph must not lead through anything solid (R43-2: a route through the kitchen ladder). Checked once at load, after the
+  // nodes above were moved clear: an edge whose 20 cm body column (knee to head) crosses a ladder, post, rail or furniture is an error
+  // (console + window.__navBad; the anim gate fails on it). Ladder edges climb through their own rungs by design and are skipped.
+  try { navMode = true; let bad; try { bad = navReport(.2); } finally { navMode = false; } window.__navBad = bad; if (bad.length) console.error('collide navReport: walk edges through solid things', JSON.stringify(bad)); } catch (e) { } }
+  if (navReady()) navCheck();
   // free(p): move a standing / walking spot (root on the floor) to the nearest place where the body has room:
   // legs, swinging arms and head clear of everything solid. hero.js calls it from pushOut (walking, approaching a job).
   const RAD = [[.35, .17], [.7, .22], [.95, .26], [1.25, .23]], fp = V();
@@ -588,6 +619,6 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function heldDepth() { skin(); const r = {}; for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const HBs = heldBoxes(L.C); if (!HBs.length) continue;
       let w = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > w) w = d; } } r[c === 2 ? 'L' : 'R'] = +(w * 100).toFixed(1); } return r; }
   const api = { trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
-    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), footFree, soleDepth: (x, y, z, dx = 0, dz = 1) => sole(x, y, z, dx, dz), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
+    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), sweep, footFree, soleDepth: (x, y, z, dx = 0, dz = 1) => sole(x, y, z, dx, dz), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => { while (bigQ.length || cutting) cutBig(1e9); buildSome(1e9); } };
   return api;
 }
