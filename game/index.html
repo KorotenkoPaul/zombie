@@ -92,6 +92,17 @@ import { buildProps } from './props.js';
 import { createCameraRig, createDOF } from './camera.js';
 import { createPerf } from './perf.js';
 import RAPIER from 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
+/* [PERF] spot lights: every lit pixel ran the full lighting of all 6 lamp spots, with 17-tap shadow lookups for the 2 that cast,
+   even by day when every lamp is off (black) and at night outside each lamp's cone. A spot whose light can't reach the pixel
+   (getSpotLightInfo: outside the cone, out of range or black) now skips its shadow lookup and shading. It added exactly nothing
+   there, so the picture is the same (A/B, see NOTES-perf). Same light count, so no shader recompiles when lamps go on or off.
+   ?nospotskip turns it off. */
+{const C=THREE.ShaderChunk,a='getSpotLightInfo( spotLight, geometryPosition, directLight );',
+  re='RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );';
+ const t=C.lights_fragment_begin,i=t.indexOf('#if ( NUM_SPOT_LIGHTS > 0 )'),j=t.indexOf(a,i),k=t.indexOf(re,j),e=t.indexOf('#pragma unroll_loop_end',i);
+ window.__lfbOrig=t;
+ if(!/[?&]nospotskip/.test(location.search)&&i>=0&&j>i&&k>j&&k<e)C.lights_fragment_begin=t.slice(0,j)+a+'\n\t\tif ( directLight.visible ) {'+t.slice(j+a.length,k)+re+'\n\t\t}'+t.slice(k+re.length);
+ window.__lfbSkip=C.lights_fragment_begin;}
 
 const $=id=>document.getElementById(id);
 const rnd=(a,b)=>a+Math.random()*(b-a);
@@ -448,7 +459,45 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  const waitN=new Map();const due=l=>l.castShadow&&l.shadow&&!l.shadow.autoUpdate&&l.shadow.needsUpdate;
  sm.render=(L,sc,cam)=>{const held=[];const D=L.filter(due);if(D.length>1){D.sort((a,b)=>(waitN.get(b)||0)-(waitN.get(a)||0)||(a===sun?-1:b===sun?1:0));
    const go=D[0]===sun?[sun]:[D[0]];for(const l of D){if(go.includes(l)){waitN.set(l,0);continue;}l.shadow.needsUpdate=false;held.push(l);waitN.set(l,(waitN.get(l)||0)+1);}}
-  for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{draw(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
+  for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}const PV=window.__plView||[];for(const v of PV)if(v.hid){v.S.visible=true;v.D.visible=false;}/* the shadow passes see the real plank meshes */try{draw(L,sc,cam);}finally{for(const v of PV)if(v.hid){v.S.visible=false;v.D.visible=true;}for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
+/* [PERF] chunked draw ranges: the bark (43k tris), the merged house props (propsStatic, ~66k), the forest trunks (18k) and the
+   ground litter (8.5k) are single meshes, so even
+   zoomed in on one room the whole of them was drawn (~340k tris at the closest zoom vs ~355k at home). Their triangles are
+   re-ordered once into 1 m x 1.5 m world cells (x first, then y; the vertices stay as they are); each frame the main pass draws
+   only the index range from the first to the last cell whose box (+0.5 m for the wind sway) is inside the camera's view.
+   Exact frustum culling, so the picture can't change; still one draw call per mesh; shadow passes and raycasts see the
+   whole mesh (the range is reset after each draw). ?nochunk or __noChunk=true turns it off. */
+{const _pm=new THREE.Matrix4(),_fr=new THREE.Frustum(),_v=new THREE.Vector3();const CX=1,CY=1.5,MG=.5;const camMoved=(st,cam)=>{const e=cam.matrixWorld.elements,P=cam.projectionMatrix;if(st.cc===cam&&st.cpj&&st.cpj.equals(P)){const dx=e[12]-st.cp[0],dy=e[13]-st.cp[1],dz=e[14]-st.cp[2];if(dx*dx+dy*dy+dz*dz<.01&&-(e[8]*st.cf[0]+e[9]*st.cf[1]+e[10]*st.cf[2])>.99998&&Math.abs(e[0]*st.cr[0]+e[1]*st.cr[1]+e[2]*st.cr[2])>.99998)return false;}st.cc=cam;st.cpj=(st.cpj||new THREE.Matrix4()).copy(P);st.cp=[e[12],e[13],e[14]];st.cf=[-e[8],-e[9],-e[10]];st.cr=[e[0],e[1],e[2]];return true;};/* the camera drifts a hair every frame: re-cull only after it moved 10 cm or turned ~0.4 deg (the boxes carry that much margin) */
+ const chunkify=m=>{const g=m.geometry;if(m.userData.chunks||m.isInstancedMesh||m.isSkinnedMesh||g.groups.length>1||(g.morphAttributes&&g.morphAttributes.position))return 0;
+  const pa=g.attributes.position,ix=g.index?g.index.array:null,n=(ix?ix.length:pa.count)/3|0;if(n<2000)return 0;
+  m.updateMatrixWorld(true);const mw=m.matrixWorld,kx=new Int32Array(n),ky=new Int32Array(n),bb=new Float32Array(n*6);
+  for(let t=0;t<n;t++){let x0=1e9,y0=1e9,z0=1e9,x1=-1e9,y1=-1e9,z1=-1e9;for(let k=0;k<3;k++){_v.fromBufferAttribute(pa,ix?ix[t*3+k]:t*3+k).applyMatrix4(mw);
+    if(_v.x<x0)x0=_v.x;if(_v.x>x1)x1=_v.x;if(_v.y<y0)y0=_v.y;if(_v.y>y1)y1=_v.y;if(_v.z<z0)z0=_v.z;if(_v.z>z1)z1=_v.z;}
+   kx[t]=Math.floor((x0+x1)/2/CX);ky[t]=Math.floor((y0+y1)/2/CY);bb.set([x0,y0,z0,x1,y1,z1],t*6);}
+  const ord=Array.from({length:n},(_,i)=>i).sort((a,b)=>kx[a]-kx[b]||ky[a]-ky[b]||a-b);
+  const vc=pa.count,NI=vc>65535?Uint32Array:Uint16Array,out=new NI(n*3),ch=[];let cur=null;
+  for(let i=0;i<n;i++){const t=ord[i];for(let k=0;k<3;k++)out[i*3+k]=ix?ix[t*3+k]:t*3+k;
+   if(!cur||cur.kx!==kx[t]||cur.ky!==ky[t]){cur={kx:kx[t],ky:ky[t],s:i*3,c:0,b:new THREE.Box3(new THREE.Vector3(1e9,1e9,1e9),new THREE.Vector3(-1e9,-1e9,-1e9))};ch.push(cur);}
+   cur.c+=3;const o=t*6;cur.b.expandByPoint(_v.set(bb[o],bb[o+1],bb[o+2]));cur.b.expandByPoint(_v.set(bb[o+3],bb[o+4],bb[o+5]));}
+  for(const c of ch)c.b.expandByScalar(MG+.5);
+  if(g.index&&g.index.array.length===out.length&&g.index.array.constructor===NI){g.index.array.set(out);g.index.needsUpdate=true;}else g.setIndex(new THREE.BufferAttribute(out,1));
+  const st={ch,last:new THREE.Matrix4(),lc:null,r0:0,r1:n*3};m.userData.chunks=st;
+  const ob=m.onBeforeRender,oa=m.onAfterRender;
+  m.onBeforeRender=function(r,sc,cam,geo){ob.apply(this,arguments);if(window.__noChunk||!cam||!cam.isPerspectiveCamera)return;
+   _pm.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);
+   if(camMoved(st,cam)){_fr.setFromProjectionMatrix(_pm);let a=-1,b=-1;
+    for(let i=0;i<ch.length;i++)if(_fr.intersectsBox(ch[i].b)){if(a<0)a=i;b=i;}
+    st.r0=a<0?0:ch[a].s;st.r1=a<0?0:ch[b].s+ch[b].c;}
+   geo.setDrawRange(st.r0,st.r1-st.r0);};
+  m.onAfterRender=function(r,sc,cam,geo){oa.apply(this,arguments);geo.setDrawRange(0,Infinity);};
+  return n;};
+ const NOCH=/[?&]nochunk/.test(location.search);let tries=0;
+ const done=window.__chunked={};
+ const go=()=>{const ps=scene.getObjectByName('propsStatic');const C=[];if(TREE&&TREE.bark)C.push(['bark',TREE.bark]);if(ps)ps.children.forEach((m,i)=>C.push(['props'+i,m]));
+  for(const nm of ['forestTrunks','litter']){const m=scene.getObjectByName(nm);if(m)C.push([nm,m]);}
+  for(const [k,m] of C)if(!(k in done)&&m.isMesh)done[k]=chunkify(m);
+  if((!ps||!('forestTrunks' in done)||!('litter' in done))&&++tries<900)requestAnimationFrame(go);};
+ if(!NOCH)requestAnimationFrame(go);}
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
 // `beams` instead of separate meshes: one draw call (and one per shadow pass) instead of ~40.
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
@@ -976,6 +1025,8 @@ const tableO=OBST.find(o=>o.n==='table');
 const heroMoves=await PREF.moves;
 // extra clip files (one per action family, so threads never fight over the big file): merged in, the main file wins on a name clash
 for(const f of ['hero-moves-repair.txt']){const x=await PREF.repair;if(x&&heroMoves)for(const k in x)if(!(k in heroMoves))heroMoves[k]=x[k];}
+/* TIGHT SKIN (thread "Сделать героя как в нормальных играх"): ?rig=tight recomputes the hero's smeared auto-rig weights into game-style tight weights at load (game/reskin.js) */
+if(new URLSearchParams(location.search).get('rig')==='tight'){/* not in ?style=game yet: while walking, the sweater still shows through the vest's front edge in thin lines */try{const {tightSkin}=await import(new URL(ASSET+'reskin.js',document.baseURI).href);window.__reskin=tightSkin(heroG.scene,THREE);}catch(e){console.error('reskin',e);}}
 const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{LC,WS,KT,BD,DK},sfx,OBST,chair:chairO,chairFace:Math.PI,bunk,bedHead:1,
  table:tableO?{x0:tableO.x0,x1:tableO.x1,z0:tableO.z0,z1:tableO.z1,top:BD+.765}:null,
  ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
@@ -986,6 +1037,10 @@ try{if(!/pose=off/.test(location.search)&&HH.stage){const PG=createPoseGuard({he
 // motion matching for walking (game/motion.js, mocap from CMU): attached when the database loads
 try{const {createClimb}=await import(new URL(ASSET+'climb.js',document.baseURI).href);if(HH.setClimb){window.__climb=createClimb();HH.setClimb(window.__climb);}}catch(e){console.error('climb',e);}
 try{const mdb=await PREF.mdb;if(mdb&&HH.setMotion){window.__motion=createMotion({hero:HH,db:mdb});HH.setMotion(window.__motion);}}catch(e){console.error('motion',e);}
+/* HERO LOOK (thread "Сделать героя как в нормальных играх"): ?look=game draws a clean silhouette line round the hero (game/herolook.js) */
+if(/^(game)$/.test(new URLSearchParams(location.search).get('look')||'')||new URLSearchParams(location.search).get('style')==='game'){try{const {createHeroLook}=await import(new URL(ASSET+'herolook.js',document.baseURI).href);const HL=createHeroLook({THREE,root:HH.hero.root,camera,renderer});window.__herolook=HL;HH.stage('guard',()=>HL.update());}catch(e){console.error('herolook',e);}}
+/* GAME WALK (thread "Сделать героя как в нормальных играх"): ?walk=game puts the hero's walking on a clean game-style cycle (game/gamewalk.js), in the 'motion' slot after motion.js */
+if(/^(game)$/.test(new URLSearchParams(location.search).get('walk')||'')||new URLSearchParams(location.search).get('style')==='game'){try{const {createGameWalk}=await import(new URL(ASSET+'gamewalk.js',document.baseURI).href);const GW=createGameWalk({THREE,hero:HH});if(GW){window.__gamewalk=GW;HH.stage('motion',dt=>GW.update(dt));}}catch(e){console.error('gamewalk',e);}}
 const hero=HH.hero,heroBones=HH.bones,N=HH.N,startTask=HH.startTask;
 // ---- age (round 3): wear paths seeded from his walking graph, then stamped wherever he actually walks; repair API for Brain
 {for(const [a,b,t] of HH.E||[]){if(t||!N[a]||!N[b])continue;const A=N[a].p,Bp=N[b].p;const n=Math.ceil(A.distanceTo(Bp)/.05);for(let k=0;k<=n;k++){const p=A.clone().lerp(Bp,k/n);WEAR.stamp(p.x,p.y,p.z,.03,.3);}}
@@ -1001,13 +1056,45 @@ const freshAttr=m=>m===boards?aFresh:m===beams?dFresh:sFresh;
 //  wear(x,y,z,amt)    -> add foot wear on the floor at that point (0..1)
 // [PERF] static house parts this thread owns: matrices frozen (no updateMatrix per frame). Instances still move via instanceMatrix.
 {const fr=o=>{o.updateMatrix();o.matrixAutoUpdate=false;o.updateMatrixWorld(true);};for(const m of [boards,beams,SHING])fr(m);scene.traverse(o=>{if(o.userData.plStatic)o.traverse(fr);});}
-window.__planks={meshes:{boards,beams,shingles:SHING},part:id=>PL[id]/* [PROPS] housewear.js: the instance behind an id */,list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
+/* [PERF] the house planks (boards, beams, roof shingles: ~1400 instances, 44 tris each, ~60k tris) were all drawn in every
+   frame, zoomed in on one room too. The oak's leaf cards (TREE.leaves, ~150 big alpha-tested cards, ~1.2 screens of shading)
+   go through the same view copy, sorted nearest first (measured: about half the leaf fragments shaded, see NOTES-perf). Each frame the main camera sees, per plank mesh, a "view" copy holding only the instances
+   whose bounding sphere (+0.1 m) is inside the view frustum, copied (matrix, colour, aRow/aTile/aWx/aFresh...) from the real
+   mesh whenever the camera or any of its instance data changed. The real meshes stay as they are for everything else
+   (housewear.js, repairs, loose boards, collide, raycasts, the box shadow proxies): they are only hidden while the scene renders,
+   and outside a render the view copies draw nothing (count 0). Exact frustum culling: the picture can't change. ?noplcull */
+if(/[?&]plcull\b/.test(location.search)){/* P0: view copies made the house and the oak leaves vanish on live; off by default until fixed, ?plcull turns them on */const camMoved=(st,cam)=>{const e=cam.matrixWorld.elements,P=cam.projectionMatrix;if(st.cc===cam&&st.cpj&&st.cpj.equals(P)){const dx=e[12]-st.cp[0],dy=e[13]-st.cp[1],dz=e[14]-st.cp[2];if(dx*dx+dy*dy+dz*dz<.01&&-(e[8]*st.cf[0]+e[9]*st.cf[1]+e[10]*st.cf[2])>.99998&&Math.abs(e[0]*st.cr[0]+e[1]*st.cr[1]+e[2]*st.cr[2])>.99998)return false;}st.cc=cam;st.cpj=(st.cpj||new THREE.Matrix4()).copy(P);st.cp=[e[12],e[13],e[14]];st.cf=[-e[8],-e[9],-e[10]];st.cr=[e[0],e[1],e[2]];return true;};/* the camera drifts a hair every frame: re-cull only after it moved 10 cm or turned ~0.4 deg (the boxes carry that much margin) */const VW=[],_fr=new THREE.Frustum(),_pm=new THREE.Matrix4(),_sp=new THREE.Sphere(),_c=new THREE.Vector3();
+ for(const [S,SORT] of [[boards,0],[beams,0],[SHING,0],[TREE.leaves&&TREE.leaves.isInstancedMesh?TREE.leaves:null,1]]){if(!S)continue;const g=S.geometry;if(!g.boundingSphere)g.computeBoundingSphere();const dg=new THREE.BufferGeometry();dg.setIndex(g.index);
+  for(const k in g.attributes){const a=g.attributes[k];dg.setAttribute(k,a.isInstancedBufferAttribute?new THREE.InstancedBufferAttribute(new a.array.constructor(a.array.length),a.itemSize):a);}
+  const D=new THREE.InstancedMesh(dg,S.material,S.instanceMatrix.count);D.count=0;D.frustumCulled=false;D.castShadow=false;D.receiveShadow=S.receiveShadow;D.layers.mask=S.layers.mask;D.renderOrder=S.renderOrder;
+  D.raycast=()=>{};D.name=(S.name||'planks')+'View';D.matrixAutoUpdate=false;D.matrix.copy(S.matrixWorld);D.matrixWorld.copy(S.matrixWorld);D.userData.planksView=true;scene.add(D);
+  VW.push({S,D,g,dg,SORT,dist:SORT?new Float32Array(S.instanceMatrix.count):null,ver:new Map(),mv:-1,n:-1,cen:new Float32Array(S.instanceMatrix.count*3),rad:new Float32Array(S.instanceMatrix.count),vis:new Int32Array(S.instanceMatrix.count),k:0,cam:new THREE.Matrix4(),hid:false});}
+ const srcAttrs=v=>{const L=[['instanceMatrix',v.S.instanceMatrix,'m']];if(v.S.instanceColor)L.push(['instanceColor',v.S.instanceColor,'c']);for(const k in v.g.attributes){const a=v.g.attributes[k];if(a.isInstancedBufferAttribute)L.push([k,a,'g']);}return L;};
+ const update=(v,cam)=>{const S=v.S,n=S.count;if(!v.L||v.hasC!==!!S.instanceColor){v.L=srcAttrs(v);v.hasC=!!S.instanceColor;}const L=v.L;let dirty=n!==v.n;for(const [k,a] of L)if(v.ver.get(k)!==a.version){dirty=true;}
+  const persp=cam&&cam.isPerspectiveCamera;if(persp&&camMoved(v,cam))dirty=true;
+  if(!dirty)return;
+  if(S.instanceMatrix.version!==v.mv||n!==v.n){const e=S.instanceMatrix.array,bs=v.g.boundingSphere,mw=S.matrixWorld;v.D.matrix.copy(mw);v.D.matrixWorld.copy(mw);
+   for(let i=0;i<n;i++){const o=i*16;_pm.fromArray(e,o).premultiply(mw);_sp.copy(bs).applyMatrix4(_pm);v.cen[i*3]=_sp.center.x;v.cen[i*3+1]=_sp.center.y;v.cen[i*3+2]=_sp.center.z;v.rad[i]=_sp.radius+.6;}
+   v.mv=S.instanceMatrix.version;if(persp)_pm.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);}
+  let k=0;if(persp){_pm.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);_fr.setFromProjectionMatrix(_pm);for(let i=0;i<n;i++){_sp.center.set(v.cen[i*3],v.cen[i*3+1],v.cen[i*3+2]);_sp.radius=v.rad[i];if(_fr.intersectsSphere(_sp))v.vis[k++]=i;}}else for(let i=0;i<n;i++)v.vis[k++]=i;
+  if(v.SORT&&persp&&k>1){const cp=cam.matrixWorld.elements,cx=cp[12],cy=cp[13],cz=cp[14],dd=v.dist;for(let j=0;j<k;j++){const i=v.vis[j];dd[i]=(v.cen[i*3]-cx)**2+(v.cen[i*3+1]-cy)**2+(v.cen[i*3+2]-cz)**2;}v.vis.subarray(0,k).sort((a,b)=>dd[a]-dd[b]);}/* leaf cards: nearest first, so the depth test rejects the hidden parts of the cards behind (alpha-tested cards write depth: the picture doesn't depend on the order) */
+  for(const [key,a,w] of L){let d=w==='m'?v.D.instanceMatrix:w==='c'?v.D.instanceColor:v.dg.attributes[key];
+   if(!d){d=new THREE.InstancedBufferAttribute(new a.array.constructor(a.array.length),a.itemSize);if(w==='c')v.D.instanceColor=d;else v.dg.setAttribute(key,d);}
+   const is=a.itemSize,sa=a.array,da=d.array;for(let j=0;j<k;j++){const i=v.vis[j];for(let q=0;q<is;q++)da[j*is+q]=sa[i*is+q];}d.needsUpdate=true;v.ver.set(key,a.version);}
+  v.n=n;v.k=k;};
+ const prevB=scene.onBeforeRender,prevA=scene.onAfterRender;
+ let depth=0;/* scene renders can nest (a pass rendering the scene from inside another render): only the outermost hides and restores */
+ scene.onBeforeRender=function(r,sc,cam,...a){if(prevB)prevB.call(this,r,sc,cam,...a);depth++;if(window.__noPlCull){for(const v of VW)if(v.hid){v.S.visible=true;v.hid=false;v.D.count=0;}return;}
+  for(const v of VW){if(!v.hid&&!v.S.visible){v.D.count=0;continue;}try{update(v,cam);}catch(e){console.warn('plank cull off',e);window.__noPlCull=true;for(const w of VW)if(w.hid){w.S.visible=true;w.hid=false;w.D.count=0;}return;}v.D.count=v.k;v.S.visible=false;v.hid=true;}};
+ scene.onAfterRender=function(...a){depth=Math.max(0,depth-1);if(depth===0)for(const v of VW){if(v.hid){v.S.visible=true;v.hid=false;}v.D.count=0;}if(prevA)prevA.apply(this,a);};
+ window.__plView=VW;}
+window.__planks={meshes:{boards,beams,shingles:SHING},part:id=>PL[id]/* [PROPS] housewear.js: the instance behind an id */,move:(id,m)=>{const p=PL[id];if(!p)return false;const b=B.find(b=>b.mesh===p.mesh&&b.i===p.i);if(!b||b.loose)return false;const q=new THREE.Quaternion(),c=V();m.decompose(c,q,V());b.rb.setTranslation({x:c.x,y:c.y,z:c.z},true);b.rb.setRotation({x:q.x,y:q.y,z:q.z,w:q.w},true);physWake=Math.max(physWake,3);return true;}/* [PROPS] housewear.js: a worn board's collider follows it */,list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
  setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,-1,1))/* below 0: worn, water-stained (housewear.js) */;A.needsUpdate=true;return true;},
  fresh:id=>PL[id]?freshAttr(PL[id].mesh).getX(PL[id].i):null,
  near:(x,y,z,r=.5,k)=>PL.map((p,id)=>[p,id]).filter(([p])=>(!k||p.kind===k)&&p.c.distanceTo(V(x,y,z))<r).map(([,id])=>id),
  wear:(x,y,z,a=.1)=>WEAR.stamp(x,y,z,a)&&(WEAR.tex.needsUpdate=true)};
 // [PROPS] house wear you can see (game/housewear.js): loose floor boards, warped wall boards, leaning rail posts, slipped slates, a fraying gate rope; repairs put them right
-let HWEAR=null;try{HWEAR=(await import(new URL(ASSET+'housewear.js',document.baseURI).href)).createHouseWear({THREE,planks:window.__planks,N,hour:()=>hour,hero:()=>({pos:hero.root.position,task:hero.task,still:!hero.path.length}),ladder:{x:0,z:4.0,top:LC+.1}});if(HWEAR.mesh)scene.add(HWEAR.mesh);window.__wear=HWEAR;}catch(e){console.error('housewear',e);}
+let HWEAR=null;try{HWEAR=(await import(new URL(ASSET+'housewear.js',document.baseURI).href)).createHouseWear({THREE,planks:window.__planks,N,E:HH.E||[],solid:(x,y,z)=>{if(inTrunk(x,y,z,.1)||trunkSolid(x,y,z,.1))return true;const h=world.castRay(new RAPIER.Ray({x,y:y+1.4,z},{x:0,y:-1,z:0}),1.4,true);const t=h?(h.toi??h.timeOfImpact):null;if(t!=null&&t<1.4-.02)return true;/* anything solid over the spot (bark, a branch, a beam) */const rc=new THREE.Raycaster(V(x,y+1.4,z),V(0,-1,0),0,1.4-.02);return rc.intersectObject(TREE.bark,false).length>0;},rayPrep:()=>{try{world.queryPipeline.update(world.bodies,world.colliders);}catch(e){}},floorAt:(x,y,z,up=.45,down=.9,boards=false)=>{const h=world.castRayAndGetNormal(new RAPIER.Ray({x,y:y+up,z},{x:0,y:-1,z:0}),up+down,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});if(boards&&h){const u=h.collider&&h.collider.userData;if(!(u&&u.size&&!u.dark))return null;}/* only on the house's floor boards (not a branch at the same height) */const t=h&&h.normal.y>.6?(h.toi??h.timeOfImpact):null;return t==null?null:y+up-t;},hour:()=>hour,hero:()=>({pos:hero.root.position,task:hero.task,still:!hero.path.length}),ladder:{x:0,z:4.0,top:LC+.1},windows:WINS});if(HWEAR.mesh)scene.add(HWEAR.mesh);if(HWEAR.nails)scene.add(HWEAR.nails);window.__wear=HWEAR;}catch(e){console.error('housewear',e);}
 const bow=makeBow();heroBones.LeftHand.add(bow);bow.position.set(0,.07,.03);bow.rotation.set(0,0,0);bow.scale.setScalar(1/Math.max(.001,heroBones.LeftHand.getWorldScale(V()).x));bow.visible=false;/* the old guard bow: hidden until a guard task (the game loop sets it each frame, but the QA stepper and watchers never run that loop and saw it in his hand and over his shoulder during chores) */
 function play(c,name,{loop=true,fade=.25,speed=1}={}){const a=c.actions[name];if(!a||c.cur===a)return a;a.reset();a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);a.clampWhenFinished=!loop;a.timeScale=speed;a.enabled=true;if(c.cur)c.cur.crossFadeTo(a,fade,false);a.play();c.cur=a;return a;}
 
