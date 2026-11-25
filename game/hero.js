@@ -1275,7 +1275,7 @@ export function createHero(ctx){
  function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
  function teleParts(){const P=window.__props||P3;let t=P&&P.placed&&P.placed.telescope;if(!t){t=null;scene.traverse(o=>{if(!t&&o.name==='telescope'&&o.userData&&o.userData.tube)t=o;});if(!t)scene.traverse(o=>{if(!t&&o.userData&&o.userData.tube&&o.userData.tube.parent)t=o;});}const tube=t&&t.userData&&t.userData.tube;if(!tube||!tube.parent)return null;
   const W=(x,y,z)=>{tube.updateMatrixWorld(true);return tube.localToWorld(V(x,y,z));};
-  return {t,tube,yoke:tube.parent,eye:()=>W(-.5,0,0),dir:()=>W(1,0,0).sub(W(0,0,0)).normalize(),gripR:()=>W(-.12,.05,0)/* LEISURE: on top of the tube a hand-width ahead of the left one, not at arm's full stretch */,gripL:()=>W(-.3,-.045,0),floor:t.position.y};}
+  return {t,tube,yoke:tube.parent,eye:()=>W(-.5,0,0),dir:()=>W(1,0,0).sub(W(0,0,0)).normalize(),gripR:()=>W(-.27,.065,0)/* LEISURE: the fist on top of the tube just ahead of the left hand. It was 15 cm further on (-.12): 0.55 m from his shoulder against a 0.47 m arm, so the hand fell short beside the tube and the fingers went 4 cm into it. The fist centre sits a fist's half-thickness over the brass (r .03-.038) */,gripL:()=>W(-.3,-.045,0),floor:t.position.y};}
  function teleStand(T){const E=T.eye(),d=T.dir();const dh=V(d.x,0,d.z).normalize();return E.clone().addScaledVector(dh,-.24).setY(T.floor);}
  // a hand onto a point by the arm alone (no leaning the body toward it): for holds while the body has its own pose to keep
  const PALM=.06;/* palm centre to wrist */
