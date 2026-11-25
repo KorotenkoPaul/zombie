@@ -395,7 +395,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
  // stronger blue rim and a cooler lift in the shadows. Uniform tweaks only: no extra draw calls or passes.
- const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:1.2,sheet:3.4,mist:2.6,/* [ENV] photo night: one soft continuous bank round the roots (sheets), not white cotton puddles (puffs); less flat haze wall over the forest (mist bands) */fill:1.7,rim:1.6,moonRim:1.8,haze:.6,/* [ENV] photo check (Lights): the photo's night has a thick softly glowing blue bank round the roots and a hazier forest */lift:new THREE.Color(0x122c52)};env.phoneNightK=PH;
+ const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:1.2,sheet:3.4,mist:1.1,/* [ENV] photo night: one soft continuous bank round the roots (sheets), not white cotton puddles (puffs); less flat haze wall over the forest (mist bands) */fill:1.7,rim:1.6,moonRim:1.8,haze:.6,/* [ENV] photo check (Lights): the photo's night has a thick softly glowing blue bank round the roots and a hazier forest */lift:new THREE.Color(0x122c52)};env.phoneNightK=PH;
  const liftBase=env.gradePass.uniforms.lift.value.clone(),liftTmp=new THREE.Color();
  function phoneNight(eve,rainK){const k=eve;PH.cur=k;const f=x=>1+(x-1)*k;
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
