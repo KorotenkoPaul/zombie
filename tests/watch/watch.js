@@ -20,7 +20,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
  const {b,p,errs}=await open({seed:SEED,vp:{width:SZ,height:SZ}});
  if(hero!=='old')console.log('note: --hero new needs ?hero=new support in lib; using default');
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
- await p.evaluate(()=>__qa.start());await p.evaluate(f=>{window.__watchFast=f;},FAST);if(FIXCAM)await p.evaluate(c=>{window.__watchCam=c;},FIXCAM.split(',').map(Number));
+ await p.evaluate(()=>__qa.start());await p.evaluate(f=>{window.__watchFast=f;},FAST);if(FIXCAM)await p.evaluate(c=>{window.__watchCam=c;},FIXCAM.split(',').map(Number));const JS=arg('js',null);if(JS)await p.evaluate(JS);
  await p.evaluate(()=>{
   const T=__dbg.THREE,H=__dbg.hero;let scene=H.root;while(scene.parent)scene=scene.parent;
   const mine=o=>{while(o){if(o===H.root)return true;o=o.parent;}return false;};
