@@ -555,11 +555,11 @@ vec3 slate(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] sam
  vec2 off=vec2(sH(sd+.7),sH(sd+1.9))*5.;
  vec2 uv=(top>.5?m.xz:(an.x>an.z?m.zy:m.xy))/.9+off;
  vec3 tx=texture2D(tSlate,uv).rgb;float lum=dot(tx,vec3(.3,.6,.1));
- vec3 col=pow(tx,vec3(1.1))*vec3(.66);
+ vec3 col=pow(tx,vec3(1.1))*vec3(.95);
  // the scan is quite blue (mean 89,104,120) and the night ambient is blue too: keep only a hint of the blue-grey so the roof
  // reads dark slate under the moon, not saturated blue
  /* [PROPS roof round] the photo's slate is a cool blue-grey with paler weathered faces, not charcoal: brighter, more of the scan's blue kept */
- col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,.62)*vec3(.97,1.,1.04);
+ col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,.85)*vec3(.88,1.,1.15);/* [TREE, 2026-11-25] lighter and bluer: at night the roofs read near-black vs the photo's blue slate */
  // each slate its own tone: some bluer, some greener-grey, some rust-brown stained, a few pale weathered
  float t=sH(sd+2.2);col*=mix(vec3(.8,.8,.84),vec3(1.1,1.06,1.0),t);
  if(sH(sd+7.)<.12)col*=vec3(1.18,1.02,.86);
