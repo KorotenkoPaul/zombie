@@ -453,6 +453,16 @@ export function buildTree(THREE, o) {
   vec3 u=normalize(cross(ax,vec3(0.,1.,0.))+vec3(1e-4,0.,0.));vec3 w=cross(ax,u);float an=atan(dot(wn,w),dot(wn,u));float al=dot(wp,ax);
   float ph=an*7.+1.4*sin(al*.8+an*2.)+.7*sin(al*2.1-an*3.);float gr=smoothstep(.55,.97,abs(sin(ph)));float aa=1.-smoothstep(.6,1.6,fwidth(an*7.));
   float k=bw*aa;diffuseColor.rgb*=1.-.42*gr*k;diffuseColor.rgb*=1.+.1*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
+    // rain: wet bark darkens and gets a sheen (Env's env.wet, like the forest: roughness x(1-.55w), colour x(1-.35w)),
+    // most on the up-facing, rain-exposed sides, less under the crown and the house
+    const WET = (o.env || window.__env || {}).wet;
+    if (WET) {
+      sh.uniforms.bWet = WET;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float bWet;')
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{vec3 nWw=normalize((vec4(normal,0.)*viewMatrix).xyz);float wk=bWet*(.45+.55*smoothstep(-.3,.6,nWw.y))*(1.-.45*smoothstep(4.,9.,vY));
+ roughnessFactor*=1.-.55*wk;diffuseColor.rgb*=1.-.35*wk;}`);
+    }
     // warm bark round the house at night (Environment drives env.barkWarm): diffuse only, the bark stays matte
     const BW = (o.env || window.__env || {}).barkWarm;
     if (BW) {
