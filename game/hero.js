@@ -46,9 +46,7 @@ export function createHero(ctx){
  const P3=ctx.props||window.__props||null;
  const root=gltf.scene;scene.add(root);
  {const seenM=new Set();root.traverse(o=>{if((o.isMesh||o.isSkinnedMesh)&&o.material&&!Array.isArray(o.material)){if(seenM.has(o.material))o.material=o.material.clone();seenM.add(o.material);}});}/* PERF: one material per mesh. Material_0/head were shared by meshes with different morph-target counts (eyelids, coat): three.js switched their program twice a frame (~0.2 ms, ~35 KB garbage) */
- root.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;if(o.material){o.material.roughness=Math.max(.55,o.material.roughness??.8);o.material.metalness=0;}}});
- /* [HERO LOOK] cloth surfaces for the v6 hero: knit, twill, leather grain and wear, clean colour over the smeared UVs (heroclothes.js) */
- try{if(ctx.dressHero)window.__clothes=ctx.dressHero({THREE,root});}catch(e){console.warn('clothes',e);}
+ root.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;if(o.material){o.material.roughness=Math.max(.55,o.material.roughness??.8);o.material.metalness=0;}}}); /* [HERO LOOK] cloth surfaces for the v6 hero (heroclothes.js) */try{if(ctx.dressHero)window.__clothes=ctx.dressHero({THREE,root});}catch(e){console.warn('clothes',e);}
  /* [PERF] shadow proxy: a hero glb may carry 'heroShadow' (body+head decimated to ~4.6k tris, same skin). It alone casts the body's
     shadow, on layer 6, which only the shadow cameras see (index.html sun, lights.js lamps); Mesh_0 stops casting (32k tris less per
     shadow pass). vest and boots keep their own shadows, so taking them off still shows. */
@@ -2996,8 +2994,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const bb=new THREE.Box3();const nm=new THREE.Matrix3().getNormalMatrix(src.bindMatrix);
    used.forEach((v,i)=>{const q=bp(v);pos.set([q.x,q.y,q.z],i*3);bb.expandByPoint(q);const n=V(N0.getX(v),N0.getY(v),N0.getZ(v)).applyMatrix3(nm).normalize();nor.set([n.x,n.y,n.z],i*3);if(uv)uv.set([UV.getX(v),UV.getY(v)],i*2);});
    const c=bb.getCenter(V());for(let i=0;i<used.length;i++){pos[i*3]-=c.x;pos[i*3+1]-=bb.min.y;pos[i*3+2]-=c.z;}
-   const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(pos,3));sg.setAttribute('normal',new THREE.BufferAttribute(nor,3));if(uv)sg.setAttribute('uv',new THREE.BufferAttribute(uv,2));sg.setIndex(keep.map(v=>remap.get(v)));
-   /* [HERO LOOK] a boot in his hand or by the bed keeps the worn boot's leather (heroclothes.js attributes, same material) */const KA=g.attributes.kp?['kp','kn','kx'].map(a=>g.attributes[a]):null;if(KA)for(const A of KA){const n=A.itemSize,ar=new Float32Array(used.length*n);used.forEach((v,i)=>{for(let k=0;k<n;k++)ar[i*n+k]=A.array[v*n+k];});sg.setAttribute(A===KA[0]?'kp':A===KA[1]?'kn':'kx',new THREE.BufferAttribute(ar,n));}
+   const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(pos,3));sg.setAttribute('normal',new THREE.BufferAttribute(nor,3));if(uv)sg.setAttribute('uv',new THREE.BufferAttribute(uv,2));sg.setIndex(keep.map(v=>remap.get(v)));/* [HERO LOOK] a boot in his hand or by the bed keeps the worn boot's leather (heroclothes.js attributes, same material) */const KA=g.attributes.kp?['kp','kn','kx'].map(a=>g.attributes[a]):null;if(KA)for(const A of KA){const n=A.itemSize,ar=new Float32Array(used.length*n);used.forEach((v,i)=>{for(let k=0;k<n;k++)ar[i*n+k]=A.array[v*n+k];});sg.setAttribute(A===KA[0]?'kp':A===KA[1]?'kn':'kx',new THREE.BufferAttribute(ar,n));}
    const pm=new THREE.Mesh(sg,KA?(Array.isArray(src.material)?src.material[0]:src.material):(Array.isArray(src.material)?src.material[0]:src.material).clone());pm.castShadow=true;pm.visible=false;pm.name='boot'+sd;scene.add(pm);
    B.prop=pm;B.c0=V(c.x,bb.min.y,c.z);// bind-space position of the prop origin
    B.foot=bones[sd+'Foot'];B.fi=bi(sd+'Foot');B.S=S;B.src=src;
@@ -3118,8 +3115,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const P=g.attributes.position;const pos=new Float32Array(P.count*3);const bb=new THREE.Box3();for(let i=0;i<P.count;i++){const q=V(P.getX(i),P.getY(i),P.getZ(i)).applyMatrix4(VEST.bindMatrix);pos.set([q.x,q.y,q.z],i*3);bb.expandByPoint(q);}
   const c=bb.getCenter(V());// folded: flattened to a low pile, laid on its back on the quilt
   for(let i=0;i<P.count;i++){const x=pos[i*3]-c.x,y=pos[i*3+1]-c.y,z=pos[i*3+2]-c.z;pos[i*3]=x*.55;pos[i*3+1]=z*.35+.025;pos[i*3+2]=-y*.45;}
-  const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(pos,3));if(g.attributes.uv)sg.setAttribute('uv',g.attributes.uv);sg.setIndex(g.index);sg.computeVertexNormals();
-  /* [HERO LOOK] the folded vest keeps the worn vest's leather (heroclothes.js attributes, same material) */if(g.attributes.kp){for(const a of ['kp','kn','kx'])sg.setAttribute(a,g.attributes[a]);}
+  const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(pos,3));if(g.attributes.uv)sg.setAttribute('uv',g.attributes.uv);sg.setIndex(g.index);sg.computeVertexNormals();/* [HERO LOOK] the folded vest keeps the worn vest's leather (heroclothes.js attributes, same material) */if(g.attributes.kp){for(const a of ['kp','kn','kx'])sg.setAttribute(a,g.attributes[a]);}
   const pm=new THREE.Mesh(sg,g.attributes.kp?VEST.material:m);pm.castShadow=true;pm.visible=false;pm.name='vestFolded';scene.add(pm);return BT.vestProp=pm;}
  function vestPark(on){const pm=vestProp();if(!pm)return;if(on){const sp=vestSpot();pm.position.copy(sp.p);pm.rotation.set(0,sp.yaw,0);pm.scale.setScalar(BT.sc||1);}pm.visible=on;}
  // the folded vest lies on the floor in front of the bed edge, between his boots and a little further out: he sets it down there by
