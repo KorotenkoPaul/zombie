@@ -510,6 +510,8 @@ function meshesToBeams(g){g.updateMatrixWorld(true);for(const o of [...g.childre
 const B=[];// all boards {rb, size, q, inst, breakable, hp, group, loose}
 const tM=new THREE.Matrix4(),tQ=new THREE.Quaternion(),tP=V(),tS=V();
 // add a board centred at c with size (len,w,t) and rotation; long axis = local x
+/* [LIGHTS] a subfloor sheet: a dark-board instance with no physics body and no random draw (board() takes from the shared random stream; the house layout after it must not shift) */
+function subSheet(c,len,w,t,rot){const q=new THREE.Quaternion().setFromEuler(rot);const i=beams.count++;dRow.setX(i,13);dTile.setX(i,Math.max(.04,len/3.84));beams.setColorAt(i,new THREE.Color().setScalar(.55));beams.setMatrixAt(i,new THREE.Matrix4().compose(c,q,V(len,w,t)));}
 function board(c,len,w,t,rot,opt={}){const q=new THREE.Quaternion().setFromEuler(rot||new THREE.Euler());
  const rb=world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(c.x,c.y,c.z).setRotation({x:q.x,y:q.y,z:q.z,w:q.w}));
  const col=world.createCollider(RAPIER.ColliderDesc.cuboid(len/2,w/2,t/2).setDensity(600).setFriction(.8).setRestitution(.15),rb);
@@ -660,7 +662,9 @@ function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z)
   for(let z=cz+.25;z<cz+R-.2;z+=.8)for(const [a2,b2] of runs(x=>ok(x,z)&&ok(x,z+.1),cx-R,cx+R,.05,.3))board(V((a2+b2)/2,y-.115,z),b2-a2-.1,.14,.12,null,{dark:true});
   return;}
  // long runs are laid as 0.8–1.9 m boards butted end to end, joints staggered row to row (real end grain and joint lines)
- for(let x=x0+.125;x<x1;x+=.25){const xo=rnd(-.004,.004);for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e0=b0>=z1-.05?b0+rnd(-.05,.05):b0;for(const [a,e] of cutRun(a0,e0,.8,1.9,.004)){const L=lay();L.lift=Math.min(L.lift,.0035);L.roll=Math.max(-.02,Math.min(.02,L.roll));/* rugs lie flat on top */board(V(x+xo,y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}}}
+ for(let x=x0+.125;x<x1;x+=.25){const xo=rnd(-.004,.004);for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e0=b0>=z1-.05?b0+rnd(-.05,.05):b0;for(const [a,e] of cutRun(a0,e0,.8,1.9,.004)){const L=lay();L.lift=Math.min(L.lift,.0035);L.roll=Math.max(-.02,Math.min(.02,L.roll));/* rugs lie flat on top */board(V(x+xo,y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}}
+   /* [LIGHTS] o.sub (rooms): a dark subfloor under the boards. The gaps between the boards are real, and at night the bright fog and sky below showed through them as glowing blue lines in the lit rooms (Props). One dark sheet per run, a hair wider than the row, 6 cm under the boards' tops */
+   if(o.sub)for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12))subSheet(V(x,y+.035-.09,(a0+b0)/2),b0-a0,.262,.016,new THREE.Euler(-Math.PI/2,-Math.PI/2,0,'YXZ'));}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
  if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
@@ -814,14 +818,14 @@ if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
 ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
 const KX0=-4.4,KX1=-.9;
-floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]]});
+floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]],sub:true});
 wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
 wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]],-1);wallSide(KX1,.8,2.2,KT+.03,BD-.15,[],1);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start above the centre landing (they used to pass through it) */brace(V(-2.3,LC+.4,frontZ(-2.3,LC+.4)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,LC+.45,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
-floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]]});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
+floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]],sub:true});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
 const HATCH=(()=>{/* own plank materials: plain meshes sharing boardMat's instanced program came out flat white (critic T20) */const hB=boardMat.clone();plankShader(hB);const hD=boardMat.clone();plankShader(hD);hD.color.setScalar(.5);const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
@@ -853,7 +857,7 @@ floorBoards(BX1,1.8,BD,2.1,3.65,{noEdge:true});brace(V(.5,BD-1.6,2.3),V(1.6,BD-.
 ropeLadder(1.35,BD,DK+.05,3.15);
 // workshop (right, middle)
 const WX0=.9,WX1=4.6;
-floorBoards(WX0,WX1+.15,WS,.8,5.3);
+floorBoards(WX0,WX1+.15,WS,.8,5.3,{sub:true});
 wallBack(WX0,WX1,WS+.03,WS+2.3,1.2,[[3.2,3.95,WS+1.05,WS+1.75]]);
 wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]],1);wallSide(WX0,1.0,2.3,WS+.03,WS+2.3,[],-1);
 roof(WX0,WX1,WS+2.3,1.0,4.0,.95);post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
@@ -1210,8 +1214,8 @@ if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=M
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return 1/60;}// a day of 24 minutes, 1 game hour = 1 real minute (Pavel 2026-11-23)
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
-const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0xC9A39A,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xD2BFB2,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
- [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xB8B4AE,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xC8A090,0x7E8E9E,0xFFB27A,1.3,.56,.86],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
+const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0x8F9BB4,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xAAB5C4,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
+ [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xADB4BC,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xD8A07E,0x6E86A2,0xFFA468,1.6,.76,1.02],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
 function pal0(h){h=((h%24)+24)%24;let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=clamp((h-a[0])/(b[0]-a[0]),0,1);const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 // [ENV] the palette is linear between keys and then averaged over +-0.4 h: no ease-in/ease-out stall at every key and no
 // sudden speed-up between them (dawn and dusk change at an even pace, no pops when time runs fast)
@@ -1364,7 +1368,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour,moonIll});
  WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
- RAIN.update(dt,T,rainK,scene.fog.color);
+ RAIN.update(dt,T,rainK,scene.fog.color);if(RAIN.ready&&!RAIN._warm){RAIN._warm=1;/* [PERF] the splash and drip meshes are built once the rain map is ready (after the loading screen's shader prewarm): compile their shaders now, quietly, instead of as a hitch at the first rain */const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);/* same output target as the real draw, so the program keys match */for(const m of [RAIN.mesh.splash,RAIN.mesh.drips])if(m)try{renderer.compile(m,camera,scene);}catch(e){}renderer.setRenderTarget(rt0);}
  if(HWEAR)HWEAR.update(dt);
  if(AUDIO)AUDIO.update(dt);
  // --- spawn ---
