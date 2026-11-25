@@ -1636,7 +1636,16 @@ export function buildProps(ctx) {
   // --- things he carries in from outside: hidden until grabbed, hidden again on release
   for (const [k, f] of [['meatBag', meatBag], ['logArmful', logArmful]]) { const o = f(); o.visible = false; tool(k, o, scene, 0, -50, 0); o.userData.home.hide = true; }
   // --- outside at the foot of the oak: a big log pile and a sawhorse with a half-sawn plank and the saw in the cut
-  { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01, z); lp.rotation.y = .5; scene.add(lp); lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
+  { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01 + .075, z); lp.rotation.y = .5; scene.add(lp); /* [ground round] raised onto two old beams: real firewood is kept off the wet ground */
+    { const sl = new THREE.Group(); for (const sz of [-.24, .24]) W(sl, 1.32, .08, .085, 0, .04, sz, { mat: M.woodDark, r: .012, ry: rr(-.03, .03) }); sl.position.set(x, ghY(x, z) - .012, z); sl.rotation.y = .5; scene.add(sl);
+      // a leaf rake dropped by the far end of the pile, tines down on the little heap of oak leaves it raked together
+      const lw = new THREE.Vector3(-1.15, 0, .32).applyAxisAngle(V(0, 1, 0), .5).add(V(x, 0, z)); const hx = lw.x, hz = lw.z;
+      const rk = new THREE.Group(); add(rk, new THREE.CylinderGeometry(.013, .015, 1.45, 7), std2(0x5E4A36), .725, .05, 0, 0, 0, Math.PI / 2); add(rk, new THREE.BoxGeometry(.03, .025, .4), M.woodDark, 0, .05, 0);
+      for (let i = 0; i < 12; i++) add(rk, new THREE.CylinderGeometry(.003, .003, .06, 3), M.woodDark, -.01, .022, -.18 + i * .0327, 0, 0, -.35);
+      rk.position.set(hx + .05, ghY(hx, hz) + .03, hz); rk.rotation.set(0, 2.2, -.04); scene.add(rk);
+      const lf = new THREE.Group(); const LC = [0x4A3420, 0x5A3E22, 0x3E2E1C, 0x4E4626, 0x3A3220, 0x5E3A1E]; const lsh = new THREE.Shape(); { const P = []; for (let k = 0; k <= 12; k++) { const t = k / 12 * Math.PI, w = Math.sin(t) * (.016 + .006 * Math.cos(t * 7)); P.push([w, -Math.cos(t) * .03]); } lsh.moveTo(0, -.03); P.forEach(([w, y]) => lsh.lineTo(w, y)); for (let k = P.length - 1; k >= 0; k--) lsh.lineTo(-P[k][0], P[k][1]); } const lg = new THREE.ShapeGeometry(lsh, 1); lg.rotateX(-Math.PI / 2); lg.rotateX(Math.PI / 2); // a lobed oak-leaf outline
+      for (let i = 0; i < 170; i++) { const a = rr(0, 6.28), d = R() * .3, lx = Math.cos(a) * d, lz = Math.sin(a) * d * .8, h = .13 * Math.pow(1 - d / .3, 1.5) * (.4 + .6 * R()); const q = add(lf, lg, std2(LC[i % 6]), lx, ghY(hx + lx, hz + lz) + h + .006, lz, -Math.PI / 2 + rr(-.4, .4), rr(-.4, .4), rr(0, 6.28)); q.castShadow = false; }
+      lf.position.set(hx, 0, hz); scene.add(lf); } lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(lp); lp.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'logpile' }); PT.logpile = [lp, V(0, .9, .2)]; }
   { // chopping block (a sawn round standing on end) with the axe bitten into its top, beside the log pile
     const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.traverse(o => { if (o.isMesh && Array.isArray(o.material)) o.material = o.material.map(m => m === mx().endgrain ? endGrainMat(5, true) : m); }); /* the block's top: axe scars */ cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
@@ -1649,6 +1658,12 @@ export function buildProps(ctx) {
       if (SA && SA(x + cx, z + cz) > gy + .015) continue;
       W(ch, rr(.035, .09), rr(.008, .016), rr(.018, .04), cx, gy - y0 + .005, cz, { mat: R() < .7 ? mx().splitwood : M.woodDark, ry: rr(0, 3), rz: rr(-.15, .15), r: .003 }); nc++; }
     ch.position.set(x, y0, z); scene.add(ch); }
+  { // [ground round] the split wood from the block: quartered pieces thrown in a loose heap beside it, ready for the armful
+    const x = -4.32, z = 4.02, y0 = ghY(x, z); const kh = new THREE.Group();
+    for (let i = 0; i < 9; i++) { const l = rr(.3, .38), lay = i < 5 ? 0 : 1; const sp = new THREE.Group(); W(sp, .07, .06, l, 0, 0, 0, { mat: mx().splitwood, r: .006 }); W(sp, .005, .062, l, -.036, 0, 0, { mat: M.woodDark, r: .002 });
+      sp.position.set(lay ? rr(-.12, .12) : -.2 + i * .1, .03 + lay * .065, rr(-.05, .05)); sp.rotation.set(0, rr(-.35, .35), rr(-.4, .4)); kh.add(sp); }
+    kh.position.set(x, y0, z); kh.rotation.y = .3; scene.add(kh); kh.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(kh); kh.userData.box = b; kh.name = 'kindling'; placed.kindling = kh;
+    OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: y0, n: 'kindling' }); }
   { const x = -3.6, z = 1.95; const sh = sawhorse(); sh.position.set(x, ghY(x, z), z); sh.rotation.y = Math.PI / 2; scene.add(sh); sh.name = 'sawhorse'; placed.sawhorse = sh; sh.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(sh); sh.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'sawhorse' });
     tool('plankSaw', handSaw(), sh, .45, .62 + .035 + .13, .24, [0, Math.PI / 2, -.6]); PT.sawhorse = [sh, V(.45, .7, 0)]; }
