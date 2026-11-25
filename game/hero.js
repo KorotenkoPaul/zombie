@@ -1283,7 +1283,7 @@ export function createHero(ctx){
     if(!a.rel&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.08||a.t>(low?1.5:1.6))){a.rel=true;a.tr=a.t;if(bt)toBelt(n,hand);else relTool(hand,n);}
     if(a.rel&&a.t-a.tr>.4&&!(H.squat>0)){a.held.pop();a.rel=false;a.toBelt=null;a.t=0;a.rg=null;a.st=0;}}};
   const finish=()=>{a.ik=null;H.squat=0;if(a.putCb){const c=a.putCb;a.putCb=null;c();return;}endTask(o.result?o.result(a):undefined);};
-  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01)reachGrip(a.rg[0],a.rg[1],a.rg[2]);};
+  a.post=dt=>{if(a.step==='work'&&o.post)o.post(a,dt);ikList(a.ik);if(a.rg&&a.rg[2]>.01){if(o.reAim&&!window.__noReAim)reachGripN(a.rg[0],a.rg[1],a.rg[2],REACH_LEAN);else reachGrip(a.rg[0],a.rg[1],a.rg[2]);}};/* LEISURE: reAim: the palm target is corrected by where the held tool's grip really is (the watering can's handle sat 9-15 cm past its spot: he let go in the air and the hand jumped) */
   a.leave=cb=>{H.squat=0;if(a.step==='work'||a.step==='take')o.end&&o.end(a);a.ik=null;
    /* GRAB P1: cut short, the tools in his hands still go back by hand through the put step (carried home, set on the spot, or onto the belt), not flown off from where he stands */
    for(const h of ['Right','Left']){const n=H.hold[h]&&H.hold[h].tool;if(n&&!a.held.includes(n)&&tools.some(x=>x[0]===n))a.held.push(n);}
@@ -1627,7 +1627,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     a.v=(a.v||0)+clamp(vT-(a.v||0),-.6*dt,.5*dt);a.w=(a.w||0)+clamp(wT-(a.w||0),-3*dt,3*dt);
     if(a.v>1e-4)p.addScaledVector(fwd(root.rotation.y),a.v*dt);if(Math.abs(a.w)>1e-4){root.rotation.y+=a.w*dt;H.face=root.rotation.y;H.lookW=.25;}
     a.ct=(a.ct||0)+dt;if(a.ct>1.2){a.ct=0;AU('sweep',p);}},look:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)}),
-  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',reachT:1.6,restand:()=>PT('plant').add(V(-.3,0,.25))/* front left of the plant (it stands by the side wall at the table's corner): the pouring hand clear of the wall boards */,reps:Math.random()<.5?1:2,faceTool:true,/* the job lasts the pour(s): with dur 5-6 s the 3 s clip ended and he stood 2-3 s frozen, can in hand, before putting it back (frames) */tools:[['wateringCan','Right']]}),
+  water:(o)=>job({pt:()=>PT('plant'),stand:.45,clip:'hy_water',reachT:1.6,reAim:true,restand:()=>PT('plant').add(V(-.3,0,.25))/* front left of the plant (it stands by the side wall at the table's corner): the pouring hand clear of the wall boards */,reps:Math.random()<.5?1:2,faceTool:true,/* the job lasts the pour(s): with dur 5-6 s the 3 s clip ended and he stood 2-3 s frozen, can in hand, before putting it back (frames) */tools:[['wateringCan','Right']]}),
   listen:(o)=>{
    // LEISURE (phone watch 2e3a58e: he stood 50 s in the middle of the workshop facing the viewer with the window at his back, and the
    // cupped hand read as a wave): he goes to a real glazed window of the room he is in (index.html win(): centre, inward normal),
