@@ -119,6 +119,7 @@ Comparisons: project files hero-v6/.
 - `KNEEW='{}'` kneeweights.mjs: around each knee the UpLeg/Leg share follows a smooth ramp along the leg (±0.2 x leg length; 0.16 x leg length radius). With heroclothes.js rotating that band about the knee joint (?knee=0 off) the deep-crouch knee stays round instead of a flat wedge.
 - Current build: add `KNEEW='{}' VESTA='{}' VESTE='{}'` to the big31 command (= big38).
 - Since critic 24: also `COLLW='{}'`, and `VESTE='{"it":12}'` (back-collar border may move up to 8 cm: its saw teeth were that long) (= big49).
+- Blocky fingers: also `HANDS='{"it":24,"l":0.6,"m":-0.62}'` (handsub.mjs: the all-hand triangles split in four and Taubin-smoothed, fading in over 4 rings from the wrist so the skin stays under the cuff; runs before handmorph, so fist/relax morphs and the weights are built on the finer hand) (= big53, +4.6k tris).
 ## Vest over the body: collar teeth and hem (critic 24)
 
 The vest is the body's own triangles a few mm further out, so wherever a coarse triangle tilts (back of the collar, the hem when
