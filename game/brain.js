@@ -110,6 +110,8 @@ const ROOM_OF = n => {
   return 'outside';
 };
 const ROOM_LAMP = { kitchen: 'kitchen', bedroom: 'bedroom', workshop: 'workshop' };
+const DECKLAMP = (() => { try { return new URLSearchParams(location.search).get('decklamp') === '1'; } catch (e) { return false; } })();
+const DECK_LIT = ['look', 'telescope', 'fix_railing'];   // jobs out on the lookout deck itself
 const MICRO = {
   stretch: { clip: 'hy_stretch', label: 'потягивается' },
   around:  { clip: '336',        label: 'оглядывается' },
@@ -407,6 +409,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if (night && !day.bolted && HH.hasTask && HH.hasTask('bolt') && (locked || Math.random() < .75)) plan.push({ task: 'bolt', opts: { lock: true }, why: 'на ночь запирает дверь', extra: 'bolt' });
       if (night && H8 && H8.hatch && H8.hatch.isOpen && H8.hatch.isOpen() && HH.hasTask && HH.hasTask('hatch') && (locked || Math.random() < .7))
         plan.push({ task: 'hatch', opts: { open: false, side: 'top' }, why: 'на ночь закрывает люк' });
+    }
+    // ?decklamp=1 (lights.js option): the deck lantern is his too. He lights it going out on the deck in the dark and
+    // usually puts it out when he comes back in (sometimes he forgets: it burns on, nothing goes out by itself).
+    if (DECKLAMP && lights && lights.get && lights.get('decklamp')) {
+      const toDeck = DECK_LIT.includes(name), onDeck = /^deck/.test(H.node || '');
+      if (onDeck && !toDeck && lampOn('decklamp') && Math.random() < .8) plan.unshift({ task: 'switch', opts: { light: 'decklamp', on: false }, why: 'уходит с палубы — гасит фонарь' });
+      else if (toDeck && dark(h) && !lampOn('decklamp')) plan.push({ task: 'switch', opts: { light: 'decklamp', on: true }, why: 'темно — зажигает фонарь на палубе' });
     }
     // going to bed: the bedroom lamp off first, always
     if (name === 'sleep' && lampOn('bedroom'))
