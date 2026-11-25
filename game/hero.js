@@ -2431,6 +2431,13 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    // beside the thigh (watchers: on the back it either covered his head or read as round his waist)
    if(n!=='meatBag'){const r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());slLad=clamp(slLad+(H.lad?1:-1)/60/.6,0,1);const kb=smooth(0,1,slLad);let dz=-.24-.08*kb,dx=.27-.17*kb;if(H.lad){/* the boards round the hatch: the bucket must hang where nothing is between its bottom and his shoulders, so on the ladder he pulls it in tight behind him, into the opening, until the deck is above it */const clear=(x,z)=>{const fy=floorAt(x,hp.y+.95,z,.05,1.45);return !(fy!=null&&fy>hp.y-.42);};/* and clear of his own seat and thighs, which stick out behind the hips on the rungs (the bucket round his backside once it was placed from the drawn pose) */const bR=back-hp.dot(f)-.16;let ok=0;for(let [cx,cz] of [[dx,dz],[.06,-.2],[.03,-.14],[0,-.09],[0,-.05]]){cz=Math.min(cz,bR);const c=hp.clone().addScaledVector(r,cx).addScaledVector(f,cz);let free=1;for(const [ox,oz] of [[0,0],[.13,0],[-.13,0],[0,.13],[0,-.13]])if(!clear(c.x+ox,c.z+oz)){free=0;break;}if(free){dx=cx;dz=cz;ok=1;break;}}if(!ok){dx=0;dz=Math.min(-.05,bR);}}
    slOX+=(dx-slOX)*Math.min(1,6/60*4);slOZ+=(dz-slOZ)*Math.min(1,6/60*4);if(!H.lad&&slLad<=0){slOX=dx;slOZ=dz;}
+   /* never in his body: the hips, thighs, shins and feet in the bucket's height band push it back along his back (gate: on the rungs the
+      bent legs and seat went 10-13 cm into it; the bone centres alone are not his surface) */
+   {if(!o.userData.slR){const bb=new THREE.Box3().setFromObject(o),sz=bb.getSize(V());o.userData.slR=Math.max(sz.x,sz.z)/2/o.getWorldScale(V()).x;o.userData.slH=sz.y/o.getWorldScale(V()).y;}
+    const R=o.userData.slR*hs+.13,y0=hp.y-.3-.04,y1=y0+o.userData.slH*hs+.08;const pts=[];const B=bones;const add=(a,b,n)=>{if(!B[a]||!B[b])return;const pa=B[a].getWorldPosition(V()),pb=B[b].getWorldPosition(V());for(let k=0;k<=n;k++)pts.push(pa.clone().lerp(pb,k/n));};
+    add('Hips','Spine',1);for(const q of pts)q.addScaledVector(f,-.04);/* the seat is further back than the hip joint */add('LeftUpLeg','LeftLeg',3);add('RightUpLeg','RightLeg',3);add('LeftLeg','LeftFoot',3);add('RightLeg','RightFoot',3);add('LeftFoot','LeftToeBase',1);add('RightFoot','RightToeBase',1);
+    const ho=hp.dot(f);let lim=9;for(const q of pts){if(q.y<y0||q.y>y1)continue;const c=hp.clone().addScaledVector(r,slOX);const lat=Math.abs(q.clone().sub(c).dot(r));if(lat>=R)continue;lim=Math.min(lim,q.dot(f)-ho-Math.sqrt(R*R-lat*lat));}
+    if(slOZ>lim)slOZ+=(lim-slOZ)*kb;}/* eased in with the climb: at the sling, out at his side, it eased from the fist straight back through his shins (full gate) */
    pos=hp.clone().addScaledVector(r,slOX).addScaledVector(f,slOZ);pos.y=hp.y-.3;/* where the boards of the hatch edge are at its height it is pulled in tight behind him and comes down through the opening with him *//* on the ladder it swings round behind him, into the open hatch at his back: out at his side it went through the deck boards and the post going down (film) *//* off the boards: at .46 under the hips its bottom sat on the deck at the hatch while he turned to go down (watch R29-1) *//* behind the hip: clear of the right arm reaching down the rungs */}
    const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,root.rotation.y,0,'YXZ'));const par=o.parent;par.updateWorldMatrix(true,false);
    const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);if(!any){any=true;strapTo(o,f,hs,S[2],n!=='meatBag');}}
@@ -2577,7 +2584,14 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});}
    a.update=dt=>{if(a.step==='fill'){pondFill(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
    a.post=()=>{if(a.step==='fill'&&a.dip){H.bucketTilt=true;pondFillPost(a);}else if(!shelfPath(a))odHang('waterBucket',0);};
-   a.leave=cb=>{a.leaving=true;if(a.step==='clip'){H.once=null;a.hits=[];}gearSync();try{slung.waterBucket=0;relLoad('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;lswLeave(a);home(()=>{play(IDLE(),{fade:.4});cb();});};return a;},
+   /* OUTDOOR: called away with the bucket on him (in the fist, or on the rope up a ladder) he first carries it to the sink and sets
+      it down there by hand: dropped back onto the shelf in one frame, or left on the rope, it rode along into the next jobs for hours
+      (critic W3) and then jumped home */
+   a.leave=cb=>{a.leaving=true;if(a.step==='clip'){H.once=null;a.hits=[];}gearSync();lswLeave(a);H.wait=null;const o=P.tools.waterBucket;
+    const done=()=>{try{slung.waterBucket=0;window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});cb();};
+    const onHim=o&&(o.parent===bones.RightHand||slung.waterBucket||onHeroT('waterBucket'));
+    if(onHim){a.step='back';a.put=1;a.dip=0;H.bucketTilt=false;shelfVisit(a,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>home(done));}
+    else home(done);};return a;},
   setbucket:(o={})=>{const a={step:'go',t:0,put:1,post:()=>{if(!shelfPath(a))odHang('waterBucket',0);}};const P=PP();shelfVisit(a,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
@@ -2598,7 +2612,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     if(a.step!=='pour'){odHang('drainBucket',0);return;}H.bucketTilt=true;const D=a.D||2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
     if(w>.01)odReach('Right',root.position.clone().addScaledVector(f,.62).addScaledVector(V(-f.z,0,f.x),.2).add(V(0,.85,0)),w);/* from the waist, leaning out over the edge: the tipped pail hangs in front of his belly, never up before his face (phone watch f1040) */const tilt=1.6*smooth(.45,.95,t)*(1-smooth(D-.8,D-.25,t));odHang('drainBucket',tilt);
     const bk=PP().tools.drainBucket;if(bk&&w>.01&&!lanternLeft()){const bt=bk.localToWorld(V(0,.02,0));odReach('Left',bt,.85*w*smooth(.3,.6,t));odHang('drainBucket',tilt);}/* with the lantern in the left hand he tips it one-handed */};
-   a.leave=cb=>{a.leaving=true;if(a.step==='clip'){H.once=null;a.hits=[];}gearSync();try{slung.drainBucket=0;P.water.pour('drainBucket',false);relLoad('drainBucket');window.__audio.carry(false);}catch(e){}H.carry=null;lswLeave(a);home(()=>{play(IDLE(),{fade:.4});cb();});};return a;},
+   a.leave=cb=>{a.leaving=true;if(a.step==='clip'){H.once=null;a.hits=[];}gearSync();lswLeave(a);H.wait=null;try{P.water.pour('drainBucket',false);}catch(e){}const o=P.tools.drainBucket;
+    const done=()=>{try{slung.drainBucket=0;window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});cb();};
+    const onHim=o&&(o.parent===bones.RightHand||slung.drainBucket||onHeroT('drainBucket'));/* back under the sink by hand first, as for the water bucket (critic W3) */
+    if(onHim){a.step='back';a.back=1;drainVisit(a,'hy_pickground',[[.47,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>home(done));}
+    else home(done);};return a;},
   // OUTDOOR (Сделать вылазки наружу естественными): splitting firewood at the chopping block by the oak with the real axe.
   // He takes the axe out of the block, picks a round from the little stack beside it (squat, left hand), stands it on the block,
   // then swings two-handed: the axe goes up over his head round the shoulders and comes down so its edge lands on the round's top
