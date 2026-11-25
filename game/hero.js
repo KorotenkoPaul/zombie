@@ -3344,7 +3344,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   const still=FZ.p&&FZ.p.distanceTo(p)<.003&&nm===FZ.c&&Math.abs(tm-FZ.ct)<1e-4;FZ.p=p.clone();FZ.c=nm;FZ.ct=tm;
   const busy=H.seated||H.inBed||H.lad||H.slide||H.fit||H.wait||(H.path&&H.path.length);
   FZ.t=still&&!busy?FZ.t+dt:0;FZ.lt=(!H.lad&&/^43[57]$/.test(nm||''))?FZ.lt+dt:0;
-  let fl=null;if(!busy&&!H.trans&&H.ground&&typeof floorAt==='function'){try{fl=floorAt(p.x,p.y,p.z,.32);}catch(e){}}FZ.ft=(fl!=null&&p.y-fl>.1&&p.y-fl<.6)?FZ.ft+dt:0;
+  let fl=null;if(!busy&&!H.trans&&H.ground&&typeof floorAt==='function'){try{fl=floorAt(p.x,p.y,p.z,.32);/* a lone ray between two planks hits the joist 20 cm below (trip, bow peg: the whole body dropped): a drop is real only if the boards around agree, as in the board follower */if(fl!=null&&p.y-fl>.1)for(const [ox,oz] of [[.07,0],[-.07,0],[0,.07],[0,-.07]]){const g2=floorAt(p.x+ox,p.y,p.z+oz,.32);if(g2!=null&&g2>fl&&g2<=p.y+.01)fl=g2;}}catch(e){}}FZ.ft=(fl!=null&&p.y-fl>.1&&p.y-fl<.6)?FZ.ft+dt:0;
   if(FZ.ft>1.5){p.y=fl;H.floorY=fl;FZ.ft=0;}
   if(FZ.t>6||FZ.lt>2.5){FZ.t=0;FZ.lt=0;console.warn('[hero] freeze guard: recover',H.task,nm,p.toArray().map(v=>+v.toFixed(2)));H.trans=false;H.lad=null;H.stk=null;H.once=null;
    play(IDLE(),{fade:.5});const n=H.task;if(n&&act){if(act.leave&&!act.left){act.left=true;try{act.leave(()=>{endTask(false);});}catch(e){endTask(false);}}else endTask(false);}}}
