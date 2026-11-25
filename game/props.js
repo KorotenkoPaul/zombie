@@ -458,7 +458,7 @@ function basket() { const g = new THREE.Group();
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), a = Math.atan2(z, x); let y;
       if (r < .2) y = .345 + .07 * (1 - Math.pow(r / .2, 2)) + .01 * Math.sin(x * 40) * Math.sin(z * 33);
       else { const o = r - .2; y = .345 - Math.min(.13, o * 1.4) + .012 * Math.sin(a * 7 + 1) * Math.min(1, o / .05); const k = (.226 + o * .3) / r; /* a short skirt over the rim, never down to the floor */ P.setX(i, x * k); P.setZ(i, z * k); } P.setY(i, y); }
-    cg.computeVertexNormals(); const tm = new THREE.MeshStandardMaterial({ map: texOf(towelCanvas()), roughness: .95, side: THREE.DoubleSide, color: 0xD6CCBC }); /* a washed, sun-faded check */ tm.map.repeat.set(2, 2); add(g, cg, tm, 0, 0, 0, 0, .4, 0); }
+    cg.computeVertexNormals(); const tm = new THREE.MeshStandardMaterial({ map: texOf(towelCanvas()), roughness: .95, side: THREE.DoubleSide, color: 0xBDB2A2 }); /* a washed, sun-faded check (dulled again: at closest zoom it read as a fresh picnic cloth) */ tm.map.repeat.set(2, 2); add(g, cg, tm, 0, 0, 0, 0, .4, 0); }
   return bake(g); }
 function chair() {
   const g = new THREE.Group(); const S = .46, w = .44, d = .42;
