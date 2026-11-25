@@ -47,6 +47,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
       for (let a = -1; a <= 1; a += .5) for (const sd of [-1, 1]) for (const o of [.08, .2, .35]) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9).addScaledVector(ax[th], sd * o);
         if (C && C.depthAt && C.depthAt(q.x, q.y, q.z) > .005) return false;
         for (const bx of furn) if (bx.containsPoint(q)) return false; } }
+    // a floor board running under a counter or a bed: the lifted end would push into the furniture, and he could not kneel there
+    if (floor) for (let a = -1, Li = sz.indexOf(Math.max(...sz)); a <= 1; a += .5) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .95); q.y = c.y + .08;
+      for (const bx of furn) if (q.x > bx.min.x - .05 && q.x < bx.max.x + .05 && q.z > bx.min.z - .05 && q.z < bx.max.z + .05 && q.y > bx.min.y - .05 && q.y < bx.max.y) return false; }
     if (floor && solid) for (const a of [-.45, 0, .45]) { q.copy(c).addScaledVector(ax[sz.indexOf(Math.max(...sz))], a * Math.max(...sz)); if (solid(q.x, c.y + .03, q.z)) return false; }
     if (floor && C && C.depthAt) for (let a = -1, Li = sz.indexOf(Math.max(...sz)); a <= 1; a += .5) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9); const top = c.y + .03; for (const h of [.02, .1, .3]) if (C.depthAt(q.x, top + h, q.z) > .005) return false; }   // merged furniture and rugs are not in the boxes
     for (let a = -1; a <= 1; a += .5) for (let w = -1; w <= 1; w += 1) {
@@ -259,6 +262,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
       const a = rnd(0, Math.PI * 2), x = at.x + Math.sin(a) * r, z = at.z + Math.cos(a) * r, yaw = rnd(0, Math.PI);
       const g = floorAt ? floorAt(x, y0 + .3, z, .45, .5, true) : y0; if (g == null || Math.abs(g - y0) > .06) { dbg('floor0'); continue; }
       const ux = Math.cos(yaw), uz = -Math.sin(yaw); let ok = true;
+      // all four corners on boards too: checking only the centre line let a board hang half over the floor edge (or a hatch)
+      for (const [e, sd] of [[-.5, -.5], [-.5, .5], [.5, -.5], [.5, .5]]) { if (!ok || !floorAt) break; const px = x + ux * len * e + uz * w * sd, pz = z + uz * len * e - ux * w * sd;
+        const gg = floorAt(px, g + .3, pz, .45, .5, true); if (gg == null || Math.abs(gg - g) > .02) { ok = false; dbg('corner'); } }
       for (const e of [-.5, 0, .5]) { const px = x + ux * len * e, pz = z + uz * len * e;
         const gg = floorAt ? floorAt(px, g + .3, pz, .45, .5, true) : g; if (gg == null || Math.abs(gg - g) > .02) { ok = false; dbg('floorE'); break; }
         if (Math.hypot(px - at.x, pz - at.z) < .6 || segD(px, g, pz) < .45 || nodes.some(q => Math.abs(q.y - g) < .4 && Math.hypot(q.x - px, q.z - pz) < .5)) { ok = false; dbg('path'); break; }
