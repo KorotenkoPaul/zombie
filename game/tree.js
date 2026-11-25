@@ -237,6 +237,26 @@ export function buildTree(THREE, o) {
     const picked = [];
     for (const c of cand) { if (picked.length >= (o.leafClumps || 40)) break; if (picked.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.3)) continue; /* Pavel: a fuller crown */ picked.push(c); }
     for (const c of picked) leafSpots.push({ p: V(c[0], c[1] + 0.3, c[2]), s: c[1] > 15 ? rnd(2.3, 2.9) : rnd(1.6, 2.2) });
+    // the photo frames the house with leaf clumps at mid height: left beside the bedroom/kitchen, right beside the deck and
+    // the workshop roof. Clumps on the camera-facing limb ends there (Env's side-by-side), clear of the rooms.
+    { const AVL = o.avoidLeaves || [], inAv = (x, y, z, p) => AVL.some(b => x > b[0] - p && x < b[1] + p && y > b[2] - p && y < b[3] + p && z > b[4] - p && z < b[5] + p);
+      const side = []; for (let i = 0; i < P.length; i += 3) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ;
+        if (y < 5.5 || y > 12.5) continue;
+        /* never in front of the house (the photo never puts leaves over a room): left just behind the bedroom/kitchen wall line, inside the
+           phone frame (its left edge is x ~ AX-5.7 at the trunk); right behind the deck/workshop plane */
+        if (x < -4.9 && x > -8 && z > -3.8 && z < -1.2) side.push([P[i], y, P[i + 2], 10 - Math.abs(x)]);
+        else if (x > 4.9 && x < 10.5 && z > -3 && z < 0.4) side.push([P[i], y, P[i + 2], 10 - x]); }
+      side.sort((a, b) => b[3] - a[3]); const got = [];
+      for (const c of side) { if (got.length >= (o.sideClumps ?? 10)) break; if (inAv(c[0], c[1], c[2], 1.4)) continue;
+        if ([...got, ...picked].some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.2)) continue; got.push(c); }
+      for (const c of got) leafSpots.push({ p: V(c[0], c[1] + 0.2, c[2] + 0.2), s: rnd(1.6, 2.1) }); }
+    // the photo has no sky between the two big limbs above the bedroom roof: one or two clumps behind the ridge close it
+    { const hole = []; for (let i = 0; i < P.length; i += 3) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ;
+        if (x > -0.5 && x < 3 && y > 12.8 && y < 15.5 && z < -2.5 && z > -5.5) hole.push([P[i], y, P[i + 2], -Math.abs(y - 14) - Math.abs(x - 1.2)]); }
+      hole.sort((a, b) => b[3] - a[3]); const hg = [];
+      for (const c of hole) { if (hg.length >= 2) break; if (hg.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.4)) continue; hg.push(c); }
+      hg.push([AX + 1.7, 13.6, AZ - 3.1]); /* the gap right of the main stem, seen from the home view */
+      for (const c of hg) leafSpots.push({ p: V(c[0], c[1] + 0.2, c[2] - 0.3), s: rnd(2.0, 2.4) }); }
     // the crown: the photo's top is a full canopy of big clumps with only small sky gaps
     const top = [];
     for (let i = 0; i < P.length; i += 3) if (P[i + 1] > 15.2 && Math.abs(P[i] - AX) < 7.5) top.push([P[i], P[i + 1], P[i + 2]]);
@@ -520,7 +540,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
   lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2'; /* [ENV] explicit key (SHADERS rule) */
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
-  const total = MOB(o) ? (o.leafCards || 170) : 700; // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
+  const total = MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
   const qg = new THREE.CircleGeometry(0.5, MOB(o) ? 10 : 12); // round like the painted clump: no empty quad corners to shade // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
@@ -545,7 +565,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
         : rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
       const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
-      sc.setScalar(MOB(o) ? rnd(3.4, 4.4) : rnd(3.2, 4.2));
+      sc.setScalar(MOB(o) ? rnd(4.7, 6.1) : rnd(4.4, 5.8));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       // phones have no inner cards, so some shell cards take the darker inner shade to keep the clumps' depth
       const rs = MOB(o) && rnd(0, 1) < 0.35 ? rnd(0.4, 0.78) : rr;
