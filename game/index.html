@@ -1026,7 +1026,7 @@ const heroMoves=await PREF.moves;
 // extra clip files (one per action family, so threads never fight over the big file): merged in, the main file wins on a name clash
 for(const f of ['hero-moves-repair.txt']){const x=await PREF.repair;if(x&&heroMoves)for(const k in x)if(!(k in heroMoves))heroMoves[k]=x[k];}
 /* TIGHT SKIN (thread "Сделать героя как в нормальных играх"): ?rig=tight recomputes the hero's smeared auto-rig weights into game-style tight weights at load (game/reskin.js) */
-if(new URLSearchParams(location.search).get('rig')==='tight'||new URLSearchParams(location.search).get('style')==='game'){try{const {tightSkin}=await import(new URL(ASSET+'reskin.js',document.baseURI).href);window.__reskin=tightSkin(heroG.scene,THREE);}catch(e){console.error('reskin',e);}}
+if(new URLSearchParams(location.search).get('rig')==='tight'){/* not in ?style=game yet: while walking, the sweater still shows through the vest's front edge in thin lines */try{const {tightSkin}=await import(new URL(ASSET+'reskin.js',document.baseURI).href);window.__reskin=tightSkin(heroG.scene,THREE);}catch(e){console.error('reskin',e);}}
 const HH=createHero({scene,gltf:heroG,moves:heroMoves,props:P3,world,RAPIER,lv:{LC,WS,KT,BD,DK},sfx,OBST,chair:chairO,chairFace:Math.PI,bunk,bedHead:1,
  table:tableO?{x0:tableO.x0,x1:tableO.x1,z0:tableO.z0,z1:tableO.z1,top:BD+.765}:null,
  ovenDoor:()=>window.__props&&window.__props.ovenDoor,hour:()=>hour,isNight:h=>isNight(h),
