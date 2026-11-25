@@ -173,7 +173,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
         if (!sw.to) sw.to = land; else sw.to.lerp(land, 1 - Math.exp(-dt * 10));
         if (ST.swing[s]) {
           const e = u * u * u * (u * (u * 6 - 15) + 10); // smootherstep: a clear push-off and landing, no step in acceleration
-          const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp(L / .3, .4, 1.2);
+          const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp((sw.L ??= L) / .3, .4, 1.2) /* the swing keeps the lift it started with: a stop mid-step (L -> 0) dropped the foot 4 cm in one frame */;
           // the swing clears what it passes over (a root, a stone, a beam end): a little more lift while the sole would be in it
           { const C = window.__collide; ST.xl = ST.xl || { Left: 0, Right: 0 }; let need = 0;
             if (C && C.soleDepth && u > .05 && u < .95) { const sd = C.soleDepth(fp.x, fp.y - ankY + ST.xl[s], fp.z, f.x, f.z); if (sd > .004) need = Math.min(.12, ST.xl[s] + sd + .015); }
