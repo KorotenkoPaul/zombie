@@ -411,6 +411,14 @@ export function buildTree(THREE, o) {
       }
       GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
       P[i * 3] += nx * h; P[i * 3 + 1] += ny * h; P[i * 3 + 2] += nz * h; }
+    // the big twisting folds (model pass above) shade dark in their troughs too, so the fluted trunk reads from the home view
+    // like the photo's, not as a flat brown wall (same phase as the folds; off near the hollow)
+    if (o.folds !== false) for (let i = 0; i < nv; i++) { const x = P[i * 3] - AX, y = P[i * 3 + 1], z = P[i * 3 + 2] - AZ, d0 = Math.hypot(x, z);
+      if (d0 < 0.3 || d0 > 3.6 || y < -0.4 || y > 12.5) continue; const an = Math.atan2(z, x);
+      const nearDoor = Math.max(0, 1 - Math.max(0, Math.abs(angDiff(an, doorAng)) - 0.45) / 0.35) * Math.max(0, Math.min(1, (door.y1 + 1.4 - y) / 0.6));
+      const w = (1 - nearDoor) * Math.min(1, (y + 0.4) / 0.8) * Math.min(1, (12.5 - y) / 1.5) * Math.min(1, (3.6 - d0) / 0.6);
+      const ph = 5 * an + 0.22 * y + 0.9 * Math.sin(2 * an + 0.35 * y), gr = Math.pow(Math.max(0, Math.cos(ph)), 1.6);
+      GR[i] = Math.max(GR[i], (o.foldShade ?? 0.7) * w * gr); }
     if (typeof window !== 'undefined') window.__rootDetail = { verts: P.length / 3 - n0, tris: I.length / 3 - t0 };
   }
   const g = new THREE.BufferGeometry();
