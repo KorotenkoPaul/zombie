@@ -830,11 +830,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // in the fingers: from the hand toward the wick, held up; at the catch it touches the wick, then it comes away
     ig.hand.getWorldPosition(_mh); const wick = s.pos.clone().add(V(0, -.035, 0)); _mw.copy(wick).sub(_mh); const d = _mw.length(); _mw.normalize();
     const reach = T < MATCH.catch ? .06 + Math.min(1, T / MATCH.catch) * Math.max(0, d - .12) * .8 : .06 + Math.max(0, d - .12) * .8 * (1 - smooth(MATCH.catch, MATCH.out, T));
-    M.g.position.copy(_mh).addScaledVector(_mw, Math.min(reach, Math.max(.06, d - .02))).add(V(0, .02, 0)); M.g.visible = true;
+    M.g.position.copy(_mh).addScaledVector(_mw, Math.min(reach + .03, Math.max(.09, d - .02))).add(V(0, .04, 0)); M.g.visible = true;   // at the fingertips, held up: at the wrist bone the fist hid it
     M.g.rotation.set(.35, Math.atan2(_mw.x, _mw.z), 0);
     // strike: a bright flash that settles into a small flame; shaken out after the catch
     const fk = T < MATCH.strike ? 1.6 * T / MATCH.strike : T < MATCH.catch + .3 ? 1 + .08 * Math.sin(T * 37) : Math.max(0, 1 - (T - MATCH.catch - .3) / .25);
-    M.fl.visible = fk > .02; M.fl.scale.set(.42 * fk, .5 * fk, .42 * fk);
+    M.fl.visible = fk > .02; M.fl.scale.set(.55 * fk, .65 * fk, .55 * fk);
   }
   function setOn(s, on) { if (s.on === on) return; s.on = on;
     if (on && s.kind === 'oil' && s.name !== 'hand') { s.ign = { t: 0, hand: heroHand(s.pos) }; if (!s.ign.hand) s.ign.t = MATCH.catch - .15; }
@@ -1306,7 +1306,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
-    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances, rimU, AO, GAO, heroBlob, emberK: () => emberK }),
+    _dbg: () => ({ match, scene, cam, pool, shadowDraws, shadowChances, rimU, AO, GAO, heroBlob, emberK: () => emberK }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,
     set: (n, on) => { const s = src.get(n); if (!s) return false; s.manual = !!on; setOn(s, !!on); return true; },

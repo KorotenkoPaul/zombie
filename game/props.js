@@ -528,8 +528,8 @@ function stove() {
     flameMat.onBeforeCompile = sh => { Object.assign(sh.uniforms, flameU); sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 fl; uniform float uT, uHeat, uSpread;').replace('#include <begin_vertex>',
       'float fn = sin(uT * 9. * fl.z + fl.w) * .5 + sin(uT * 23. * fl.z + fl.w * 2.) * .3; vec3 transformed = position * vec3(1. + fn * .12, (.6 + uHeat * .7) * (1. + fn * .35), 1. + fn * .12); float fa = sin(uT * 5. + fl.w) * .12; transformed.xy = mat2(cos(fa), sin(fa), -sin(fa), cos(fa)) * transformed.xy; float thr = clamp((fl.x + .14) / .3, 0., 1.) * .8; transformed *= smoothstep(thr, thr + .2, uSpread); transformed.x += fl.x; transformed.z += fl.y;'); };   /* Lights: the flames catch one by one from the kindling (left) across the logs, and go out in the same order backwards */
     flameMat.customProgramCacheKey = () => 'ovenFlames'; const fm = new THREE.Mesh(mergeGeometries(gs, false), flameMat); fm.frustumCulled = false; fm.userData.live = true; fire.add(fm); }
-  // baking tray with buns on the rack
-  { const tr = new THREE.Group(); tr.position.set(0, oy0 + .206, .02); g.add(tr); add(tr, rb(ow * .78, .012, D * .55, .004), M.iron, 0, .006, 0); for (let i = 0; i < 4; i++) { const b = add(tr, new THREE.SphereGeometry(.035, 14, 8, 0, 6.283, 0, Math.PI / 2), M.bread, -.13 + i * .087, .012, rr(-.03, .03)); b.scale.y = .7; } }
+  // an empty baking tray on the rack (critic P2 pass 22: buns sat in it all night over the embers; nobody bakes here, so it is empty) - rr calls kept so the random stream below stays the same
+  { const tr = new THREE.Group(); tr.position.set(0, oy0 + .206, .02); g.add(tr); add(tr, rb(ow * .78, .012, D * .55, .004), M.iron, 0, .006, 0); for (let i = 0; i < 4; i++) rr(-.03, .03); }
   for (let i = 0; i < 7; i++) add(g, new THREE.CylinderGeometry(.004, .004, D - .1, 6), M.steel, -ow / 2 + .04 + i * (ow - .08) / 6, oy0 + .2, .02, Math.PI / 2);
   // cooktop, backsplash, burners
   add(g, rb(Wd + .02, .035, D + .02, .01), M.enamelDark, 0, top - .0175, 0);
@@ -1738,13 +1738,13 @@ export function buildProps(ctx) {
   const COVER_SEG = [['Hips', 'Spine1', .15], ['Spine1', 'Spine2', .16], ['Spine2', 'Neck', .13], ['LeftUpLeg', 'RightUpLeg', .12],
     ['LeftUpLeg', 'LeftLeg', .105], ['RightUpLeg', 'RightLeg', .105], ['LeftLeg', 'LeftFoot', .085], ['RightLeg', 'RightFoot', .085],
     ['LeftFoot', 'LeftToeBase', .09], ['RightFoot', 'RightToeBase', .09],
-    ['LeftShoulder', 'LeftArm', .075], ['RightShoulder', 'RightArm', .075], ['LeftArm', 'LeftForeArm', .06], ['RightArm', 'RightForeArm', .06]];/* forearms and hands stay out (on top of the quilt), they tented it into peaks */
+    ['LeftShoulder', 'LeftArm', .075], ['RightShoulder', 'RightArm', .075], ['LeftArm', 'LeftForeArm', .06], ['RightArm', 'RightForeArm', .06], ['LeftForeArm', 'LeftHand', .06, 1], ['RightForeArm', 'RightHand', .06, 1]];/* R54-1: a forearm and fist lying low beside him (under the hips' height) are covered too: the fist stood out through the quilt's side. Up on his chest or stomach they stay out on top *//* forearms and hands stay out (on top of the quilt), they tented it into peaks */
   let coverBones = null, coverT = 0; const cb = [];
   function findCoverBones() { if (coverBones) return coverBones; if (!press.at) return null; const at = bunk.localToWorld(press.at.clone()); let sk = null, best = 1e9;
     const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
     const byName = {}; for (const bn of sk.bones) byName[bn.name.replace(/^.*[:_]/, '').replace(/^mixamorig/, '')] = bn;
-    const list = []; for (const [a, b, r] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r, f: /Leg|Foot|Toe/.test(a + b) ? .75 : 1.05 }); return (coverBones = list.length >= 8 ? list : null); }
+    const list = []; for (const [a, b, r, low] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r, f: /Leg|Foot|Toe/.test(a + b) ? .75 : 1.05, low: !!low, hips: byName.Hips }); return (coverBones = list.length >= 8 ? list : null); }
   out._quiltDbg = () => ({ qTop, qBot, m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V(), _cw = V();
   // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
@@ -1779,7 +1779,7 @@ export function buildProps(ctx) {
     else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
     press.shown = press.k; fold.shown = fold.a;
     if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
-      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f: q.f || 1 }); } } }
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f: q.f || 1 }); } } }
     const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
     for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
       let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }
