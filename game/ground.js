@@ -207,6 +207,8 @@ export function createGround(C){const __before=new Set(C.scene.children);
      {float ev=clamp(uGlow/1.8,0.,1.);diffuseColor.rgb*=1.+.45*ev;diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.82,1.25,.95),ev*.7);}
      // roots: soft contact shadow, a ring of damp dark earth hugging the wood
      float litA=.3;/* autumn leaf litter amount, raised near roots, path edges and the pond below */
+     /* under the forest ring the floor is shaded and leaf-buried, not a mown lawn: from the clearing's edge outwards the moss gives way to brown litter in patches */
+     {float ff=smoothstep(10.5,17.,length(vGW-vec2(0.,1.5))+(fbm(vGW*.35+7.)-.5)*5.);litA+=ff*.9;diffuseColor.rgb=mix(diffuseColor.rgb,vec3(dot(diffuseColor.rgb,vec3(.33)))*vec3(1.25,.95,.62)*.9,ff*(.35+.6*smoothstep(.25,.65,fbm(vGW*.6+2.))));}
      vec2 auv=(vGW+uGE)/(2.*uGE);if(auv.x>0.&&auv.x<1.&&auv.y>0.&&auv.y<1.){vec4 ao=texture2D(uAO,auv);litA+=ao.r*.9+ao.g*.35+smoothstep(.02,.3,ao.b)*(1.-smoothstep(.45,.85,ao.b))*.6;diffuseColor.rgb*=1.-ao.r*.55;diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.72,1.3,.62)+vec3(.0,.016,.0),ao.g*.7);/* photo: a band of green moss where every root meets the floor */
       // trodden path: packed brown earth with a few pressed blades left at its frayed edges
       pathK=ao.b*smoothstep(.35,.75,ao.b+(fbm(vGW*2.3)-.5)*.8)*(.55+.25*fbm(vGW*.8))*(1.-.35*clamp(uGlow/1.8,0.,1.));pathC=vec3(.17,.135,.1)*(.6+.7*fbm(vGW*7.))*(.65+.7*lum)*(1.-ao.r*.4);pathC*=1.+.55*clamp(uGlow/1.8,0.,1.);/* [ENV] night: the packed earth catches the moonlight more than the moss, so the way out stays readable */
@@ -429,7 +431,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    x.strokeStyle='rgba(40,26,16,.7)';x.lineWidth=2;for(let k=0;k<5;k++){const a=Math.random()*6.283;x.beginPath();x.moveTo(128+Math.cos(a)*20,128+Math.sin(a)*20);x.lineTo(128+Math.cos(a+.05)*(70+Math.random()*40),128+Math.sin(a+.05)*(70+Math.random()*40));x.stroke();}
    const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
   const barkM=new THREE.MeshStandardMaterial({map:barkT,color:0x8A7A6A,roughness:1,vertexColors:true});
-  const endM=new THREE.MeshStandardMaterial({map:endT,roughness:.95});
+  const endM=new THREE.MeshStandardMaterial({map:endT,roughness:.95,vertexColors:true});
   // log/stump: a slightly lumpy cylinder; the top of a lying log greens with moss (vertex colour)
   const wood=(r0,r1,h,seg,mossUp,seed,flare=0)=>{const g=new THREE.CylinderGeometry(r0,r1,h,seg,flare?(MOBILE?4:7):(MOBILE?3:5));const p=g.attributes.position,uv=g.attributes.uv,nr=g.attributes.normal;
    for(let i=0;i<p.count;i++){if(Math.abs(nr.getY(i))<.5){const a=Math.atan2(p.getZ(i),p.getX(i));let k=1+(vnoise(a*2.2+seed,p.getY(i)*3)-.5)*.14;/* [ENV] stumps: the base flares into root buttresses that run into the ground (not a can stood on the moss) */if(flare){const t=(p.getY(i)+h/2)/h;const bt=Math.pow(Math.max(0,Math.sin(a*2.5+seed*1.7)*.5+.5),2.2);k*=1+flare*Math.pow(Math.max(0,1-t),2.6)*(.35+1.1*bt);}p.setX(i,p.getX(i)*k);p.setZ(i,p.getZ(i)*k);uv.setXY(i,uv.getX(i)*Math.max(1,Math.round(r0*14)),uv.getY(i)*h*1.6);}}
@@ -437,7 +439,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const tint=(mesh,mossK)=>{const g=mesh.geometry,p=g.attributes.position,c=g.attributes.color;mesh.updateMatrixWorld(true);const n=V(),w=V();const nm=new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
    for(let i=0;i<p.count;i++){n.fromBufferAttribute(g.attributes.normal,i).applyMatrix3(nm).normalize();w.fromBufferAttribute(p,i).applyMatrix4(mesh.matrixWorld);
     const m=smooth(.2,.8,n.y+(fbm2(w.x*3,w.z*3+w.y*3)-.5)*.8)*mossK;const low=smooth(.35,0,w.y-groundH(w.x,w.z))*.35;c.setXYZ(i,(1-m*.55)*(1-low),(1-m*.25)*(1-low),(1-m*.6)*(1-low));}c.needsUpdate=true;};
-  const grp=new THREE.Group();grp.name='woodpile';const add=(g,x,z,ry,tilt,sink,mossK)=>{const m=new THREE.Mesh(g,[barkM,endM,endM]);m.position.set(x,groundH(x,z)+sink,z);m.rotation.set(tilt[0],ry,tilt[1]);grp.add(m);tint(m,mossK);m.castShadow=!MOBILE;m.receiveShadow=true;return m;};
+  const grp=new THREE.Group();grp.name='woodpile';const add=(g,x,z,ry,tilt,sink,mossK)=>{const m=new THREE.Mesh(g,[barkM,endM,endM]);m.position.set(x,groundH(x,z)+sink,z);m.rotation.set(tilt[0],ry,tilt[1]);grp.add(m);tint(m,mossK);m.userData.old=mossK>=.9?1:0;m.castShadow=!MOBILE;m.receiveShadow=true;return m;};
   const ok=(x,z)=>rootD(x,z)>.4;
   // chopping stump with an old axe cut, and the stacked firewood next to it
   const chop=[12.5,7.4],pile=[13.5,8.1],big=[15.4,6.7],big2=[16.6,2.9],log=[11.0,3.4];
@@ -446,7 +448,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    [[5,0],[4,1],[3,2]].forEach(([n,row])=>{for(let i=0;i<n;i++){const rad=.075+r()*.02,len=.55+r()*.12,y=rad+row*.135,z=(i-(n-1)/2)*.16+(row%2)*.0,yaw=.06*(r()-.5);
      const sd=new THREE.CylinderGeometry(rad,rad,len,7,1,true).rotateZ(Math.PI/2).rotateY(yaw).translate(0,y,z);S.push(sd);
      for(const e of [-1,1]){const c=new THREE.CircleGeometry(rad,8).rotateY(e*Math.PI/2).translate(e*len/2,0,0).rotateY(yaw).translate(0,y,z);E2.push(c);}}});
-   const sg=mergeGeometries(S);sg.setAttribute('color',new THREE.BufferAttribute(new Float32Array(sg.attributes.position.count*3).fill(1),3));const eg=mergeGeometries(E2);
+   const sg=mergeGeometries(S);sg.setAttribute('color',new THREE.BufferAttribute(new Float32Array(sg.attributes.position.count*3).fill(1),3));const eg=mergeGeometries(E2);eg.setAttribute('color',new THREE.BufferAttribute(new Float32Array(eg.attributes.position.count*3).fill(1),3));
    for(const [g,mt] of [[sg,barkM],[eg,endM]]){const m=new THREE.Mesh(g,mt);m.position.set(pile[0],groundH(...pile)+.005,pile[1]);m.rotation.y=-.35;m.castShadow=!MOBILE;m.receiveShadow=true;grp.add(m);}}
   if(ok(...big))add(wood(.42,.55,.62,MOBILE?14:20,1,2,.6),big[0],big[1],1.1,[.04,-.03],.18,.9);
   if(ok(...big2))add(wood(.3,.4,.38,MOBILE?12:16,1,3,.55),big2[0],big2[1],.2,[0,.05],.14,1);
@@ -461,10 +463,17 @@ export function createGround(C){const __before=new Set(C.scene.children);
    for(const m of grp.children){const g=m.geometry.clone().applyMatrix4(m.matrix);const mats=Array.isArray(m.material)?m.material:[m.material];
     const groups=g.groups.length?g.groups:[{start:0,count:g.index?g.index.count:g.attributes.position.count,materialIndex:0}];
     for(const gr of groups){const mt=mats[gr.materialIndex]||mats[0];const sub=new THREE.BufferGeometry();for(const k of ['position','normal','uv'])sub.setAttribute(k,g.attributes[k]);
+     /* end grain: only the chopping stump and the split logs are fresh; old stumps and windfall are cut years ago: grey, dark, cracked, the stump tops mossed over */
+     if(mt===endM){const n=g.attributes.position.count,cc=new Float32Array(n*3),old=m.userData.old||0;for(let i=0;i<n;i++){const x=g.attributes.position.getX(i),y=g.attributes.position.getY(i),z=g.attributes.position.getZ(i);const up=g.attributes.normal.getY(i)>.6?1:0;
+       const nz=fbm2(x*4.3+y,z*4.3);const mo=old*up*smooth(.38,.62,nz+.12);let r=1-old*(.5+.15*nz),gg=1-old*(.5+.15*nz),b=1-old*(.56+.15*nz);r=r*(1-mo)+.3*mo;gg=gg*(1-mo)+.42*mo;b=b*(1-mo)+.2*mo;cc[i*3]=r;cc[i*3+1]=gg;cc[i*3+2]=b;}sub.setAttribute('color',new THREE.BufferAttribute(cc,3));}
      if(mt===barkM)sub.setAttribute('color',g.attributes.color||new THREE.BufferAttribute(new Float32Array(g.attributes.position.count*3).fill(1),3));
      sub.setIndex(g.index?Array.from(g.index.array.slice(gr.start,gr.start+gr.count)):Array.from({length:gr.count},(_,i)=>gr.start+i));(mt===barkM?bark:ends).push(sub);}}
    while(grp.children.length)grp.remove(grp.children[0]);
    for(const [list,mt] of [[bark,barkM],[ends,endM]])if(list.length){const m=new THREE.Mesh(mergeGeometries(list),mt);m.castShadow=!MOBILE;m.receiveShadow=true;grp.add(m);}}
+  /* seat the stumps and logs in the floor like the oak's roots: a soft contact shadow and a moss collar where the wood meets the ground (not stood on the lawn) */
+  {const d=aoTex.image.data,p=grp.children[0]&&grp.children[0].geometry.attributes.position;if(p){for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i);if(y-groundH(x,z)>.22)continue;
+     for(let a=-2;a<=2;a++)for(let b=-2;b<=2;b++){const gx=Math.floor((x+GE)/CELL)+a,gz=Math.floor((z+GE)/CELL)+b;if(gx<0||gz<0||gx>=GS||gz>=GS)continue;const wx=(gx+.5)*CELL-GE,wz=(gz+.5)*CELL-GE;const r=Math.hypot(wx-x,wz-z);const j=(gz*GS+gx)*4;
+      d[j]=Math.max(d[j],255*.7*smooth(.45,0,r));d[j+1]=Math.max(d[j+1],255*.85*smooth(.55,.15,r));}}aoTex.needsUpdate=true;}}
   scene.add(grp);G.woodpile=grp;G._stones=(G._stones||[]);for(const [x,z,r] of [[...chop,.3],[...pile,.5],[...big,.55],[...big2,.4],[log[0],log[1],.5],[log[0]+.9,log[1]-.45,.3],[log[0]-.9,log[1]+.45,.3]])G._stones.push([x,z,r]);
   // nav for Character/Brain: the way out from the foot of the ground ladder, the gap where he leaves the clearing, a spot
   // out in the fog where he is hidden, and the work spots by the stump and the pile
