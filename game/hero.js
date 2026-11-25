@@ -2756,7 +2756,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     const unload=next=>{if(!a.haul){next();return;}const P=PP();
      if(a.haul==='meatBag'){try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}fridgeVisit(a,'in',next);}
      else visit(a,PT('woodpile'),.5,'hy_droplogs',[[.6,()=>{try{P.release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],next);};
-    a.unload=unload;if(a.leaving)return;(GEAR.bow?n=>gearOff(a,n,'bow'):n=>n())(()=>unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);})));};/* CLIMB HOOK: the bow and quiver go back on the workshop wall (on the landing) before the meat goes up the hatch ladder: with them on his back he could not pass the hatch (the quiver went right through the kitchen floor's edge beam, the bow tip through the open hatch lid) */
+    a.unload=unload;if(a.leaving)return;(GEAR.bow&&!(window.__noDuck||/noduck/.test(location.search))?n=>gearOff(a,n,'bow'):n=>n())(()=>unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);})));};/* CLIMB HOOK: the bow and quiver go back on the workshop wall (on the landing) before the meat goes up the hatch ladder: with them on his back he could not pass the hatch (the quiver went right through the kitchen floor's edge beam, the bow tip through the open hatch lid) */
    if(kind==='hunt'&&(o.hit!=null?!o.hit:Math.random()<.3))res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};
    const goOut=()=>{if(a.leaving)return;a.step='out';goTo('g_out',()=>{if(a.leaving)return;a.step='away';a.t=0;root.visible=false;});};
    /* OUTDOOR hunt (phone watch: three game hours of nothing behind a bush): at the forest edge, in sight, he takes the bow off
