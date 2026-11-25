@@ -292,7 +292,7 @@ float pTop(vec2 mm,vec3 sz,float sd,float wall){float yw=mm.y/max(sz.y*.5,.01);f
 vec3 pTex(vec2 uv,float wall,float bias){return wall>.5?texture2D(tWoodB,uv,bias).rgb:texture2D(tWoodA,uv,bias).rgb;}
 vec3 pTexG(vec2 uv,float wall,vec2 gx,vec2 gy){return wall>.5?textureGrad(tWoodB,uv,gx,gy).rgb:textureGrad(tWoodA,uv,gx,gy).rgb;}
 float pL(vec3 c){return dot(c,vec3(.3,.6,.1));}
-vec3 plank(vec3 lp,vec3 sz,float sd){
+vec3 plank(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] the per-board seed arrives as an interpolated varying; its last-bit wobble from pixel to pixel went through the sin-hash (x127.1x43758) and gave every pixel its own texture offset: the black-and-white cork speckle on beams and boards. Quantised it is the same on every pixel of a board */
  float wall=step(99.5,sd)*step(sd,399.5);vec3 m=lp*sz;vec3 an=abs(vN0);float fr=vFresh,old=1.-fr;
  // which face: 0 the broad face, 1 the long sides (seen down in the gaps), 2 the sawn ends
  float face=an.x>an.y&&an.x>an.z?2.:(an.y>an.z?1.:0.);
@@ -506,7 +506,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
 const _bm=new THREE.Matrix4(),_bs=new THREE.Matrix4();
 function beamInst(m,kind='beam'){const i=beams.count++;{const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:beams,i,kind,c:p,q});}beams.setMatrixAt(i,m);dRow.setX(i,rnd(0,97));beams.setColorAt(i,new THREE.Color().setScalar(rnd(.9,1.04)));beams.instanceMatrix.needsUpdate=true;dRow.needsUpdate=true;if(beams.instanceColor)beams.instanceColor.needsUpdate=true;}
 function meshesToBeams(g){g.updateMatrixWorld(true);for(const o of [...g.children]){if(!o.isMesh||o.material!==darkBoard||!o.geometry.parameters||o.geometry.parameters.width===undefined)continue;const p=o.geometry.parameters;
- beamInst(_bm.copy(o.matrixWorld).multiply(_bs.makeScale(p.width,p.height,p.depth)));g.remove(o);o.geometry.dispose();}}
+ beamInst(_bm.copy(o.matrixWorld).multiply(_bs.makeScale(p.width,p.height,p.depth)));if(o.userData.tint)beams.setColorAt(beams.count-1,new THREE.Color().setScalar(o.userData.tint));g.remove(o);o.geometry.dispose();}}
 const B=[];// all boards {rb, size, q, inst, breakable, hp, group, loose}
 const tM=new THREE.Matrix4(),tQ=new THREE.Quaternion(),tP=V(),tS=V();
 // add a board centred at c with size (len,w,t) and rotation; long axis = local x
@@ -545,7 +545,7 @@ float sMoss(vec3 w,float sd){float n=sN(w.xz*1.3+sd*.0)*.65+sN(w.xz*4.1+3.)*.35;
 // crack line height (metres, negative = groove) on the top face
 float sCrack(vec2 mm,vec3 sz,float sd){if(sH(sd+3.)>.16)return 0.;vec2 c=vec2((sH(sd+4.)-.5)*sz.x*.5,(sH(sd+5.)-.5)*sz.z*.4);float a=sH(sd+6.)*3.14;vec2 dir=vec2(cos(a),sin(a));
  float d=abs(dot(mm-c,vec2(-dir.y,dir.x))+.012*(sN(vec2(dot(mm,dir)*25.,sd))-.5));float along=abs(dot(mm-c,dir));return -.003*smoothstep(.005,.0,d)*smoothstep(sz.z*.55,sz.z*.2,along);}
-vec3 slate(vec3 lp,vec3 sz,float sd){
+vec3 slate(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] same as plank(): a quantised seed, so the sin-hash gives one offset per slate, not one per pixel */
  float old=1.-vFresh;vec3 m=lp*sz;vec3 an=abs(vN0);float top=step(an.x,an.y)*step(an.z,an.y)*step(0.,vN0.y);
  vec2 off=vec2(sH(sd+.7),sH(sd+1.9))*5.;
  vec2 uv=(top>.5?m.xz:(an.x>an.z?m.zy:m.xy))/.9+off;
@@ -981,7 +981,7 @@ win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+
   const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;gm.emissiveIntensity=.12;gm.opacity=.1;WINS.push({mat:gm,room:'trunk',g});
   const pane=new THREE.Mesh(new THREE.PlaneGeometry(W,H),gm);pane.position.z=D-.09;pane.renderOrder=2;g.add(pane);
   // the frame: jambs, a lintel and a deep sill that run past them, a cross bar in the glass
-  const fb=(w,h,d,x,y,z,rz=0)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),darkBoard);m.position.set(x,y,z);m.rotation.z=rz;g.add(m);};
+  const fb=(w,h,d,x,y,z,rz=0)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),darkBoard);m.position.set(x,y,z);m.rotation.z=rz;m.userData.tint=2.15;/* photo: a honey-wood frame, not dark beams (lighter instance tint) */g.add(m);};
   // the casing runs from the face right back into the bark, so the lit lining never shows from the side
   fb(.11,H+.16,L+.02,-W/2-.055,0,zc+.01,.012);fb(.11,H+.16,L+.02,W/2+.055,.005,zc+.005,-.01);fb(W+.2,.09,L,0,H/2+.08,zc-.01);fb(W+.2,.07,L,0,-H/2-.07,zc-.01);
   fb(W+.44,.12,.16,.01,H/2+.1,D-.03,.018);fb(W+.38,.075,.24,-.01,-H/2-.075,D+.01,-.012);
