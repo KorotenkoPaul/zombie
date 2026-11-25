@@ -432,16 +432,20 @@ uniform float tdCool;` + NOISE)
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
     mat.onBeforeCompile = sh => {
       branchHook(sh, AX, AZ);
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
-        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.8+.4*f+.18*(g-.5)*clamp(1.-length(fwidth(tdP))*55.*.45,0.,1.);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}')
+      // tdS: 1 on the mossy earth humps between the roots (they share this mesh), tdHg: height above the ground there
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;attribute float tdSoil;varying float tdS,tdHg; /* tdHg: 0 at the floor, 1 at the hump top */').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;tdS=tdSoil;tdHg=(tdP.y-(modelMatrix*instanceMatrix*vec4(0.,0.,0.,1.)).y-.06)/max(length(instanceMatrix[1].xyz)-.06,.01);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying float tdS,tdHg;' + NOISE)
+        // [ladder-foot round] the earth humps read as black speckled ovals with a hard rim cut into the floor: a frayed rim
+        // (arithmetic noise, no texture reads) so the floor shows through in ragged bays, as moss creeping over the earth does
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif(tdS>.5&&tdHg<.5*td_n(tdP*17.)+.2*td_n(tdP*43.)-.16)discard;')
+        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.8+.4*f-.18*(f-.5)*tdS+.18*(g-.5)*clamp(1.-length(fwidth(tdP))*55.*.45,0.,1.)*(1.-tdS);diffuseColor.rgb*=mix(mix(.6,.9,tdS),1.,smoothstep(-.2,3.,tdP.y));\nif(tdS>.5){float fz=td_f(tdP*41.+1.7);float fz2=td_n(tdP*113.+4.2);diffuseColor.rgb*=mix(1.,.62+.6*smoothstep(.3,.72,fz),clamp(1.-length(fwidth(tdP))*41.*.7,0.,1.))*mix(1.,.82+.36*fz2,clamp(1.-length(fwidth(tdP))*113.*.7,0.,1.));diffuseColor.rgb*=.92+.16*smoothstep(.3,.8,td_n(tdP*9.));}}')
         // a cushion of moss is a pile of tiny stems, not a smooth skin: a fine fuzzy bump on the lit side (critic: the patches
         // on the roots read as flat green felt from the close zoom)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
- { float px=length(fwidth(tdP)); float aF=clamp(1.-px*160.*.45,0.,1.), aM=clamp(1.-px*47.*.45,0.,1.); /* fade the stems once they are smaller than a pixel: aliased, they drew black hatching */
+ { float px=length(fwidth(tdP)); float aF=clamp(1.-px*160.*.45,0.,1.)*(1.-tdS), aM=clamp(1.-px*47.*.45,0.,1.)*(1.-tdS); /* earth humps: no stem bump (pixel stems speckled, the coarse ones drew dark worms on a 0.6 m hump) */ /* fade the stems once they are smaller than a pixel: aliased, they drew black hatching */
    float hgt=(td_n(tdP*160.)-.5)*.6*aF+(td_n(tdP*47.)-.5)*.4*aM+.5; vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition); float hx=dFdx(hgt),hy=dFdy(hgt);
    vec3 r1=cross(dpy,normal),r2=cross(normal,dpx); float det=dot(dpx,r1); normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.35);
-   diffuseColor.rgb*=.86+.26*hgt; }`)
+   diffuseColor.rgb*=mix(.86+.26*hgt,.9+.2*hgt,tdS); /* the wide earth humps: soft fuzz, not black speckles */ }`)
         // weather (same uniforms as the bark): soaked moss deeper and greener, hoar frost on the tops of the cushions on cold nights.
         // Only the green instances (moss), not the brown soil lumps that share this mesh.
         .replace('#include <color_fragment>', `#include <color_fragment>
@@ -449,12 +453,14 @@ uniform float tdCool;` + NOISE)
   c=mix(c,c*vec3(.72,1.1,.6),tdDamp*green);
   vec3 wN=normalize((vec4(vNormal,0.)*viewMatrix).xyz); float top=smoothstep(.3,.85,wN.y);
   float fr=tdFrost*top*green*(.35+.65*smoothstep(.4,.65,td_n(tdP*70.)));
-  c=mix(c,vec3(.24,.26,.3),fr*.45); diffuseColor.rgb=c; }`)
+  c=mix(c,vec3(.24,.26,.3),fr*.45);
+  c=mix(c*vec3(1.05,.85,.75),c,mix(1.,smoothstep(.0,.6,tdHg),tdS)); /* the earth humps: browner low down, the moss on top */ diffuseColor.rgb=c; }`)
         .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost;');
       sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost;
     };
-    mat.customProgramCacheKey = () => 'tdMossCushion3'; /* SHADERS rule: own key */
+    mat.customProgramCacheKey = () => 'tdMossCushion4'; /* SHADERS rule: own key */
     const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
+    g.setAttribute('tdSoil', new THREE.InstancedBufferAttribute(new Float32Array(N + NSOIL), 1));
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
@@ -551,12 +557,13 @@ uniform float tdCool;` + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*6.);float g=td_n(tdP*40.);diffuseColor.rgb*=.7+.5*f+.3*(g-.5);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.03,.045,.015),smoothstep(.55,.75,f)*.6);}');
     };
     // the soil humps share the moss cushions' instanced mesh (one draw call less)
-    const soil = D.moss, NS = soil.instanceMatrix.count - soil.count, s0 = soil.count; let ns = 0;
+    const soil = D.moss, NS = soil.instanceMatrix.count - soil.count, s0 = soil.count; let ns = 0; const soilA = soil.geometry.attributes.tdSoil;
     for (const [x, y, z, rd, a] of spots) {
       if (ns >= NS) break; if (R() < 0.55) continue;
       const w = rr(0.35, 0.75) * (0.6 + rd);
       M4.compose(V(x, y - 0.06, z), new THREE.Quaternion().setFromAxisAngle(UP, -a + rr(-0.3, 0.3)), S.set(w * 0.6, rr(0.08, 0.16), w)); soil.setMatrixAt(s0 + ns, M4);
-      const v = rr(0.8, 1.1); col.setRGB(0.045 * v, 0.034 * v, 0.022 * v); soil.setColorAt(s0 + ns, col); ns++;
+      // [ladder-foot round] mossy earth, close to the floor's own tone (the near-black brown read as a hole); a few barer ones
+      const v = rr(0.8, 1.1), hb = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5) % 1, bare = hb < 0.3 ? 0.3 + hb : hb * 0.25; /* a hash, not R(): the rng stream (and every placement after this) stays as it was */ col.setRGB((0.072 + 0.025 * bare) * v, (0.115 - 0.045 * bare) * v, (0.04 - 0.008 * bare) * v); soil.setColorAt(s0 + ns, col); soilA.setX(s0 + ns, 1); ns++;
     }
     soil.count = s0 + ns; D.soil = { count: ns };
 
