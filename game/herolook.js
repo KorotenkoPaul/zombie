@@ -40,7 +40,7 @@ export function createHeroLook({ THREE, root, camera, renderer, opts = {} }) {
     m.onBeforeCompile = sh => { sh.uniforms.uOW = uOW; sh.vertexShader = 'uniform float uOW;\n' + sh.vertexShader.replace('#include <project_vertex>',
       '#include <project_vertex>\n  mvPosition.xyz += normalize(transformedNormal) * uOW * max(.05, -mvPosition.z);\n  gl_Position = projectionMatrix * mvPosition;'); };
     m.customProgramCacheKey = () => 'heroHull1';
-    const h = new THREE.SkinnedMesh(g, m); h.name = name; h.bind(src.skeleton, src.bindMatrix); h.frustumCulled = false; h.castShadow = false; h.receiveShadow = false;
+    const h = new THREE.SkinnedMesh(g, m); h.name = name; h.bind(src.skeleton, src.bindMatrix); try { window.__clothes && window.__clothes.knee && window.__clothes.knee(h); } catch (e) { } h.frustumCulled = false; h.castShadow = false; h.receiveShadow = false;
     h.layers.set(0); src.parent.add(h); h.position.copy(src.position); h.quaternion.copy(src.quaternion); h.scale.copy(src.scale);
     hulls.push({ h, src, vis: src.name === 'heroShadow' ? root.getObjectByName('Mesh_0') : src });
     return h;

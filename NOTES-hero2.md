@@ -112,3 +112,18 @@ Comparisons: project files hero-v6/.
   - hairgrade.py, through hairstep.mjs (build step HAIRG='{"t":[116,80,62],"g":1.2}' after CLOTHF), gives the hair family (dark, saturated, red over green: hair, brows, lashes, irises) the target hue. Each texel keeps its brightness relative to the hair median, with contrast ^1.2 so the locks read, and a soft mask keeps the hairline smooth.
   - Irises came out a little orange. They need their own zone if that matters.
   - Current full build: add CLOTHF='{}' HAIRG='{"t":[116,80,62],"g":1.2}' to the line above.
+
+## Vest borders, armholes and knees (critic pass 22, 2026-11-25)
+- `VESTE='{}'` vestedge.mjs: Taubin smoothing of the vest's open border loops (saw-tooth spikes up to 5 cm; moves capped at 2 cm so lapel points stay).
+- `VESTA='{}'` vestarm.mjs: LeftArm/RightArm weight on the vest capped at 0.25, the rest to the Shoulder: the armhole rides on the shoulder, no strap spikes when he reaches.
+- `KNEEW='{}'` kneeweights.mjs: around each knee the UpLeg/Leg share follows a smooth ramp along the leg (±0.2 x leg length; 0.16 x leg length radius). With heroclothes.js rotating that band about the knee joint (?knee=0 off) the deep-crouch knee stays round instead of a flat wedge.
+- Current build: add `KNEEW='{}' VESTA='{}' VESTE='{}'` to the big31 command (= big38).
+- Since critic 24: also `COLLW='{}'` (= big45).
+## Vest over the body: collar teeth and hem (critic 24)
+
+The vest is the body's own triangles a few mm further out, so wherever a coarse triangle tilts (back of the collar, the hem when
+the legs spread) the body won the depth test and showed through: dark teeth above the collar, sweater patches on the hem.
+- `collarweights.mjs` (COLLW): behind the neck the body and vest weights are a Gaussian average of the body's own weights by
+  position (one field for both garments), so no 0.8-Shoulder vertex sits next to a 0.6-Head one.
+- `vestedge.mjs` leaves the back-collar border as modelled (cy/cz): pulled straight there it sank under the body.
+- heroclothes.js draws the vest 12 mm nearer in depth only (`?vestz=` to try other values, 0 = off); screen position unchanged.

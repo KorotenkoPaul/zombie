@@ -824,14 +824,14 @@ uniform float tdCool;` + NOISE)
     // surface. A cap under an overhang (something solid well above it) is left out: it could never be seen.
     const tSnap = performance.now();
     // (a) the bark: the final carved triangles (TREE.tris) bucketed by 0.3 m cells, low ones only; a vertical ray is a 2D point-in-triangle test
-    const CS = 0.3, cells = new Map(), ck = (i, j) => i * 4096 + j;
+    const CS = 0.3, cells = new Map(), ck = (i, j) => i * 4096 + j; const T = (() => { const bk = TREE.bark, bg = bk && bk.geometry, pa = bg && bg.attributes.position; if (!pa) return TREE.tris; bk.updateMatrixWorld(true); const ix = bg.index ? bg.index.array : null, n = ix ? ix.length : pa.count, o = new Float32Array(n * 3), v = new THREE.Vector3(); for (let i = 0; i < n; i++) { v.fromBufferAttribute(pa, ix ? ix[i] : i).applyMatrix4(bk.matrixWorld); o[i * 3] = v.x; o[i * 3 + 1] = v.y; o[i * 3 + 2] = v.z; } return o; })(), nT = T.length / 9; // the bark AS DRAWN (index after the thin-shoot cut): TREE.tris still holds triangles the mesh no longer draws, and caps snapped onto them floated (Ground: caps on the root bark)
     for (let t = 0; t < nT; t++) { const i = t * 9; const y0 = Math.min(T[i + 1], T[i + 4], T[i + 7]); if (y0 > 2.2) continue;
       const x0 = Math.min(T[i], T[i + 3], T[i + 6]), x1 = Math.max(T[i], T[i + 3], T[i + 6]), z0 = Math.min(T[i + 2], T[i + 5], T[i + 8]), z1 = Math.max(T[i + 2], T[i + 5], T[i + 8]);
       for (let a = Math.floor(x0 / CS); a <= Math.floor(x1 / CS); a++) for (let b = Math.floor(z0 / CS); b <= Math.floor(z1 / CS); b++) { const k = ck(a, b); let L = cells.get(k); if (!L) cells.set(k, L = []); L.push(t); } }
-    const barkTop = (x, z, yMax) => { const L = cells.get(ck(Math.floor(x / CS), Math.floor(z / CS))); if (!L) return null; let best = null;
+    const barkTop = (x, z, yMax, up) => { const L = cells.get(ck(Math.floor(x / CS), Math.floor(z / CS))); if (!L) return null; let best = null;
       for (const t of L) { const i = t * 9; const ax = T[i], az = T[i + 2], bx = T[i + 3], bz = T[i + 5], cx = T[i + 6], cz = T[i + 8];
         const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(d) < 1e-9) continue; const u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d, v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d, w = 1 - u - v;
-        if (u < 0 || v < 0 || w < 0) continue; const y = u * T[i + 1] + v * T[i + 4] + w * T[i + 7]; if (y <= yMax && (best === null || y > best)) best = y; }
+        if (u < 0 || v < 0 || w < 0) continue; if (up && (T[i + 5] - T[i + 2]) * (T[i + 6] - T[i]) - (T[i + 3] - T[i]) * (T[i + 8] - T[i + 2]) <= 0) continue; /* only a top face can carry a cap: a root's underside skin (back face from above) left them 5 cm over the drawn top */ const y = u * T[i + 1] + v * T[i + 4] + w * T[i + 7]; if (y <= yMax && (best === null || y > best)) best = y; }
       return best; };
     // (b) the ground as drawn: the ground mesh's own grid (bilinear), not groundH (its fine noise is not in the 128-cell mesh)
     let gridH = null;
@@ -843,10 +843,10 @@ uniform float tdCool;` + NOISE)
           return (H[b * n + a] * (1 - tx) + H[b * n + a + 1] * tx) * (1 - tz) + (H[(b + 1) * n + a] * (1 - tx) + H[(b + 1) * n + a + 1] * tx) * tz; }; } }
     const snap = (p, maxUp = 0.45) => {
       const over = barkTop(p.x, p.z, 9); if (over !== null && over > p.y + maxUp) return null;   // under an overhang: never seen
-      const bt = barkTop(p.x, p.z, p.y + maxUp), gh = gridH ? gridH(p.x, p.z) : null;
+      const bt = barkTop(p.x, p.z, p.y + maxUp, true), gh = gridH ? gridH(p.x, p.z) : null;
       const y = Math.max(bt ?? -1e9, gh ?? -1e9); if (y < -1e8 || y < p.y - 0.35) return null; p.y = y - 0.008; return p; };
     let ns = 0;
-    for (let k = 0; k < 200 && ns < NSM - NBASE * 3; k++) {
+    for (let k = 0; k < 500 && ns < NSM - NBASE * 3; k++) {
       const s0 = onRoots(); if (!s0) break; const p0 = s0.p; if (p0.z < AZ - 0.5 && R() < 0.75) continue; if (blocked(p0.x, p0.y + 0.2, p0.z, 0.1) || nearDoor(p0.x, p0.y, p0.z)) continue;
       const cnt = 2 + Math.floor(R() * 4);
       for (let j = 0; j < cnt && ns < NSM; j++) {
