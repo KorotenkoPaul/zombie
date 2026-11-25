@@ -24,6 +24,9 @@ const _v = new THREE.Vector3();
 
 // how a source wakes up and dies down (seconds), and how it flickers
 // ?decklamp=1 (option for Pavel, not the default): an oil lantern on the lookout deck, lit by the hero when he goes out there in the dark
+// ?embers=1 (an option for Pavel): when he goes to bed at night he banks the stove, and the coals glow low in the dark
+// kitchen through the night, dying out by morning (~7 game hours). Off by default: the base game is unchanged.
+const EMBERS = (() => { try { return new URLSearchParams(location.search).get('embers') === '1'; } catch (e) { return false; } })();
 const DECKLAMP = (() => { try { return new URLSearchParams(location.search).get('decklamp') === '1'; } catch (e) { return false; } })();
 const GLOW = (() => { try { return new URLSearchParams(location.search).get('glow') === '1'; } catch (e) { return false; } })();
 const GLOW_K = { kitchen: 1.8, workshop: 1.6, oven: 1.3, bedroom: 1.1 }, GLOW_C = new THREE.Color(0xFFD9A0);
@@ -678,7 +681,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       w.sp.position.set(w.x0 + Math.sin(w.age * 2.2 + w.ph) * .03 * a, w.y0 + a * .38, w.z0 + Math.cos(w.age * 1.7 + w.ph) * .02 * a);
       w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); w.sp.visible = w.sp.material.opacity > .004; }
   }
-  let cookT = 0, t = 0, frame = 0;
+  let cookT = 0, t = 0, frame = 0, emberK = 0, wasAsleep = false;
   // Phone and desktop light a room differently (phones: four pooled half-space cones, no point shadows; desktop: omni
   // lights and bloom), so the same lamp read ~40% too bright on desktop in the workshop and 25-45% too dark on phones.
   // One gain per room and platform brings both to the reference photo's room brightness (home view, one room lit with the
@@ -881,6 +884,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
 
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
     t += dt; frame++;
+    if (EMBERS) {
+      const sl = (task === 'sleep' || asleep) && dayK < .5;
+      if (sl && !wasAsleep) emberK = Math.max(emberK, 1);
+      wasAsleep = sl; emberK = Math.min(Math.max(0, emberK - dt / 420), 1 - smooth(.4, .9, dayK));   // 7 game hours (1 game hour = 60 s), gone by full day
+    }
     samplePose();
     // cooking, or stoking (the log goes in while the little door is open): the fire is fed
     const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
@@ -901,6 +909,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       if (s.kind === 'oil' || s.kind === 'candle') k = s.level * (1 + s.flare * .35 * Math.max(0, Math.sin(t * 31 + s.seed)));
       else if (s.kind === 'electric' && s.flare > .85) k *= (Math.sin(t * 90) > 0 ? 1 : .35);
       else if (s.kind === 'fire') k = s.level * s.level * (3 - 2 * s.level);
+      if (EMBERS && s.name === 'oven') k = Math.max(k, emberK * .3);   // banked coals: a low, breathing glow (extra() turns it into embers)
       // lockdown: he turns the wicks down / the bulb to a glow, so little light shows from outside (never off: Pavel)
       if (lockK > 0 && (s.name === 'kitchen' || s.name === 'bedroom' || s.name === 'workshop')) k *= 1 - .65 * lockK;
       let f = k > 0 ? flick(s, T) : 0;
@@ -1121,7 +1130,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
-    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances, rimU, AO, GAO, heroBlob }),
+    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances, rimU, AO, GAO, heroBlob, emberK: () => emberK }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,
     set: (n, on) => { const s = src.get(n); if (!s) return false; s.manual = !!on; setOn(s, !!on); return true; },
