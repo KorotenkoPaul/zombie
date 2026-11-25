@@ -574,14 +574,14 @@ export function createGround(C){const __before=new Set(C.scene.children);
    // y was mirrored above, so flip the winding back (the surface faces up)
    const ix=geo.index.array;for(let i=0;i<ix.length;i+=3){const t=ix[i+1];ix[i+1]=ix[i+2];ix[i+2]=t;}}
   const U={uT:{value:0},uMoon:{value:new THREE.Vector3(-.7,.5,.15).normalize()},uNight:{value:0},uDeep:{value:new THREE.Color(.02,.035,.04)},
-   uSp0:{value:new THREE.Vector4(0,0,-9,0)},uSp1:{value:new THREE.Vector4(0,0,-9,0)},uNz:NZU,uSky:{value:new THREE.Color(.3,.4,.5)},uDepth:{value:DB.t},uDB:{value:DB.v},tDiffuse:{value:null},textureMatrix:{value:new THREE.Matrix4()},color:{value:new THREE.Color(1,1,1)}};
+   uSp0:{value:new THREE.Vector4(0,0,-9,0)},uSp1:{value:new THREE.Vector4(0,0,-9,0)},uNz:NZU,uSky:{value:new THREE.Color(.3,.4,.5)},uDepth:{value:DB.t},uDB:{value:DB.v},uLp:{value:Array.from({length:6},()=>new THREE.Vector4(0,-99,0,0))},/* [ENV] the lit lamps (env.lampPts) */tDiffuse:{value:null},textureMatrix:{value:new THREE.Matrix4()},color:{value:new THREE.Color(1,1,1)}};
   const VS=`#include <fog_pars_vertex>
    uniform mat4 textureMatrix;attribute float aD;varying float vD;varying vec3 vW;varying vec4 vRU;
    void main(){vD=aD;vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;vRU=textureMatrix*vec4(position,1.);vec4 mvPosition=viewMatrix*w;gl_Position=projectionMatrix*mvPosition;
    #include <fog_vertex>
    }`;
   const FS=(refl)=>`#include <fog_pars_fragment>
-   uniform float uT,uNight;uniform vec3 uMoon,uDeep,uSky,color;uniform vec4 uSp0,uSp1,uDB;uniform sampler2D uDepth;
+   uniform float uT,uNight;uniform vec3 uMoon,uDeep,uSky,color;uniform vec4 uSp0,uSp1,uDB;uniform vec4 uLp[6];uniform sampler2D uDepth;
    float spC=0.;vec2 splash(vec2 p,vec4 s){float age=uT-s.z;if(age<0.||age>3.)return vec2(0.);vec2 d=p-s.xy;float r=length(d)+1e-4;float fr=age*.38;float env=exp(-age*1.4)*smoothstep(.12,0.,abs(r-fr))*s.w;float w=sin((r-fr)*46.)*env;
     spC+=max(0.,w)*.9+smoothstep(.09,0.,r)*exp(-age*5.)*s.w*1.5;/* crest lines + the churned spot right where the bucket went in */return d/r*w;}uniform sampler2D tDiffuse;varying float vD;varying vec3 vW;varying vec4 vRU;`+GLSL_NOISE+`
    void main(){
@@ -604,6 +604,11 @@ export function createGround(C){const __before=new Set(C.scene.children);
     c*=1.-.35*uNight*smoothstep(-.1,-.5,vD);
     // night: the open water catches the bright blue night sky above the clearing (a soft silver sheen), lighter than the mist around it
     {float lane=.45+.9*vn(vec2(vW.x*.7+vW.z*.25,vW.z*2.6)+uT*.03);c+=vec3(.16,.26,.34)*uNight*(.12+.88*fr)*lane*.8*smoothstep(-.05,-.4,vD);}/* [ENV] broken by wind lanes: not a flat silver sheet */c+=uSky*vec3(.9,1.,1.1)*.7*uNight*smoothstep(.0,.012,dep)*smoothstep(.045,.018,dep);/* the moonlit waterline: a thin line where the drawn floor meets the water */
+    /* [ENV] rain: every drop's ring catches the sky on its crest (the ripple normal alone barely moved the dark water: in rain the pool read as a still black plate) */
+    {float rg=clamp(length(waterRings(vW.xz))*2.4,0.,1.)*smoothstep(-.02,-.25,vD);c=mix(c,max(sky,uSky*.55)*1.1+uSky*.06,rg*.4);}
+    ${refl?'':`/* [ENV] phones have no mirror: the lit windows, the trunk door and the lanterns glint in the water as warm wobbling patches, broken up by the ripples and rain rings */
+    {vec3 Rr=reflect(-V,normalize(mix(vec3(0.,1.,0.),n,1.6)));for(int i=0;i<6;i++){vec4 l=uLp[i];if(l.w<=0.)continue;vec3 L=l.xyz-vW;float dl=length(L);float k=max(dot(Rr,L/dl),0.);
+      c+=vec3(1.,.6,.28)*l.w*(pow(k,700.)*2.2+pow(k,60.)*.1)*(.35+fr)*smoothstep(-.03,-.2,vD);}}`}
     // splash: bright broken crests and a pale churned spot where the bucket dips (sky-tinted, dimmer at night)
     c=mix(c,sky*1.15+uSky*.08,clamp(spC,0.,1.)*mix(.5,.35,uNight));/* the crests mirror the sky like the rest of the water: no painted white ring */
     // phones have no real mirror: the far bank, the reeds and the dark wood beyond show as a soft dark band along the
@@ -624,7 +629,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    water.material.uniforms.color.value.setRGB(.82,.86,.9);}
   else water=new THREE.Mesh(geo,new THREE.ShaderMaterial({uniforms:{...THREE.UniformsUtils.clone(fogU),...U},vertexShader:VS,fragmentShader:FS(false)}));
   water.material.fog=true;water.material.transparent=true;water.material.depthWrite=false;
-  if(C.wind&&C.wind.hookWater)water.material.onBeforeCompile=sh=>{C.wind.hookWater(sh,THREE);};
+  if(C.wind&&C.wind.hookWater)water.material.onBeforeCompile=sh=>{C.wind.hookWater(sh,THREE);};water.material.customProgramCacheKey=()=>'pond-env2'+(MOBILE?'m':'d');/* [ENV] */
   // falling leaves land on the pond and float (Wind)
   if(C.wind&&C.wind.addWater)C.wind.addWater((x,z)=>pondD(x,z)<-.12?level:null);
   water.rotation.x=-Math.PI/2;water.position.y=level;water.renderOrder=1;water.name='pond';scene.add(water);
@@ -713,7 +718,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   // also emits __ground.on('pond', e) with {act:'splash', pos:[x,y,z], k} for Sound
   let spI=0;G.pond.splash=(x,z,k=1)=>{const u=water.material.uniforms[spI?'uSp1':'uSp0'];spI^=1;u.value.set(x,z,WU.uT.value,Math.min(2,k));
    const L=LST.pond;if(L)for(const f of L){try{f({act:'splash',pos:[x,level,z],k});}catch(e){console.error(e);}}};
-  G._pond=(dt,cam)=>{WU.uT.value+=dt;upLeaves(dt);const E2=window.__env;if(E2&&E2.moonRim){WU.uMoon.value.copy(E2.moonRim.dir.value);WU.uNight.value=E2.moonRim.strength.value;}
+  G._pond=(dt,cam)=>{WU.uT.value+=dt;upLeaves(dt);const E2=window.__env;if(E2&&E2.moonRim){WU.uMoon.value.copy(E2.moonRim.dir.value);WU.uNight.value=E2.moonRim.strength.value;}if(E2&&E2.lampPts)WU.uLp.value.forEach((v,i)=>v.copy(E2.lampPts.value[i]));/* [ENV] */
    const fc=scene.fog&&scene.fog.color;if(fc){WU.uSky.value.copy(fc);WU.uDeep.value.copy(fc).multiplyScalar(.085).add(Col.setRGB(.016,.017,.01));}};}
 
  // ================= footprints in the mud =================
