@@ -421,6 +421,9 @@ export function createMotion({ hero, db, opts = {} }) {
 
   // timing check: n full searches against random database frames as queries (Date.now: works under a frozen performance.now)
   function bench(n = 400) { let pr = 0; const t0 = Date.now(); for (let i = 0; i < n; i++) { const g = (Math.random() * total) | 0; for (let k = 0; k < NF; k++) Qv[k] = F[g*NF + k] + (Math.random() - .5) * .3; search(Qv, -1, 1e9); pr += S.pruned; } return { msPerSearch: (Date.now() - t0) / n, pruned: pr / n }; }
-  const api = { pre, post, bench, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
+  // snap(): a teleport (the QA spawn) drops the inertialization still easing out of the cut-off clip, and the foot locks (a walk's
+  // standing-hips offset carried 38 cm into the seated reading pose and pulled the root off the chair for a few frames)
+  function snap() { offX.fill(0); offV.fill(0); offP.fill(0); offPV.fill(0); haveOut = haveOut2 = false; S.hipKind = null; srcKind.fill(-1); for (const L of lock) { L.on = L.hold = false; L.w = 0; } }
+  const api = { pre, post, bench, snap, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
   return api;
 }
