@@ -1301,7 +1301,7 @@ function meatBag0() { const X = mx(), g = new THREE.Group(); const prof0 = [[0, 
   { const c = new THREE.CatmullRomCurve3([V(.04, -.045, .02), V(.07, -.07, .045), V(.075, -.12, .05)]); add(g, new THREE.TubeGeometry(c, 8, .004, 5), X.rope); } // the twine's loose end
   g.userData.grip = V(0, 0, 0); return bake(g); }
 function logArmful() { return fine(() => logArmful0()); }
-function logArmful0() { const X = mx(), g = new THREE.Group(); for (const [x, y, v] of [[-.06, 0, 3], [.06, 0, 4], [0, .1, 5]]) { const l = logPiece(.5, .065, v); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
+function logArmful0() { const X = mx(), g = new THREE.Group(); for (const [x, y, v, z, len, r] of [[-.06, 0, 3, -.035, .5, .065], [.062, -.002, 4, .04, .46, .06], [0, .1, 5, .012, .53, .068]]) { const l = logPiece(len, r, v); l.position.set(x, y, z); l.rotation.z = rr(0, 3); g.add(l); } /* [PROPS] staggered ends and a little spread in length and girth: three split logs, not one flat slab of bark */
   // [PROPS round] two cords pulled tight round the bundle (they were round hoops standing off the logs like handles): each
   // follows the hull of the three logs, so it lies on the bark and runs straight across the gaps
   const PS = []; g.updateMatrixWorld(true); g.traverse(o => { if (!o.isMesh) return; const P = o.geometry.attributes.position, v = V(); for (let i = 0; i < P.count; i += 3) { v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); PS.push([v.x, v.y]); } });
