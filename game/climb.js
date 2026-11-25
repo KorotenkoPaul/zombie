@@ -222,8 +222,9 @@ export function createClimb() {
     if (A.mode === 'land') { // both feet on the floor: let go of the rungs, stand up
       A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1; /* the hands come down by IK (fading to the climb clip left both arms up at shoulder height while he stepped back: watch R28-3) */
       // a step back off the ladder before walking away (gate: arms, hips and shins swept through the rail when he turned off at the foot)
-      A.back = BACK * sstep(.15, .75, A.lt);
-      if (A.lt > .8) { S.act = null; S.wTarget = 0; S.fade = .3; return 'bottom'; } /* the root stays where the last hip correction put it (gate: root 14 cm in one frame at the end) */
+      if (A.BK == null) { A.BK = A.lad.rope && A.lad.y0 < .5 ? .5 : BACK; A.lf = A.BK > .3 ? 1.25 : 1; } /* at the foot of a rope ladder the ropes' tails lie out on the earth ~45 cm: he steps back clear of them before he turns (watch R35-1: he walked off sideways through the rope) */
+      A.back = A.BK * sstep(.15 * A.lf, .75 * A.lf, A.lt);
+      if (A.lt > .8 * A.lf) { S.act = null; S.wTarget = 0; S.fade = .3; return 'bottom'; } /* the root stays where the last hip correction put it (gate: root 14 cm in one frame at the end) */
       placeRoot(A, p); return null; }
     if (!A.step) { A.step = planStep(A); if (!A.step) {
       if (A.up) { startOver(A, 1); return overTick(A, dt, p); }
@@ -311,7 +312,7 @@ export function createClimb() {
       const g = restTarget(A, k, Math.min(L.r, A.R.length - 1)), sh = A.shP[k], hp = C.bones.Hips.getWorldPosition(V()); const out = sh.clone().sub(hp).setY(0); if (out.lengthSq() > 1e-6) out.normalize();
       const hang = sh.clone().add(V(0, -.52, 0)).addScaledVector(out, .08); hang.z += A.zDir * .02; const e = sstep(0, .55, A.lt); const q = g.lerp(hang, e); q.z += A.zDir * Math.sin(Math.PI * e) * .06; return q; }
     if (A.mode === 'land' && k[1] === 'F' && A.back) { // the feet step back one after the other, lifted a little
-      const e = k === 'LF' ? sstep(.15, .5, A.lt) : sstep(.4, .75, A.lt); const q = restTarget(A, k, L.r); q.z += A.zDir * BACK * e; q.y += Math.sin(Math.PI * e) * .06; return q; }
+      const f = A.lf || 1, e = k === 'LF' ? sstep(.15 * f, .5 * f, A.lt) : sstep(.4 * f, .75 * f, A.lt); const q = restTarget(A, k, L.r); q.z += A.zDir * (A.BK || BACK) * e; q.y += Math.sin(Math.PI * e) * .06; return q; }
     return restTarget(A, k, L.r);
   }
 
@@ -415,8 +416,8 @@ export function createClimb() {
       // out of the arm's reach the hand slows down softly before it gets there (it went at 11 cm/frame and stopped dead at full stretch: gate, hand jump 7-11 cm/frame² reaching up for the floor above)
       if (t && M.arm && B[s + 'Arm']) { const sp = wp(B[s + 'Arm']), v = t.clone().sub(sp), d = v.length(), Lm = M.arm * .96, x0 = .86 * Lm; const mvE = A && A.mode === 'climb' && A.step && A.step.move.some(m => m.k === k) ? (A.limb[k].e || 0) : 0; const wu = Math.max(sstep(sp.y - .02, sp.y + .14, t.y), sstep(0, .15, mvE) * (1 - sstep(.85, 1, mvE))); /* a moving hand also slows before full stretch below the shoulder (going down it reached the straight arm and stopped dead: 4 cm/frame²) */ if (d > x0 && wu > 0) /* only reaching up: a hand hanging on a rung below the shoulder with the arm near straight was pulled off it (11-40 cm off the rung) */ /* weighted in by height (an on/off switch at shoulder + 10 cm jerked the hand 10 cm/frame²) */ { const w = Lm - x0; v.setLength(x0 + w * Math.tanh((d - x0) / w)); t = t.clone().lerp(sp.clone().add(v), wu); } }
       const sx = (s === 'Left' ? -1 : 1) * zDir; const w = W * (hw ? hw[k] : 1); if (w < .002) continue;
-      let bo = 0; if (B.Hips && B[s + 'Arm']) { const hp = wp(B.Hips); for (const c of B.Hips.children) { if (c.isBone || !c.visible) continue; const q = wp(c).sub(hp); if (q.x * sx > .08) bo = 1; } if (bo) bo *= sstep(.1, .3, wp(B[s + 'Arm']).y - t.y); S.bo = S.bo || {}; S.bo[k] = (S.bo[k] || 0) + (bo - (S.bo[k] || 0)) * Math.min(1, dt * 4); bo = S.bo[k]; } /* a tool hung on that hip (belt hammer): the elbow goes wider round it (gate: forearm 2 cm through the hammer going down) */
-      C.ik2(B[s + 'Arm'], B[s + 'ForeArm'], B[s + 'Hand'], t, V(sx * (.7 + 1.1 * bo), -1 + .3 * bo, zDir * .45), w, false); if (window.__qa) { S.tl = S.tl || {}; S.tl[k] = [t.x, t.y, t.z, w, wp(B[s + 'Hand']).distanceTo(t)]; }
+      let bo = 0; if (B.Hips && B[s + 'Arm']) { const hp = wp(B.Hips); for (const c of B.Hips.children) { if (c.isBone || !c.visible) continue; const q = wp(c).sub(hp); if (q.x * sx > .08) bo = 1; } if (bo) bo *= sstep(-.05, .15, wp(B[s + 'Arm']).y - t.y); S.bo = S.bo || {}; S.bo[k] = (S.bo[k] || 0) + (bo - (S.bo[k] || 0)) * Math.min(1, dt * 4); bo = S.bo[k]; } /* a tool hung on that hip (belt hammer): the elbow goes wider round it (gate: forearm 2 cm through the hammer going down) */
+      C.ik2(B[s + 'Arm'], B[s + 'ForeArm'], B[s + 'Hand'], t, V(sx * (.7 + 2 * bo), -1 + .4 * bo, zDir * .45), w, false); if (window.__qa) { S.tl = S.tl || {}; S.tl[k] = [t.x, t.y, t.z, w, wp(B[s + 'Hand']).distanceTo(t)]; }
       const Hd = B[s + 'Hand']; if (Hd) { const a = wp(Hd); const dir = V(0, 1, 0).applyQuaternion(Hd.getWorldQuaternion(new THREE.Quaternion())); const tip = a.clone().addScaledVector(dir, .09);
         const flat = S.last.flat && S.last.flat[k];
         const he = S.last.hangE || 0; const aim = flat ? V(0, -.015, -zDir * .09).lerp(V(0, -.09, -zDir * .015), he) : V(0, -.02, -zDir * .09);
