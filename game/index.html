@@ -166,7 +166,7 @@ const glbBuf=n=>{const bn=GLBBIN&&/-glb\.txt$/.test(n)?n.replace(/-glb\.txt$/,'.
  return bn?fetch(ASSET+bn).then(r=>{const ct=r.headers.get('content-type')||'';return r.ok&&!/text\/html/.test(ct)?r.arrayBuffer().then(b=>{const h=new Uint32Array(b,0,1)[0];return h===0x46546C67?b:txt();}):txt();}).catch(txt):txt();};
 const glb=n=>glbBuf(n).then(buf=>new Promise((res,rej)=>loader.parse(buf,'',g=>{prog();res(g);},rej)));
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(({new:'hero-new-glb.txt',detail:'hero-detail-glb.txt',v6:'hero-v6-glb.txt',orig:'hero-glb.txt'})[new URLSearchParams(location.search).get('hero')]||'hero-v6-glb.txt')/* ?hero=new = adult redesign (rejected), ?hero=detail = the same hero, more detailed (KTX2 base colour), ?hero=v6 = concept 6 look (Pavel's pick 2026-11-24, now the default), same skeleton; ?hero=orig = the previous default hero */]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG,leafSprigT,leafRosT]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(({new:'hero-new-glb.txt',detail:'hero-detail-glb.txt',v6:'hero-v6-glb.txt',orig:'hero-glb.txt'})[new URLSearchParams(location.search).get('hero')]||'hero-v6-glb.txt')/* ?hero=new = adult redesign (rejected), ?hero=detail = the same hero, more detailed (KTX2 base colour), ?hero=v6 = concept 6 look (Pavel's pick 2026-11-24, now the default), same skeleton; ?hero=orig = the previous default hero */,tex('leaf-sprig.png'),MOBILE?tex('leaf-rosette.png'):null/* [TREE] one sprig of the same painted oak leaves: the crown is built from round clumps of these (Pavel 2026-11-25: no flat planes) */]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -216,7 +216,7 @@ const HY=1.0,LG_=1.4;/* the hollow landing and the trunk door sit low at the tru
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
 const DOORP={x:1.0,ang:1.05,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95};// the glowing hollow (tree.js); its plank frame is built with the boards
-const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:2.35,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:1.45,top:.42,clear:.45}],door:DOORP,
+const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,leafSprigT:/[?&]oldleaves/.test(location.search)?null:leafSprigT,leafRosT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:2.35,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:1.45,top:.42,clear:.45}],door:DOORP,
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
@@ -453,30 +453,31 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
 /* [PERF] lamp shadows: the whole bark (43k tris) and the merged house props (~36k) were drawn into every lamp's shadow map,
    though a lamp's cone only reaches a small part of them. Per (lamp, big static caster) we keep only the triangles whose box
    touches the lamp's shadow frustum (the rest can't put a single texel into the map) as a hidden mesh sharing the caster's
-   vertices, and draw that instead: one caster per 250 ms, CPU only. ?lampcheck also draws each lamp's map with the crop and
+   vertices, and draw that instead: one caster per lamp draw (CPU only, a few ms), with ?lampcheck one per 250 ms. ?lampcheck also draws each lamp's map with the crop and
    with the full caster (the hero left out of both), reads both back and keeps the crop only if not one texel differs
    (checked 2026-11-24: byte-identical for both lamps). A lamp that moves or changes its cone is redone. ?lampskip=off or __lampSkipOff=true draws everything. */
  const lampSt=new Map(),lampStat=window.__lampStat={resets:0,tests:0};let lampTestF=-1e9;const _lp=new THREE.Vector3(),_lt=new THREE.Vector3();if(/[?&]lampskip=off/.test(location.search))window.__lampSkipOff=true;
  const LCHECK=/[?&]lampcheck/.test(location.search);
  // only casters whose depth pass is plain geometry (no alpha cut-outs, morphs, skinning, instancing or custom depth shader) may be cropped
  const plainCaster=m=>m.isMesh&&m.castShadow&&!m.userData.lampCrop&&!m.isInstancedMesh&&!m.isSkinnedMesh&&!m.customDepthMaterial&&!m.customDistanceMaterial&&m.material&&!Array.isArray(m.material)&&!(m.material.alphaTest>0)&&!m.material.alphaMap&&!m.material.displacementMap&&!(m.geometry.morphAttributes&&m.geometry.morphAttributes.position)&&m.geometry.groups.length<=1;
- const lampCands=()=>{const c=[];if(TREE&&TREE.bark&&plainCaster(TREE.bark))c.push(TREE.bark);if(PSG)PSG.traverse(m=>{if(plainCaster(m))c.push(m);});return c;};
+ let CURT=null;const lampCands=()=>{const c=[];if(TREE&&TREE.bark&&plainCaster(TREE.bark))c.push(TREE.bark);if(PSG)PSG.traverse(m=>{if(plainCaster(m))c.push(m);});if(!CURT)CURT=scene.getObjectByName('curtains');if(CURT&&plainCaster(CURT))c.push(CURT);return c;};
+ /* the curtains (lights.js) move on the CPU (open/close, draught): their triangles get a 1.2 m margin, more than a panel ever travels */
  const readMap=l=>{const m=l.shadow.map;if(!m)return null;const b=new Uint8Array(m.width*m.height*4);renderer.readRenderTargetPixels(m,0,0,m.width,m.height,b);return b;};
  const _cv=new THREE.Vector3(),_cb=new THREE.Box3();
  // the caster's triangles that touch the lamp's shadow frustum (sharing its vertex buffer); null = none touch, 'full' = all do
  function cropOf(c,fr){const g=c.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=c.matrixWorld,I=[];
-  for(let t=0;t+2<n;t+=3){_cb.makeEmpty();for(let k=0;k<3;k++){_cv.fromBufferAttribute(pa,ix?ix[t+k]:t+k).applyMatrix4(mw);_cb.expandByPoint(_cv);}if(fr.intersectsBox(_cb))I.push(ix?ix[t]:t,ix?ix[t+1]:t+1,ix?ix[t+2]:t+2);}
+  const mg=c.name==='curtains'?1.2:0;for(let t=0;t+2<n;t+=3){_cb.makeEmpty();for(let k=0;k<3;k++){_cv.fromBufferAttribute(pa,ix?ix[t+k]:t+k).applyMatrix4(mw);_cb.expandByPoint(_cv);}if(mg){if(_cb.min.lengthSq()<1e-12&&_cb.max.lengthSq()<1e-12)_cb.set(_cv.set(-1e4,-1e4,-1e4),new THREE.Vector3(1e4,1e4,1e4));/* not placed yet: keep */else _cb.expandByScalar(mg);}if(fr.intersectsBox(_cb))I.push(ix?ix[t]:t,ix?ix[t+1]:t+1,ix?ix[t+2]:t+2);}
   if(!I.length)return null;if(I.length===n)return 'full';
   const cg=new THREE.BufferGeometry();cg.setAttribute('position',pa);cg.setIndex(I);
   const pm=new THREE.Mesh(cg,new THREE.MeshBasicMaterial({colorWrite:false,side:c.material.side,shadowSide:c.material.shadowSide}));pm.castShadow=true;pm.visible=false;pm.frustumCulled=false;pm.userData.lampCrop=1;pm.raycast=()=>{};pm.matrixAutoUpdate=false;c.add(pm);return pm;}
  function lampDraw(l,sc,cam){let st=lampSt.get(l);l.getWorldPosition(_lp);(l.target||l).getWorldPosition(_lt);
   const key=[l.angle,l.distance,l.shadow.camera.near,l.shadow.camera.far].join();if(!st||st.key!==key||st.p.distanceToSquared(_lp)>1e-6||st.t.distanceToSquared(_lt)>1e-6){if(st)for(const pm of st.sub.values())if(pm&&pm.parent){pm.parent.remove(pm);pm.geometry.dispose();pm.material.dispose();}lampStat.resets++;st={key,p:_lp.clone(),t:_lt.clone(),sub:new Map(),tested:new Set()};lampSt.set(l,st);}
-  const now=performance.now();const test=now-lampTestF>250&&(sm.autoUpdate||sm.needsUpdate)?lampCands().find(c=>!st.tested.has(c)):null;
+  const now=performance.now();const test=now-lampTestF>(LCHECK?250:0)&&(sm.autoUpdate||sm.needsUpdate)?lampCands().find(c=>!st.tested.has(c)):null;
   const on=[],shown=[];const use=(c,pm)=>{if(!c.castShadow)return;c.castShadow=false;on.push(c);if(pm){pm.visible=true;shown.push(pm);}};
   for(const [c,pm] of st.sub)use(c,pm);
   try{if(!test){r0([l],sc,cam);return;}
    lampTestF=now;lampStat.tests++;st.tested.add(test);l.shadow.updateMatrices(l);const pm=cropOf(test,l.shadow.getFrustum());if(pm==='full'){r0([l],sc,cam);return;}
-   if(!LCHECK){st.sub.set(test,pm);use(test,pm);r0([l],sc,cam);return;}/* the crop is exact by construction; ?lampcheck verifies it texel by texel (3 map draws per test) */
+   if(!LCHECK){st.sub.set(test,pm);use(test,pm);for(const c of lampCands()){if(st.tested.has(c))continue;st.tested.add(c);const q=cropOf(c,l.shadow.getFrustum());if(q!=='full'){st.sub.set(c,q);use(c,q);}}/* the rest at once too (exact crops, CPU only; the first lamp draws happen behind the loading screen) */r0([l],sc,cam);return;}/* the crop is exact by construction; ?lampcheck verifies it texel by texel (3 map draws per test) */
    const heroM=[];let hr=null;try{hr=hero&&hero.root;}catch(e){}/* declared further down */if(hr&&hr.traverse)hr.traverse(o=>{if(o.isMesh&&o.castShadow){heroM.push(o);o.castShadow=false;}});const nu=sm.needsUpdate;let A,B;
    try{test.castShadow=false;if(pm)pm.visible=true;l.shadow.needsUpdate=true;r0([l],sc,cam);A=readMap(l);test.castShadow=true;if(pm)pm.visible=false;l.shadow.needsUpdate=true;sm.needsUpdate=nu;r0([l],sc,cam);B=readMap(l);}
    finally{test.castShadow=true;if(pm)pm.visible=false;for(const o of heroM)o.castShadow=true;}
