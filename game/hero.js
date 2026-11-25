@@ -2920,7 +2920,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    {root.updateMatrixWorld(true);const lr=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg));lr.y=0;const hw=lr.length()/2;if(hw>1e-3){lr.normalize();const mid=wp(bones.LeftUpLeg).add(wp(bones.RightUpLeg)).multiplyScalar(.5);
     for(const sd of ['Left','Right']){const U=bones[sd+'UpLeg'],L=bones[sd+'Leg'];const k=wp(L);const sg=sd==='Left'?1:-1;const off=k.clone().sub(mid).dot(lr)*sg;const lim=hw+.02;if(off<=lim)continue;
      const k2=k.clone().addScaledVector(lr,-sg*(off-lim));turnBone(U,k,k2,kb);root.updateMatrixWorld(true);}}}
-   for(const sd of ['Left','Right']){dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],B.mat+.10,kb);dropTo(bones[sd+'Leg'],bones[sd+'Foot'],B.mat+heelUnder(sd)-.018,kb);}
+   for(const sd of ['Left','Right']){dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],B.mat+.13,kb);dropTo(bones[sd+'Leg'],bones[sd+'Foot'],B.mat+heelUnder(sd)-.018,kb);}
    if(bones.Neck&&bones.Head){const nk=wp(bones.Neck),hd=wp(bones.Head);const d=hd.clone().sub(nk).normalize();const ax=V().crossVectors(d,V(0,1,0));if(ax.lengthSq()>1e-6)rotW(bones.Neck,ax.normalize(),.18*kb);}}
   if(ks>.002){const top=down==='Left'?'Right':'Left';dropTo(bones[top+'UpLeg'],bones[top+'Leg'],B.mat+.17,ks);dropTo(bones[top+'Leg'],bones[top+'Foot'],B.mat+.1,ks);}}
  // BED: the arms rest on something while he sleeps (watcher B3: the right forearm stayed raised with a stiff claw hand all night).
