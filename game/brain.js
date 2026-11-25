@@ -383,6 +383,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // Body: task 'jacket' {on} at the peg, state HH.gear.coat (Character). Without them nothing is planned.
   const canJacket = () => !!(HH.hasTask && HH.hasTask('jacket') && HH.gear);
   const wearing = () => { try { return !!(HH.gear && HH.gear.coat); } catch (e) { return false; } };
+  function throughDoor(node) {
+    if (!node || !HH.route || !H.node) return false;
+    let r; try { r = HH.route(H.node, node) || []; } catch (e) { return false; }
+    const ns = [H.node, ...r.map(st => st.node)];
+    for (let i = 1; i < ns.length; i++) if ((ns[i - 1] === 'bdoor' && ns[i] === 'ledge') || (ns[i - 1] === 'ledge' && ns[i] === 'bdoor')) return true;
+    return false;
+  }
   function roomsOnWay(node) {
     if (!node || !HH.route || !H.node) return [];
     let r; try { r = HH.route(H.node, node) || []; } catch (e) { return []; }
@@ -396,6 +403,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (from !== to && ROOM_LAMP[from] && lampOn(ROOM_LAMP[from]) && Math.random() < .8)
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[from], on: false }, why: dark(h) ? 'уходит — гасит свет' : 'светло — уходя, гасит лампу' });
     // a lamp forgotten earlier in a room he walks through: he notices it on the way and puts it out (usually)
+    // the bedroom door (props door, bdoor <-> ledge) shut or bolted and his way goes through it: he unbolts and opens it by hand
+    // first (critic W6: bolted all night, in the morning he walked out through the wall post beside it)
+    { const D = window.__props && window.__props.door, tgt = A.node || AREA_NODE[area(name)] || AREA_NODE[to];
+      if (D && HH.hasTask && HH.hasTask('bolt') && (D.bolt > .1 || D.open < .4) && throughDoor(tgt)) plan.push({ task: 'bolt', opts: { lock: false, open: true }, why: 'отпирает и открывает дверь' }); }
     for (const r of roomsOnWay(A.node || AREA_NODE[area(name)] || AREA_NODE[to])) if (r !== from && r !== to && ROOM_LAMP[r] && lampOn(ROOM_LAMP[r]) && Math.random() < .85)
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'по пути: забытая лампа — гасит' });
     // the floor hatch is closed and the way goes through it: open it first (without a hatch task the ladder climb opens it by hand)
