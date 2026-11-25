@@ -426,7 +426,7 @@ uniform float tdCool;` + NOISE)
   };
   // ================= 2. moss cushions on root tops and in limb forks =================
   {
-    const g = (() => { const s = new THREE.IcosahedronGeometry(1, MOBILE ? 0 : 1); s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); const p = m.attributes.position;
+    const g = (() => { const s = new THREE.IcosahedronGeometry(1, MOBILE ? 1 : 2); /* rounder: a faceted blob read as a plastic lump */ s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); const p = m.attributes.position;
       for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 1 + 0.18 * Math.sin(x * 5.1 + z * 3.7) * Math.cos(z * 4.3 - y * 2); p.setXYZ(i, x * k, Math.max(y, -0.2) * k, z * k); }
       m.computeVertexNormals(); return m; })();
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
@@ -435,6 +435,12 @@ uniform float tdCool;` + NOISE)
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.62+.55*f+.25*(g-.5);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}')
+        // a cushion of moss is a pile of tiny stems, not a smooth skin: a fine fuzzy bump on the lit side (critic: the patches
+        // on the roots read as flat green felt from the close zoom)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+ { float hgt=td_n(tdP*160.)*.6+td_n(tdP*47.)*.4; vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition); float hx=dFdx(hgt),hy=dFdy(hgt);
+   vec3 r1=cross(dpy,normal),r2=cross(normal,dpx); float det=dot(dpx,r1); normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.35);
+   diffuseColor.rgb*=.78+.4*hgt; }`)
         // weather (same uniforms as the bark): soaked moss deeper and greener, hoar frost on the tops of the cushions on cold nights.
         // Only the green instances (moss), not the brown soil lumps that share this mesh.
         .replace('#include <color_fragment>', `#include <color_fragment>
@@ -446,6 +452,7 @@ uniform float tdCool;` + NOISE)
         .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost;');
       sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost;
     };
+    mat.customProgramCacheKey = () => 'tdMossCushion2'; /* SHADERS rule: own key */
     const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
@@ -455,10 +462,15 @@ uniform float tdCool;` + NOISE)
       const { p } = s; if (blocked(p.x, p.y, p.z, 0.15) || nearDoor(p.x, p.y, p.z)) continue;
       // grow in small colonies: keep a sample only if the big moss noise is high here (matches the shader patches loosely)
       if (Math.sin(p.x * 1.3 + p.z * 0.9) + Math.sin(p.y * 1.7 - p.x * 0.6) < -0.3) continue;
-      const sz = rr(0.09, 0.24) * (p.y > 3 ? 0.8 : 1);
-      M4.compose(p.clone().addScaledVector(s.n, -sz * 0.15), orient(s.n, rr(0, 6.28)), S.set(sz * rr(1, 1.6), sz * rr(0.28, 0.45), sz * rr(0.8, 1.3)));
-      im.setMatrixAt(n, M4);
-      const v = rr(0.85, 1.15); col.setRGB(0.05 * v, 0.075 * v * rr(0.95, 1.08), 0.022 * v); im.setColorAt(n, col); n++;
+      // a colony of a few small domed cushions, not one wide flat sheet (critic: a 0.5 m flat patch read as green felt laid on
+      // the root); small ones also follow the curved root without their edges standing off it
+      const tA = V(1, 0, 0).cross(s.n); if (tA.lengthSq() < 1e-4) tA.set(0, 0, 1); tA.normalize(); const tB = s.n.clone().cross(tA);
+      for (let j = 0, m = 2 + Math.floor(R() * 3); j < m && n < NUP; j++) {
+        const a = rr(0, 6.28), d = j ? rr(0.05, 0.15) : 0, q = p.clone().addScaledVector(tA, Math.cos(a) * d).addScaledVector(tB, Math.sin(a) * d);
+        const sz = rr(0.045, 0.11) * (j ? 0.8 : 1) * (p.y > 3 ? 0.8 : 1);
+        M4.compose(q.addScaledVector(s.n, -sz * 0.2), orient(s.n, rr(0, 6.28)), S.set(sz * rr(1, 1.35), sz * rr(0.45, 0.65), sz * rr(0.85, 1.15)));
+        im.setMatrixAt(n, M4);
+        const v = rr(0.85, 1.15); col.setRGB(0.05 * v, 0.075 * v * rr(0.95, 1.08), 0.022 * v); im.setColorAt(n, col); n++; }
     }
     // roofs: moss creeps over the shingles in a few patches, mostly low on the slope near the eaves and against the trunk
     const roofs = C.roofs; const qi = new THREE.Quaternion(), pi = V(), si = V(), nrm = V();
@@ -802,12 +814,38 @@ uniform float tdCool;` + NOISE)
     const small = new THREE.InstancedMesh(smallG, mk(), NSM), brk = new THREE.InstancedMesh(bracketG, mk(), NBR);
     // small caps: clusters on the tops and flanks of the roots
     const onRoots = sampler(q => q.n.y > 0.35 && q.c.y > 0.05 && q.c.y < 1.1 && radial(q.c.x, q.c.z) > 2.4);
+    // sit each cap on the surface that is really drawn there (critic: they were gone): the carved roots and the rendered ground
+    // differ from the sampled triangles / groundH by up to ~12 cm. Down-ray against the bark and the ground mesh; the first hit is the
+    // surface. A cap under an overhang (something solid well above it) is left out: it could never be seen.
+    const tSnap = performance.now();
+    // (a) the bark: the final carved triangles (TREE.tris) bucketed by 0.3 m cells, low ones only; a vertical ray is a 2D point-in-triangle test
+    const CS = 0.3, cells = new Map(), ck = (i, j) => i * 4096 + j;
+    for (let t = 0; t < nT; t++) { const i = t * 9; const y0 = Math.min(T[i + 1], T[i + 4], T[i + 7]); if (y0 > 2.2) continue;
+      const x0 = Math.min(T[i], T[i + 3], T[i + 6]), x1 = Math.max(T[i], T[i + 3], T[i + 6]), z0 = Math.min(T[i + 2], T[i + 5], T[i + 8]), z1 = Math.max(T[i + 2], T[i + 5], T[i + 8]);
+      for (let a = Math.floor(x0 / CS); a <= Math.floor(x1 / CS); a++) for (let b = Math.floor(z0 / CS); b <= Math.floor(z1 / CS); b++) { const k = ck(a, b); let L = cells.get(k); if (!L) cells.set(k, L = []); L.push(t); } }
+    const barkTop = (x, z, yMax) => { const L = cells.get(ck(Math.floor(x / CS), Math.floor(z / CS))); if (!L) return null; let best = null;
+      for (const t of L) { const i = t * 9; const ax = T[i], az = T[i + 2], bx = T[i + 3], bz = T[i + 5], cx = T[i + 6], cz = T[i + 8];
+        const d = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz); if (Math.abs(d) < 1e-9) continue; const u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / d, v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / d, w = 1 - u - v;
+        if (u < 0 || v < 0 || w < 0) continue; const y = u * T[i + 1] + v * T[i + 4] + w * T[i + 7]; if (y <= yMax && (best === null || y > best)) best = y; }
+      return best; };
+    // (b) the ground as drawn: the ground mesh's own grid (bilinear), not groundH (its fine noise is not in the 128-cell mesh)
+    let gridH = null;
+    if (C.ground && C.ground.geometry) { const gm = C.ground; gm.updateMatrixWorld(true); const P = gm.geometry.attributes.position, W = [], v = V(); let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+      for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(gm.matrixWorld); W.push(v.x, v.y, v.z); mnx = Math.min(mnx, v.x); mxx = Math.max(mxx, v.x); mnz = Math.min(mnz, v.z); mxz = Math.max(mxz, v.z); }
+      const n = Math.round(Math.sqrt(P.count)); if (n * n === P.count) { const H = new Float32Array(P.count); const sx = (mxx - mnx) / (n - 1), sz = (mxz - mnz) / (n - 1);
+        for (let i = 0; i < P.count; i++) { const a = Math.round((W[i * 3] - mnx) / sx), b = Math.round((W[i * 3 + 2] - mnz) / sz); H[b * n + a] = W[i * 3 + 1]; }
+        gridH = (x, z) => { const fx = (x - mnx) / sx, fz = (z - mnz) / sz; if (fx < 0 || fz < 0 || fx >= n - 1 || fz >= n - 1) return null; const a = Math.floor(fx), b = Math.floor(fz), tx = fx - a, tz = fz - b;
+          return (H[b * n + a] * (1 - tx) + H[b * n + a + 1] * tx) * (1 - tz) + (H[(b + 1) * n + a] * (1 - tx) + H[(b + 1) * n + a + 1] * tx) * tz; }; } }
+    const snap = (p, maxUp = 0.45) => {
+      const over = barkTop(p.x, p.z, 9); if (over !== null && over > p.y + maxUp) return null;   // under an overhang: never seen
+      const bt = barkTop(p.x, p.z, p.y + maxUp), gh = gridH ? gridH(p.x, p.z) : null;
+      const y = Math.max(bt ?? -1e9, gh ?? -1e9); if (y < -1e8 || y < p.y - 0.35) return null; p.y = y - 0.008; return p; };
     let ns = 0;
     for (let k = 0; k < 200 && ns < NSM - NBASE * 3; k++) {
       const s0 = onRoots(); if (!s0) break; const p0 = s0.p; if (p0.z < AZ - 0.5 && R() < 0.75) continue; if (blocked(p0.x, p0.y + 0.2, p0.z, 0.1) || nearDoor(p0.x, p0.y, p0.z)) continue;
       const cnt = 2 + Math.floor(R() * 4);
       for (let j = 0; j < cnt && ns < NSM; j++) {
-        const p = p0.clone().add(V(rr(-0.12, 0.12), 0, rr(-0.12, 0.12))); p.addScaledVector(s0.n, -0.01);
+        const p = snap(p0.clone().add(V(rr(-0.12, 0.12), 0, rr(-0.12, 0.12)))); if (!p) continue;
         const up = s0.n.clone().lerp(UP, 0.65).normalize(); const sz = rr(0.025, 0.06) * (j === 0 ? 1.35 : 1);
         M4.compose(p, orient(up, rr(0, 6.28)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-0.25, 0.25), 0, rr(-0.25, 0.25)))), S.set(sz, sz * rr(0.9, 1.5), sz));
         small.setMatrixAt(ns, M4); col.setHSL(rr(0.03, 0.08), rr(0.45, 0.75), rr(0.55, 0.75)); small.setColorAt(ns++, col);
@@ -821,7 +859,8 @@ uniform float tdCool;` + NOISE)
       const cnt = 2 + Math.floor(R() * 3), y0 = groundH(x, z);
       for (let j = 0; j < cnt && ns < NSM; j++) {
         const px = x + rr(-0.1, 0.1), pz = z + rr(-0.1, 0.1); const sz = rr(0.03, 0.065) * (j === 0 ? 1.3 : 1);
-        M4.compose(V(px, groundH(px, pz) - 0.01, pz), new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-0.2, 0.2), rr(0, 6.28), rr(-0.2, 0.2))), S.set(sz, sz * rr(1, 1.6), sz));
+        const gp = snap(V(px, groundH(px, pz), pz)); if (!gp) continue;
+        M4.compose(gp, new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-0.2, 0.2), rr(0, 6.28), rr(-0.2, 0.2))), S.set(sz, sz * rr(1, 1.6), sz));
         small.setMatrixAt(ns, M4); col.setHSL(rr(0.02, 0.09), rr(0.4, 0.7), rr(0.5, 0.72)); small.setColorAt(ns++, col);
       }
       D.baseShroom++;
@@ -839,11 +878,11 @@ uniform float tdCool;` + NOISE)
         brk.setMatrixAt(nb, M4); const v = rr(0.8, 1.1); brk.setColorAt(nb++, col.setRGB(v, v * rr(0.95, 1.02), v * rr(0.9, 1)));
       }
     }
-    small.count = ns; brk.count = nb;
+    small.count = ns; brk.count = nb; if (typeof window !== 'undefined') window.__shroomSnapMs = Math.round(performance.now() - tSnap);
     // bake both kinds into one plain mesh (they never move): one draw call instead of two
     const bake = (im, out) => { const m = new THREE.Matrix4(), c = new THREE.Color(); for (let i = 0; i < im.count; i++) { im.getMatrixAt(i, m); im.getColorAt(i, c); const g2 = im.geometry.clone().applyMatrix4(m); const ca = g2.attributes.color; for (let k = 0; k < ca.count; k++) ca.setXYZ(k, ca.getX(k) * c.r, ca.getY(k) * c.g, ca.getZ(k) * c.b); out.push(g2); } };
     const parts = []; bake(small, parts); bake(brk, parts);
-    const fung = new THREE.Mesh(parts.length ? mergeGeometries(parts) : new THREE.BufferGeometry(), mk()); fung.receiveShadow = !MOBILE; fung.castShadow = !MOBILE;
+    const fung = new THREE.Mesh(parts.length ? mergeGeometries(parts) : new THREE.BufferGeometry(), mk()); fung.name = 'fungi'; fung.userData.counts = { small: ns, brackets: nb, base: D.baseShroom || 0 }; fung.receiveShadow = !MOBILE; fung.castShadow = !MOBILE;
     small.dispose(); brk.dispose(); D.group.add(fung); D.shrooms = { count: ns }; D.brackets = { count: nb }; D.fungi = fung;
   }
 
