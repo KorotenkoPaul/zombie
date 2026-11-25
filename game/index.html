@@ -748,13 +748,24 @@ const LG=LG_,LL=2.45,LC=3.4+HY,WS=3.6+HY,KT=5.0+HY,BD=7.4+HY,DK=9.0+HY;
 floorBoards(.4,2.9,LG,.9,3.2,{shape:disc(1.62,1.95,1.05,.9),radial:[1.62,1.95,1.05,.9]});
 for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,pz-.03),.13);/* short posts down into the soil */
 /* a short open-tread stair from the soil up to the door landing: a door and a landing in the air with no way up made no sense */
-{const c0=V(1.62,LG,1.95),dir=V(.68,0,.8).normalize(),side=V(-dir.z,0,dir.x),T=c0.clone().addScaledVector(dir,.98);T.y=LG-.02;
- const run=1.05,Bx=T.x+dir.x*run,Bz=T.z+dir.z*run,gy=(GROUND.standAt?GROUND.standAt(Bx,Bz):0)-.04,B=V(Bx,gy,Bz),rise=T.y-gy;
- if(rise>.45&&rise<2.2){const up=B.clone().sub(T).multiplyScalar(-1).normalize(),L=T.distanceTo(B)+.12;
-  for(const s of [-1,1]){const m=T.clone().add(B).multiplyScalar(.5).addScaledVector(side,s*.27);const ex=up.clone(),ez=side.clone(),ey=ez.clone().cross(ex).normalize();
-   board(m,L,.15,.045,new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,ez)),{dark:true});}
-  const n=Math.max(2,Math.round(rise/.27));for(let k=1;k<n;k++){const p=B.clone().lerp(T,k/n);p.y-=.01;const ex=side.clone(),ey=V(0,1,0),ez=ex.clone().cross(ey).normalize();
-   board(p,.58,.035,.2,new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,ez)),{tint:rnd(.85,1)});}}}
+{const c0=V(1.62,LG,1.95),dir=V(.68,0,.8).normalize(),side=V(-dir.z,0,dir.x),T=c0.clone().addScaledVector(dir,.96);T.y=LG-.03;
+ /* the real surface under the stair (the big root in front of the landing is bark, not soil; standAt only guessed it and the
+    stringers hung in the air / sank 1 m into the root). We find where a ~38 deg line from the landing meets that surface and crib the treads on blocks. */
+ const rc=new THREE.Raycaster(),tg=[TREE.bark,GROUND.groundPatch||GROUND.ground];tg.forEach(o=>o.updateMatrixWorld(true));
+ const surf=(x,z)=>{rc.set(V(x,LG+3,z),V(0,-1,0));const h=rc.intersectObjects(tg,false)[0];return h?h.point.y:(GROUND.standAt?GROUND.standAt(x,z):0);};
+ const sl=.78,feet=[];
+ for(const s of [-1,1]){let d=.05,q;for(;d<2.6;d+=.03){q=T.clone().addScaledVector(dir,d).addScaledVector(side,s*.26);if(T.y-d*sl<=surf(q.x,q.z)+.01)break;}
+  feet.push({s,d,y:T.y-d*sl});}
+ const dF=Math.max(feet[0].d,feet[1].d),rise=T.y-Math.min(feet[0].y,feet[1].y);
+ /* steps cribbed on short blocks: every tread end stands on its own block that goes down into the real surface, so nothing hangs */
+ if(rise>.12&&dF<2.5){const n=Math.max(1,Math.round(rise/.2));
+  for(let k=1;k<=n;k++){const h=rise*k/(n+1),d=h/sl;const p=T.clone().addScaledVector(dir,d+.08);p.y=T.y-h;
+   const ex=side.clone(),ey=V(0,1,0),ez=ex.clone().cross(ey).normalize(),eu=new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,ez));
+   const ends=[-1,1].map(sd=>{const q=p.clone().addScaledVector(side,sd*.25);return {q,gy:Math.max(surf(q.x,q.z),surf(q.x+dir.x*.1,q.z+dir.z*.1),surf(q.x-dir.x*.1,q.z-dir.z*.1))};});
+   if(p.y-.025<Math.max(ends[0].gy,ends[1].gy)+.03)continue;// would sit in the root: the root itself is the step here
+   board(p,.66,.05,.24,eu,{tint:rnd(.85,1)});
+   for(const {q,gy:g0} of ends){const gy=g0-.04,top=p.y-.025;if(top-gy<.06)continue;
+    board(V(q.x,(top+gy)/2,q.z),.1,top-gy,.1,eu,{tint:rnd(.6,.72)});}}}}
 // ---- the trunk door like the photo: a thick plank frame set into the bark round the arch (jambs + arch pieces, hiding the
 // ragged bark edge), a worn threshold, and a plank floor running into the warm cave. Instances only, no physics.
 {const D=DOORP,ax=TAX[0],az=TAX[1],H=D.y1-D.y0;const rc=new THREE.Raycaster();
@@ -762,8 +773,8 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  const R0=surf(D.ang+(D.w/2+.2)/2.2,D.y0+.6)||surf(D.ang-(D.w/2+.2)/2.2,D.y0+.6)||2.2;
  const at=(side,y,inset)=>{let r=surf(D.ang+Math.sign(side||1)*(Math.abs(side)+.12)/R0,y)||R0;const a=D.ang+side/r;r=(surf(a+Math.sign(side||1)*.05/r,y)||r)-inset;return V(ax+Math.cos(a)*r,y,az+Math.sin(a)*r);};
  const out=V(Math.cos(D.ang),0,Math.sin(D.ang)),sideV=V(-Math.sin(D.ang),0,Math.cos(D.ang));
- const piece=(a,b,wd,dp,kind)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();const ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex))).normalize();const ey=ez.clone().cross(ex);
-  const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(rnd(.85,1)));
+ const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();const ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex))).normalize();const ey=ez.clone().cross(ex);
+  const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(tn||rnd(.85,1)));
    const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
  const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
  // jambs, a little proud of the bark and sunk into it
@@ -774,6 +785,12 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  {const p=at(0,yS+ah+.02,.05);piece(p.clone().addScaledVector(V(0,1,0),-.12),p.clone().addScaledVector(V(0,1,0),.12),.2,.34,'beam');}
  // threshold: a thick worn board across the foot of the opening, flush with the landing
  {const a=at(-hw-.06,D.y0+.02,.04),b=at(hw+.06,D.y0+.02,.04);piece(a,b,.24,.08,'board');}
+ // the reveal: the doorway runs ~1 m through the bark into the cave. Its sides and top were open, so from the side the lit
+ // cave showed through between the jamb and the bark as an orange slit (critic T25). Lined with planks like a real passage.
+ {const dep=[.2,.46],dd=.27;/* shallow and dark like old weathered wood: from the home view the lit planks of a 1 m lining read as boards leaning in the doorway */
+  for(const sd of [-1,1])for(const ins of dep)piece(at(sd*(D.w/2+.03),D.y0-.02,ins),at(sd*(D.w/2+.03),yS+.03,ins),.045,dd,'board',rnd(.42,.5));
+  for(const ins of dep){let pv=at(-(D.w/2+.03),yS,ins);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*(D.w/2+.03),yS+Math.sin(t)*(ah-fw*.45+.03),ins);
+   piece(pv.clone().addScaledVector(pv.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(pv).normalize(),.03),.045,dd,'board',rnd(.42,.5));pv=p;}}}
  // plank floor into the cave, boards running inward, slightly lower than the threshold
  {const c0=at(0,D.y0+.03,.14);for(let k=-2;k<=2;k++){const a=c0.clone().addScaledVector(sideV,k*.205),b=a.clone().addScaledVector(out,-.95);piece(b,a,.19,.05,'board');}}
  boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
