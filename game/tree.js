@@ -176,12 +176,12 @@ export function buildTree(THREE, o) {
         const fk = (d1 + sk) / d1; xr *= fk; zr *= fk; }
       // the photo's main roots reach ~1.5x further, diagonally to the bottom corners of the frame, and stand taller where
       // they leave the trunk (Ground's side-by-side). The front centre (ladder foot, path, pond) keeps its short roots.
-      let yo = yy;
+      let yo = yy, rs = 1;
       if (o.rootReach !== false) { /* the walk from the ladder foot to the woodpile/chopping block (Anim QA: he stepped over a 70 cm root): no stretching into it, no lift */ const pa = o.rootPath || [-4.9, 0.6, 3.5, 5.5], zin = (qx, qz) => Math.min(1, Math.max(0, Math.min(qx - pa[0], pa[1] - qx, qz - pa[2], pa[3] - qz) / 0.5 + 0.5)); const d2 = Math.hypot(xr, zr) || 1e-6, an = Math.atan2(zr, xr), offDoor = Math.min(1, Math.max(0, (Math.abs(angDiff(an, doorAng)) - 0.55) / 0.3)); /* the hollow landing sits on the roots there: leave them as they were */
         if (yy < 1.6 && d2 > 3.2) { const low = Math.min(1, (1.6 - yy) / 0.8), front = Math.max(0, Math.sin(an)), centre = Math.max(0, 1 - Math.abs(angDiff(an, Math.PI / 2)) / 0.55);
-          const kk = (o.rootReach ?? 0.6) * low * (0.4 + 0.6 * front) * (1 - 0.85 * centre) * offDoor, nd0 = 3.2 + (d2 - 3.2) * (1 + kk), px = AX + xr * nd0 / d2, pz = AZ + zr * nd0 / d2; const inP = Math.max(zin(px, pz), zin(AX + xr, AZ + zr)), nd = 3.2 + (d2 - 3.2) * (1 + kk * (1 - inP)); xr *= nd / d2; zr *= nd / d2; }
+          const kk = (o.rootReach ?? 0.6) * low * (0.4 + 0.6 * front) * (1 - 0.85 * centre) * offDoor, nd0 = 3.2 + (d2 - 3.2) * (1 + kk), px = AX + xr * nd0 / d2, pz = AZ + zr * nd0 / d2; const inP = Math.max(zin(px, pz), zin(AX + xr, AZ + zr)), nd = 3.2 + (d2 - 3.2) * (1 + kk * (1 - inP)); xr *= nd / d2; zr *= nd / d2; rs = nd / d2; }
         if (yy > -0.3 && yy < 1.5) { const d3 = Math.hypot(xr, zr), hump = Math.max(0, 1 - Math.abs(d3 - 3.1) / 2.4);
-          yo = yy + 0.32 * offDoor * (1 - zin(AX + xr, AZ + zr)) * hump * Math.min(1, (yy + 0.3) / 0.7) * Math.min(1, (1.5 - yy) / 0.5); } }
+          yo = yy + 0.32 * offDoor * (1 - zin(AX + xr, AZ + zr)) * hump * Math.min(1, (yy + 0.3) / 0.7) * Math.min(1, (1.5 - yy) / 0.5); } /* [TREE] a stretched root keeps its round body (photo: tall rounded roots out to the tips), not a flat ribbon: the crest rises with the stretch, the underside stays on the ground */ yo += (o.rootThick ?? 1.2) * (rs - 1) * Math.max(0, Math.min(yy + 0.15, 1.2)); }
       P.push(AX + xr, yo, AZ + zr);
       UV.push(su ? su.getX(i) : 0, su ? su.getY(i) : 0); G.push(0);
     }
