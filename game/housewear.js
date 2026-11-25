@@ -17,7 +17,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   const rnd = (a = 0, b = 1) => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return a + (b - a) * (((t ^ t >>> 14) >>> 0) / 4294967296); };
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
   const UP = V(0, 1, 0);
-  const crackMat = new THREE.MeshBasicMaterial({ color: 0xDDE6EA, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide });
+  // lit, not basic: an unlit pale line glowed white at night like a spider web drawn on the glass. A real crack only catches
+  // light that falls on it, so it is dark at night and pale by day
+  const crackMat = new THREE.MeshStandardMaterial({ color: 0xD6DEE2, roughness: .3, metalness: 0, transparent: true, opacity: .5, depthWrite: false, side: THREE.DoubleSide });
   const nodes = []; for (const k in N) { const n = N[k]; if (n && n.p && n.seat == null) nodes.push(n.p); }
   const nearNode = p => { let b = null, bd = 1e9; for (const q of nodes) { const d = Math.hypot(q.x - p.x, q.z - p.z) + Math.abs(q.y - p.y) * 2; if (d < bd) { bd = d; b = q; } } return b; };
 
@@ -27,15 +29,29 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   const M = new THREE.Matrix4(), P = V(), Q = new THREE.Quaternion(), S = V();
   // nothing lies on or against it: a lifted board under a rug or a chest, a warped one behind the tool board would cut into them
   let boxes = null;
+  const furn = [];
   function propBoxes() {
-    if (boxes) return boxes; boxes = []; const skip = new Set(Object.values(planks.meshes || {})); let root = planks.meshes.boards; while (root.parent) root = root.parent;
+    if (boxes) return boxes; boxes = []; furn.length = 0; const skip = new Set(Object.values(planks.meshes || {})); let root = planks.meshes.boards; while (root.parent) root = root.parent;
     const b = new THREE.Box3(), sz = V();
     root.traverse(o => { if (!o.isMesh || skip.has(o) || o.isSkinnedMesh || !o.geometry) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); b.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
       b.getSize(sz); if (sz.x > 3 || sz.z > 3 || sz.y > 3 || b.max.y < 2) return; boxes.push(b.clone()); });
+    // the props are baked into big merged meshes (skipped above), so a bunk or a shelf unit was not in the list at all:
+    // each placed prop keeps its own world box (props.js place())
+    // (used for wall boards only: the floor test already has its own furniture and rug checks)
+    const PO = window.__props && window.__props.objects; if (PO) for (const g of Object.values(PO)) { const pb = g && g.userData && g.userData.box; if (pb && pb.max.y >= 2 && !pb.isEmpty()) furn.push(pb.clone()); }
     return boxes;
   }
   function clear(c, ax, sz, pad, floor) {
     const B = propBoxes(), q = V(), C = window.__collide;
+    // a wall board: nothing standing against either face along its length (a bunk, a shelf unit: merged furniture is not in
+    // the boxes). A warped board behind the upper bunk pushed into its mattress, and he could never reach it to mend it.
+    if (floor === false) { const th = sz.indexOf(Math.min(...sz)), Li = sz.indexOf(Math.max(...sz));
+      for (let a = -1; a <= 1; a += .5) for (const sd of [-1, 1]) for (const o of [.08, .2, .35]) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9).addScaledVector(ax[th], sd * o);
+        if (C && C.depthAt && C.depthAt(q.x, q.y, q.z) > .005) return false;
+        for (const bx of furn) if (bx.containsPoint(q)) return false; } }
+    // a floor board running under a counter or a bed: the lifted end would push into the furniture, and he could not kneel there
+    if (floor) for (let a = -1, Li = sz.indexOf(Math.max(...sz)); a <= 1; a += .5) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .95); q.y = c.y + .08;
+      for (const bx of furn) if (q.x > bx.min.x - .05 && q.x < bx.max.x + .05 && q.z > bx.min.z - .05 && q.z < bx.max.z + .05 && q.y > bx.min.y - .05 && q.y < bx.max.y) return false; }
     if (floor && solid) for (const a of [-.45, 0, .45]) { q.copy(c).addScaledVector(ax[sz.indexOf(Math.max(...sz))], a * Math.max(...sz)); if (solid(q.x, c.y + .03, q.z)) return false; }
     if (floor && C && C.depthAt) for (let a = -1, Li = sz.indexOf(Math.max(...sz)); a <= 1; a += .5) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9); const top = c.y + .03; for (const h of [.02, .1, .3]) if (C.depthAt(q.x, top + h, q.z) > .005) return false; }   // merged furniture and rugs are not in the boxes
     for (let a = -1; a <= 1; a += .5) for (let w = -1; w <= 1; w += 1) {
@@ -77,7 +93,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
         if (Math.abs(long.y) > .97 && Math.abs(sz[L] - .94) < .03 && sz[Wd] < .14) { ok = hd < 1.6 && dy > .3 && dy < .7; mode = 'post'; }
         else if (Math.abs(long.y) < .1 && sz[Wd] < .1 && sz[L] > .6 && sz[L] < 4) { ok = hd < 1.6 && dy > .4 && dy < 1.05; mode = 'brace'; }
       } else if (kind === 'shingle') ok = hd < 1.5 && dy > .75 && dy < 1.3;
-      if (ok && (mode === 'floor' || mode === 'wall' || mode === 'post' || mode === 'brace') && !clear(c, ax, sz, mode === 'floor' ? .04 : .07, mode === 'floor')) ok = false;
+      if (ok && (mode === 'floor' || mode === 'wall' || mode === 'post' || mode === 'brace') && !clear(c, ax, sz, mode === 'floor' ? .04 : .07, mode === 'floor' ? true : mode === 'wall' ? false : undefined)) ok = false;
       if (!ok) continue;
       parts.set(it.id, { id: it.id, kind, mode, mesh: pl.mesh, i: pl.i, home: M.clone(), c, ax, sz, L, Wd, T, n: n.clone(), d: 0, vis: 0, sgn: rnd() < .5 ? -1 : 1, sgn2: rnd() < .5 ? -1 : 1 });
     }
@@ -248,6 +264,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
       const a = rnd(0, Math.PI * 2), x = at.x + Math.sin(a) * r, z = at.z + Math.cos(a) * r, yaw = rnd(0, Math.PI);
       const g = floorAt ? floorAt(x, y0 + .3, z, .45, .5, true) : y0; if (g == null || Math.abs(g - y0) > .06) { dbg('floor0'); continue; }
       const ux = Math.cos(yaw), uz = -Math.sin(yaw); let ok = true;
+      // all four corners on boards too: checking only the centre line let a board hang half over the floor edge (or a hatch)
+      for (const [e, sd] of [[-.5, -.5], [-.5, .5], [.5, -.5], [.5, .5]]) { if (!ok || !floorAt) break; const px = x + ux * len * e + uz * w * sd, pz = z + uz * len * e - ux * w * sd;
+        const gg = floorAt(px, g + .3, pz, .45, .5, true); if (gg == null || Math.abs(gg - g) > .02) { ok = false; dbg('corner'); } }
       for (const e of [-.5, 0, .5]) { const px = x + ux * len * e, pz = z + uz * len * e;
         const gg = floorAt ? floorAt(px, g + .3, pz, .45, .5, true) : g; if (gg == null || Math.abs(gg - g) > .02) { ok = false; dbg('floorE'); break; }
         if (Math.hypot(px - at.x, pz - at.z) < .6 || segD(px, g, pz) < .45 || nodes.some(q => Math.abs(q.y - g) < .4 && Math.hypot(q.x - px, q.z - pz) < .5)) { ok = false; dbg('path'); break; }
