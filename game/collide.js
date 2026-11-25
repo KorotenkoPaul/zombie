@@ -34,6 +34,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const mine = o => { while (o) { if (o === root) return true; o = o.parent; } return false; };
   const visible = o => { while (o) { if (!o.visible) return false; o = o.parent; } return true; };
   const solidMat = o => { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (!m) return false; if (m.transparent && m.opacity < .6) return false; if (m.alphaTest > 0) return false; /* cut-out leaves and bushes */ if (m.depthWrite === false || m.blending === THREE.AdditiveBlending) return false; return true; };
+  // plants bend: not walls. By name, or (unnamed instanced ground plants: the reeds by the pond and round the roots were 1.4 m solid
+  // boxes, so the walk to the chopping block went 'through' them at 30 cm) by their material's program key or their __ground slot
+  const PLANT = /grass|foliage|leaf|leaves|fern|moss|weed|reed/i;
+  const softKey = o => { try { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (m && m.customProgramCacheKey && PLANT.test(String(m.customProgramCacheKey()).split('-')[0]) /* the key's own name: 'groundStone-moss2' is a stone */) return true;
+    const G = window.__ground; if (G) for (const k in G) if (G[k] === o && PLANT.test(k)) return true; } catch (e) { } return false; };
   const label = o => { const parts = []; let x = o; while (x && x !== scene) { if (x.name && !/^(Mesh|Object|Group|Scene)?_?\d*$/.test(x.name)) parts.push(x.name); x = x.parent; } return parts.reverse().join('/') || o.geometry.type; };
 
   // ---------- where the hero can be: the walk graph's box, padded ----------
@@ -94,7 +99,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (!o.isMesh || o.isSkinnedMesh || mine(o) || !solidMat(o)) return; const t = o.geometry.type;
     if (/Plane|Circle|Shape|Ring/.test(t)) return;
     if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-    const name = label(o); if (/grass|foliage|leaf|leaves|fern|moss|weed|reed/i.test(name)) { skipped['soft ' + name.replace(/#\d+$/, '')] = 1; return; } // plants bend: not walls
+    const name = label(o); if (PLANT.test(name) || softKey(o)) { skipped['soft ' + name.replace(/#\d+$/, '')] = 1; return; } // plants bend: not walls
     if (o.isInstancedMesh) {
       if (o.count > 1500) { skipped['inst ' + name] = o.count; return; }
       for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, mi); m4.multiplyMatrices(o.matrixWorld, mi); wb.copy(o.geometry.boundingBox).applyMatrix4(m4); if (!wb.intersectsBox(REG)) continue; { const sz = wb.getSize(V()); const big = [sz.x, sz.y, sz.z].filter(v => v > 1.8).length; if (big >= 2 && !/plank|board|beam|floor|deck/i.test(name)) { skipped['big inst ' + name] = (skipped['big inst ' + name] || 0) + 1; continue; } } /* bushes / tree crowns as one big box are not walls */ add(o, o.geometry, m4, name + '#' + i, i); }

@@ -296,7 +296,10 @@ export function createWind(opt = {}) {
     on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
-    gust(amp) { startGust(amp); },
+    // [ENV] gust(amp) starts a gust; gust() with no argument only READS how windy it is (0..1). Brain and housewear call
+    // w.gust() as a getter every frame, which restarted the gust at the edge each frame: gusts never reached the tree.
+    gust(amp) { if (amp === undefined) return W.strength(); startGust(amp); },
+    strength() { return Math.max(0, Math.min(1, W.level() / 1.5)); },
 
     // a small tiling noise texture (fbm baked once): one or two texture reads instead of 4-5 octaves of procedural
     // noise per pixel. Shared by the fog layers (fogbank.js; Environment may use it too): __wind.noiseTexture(THREE)
