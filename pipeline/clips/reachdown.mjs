@@ -23,7 +23,7 @@ for (let f = 0; f < F; f++) { setFrame(f); const ax = wp('LeftUpLeg').sub(wp('Ri
     for (const n of ['Spine','Spine1','Spine2']) { const q0 = wq(n); const l0 = lean(); setWorldQ(n, new T.Quaternion().setFromAxisAngle(ax, e/3).multiply(q0)); if ((lean() - l0) * e < 0) setWorldQ(n, new T.Quaternion().setFromAxisAngle(ax, -e/3).multiply(q0)); } }
   if (lean() > LEAN + 0.02 || wp('Neck').y > wp('Hips').y + 9) {}
   // check direction: forward bend lowers the neck; if it rose, flip
-  for (const s of ['Left','Right']) { const q0 = wq(s+'Arm'); setWorldQ(s+'Arm', new T.Quaternion().setFromAxisAngle(ax, +(process.env.ARMSIGN || 1) * ARM * w[f]).multiply(q0)); }
+  for (const s of ['Left','Right']) { const q0 = wq(s+'Arm'); setWorldQ(s+'Arm', new T.Quaternion().setFromAxisAngle(ax, +(process.env.ARMSIGN || 1) * ARM * w[f] * +(process.env['ARM_' + s] || 1)).multiply(q0)); }
   mxL = Math.max(mxL, lean()); hand = Math.min(hand, wp('LeftHand').y, wp('RightHand').y);
   for (const n of ['Spine','Spine1','Spine2','LeftArm','RightArm']) O[n].quaternion.toArray(C.tracks[n], f * 4); }
 for (const k of Object.keys(C.tracks)) C.tracks[k] = C.tracks[k].map(v => +(+v).toFixed(5));

@@ -14,6 +14,7 @@ const setFrame = f => { for (const b of Object.keys(C.tracks)) if (O[b]) O[b].qu
 const setWorldQ = (n, q) => { const pq = new T.Quaternion(); O[n].parent.getWorldQuaternion(pq); O[n].quaternion.copy(pq.invert().multiply(q)); root.updateMatrixWorld(true); };
 const aim = (bone, child, target) => { const p = wp(bone), c = wp(child); const q = new T.Quaternion().setFromUnitVectors(c.sub(p).normalize(), target.clone().sub(p).normalize()); setWorldQ(bone, q.multiply(wq(bone))); };
 const B = {}; for (const s of ['Left','Right']) { B[s] = new T.Vector3(); for (let f = f0; f <= f1; f++) { setFrame(f); B[s].add(wp(s+'ToeBase')); } B[s].multiplyScalar(1 / (f1 - f0 + 1)); B[s].y = BY; }
+if (process.env.PL) { const [l, r] = process.env.PL.split(';').map(t => t.split(',').map(Number)); B.Left.set(l[0], BY, l[1]); B.Right.set(r[0], BY, r[1]); }
 let miss = 0, minY = 9;
 for (let f = 0; f < F; f++) { setFrame(f);
   for (const s of ['Left','Right']) { const fq = wq(s+'Foot'); const off = wp(s+'ToeBase').sub(wp(s+'Foot'));

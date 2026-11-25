@@ -441,6 +441,6 @@
   "src": "69_70",
   "t0": 2.0,
   "t1": 4.3,
-  "note": "Real mocap (CMU 69_70 squat, pick up object) in place: smoothed, feet pinned (plantfeet), knees opened to >=35 interior (kneeopen), ankle cap 100, trunk lean raised to <=40 in the low part with arms reaching down (reachdown), hands kept 0.30 apart after the grab (handspread), elbows bent to carry at chest 1.12 m (carryup), head up (headlevel+neckcap), pelvis yaw drift removed (unyaw). 2.33 s. hy_logpick."
+  "note": "Real mocap (CMU 69_70 squat, pick up object) in place: smoothed, feet pinned (plantfeet), knees opened to >=35 interior (kneeopen), ankle cap 100, trunk lean raised to <=40 in the low part with arms reaching down (reachdown), hands kept 0.30 apart after the grab (handspread), elbows bent to carry at chest 1.12 m (carryup), head up (headlevel+neckcap), pelvis yaw drift removed (unyaw). 2.33 s. hy_logpick. v2: lean from the hips (pelvislean: pelvis 36-40 fwd, spine chain <=39 vs pelvis, head <=34 vs chest), legs kept in world then re-planted, left hand mirrored to the right (armmirror) so both wrists reach ~0.40."
  }
 }
