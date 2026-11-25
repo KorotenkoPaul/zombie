@@ -72,7 +72,7 @@ export function dressHero({ THREE, root }) {
         const dx = v.clone().sub(h); const crease = Math.exp(-((dx.y * S - .04) ** 2) / (2 * .02 * .02)) * Math.max(0, n3.dot(ax)) * THREE.MathUtils.smoothstep(along, -.2, .4) * (1 - THREE.MathUtils.smoothstep(along, .6, 1));
         if (v.distanceTo(h) * S < .3) wear = Math.max(wear, Math.max(toe, heel) * (1 - crease)) - crease * .5; } }
       // the body's own feet (under the boots, with collapsed UVs: a flat orange smear when the boots are off) become wool socks
-      kx[i * 3] = cls === 0 && /^(Left|Right)(Foot|ToeBase|Toe_End)/.test(bn[mb] || '') ? 3 : cls; kx[i * 3 + 1] = wear;
+      kx[i * 3] = cls === 0 && /^(Left|Right)(Foot|ToeBase|Toe_End)/.test(bn[mb] || '') ? 3 : cls === 0 && /^(Left|Right)Hand/.test(bn[mb] || '') ? -1 /* hand skin: never knit (its tone passed the sweater's colour test: stitches on the hands, close-zoom pass) */ : cls; kx[i * 3 + 1] = wear;
       /* vest: the sweater's chest strip between the flaps, by place in true metres (its kp is in the vest's own scaled space): the
          front centre of the torso. Mustard texels anywhere else on the vest are atlas bleed (orange shards on the shoulder straps, critic pass 22) */
       if (cls === 1) { const t = v.clone().applyMatrix4(TB).sub(FR.torso.o); const x = t.dot(FR.torso.x) * S, y = t.dot(FR.torso.y) * S; kx[i * 3 + 2] = (1 - THREE.MathUtils.smoothstep(Math.abs(x), .035, .06)) * THREE.MathUtils.smoothstep(y, -.005, .01); }
@@ -153,7 +153,7 @@ float fw=length(fwidth(vKp));vec3 an=abs(normalize(vKn));vec2 tw=an.xy/(an.x+an.
 float cls=vKx.x;` +
           (cls === 0 ? `
 // sweater: mustard (red > green > blue, saturated, light); trousers: green over red
-float knitM=smoothstep(.35,.5,sat)*step(sc.b,sc.g)*step(sc.g,sc.r)*smoothstep(.45,.6,sc.g/max(sc.r,.01))*smoothstep(.3,.42,mx);
+float knitM=smoothstep(.35,.5,sat)*step(sc.b,sc.g)*step(sc.g,sc.r)*smoothstep(.45,.6,sc.g/max(sc.r,.01))*smoothstep(.3,.42,mx)*step(-.5,cls);
 float pantM=smoothstep(-.01,.04,sc.g-sc.r)*smoothstep(.05,.12,sc.g-sc.b);
 float fk=1.-smoothstep(.0012,.0028,fw);
 float hk=tw.y*hcKnit(vKp.x,vKp.z)+tw.x*hcKnit(vKp.y,vKp.z);
