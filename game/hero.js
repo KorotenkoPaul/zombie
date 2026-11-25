@@ -1689,14 +1689,14 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const LN=['land','gate','wstep'];let e0=openEdge(LN);if(e0)EDGE_OK=e0;else e0=EDGE_OK;const a={step:'go',t:0,T:0};const dur=rnd(40,90);
    const node=e0?e0.node:'land';H.ledgeWhy=e0?'':'no edge found from '+(nearNode(root.position)||'?');
    goTo(node,()=>{/* looked at again from the spot itself (the grids near him are built by now) */const e1=openEdge([node]);if(e1)EDGE_OK=e1;const e=e1||e0;if(!e){H.ledgeWhy='no open edge at '+node;endTask(false);return;}a.e=e;const yaw=Math.atan2(e.f.x,e.f.z);
-    const tgt=e.p.clone().addScaledVector(e.f,-.12);let tries=0;/* approachTo moves at most 1.2 m per call: step on until the hips are over the edge (he sat 1 m short on the workshop step) */const near=()=>{const sp=V(tgt.x,0,tgt.z).addScaledVector(e.f,.5);const go=()=>Math.hypot(root.position.x-tgt.x,root.position.z-tgt.z)>.06&&++tries<4;approachTo(a,sp,.5,()=>{if(go())near();else seat();});};const seat=()=>{a.step='sit';a.t=0;H.face=yaw;a.hy0=bones.Hips.getWorldPosition(V()).y;
+    const tgt=e.p.clone().addScaledVector(e.f,-.06);/* the hips 6 cm in from the edge, not 12: the calves near the knees went 4-6 cm into the landing's rim beam (gate, Collide audit) */let tries=0;/* approachTo moves at most 1.2 m per call: step on until the hips are over the edge (he sat 1 m short on the workshop step) */const near=()=>{const sp=V(tgt.x,0,tgt.z).addScaledVector(e.f,.5);const go=()=>Math.hypot(root.position.x-tgt.x,root.position.z-tgt.z)>.06&&++tries<4;approachTo(a,sp,.5,()=>{if(go())near();else seat();});};const seat=()=>{a.step='sit';a.t=0;H.face=yaw;a.hy0=bones.Hips.getWorldPosition(V()).y;
      H.fit={mode:'hold',base:e.y,y:a.hy0,dangle:true};H.ground=false;AU('sigh');};near();});
    // LEISURE: sitting down is one motion: the hips sink while the legs fold over the edge (the dangle clip fades in from
    // the middle of the descent, never a seated pose in mid-air) and both palms go down onto the boards beside the hips to
    // take the weight and stay there while he sits; getting up is the same backwards.
    const SIT=1.7,UP=1.5;const seatY=()=>a.e.y+SEAT_CLEAR;
    const palms=w=>{if(w<.01){a.ik=null;return;}const f=a.e.f,r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());
-    a.ik=[['Left',V(hp.x,a.e.y+.03,hp.z).addScaledVector(r,-.24).addScaledVector(f,-.04),w],['Right',V(hp.x,a.e.y+.03,hp.z).addScaledVector(r,.24).addScaledVector(f,-.04),w]];};
+    const py=a.e.y+.065;/* the wrist a palm's thickness up: at +3 cm the hands sank 4-6 cm into the boards (gate) */a.ik=[['Left',V(hp.x,py,hp.z).addScaledVector(r,-.24).addScaledVector(f,-.04),w],['Right',V(hp.x,py,hp.z).addScaledVector(r,.24).addScaledVector(f,-.04),w]];};
    // the legs hang over the drop: thighs along the boards to the edge, knees bent, shins down, a lazy swing (watcher P2: the clip held
    // them nearly straight, sticking out forward at knee height)
    const legsHang=w=>{if(w<.01||!a.e)return;const f=V(a.e.f.x,0,a.e.f.z).normalize();const T=a.T||0;
