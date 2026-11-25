@@ -267,7 +267,7 @@ export function createMotion({ hero, db, opts = {} }) {
     // the game walk (gamewalk.js, ?style=game) plants each foot in the world and solves the legs to it: a 'pop' it makes in a thigh or a
     // shin is the leg reaching its next planned ankle, and easing that bone from last frame's angle took the planted foot off its spot
     // (stage trace, style=game trip: the pop filter alone added 8 cm/frame² to a standing foot). Lower-body bones take no new pops then.
-    const gwPlant = !!(window.__gamewalk && window.__gamewalk.S && window.__gamewalk.S.w > .01);
+    const gwPlant = !!(window.__gamewalk && window.__gamewalk.S && window.__gamewalk.S.w > .01) || !!H.feetIK; H.feetIK = 0; /* LEISURE: an action that holds the soles on their spot by leg IK this frame (stretch) sets H.feetIK: the same as the game walk's plant, a leg 'pop' is the IK keeping the foot still against the clip's shuffle (easing it moved the planted foot 11 cm) */
     // a snap spread over a chain (spine, spine1, spine2, neck, head each 8-12 deg in one frame) stays under the per-bone limit but
     // throws the head 25-30 cm: deviations are summed down the chain and a chain over the limit is caught as a whole
     for (let b = 0; b < NB; b++) { fDv[b] = -1; fHit[b] = 0; const B = HB[b]; if (!B) continue;
