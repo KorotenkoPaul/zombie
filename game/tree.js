@@ -203,7 +203,15 @@ export function buildTree(THREE, o) {
     // the thinnest bark beside the opening: the cave is clipped to it so its shell never shows through the side of the trunk
     let rs = 9; for (let i = 0; i < P.length; i += 3) { const y = P[i + 1]; if (y < door.y0 - 0.1 || y > door.y1 + 0.5) continue;
       const dx = P[i] - AX, dz = P[i + 2] - AZ, ad = Math.abs(angDiff(Math.atan2(dz, dx), doorAng)); if (ad < 0.3 || ad > 1.6) continue; rs = Math.min(rs, Math.hypot(dx, dz)); }
-    ARCH = { cx: ccx, cz: ccz, dx: ddx, dz: ddz, rs: rs < 9 ? rs : 0 };
+    // the bark's radius all round the hollow (17 bins, -1.6..1.6 rad from the door): the cave is clipped against the bark on
+    // its own side only. One global minimum (the thin flank on one side) cut the cave's far wall away where the bark is thick,
+    // and the night sky showed through the trunk (Lights, after the door moved right of the ladder)
+    const RA = new Array(17).fill(9);
+    for (let i = 0; i < P.length; i += 3) { const y = P[i + 1]; if (y < door.y0 - 0.1 || y > door.y1 + 0.5) continue;
+      const dx = P[i] - AX, dz = P[i + 2] - AZ, sd = angDiff(Math.atan2(dz, dx), doorAng); if (Math.abs(sd) < 0.3 || Math.abs(sd) > 1.7) continue;
+      const k = Math.round((sd + 1.6) / 0.2); if (k < 0 || k > 16) continue; RA[k] = Math.min(RA[k], Math.hypot(dx, dz)); }
+    for (let k = 0; k < 17; k++) if (RA[k] >= 9) RA[k] = 99;
+    ARCH = { cx: ccx, cz: ccz, dx: ddx, dz: ddz, rs: rs < 9 ? rs : 0, ra: RA };
     const arch = (x, y, z) => {
       const rx = x - ccx, rz = z - ccz, u = rx * ddx + rz * ddz, v = -rx * ddz + rz * ddx;
       if (u < 0.2 || u > 3) return 99;
@@ -257,18 +265,50 @@ export function buildTree(THREE, o) {
       if (y < rf.yb - 1.2 || !wood(x, y, z)) continue;
       const w = Math.min(1, (y - (rf.yb - 1.2)) / 1.0); P[i + 1] = y + at(x, z) * w; }
   }
+  // the model's limbs are big triangles: a vertex pushed out of a room drags long faces that still cut across it (a limb lay
+  // diagonally through the bedroom behind the bunk, in front of the back wall). Split the faces near a room first, so the
+  // pushed surface folds round the room's sides instead of cutting through it.
+  if ((o.avoid || []).length) {
+    const near = (x, y, z) => o.avoid.some(b => x > b[0] - 0.45 && x < b[1] + 0.45 && y > b[2] - 0.45 && y < b[3] + 0.45 && z > b[4] - 0.45 && z < b[5]);
+    for (let pass = 0; pass < 2; pass++) {
+      const mid = new Map(), out = [];
+      const split = (a, b) => { const k = a < b ? a * 4194304 + b : b * 4194304 + a; let m = mid.get(k); if (m !== undefined) return m;
+        const ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2], bx = P[b * 3], by = P[b * 3 + 1], bz = P[b * 3 + 2], mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
+        if (Math.hypot(ax - bx, ay - by, az - bz) < 0.16 || !(near(mx, my, mz) || near(ax, ay, az) || near(bx, by, bz))) { mid.set(k, -1); return -1; }
+        m = P.length / 3; P.push(mx, my, mz); UV.push((UV[a * 2] + UV[b * 2]) / 2, (UV[a * 2 + 1] + UV[b * 2 + 1]) / 2); G.push((G[a] + G[b]) / 2); mid.set(k, m); return m; };
+      let any = false;
+      for (let t = 0; t < I.length; t += 3) { const v = [I[t], I[t + 1], I[t + 2]], m = [split(v[0], v[1]), split(v[1], v[2]), split(v[2], v[0])], n = (m[0] >= 0) + (m[1] >= 0) + (m[2] >= 0);
+        if (!n) { out.push(v[0], v[1], v[2]); continue; } any = true;
+        if (n === 3) { out.push(v[0], m[0], m[2], m[0], v[1], m[1], m[2], m[1], v[2], m[0], m[1], m[2]); continue; }
+        const r = m[0] >= 0 && (n === 1 || m[2] < 0) ? 0 : m[1] >= 0 && (n === 1 || m[0] < 0) ? 1 : 2;
+        const A = v[r], B = v[(r + 1) % 3], C = v[(r + 2) % 3], mAB = m[r], mBC = m[(r + 1) % 3];
+        if (n === 1) out.push(A, mAB, C, mAB, B, C); else out.push(A, mAB, C, mAB, B, mBC, mAB, mBC, C); }
+      I.length = 0; for (const q of out) I.push(q); if (!any) break;
+    }
+  }
   const M = 0.1;
   for (let i = 0; i < P.length; i += 3) {
     let x = P[i], y = P[i + 1], z = P[i + 2];
     for (const b of o.avoid || []) {
       if (x > b[0] - M && x < b[1] + M && y > b[2] - M && y < b[3] + M && z > b[4] - M && z < b[5]) {
         // push out through the nearest side, never through the open front
-        const d = [[x - (b[0] - M), 0], [(b[1] + M) - x, 1], [z - (b[4] - M), 4], [y - (b[2] - M), 2], [(b[3] + M) - y, 3]].sort((a, c) => a[0] - c[0])[0];
+        // a limb lying along the back wall goes out the back (flat against the wall, hidden from the room), not split between
+        // the back, a side and the floor, which tore it apart across the room's corner
+        const d = [[x - (b[0] - M), 0], [(b[1] + M) - x, 1], [Math.max(0, z - (b[4] - M) - 0.45), 4], [y - (b[2] - M), 2], [(b[3] + M) - y, 3]].sort((a, c) => a[0] - c[0])[0];
         if (d[1] === 0) x = b[0] - M; else if (d[1] === 1) x = b[1] + M; else if (d[1] === 4) z = b[4] - M; else if (d[1] === 2) y = b[2] - M; else y = b[3] + M;
       }
     }
     P[i] = x; P[i + 1] = y; P[i + 2] = z;
   }
+  // a face whose corners went out through different sides of a room still bridges across it (two corners on the floor, one
+  // on the side wall: a sheet of bark cutting the room's corner). Its middle is inside the room: drop it. What is left
+  // ends at the room's walls and floor, which hide the cut.
+  if ((o.avoid || []).length) { const E = 0.03, keep = [];
+    for (let t = 0; t < I.length; t += 3) { const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      const x = (P[a] + P[b] + P[c]) / 3, y = (P[a + 1] + P[b + 1] + P[c + 1]) / 3, z = (P[a + 2] + P[b + 2] + P[c + 2]) / 3;
+      if (o.avoid.some(q => x > q[0] - M + E && x < q[1] + M - E && y > q[2] - M + E && y < q[3] + M - E && z > q[4] - M + E && z < q[5] - E)) continue;
+      keep.push(I[t], I[t + 1], I[t + 2]); }
+    I.length = 0; for (const q of keep) I.push(q); }
   // ---------- roots (Pavel / critic T22): the model's roots are a few big flat faces. Refine them where they lie on the
   // ground and carve irregular folds running out along each root, a few sharp cuts across them, and bark lumps, all
   // deep enough to read from the normal camera. Edges are split by a rule that depends only on the edge itself
@@ -399,6 +439,17 @@ export function buildTree(THREE, o) {
 `)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(vec3(.38,.37,.47),vec3(1.06,1.05,1.02),pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
+    // [ENV] limbs (Pavel / photo: smooth bark with long folds following the wood): the trunk's folds are carved in the mesh, the
+    // limbs only had the painted crackle. Shading-only grooves that run along each limb (axis estimated from the trunk outwards),
+    // wandering and merging, darkened in the furrow and caught on the ridge; they fade out where they would be under a pixel.
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vOkW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvOkW=(modelMatrix*vec4(transformed,1.)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vOkW;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{vec3 wp=vOkW;float dT=length(wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));float bw=max(smoothstep(3.3,4.4,dT),smoothstep(9.6,10.8,wp.y));
+ if(bw>0.){vec3 wn=normalize((vec4(normal,0.)*viewMatrix).xyz);vec3 ax=normalize(wp-vec3(${AX.toFixed(3)},wp.y*.6,${AZ.toFixed(3)}));
+  vec3 u=normalize(cross(ax,vec3(0.,1.,0.))+vec3(1e-4,0.,0.));vec3 w=cross(ax,u);float an=atan(dot(wn,w),dot(wn,u));float al=dot(wp,ax);
+  float ph=an*7.+1.4*sin(al*.8+an*2.)+.7*sin(al*2.1-an*3.);float gr=smoothstep(.55,.97,abs(sin(ph)));float aa=1.-smoothstep(.6,1.6,fwidth(an*7.));
+  float k=bw*aa;diffuseColor.rgb*=1.-.42*gr*k;diffuseColor.rgb*=1.+.1*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
     // warm bark round the house at night (Environment drives env.barkWarm): diffuse only, the bark stays matte
     const BW = (o.env || window.__env || {}).barkWarm;
     if (BW) {
@@ -415,10 +466,11 @@ export function buildTree(THREE, o) {
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vAW;uniform vec2 aC;uniform vec2 aD;uniform vec3 aY;')
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
 {vec2 r=vAW.xz-aC;float u=dot(r,aD),v=-r.x*aD.y+r.y*aD.x,da=abs(v)/(aY.z*.5),vy=(vAW.y-aY.x)/(aY.y-aY.x);
- if(u>.2&&u<3.&&vy>0.&&vy<1.&&(vy<.62?da:length(vec2(da,(vy-.62)/.38*1.05)))<1.)discard;}`);
+ if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.62?da:length(vec2(da,(vy-.62)/.38*1.05)))<1.)discard;}`);
     }
   };
   mat.userData.doorGlow = { value: 0 };
+  mat.customProgramCacheKey = () => 'oakBark-grooves1'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
 
   // ---------- leaves: clumps of painted oak-leaf cards, facing outwards like the painted crown ----------
@@ -430,24 +482,28 @@ export function buildTree(THREE, o) {
     : new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
   // soft, lit-from-above clumps: cards near the clump centre are darker (painted volume)
   lmat.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\nvFacing=abs(dot(normalize(transformedNormal),normalize(-mvPosition.xyz)));vDep=-mvPosition.z;');
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\n/* [ENV] per CARD, not per pixel: an oblique or too-near card goes whole (each at its own threshold), so no leaf is ever cut across */{vec4 cC=modelViewMatrix*instanceMatrix*vec4(0.,0.,0.,1.);vec3 cN=normalize(mat3(modelViewMatrix)*mat3(instanceMatrix)*vec3(0.,0.,1.));float cH=fract(sin(dot(instanceMatrix[3].xyz,vec3(12.99,78.23,37.71)))*4375.5);float th=mix(.16,.42,cH),dh=mix(1.6,3.2,fract(cH*7.31));/* shrinks smoothly towards its centre over a short band (no pop when the camera turns or zooms) */float cf=smoothstep(th-.07,th+.07,abs(dot(cN,normalize(-cC.xyz))))*smoothstep(dh-.5,dh+.5,-cC.z);mvPosition=cC+(mvPosition-cC)*cf;gl_Position=projectionMatrix*mvPosition;vFacing=step(.001,cf);vDep=1.;}');
     // [WIND] leaves sway with the global wind (game/wind.js): each card drifts with its clump and flutters on its own
     const W = o.wind || window.__wind;
     if (W) {
       W.hook(sh);
       sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
 {vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);
- float s=windStrength(ip);vec2 wv=windSway(ip,2.3)*.15;
- float h=fract(sin(dot(ip,vec3(12.99,78.23,37.71)))*4375.5);
- float a=sin(uWT*(6.+h*5.)+h*30.)*(.04+.25*s),b=sin(uWT*(4.7+h*4.)+h*17.)*(.03+.15*s);
+ // [ENV wind] cards on one twig move together (phase from a ~1.6 m cell, not per card: no shimmering jelly), the outer crown
+ // more than the cards near the trunk; the flutter is a quick small tremble that wakes with the wind (almost still in calm)
+ float s=windStrength(ip);float hc=fract(sin(dot(floor(ip/1.6),vec3(12.99,78.23,37.71)))*4375.5);
+ vec2 wv=windSwayH(ip,1.7,hc*6.28)*.13*(.45+.55*smoothstep(2.5,8.,length(ip.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}))));
+ float h=fract(sin(dot(ip,vec3(12.99,78.23,37.71)))*4375.5);float fl=min(s,1.6);
+ float a=sin(uWT*(10.+h*7.)+h*30.)*(.012+.13*fl*fl*.6),b=sin(uWT*(8.3+h*6.)+h*17.)*(.01+.08*fl*fl*.6);
  // flutter as ripples running across the cupped card (the centre stays, the rim waves in several places at
  // different phases), never a tilt of the whole card, which would show it as a flat plane
  float r2=dot(position.xy,position.xy)*2.;
- transformed.z+=r2*(a*sin(position.x*7.+uWT*3.1+h*9.)+b*sin(position.y*6.+uWT*2.4+h*13.)+.5*(a+b)*sin((position.x+position.y)*9.+uWT*4.3))*.45;
+ transformed.z+=r2*(a*sin(position.x*7.+uWT*3.1+h*9.)+b*sin(position.y*6.+uWT*2.4+h*13.)+.5*(a+b)*sin((position.x+position.y)*9.+uWT*4.3))*.3;
  transformed+=windLocal(vec3(wv.x,wv.x*.15,wv.y)+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)})));}`);
     }
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\nfloat ff=smoothstep(.18,.6,vFacing)*smoothstep(.8,3.,vDep);diffuseColor.a*=step(length(vMapUv-.5)*2.,ff*1.3);\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\ndiffuseColor.a*=vFacing*vDep;\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;');
   };
+  lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2'; /* [ENV] explicit key (SHADERS rule) */
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
   const total = MOB(o) ? (o.leafCards || 170) : 700; // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
@@ -576,17 +632,17 @@ vec3 objectTangent=vec3(tangent.xyz);
     const hh = door.y1 - door.y0, Rm = R(door.y0 + hh / 2);
     const dirx = Math.cos(doorAng), dirz = Math.sin(doorAng);
     const A = 1.55, B = hh * 0.95, Cl = Math.max(1.0, door.w * 1.0), off = Rm - 1.25;
-    const cx = AX + dirx * off, cz = AZ + dirz * off, cy = door.y0 + hh * 0.38; // tall: wide at the floor, no gap under the walls
-    const U = { doorGlow: mat.userData.doorGlow, cAx: { value: new THREE.Vector2(AX, AZ) }, cDir: { value: new THREE.Vector2(dirx, dirz) }, cR: { value: Rm - 0.04 }, cRs: { value: ARCH && ARCH.rs ? ARCH.rs - 0.08 : 99 }, cW: { value: door.w * 0.5 + 0.12 },
+    const cx = AX + dirx * off, cz = AZ + dirz * off, cy = door.y0 + hh * 0.38;
+    const U = { doorGlow: mat.userData.doorGlow, cAx: { value: new THREE.Vector2(AX, AZ) }, cDir: { value: new THREE.Vector2(dirx, dirz) }, cR: { value: Rm - 0.04 }, cRs: { value: ARCH && ARCH.rs ? ARCH.rs - 0.08 : 99 }, cRa: { value: ARCH && ARCH.ra ? ARCH.ra.map(v => v - 0.08) : new Array(17).fill(99) }, cW: { value: door.w * 0.5 + 0.12 },
       cC: { value: new THREE.Vector3(cx, cy, cz) }, cS: { value: new THREE.Vector3(A, B, Cl) } };
     const clip = sh => {
       Object.assign(sh.uniforms, U);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vCW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvCW=(modelMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-varying vec3 vCW;uniform float doorGlow;uniform vec2 cAx;uniform vec2 cDir;uniform float cR;uniform float cRs;uniform float cW;uniform vec3 cC;uniform vec3 cS;
+varying vec3 vCW;uniform float doorGlow;uniform vec2 cAx;uniform vec2 cDir;uniform float cR;uniform float cRs;uniform float cRa[17];uniform float cW;uniform vec3 cC;uniform vec3 cS;
 float cH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i),cH(i+vec2(1,0)),f.x),mix(cH(i+vec2(0,1)),cH(i+vec2(1,1)),f.x),f.y);}`)
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{vec2 r=vCW.xz-cAx;if(dot(r,cDir)>cR)discard;if(length(r)>cRs&&abs(-r.x*cDir.y+r.y*cDir.x)>cW)discard;}');
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n{vec2 r=vCW.xz-cAx;if(dot(r,cDir)>cR)discard;float lat=-r.x*cDir.y+r.y*cDir.x;float an=atan(lat,dot(r,cDir));float fk=clamp((an+1.6)/.2,0.,16.);int k0=int(floor(fk));int k1=min(k0+1,16);float rr=mix(cRa[k0],cRa[k1],fk-float(k0));if(length(r)>min(rr,99.)&&abs(lat)>cW)discard;}');
     };
     const cmat = new THREE.MeshStandardMaterial({ color: 0x6E4A32, roughness: 1, side: THREE.BackSide });
     cmat.onBeforeCompile = sh => {
@@ -608,7 +664,7 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
   vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition);float hx=dFdx(hgt),hy=dFdy(hgt);
   vec3 r1=cross(dpy,normal),r2=cross(normal,dpx);float det=dot(dpx,r1);
   normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.1);}`)
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.3*smoothstep(-.6,1.2,u2);}');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*2.3*(.35+.65*smoothstep(-1.,1.,u2));}');
     };
     cmat.customProgramCacheKey = () => 'hollow';
     // rough, uneven walls (critic N4: a smooth dome reads as plastic): ridges of wood fibre running into the trunk and

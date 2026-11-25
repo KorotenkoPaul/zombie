@@ -74,7 +74,7 @@ vec3 windRope(vec3 p,float t,float len){vec2 w=windSwayS(p,1.1)*.05*len*t*t*(1.-
 // ax = the trunk axis (x,z). Still near the trunk and the house; the far limbs and the top of the crown move a few cm,
 // ~15 cm in a strong gust. Leaf cards add the same offset at their centre, so they stay on their branch.
 vec3 windBranch(vec3 p,vec2 ax){float d=length(p.xz-ax);float a=.09*max(smoothstep(5.5,10.,d),smoothstep(14.,19.,p.y));
- float s=windStrength(p);vec2 dd=uWind.xy,q=vec2(-dd.y,dd.x);float ph=uWT*.7-dot(p.xz,dd)*.12,sh=.1+.6*s;
+ vec2 dd=uWind.xy,q=vec2(-dd.y,dd.x);/* [ENV] heavy limbs lag a gust: they feel it as if ~6 m further downwind (~0.7 s late), the leaves at once */float s=windStrength(p+vec3(dd.x,0.,dd.y)*6.);float ph=uWT*.7-dot(p.xz,dd)*.12,sh=.1+.6*s;
  vec2 o=dd*(.4*s*s+sin(ph)*sh*.6)+q*sin(ph*1.37+1.)*sh*.3;return vec3(o.x,0.,o.y)*a;}
 vec3 windLocal(vec3 w){
 #ifdef USE_INSTANCING
@@ -391,7 +391,7 @@ export function createWind(opt = {}) {
             if (wh != null && wh > g - 0.015 && p[1] <= wh + 0.01) { p[1] = wh; l.water = wh; l.rest = 0.001; l.life = rr(50, 90); l.r[0] = -Math.PI / 2; l.r[1] = 0; }
             else if (p[1] <= g) { p[1] = g; l.rest = 0.001; l.built = g > gH(p[0], p[2]) + 0.5; if (l.built) l.life = Math.max(l.life, rr(12, 30)); l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
             // never through a room: a leaf that drifts into one is gone (the roof hides it)
-            if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5])) { l.on = false; im.setMatrixAt(i, zero); continue; }
+            if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] - 0.35 && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5]))/* [ENV] down to the floor boards too: none settles on a rug */ { l.on = false; im.setMatrixAt(i, zero); continue; }
             if (Math.abs(p[0]) > 60 || Math.abs(p[2]) > 60) { l.on = false; im.setMatrixAt(i, zero); continue; }
           }
           q.setFromEuler(e.set(l.r[0], l.r[1], l.r[2])); m4.compose(v.set(p[0], p[1], p[2]), q, sc.setScalar(l.k)); im.setMatrixAt(i, m4);
@@ -426,7 +426,9 @@ export function createWind(opt = {}) {
       // flat on the boards with a little curl (a dry oak leaf never lies dead flat), random turn and size
       q.setFromEuler(e.set(-Math.PI / 2 + rr(-0.25, 0.25), rr(-0.2, 0.2), yaw)); m4.compose(v.set(x, y + 0.006, z), q, sc.setScalar(rr(1.0, 1.5))); im.setMatrixAt(i, m4); dirty = true; };
     const kill = i => { if (!on[i]) return; on[i] = 0; n--; im.setMatrixAt(i, zero); dirty = true; };
-    const add = (p, yaw) => { let i = -1; for (let k = 0; k < LN; k++) { const j = (head + k) % LN; if (!on[j]) { i = j; break; } }
+    // [ENV] never inside a room (the open cutaway side let them settle on the bedroom rug as flat brown blots)
+    const rooms = o.avoid || [], inRoom = (x, y, z) => rooms.some(b => x > b[0] && x < b[1] && y > b[2] - 0.35 && y < b[3] + 0.6 && z > b[4] && z < b[5]);
+    const add = (p, yaw) => { if (inRoom(p[0], p[1], p[2])) return false; let i = -1; for (let k = 0; k < LN; k++) { const j = (head + k) % LN; if (!on[j]) { i = j; break; } }
       if (i < 0) { i = head; on[i] = 0; n--; }                         // full: the oldest goes
       head = (i + 1) % LN; n++; put(i, p[0], p[1], p[2], yaw); return true; };
     // a little litter to start with, where leaves would really be: under the crown, on top surfaces well above the ground

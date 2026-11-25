@@ -89,3 +89,18 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - Critic H5 ("__th.task('ledge') ignored at 21:00, he went to the telescope"): not reproducible on the brain side. __th.task routes to brain.command; at 7, 9, 11, 16, 20 and 21 h on 5 seeds, and with task-then-setHour, he does ledge for the full 60 s window. The likely cause is the body: MAKE.ledge ends at once with endTask(false) when openEdge() finds no free edge, and the brain then picks the next thing (telescope is close by). Now a requested task that the body ends at once with a failure logs a console.warn('[brain] requested task ... ended at once in the body') and the trace has 'cmdfail:<name>'.
 - Critic B2 (bolted at 13:00): the bolt and the hatch shut are evening/night things only (lateHours: 19:00-5:00), or lockdown. The bolt chore scores null by day, the sleep chain skips them for a daytime nap, and the night-noise reaction only bolts or shuts the hatch in late hours. 48 h on 2 seeds: bolt at 19.9-21.0, hatch shut at 21.3-22.3, the only morning hatch step is opening it.
 - Lantern (outdoor thread / Lights): trips and water runs carry the lantern from 18:30 to 6:36 (lanternTime); dark(h) (19.2) stays for lamps and washFace.
+- Critic W2 (bolt did not lock): on master 6e384e3 the bolt task locks in 3/3 evening runs; the brain now checks the house after 'bolt' and 'hatch' (door.bolt >= .9 / hatch shut), traces '<name>:failed', does not count a failed bolt, and retries once (day.retried resets each morning). Forced-failure test: retry locked it.
+
+## 3-day routine watch (2026-11-25, 3 seeds × 72 game h, 1 sample per game minute)
+- Before: 78 area visits, median stay 76-113 s, 5 stays < 40 s, 2 A-B-A round trips < 30 s, no idle gaps, sleep 20:54-22:48. Meals: after every stew he ate BOTH portions in a row (eat, eat), and tea took .3 hunger a cup, so some days had one meal and no cooking.
+- Fixes: hotMeal (one plate straight after cooking, the second portion later when hungry); tea hunger -.015 -> -.005 per s; the last log is kept for the stew (no stoking it away while there is meat and no meal); wood gets the hunger value when there is meat but no log; a hunt is allowed with one portion left and an empty fridge; visits younger than 40 s: elsewhere -2 (was -1.2).
+- After: 77 visits, median 86-97 s, 3 stays < 40 s, 1 A-B-A (a night noise from the bedroom), 2 meals a day (cook in the morning or after a hunt, eat 1-3 h apart), no idle gaps, hunts/wood 8:30-13:00.
+
+## Variety and weather round (2026-11-25, 3 seeds × 120 game h, forced drizzle/rain/storm spells + natural weather)
+- Pavel's 20 approved actions, counts per 5 days (3 seeds) before -> after:
+  sweep 0/1/0 -> 3/3/3, watering 0/1/0 -> 3/3/3, fixlamp 0/0/1 -> 3/3/3, firewood up 0/1/1 -> 1/1/2, saw 2/0/1 -> 3/2/4, hammer 1/0/2 -> 4/2/4, sharpen 1/0/2 -> 2/4/4, window 1/4/1 -> 3/2/4, listen 1/4/1 -> 3/3/3, radio 3/3/2 -> 4/3/3; tea 14/9/8 -> 6/3/2 (was 3-4 cups a day).
+- Habit: HABITS + lastDone (absH game hours). Each approved EXTRA gets +1.1 per day since it was last done (after half a day, max +1.4), only at an hour where its own habit bonus is >= -.25 (so sweeping in the morning, the radio in the evening, nothing outdoors in rain). 'window' the same by day. Start: each one "last done" 0-30 h ago at random.
+- Weather: jobs (trips, water, dump) in a storm -30, in rain -2.2 (water with an empty bucket -.8), drizzle -.6. Before: a water run in a storm, a hunt in heavy rain.
+- Tea: third and later cups a day -.6 each.
+- Firewood up the ladder: habit-eligible when logs <= 3 (was only <= 1).
+- JS errors seen in these runs are the body's: "grab late TypeError: Cannot read properties of null (reading '_x')" (grab.js), reported.
