@@ -1943,7 +1943,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const setLF=lf=>{LF=lf;TT=Tf(lf);want=Wf(lf);};
    const key=(lf,starts,base)=>{setLF(lf);Qh=mkQh(S.al,S.yw);PS=S.ps;let best=null;for(const bs of base?[base,null]:[null])for(const st of starts){const e=run(30,false,st,bs);/* the answer on from the last blow wins unless the fresh one is clearly closer (3 cm) */const e2=e-(bs?(window.__seedBias??.03):0);if(!best||e2<best.e2-.002)best={e,e2,t:tEnd.clone(),q:AB.map(b=>b.quaternion.clone())};}return best;};
    const shNow=bones.RightArm.getWorldPosition(V());
-   if(!S.K||S.K.n!==S.n||S.K.sh.distanceTo(shNow)>(window.__keyTh??.015)&&!S.Ko||window.__keyEvery){
+   if(!S.K||S.K.n!==S.n&&!fade||S.K.sh.distanceTo(shNow)>(window.__keyTh??.015)&&!S.Ko&&!fade||window.__keyEvery){/* letting go at the end (the clip walks the body back to idle under the arm): the last keys stay, no fresh solves while the arm fades out (gate orig fix_railing: 20 frames of 8-23 cm/frame) */
     setLF(0);
     if(PG&&PG.over&&!window.__noFit&&!window.__noSearch){
      const cost=(ca,cy,cp)=>{Qh=mkQh(ca,cy);PS=cp;const e=run(8,true);return PG.over(hb,hb.quaternion)+PG.over(fa,fa.quaternion)+e*300+(S.ps!=null?4*(Math.abs(ca-S.al)+Math.abs(cy-S.yw)+Math.abs(cp-S.ps)):0);};
@@ -1956,7 +1956,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     /* each key is solved on from the last blow's same key, so the elbow stays on the same side from blow to blow (solved from the clip's arm the fitted wrist could land on the other side: gate fix_railing 19 cm in a frame as the keys blended) */const PB=window.__noKeySeed?null:S.K;
     const k0=key(0,[Tf(0),...(S.K?[S.K.t0]:[])],PB&&PB.q0);const km=key(.5,[k0.t.clone().add(Tf(.5)).sub(Tf(0)),Tf(.5)],PB&&PB.qm);const k1=key(1,[km.t.clone().add(Tf(1)).sub(Tf(.5)),Tf(1),k0.t.clone().add(Tf(1)).sub(Tf(0))],PB&&PB.q1);
     /* mid-blow the new keys are blended in over 0.2 s (a fresh solve can land on a different elbow: no jump) */if(S.K){S.Ko=S.K;S.kb=0;}else S.Ko=null;/* a new blow's keys can land on the other elbow too (gate fix_wall: 28 cm in one frame): always blended in */
-    S.K={n:S.n,sh:shNow.clone(),q0:k0.q,qm:km.q,q1:k1.q,t0:k0.t,t1:k1.t,e0:k0.e};}
+    /* a key the arm could not really give (gate orig fix_railing: the top of the lift 27 cm off its target, the swing thrashed between the keys for 20 frames): the swing stops short at the last good key instead */const kmq=km.e>.06?k0.q:km.q,k1q=k1.e>.06?kmq:k1.q;
+    S.K={n:S.n,sh:shNow.clone(),q0:k0.q,qm:kmq,q1:k1q,t0:k0.t,t1:k1.t,e0:k0.e};}
    /* this frame: between the two keys by the lift */
    const at=(K,i)=>lift<=.5?K.q0[i].clone().slerp(K.qm[i],lift*2):K.qm[i].clone().slerp(K.q1[i],lift*2-1);if(S.Ko){S.kb=Math.min(1,(S.kb||0)+dt/.2);if(S.kb>=1)S.Ko=null;}
    AB.forEach((b,i)=>{b.quaternion.copy(S.Ko?at(S.Ko,i).slerp(at(S.K,i),smooth(0,1,S.kb)):at(S.K,i));});bones.RightArm.updateMatrixWorld(true);hm.updateMatrixWorld(true);
