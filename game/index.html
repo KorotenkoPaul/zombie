@@ -1096,7 +1096,8 @@ if(ENV.fireflies)WIND.hookRaw(ENV.fireflies.material);
 const rayMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{t:{value:0},o:{value:0},col:{value:new THREE.Color(1,.86,.6)}},
  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
  fragmentShader:`varying vec2 vUv;uniform float t,o;uniform vec3 col;float h(float x){return fract(sin(x*91.7)*43758.5);}float n(float x){float i=floor(x),f=fract(x);return mix(h(i),h(i+1.),f*f*(3.-2.*f));}void main(){float b=pow(n(vUv.x*12.+t*.05)*n(vUv.x*29.-t*.04+3.),1.4)*1.7;float f=smoothstep(0.,.2,vUv.y)*smoothstep(1.,.45,vUv.y)*smoothstep(0.,.2,vUv.x)*smoothstep(1.,.8,vUv.x);gl_FragColor=vec4(col*b*f*o,b*f*o);}`});
-const rays=new THREE.Group();scene.add(rays);for(let i=0;i<3;i++){const p=new THREE.Mesh(new THREE.PlaneGeometry(7,30),rayMat);p.position.set(-4+i*3.5,8,4+i*.6);rays.add(p);}
+rayMat.customProgramCacheKey=()=>'envGodRays1';/* [ENV] explicit key (Apple rule) */
+const rays=new THREE.Group();scene.add(rays);for(let i=0;i<3;i++){const p=new THREE.Mesh(new THREE.PlaneGeometry(7,30),rayMat);p.raycast=()=>{};/* [ENV] tall see-through beams: raycasts (taps, probes) pass through them */p.position.set(-4+i*3.5,8,4+i*.6);rays.add(p);}
 
 // ================= audio =================
 let AC=null;function ac(){try{if(!AC){const C=window.AudioContext||window.webkitAudioContext;try{AC=new C({sampleRate:32000});}catch(e){AC=new C();}}/* 32 kHz: plenty for forest ambience, a third less memory and mixing work on phones */if(AC.state==='suspended')AC.resume();}catch(e){}return AC;}
