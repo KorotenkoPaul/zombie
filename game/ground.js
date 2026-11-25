@@ -177,9 +177,9 @@ export function createGround(C){const __before=new Set(C.scene.children);
  // big mesh with heights from env.js groundH(); vertex colours give the large-scale moss / teal / earth patches,
  // the painted Fal forest floor (ground3.jpg) gives the detail at two scales, plus moss fuzz and root contact shadows.
  {const S=MOBILE?40:150;const g=new THREE.PlaneGeometry(260,260,S,S).rotateX(-Math.PI/2);const p=g.attributes.position;const col=new Float32Array(p.count*3);const c=new THREE.Color();
-  const moss=new THREE.Color(0x5E8C55),teal=new THREE.Color(0x3F6B5C),earth=new THREE.Color(0x6E5A47),deep=new THREE.Color(0x36585A);
+  const moss=new THREE.Color(0x5E8C55),teal=new THREE.Color(0x3F6B5C),earth=new THREE.Color(0x6E5A47),fall=new THREE.Color(0x6B5034),deep=new THREE.Color(0x36585A);
   const colAt=(x,z)=>{const r=Math.hypot(x,z);const n=fbm2(x*.08+11,z*.08+3),m=fbm2(x*.3,z*.3);
-   c.copy(teal).lerp(moss,smooth(.35,.7,n));c.lerp(earth,smooth(5.,2.4,r+(m-.5)*2.5)*.6);c.lerp(deep,smooth(30,70,r)*.6);c.multiplyScalar(.82+m*.3);return c;};
+   c.copy(teal).lerp(moss,smooth(.35,.7,n));c.lerp(earth,smooth(5.,2.4,r+(m-.5)*2.5)*.6);c.lerp(fall,smooth(12,22,r+(n-.5)*6)*(.5+.4*m));/* the forest beyond the ring: an autumn leaf floor, not green lawn */c.lerp(deep,smooth(34,80,r)*.4);c.multiplyScalar(.82+m*.3);return c;};
   // the big mesh is coarse (1.7 m), so in the middle it sits 4 cm low and a fine 25 cm patch carries the real shape
   for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);const inner=Math.max(Math.abs(x),Math.abs(z))<15.6;p.setY(i,groundH0(x,z)-(inner?.1:0)-(pondD(x,z)<2.5?.8:0));colAt(x,z);
    col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b;}
@@ -194,7 +194,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    s.uniforms.uNz=NZU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vGW;uniform sampler2D uAO;uniform float uGE,uGlow;'+GLSL_NOISE)
     .replace('#include <color_fragment>','#include <color_fragment>\n diffuseColor.rgb=mix(diffuseColor.rgb,pathC,pathK);').replace('#include <map_fragment>',`
      // two texture scales blended by noise: no visible tiling. The far scale is softened so the painted clumps read as ground, not stickers.
-     float pathK=0.;vec3 pathC=vec3(0.);float pondMud=0.,pondWet=0.;
+     float pathK=0.;vec3 pathC=vec3(0.);float pondMud=0.,pondWet=0.,forK=0.;
      vec4 g1=texture2D(map,vGW/4.6);vec4 g2=texture2D(map,vGW/12.7+.37);float bn=fbm(vGW*.09);vec3 gc=mix(g1.rgb,g2.rgb,smoothstep(.35,.65,bn));
      // close to the camera a finer third scale adds crisp detail (the far scales blur when you zoom in)
      vec3 g0=texture2D(map,vGW/1.5+.71).rgb;float nearK=1.-smoothstep(2.5,11.,length(vViewPosition));gc=mix(gc,g0,.6*nearK);
@@ -208,7 +208,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
      // roots: soft contact shadow, a ring of damp dark earth hugging the wood
      float litA=.3;/* autumn leaf litter amount, raised near roots, path edges and the pond below */
      /* under the forest ring the floor is shaded and leaf-buried, not a mown lawn: from the clearing's edge outwards the moss gives way to brown litter in patches */
-     {float ff=smoothstep(10.5,17.,length(vGW-vec2(0.,1.5))+(fbm(vGW*.35+7.)-.5)*5.);litA+=ff*.9;diffuseColor.rgb=mix(diffuseColor.rgb,vec3(dot(diffuseColor.rgb,vec3(.33)))*vec3(1.25,.95,.62)*.9,ff*(.35+.6*smoothstep(.25,.65,fbm(vGW*.6+2.))));}
+     {float ff=smoothstep(10.5,17.,length(vGW-vec2(0.,1.5))+(fbm(vGW*.35+7.)-.5)*5.);forK=ff;litA+=ff*.9;diffuseColor.rgb=mix(diffuseColor.rgb,vec3(dot(diffuseColor.rgb,vec3(.33)))*vec3(1.25,.95,.62)*.9,ff*(.35+.6*smoothstep(.25,.65,fbm(vGW*.6+2.))));}
      vec2 auv=(vGW+uGE)/(2.*uGE);if(auv.x>0.&&auv.x<1.&&auv.y>0.&&auv.y<1.){vec4 ao=texture2D(uAO,auv);litA+=ao.r*.9+ao.g*.35+smoothstep(.02,.3,ao.b)*(1.-smoothstep(.45,.85,ao.b))*.6;diffuseColor.rgb*=1.-ao.r*.55;diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.72,1.3,.62)+vec3(.0,.016,.0),ao.g*.7);/* photo: a band of green moss where every root meets the floor */
       // trodden path: packed brown earth with a few pressed blades left at its frayed edges
       pathK=ao.b*smoothstep(.35,.75,ao.b+(fbm(vGW*2.3)-.5)*.8)*(.55+.25*fbm(vGW*.8))*(1.-.35*clamp(uGlow/1.8,0.,1.));pathC=vec3(.17,.135,.1)*(.6+.7*fbm(vGW*7.))*(.65+.7*lum)*(1.-ao.r*.4);pathC*=1.+.55*clamp(uGlow/1.8,0.,1.);/* [ENV] night: the packed earth catches the moonlight more than the moss, so the way out stays readable */
@@ -240,7 +240,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
        lsh=max(lsh,sh*(1.-lm));lcol=mix(lcol,cc,m);lm=max(lm,m);}
       vec3 avg=vec3(.5,.3,.1);float ff=1.-pathK*.6;
       diffuseColor.rgb*=1.-.3*lsh*(1.-lm)*(1.-far)*ff;
-      float k=mix(lm,litA*.6,far)*ff;diffuseColor.rgb=mix(diffuseColor.rgb,mix(lcol*vec3(2.3,1.45,1.15),avg*vec3(1.6,1.3,1.2),far)*(.75+.6*lum),k);}`);};
+      float k=mix(lm,litA*mix(.6,.85,forK),far)*ff;diffuseColor.rgb=mix(diffuseColor.rgb,mix(lcol*vec3(2.3,1.45,1.15),avg*vec3(1.6,1.3,1.2),far)*(.75+.6*lum),k);}`);};
   {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');s.fragmentShader=s.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.3,pondMud*.8);roughnessFactor=mix(roughnessFactor,.1,pondWet);');};}
   mat.customProgramCacheKey=()=>'groundFloor-litter3';/* [ENV] explicit key (SHADERS rule) */
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);G.ground=ground;
