@@ -207,9 +207,12 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // ---------- depth of a point inside a shape (>0 inside) and the way out ----------
   const tq = V(), vq = V(); const OUT = { d: 0, n: V() };
   let frameNo = 0;
+  // the house's board / beam / shingle meshes are only ever hidden by the view cull (index.html, around the render): they are
+  // always solid here, whatever their visible flag says between frames (a nested render once left them hidden for good)
+  const plankSrc = o => { const P = window.__planks && window.__planks.meshes; return !!P && (o === P.boards || o === P.beams || o === P.shingles); };
   function refresh(s) { // follow moving objects; ignore what the hero carries or what is hidden
     if (s.seen === frameNo) return !s.off; s.seen = frameNo;
-    const o = s.obj; if (s.inst < 0) { if (mine(o) || !visible(o)) { s.off = true; return false; } } else if (!o.visible) { s.off = true; return false; }
+    const o = s.obj; if (s.inst < 0) { if (mine(o) || !visible(o)) { s.off = true; return false; } } else if (!o.visible && !plankSrc(o)) { s.off = true; return false; }
     s.off = false;
     // boards and beams (instanced) almost never move: their matrix is re-read only when the instance buffer changed, or every 20 frames
     if (s.inst >= 0) { const ver = o.instanceMatrix.version; if (ver === s.ver && frameNo - (s.chk || 0) < 20) return true; s.ver = ver; s.chk = frameNo; }
