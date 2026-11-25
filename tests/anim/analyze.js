@@ -143,7 +143,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    if(Math.max(before,after)>.05&&Math.max(before,after)/Math.max(.02,Math.min(before,after))>2.5)add('robot',i,{bone:'root',value:+(Math.max(before,after)/Math.max(.02,Math.min(before,after))).toFixed(1),unit:'x speed change at the ladder ('+before.toFixed(2)+' -> '+after.toFixed(2)+' m/s)',limit:2.5,what:'ladder '+(b?'entry':'exit')+': '+(after>before?'speeds up':'slows down')+' abruptly'});}}
  // ---- 9b. posture: torso lean (hips -> neck) forward/back and sideways, from positions only (no bone axes).
  // Walking or standing upright should not hunch or tilt; tasks that bend (sweep, chop, wash ...) get a looser forward limit.
- {const BEND=/sweep|chop|wash|dishes|fetchwater|dumpwater|water|saw|hammer|sharpen|fix_|stoke|firewood|cook|pot|store|craft|hatch|trip|eat|tea/;let ev=null;
+ {const BEND=/sweep|chop|wash|dishes|fetchwater|dumpwater|water|saw|hammer|sharpen|fix_|stoke|firewood|splitwood|cook|pot|store|craft|hatch|trip|eat|tea/;let ev=null;
   const flush=()=>{if(ev&&ev.i1-ev.i0>=12)add('posture',ev.ip,{bone:'Spine',value:ev.v,unit:'deg '+ev.k,limit:ev.lim,dur:+((ev.i1-ev.i0+1)*lim.dt).toFixed(2),from:F[ev.i0].f,to:F[ev.i1].f,what:ev.k+' lean while '+ev.a});ev=null;};
   F.forEach((f,i)=>{if(f.fl.includes('B')||f.fl.includes('S')||f.fl.includes('L')||f.fl.includes('W')||f.fl.includes('F')||f.fl.includes('T')){flush();return;}
    const hp=bone(f,'Hips'),nk=bone(f,'Neck'),lt=sub(bone(f,'LeftUpLeg'),bone(f,'RightUpLeg'));const v=sub(nk,hp);const L=len(v)||1;
