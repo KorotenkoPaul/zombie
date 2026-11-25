@@ -182,7 +182,7 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
      vec3 nt=c*1.0;
      vec3 o=mix(day,nt,night);
      // bottom of the painting melts into the scene fog, so the far ground edge doesn't draw a straight line against it
-     vec3 hz=mix(fogc,hor,.08);/* [ENV] the far rings' own haze colour: no brighter band to glint white between their trunks */o=mix(o,hz,smoothstep(.34,.08,vUv.y));float a=smoothstep(1.,.5,vUv.y+(texture2D(map,vec2(uv.x*3.,.5)).r-.3)*.4)*ok;
+     vec3 hz=mix(fogc,hor,.08);/* [ENV] the far rings' own haze colour: no brighter band to glint white between their trunks */o=mix(o,hz,smoothstep(.34,.08,vUv.y));/* [ENV] fades out below the painting's pale squeezed upper trunks: they drew a streaky band above the tree lines */float a=smoothstep(.8,.42,vUv.y+(texture2D(map,vec2(uv.x*3.,.5)).r-.3)*.4)*ok;
      gl_FragColor=vec4(o,a);
      #include <colorspace_fragment>
     }`});
