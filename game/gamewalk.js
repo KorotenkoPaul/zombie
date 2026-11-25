@@ -49,9 +49,10 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
   const upOff = (bp('Hips').y - (bp('LeftUpLeg').y + bp('RightUpLeg').y) / 2) * SC;
   const hipW = Math.abs(bp('LeftUpLeg').x - bp('RightUpLeg').x) / 2 * SC;
   // foot world orientation in the bind pose, relative to the root
+  const ballF = (() => { const a = bp('LeftFoot'), b = bp('LeftToeBase'); return a && b ? Math.hypot(a.x - b.x, a.z - b.z) * SC : .08; })(); // ankle to the ball, horizontal
   const footRestQ = {}; for (const s of ['Left', 'Right']) { const q = Q(); bindWorld(B[s + 'Foot']).decompose(V(), q, V()); footRestQ[s] = q; }
   const headRest = Q(); bindWorld(B.Head).decompose(V(), headRest, V());
-  const P = Object.assign({ duty: .6, lift: .075, bob: .012, sway: .014, pelvisYaw: .9, chestCounter: .65, arm: .55, elbow: .38, elbowFwd: .35, abd: .14, lean: .06, kneeBend: .03, passOut: .03 }, opts);
+  const P = Object.assign({ duty: .6, lift: .075, bob: .012, sway: .014, pelvisYaw: .9, chestCounter: .65, arm: .55, elbow: .38, elbowFwd: .35, abd: .08, lean: .06, kneeBend: .03, passOut: .03 }, opts);
   // ---------- state ----------
   const ST = { vx: 0, vz: 0, w: 0, ph: 0, on: false, feet: { Left: null, Right: null }, swing: { Left: null, Right: null }, prevYaw: null, av: 0, v: 0, settle: 0, prevPos: null };
   const _v = V(), _q = Q(), _q2 = Q(), _m = new THREE.Matrix4();
@@ -80,8 +81,11 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     // and planted feet then snapped the knees)
     if (ladderSoon()) return false;
     if (H.path.length > 0 && !H.slide) return true;
+    // turning on the spot (the hero turns to face the work with the walk clip playing in place): real steps, the toes were in the air
+    ST.turning = Math.abs(ST.av) > (ST.turning ? .35 : .9) && (H.cur && H.cur._clip && H.cur._clip.name === '30');
+    if (ST.turning) return true;
     // the last bit up to a work spot (approachTo, slideTo: 0.3-1.2 m): real steps too, MM glided there on two standing feet
-    const sl = H.slide; return !!(sl && sl.k < 1 && Math.hypot(sl.x, sl.z) > .3);
+    const sl = H.slide; return !!(sl && sl.k < 1 && (Math.hypot(sl.x, sl.z) > .3 || Math.abs(sl.yaw || 0) > .6 || (sl.yT != null && Math.abs(sl.yT - sl.y0) + Math.abs((sl.yF ?? sl.yT) - sl.yT) > .6))); // and a turn on the spot: steps, not the walk clip shuffling with the toes in the air
   }
   function neutral(s, pos, yaw) { return pos.clone().addScaledVector(rightOf(yaw), footX[s] * .85).setY(pos.y + ankY); }
   const sm = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
@@ -166,6 +170,10 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
         if (ST.swing[s]) {
           const e = u * u * u * (u * (u * 6 - 15) + 10); // smootherstep: a clear push-off and landing, no step in acceleration
           const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp(L / .3, .4, 1.2);
+          // the swing clears what it passes over (a root, a stone, a beam end): a little more lift while the sole would be in it
+          { const C = window.__collide; ST.xl = ST.xl || { Left: 0, Right: 0 }; let need = 0;
+            if (C && C.soleDepth && u > .05 && u < .95) { const sd = C.soleDepth(fp.x, fp.y - ankY + ST.xl[s], fp.z, f.x, f.z); if (sd > .004) need = Math.min(.12, ST.xl[s] + sd + .015); }
+            ST.xl[s] += (need - ST.xl[s]) * (1 - Math.exp(-dt * (need > ST.xl[s] ? 30 : 6))); fp.y += ST.xl[s] * Math.sin(Math.PI * u); }
           ST.feet[s + 'Shown'] = fp; lift[s] = u;
           roll[s] = sw.quick != null ? 0 : u < .3 ? .35 * (1 - sm(u / .3)) : u > .75 ? -.22 * sm((u - .75) / .25) : 0; // toe-off peel ends early in the swing, the toes come up for the heel strike; continuous with the stance roll at both ends (it jumped .3 -> .45 rad at lift-off, and from any stance roll to .45 on a quick step)
         }
@@ -207,7 +215,10 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       setWorldQ(B.Neck, half.multiply(B.Neck.getWorldQuaternion(Q()))); setWorldQ(B.Head, want); }
     // ---------- legs ----------
     for (const s of ['Left', 'Right']) {
-      const t = ST.feet[s + 'Shown'];
+      let t = ST.feet[s + 'Shown'];
+      // heel up: the foot turns about the ball of the foot, not the ankle, so the ankle rises (turned about the ankle, the toes went
+      // into the boards, the floor guard lifted the whole foot and the gate saw both feet 8-9 cm up, 'stands on air')
+      if (roll[s] > 0) { t = t.clone(); t.y += ballF * Math.sin(roll[s]); t.addScaledVector(f, -ballF * (1 - Math.cos(roll[s]))); }
       const pole = f.clone().add(V(0, 0, 0)).addScaledVector(r, sideSign[s] * .1);
       ik2(B[s + 'UpLeg'], B[s + 'Leg'], B[s + 'Foot'], t, pole);
       // sole: heading + roll about the lateral axis

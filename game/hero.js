@@ -161,11 +161,11 @@ export function createHero(ctx){
   kh_b:{p:V(-1.22,LC,3.77)},kh_side:{p:V(-.55,LC,3.55),tight:true},/* WALK: the kitchen ladder stands between kh_b and the landing: round its side, not through the rungs */land:{p:V(-.4,LC,2.85)},gate:{p:V(0,LC,3.35),face:0},wstep:{p:V(1.15,WS,3.15)},
   wmid:{p:V(2.4,WS,3.45)},bench:{p:V(2.55,WS,2.62),face:Math.PI},wwin:{p:V(3.0,WS,3.95),face:0},
   kh_t:{p:V(-1.22,KT,2.75)},kmid:{p:V(-2.5,KT,3.3)},kl_m:{p:V(-3.4,KT,2.65)},stove:{p:V(-3.25,KT,2.42),face:Math.PI},sink:{p:V(-2.3,KT,2.15),face:Math.PI},kwin:{p:V(-3.0,KT,3.45),face:0},kl_b:{p:V(-3.98,KT,2.62)},
-  bl_t:{p:V(-3.98,BD,1.95)},bl_m:{p:V(-3.45,BD,2.6)},bmid:{p:V(-2.3,BD,3.05)},bwin:{p:V(-3.6,BD,3.6),face:0},bdoor:{p:V(-.1,BD,2.78)},
+  bl_t:{p:V(-3.98,BD,1.95)},bl_m:{p:V(-3.45,BD,2.6)},bmid:{p:V(-2.3,BD,3.05)},bwin:{p:V(-3.6,BD,3.6),face:0},bdoor:{p:V(-.1,BD,2.78)},bdoor2:{p:V(.4,BD,2.8),tight:true}/* WALK (Collide): the doorway out to the ledge spans z 2.35-3.25; the straight bdoor-ledge line crossed the jamb at z 3.05 and the head went 2.6 cm into it */,
   ledge:{p:V(1.25,BD,3.5),face:0},ll_b:{p:V(1.35,BD,3.47)},ll_t:{p:V(1.35,DK,2.7)},deckm:{p:V(1.9,DK,2.5)},deck:{p:V(3.13,DK,2.62),face:0},
  };
  const E=[['kh_b','kh_side'],['kh_side','land'],['land','gate'],['land','wstep'],['wstep','wmid'],['wmid','bench'],['wmid','wwin'],['kh_b','kh_t','ladder'],['kh_t','kmid'],['kmid','stove'],['kmid','sink'],['kmid','kwin'],['kmid','kl_m'],['kl_m','kl_b'],
-  ['kl_b','bl_t','ladder'],['bl_t','bl_m'],['bl_m','bmid'],['bmid','bwin'],['bmid','bdoor'],['bdoor','ledge'],['ledge','ll_b'],['ll_b','ll_t','ladder'],['ll_t','deckm'],['deckm','deck']];
+  ['kl_b','bl_t','ladder'],['bl_t','bl_m'],['bl_m','bmid'],['bmid','bwin'],['bmid','bdoor'],['bdoor','bdoor2'],['bdoor2','ledge'],['ledge','ll_b'],['ll_b','ll_t','ladder'],['ll_t','deckm'],['deckm','deck']];
  // the rooms can be shifted sideways as a block (lv.XL: left rooms, lv.XR: right rooms); landings at LC stay
  {const XL=lv.XL||0,XR=lv.XR||0;if(XL||XR)for(const k in N){const n=N[k];if(n.p.y<LC+.3)continue;n.p.x+=n.p.x<0?XL:XR;}}
  const LAD={'kh_b>kh_t':{lz:3.45,side:1},'kl_b>bl_t':{lz:2.3,side:1},'ll_b>ll_t':{lz:3.15,side:1,rope:true}};
@@ -1597,7 +1597,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
      const w=smooth(0,1,a.hw);if(w>.01){const s=a.side>0?'Left':'Right';/* the hand AWAY from the turned ear rests on the sill (the bottom rail of the frame; the curtains hang at the sides) */
       const r=V(-gl.n.z,0,gl.n.x);const t=gl.c.clone().addScaledVector(r,-a.side*.16).addScaledVector(gl.n,.07);t.y=gl.lo+.05;
       const put=()=>gripNoLean(s,t,w);put();const GG=window.__grab;if(GG&&GG.late)GG.late(put);}}});},
-  bolt:(o)=>{const P=window.__props||P3;const D=P&&P.door;const to=o&&o.lock===false?0:1;
+  bolt:(o)=>{const P=window.__props||P3;const D=P&&P.door;const to=o&&o.lock===false?0:1;const OPEN=.85;/* {lock:false,open:true} (morning): bolt drawn, then the leaf swung open by hand to here (critic W6: he walked through the shut leaf). .85, not 1: past that the leaf would sweep through the spot he pulls it from */const wantOpen=!!(o&&o.open&&to===0);
    // GRAB DOOR: the door and its bolt move only under his palm (grab.js door hand + props door.hand). The open door sweeps a
    // quarter circle (0.77 m) round its hinge, so he walks round just outside that sweep, a little ahead of the leaf, his palm
    // on it, and ends beside the shut door at the bolt. Spots in the door's frame: hinge + r * (-cos th, 0, sin th), th = open * 1.66.
@@ -1614,10 +1614,12 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     const mv=st/dt>.12;if(mv&&!a.walk){a.walk=1;play('30',{fade:.25,speed:.8});}else if(!mv&&a.walk&&m<.03){a.walk=0;play(IDLE(),{fade:.4});}return m;};
    return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.42,clip:null,dur:[14,14],vary:false,
    look:a=>D.open>.02?spot(D.open*1.66,.62).setY(root.position.y+.95):D.boltKnob(V()),
-   start:a=>{a.ds='shut';a.dt=0;},
+   start:a=>{a.ds=wantOpen&&D.bolt<1e-3?'open':'shut';a.dt=0;},
    tick:(a,dt)=>{a.dt+=dt;const m=follow(a,dt);
     if(a.ds==='shut'){if(m<.12&&D.target!==0)D.openTo(0);if(D.open<=1e-3&&m<.05){D.openTo(D.open);D.boltTo(to);a.ds='bolt';a.dt=0;}else if(a.dt>11){D.openTo(D.open);a.ds='done';a.dt=0;/* not shut in time: the bolt is never pushed on an open door */}return;}
-    if(a.ds==='bolt'){if(Math.abs(D.bolt-to)<1e-3){AU('bolt',D.boltKnob(V()));a.ds='done';a.dt=0;}else if(a.dt>3){D.boltTo(D.bolt);a.ds='done';a.dt=0;}return;}
+    if(a.ds==='bolt'){if(Math.abs(D.bolt-to)<1e-3){AU('bolt',D.boltKnob(V()));a.ds=wantOpen?'open':'done';a.dt=0;}else if(a.dt>3){D.boltTo(D.bolt);a.ds='done';a.dt=0;}return;}
+    /* the reverse of the shut stage: his palm on the leaf (grab.js doorDrive), he backs round the sweep as it comes toward him; the door moves only under the palm */
+    if(a.ds==='open'){if(D.open<OPEN-1e-3){if(D.target!==OPEN&&D.bolt<1e-3)D.openTo(OPEN);if(a.dt>11){D.openTo(D.open);a.ds='done';a.dt=0;}}else{D.openTo(D.open);a.ds='done';a.dt=0;}return;}
     if(a.ds==='done'&&a.dt>.6)a.T=1e3;}});},
   radio:(o)=>{const P=window.__props||P3;const R=P&&P.radio;if(!R||!R.knob)return job({pt:()=>PT('radio'),stand:.45,clip:'hy_radio',loop:true,dur:[30,60]});
    // LEISURE: the radio sits low on the crate by the bed. He bends his knees to it, switches it on and turns the dial with his
@@ -1625,10 +1627,10 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    // to retune, and switches it off by hand before he goes (QA: the dial turned while his palms were 60-100 cm away)
    const D=rnd(30,60);const kn=()=>R.knob(V());
    const reachK=(a,dt,on)=>{a.kw=clamp((a.kw||0)+(on?dt/.6:-dt/.5),0,1);const k=kn();const kh=k.y-root.position.y;if(on&&!a.sq&&kh<.8&&has('cm_squat')){a.sq=1;play('cm_squat',{fade:.55});}else if(!on&&a.sq&&a.kw<.35){a.sq=0;play(IDLE(),{fade:.6});}/* a real crouch (CMU squat) to the low crate, not a stoop */
-    a.kp=k;const G=window.__grab;return G&&G.gripPoint?G.gripPoint('Right').distanceTo(k)<.06:a.kw>.95;};/* the fingers on the dial (Grab's grip point): gripNoLean in post */
+    {const o3=R.obj;const ff=fwd(o3.rotation.y);a.kp=k.clone().addScaledVector(ff,+(window.__RKO??.03));}/* the fingertips on the knob, not the grip point in it (gate: hand 4 cm into the set) */const G=window.__grab;return G&&G.gripPoint?G.gripPoint('Right').distanceTo(a.kp)<.06:a.kw>.95;};/* the fingers on the dial (Grab's grip point): gripNoLean in post */
    // the stand spot: half a metre in front of the dial, 30 cm clear of the watering can (QA: the can went through his shins and
    // chest in the crouch; beside the crate he had to fold over 50 deg between it and the bunk); the approach line is aimed so he stops there
-   const S0=()=>{const o3=R.obj;const f=fwd(o3.rotation.y),r=V(-f.z,0,f.x);const q=kn().addScaledVector(f,.58).addScaledVector(r,.05);q.y=root.position.y;return q;};/* square in front of the dial, in the 47 cm gap between the bunk end (x -1.15) and the watering can (gate: at +12 cm right the squat hit the bunk, at -6 cm the can) */
+   const S0=()=>{const o3=R.obj;const f=fwd(o3.rotation.y),r=V(-f.z,0,f.x);const q=kn().addScaledVector(f,+(window.__RST??.46)).addScaledVector(r,.05);q.y=root.position.y;return q;};/* square in front of the dial, in the 47 cm gap between the bunk end (x -1.15) and the watering can (gate: at +12 cm right the squat hit the bunk, at -6 cm the can) */
    const PTr=()=>{const S=S0();const nn=nearNode(S);const from=nn&&N[nn]?N[nn].p:root.position;const u=V(S.x-from.x,0,S.z-from.z);if(u.lengthSq()<1e-4)u.set(0,0,1);u.normalize();return S.clone().addScaledVector(u,.3).setY(kn().y);};
    // LEISURE (phone watch 7914e3f: 30 s crouched behind the chair, then standing with his back to the room and no radio in sight):
    // he tunes it in at the crate, then sits back in the chair by the table with the radio in view to listen (the bunk edge forces
@@ -1643,12 +1645,12 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     tick:(a,dt)=>{if(bedPh(a,dt))return;const T=a.T;{const p=root.position;if(!a.pin)a.pin=p.clone();else if(a.sq||a.sqw>0){p.x=a.pin.x;p.z=a.pin.z;}}/* he stays on his spot in the crouch (gate: contact pushes walked him 30 cm into the can and the bunk end) */{const k=kn(),p=root.position;const y=Math.atan2(k.x-p.x,k.z-p.z);const d=wrapA(y-root.rotation.y);root.rotation.y+=Math.sign(d)*Math.min(Math.abs(d),2.4*dt);H.face=root.rotation.y;}/* square up to the radio */let want=T<6.5&&T>.4;// tune on arrival
      if(!want&&!(o&&o.keepOn)&&T>(a.jdur||D)-3)want=true;// switch off before leaving
      if(!want){a.rt=(a.rt??rnd(14,24))-dt;if(a.rt<0){a.rr=(a.rr||0)+dt;want=true;if(a.rr>3.2){a.rt=rnd(14,24);a.rr=0;a.t0=null;}}}
-     const touch=reachK(a,dt,want);a.sqw=clamp((a.sqw||0)+(a.sq?dt/.6:-dt/.6),0,1);H.squat=.15*smooth(0,1,a.sqw);/* hips down into a real crouch, the feet stay on the boards (post) */
+     const touch=reachK(a,dt,want);a.sqw=clamp((a.sqw||0)+(a.sq?dt/.6:-dt/.6),0,1);H.squat=+(window.__RSQ??.15)*smooth(0,1,a.sqw);/* hips down into a real crouch, the feet stay on the boards (post) */
      if(touch){if(T<6.5){if(!R.on)R.setOn(1);a.tn=.3+.4*smooth(1,6,T);R.setTune(a.tn);}
       else if(T>(a.jdur||D)-3){if(R.on&&!(o&&o.keepOn))R.setOn(0);}
       else if(a.rr>.5){a.t0=a.t0??(a.tn??.7);R.setTune(clamp(a.t0+Math.sin((a.rr-.5)*1.4)*.05,0,1));}}},
     post:(a,dt)=>{const sw=smooth(0,1,a.sqw||0);if(sw>.01){if(H.floorY!=null)legPlant(H.floorY,dt,sw);/* QA: in the CMU squat both soles hung 12-20 cm over the boards */
-      const f=fwd(root.rotation.y),ax=V(0,1,0).cross(f).normalize();rotW(bones.Spine,ax,-.28*sw);rotW(bones.Spine1,ax,-.16*sw);/* a crouch, not a 60 deg stoop: the lowered hips take the height, the back straightens */}
+      const f=fwd(root.rotation.y),ax=V(0,1,0).cross(f).normalize();rotW(bones.Spine,ax,-(window.__RB1??.65)*sw);rotW(bones.Spine1,ax,-(window.__RB2??.4)*sw);/* a crouch, not a 60 deg stoop: the lowered hips take the height, the back straightens */}
      if(a.kp&&a.kw>.01){gripNoLean('Right',a.kp,smooth(0,1,a.kw));const G=window.__grab;if(G&&G.late){const k=a.kp,w=smooth(0,1,a.kw);G.late(()=>gripNoLean('Right',k,w));}}},
     end:a=>{a.ik=null;H.squat=0;legPlantOff();if(a.sq){a.sq=0;play(IDLE(),{fade:.5});}}});},
   telescope:(o)=>{const T=teleParts();if(T)window.__tele=T;if(!T)return job({pt:telePt,stand:.5,clip:'hy_telescope',loop:true,dur:[40,90],start:()=>AU('sigh')});
@@ -2876,7 +2878,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     const fa=f.x*sd.x+f.z*sd.z;const fl=Math.hypot(f.x,f.z)*Math.hypot(sd.x,sd.z)||1;const dd=fa/fl;if(dd>.45&&rayFree(hp,sd,.25,6,.25))want=smooth(.45,.85,dd)*(1-smooth(9,10,h))*smooth(6.2,6.8,h);}
    FACE.sunW=want;
    // breath vapour: cold (feels < 7.5 C: late evening, night, dawn, wind or rain) and open sky over his head
-   const cold=st&&st.feels!=null?st.feels<7.5:false;FACE.out=cold&&!H.inBed&&rayFree(hp,V(0,1,0),.3,5,.35);}
+   const cold=st&&st.feels!=null?st.feels<7.5:false;const IB=window.__env&&window.__env.interiorBoxes;const indoor=!!(IB&&IB.some(r=>hp.x>r[0]-.3&&hp.x<r[1]+.3&&hp.z>r[4]-.3&&hp.z<r[5]+.3&&hp.y>r[2]-.35&&hp.y<r[3]+.4));/* the rooms (index.html ROOMS via env.setInterior): the roof is not in the collide grid */
+   FACE.out=cold&&!H.inBed&&!indoor&&rayFree(hp,V(0,1,0),.3,5,.35);}
   FACE.sun+=((FACE.sunW||0)-FACE.sun)*Math.min(1,dt*2);
   const smT=(t==='telescope'||t==='radio')&&act&&act.step==='work'?.55+.15*Math.sin(actT*.7):0;FACE.sm+=(smT-FACE.sm)*Math.min(1,dt*(smT>FACE.sm?1.2:2));
   breathTick(dt);}
@@ -3069,7 +3072,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // the folded vest lies on the floor in front of the bed edge, between his boots and a little further out: he sets it down there by
  // hand sitting (the upper bunk and the ladder were out of a seated arm's reach) and picks it up from there in the morning
  function vestSpot(){{const P=PP();const st=P&&P.objects&&P.objects.bedstool;if(st&&P.surfaces&&P.surfaces.bedStool){/* on the bedside stool: in a seated arm's reach (the floor is not: the pose guard will not fold his back that far) */return {p:V(st.position.x,P.surfaces.bedStool+.002,st.position.z-.05),yaw:.5};}}const B=FIT.bed;const hd=B.headDir||1;const ed=N.bededge;const fl=(ed&&ed.floor)??floorTop(BD);const x=ed?ed.p.x:(B.x0+B.x1)/2;return {p:V(x-.14*hd,fl+.012,B.z1+.36),yaw:-.3};}/* in front of his RIGHT foot (his right is the foot end, -headDir): at +x it was across his body, the lean became a side bend the guard took back and the hand flew up 60 cm */
- function vestShow(on){BT.vestOn=on;if(VEST)VEST.visible=on;else if(BT.vestU)BT.vestU.value=on?0:1;}
+ /* v6: 'undershirt' (pipeline/hero2/undervest.mjs) is an inner sweater shell that closes the cracks of the vest-shaped body; drawn only while the vest is off */
+ const USH=root.getObjectByName('undershirt');if(USH)USH.traverse(o=>{if(o.isMesh){o.visible=false;o.castShadow=false;}});
+ function vestShow(on){BT.vestOn=on;if(VEST)VEST.visible=on;else if(BT.vestU)BT.vestU.value=on?0:1;if(USH)USH.traverse(o=>{if(o.isMesh)o.visible=!on;});}
  // instant state (spawned in bed, reset): no clips
  function undress(off,quiet){bootInit();for(const sd of ['Left','Right']){const B=BT.side[sd];if(!B)continue;for(let i=BTW.length-1;i>=0;i--)if(BTW[i].pm===B.prop)BTW.splice(i,1);if(off){bootShow(sd,false);bootPark(sd);}else{B.prop.visible=false;scene.attach(B.prop);bootShow(sd,true);}}
   if(hasVest()){vestShow(!off);vestPark(off);}if(!quiet)AU(off?'unzip':'zip',root.position);}
