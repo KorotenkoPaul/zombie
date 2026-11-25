@@ -395,7 +395,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
  // stronger blue rim and a cooler lift in the shadows. Uniform tweaks only: no extra draw calls or passes.
- const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:3.3,sheet:2.6,mist:4,fill:1.7,rim:1.6,moonRim:1.8,haze:.95,/* [ENV] photo check (Lights): the photo's night has a thick softly glowing blue bank round the roots and a hazier forest */lift:new THREE.Color(0x122c52)};env.phoneNightK=PH;
+ const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:1.2,sheet:3.4,mist:2.6,/* [ENV] photo night: one soft continuous bank round the roots (sheets), not white cotton puddles (puffs); less flat haze wall over the forest (mist bands) */fill:1.7,rim:1.6,moonRim:1.8,haze:.6,/* [ENV] photo check (Lights): the photo's night has a thick softly glowing blue bank round the roots and a hazier forest */lift:new THREE.Color(0x122c52)};env.phoneNightK=PH;
  const liftBase=env.gradePass.uniforms.lift.value.clone(),liftTmp=new THREE.Color();
  function phoneNight(eve,rainK){const k=eve;PH.cur=k;const f=x=>1+(x-1)*k;
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
@@ -411,7 +411,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  env.barkWarm={color:{value:new THREE.Color(0xFF9A50)},strength:{value:0}};let WH=null,WA=null;const wTmp2=new THREE.Color();
  function warmBounce(eve,rainK,nightK){if(!WH){scene.traverse(o=>{if(o.isHemisphereLight&&o!==sky&&!WH)WH=o;else if(o.isAmbientLight&&!WA)WA=o;});if(!WH)return;}
   if(WA)WA.color.set(0xFFE6C8);/* index sets the ambient's intensity each frame, not its colour: start from its own colour */
-  env.barkWarm.strength.value=eve*(1-rainK*.4)*.35;
+  env.barkWarm.strength.value=eve*(1-rainK*.4)*.6;/* [ENV] photo: the trunk round the rooms is warm brown in the house glow, not cold grey */
   const k=eve*env.duskWarm.k*(1-rainK*.5);if(k<=0)return;WH.groundColor.lerp(env.duskWarm.col,k);
   if(WA){WA.color.lerp(wTmp2.copy(env.duskWarm.col),k*.5);WA.intensity+=eve*env.duskWarm.amb*(1-rainK*.5);}}
  // phones: the two non-shadow directional lights (fill, rim) and the second hemisphere (sky) are not in the scene, so every lit
