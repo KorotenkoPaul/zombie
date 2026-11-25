@@ -840,7 +840,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // One gain per room and platform brings both to the reference photo's room brightness (home view, one room lit with the
   // hero in it; mean luminance photo/desktop/phone: bedroom 89/80/68 (cosy, kept under the photo), kitchen 108/91/87, workshop 84/94/83).
   // (re-measured after the clear lantern glass and the bedroom lantern's move to its hook: kitchen and bedroom had dropped ~12%)
-  const ROOM_GAIN = MOBILE ? { bedroom: 2.8, kitchen: 1.5, workshop: 1.05 } : { bedroom: 1.2, kitchen: 1.35, workshop: .42 };
+  const ROOM_GAIN = MOBILE ? { bedroom: 2.8, kitchen: 1.7, workshop: 1.05 } : { bedroom: 1.2, kitchen: 1.35, workshop: .42 };
   const roomGain = r => { const o = window.__lgain; return (o && o[r] != null ? o[r] : ROOM_GAIN[r]) ?? 1; };
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
   // [PERF] a lamp's shadow map only needs redrawing when what it sees has moved, and the one thing that moves under a lamp
