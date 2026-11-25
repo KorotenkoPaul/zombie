@@ -618,7 +618,7 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7
    const put=(mesh,cx,cy,cz,L,W,T,roll,seed)=>{const m=SM.clone().multiply(new THREE.Matrix4().makeTranslation(cx,cy,cz)).multiply(B0).multiply(new THREE.Matrix4().makeRotationX(roll)).multiply(new THREE.Matrix4().makeScale(L,W,T));
     if(mesh===beams){beamInst(m,'roof');dWx.setXY(beams.count-1,0,.2);return;}const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,seed);aWx.setXY(i,0,.3);boards.setColorAt(i,new THREE.Color().setScalar(rnd(.8,.95)));
     {const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'roof',c:p,q});}};
-   for(let z=-d/2+.13;z<d/2-.05;z+=.25)put(boards,0,-.19-.013,z+rnd(-.004,.004),sl-.02,rnd(.226,.243),.025,rnd(-.02,.02),rnd(0,97)+100);
+   const oe=Math.max(0,(s>0?ov-(gx1-x1):ov)-.05)/Math.cos(ang);/* [TREE] the honey sheathing is the room's ceiling: it stops at the wall line, so the eave overhang outside shows the dark slab underside (it glowed orange under every eave at night, lit like the room) */for(let z=-d/2+.13;z<d/2-.05;z+=.25)put(boards,-s*oe/2,-.19-.013,z+rnd(-.004,.004),sl-.02-oe,rnd(.226,.243),.025,rnd(-.02,.02),rnd(0,97)+100);
    for(let z=-d/2+.35;z<d/2;z+=.85)put(beams,0,-.19-.026-.07,z,sl-.1,.1,.14,0,0);
    boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
   // shingles: rows from the ridge down, each row overlapping the one below, staggered
