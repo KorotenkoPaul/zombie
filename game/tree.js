@@ -567,7 +567,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
   lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2-gold-sky' + (SPR ? '-sprig2' : ''); /* [ENV] explicit key (SHADERS rule) */
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
-  const total = SPR ? (MOB(o) ? (o.leafCards || (ROS ? 480 : 520)) : 4200) : MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
+  const total = SPR ? (MOB(o) ? (o.leafCards || (ROS ? 370 : 520)) : 4200) : MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
   // the photo keeps open sky behind the telescope deck (critic T26): no clump in the window above and behind it
   { const SW = o.skyWindow || [AX + 2.2, AX + 8, 9.6, 15.2, AZ - 13, AZ + 2.5];
     for (let i = leafSpots.length - 1; i >= 0; i--) { const p = leafSpots[i].p; if (p.x > SW[0] && p.x < SW[1] && p.y > SW[2] && p.y < SW[3] && p.z > SW[4] && p.z < SW[5]) leafSpots.splice(i, 1); } if (SPR) { /* [TREE] Pavel: at least twice the foliage, visible from the home view: a second ring of clumps grows out of the crown (outwards and up from the trunk axis), so the crown gets bigger and fuller, not just more layers inside */
@@ -594,7 +594,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
         if (inB(p.x, p.y, p.z, 0.8)) continue;
         const fw = V(0, 0.3, 1).multiplyScalar(0.75).addScaledVector(d0, 0.55).add(V(rnd(-1, 1), rnd(-.6, 1), rnd(-1, 1)).normalize().multiplyScalar(0.5)); /* mostly towards the home view (the camera never goes behind), each its own way */
         q.setFromRotationMatrix(new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(rnd(-1, 1), 1, rnd(-1, 1)).normalize())).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rnd(0, 6.28))));
-        sc.setScalar(ROS ? rnd(3.3, 3.9) * (1 + 0.35 * Math.min(1, Math.max(0, (Math.abs(p.x - AX) - 4) / 3))) : MOB(o) ? rnd(2.5, 3.1) : rnd(2.3, 2.9)); m4.compose(p, q, sc); im.setMatrixAt(n, m4);
+        sc.setScalar(ROS ? rnd(3.3, 3.9) * (1 + 0.35 * Math.min(1, Math.max(0, (Math.abs(p.x - AX) - 4) / 3))) * (Math.hypot(d0.x, d0.y) < 0.55 ? 0.85 : 1) /* [PERF] the front middle of a clump only doubles the cards around it: smaller there */ : MOB(o) ? rnd(2.5, 3.1) : rnd(2.3, 2.9)); m4.compose(p, q, sc); im.setMatrixAt(n, m4);
         const c0 = s.p.clone().add(V(b[0], b[1] - b[3] * 0.25, b[2])); cc[n * 3] = c0.x; cc[n * 3 + 1] = c0.y; cc[n * 3 + 2] = c0.z;
         const r = rnd(0.92, 1.15); col.setRGB(r, r * rnd(0.98, 1.06), r * rnd(0.88, 1));
         if (rr > 0.8 && d0.y > -0.2 && rnd(0, 1) < 0.6) col.multiply(new THREE.Color(1.14, 1.12, 0.84));
