@@ -216,7 +216,8 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       if (layer || holding(s)) { // keep the arm the action / the held thing needs: its local pose from underneath
         for (const n of ['Shoulder', 'Arm', 'ForeArm', 'Hand']) B[s + n].quaternion.copy(saved[NAMES.indexOf(s + n)]); B[s + 'Shoulder'].updateMatrixWorld(true); continue;
       }
-      const sw = (s === 'Left' ? -legDiff : legDiff) * P.arm * Math.min(1, amp + .15); // forward when the other foot is forward
+      ST.armK = ST.armK || { Left: 1, Right: 1 };
+      const sw = (s === 'Left' ? -legDiff : legDiff) * P.arm * Math.min(1, amp + .15) * ST.armK[s]; // forward when the other foot is forward
       const side = r.clone().multiplyScalar(sideSign[s]);
       const dUA = V(0, -1, 0).applyAxisAngle(r, 0).addScaledVector(f, Math.tan(clamp(sw, -1, 1))).addScaledVector(side, Math.tan(P.abd)).normalize();
       // the upper arm hangs from the shoulder in the swing direction (the shortest turn from the bind pose keeps the palm toward the thigh)
@@ -225,6 +226,10 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       const ax = dUA.clone().cross(f).normalize();
       const dFA = dUA.clone().applyAxisAngle(ax, el);
       aim(B[s + 'ForeArm'], B[s + 'Hand'], dFA);
+      // walking along a counter or the bunk: the swing narrows while the hand (8 cm ahead along its swing, 4 cm out) would be
+      // in something (gate collide: right hand 6.6 cm into the kitchen counter)
+      { const C = window.__collide; let hit = false; if (C && C.depthAt) { const h = B[s + 'Hand'].getWorldPosition(V()).addScaledVector(f, Math.sign(sw) * .08).addScaledVector(side, .04); hit = C.depthAt(h.x, h.y, h.z) > 0; }
+        const tk = hit ? .25 : 1; ST.armK[s] += (tk - ST.armK[s]) * (1 - Math.exp(-dt * (hit ? 12 : 2))); }
     }
     // ---------- blend with the pose underneath ----------
     const w = smooth(ST.w);
