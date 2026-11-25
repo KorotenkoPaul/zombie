@@ -430,7 +430,10 @@ export function createClimb() {
     }
     // guard: the wrist never twists more than ~100 deg about the forearm from the walk's wrist (a twist near 180 deg collapses the skin into a thin ribbon: watch R33-1)
     for (const s of ['Left', 'Right']) { const Hd = B[s + 'Hand']; if (!Hd) continue; if (!S.hq0 || !S.hq0[s]) continue;
-      const r = S.hq0[s].clone().invert().multiply(Hd.quaternion); if (r.w < 0) { r.x = -r.x; r.y = -r.y; r.z = -r.z; r.w = -r.w; } const tw = Math.atan2(r.y, r.w) * 2, lim = 1.75; if (Math.abs(tw) <= lim) continue;
+      const r = S.hq0[s].clone().invert().multiply(Hd.quaternion); if (r.w < 0) { r.x = -r.x; r.y = -r.y; r.z = -r.z; r.w = -r.w; } let tw = Math.atan2(r.y, r.w) * 2; const lim = 1.75;
+      { const FA = B[s + 'ForeArm'], k0 = .9; if (FA && Math.abs(tw) > k0) { const sh = (Math.abs(tw) - k0) * Math.sign(tw) * .65; /* pronation is the forearm's: most of a big wrist twist goes into the forearm roll (the elbow-to-wrist skin twists, as a real forearm does), the hand keeps its world turn */
+          FA.quaternion.multiply(_q1().setFromAxisAngle(V(0, 1, 0), sh)); Hd.quaternion.premultiply(_q1().setFromAxisAngle(V(0, 1, 0), -sh)); FA.updateMatrixWorld(true); tw -= sh; } }
+      if (Math.abs(tw) <= lim) continue;
       const fix = _q1().setFromAxisAngle(V(0, 1, 0), (Math.sign(tw) * lim - tw)); Hd.quaternion.multiply(fix); Hd.updateMatrixWorld(true); }
     if (A && A.lookPt) aimHead(A.lookPt, W * .85);
     // the face off the rungs (after the look, which would turn it back): the climb clip leans the head ~35 deg to the ladder and the brow went 2-3 cm into the top rung at the hatch.
