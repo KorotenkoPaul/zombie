@@ -207,9 +207,12 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // ---------- depth of a point inside a shape (>0 inside) and the way out ----------
   const tq = V(), vq = V(); const OUT = { d: 0, n: V() };
   let frameNo = 0;
+  // the house's board / beam / shingle meshes are only ever hidden by the view cull (index.html, around the render): they are
+  // always solid here, whatever their visible flag says between frames (a nested render once left them hidden for good)
+  const plankSrc = o => { const P = window.__planks && window.__planks.meshes; return !!P && (o === P.boards || o === P.beams || o === P.shingles); };
   function refresh(s) { // follow moving objects; ignore what the hero carries or what is hidden
     if (s.seen === frameNo) return !s.off; s.seen = frameNo;
-    const o = s.obj; if (s.inst < 0) { if (mine(o) || !visible(o)) { s.off = true; return false; } } else if (!o.visible) { s.off = true; return false; }
+    const o = s.obj; if (s.inst < 0) { if (mine(o) || !visible(o)) { s.off = true; return false; } } else if (!o.visible && !plankSrc(o)) { s.off = true; return false; }
     s.off = false;
     // boards and beams (instanced) almost never move: their matrix is re-read only when the instance buffer changed, or every 20 frames
     if (s.inst >= 0) { const ver = o.instanceMatrix.version; if (ver === s.ver && frameNo - (s.chk || 0) < 20) return true; s.ver = ver; s.chk = frameNo; }
@@ -404,9 +407,32 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   const _hp = V(), lastHip = V(1e9, 0, 0), lastEnd = [null, null, V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0)]; let lastTouch = -100, settled = false;
   const kneel = [false, false, false, false, false, false], _kp = V(), _fp = V(), _kn = V();
-  function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } }
+  function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } wornUndo(); }
+  // ---------- what he wears / hangs on the body (hammer at the hip, sack on the back...): rigid meshes on a body bone that is not
+  // a hand. They follow the bone and went straight through ladder rails and furniture (hammer at the hip through the hatch ladder's
+  // rail on every repair climb, 3 cm). Each is moved out of what it is in, along the way out, eased in (<=1.2 cm a frame) and out
+  // (~0.4 s), at most 8 cm, as a display offset taken off again before hero.js runs. The quiver is hero.js's (quiverClear).
+  const WORN = new Map(), _wv = V(), _wp = V(), _wd = V(), _wl = V();
+  // undone only if nobody set the item's position since (hero.js / props.js re-placing it each frame would otherwise drift)
+  function wornUndo() { for (const [o, w] of WORN) if (w.appl) { if (w.at && o.position.distanceToSquared(w.at) < 1e-12) o.position.sub(w.appl); w.appl = null; } }
+  function wornItems(dt) { if (window.__colX && window.__colX.noWorn) return;
+    const T = (window.__props && window.__props.tools) || {}; const items = new Set();
+    root.traverse(m => { if (!m.isMesh || m.isSkinnedMesh || !m.visible || !m.geometry) return; let it = m; while (it.parent && it.parent !== root && !it.parent.isBone) it = it.parent;
+      const b = it.parent; if (!b || !b.isBone || /Hand|Finger|Thumb|Index|Middle|Ring|Pinky/.test(b.name) || it === T.quiver || it === T.bow) return; let v = it; for (; v && v !== root; v = v.parent) if (!v.visible) return; items.add(it); });
+    for (const [o, w] of WORN) if (!items.has(o)) WORN.delete(o);
+    const rel = Math.exp(-dt * 2.5);
+    for (const it of items) { let w = WORN.get(it); if (!w) WORN.set(it, w = { off: V(), appl: null });
+      it.updateMatrixWorld(true); _wd.set(0, 0, 0); let deep = 0;
+      it.traverse(m => { if (!m.isMesh || !m.visible) return; const P = m.geometry.attributes.position; const step = Math.max(1, Math.floor(P.count / 40));
+        for (let i = 0; i < P.count; i += step) { _wp.fromBufferAttribute(P, i).applyMatrix4(m.matrixWorld).add(w.off); const d = probe(_wp, 7, false); if (d > .002) { _wv.copy(OUT.n).multiplyScalar(d); if (d > deep) deep = d;
+            for (let k = 0; k < 3; k++) { const c = _wv.getComponent(k); if (Math.abs(c) > Math.abs(_wd.getComponent(k))) _wd.setComponent(k, c); } } } });
+      if (deep > 0) { _wd.clampLength(0, .012); w.off.add(_wd).clampLength(0, .08); st.worn = (st.worn || 0) + 1; } else w.off.multiplyScalar(rel);
+      if (w.off.lengthSq() < 1e-8) { w.off.set(0, 0, 0); continue; }
+      // world offset -> the item's parent space
+      const par = it.parent; par.updateMatrixWorld(); _wl.copy(it.position).applyMatrix4(par.matrixWorld).add(w.off); par.worldToLocal(_wl); w.appl = _wl.sub(it.position).clone(); it.position.add(w.appl); w.at = it.position.clone(); it.updateMatrixWorld(true); }
+  }
   function post(dt) {
-    if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++;
+    if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++; curDt = dt;
     const _rn = () => Performance.prototype.now.call(performance), _s0 = _rn(); if (bigQ.length || cutting) cutBig(); const _s1 = _rn(); buildSome(1.5); const _s2 = _rn(); trackMoving(); const _s3 = _rn(); secs[0] = _s1 - _s0; secs[1] = _s2 - _s1; secs[2] = _s3 - _s2; if (trunk && slPre < trunk.SL.length) for (let q = 0; q < 3 && slPre < trunk.SL.length; q++, slPre++) if (!SLR[slPre]) { const sl = trunk.SL[slPre]; SLR[slPre] = sliceRows(sl, SLB[slPre] || (SLB[slPre] = sliceBox(sl))); } // trunk rows ahead of need, 3 slices a frame
     floorGuard(dt);
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 6);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
@@ -507,7 +533,8 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       if (heldAmt[c] > 0) { const t = L.C.getWorldPosition(V()).addScaledVector(out, heldAmt[c]); ik2(L.A, L.B, L.C, t, false); L.C.getWorldPosition(anim[c]).sub(off.limb[c]); /* the contact pass below solves from here: from the bare animation it dropped the carried arm back 15 cm on every touching frame */ } }
   }
 
-  function finish(t0, it, worst) { if (window.__colTrace) { const A = window.__A; window.__colTrace.push([A && A.out ? A.out.frames.length : frameNo, off.limb[2].toArray().map(v => +(v * 100).toFixed(1)), off.limb[3].toArray().map(v => +(v * 100).toFixed(1)), +(heldAmt[2] * 100).toFixed(1), +(heldAmt[3] * 100).toFixed(1), +hold[2].toFixed(2), +hold[3].toFixed(2), ikRef, it]); ikRef = 0; } const ms = performance.now() - t0; st.frames++; st.sum = (st.sum || 0) + ms; if (ms > 4 && (st.spikes || (st.spikes = [])).length < 40) st.spikes.push([frameNo, +ms.toFixed(1), ...secs.map(v => +v.toFixed(1)), it]); secs.fill(0); st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
+  let curDt = 1 / 60;
+  function finish(t0, it, worst) { try { wornItems(curDt); } catch (e) { console.warn('collide worn', e); } if (window.__colTrace) { const A = window.__A; window.__colTrace.push([A && A.out ? A.out.frames.length : frameNo, off.limb[2].toArray().map(v => +(v * 100).toFixed(1)), off.limb[3].toArray().map(v => +(v * 100).toFixed(1)), +(heldAmt[2] * 100).toFixed(1), +(heldAmt[3] * 100).toFixed(1), +hold[2].toFixed(2), +hold[3].toFixed(2), ikRef, it]); ikRef = 0; } const ms = performance.now() - t0; st.frames++; st.sum = (st.sum || 0) + ms; if (ms > 4 && (st.spikes || (st.spikes = [])).length < 40) st.spikes.push([frameNo, +ms.toFixed(1), ...secs.map(v => +v.toFixed(1)), it]); secs.fill(0); st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
   // wrap the hero's update: corrections go on after hero.js has posed the body, and come off before it runs again
   // HERO-RULES.md: the 'collide' slot of the pose pipeline (after contacts, before grab and the guard); the old wrap only without stages
   if (HH.stage) { if ((HH.SLOTS || []).includes('pre')) HH.stage('pre', () => pre()); HH.stage('collide', dt => post(dt)); } else { const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); }; }
@@ -550,6 +577,6 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   function heldDepth() { skin(); const r = {}; for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const HBs = heldBoxes(L.C); if (!HBs.length) continue;
       let w = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > w) w = d; } } r[c === 2 ? 'L' : 'R'] = +(w * 100).toFixed(1); } return r; }
   const api = { trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
-    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
+    depthAt: (x, y, z) => probe(V(x, y, z), 7, false), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
   return api;
 }
