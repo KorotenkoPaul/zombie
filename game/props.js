@@ -1021,8 +1021,8 @@ function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStanda
     splitwood: (() => { const c = canvas(128, 256, (g) => { g.fillStyle = '#C8955E'; g.fillRect(0, 0, 128, 256); for (let i = 0; i < 40; i++) { g.strokeStyle = Math.random() < .5 ? 'rgba(120,70,35,.35)' : 'rgba(240,200,150,.35)'; g.lineWidth = .5 + Math.random() * 2; g.beginPath(); let x = Math.random() * 128; g.moveTo(x, 0); for (let y = 0; y <= 256; y += 32) { x += (Math.random() - .5) * 5; g.lineTo(x, y); } g.stroke(); } });
       return s(0xffffff, { map: texOf(c), bumpMap: texOf(c, { srgb: false }), bumpScale: 2, roughness: .9 }); })(), endgrain: endGrainMat(11, false),
     grille: s(0x8A7350, { roughness: 1 }), meat: s(0xA2343A, { roughness: .5 }), fat: s(0xEEDCCB, { roughness: .6 }), paper: s(0xD8C7A0, { roughness: .95 }), sack: s(0xB59B6E, { roughness: 1 }),
-    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x7A5A3A, { roughness: 1 }), leather: s(0x9A6038, { roughness: .78, ...leatherOf() }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
-    rope: s(0xB09A6A, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
+    jacket: s(0x56613F, { roughness: .95, ...twillOf() }), jacketDark: s(0x3E4733, { roughness: .95, ...twillOf() }), /* waxed-cotton twill with wear, not a flat plastic green */ patch: s(0x4F4630, { roughness: 1, ...twillOf() }), leather: s(0x9A6038, { roughness: .78, ...leatherOf() }), fletch: s(0xD9D2C0, { roughness: .9, side: THREE.DoubleSide }),
+    rope: s(0x6E5C3E, { roughness: 1 }), stew: s(0x6A3A1E, { roughness: .35 }), sawdust: s(0xE2C08A, { roughness: 1 }), ribbon: s(0xA0302A, { roughness: .8, side: THREE.DoubleSide }) };
   return MX; }
 // a box between two points (legs, struts) and a tapered rod between two points
 function strut(parent, a, b, w, d, mat) { const dir = b.clone().sub(a); const m = add(parent, rb(w, dir.length(), d, Math.min(w, d) * .25), mat, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); m.quaternion.setFromUnitVectors(V(0, 1, 0), dir.normalize()); return m; }
@@ -1258,16 +1258,16 @@ function repairLantern() { const g = new THREE.Group(); const L = lanternHousing
   g.userData.glow = { glass, flame }; return bake(g); }
 function jacket() { const X = mx(), g = new THREE.Group(); // origin = the hanging loop, the jacket faces +z
   add(g, new THREE.TorusGeometry(.014, .003, 4, 10), X.jacketDark, 0, -.012, 0);
-  const b = new THREE.Shape(); b.moveTo(-.07, 0); b.lineTo(.07, 0); b.quadraticCurveTo(.17, -.02, .2, -.07); b.lineTo(.215, -.7); b.lineTo(-.215, -.7); b.lineTo(-.2, -.07); b.quadraticCurveTo(-.17, -.02, -.07, 0);
-  add(g, EX(b, .08, .022), X.jacket, 0, -.03, 0); add(g, rb(.17, .06, .11, .02), X.jacketDark, 0, -.05, 0);
-  for (const s of [-1, 1]) { strut(g, V(s * .19, -.1, .0), V(s * .225, -.64, .035), .1, .085, X.jacket); add(g, rb(.1, .05, .09, .015), X.jacketDark, s * .227, -.63, .037); }
-  add(g, rb(.008, .62, .006, .002), X.jacketDark, 0, -.4, .062); for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(.008, .008, .006, 10), M.iron, .018, -.15 - i * .11, .065, Math.PI / 2);
-  for (const s of [-1, 1]) add(g, rb(.11, .03, .012, .004), X.jacketDark, s * .1, -.46, .065);
-  add(g, rb(.08, .09, .005, .002), X.patch, .1, -.28, .064, 0, 0, .15); add(g, rb(.06, .06, .005, .002), X.patch, -.23, -.4, .08, 0, -.2, .05); // patched elbow and chest: an old, mended coat
+  const lg = lathe([[.214, -.7], [.215, -.68], [.205, -.5], [.2, -.3], [.195, -.14], [.17, -.08], [.12, -.04], [.05, -.01], [0, 0]], 28); { const P = lg.attributes.position; for (let j = 0; j < P.count; j++) { const x = P.getX(j), y = P.getY(j), z = P.getZ(j), a = Math.atan2(z, x), d = Math.min(1, Math.max(0, (-y - .12) / .3)); const k = 1 + d * (.05 * Math.sin(a * 7 + y * 4) + .03 * Math.sin(a * 11 - y * 9)); P.setX(j, x * k); P.setZ(j, z * k * .38 + .03); } lg.computeVertexNormals(); } /* [kitchen round] a body with real volume: shoulders round the peg, a flattened tube with soft vertical folds (the extruded slab read as cardboard) */
+  add(g, lg, X.jacket, 0, -.03, 0); add(g, rb(.17, .06, .11, .02), X.jacketDark, 0, -.05, .03);
+  for (const s of [-1, 1]) { add(g, new THREE.CylinderGeometry(.04, .05, .5, 10), X.jacket, s * .2, -.36, .055, -.07, 0, s * .05); add(g, new THREE.CylinderGeometry(.053, .053, .05, 10), X.jacketDark, s * .212, -.6, .072, -.07, 0, s * .05); } /* sleeves hang as round tubes with a cuff */
+  add(g, rb(.008, .6, .006, .002), X.jacketDark, 0, -.41, .107); { const hm = add(g, new THREE.CylinderGeometry(.219, .219, .04, 28, 1, true), X.jacketDark, 0, -.71, .03); hm.scale.set(1, 1, .4); } /* hem band */ for (let i = 0; i < 5; i++) add(g, new THREE.CylinderGeometry(.008, .008, .006, 10), M.iron, .018, -.15 - i * .11, .108, Math.PI / 2);
+  for (const s of [-1, 1]) add(g, rb(.11, .03, .012, .004), X.jacketDark, s * .1, -.46, .098, 0, s * .22, 0);
+  add(g, rb(.075, .085, .006, .003), X.patch, .1, -.28, .097, 0, .22, .15); add(g, rb(.055, .06, .006, .003), X.patch, -.2, -.42, .104, -.07, 0, .05); // patched elbow and chest: an old, mended coat
   g.userData.grip = V(0, -.05, .05); return bake(g); }
 function bowOnWall() { const X = mx(), g = new THREE.Group(); // in the y-z plane, bulging toward +z; origin at the grip
-  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); add(g, new THREE.TubeGeometry(c, 28, .015, 7), M.wood); /* scanned wood grain, not a flat brown tube */
-  add(g, new THREE.CylinderGeometry(.0025, .0025, 1.12, 4), std2(0xE8E2D0), 0, 0, .002); add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
+  const c = new THREE.CatmullRomCurve3([V(0, -.56, 0), V(0, -.3, .08), V(0, 0, .11), V(0, .3, .08), V(0, .56, 0)]); { const tg = new THREE.TubeGeometry(c, 40, .017, 8), P = tg.attributes.position, q = V(); for (let i = 0; i < P.count; i++) { const y = P.getY(i), t = Math.min(1, Math.abs(y) / .56); q.copy(c.getPoint(Math.min(1, Math.max(0, (y + .56) / 1.12)))); const f = 1 - .6 * Math.pow(t, 1.4); P.setX(i, P.getX(i) * f * 1.25); P.setZ(i, q.z + (P.getZ(i) - q.z) * f * .7); } tg.computeVertexNormals(); add(g, tg, M.wood); } /* scanned wood grain; [gear round] limbs taper to the tips and are flat (wide across, thin in the draw), not one round rod */ for (const sy of [-1, 1]) add(g, new THREE.CylinderGeometry(.006, .009, .045, 8), std2(0x2A2018), 0, sy * .54, .003); add(g, new THREE.CylinderGeometry(.0013, .0013, 1.1, 4), std2(0xBFAF88), 0, 0, .002); /* dark horn tips with the string nocks; a thin waxed tan string (it read as a white cord) */ 
+  add(g, new THREE.CylinderGeometry(.022, .022, .12, 10), X.leather, 0, 0, .11); return bake(g); }
 function quiver() { return fine(() => quiver0()); }
 function quiver0() { const X = mx(), g = new THREE.Group(); // origin at the strap ring on top
   add(g, lathe([[0, -.52], [.04, -.52], [.05, -.5], [.055, -.05], [.058, 0], [.05, 0], [.047, -.05], [0, -.05]], 16), X.leather);
@@ -1275,7 +1275,7 @@ function quiver0() { const X = mx(), g = new THREE.Group(); // origin at the str
   add(g, new THREE.TorusGeometry(.058, .006, 5, 16), std2(0x3E2618), 0, -.03, 0, Math.PI / 2); add(g, new THREE.TorusGeometry(.046, .007, 5, 16), std2(0x3E2618), 0, -.5, 0, Math.PI / 2); // rim and base bands
   add(g, rb(.012, .44, .008, .003), std2(0x4A2E1C), 0, -.27, -.055); for (let i = 0; i < 18; i++) add(g, rb(.016, .003, .004, .001), std2(0xC8B48C), 0, -.06 - i * .024, -.06); // the back seam, laced with pale thread
   add(g, rb(.022, .5, .006, .002), std2(0x4A2E1C), .0, -.24, .058, .0, 0, .05); // the carrying strap down the front
-  for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025; add(g, new THREE.CylinderGeometry(.003, .003, .2, 4), std2(0xC9A875), x, .05, z); add(g, new THREE.PlaneGeometry(.025, .06), X.fletch, x, .12, z, 0, a, 0); }
+  for (let i = 0; i < 6; i++) { const a = i * 1.05, x = Math.cos(a) * .025, z = Math.sin(a) * .025, h = .1 + (i % 3) * .015; add(g, new THREE.CylinderGeometry(.0032, .0032, .2, 6), std2(0x9C7E52), x, h - .07, z); for (let v = 0; v < 3; v++) { const va = a + v * 2.094; add(g, new THREE.PlaneGeometry(.011, .065), X.fletch, x + Math.cos(va) * .0085, h, z - Math.sin(va) * .0085, 0, va, 0); } add(g, new THREE.CylinderGeometry(.0042, .0036, .012, 6), std2(0x2A221A), x, h + .036, z); } /* [gear round] each arrow: a tan shaft, three feather vanes round it (one flat card read as a paper tag) and a dark nock */
   return bake(g); }
 // the meat sack (realism sweep: it was a smooth yellow blob with a red box stuck on it): coarse burlap with a visible weave,
 // lumpy where the cuts inside press out, gathered at the neck under a twine tie, and a dark blood-soaked patch at the bottom
@@ -1470,7 +1470,7 @@ export function buildProps(ctx) {
   place('wbarrel', barrel(.8), 1.55, WS, 1.55);
   place('wbucket', bucket(.36, true), 4.05, WS, 3.4);
   place('wrug', rug(1.6, .95, 'green', '#D9C99A'), 2.8, WS, 3.05, { solid: false });
-  place('wlamp', bake(domeShade(1.1)), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
+  place('wlamp', bake(domeShade(1.2)), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
 
   // ---------- deck and landings ----------
@@ -1636,7 +1636,7 @@ export function buildProps(ctx) {
   // --- things he carries in from outside: hidden until grabbed, hidden again on release
   for (const [k, f] of [['meatBag', meatBag], ['logArmful', logArmful]]) { const o = f(); o.visible = false; tool(k, o, scene, 0, -50, 0); o.userData.home.hide = true; }
   // --- outside at the foot of the oak: a big log pile and a sawhorse with a half-sawn plank and the saw in the cut
-  { const x = -4.2, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01 + .075, z); lp.rotation.y = .5; scene.add(lp); /* [ground round] raised onto two old beams: real firewood is kept off the wet ground */
+  { const x = -4.45, z = 3.1; const lp = logStack(pyramidSlots([6, 5, 4, 3, 2], .1, .195, .012, [0, 1, 2, 0, 1]), .72, true); lp.position.set(x, ghY(x, z) - .01 + .075, z); lp.rotation.y = .5; scene.add(lp); /* [ground round] raised onto two old beams: real firewood is kept off the wet ground */
     { const sl = new THREE.Group(); for (const sz of [-.24, .24]) W(sl, 1.32, .08, .085, 0, .04, sz, { mat: M.woodDark, r: .012, ry: rr(-.03, .03) }); sl.position.set(x, ghY(x, z) - .012, z); sl.rotation.y = .5; scene.add(sl);
       // a leaf rake dropped by the far end of the pile, tines down on the little heap of oak leaves it raked together
       const lw = new THREE.Vector3(-1.15, 0, .32).applyAxisAngle(V(0, 1, 0), .5).add(V(x, 0, z)); const hx = lw.x, hz = lw.z;
@@ -1648,7 +1648,7 @@ export function buildProps(ctx) {
       lf.position.set(hx, 0, hz); scene.add(lf); } lp.name = 'logpile'; placed.logpile = lp; lp.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(lp); lp.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: ghY(x, z), n: 'logpile' }); PT.logpile = [lp, V(0, .9, .2)]; }
   { // chopping block (a sawn round standing on end) with the axe bitten into its top, beside the log pile
-    const x = -3.45, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.traverse(o => { if (o.isMesh && Array.isArray(o.material)) o.material = o.material.map(m => m === mx().endgrain ? endGrainMat(5, true) : m); }); /* the block's top: axe scars */ cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
+    const x = -3.95, z = 4.05, y0 = ghY(x, z); const cb = logPiece(.42, .21, 0); cb.traverse(o => { if (o.isMesh && Array.isArray(o.material)) o.material = o.material.map(m => m === mx().endgrain ? endGrainMat(5, true) : m); }); /* the block's top: axe scars */ cb.rotation.x = -Math.PI / 2; cb.position.set(x, y0 + .2, z); scene.add(cb); cb.name = 'chopblock'; placed.chopblock = cb; cb.updateMatrixWorld(true);
     const b = new THREE.Box3().setFromObject(cb); cb.userData.box = b; OBST.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z, y: y0, n: 'chopblock' });
     const ax = axe(); tool('axe', ax, scene, x + .05, y0 + .42 + .03, z, [0, .8, -2.25]); PT.chopblock = [cb, V(0, 0, .21)];
     // wood chips round it, each on the ground under it (the soil slopes here): thrown mostly to the front, where the
@@ -1659,7 +1659,7 @@ export function buildProps(ctx) {
       W(ch, rr(.035, .09), rr(.008, .016), rr(.018, .04), cx, gy - y0 + .005, cz, { mat: R() < .7 ? mx().splitwood : M.woodDark, ry: rr(0, 3), rz: rr(-.15, .15), r: .003 }); nc++; }
     ch.position.set(x, y0, z); scene.add(ch); }
   { // [ground round] the split wood from the block: quartered pieces thrown in a loose heap beside it, ready for the armful
-    const x = -4.32, z = 4.02, y0 = ghY(x, z); const kh = new THREE.Group();
+    const x = -4.56, z = 4.02, y0 = ghY(x, z); const kh = new THREE.Group();
     for (let i = 0; i < 9; i++) { const l = rr(.3, .38), lay = i < 5 ? 0 : 1; const sp = new THREE.Group(); W(sp, .07, .06, l, 0, 0, 0, { mat: mx().splitwood, r: .006 }); W(sp, .005, .062, l, -.036, 0, 0, { mat: M.woodDark, r: .002 });
       sp.position.set(lay ? rr(-.12, .12) : -.2 + i * .1, .03 + lay * .065, rr(-.05, .05)); sp.rotation.set(0, rr(-.35, .35), rr(-.4, .4)); kh.add(sp); }
     kh.position.set(x, y0, z); kh.rotation.y = .3; scene.add(kh); kh.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(kh); kh.userData.box = b; kh.name = 'kindling'; placed.kindling = kh;
@@ -1748,11 +1748,15 @@ export function buildProps(ctx) {
   out._quiltDbg = () => ({ qTop, qBot, m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V(), _cw = V();
   // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
+  const LT = [0, .25, .5, .75, 1];
   function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const dx = x - (q.ax + ex * t), dz = z - (q.az + ez * t), d = Math.sqrt(dx * dx + dz * dz); const yc = q.ay + (q.by - q.ay) * t;
       // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
-      const top = yc + q.r * q.f + .015;/* the legs thin (R42-2 box); chest and arms full, the sweater is thicker there (it came through in orange shards) */ const o = Math.max(0, d - q.r * .4); const dr = o < .06 ? 5 * o * o : .018 + .6 * (o - .06) + 9 * (o - .06) * (o - .06);/* R42-2: the cloth lies ON the limb and falls off it (it stood 25-30 cm over his legs like a box with straight sides) */
-      const h = top - dr - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
+      // R56-1: the highest point of the limb under the cloth, not only the one nearest in plan: a raised shin stands near upright, its
+      // plan is a dot and the nearest point could be the low ankle, so the knee and shin came up through the quilt as he swung his legs in
+      let hb = -1e9; for (let j = -1; j < LT.length; j++) { const tt = j < 0 ? t : LT[j]; const dx = x - (q.ax + ex * tt), dz = z - (q.az + ez * tt), d = Math.sqrt(dx * dx + dz * dz); const yc = q.ay + (q.by - q.ay) * tt;
+        const top = yc + q.r * q.f + .015;/* the legs thin (R42-2 box); chest and arms full, the sweater is thicker there (it came through in orange shards) */ const o = Math.max(0, d - q.r * .4); const dr = o < .06 ? 5 * o * o : .018 + .6 * (o - .06) + 9 * (o - .06) * (o - .06);/* R42-2: the cloth lies ON the limb and falls off it (it stood 25-30 cm over his legs like a box with straight sides) */
+        const h = top - dr; if (h > hb) hb = h; }
+      const h = hb - y0; if (h > 0) acc += Math.exp(h * 45) - 1; } return acc > 0 ? Math.log1p(acc) / 45 : 0; }
   // ---- BED (2026-11-24, Pavel: "the quilt just appears on top of him, he never covers himself"): the quilt's head flap folds over a
   // hinge across the bed. fold 0 = flat (a made bed), 1 = turned down onto the lower half. Character moves it with his hand on the
   // flap's free edge (quiltFold / quiltEdge), so it only ever moves where his hand takes it; quiltLive(s) refreshes it every frame.
@@ -1779,7 +1783,7 @@ export function buildProps(ctx) {
     else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
     press.shown = press.k; fold.shown = fold.a;
     if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
-      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f: q.f || 1 }); } } }
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } let f = q.f || 1; if (f < 1) { const sl = Math.abs(_cw.y - _cv.y) / Math.max(1e-4, _cv.distanceTo(_cw)); f += (1.05 - f) * Math.min(1, sl * 2.5); }/* R56-1: a leg that rises (knee up as he swings in) is covered at its full thickness: thinned, its trousers came up through the quilt at the hip; lying flat it stays thin (R42-2 box) */ cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f }); } } }
     const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
     for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
       let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }

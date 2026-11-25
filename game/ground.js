@@ -69,6 +69,26 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const d1=CELL,d2=CELL*1.4142;
   for(let z=0;z<GS;z++)for(let x=0;x<GS;x++){const i=z*GS+x;let d=dist[i];if(x>0)d=Math.min(d,dist[i-1]+d1);if(z>0){d=Math.min(d,dist[i-GS]+d1);if(x>0)d=Math.min(d,dist[i-GS-1]+d2);if(x<GS-1)d=Math.min(d,dist[i-GS+1]+d2);}dist[i]=d;}
   for(let z=GS-1;z>=0;z--)for(let x=GS-1;x>=0;x--){const i=z*GS+x;let d=dist[i];if(x<GS-1)d=Math.min(d,dist[i+1]+d1);if(z<GS-1){d=Math.min(d,dist[i+GS]+d1);if(x<GS-1)d=Math.min(d,dist[i+GS+1]+d2);if(x>0)d=Math.min(d,dist[i+GS-1]+d2);}dist[i]=d;}}
+ // WALK (exact): the bark's top SURFACE, rasterised from the root/trunk triangles on a 10 cm grid (the vertex-max map
+ // above is ~25 cm coarse and misses between vertices: feet floated up to 37 cm or sank up to 58 cm on the big roots)
+ const TS=320,TC=GE*2/TS,topS=new Float32Array(TS*TS).fill(-99);
+ {const w=new THREE.Vector3();
+  for(const o of obstacles)o.traverse(m=>{if(!m.isMesh||m.isInstancedMesh||!m.geometry)return;const p=m.geometry.attributes.position;if(!p)return;m.updateWorldMatrix(true,false);
+   const P=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){w.fromBufferAttribute(p,i).applyMatrix4(m.matrixWorld);P[i*3]=w.x;P[i*3+1]=w.y;P[i*3+2]=w.z;}
+   const idx=m.geometry.index?m.geometry.index.array:null;const nt=(idx?idx.length:p.count)/3;
+   for(let t=0;t<nt;t++){const i0=idx?idx[t*3]:t*3,i1=idx?idx[t*3+1]:t*3+1,i2=idx?idx[t*3+2]:t*3+2;
+    const ax=P[i0*3],ay=P[i0*3+1],az=P[i0*3+2],bx=P[i1*3],by=P[i1*3+1],bz=P[i1*3+2],cx=P[i2*3],cy=P[i2*3+1],cz=P[i2*3+2];
+    const x0=Math.min(ax,bx,cx),x1=Math.max(ax,bx,cx),z0=Math.min(az,bz,cz),z1=Math.max(az,bz,cz);if(x1<=-GE||x0>=GE||z1<=-GE||z0>=GE)continue;
+    if(Math.min(ay,by,cy)>groundH0((ax+bx+cx)/3,(az+bz+cz)/3)+1.1)continue;
+    const den=(bz-cz)*(ax-cx)+(cx-bx)*(az-cz);if(Math.abs(den)<1e-7)continue;
+    const gx0=Math.max(0,Math.ceil((x0+GE)/TC-.5)),gx1=Math.min(TS-1,Math.floor((x1+GE)/TC-.5)),gz0=Math.max(0,Math.ceil((z0+GE)/TC-.5)),gz1=Math.min(TS-1,Math.floor((z1+GE)/TC-.5));
+    for(let gz=gz0;gz<=gz1;gz++){const zc=(gz+.5)*TC-GE;for(let gx=gx0;gx<=gx1;gx++){const xc=(gx+.5)*TC-GE;
+     const l1=((bz-cz)*(xc-cx)+(cx-bx)*(zc-cz))/den,l2=((cz-az)*(xc-cx)+(ax-cx)*(zc-cz))/den,l3=1-l1-l2;if(l1<-1e-4||l2<-1e-4||l3<-1e-4)continue;
+     const y=l1*ay+l2*by+l3*cy;const g0=groundH0(xc,zc);if(y>g0+1.1)continue;const k=gz*TS+gx;if(y>topS[k])topS[k]=y;}}}});}
+ // top of the wood under (x,z) in world y, or null where there is none (nearest-cell inside a root, bilinear where all 4 are wood)
+ G.barkTop=(x,z)=>{const fx=(x+GE)/TC-.5,fz=(z+GE)/TC-.5;const ix=Math.floor(fx),iz=Math.floor(fz);if(ix<0||iz<0||ix>=TS-1||iz>=TS-1)return null;
+  const a=topS[iz*TS+ix],b=topS[iz*TS+ix+1],c=topS[(iz+1)*TS+ix],d=topS[(iz+1)*TS+ix+1];const tx=fx-ix,tz=fz-iz;
+  if(a>-90&&b>-90&&c>-90&&d>-90)return (a*(1-tx)+b*tx)*(1-tz)+(c*(1-tx)+d*tx)*tz;const n=topS[Math.round(fz)*TS+Math.round(fx)];return n>-90?n:null;};
  // distance from (x,z) to the nearest root/trunk, in metres (99 = far away / outside the map)
  const rootD=(x,z)=>{if(Math.abs(x)>=GE-CELL||Math.abs(z)>=GE-CELL)return 99;const fx=(x+GE)/CELL-.5,fz=(z+GE)/CELL-.5;const ix=Math.max(0,Math.floor(fx)),iz=Math.max(0,Math.floor(fz));const tx=fx-ix,tz=fz-iz;
   const a=dist[iz*GS+ix],b=dist[iz*GS+ix+1],c=dist[(iz+1)*GS+ix],d=dist[(iz+1)*GS+ix+1];return (a*(1-tx)+b*tx)*(1-tz)+(c*(1-tx)+d*tx)*tz-CELL*.5;};
@@ -82,10 +102,16 @@ export function createGround(C){const __before=new Set(C.scene.children);
  // what the RENDERED floor is at (x,z): the near patch is a coarse grid on phones (64 cm cells), so small things placed
  // at the exact groundH float over the hollows and sink into the bumps; this follows the patch triangles instead
  const PS=MOBILE?48:128,PC=32/PS;
- const meshH=(x,z)=>{const fx=(x+16)/PC,fz=(z+16)/PC;const ix=Math.floor(fx),iz=Math.floor(fz);if(ix<0||iz<0||ix>=PS||iz>=PS)return groundH(x,z);
+ // reads the real vertex heights of the near patch (32 m) and, outside it, of the big coarse floor (260 m), and
+ // interpolates them over the same triangles the GPU draws
+ const gridH=(mesh,size,S,x,z)=>{const p=mesh.geometry.attributes.position.array;const C=size/S,h=size/2;const fx=(x+h)/C,fz=(z+h)/C;const ix=Math.floor(fx),iz=Math.floor(fz);
+  if(ix<0||iz<0||ix>=S||iz>=S)return null;const tx=fx-ix,tz=fz-iz,W=S+1,oy=mesh.position.y;const Y=(i,j)=>p[((j)*W+(i))*3+1]+oy;
+  const ha=Y(ix,iz),hb=Y(ix,iz+1),hc=Y(ix+1,iz+1),hd=Y(ix+1,iz);return tx+tz<=1?ha+(hd-ha)*tx+(hb-ha)*tz:hc+(hb-hc)*(1-tx)+(hd-hc)*(1-tz);};
+ const meshH=(x,z)=>{let h=null;if(G.groundPatch)h=gridH(G.groundPatch,32,PS,x,z);if(h==null&&G.ground)h=gridH(G.ground,260,MOBILE?40:150,x,z);
+  if(h!=null)return h;const fx=(x+16)/PC,fz=(z+16)/PC;const ix=Math.floor(fx),iz=Math.floor(fz);if(ix<0||iz<0||ix>=PS||iz>=PS)return groundH(x,z);
   const tx=fx-ix,tz=fz-iz,X=-16+ix*PC,Z=-16+iz*PC;const ha=groundH(X,Z),hb=groundH(X,Z+PC),hc=groundH(X+PC,Z+PC),hd=groundH(X+PC,Z);
   return tx+tz<=1?ha+(hd-ha)*tx+(hb-ha)*tz:hc+(hb-hc)*(1-tx)+(hd-hc)*(1-tz);};G.meshH=meshH;
- G.standAt=(x,z)=>{const g=groundH(x,z),r=G.rootTop(x,z);return r>.02?Math.max(g,groundH0(x,z)+r):g;};// WALK: what a sole stands on: the ground or the top of a root
+ G.standAt=(x,z)=>{const g=meshH(x,z),t=G.barkTop(x,z);return t!=null?Math.max(g,t):g;};/* the RENDERED floor (phone patch cells are ~67 cm: the exact groundH floated or sank feet by up to 6 cm) */// WALK: what a sole stands on: the ground or the top of a root
  // ---- soil mounds: wherever the underside of a root sits above the ground, the earth is heaped up to meet it and
  // slopes gently away (~20 cm per metre), so no root hangs in the air at any zoom. Only right at the wood (<1 m),
  // so the paths the hero walks stay flat.
@@ -746,7 +772,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   // ---- the far edge of the clearing: a dense wall of undergrowth and young trees in front of the painted forest ----
   // It gives depth: near plants, then this thicket, then the far trees and the fog. Kept out of the camera's view line.
   const edgeOK=(x,z)=>!(z>1&&Math.abs(x)<13)&&rootD(x,z)>1.5&&exitClear(x,z);
-  {const bg=mkBush(5,MOBILE?14:20);const NE=MOBILE?78:180;/* [ENV perf] phones: overdraw */const im=new THREE.InstancedMesh(bg,mat,NE);im.name='groundBushes';let n=0;
+  {const bg=mkBush(5,MOBILE?14:20);const NE=MOBILE?66:180;/* [ENV perf] phones: overdraw */const im=new THREE.InstancedMesh(bg,mat,NE);im.name='groundBushes';let n=0;
    for(let t=0;t<NE*40&&n<NE;t++){const a=rr(0,6.28),r=(R()<.4?rr(10,15):rr(15,25))+(vnoise(a*3,1)-.5)*3;const x=Math.cos(a)*r,z=Math.sin(a)*r*.95;if(!edgeOK(x,z))continue;
     const sz=rr(1.2,2.4);M.compose(V(x,groundH(x,z)-.25,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(1,1.6),sz*rr(.8,1.25),sz*rr(1,1.5)));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.4),rr(.18,.32),rr(.38,.52));const au=R();if(au<.2)Col.setHSL(rr(.1,.15),rr(.45,.6),rr(.42,.52));else if(au<.33)Col.setHSL(rr(.04,.07),rr(.5,.65),rr(.36,.46));/* autumn: a third yellow / rust */im.setColorAt(n,Col);n++;}
@@ -766,10 +792,10 @@ export function createGround(C){const __before=new Set(C.scene.children);
       float li=smoothstep(.62,.75,fbm(vec2((vYP.x+vYP.z)*30.,vYP.y*5.)+9.));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.36,.4,.3),li*.35);
       float mo=smoothstep(.9,.1,vYP.y+(f-.5)*.6);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.11,.15,.07),mo*.5);}`);};
    tmat.customProgramCacheKey=()=>'youngTree-bark1';
-   const crownG=mergeGeometries([mkBush(7,MOBILE?10:14).translate(0,3.6,0),mkBush(8,MOBILE?8:10).scale(.8,.8,.8).translate(.6,3.0,.3),mkBush(11,MOBILE?7:9).scale(.7,.7,.7).translate(-.5,4.3,-.2)]);
-   const NT=MOBILE?24:40;const ti=new THREE.InstancedMesh(trunkG,tmat,NT),ci=new THREE.InstancedMesh(crownG,mat,NT);let n=0;
-   for(let t=0;t<NT*50&&n<NT;t++){const a=rr(0,6.28),rad=rr(12,27);const x=Math.cos(a)*rad,z=Math.sin(a)*rad;if(!edgeOK(x,z))continue;
-    const sz=rr(.75,1.25);{const yq=Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)).clone();const h1=Math.abs(Math.sin(x*91.7+z*47.3)*43758.5)%1,h2=Math.abs(Math.sin(x*13.1+z*77.9)*24634.6)%1;/* [ENV] each leans its own way a little: not one tree copied forty times */const lq=new THREE.Quaternion().setFromEuler(new THREE.Euler((h1-.5)*.16,0,(h2-.5)*.16));M.compose(V(x,groundH(x,z)-.1,z),lq.multiply(yq),Sc.set(sz*(.85+h2*.3),sz*rr(.9,1.2),sz*(.85+h1*.3)));ti.setMatrixAt(n,M);ci.setMatrixAt(n,M);ti.setColorAt(n,new THREE.Color().setRGB(.8+h1*.4,.8+h1*.35,.8+h2*.35));}
+   /* [ENV ask] clumps stacked unevenly and spread, so they read as small trees, not one ball on a stick */const crownG=mergeGeometries([mkBush(7,MOBILE?10:14).translate(.1,3.75,0),mkBush(8,MOBILE?8:10).scale(.85,.8,.85).translate(1.0,2.85,.45),mkBush(11,MOBILE?7:9).scale(.72,.75,.72).translate(-.75,4.65,-.35)]);
+   const NT=MOBILE?32:66;const ti=new THREE.InstancedMesh(trunkG,tmat,NT),ci=new THREE.InstancedMesh(crownG,mat,NT);let n=0;
+   for(let t=0;t<NT*50&&n<NT;t++){const a=rr(0,6.28),rad=R()<.25?rr(12,16):rr(16,28);const x=Math.cos(a)*rad,z=Math.sin(a)*rad;if(!edgeOK(x,z))continue;
+    const sz=rr(.75,1.25);{const yq=Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)).clone();const h1=Math.abs(Math.sin(x*91.7+z*47.3)*43758.5)%1,h2=Math.abs(Math.sin(x*13.1+z*77.9)*24634.6)%1;/* [ENV] each leans its own way a little: not one tree copied forty times */const lq=new THREE.Quaternion().setFromEuler(new THREE.Euler((h1-.5)*.16,0,(h2-.5)*.16));const tall=(n%3===0)?rr(1.7,2.1):1;/* a third grow to 7-9 m */M.compose(V(x,groundH(x,z)-.1,z),lq.multiply(yq),Sc.set(sz*(.85+h2*.3)*(tall>1?1.2:1),sz*rr(.9,1.2)*tall,sz*(.85+h1*.3)*(tall>1?1.2:1)));ti.setMatrixAt(n,M);ci.setMatrixAt(n,M);ti.setColorAt(n,new THREE.Color().setRGB(.8+h1*.4,.8+h1*.35,.8+h2*.35));}
     Col.setHSL(rr(.28,.38),rr(.2,.35),rr(.42,.56));const au=R();if(au<.2)Col.setHSL(rr(.1,.15),rr(.45,.6),rr(.42,.52));else if(au<.33)Col.setHSL(rr(.04,.07),rr(.5,.65),rr(.36,.46));/* autumn: a third yellow / rust */ci.setColorAt(n,Col);n++;}
    for(const im of [ci]){im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);}ti.count=n;G.youngTrees=ti;
    // phones' draw-call budget: the slim trunks are static, so they are baked into the woodpile's bark mesh (bark texture, one call less)
