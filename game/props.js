@@ -1589,12 +1589,12 @@ export function buildProps(ctx) {
     let potO = null; st.children.forEach(c => { if (!potO && c.position && Math.abs(c.position.x - .19) < .001 && Math.abs(c.position.z - .13) < .001) potO = c; });
     if (potO) { potO.removeFromParent(); }
     const pg = fine(() => { const pg = new THREE.Group(); { const X = mx(); add(pg, lathe([[0, 0], [.085, 0], [.095, .01], [.095, .11], [.1, .115], [.092, .115], [.087, .02], [0, .02]], 28), M.enamelDark); add(pg, new THREE.CircleGeometry(.088, 24), X.stew, 0, .085, 0, -Math.PI / 2); add(pg, new THREE.TorusGeometry(.087, .0035, 4, 28), std2(0x3E2412), 0, .0855, 0, Math.PI / 2); for (const [cx, cz, c, r] of [[.03, .02, 0, .3], [-.035, .03, 1, 1.1], [.01, -.04, 0, 2], [-.05, -.02, 2, .7], [.05, -.03, 1, 2.6], [-.01, .055, 2, 1.8], [.045, .045, 0, .9]]) add(pg, rb(.017, .011, .015, .004), [X.carrot, std2(0xC9B07A), std2(0x7A4428)][c], cx, .086, cz, .2, r, .15); /* [kitchen round] chunks of carrot, potato and meat in the stew and a dark film at the rim: it was one flat orange disc */ for (const s of [-1, 1]) add(pg, new THREE.TorusGeometry(.022, .006, 6, 12, Math.PI), M.iron, s * .1, .09, 0, 0, s > 0 ? 0 : Math.PI, s * Math.PI / 2); } return bake(pg); });
-    tool('pot', pg, st, .19, .93, .13); tool('ladle', fine(() => bake(ladle(.3))), st, .2, .93 + .14, .1, [-.25, 0, -.45]);
-    const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, .14); fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; stk.userData.live = true; fp.add(stk);
+    tool('pot', pg, st, .19, .93, -.13); tool('ladle', fine(() => bake(ladle(.3))), st, .2, .93 + .14, -.08, [.6, 0, -.2]); /* [PROPS] stew simmers on the back right ring: on the front one it stood on the serving plate */
+    const fp = bake(fryPan()); fp.userData.live = true; fp.position.set(-.19, .91, -.13); /* [PROPS] back left ring: the kettle has the front one (tea reach) and stood in the pan */ fp.rotation.y = -2.2; st.add(fp); const stk = steak(); stk.position.set(0, .006, 0); stk.visible = false; stk.userData.live = true; fp.add(stk);
     const raw = new THREE.Color(0xA2343A), done = new THREE.Color(0x6A3A22);
     // the pan: setMeat(true/false) puts a steak in it, setCook(0..1) browns it
     out.pan = { obj: fp, setMeat(on) { stk.visible = !!on; }, setCook(k) { stk.userData.mat.color.copy(raw).lerp(done, clamp01(k)); } };
-    PT.pan = [fp, V(0, .05, 0)]; PT.pot = [st, V(.19, 1.06, .13)]; PT.oven = [st, V(0, .45, .45)]; }
+    PT.pan = [fp, V(0, .05, 0)]; PT.pot = [st, V(.19, 1.06, -.13)]; PT.oven = [st, V(0, .45, .45)]; }
   { // fridge API (the lower door is on a hinge; meat inside follows the stock)
     const F = placed.fridge.userData.fridge; const fs = { open: 0, to: 0, n: 0 };
     const apply = () => { F.piv.rotation.y = fs.open * 1.75; };

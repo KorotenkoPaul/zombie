@@ -768,7 +768,7 @@ export function createHero(ctx){
    const sqFor=t=>{const sh=bones.RightArm.getWorldPosition(V());const hz=Math.hypot(sh.x-t.x,sh.z-t.z);const R0=armLen*.9+PALM-.03;const dy=sh.y+(H.squat||0)-t.y;return clamp(dy-Math.sqrt(Math.max(0,R0*R0-hz*hz))+.03,0,.45);};
    const afterOven=()=>{/* GRAB: no spoon out of thin air and no clip stirring the air beside the stove: he steps up to the
      pot, takes the ladle out of it with his hand, then stirs in it (stirPost) */const PO=PP();const pp=PO&&PO.tools&&PO.tools.pot;
-     if(pp&&PO.tools.ladle){pot.visible=false;a.pot2=1;a.step='topot';a.t=0;play(IDLE(),{fade:.5});approachTo(a,pp.getWorldPosition(V()),.45,()=>{a.step='getladle';a.t=0;});}
+     if(pp&&PO.tools.ladle){pot.visible=false;a.pot2=1;a.step='topot';a.t=0;play(IDLE(),{fade:.5});approachTo(a,pp.getWorldPosition(V()),.71,()=>{a.step='getladle';a.t=0;});/* KITCHEN: the pot is on the back ring: .45 from it was inside the stove, he walked round looking for room */}
      else{a.step='stir';a.t=0;grab(spoon,'Right',[0,.06,.02],[0,0,-Math.PI/2]);play('hy_stir',{fade:.7});}};
    const toOven=()=>{if(OVP()&&ovp){a.ovh=1;ovenSpot(a,()=>{a.step='ovsq';a.t=0;});}
     else{a.step='oven';a.t=0;once('hy_oven',{fade:.5,then:afterOven});}};
@@ -777,13 +777,13 @@ export function createHero(ctx){
        step in to the pan from the stove spot, the fist over it, let go, and the same step back onto the spot, so the oven approach and the
        rest of the cooking start from exactly where they always did */
     const PO=PP();if(co.meat&&PO&&PO.pan&&PO.tools&&PO.tools.meatBag&&PO.tools.meatBag.parent===bones.RightHand){a.p0=root.position.clone();a.y0=root.rotation.y;a.mApp=1;
-     a.meatDone=()=>{a.faceYaw=a.y0;a.noPush=1;approachTo(a,a.p0,0,()=>{a.faceYaw=null;a.noPush=0;a.mApp=0;toOven();});};
+     a.meatDone=()=>{a.mApp=0;toOven();};/* KITCHEN: from the pan straight on to the oven (walking back to where he came in first was a turn away and back: Pavel, no going somewhere and turning straight back) */
      approachTo(a,PO.pan.obj.getWorldPosition(V()),.42,()=>{a.step='meatin';a.t=0;});}else toOven();});
    const oven=()=>P3&&P3.oven?P3.oven:(ctx.ovenDoor&&ctx.ovenDoor());
    a.update=dt=>{if(a.step==='approach'){if(a.pot2||a.ovh||a.mApp){stepTick(a,dt);return;}}a.t+=dt;
     if(a.step==='meatin'){const PO=PP();const pan=PO.pan.obj.getWorldPosition(V()).add(V(0,.19,0));H.look=pan;H.lookW=1;/* the fist over the pan, the meat let down into it (lower, the fist went into the pan) */
      const G=window.__grab;const gp=G&&G.gripPoint?G.gripPoint('Right'):bones.RightHand.getWorldPosition(V());
-     if(!a.mIn){a.mreach=['Right',reachArc(a,'Right',pan,dt),smooth(0,.3,a.t)];/* up first, then over: straight from his hip the fist went through the stove front */if((a.t>.6&&gp.distanceTo(pan)<.06)||a.t>1.4){a.mIn=1;a.mt=a.t;try{PO.pan.setMeat(true);PO.release('meatBag');}catch(e){}AU('cloth');}}
+     if(!a.mIn){a.mreach=['Right',reachArc(a,'Right',pan,dt),smooth(0,.3,a.t)];/* up first, then over: straight from his hip the fist went through the stove front */if((a.t>.6&&gp.distanceTo(pan)<.06)||a.t>1.4){a.mIn=1;a.mt=a.t;try{PO.pan.setMeat(true);PO.pan.setCook&&PO.pan.setCook(0);PANM=1;PO.release('meatBag');}catch(e){}AU('cloth');}}
      else{a.mreach=['Right',pan.clone().add(V(0,.05*smooth(0,.3,a.t-a.mt),0)),1-smooth(.15,.6,a.t-a.mt)];/* the empty hand comes up off the pan and back */if(a.t-a.mt>.65){a.mreach=null;const f=a.meatDone;a.meatDone=null;f&&f();}}
      return;}
     kSlow(/^(ovsq|open|peek|shut)$/.test(a.step)&&(H.squat||0)>.05);if(/^(ovsq|open|peek|shut|up)$/.test(a.step)){const o=OVP();const h=o.handle(V());const m=ovp.clone().add(V(h.x-ovp.x,0,h.z-ovp.z).multiplyScalar(-.15)).setY(ovp.y+.02);const G=window.__grab;a.oik=null;
@@ -1007,7 +1007,7 @@ export function createHero(ctx){
   // the plate's spot on the barrel top: on the line from the table centre towards his chest, 17 cm out
   const tableC=PT('eatTable');const chest0=seat.p.clone().addScaledVector(F,.07);const toMe=V(chest0.x-tableC.x,0,chest0.z-tableC.z).normalize();
   const plateSpot=V(tableC.x,KT_.top+.002,tableC.z).addScaledVector(toMe,.2);/* near his edge of the top: he eats sitting up, not folded over */
-  const pan=PT('pan')||PT('pot');const home=toolHome('plate')||pan;const sinkP=PT('sink');
+  const fromPan=!!PANM&&!!PT('pan');const pan=(fromPan?PT('pan'):PT('pot'))||PT('pan');const home=toolHome('plate')||pan;/* KITCHEN: served from the pan when a cooked steak waits there, else a ladle of stew from the pot */const sinkP=PT('sink');
   const bites=Math.round(rnd(7,10));let food=1;a.bite=0;
   pl.visible=true;a.plate='home';a.spoon='plate';a.wL=0;a.wR=0;a.tw=0;
   try{P.plate&&P.plate.setFood&&P.plate.setFood(0);}catch(e){}
@@ -1031,7 +1031,7 @@ export function createHero(ctx){
    if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
    if(a.step==='take'){if(a.t>.7&&a.plate==='home'){a.plate='hand';AU('cloth');}if(a.t>1.3){say('spoon');}return;}
    if(a.step==='spoon'){H.look=pl.getWorldPosition(V());H.lookW=.9;if(a.t>.55&&a.spoon==='plate'){spoonToHand();}if(a.t>.9){say('serve');a.sc=0;}return;}
-   if(a.step==='serve'){H.look=pan;H.lookW=.9;const n=Math.floor(a.t/1.35);if(n!==a.sc){a.sc=n;try{P.plate.setFood(Math.min(1,n/3));}catch(e){}AU('scrape',pan);}if(a.t>=4.05){say('spoonback');}return;}
+   if(a.step==='serve'){H.look=pan;H.lookW=.9;const n=Math.floor(a.t/1.35);if(n!==a.sc){a.sc=n;try{P.plate.setFood(Math.min(1,n/3));if(fromPan&&n>=2){P.pan.setMeat(false);PANM=0;}}catch(e){}AU('scrape',pan);}/* the steak leaves the pan as it goes onto the plate */if(a.t>=4.05){say('spoonback');}return;}
    if(a.step==='spoonback'){H.look=pl.getWorldPosition(V());if(a.t>.5&&a.spoon==='hand'){spoonOnPlate();}if(a.t>.85){say('go2');play(IDLE(),{fade:.4});
      goTo('kmid',()=>approachTo(a,wayPt,0,()=>{say('go2');approachTo(a,standPt.clone().addScaledVector(F,1),1,()=>{say('pdown');});}));}return;}
    if(a.step==='pdown'){/* EAT (watch R25-5): the plate goes onto the barrel by hand while he still stands; sitting down with it in his hand, the sit clip's lean lifted it to his face */H.look=plateSpot.clone().add(V(0,.15,0));H.lookW=.7;if(a.t>.85&&a.plate==='hand'){a.plate='table';plateDown(plateSpot);AU('cup',plateSpot);}
@@ -1268,7 +1268,7 @@ export function createHero(ctx){
     if(a.gotIt&&low){/* GRAB: taken off the floor, the tool rises with him in front of his shins (it used to swing back through them) */if(a.sq0==null)a.sq0=H.squat||0;const up=Math.max(0,a.sq0-(H.squat||0));if(H.squat>.02)a.tsU=a.t;
      a.rg=[hand,h.clone().add(V(0,up+.06*smooth(0,.3,a.t-a.tg),0)),1-smooth(0,.35,a.t-(a.tsU??a.t))];}
     else if(a.gotIt&&o.keepGrip){/* POT: the ladle stays up at the stove and goes straight into the stir (it fell to his hip first: the ladle through his shins, arm and head on the way back up) */a.kgP=h.clone().add(V(0,.05*smooth(0,.2,a.t-a.tg),0));a.rg=[hand,a.kgP,1];}
-    else a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.gotIt?1-smooth(0,.35,a.t-a.tg):1)];
+    else a.rg=[hand,o.arc&&!a.gotIt?(()=>{if(!a.ap0)a.ap0=bones[hand+'Hand'].getWorldPosition(V());a.ak=Math.min(1,(a.ak||0)+dt/.75);const ky=smooth(0,.35,a.ak),kx=smooth(.3,1,a.ak);const q=a.ap0.clone().lerp(h,kx);q.y=a.ap0.y+(Math.max(h.y,a.ap0.y)+.04-a.ap0.y)*ky-.04*smooth(.8,1,a.ak);return q;})():h,(low?smooth(.4,.85,a.t):o.arc?smooth(0,.12,a.t):smooth(0,.45,a.t))*(a.gotIt?1-smooth(0,.35,a.t-a.tg):1)];/* KITCHEN o.arc: up first, then over (the ladle on the back ring: from his side the fist went in under the counter edge, 9 cm) */
     if(!a.gotIt&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.06||a.t>(low?1.5:1.6))){a.gotIt=true;a.tg=a.t;grabTool(n,hand);if(H.belt===n)H.belt=null;AU('cloth');}
     if(a.gotIt&&a.t-a.tg>(o.keepGrip?.2:.4)&&!(H.squat>0)&&(!low||a.t-(a.tsU??0)>.35)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;a.sq0=null;a.tsU=null;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else if(o.restand){const q=o.restand();q.y=root.position.y;const s=sp();const fy=a.faceYaw;a.faceYaw=Math.atan2(s.x-q.x,s.z-q.z);play('30',{fade:.3,speed:1});approachTo(a,q,0,()=>{a.faceYaw=fy;a.fetched=true;work();});/* GRAB: the step in for the tool left him beside its shelf; he steps back to a stand of the work's own (the watering can: the pour swept the can through the table's end) */}else if(a.standAt&&!a.reApp&&Math.hypot(a.standAt.x-root.position.x,a.standAt.z-root.position.z)>.12){/* REPAIRS: the step to the tool took him off his work spot: back to it first (he hammered a wall 1.1 m away, from beside the bench) */a.reApp=1;approachTo(a,sp(),o.stand??.45,work);}else work();}}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
@@ -1447,7 +1447,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     ik2(U,Lg,F,P[0],k.clone().add(pole),w*sw,false);/* weighted by the fade: at its first frames a full re-solve snapped the knee into the pole plane (a 12 cm leg jump); the slide left is (1-w)·w·1.8 cm, under 5 mm */const pq=F.parent.getWorldQuaternion(new THREE.Quaternion());F.quaternion.copy(pq.invert().multiply(P[1]));F.updateMatrixWorld(true);}}
   /* no breathing motion (Pavel 2026-11-25: remove his breathing entirely) */root.updateMatrixWorld(true);
   lifeUndo=LB.map((b,i)=>[b,b.position.clone().sub(base[i][0]),b.quaternion.clone().invert().premultiply(new THREE.Quaternion()).multiply(base[i][1])]);if(!lifeReg){lifeReg=1;stage('pre',()=>{/* next frame's start, before the clip: take our offset back off. A bone the clip rewrites loses it anyway; one it leaves (a held or slowed pose) must not pile it up */if(!lifeUndo)return;for(const [b,dp,dq] of lifeUndo){b.position.sub(dp);b.quaternion.multiply(dq);}lifeUndo=null;});}}
- let lifeUndo=null,lifeReg=0;
+ let lifeUndo=null,lifeReg=0;let PANM=0;/* KITCHEN: a cooked steak waits in the pan until he serves it (cook puts it in, eat scoops it onto the plate) */
  function lifeLook(a,dt,w=1,amp=.035){const L=a.life;if(window.__noLife)return;if(!L||w<.01||!H.look||!H.look.isVector3)return;L.nx-=dt;if(L.nx<=0){L.nx=lr(.7,2.4);L.lkT.set(lr(-1,1),lr(-.6,.6),lr(-1,1)).multiplyScalar(amp);}
   L.lk.lerp(L.lkT,1-Math.exp(-dt*14));/* a saccade: quick, then still */if(L.lo&&H.look===L.lo)H.look=L.lb;/* a look target not set again this frame: offset the base, never pile it up */L.lb=H.look;H.look=H.look.clone().addScaledVector(L.lk,w);L.lo=H.look;}
  function chopPost(a,dt){const P=PP();const bd=P&&P.tools&&P.tools.board,kn=P&&P.tools&&P.tools.knife;if(!bd||!kn||kn.parent!==bones.RightHand)return;
@@ -1475,7 +1475,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  Object.assign(MAKE,{
   // kitchen
   chop:(o)=>job({pt:()=>PT('board'),stand:.3,/* KITCHEN (watcher B8): no hy_chop clip (it chopped at hip height under the worktop, bow-legged, the left hand hanging): he stands upright at the board, the knife is held by hand IK and rocks on its tip over the carrot, the left hand holds the carrot */loop:true,dur:[22,40],tools:[['knife','Right']],vary:false,post:(a,dt)=>chopPost(a,dt),end:a=>{if(a.sl){for(const m of a.sl)m.parent&&m.parent.remove(m);a.sl=null;}if(a.chHold){a.chHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
-  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.45,pushR:.23,/* the oven door's handle bar stands out past the stove box: 3 cm more room for his toes *//* POT: standing right up at the stove (pushR .15) put his feet in the oven door and the fist through the stove front: back at .45 *//* KITCHEN: no hy_stir clip (it sways the whole body and mimes beside the pot): the stirring arm is hand IK (stirPost), the body stands calm */loop:true,dur:[25,45],tools:[['ladle','Right']],keepGrip:true,vary:false,post:(a,dt)=>stirPost(a,dt),end:a=>{if(a.stirHold){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
+  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.71,arc:true,/* KITCHEN: the pot simmers on the BACK ring now (Props: the pan took its front ring's partner, the plate stays front right): .26 m further back, his stand stays where it was */pushR:.23,/* the oven door's handle bar stands out past the stove box: 3 cm more room for his toes *//* POT: standing right up at the stove (pushR .15) put his feet in the oven door and the fist through the stove front: back at .45 *//* KITCHEN: no hy_stir clip (it sways the whole body and mimes beside the pot): the stirring arm is hand IK (stirPost), the body stands calm */loop:true,dur:[25,45],tools:[['ladle','Right']],keepGrip:true,vary:false,post:(a,dt)=>stirPost(a,dt),end:a=>{if(a.stirHold){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
   stoke:(o)=>{// KITCHEN: logs from the woodpile into the oven, all by hand. Squat at the pile, both palms on the logs, the armful goes into the
    // left arm; walk over cradling it; squat at the oven, the right hand takes the door handle and lowers the door as far as the hand carries it;
    // one log after another: the right hand takes it out of the left arm and pushes it into the fire; the right hand lifts the door shut; stand up.
@@ -2843,7 +2843,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  });
  {const cookBase=MAKE.cook;MAKE.cook=(o={})=>{if(!o.fromFridge)return cookBase(o);const a={step:'go',t:0};const P=PP();
   fridgeVisit(a,'out',()=>{
-   const inner=cookBase(Object.assign({},o,{meat:true}));act=inner;inner.name='cook';const cd=rnd(22,34);let ct=0;const iu=inner.update;inner.update=dt=>{iu&&iu(dt);ct+=dt;if(ct>cd&&!inner.left){inner.left=true;inner.leave(()=>{try{P.pan&&P.pan.setMeat&&P.pan.setMeat(false);P.plate&&P.plate.setFood&&P.plate.setFood(1);}catch(e){}endTask({ok:true});});}};});
+   const inner=cookBase(Object.assign({},o,{meat:true}));act=inner;inner.name='cook';const cd=rnd(22,34);let ct=0;const iu=inner.update;inner.update=dt=>{iu&&iu(dt);ct+=dt;if(PANM){try{P.pan.setCook&&P.pan.setCook(Math.min(1,ct/cd));}catch(e){}}/* the steak browns in the pan while he cooks */if(ct>cd&&!inner.left){inner.left=true;inner.leave(()=>{endTask({ok:true});});}};/* KITCHEN: the steak stays in the pan, cooked, until he serves it (it used to vanish from the pan and appear on the plate at once) */});
   a.update=dt=>{stepTick(a,dt);};a.leave=cb=>{const go=()=>{try{P.release('meatBag');P.fridge.openTo(0,.4);}catch(e){}cb();};if(fridgeLeave(a,go))return;go();};return a;};}
 
  // ---------- sitting, lying down, getting up ----------
