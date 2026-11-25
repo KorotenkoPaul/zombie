@@ -172,7 +172,7 @@ export function createClimb() {
     const FF = { [h]: ff(h).setZ(A.edge - zD * .24), [l]: ff(l).setZ(A.P.z - zD * .02) };
     if (feetTop) { FF.LF = feetTop.LF.clone(); FF.RF = feetTop.RF.clone(); }
     const P = rootTop ? rootTop.clone() : A.P.clone();
-    const fromClimb = A.mode === 'climb'; A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: dir > 0 ? 1.35 : 1.55, h, l, FF, P, ys: dir > 0 && fromClimb ? A.y : top(A, L[l].r), hold: 0, idle: false };
+    const fromClimb = A.mode === 'climb'; A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: dir > 0 ? 1.15 : 1.25, /* was 1.35 / 1.55: from the far camera the over stage read as a stop at every ladder (outdoor film: 0.8-0.9 s of standing) */ h, l, FF, P, ys: dir > 0 && fromClimb ? A.y : top(A, L[l].r), hold: 0, idle: false };
   }
   function overTick(A, dt, p) {
     const c = A.C; if (c.hold > 0) c.hold -= dt; else c.s = Math.min(1, Math.max(0, c.s + c.dir * dt / c.T));
@@ -202,7 +202,7 @@ export function createClimb() {
       const out = sh.clone().sub(hp).setY(0); if (out.lengthSq() > 1e-6) out.normalize();
       const hang = sh.clone().add(V(0, -.5, 0)).addScaledVector(out, .1); /* clear of a tool hung on the hip (gate: forearm 2 cm through the belt hammer at bl_t / kh_t) */ hang.z -= A.zDir * .03;
       const q = f.lerp(hang, e); q.addScaledVector(out, Math.sin(Math.PI * e) * .06); return q; }
-    const [a, b, lift] = c.dir < 0 ? (k === c.h ? [.24, .54, .13] : [.46, .76, .18]) : (k === c.h ? [.2, .62, .13] : [.6, .95, .18]); // going down a foot leaves the floor only once the body is low enough to reach the rung
+    const [a, b, lift] = c.dir < 0 ? (k === c.h ? [.24, .56, .13] : [.42, .8, .18]) : (k === c.h ? [.2, .62, .13] : [.55, .97, .18]); // going down a foot leaves the floor only once the body is low enough to reach the rung
     const e = sine((s - a) / (b - a)); const from = restTarget(A, k, L.r), to = c.FF[k];
     // up first, then over the edge, then down onto the boards (a straight line clipped the floor's edge beam: gate, feet 5 cm into it)
     const eh = sine((e - .25) / .75), ev = sine(e / .75); /* gentle and overlapping (gate: foot and knee jumps stepping onto the boards) */ const q = from.clone().lerp(to, eh); q.y = lerp(from.y, to.y, ev) + Math.sin(Math.PI * e) * lift; return q;
