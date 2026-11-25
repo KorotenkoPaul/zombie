@@ -37,10 +37,18 @@ export function dressHero({ THREE, root }) {
   const kneeF = ['Left', 'Right'].map(sd => { const k = bindPos(sd + 'Leg'); const fr = FR['leg' + sd[0]]; return k && fr ? k.clone().addScaledVector(fr.y, .045 / S) : null; });
   const toes = ['Left', 'Right'].map(sd => bindPos(sd + 'ToeBase')), heels = ['Left', 'Right'].map(sd => bindPos(sd + 'Foot'));
   const GC = (a, i, c) => c === 0 ? a.getX(i) : c === 1 ? a.getY(i) : c === 2 ? a.getZ(i) : a.getW(i);
+  // the vest's span around the torso axis (72 bins of angle): body torso points between its hem and its top there are under the
+  // vest. Where the vest's jagged collar and armhole edges leave notches, the sweater behind showed as orange zigzags (critic
+  // pass 20b): those body points take the vest's leather while it is on. Notches are filled by a max/min filter over the bins.
+  const NB = 72; const ENV = (() => { const vg = meshes.vest.geometry, VPa = vg.attributes.position; if (!VPa) return null; const fr = FR.torso; const top = new Float32Array(NB).fill(-1e9), bot = new Float32Array(NB).fill(1e9); const q = new THREE.Vector3();
+    for (let i = 0; i < VPa.count; i++) { q.fromBufferAttribute(VPa, i).applyMatrix4(meshes.vest.bindMatrix).sub(fr.o); const x = q.dot(fr.x) * S, y = q.dot(fr.y) * S, z = q.dot(fr.z) * S; const b = ((Math.floor((Math.atan2(y, x) + Math.PI) / (2 * Math.PI) * NB)) % NB + NB) % NB; top[b] = Math.max(top[b], z); bot[b] = Math.min(bot[b], z); }
+    const T2 = new Float32Array(NB), B2 = new Float32Array(NB); for (let b = 0; b < NB; b++) { let t = -1e9, m = 1e9; for (let k = -2; k <= 2; k++) { const j = (b + k + NB) % NB; t = Math.max(t, top[j]); m = Math.min(m, bot[j]); } T2[b] = t; B2[b] = m; }
+    return { top: T2, bot: B2 }; })();
+  const uVest = { value: 1 };
   const v = new THREE.Vector3(), n3 = new THREE.Vector3(), nm = new THREE.Matrix3();
   function attrs(mesh, cls) {
     const g = mesh.geometry; const P = g.attributes.position, N = g.attributes.normal, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight; if (!P || !N || !SI) return;
-    const cnt = P.count; const kp = new Float32Array(cnt * 3), kn = new Float32Array(cnt * 3), kx = new Float32Array(cnt * 2);
+    const cnt = P.count; const kp = new Float32Array(cnt * 3), kn = new Float32Array(cnt * 3), kx = new Float32Array(cnt * 3);
     nm.getNormalMatrix(mesh.bindMatrix); const bp = new Array(cnt);
     for (let i = 0; i < cnt; i++) {
       let m = -1, mb = 0; for (let c = 0; c < 4; c++) { const w = GC(SW, i, c); if (w > m) { m = w; mb = GC(SI, i, c); } }
@@ -58,7 +66,9 @@ export function dressHero({ THREE, root }) {
         const dx = v.clone().sub(h); const crease = Math.exp(-((dx.y * S - .04) ** 2) / (2 * .02 * .02)) * Math.max(0, n3.dot(ax)) * THREE.MathUtils.smoothstep(along, -.2, .4) * (1 - THREE.MathUtils.smoothstep(along, .6, 1));
         if (v.distanceTo(h) * S < .3) wear = Math.max(wear, Math.max(toe, heel) * (1 - crease)) - crease * .5; } }
       // the body's own feet (under the boots, with collapsed UVs: a flat orange smear when the boots are off) become wool socks
-      kx[i * 2] = cls === 0 && /^(Left|Right)(Foot|ToeBase|Toe_End)/.test(bn[mb] || '') ? 3 : cls; kx[i * 2 + 1] = wear;
+      kx[i * 3] = cls === 0 && /^(Left|Right)(Foot|ToeBase|Toe_End)/.test(bn[mb] || '') ? 3 : cls; kx[i * 3 + 1] = wear;
+      if (cls === 0 && ENV && grpOf(bn[mb] || '') === 'torso' && fr === FR.torso) { const th = Math.atan2(kp[i * 3 + 1], kp[i * 3]); const b = ((Math.floor((th + Math.PI) / (2 * Math.PI) * NB)) % NB + NB) % NB; const z = kp[i * 3 + 2];
+        kx[i * 3 + 2] = z > ENV.bot[b] && z < ENV.top[b] - .002 && kp[i * 3 + 1] < .01 ? 1 : 0; } // back half only: in front, the gap between the flaps rightly shows the sweater
     }
     // vest: rubbed edges, by the distance (along the surface) to its open border
     if (cls === 1 && g.index) {
@@ -68,9 +78,9 @@ export function dressHero({ THREE, root }) {
       const dist = new Float32Array(nw).fill(1e9); const Q = []; for (const [k, c] of ec) if (c === 1) { for (const s of k.split(',')) { const w = +s; if (dist[w] > 0) { dist[w] = 0; Q.push(w); } } }
       // Bellman-Ford style relaxation over edge lengths (small mesh): good enough as a geodesic distance
       for (let it = 0; it < 60 && Q.length; it++) { const nx = []; for (const a of Q) for (const b of adj[a]) { const dd = dist[a] + bp[rep[a]].distanceTo(bp[rep[b]]) * S; if (dd < dist[b] - 1e-5) { dist[b] = dd; nx.push(b); } } Q.length = 0; Q.push(...new Set(nx)); }
-      for (let i = 0; i < cnt; i++) kx[i * 2 + 1] = 1 - THREE.MathUtils.smoothstep(dist[wid[i]], .004, .022);
+      for (let i = 0; i < cnt; i++) kx[i * 3 + 1] = 1 - THREE.MathUtils.smoothstep(dist[wid[i]], .004, .022);
     }
-    g.setAttribute('kp', new THREE.BufferAttribute(kp, 3)); g.setAttribute('kn', new THREE.BufferAttribute(kn, 3)); g.setAttribute('kx', new THREE.BufferAttribute(kx, 2));
+    g.setAttribute('kp', new THREE.BufferAttribute(kp, 3)); g.setAttribute('kn', new THREE.BufferAttribute(kn, 3)); g.setAttribute('kx', new THREE.BufferAttribute(kx, 3));
   }
   const GLSL_NOISE = `
 float hcH(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
@@ -84,9 +94,10 @@ float hcTwill(float t,float s){return .5+.5*sin(6.28318*(s+t)/.0024);}
     attrs(mesh, cls);
     const m = mesh.material;
     m.onBeforeCompile = sh => {
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 kp;attribute vec3 kn;attribute vec2 kx;varying vec3 vKp;varying vec3 vKn;varying vec2 vKx;')
+      sh.uniforms.uVestOn = uVest;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 kp;attribute vec3 kn;attribute vec3 kx;varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvKp=kp;vKn=kn;vKx=kx;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vKp;varying vec3 vKn;varying vec2 vKx;' + GLSL_NOISE + '\nfloat hcHgt=0.;float hcAmp=0.;float hcRough=-1.;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uVestOn;varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;' + GLSL_NOISE + '\nfloat hcHgt=0.;float hcAmp=0.;float hcRough=-1.;')
         .replace('#include <map_fragment>', '#include <map_fragment>\n{' +
           `vec3 sc=pow(max(diffuseColor.rgb,vec3(0.)),vec3(1./2.2));float mx=max(sc.r,max(sc.g,sc.b)),mn=min(sc.r,min(sc.g,sc.b)),sat=mx>0.?(mx-mn)/mx:0.;
 float fw=length(fwidth(vKp));vec3 an=abs(normalize(vKn));vec2 tw=an.xy/(an.x+an.y+1e-4);
@@ -108,6 +119,8 @@ vec3 kq=mat3(.8,.36,-.48,-.6,.48,-.64,0.,.8,.6)*vKp;float kw=vKx.y*clamp(.25+.6*
 diffuseColor.rgb=mix(diffuseColor.rgb,mix(vec3(lum),diffuseColor.rgb,.55)*1.45,pantM*kw*.75);
 hcHgt=knitM*hk*.0007*fk+pantM*(ht*.6+can*.4)*.00025*ft;hcAmp=1.;
 hcRough=mix(mix(-1.,.95,knitM),.9,pantM);
+// under the vest (seen through notches in its collar and armhole edges): the vest's leather while it is on
+float uvM=smoothstep(.5,1.,vKx.z)*uVestOn;if(uvM>0.){float pt=hcN(vKp*22.)*.55+hcN(vKp*70.+3.1)*.45;diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.15,.074,.042)*(.8+.36*pt),uvM);hcHgt*=1.-uvM;hcRough=mix(hcRough,.78,uvM);}
 // socks: grey-brown wool with the knit
 float sockM=smoothstep(1.5,2.6,cls);if(sockM>0.){float hs=tw.y*hcKnit(vKp.x,vKp.z)+tw.x*hcKnit(vKp.y,vKp.z);vec3 sk=vec3(.16,.14,.12)*mix(.8,1.1,mix(.5,hs,fk))*(.9+.2*hcN(vKp*60.));
  diffuseColor.rgb=mix(diffuseColor.rgb,sk,sockM);hcHgt=mix(hcHgt,hs*.0006*fk,sockM);hcRough=mix(hcRough,.95,sockM);}` : cls === 1 ? `
@@ -117,7 +130,7 @@ float knitM=smoothstep(.45,.55,sat)*step(sc.b,sc.g)*step(sc.g,sc.r)*smoothstep(.
 float fk=1.-smoothstep(.0012,.0028,fw);float hk=tw.y*hcKnit(vKp.x,vKp.z)+tw.x*hcKnit(vKp.y,vKp.z);
 diffuseColor.rgb*=mix(1.,mix(.86,1.08,hk),knitM*fk);
 // leather: a warmer, less red brown than the bake, darker, a mottled patina, pale rubbed edges and high points
-vec3 c0=diffuseColor.rgb;float lum=dot(c0,vec3(.3,.59,.11));vec3 lc=mix(vec3(lum),c0,.7)*vec3(1.,.97,1.)*.8;
+vec3 c0=diffuseColor.rgb;/* bright sweater texels bled onto the vest's hem in the atlas (orange specks on its back hem): the vest's mean leather */c0=mix(c0,vec3(.38,.13,.048),smoothstep(.82,.92,mx)*smoothstep(.6,.66,sc.g/max(sc.r,.01))*lea);float lum=dot(c0,vec3(.3,.59,.11));vec3 lc=mix(vec3(lum),c0,.7)*vec3(1.,.97,1.)*.8;
 float pat=hcN(vKp*22.)*.55+hcN(vKp*70.+3.1)*.45;lc*=.8+.36*pat;
 float rub=clamp(vKx.y*(.75+.8*(hcN(vKp*120.)-.5))+smoothstep(.66,.82,pat)*.3,0.,1.);
 lc=mix(lc,lc*vec3(1.7,1.6,1.45)+vec3(.012,.008,.004),rub*.85);
@@ -141,5 +154,5 @@ if(hcAmp>0.){vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition);float dhx=dF
     m.needsUpdate = true;
   }
   hook(meshes.body, 0); hook(meshes.vest, 1); if (meshes.boots) hook(meshes.boots, 2); if (meshes.under) hook(meshes.under, 0);
-  return { S, meshes: Object.keys(meshes) };
+  return { S, meshes: Object.keys(meshes), vestOn(on) { uVest.value = on ? 1 : 0; } };
 }

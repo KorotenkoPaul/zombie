@@ -104,3 +104,7 @@ Comparisons: project files hero-v6/.
     - Fine relief is a bump from screen derivatives of the pattern, faded by the pixel footprint, so it does not shimmer at the game camera. No texture reads, no draw calls, no triangles.
     - ?cloth=0 turns it off. The folded vest and the boot props share the worn material and attributes.
   - Still open: the sweater pokes through the back of the vest collar as small orange zigzags. The body and vest share a jagged border there, and the vest normals at the collar fold are too noisy for a simple push. A try (vestpush.mjs, not committed) did not fix it.
+- Sweater through the vest (critic pass 20b, 11:00 UTC 2026-11-25): the orange zigzags at the back of the collar and the shards on the back/shoulder are the BODY seen through notches in the vest's jagged collar and armhole edges (raycast: body triangles behind vest gaps), plus bright sweater texels bled onto the vest hem in the atlas.
+  - Fix: heroclothes.js builds the vest's span around the torso axis (72 angle bins: its top and hem, notches filled by a max/min filter over ±2 bins). Body torso vertices on the back half that lie between hem and top take the vest's leather while it is on (kx.z, uniform uVestOn, set by vestShow through window.__clothes.vestOn).
+  - Vest texels brighter than .82 in mustard hue are recoloured to the mean leather.
+  - Tried and dropped: hiding body triangles under the vest with drawRange. It left black slits between the flaps and the chest strip, and the zigzags were not coincident triangles.
