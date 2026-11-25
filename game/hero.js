@@ -3152,7 +3152,7 @@ const BTOP=new Map();const _btr=new THREE.Raycaster();function bedTopAt(x,z){con
  if(BTOP.size>4000)BTOP.clear();BTOP.set(k,y);return y;}
 // the lowest point of the head's own skin (each hero's head is shaped differently: one bone height left one 7 cm in the pillow, the other 14 cm over it)
 const HLV={m:null,ix:null};const _hlv=new THREE.Vector3();function headLow(){let sk=null;root.traverse(o=>{if(!sk&&o.isSkinnedMesh&&o.visible&&o.skeleton&&o.skeleton.bones.includes(bones.Head))sk=o;});if(!sk)return wp(bones.Head).y-.1;
- if(HLV.m!==sk){const bi=sk.skeleton.bones.indexOf(bones.Head);const SI=sk.geometry.attributes.skinIndex,SW=sk.geometry.attributes.skinWeight;const ix=[];if(SI&&SW)for(let i=0;i<SI.count;i++){for(let k=0;k<4;k++)if(SI.getComponent(i,k)===bi&&SW.getComponent(i,k)>.6){ix.push(i);break;}}
+ if(HLV.m!==sk){const bi=sk.skeleton.bones.indexOf(bones.Head);const SI=sk.geometry.attributes.skinIndex,SW=sk.geometry.attributes.skinWeight;const ix=[];if(SI&&SW)for(let i=0;i<SI.count;i++){for(let k=0;k<4;k++)if(GCMP(SI,i,k)===bi&&GCMP(SW,i,k)>.6){ix.push(i);break;}}
   const st=Math.max(1,Math.floor(ix.length/400));HLV.m=sk;HLV.ix=ix.filter((_,j)=>j%st===0);}
  if(!HLV.ix.length)return wp(bones.Head).y-.1;let lo=1e9;for(const i of HLV.ix){sk.getVertexPosition(i,_hlv);sk.localToWorld(_hlv);if(_hlv.y<lo)lo=_hlv.y;}return lo;}
 stage('grab',dt=>{lieSettle(dt);quiltHandTick(dt);vestReachTick(dt);vestPutTick(dt);});
