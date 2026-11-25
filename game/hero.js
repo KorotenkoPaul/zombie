@@ -45,7 +45,13 @@ export function createHero(ctx){
  const {scene,gltf,world,RAPIER,lv,sfx}=ctx;
  const P3=ctx.props||window.__props||null;
  const root=gltf.scene;scene.add(root);
+ {const seenM=new Set();root.traverse(o=>{if((o.isMesh||o.isSkinnedMesh)&&o.material&&!Array.isArray(o.material)){if(seenM.has(o.material))o.material=o.material.clone();seenM.add(o.material);}});}/* PERF: one material per mesh. Material_0/head were shared by meshes with different morph-target counts (eyelids, coat): three.js switched their program twice a frame (~0.2 ms, ~35 KB garbage) */
  root.traverse(o=>{if(o.isMesh||o.isSkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;if(o.material){o.material.roughness=Math.max(.55,o.material.roughness??.8);o.material.metalness=0;}}});
+ /* [PERF] shadow proxy: a hero glb may carry 'heroShadow' (body+head decimated to ~4.6k tris, same skin). It alone casts the body's
+    shadow, on layer 6, which only the shadow cameras see (index.html sun, lights.js lamps); Mesh_0 stops casting (32k tris less per
+    shadow pass). vest and boots keep their own shadows, so taking them off still shows. */
+ {const HSH=root.getObjectByName('heroShadow');if(HSH){HSH.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=false;o.layers.set(6);}});
+  const M0=root.getObjectByName('Mesh_0');if(M0)M0.traverse(o=>{if(o.isMesh)o.castShadow=false;});}}
  const bones={};root.traverse(o=>{if(o.isBone)bones[o.name.replace('mixamorig','').replace(':','')]=o;});
  for(const c of movesToClips(ctx.moves))if(!gltf.animations.some(a=>a.name===c.name))gltf.animations.push(c);
  // ---------- eyelids: the eyes are painted into the texture, so closed eyes are two skin-coloured lids on the Head bone ----------
@@ -202,7 +208,7 @@ export function createHero(ctx){
   FIT.bed={bx,bz,mat,x0,x1,z1,headDir,box:bb};
   // lying: pelvis ~0.85 m from the head end, body centred across the mattress; yaw so the head points at the pillow
   const lieYaw=(headDir>0?Math.PI/2:-Math.PI/2)-(POSE.sleepHeadYaw??0);
-  N.bedlie={p:V(headDir>0?x1-.95:x0+.95,mat,bz),face:0,seat:mat};SLEEPB=makeBedClip(lieYaw)||SLEEPB;
+  N.bedlie={p:V(headDir>0?x1-.70:x0+.70,mat,bz)/* 25 cm nearer the pillow: at .78 the head lay beside the pillow, at .62 the shoulders were on it, at .95 the head lay off the pillow's edge, sunk 7 cm into the mattress (gate), the toes at the very foot end */,face:0,seat:mat};SLEEPB=makeBedClip(lieYaw)||SLEEPB;
   // sitting on the very front edge of the mattress facing the room
   N.bededge={p:V(bx-headDir*.15,mat,z1+.14),face:0,seat:mat,floor:floorTop(BD,bx,z1+.45)};
   N.bed_app={p:V(N.bededge.p.x-sdEnd.x,BD,N.bededge.p.z-sdEnd.z),face:0,tight:true};
@@ -297,7 +303,10 @@ export function createHero(ctx){
    let want=0;if(bend>.06&&ll<l1+l2-.02&&!kneel&&td.dot(fh)>.5){const ang=Math.atan2(off.dot(inw),off.dot(pf));want=smooth(.15,.4,ang);}/* radians toward the other leg, 9..23 deg */
    /* once a frame from the pose as the clip and the legs left it; a later pass (the planted crouch re-solves the legs) only re-applies it */
    const first=KOT.f[s]!==FRN;if(first){KOT.f[s]=FRN;KOT.b[s]=KOT[s];KOT.w[s]=want;}else KOT.w[s]=Math.max(KOT.w[s],want);KOT[s]=KOT.b[s]+clamp(KOT.w[s]-KOT.b[s],-dt*4,dt*4);if(KOT[s]<.01||(!first&&want<.01))continue;
-   ik2(U,L,F,a,pf.clone().addScaledVector(inw,-.15).normalize(),KOT[s],true);}}
+   /* WALK: the turn is eased by blending the knee's DIRECTION and solving fully: an ik2 at partial weight leaves the ankle off its own
+      target (both bones turn part-way), and the foot swung 7 cm in a frame as the weight ramped (gate firewood, right foot jump 10) */
+   const pw=pf.clone().addScaledVector(inw,-.15).normalize();const p0=off.clone().multiplyScalar(1/Math.max(bend,1e-6));const pole=bend>1e-4?p0.lerp(pw,KOT[s]).normalize():pw;
+   ik2(U,L,F,a,pole,1,true);}}
  // WALK + carry: a load hanging from a fist (the meat sack, a bucket, the lantern) never passes through the legs: when a stepping leg
  // reaches it, it swings aside about the fist the least that clears the legs' own skin, and swings back to hanging straight after
  // (gate store: the sack went 4.6-10.4 cm into the shins, depending on when he arrived). Measured on the final pose, every frame.
@@ -354,7 +363,7 @@ export function createHero(ctx){
    const swing=a.y-(g+(POSE.ankle??.1))>.02;/* a sole is ~25 cm long: one ray into a gap between planks is not a step down */const G=window.__ground,onG=p.y<=2&&G&&G.standAt;/* WALK: on the ground the floor under a sole is the roots' top (it was an instant per-foot lift: a sole crossing a root edge jumped 14 cm) */const fl=onG?(x,z)=>G.standAt(x,z):(x,z)=>{/* the ray under the ankle; a gap between planks reads lower than the boards on BOTH sides (a step edge is higher on one side only, and lifting a heel off the low boards for it floated the planted foot 18 cm) */const r=(ox,oz)=>floorAt(x+ox,g,z+oz,.28,.25);const c=r(0,0);let m=c;for(const [ox,oz] of [[.06,0],[0,.06]]){const a1=r(ox,oz),a2=r(-ox,-oz);if(a1!=null&&a2!=null){const lo=Math.min(a1,a2);if(m==null||(lo>m+.01&&lo-m<.12))m=lo;}}return m;};let fb=fl(a.x,a.z);if(swing&&H.path.length){const f2=fl(a.x+fw.x*.22,a.z+fw.z*.22);if(f2!=null&&(fb==null||f2>fb))fb=f2;}
    /* boards: a lower floor counts only if the boards are there all round the sole (the hatch opening or a rung below it is not a floor: the foot dropped 3 cm and slid 7 at the bedroom ladder top) */
    if(!onG&&fb!=null&&fb<g-.012){for(const [ox,oz] of [[.08,0],[-.08,0],[0,.08],[0,-.08]]){const h=floorAt(a.x+ox,g,a.z+oz,.28,.25);if(h==null||h>fb+.02){fb=g;break;}}}
-   const tgt=(fb!=null&&Math.abs(fb-g)<(onG?.5:.28))?fb:g;if(TF[s]==null||Math.abs(TF[s]-tgt)>.35)TF[s]=tgt;else TF[s]+=clamp(tgt-TF[s],-1.2*dt,1.4*dt);o[s]=TF[s]-p.y;}return o;}
+   const tgt=(fb!=null&&Math.abs(fb-g)<(onG?.3:.28))?fb:g;/* WALK: on the ground a root top more than a step (30 cm) above the floor under him is a wall, not a step, and the floor under a sole only snaps after the body itself jumped (a task start): walking past the oak's big root the right foot leapt 52 cm up onto it in one frame (splitwood) */if(TF[s]==null||(Math.abs(TF[s]-tgt)>.35&&TF.rp&&TF.rp.distanceToSquared(p)>.09))TF[s]=tgt;else TF[s]+=clamp(tgt-TF[s],-1.2*dt,1.4*dt);o[s]=TF[s]-p.y;}(TF.rp||(TF.rp=V())).copy(p);return o;}
  function terrainFeet(g){const G=window.__ground;if(!G||!G.standAt||root.position.y>2)return;
   for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'];if(!F)continue;const a=F.getWorldPosition(V());const d=G.standAt(a.x,a.z)-g;if(Math.abs(d)<.01)continue;
    const k=L.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(a).multiplyScalar(.5));const pl=pole.length();pole.multiplyScalar(1/Math.max(pl,1e-6)).lerp(fwd(root.rotation.y),1-smooth(.01,.04,pl));
@@ -707,7 +716,7 @@ export function createHero(ctx){
    a.post=()=>ikList(a.ik);
    a.leave=cb=>{plank.visible=false;if(!H.hold.Right){cb();return;}a.step='putback';a.t=0;play(IDLE(),{fade:.5});a.update=dt=>{a.t+=dt;const hp=hammerHome();H.look=hp;H.lookW=1;
      a.ik=[['Right',hp.clone().add(V(0,.06,0)),smooth(0,.8,a.t)-smooth(1.0,1.6,a.t)]];if(a.t>.85&&H.hold.Right){releaseTool('Right');}if(a.t>1.6){a.ik=null;cb();}};};return a;},
-  cook:()=>{const a={step:'go',t:0};
+  cook:(co={})=>{const a={step:'go',t:0};
    // KITCHEN: a look at the fire first, by hand (the hy_oven clip stooped bow-legged with the hand hovering while the door dropped by
    // itself): squat at the oven, the right palm on the handle lowers the door, a look at the embers, the hand lifts it shut, stand up
    const OVP=()=>{const P=window.__props||P3;return P&&P.oven&&P.oven.handle?P.oven:null;};const ovp=PT('oven');
@@ -717,11 +726,22 @@ export function createHero(ctx){
      pot, takes the ladle out of it with his hand, then stirs in it (stirPost) */const PO=PP();const pp=PO&&PO.tools&&PO.tools.pot;
      if(pp&&PO.tools.ladle){pot.visible=false;a.pot2=1;a.step='topot';a.t=0;play(IDLE(),{fade:.5});approachTo(a,pp.getWorldPosition(V()),.45,()=>{a.step='getladle';a.t=0;});}
      else{a.step='stir';a.t=0;grab(spoon,'Right',[0,.06,.02],[0,0,-Math.PI/2]);play('hy_stir',{fade:.7});}};
+   const toOven=()=>{if(OVP()&&ovp){a.ovh=1;ovenSpot(a,()=>{a.step='ovsq';a.t=0;});}
+    else{a.step='oven';a.t=0;once('hy_oven',{fade:.5,then:afterOven});}};
    goTo('stove',()=>{pot.visible=true;pot.position.copy(potSpot());pot.rotation.y=rnd(0,6);
-    if(OVP()&&ovp){a.ovh=1;ovenSpot(a,()=>{a.step='ovsq';a.t=0;});}
-    else{a.step='oven';a.t=0;once('hy_oven',{fade:.5,then:afterOven});}});
+    /* GRAB: the meat from the fridge goes into the pan from his own hand (it used to appear there while he was still at the fridge): a short
+       step in to the pan from the stove spot, the fist over it, let go, and the same step back onto the spot, so the oven approach and the
+       rest of the cooking start from exactly where they always did */
+    const PO=PP();if(co.meat&&PO&&PO.pan&&PO.tools&&PO.tools.meatBag&&PO.tools.meatBag.parent===bones.RightHand){a.p0=root.position.clone();a.y0=root.rotation.y;a.mApp=1;
+     a.meatDone=()=>{a.faceYaw=a.y0;a.noPush=1;approachTo(a,a.p0,0,()=>{a.faceYaw=null;a.noPush=0;a.mApp=0;toOven();});};
+     approachTo(a,PO.pan.obj.getWorldPosition(V()),.42,()=>{a.step='meatin';a.t=0;});}else toOven();});
    const oven=()=>P3&&P3.oven?P3.oven:(ctx.ovenDoor&&ctx.ovenDoor());
-   a.update=dt=>{if(a.step==='approach'){if(a.pot2||a.ovh){stepTick(a,dt);return;}}a.t+=dt;
+   a.update=dt=>{if(a.step==='approach'){if(a.pot2||a.ovh||a.mApp){stepTick(a,dt);return;}}a.t+=dt;
+    if(a.step==='meatin'){const PO=PP();const pan=PO.pan.obj.getWorldPosition(V()).add(V(0,.19,0));H.look=pan;H.lookW=1;/* the fist over the pan, the meat let down into it (lower, the fist went into the pan) */
+     const G=window.__grab;const gp=G&&G.gripPoint?G.gripPoint('Right'):bones.RightHand.getWorldPosition(V());
+     if(!a.mIn){a.mreach=['Right',reachArc(a,'Right',pan,dt),smooth(0,.3,a.t)];/* up first, then over: straight from his hip the fist went through the stove front */if((a.t>.6&&gp.distanceTo(pan)<.06)||a.t>1.4){a.mIn=1;a.mt=a.t;try{PO.pan.setMeat(true);PO.release('meatBag');}catch(e){}AU('cloth');}}
+     else{a.mreach=['Right',pan.clone().add(V(0,.05*smooth(0,.3,a.t-a.mt),0)),1-smooth(.15,.6,a.t-a.mt)];/* the empty hand comes up off the pan and back */if(a.t-a.mt>.65){a.mreach=null;const f=a.meatDone;a.meatDone=null;f&&f();}}
+     return;}
     kSlow(/^(ovsq|open|peek|shut)$/.test(a.step)&&(H.squat||0)>.05);if(/^(ovsq|open|peek|shut|up)$/.test(a.step)){const o=OVP();const h=o.handle(V());const m=ovp.clone().add(V(h.x-ovp.x,0,h.z-ovp.z).multiplyScalar(-.15)).setY(ovp.y+.02);const G=window.__grab;a.oik=null;
      if(a.step==='ovsq'){H.look=h;H.lookW=1;if(!a.ovSt){a.ovSt=1;/* GRAB (frame check: his fist stayed 26 cm short of the handle and the door opened anyway): first a short step in to arm's reach
       (the stove's obstacle box kept him ~0.75 m off; the boards in front of the door are free: checked with collide.js) */const sh=bones.RightArm.getWorldPosition(V());const d=V(h.x-sh.x,0,h.z-sh.z);const L=d.length();
@@ -743,10 +763,11 @@ export function createHero(ctx){
      a.ik=[['Right',pp.clone().add(V(Math.cos(a.t*3)*.045,.12,Math.sin(a.t*3)*.045)),.75]];}};
    // while crouched at the oven the free hand rests on its knee (never hanging behind him or to the floor)
    const knee=sd=>bones[sd+'Leg'].getWorldPosition(V()).addScaledVector(fwd(root.rotation.y),.02).add(V(0,.07,0));
-   a.post=dt=>{ikList(a.ik);const crouch=/^(ovsq|open|peek|shut|up)$/.test(a.step)?clamp((H.squat||0)/.18,0,1):0;
+   a.post=dt=>{ikList(a.ik);{/* the short steps to the pan and back with the sack: carried up at his hip, not swinging at his shins */const PO=PP();const mb=PO&&PO.tools&&PO.tools.meatBag;const on=co.meat&&mb&&mb.parent===bones.RightHand&&a.step!=='meatin';a.hcw=Math.min(1,Math.max(0,(a.hcw||0)+(on&&(a.step==='approach'||a.step==='go')?1:-1)/60/.35));if(a.hcw>.01&&on){const hp=bones.Hips.getWorldPosition(V());const fw=fwd(root.rotation.y);const cp=hp.addScaledVector(V(-fw.z,0,fw.x),.28).addScaledVector(fw,.16).add(V(0,.16,0));reachGrip('Right',cp,smooth(0,1,a.hcw));}}
+    if(a.mreach&&a.mreach[2]>.01)reachGrip(a.mreach[0],a.mreach[1],Math.min(1,a.mreach[2]));const crouch=/^(ovsq|open|peek|shut|up)$/.test(a.step)?clamp((H.squat||0)/.18,0,1):0;
     if(crouch>.01){gripNoLean('Left',knee('Left'),crouch);if(a.oik&&a.oik[2]<1)gripNoLean('Right',knee('Right'),crouch*(1-(a.oik?a.oik[2]:0)));}
     if(a.oik&&a.oik[2]>.01)reachGrip(a.oik[0],a.oik[1],Math.min(1,a.oik[2]));if(a.step==='stir2'){if(a.lpa&&a.t<.7)reachTo('Right',a.lpa,1-smooth(.1,.7,a.t));stirPost(a,dt);}if(a.reach&&a.reach[2]>.01)reachGrip(a.reach[0],a.reach[1],a.reach[2]);};
-   a.leave=cb=>{{const ov=oven();/* GRAB: called away with the oven door down: his hand shuts it first (it used to snap shut by itself) */if(ov&&ov.open>.01&&/^(open|peek|shut)$/.test(a.step)&&!a.lvCb){a.lvCb=()=>a.leave(cb);if(a.step!=='shut'){a.step='shut';a.sh=1;a.t=0;}return;}}a.ik=null;a.oik=null;H.squat=0;H.kSquat=0;kSlow(false);const ov=oven();try{window.__grab&&ov&&ov.door&&window.__grab.free(ov.door);}catch(e){}ov&&ov.setOpen&&ov.setOpen(0);pot.visible=false;
+   a.leave=cb=>{{const ov=oven();/* GRAB: called away with the oven door down: his hand shuts it first (it used to snap shut by itself) */if(ov&&ov.open>.01&&/^(open|peek|shut)$/.test(a.step)&&!a.lvCb){a.lvCb=()=>a.leave(cb);if(a.step!=='shut'){a.step='shut';a.sh=1;a.t=0;}return;}}a.ik=null;a.oik=null;a.mreach=null;if(co.meat){try{const PO=PP();if(PO.tools.meatBag&&PO.tools.meatBag.parent===bones.RightHand)PO.release('meatBag');}catch(e){}}H.squat=0;H.kSquat=0;kSlow(false);const ov=oven();try{window.__grab&&ov&&ov.door&&window.__grab.free(ov.door);}catch(e){}ov&&ov.setOpen&&ov.setOpen(0);pot.visible=false;
     if(H.hold.Right&&H.hold.Right.tool==='ladle'){/* the ladle goes back into the pot from his hand */try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}a.step='putladle';a.t=0;
      a.update=dt=>{a.t+=dt;const g=gripHome('ladle');a.reach=['Right',g,smooth(0,.45,a.t)*(1-smooth(.75,1.1,a.t))];const G=window.__grab;const dd=G&&G.gripPoint?G.gripPoint('Right').distanceTo(g):0;
       if(H.hold.Right&&(dd<.03||a.t>.7))relTool('Right','ladle',.14);if(a.t>1.1){a.reach=null;cb();}};return;}
@@ -756,17 +777,17 @@ export function createHero(ctx){
    const a={step:'go',t:0};const hand=POSE.drinkHand||'Right',oth=hand==='Right'?'Left':'Right';const P=window.__props||P3;
    const ket=()=>P&&P.tools&&P.tools.kettle;const kHandle=()=>{const k=ket();k.updateMatrixWorld(true);return k.localToWorld(V(0,.21,0));};
    const kSpout=()=>ket().localToWorld(V(.17,.155,0));const rgt=()=>{const f=fwd(root.rotation.y);return V(-f.z,0,f.x);};
-   const cupAt=()=>{const hp=bones.Spine1.getWorldPosition(V());const nearSt=/^(kreach|pour|kback)$/.test(a.step);hp.addScaledVector(fwd(root.rotation.y),(nearSt?.24:.32)+(a.cfw||0)).addScaledVector(rgt(),(hand==='Right'?1:-1)*(nearSt?.1:.04)).add(V(0,-.12-(a.cd||0)+(a.step==='kreach'?.1:nearSt?.04:0),0));if(nearSt){if(a.kHy==null){const kh=toolHome('kettle');a.kHy=kh&&Math.abs(kh.y-root.position.y)<1.6?kh.y:-1e9;}if(a.kSt===undefined){const kh=toolHome('kettle');a.kSt=kh?OBST.find(o=>o.x1!=null&&!o.seat&&kh.x>o.x0&&kh.x<o.x1&&kh.z>o.z0&&kh.z<o.z1&&Math.abs(o.y-root.position.y)<.6)||null:null;}const o=a.kSt,r=.07,over=o&&hp.x>o.x0-r&&hp.x<o.x1+r&&hp.z>o.z0-r&&hp.z<o.z1+r;const fl=a.kHy+(over?.07:.04);if(hp.y<fl)hp.y=fl;}/* never below the stove top, and over its edge the fist with the mug clears it: on the shorter hero, right up at the stove, the mug sank under the top, collide shoved the fist 13 cm down and back out of the stove and the kettle chased it down through his hips *//* never below the stove top: on the shorter hero the lowered mug sank under it and the kettle followed it down through his hips */return hp;/* right up at the stove the mug keeps off its top edge: nearer the belly, out to the side */};// mug held in front of the belly (lower while he pours: the spout comes over it with the fist at his chest)
+   const cupAt=()=>{const hp=bones.Spine1.getWorldPosition(V());const nearSt=/^(kreach|pour|kback)$/.test(a.step);const nf=a.nf==null?(nearSt?1:0):a.nf;hp.addScaledVector(fwd(root.rotation.y),.32-.08*nf+(a.cfw||0)).addScaledVector(rgt(),(hand==='Right'?1:-1)*(.04+.06*nf)).add(V(0,-.12-(a.cd||0)+(a.cup==null?(a.step==='kreach'?.1:nearSt?.04:0):a.cup),0));/* eased (a.nf, a.cup): switched at the step change, the mug target jumped 6-8 cm and the reach jerked his chest and head (gate: head 14 cm at pour) */if(nearSt){if(a.kHy==null){const kh=toolHome('kettle');a.kHy=kh&&Math.abs(kh.y-root.position.y)<1.6?kh.y:-1e9;}if(a.kSt===undefined){const kh=toolHome('kettle');a.kSt=kh?OBST.find(o=>o.x1!=null&&!o.seat&&kh.x>o.x0&&kh.x<o.x1&&kh.z>o.z0&&kh.z<o.z1&&Math.abs(o.y-root.position.y)<.6)||null:null;}const o=a.kSt,r=.07,over=o&&hp.x>o.x0-r&&hp.x<o.x1+r&&hp.z>o.z0-r&&hp.z<o.z1+r;const fl=a.kHy+(over?.07:.04);if(over&&hp.y<fl)hp.y=fl;}/* pouring, the mug comes back off the stove edge and down to his waist: held over the stove top it lifted the kettle fist to his shoulder (watch R28-2) *//* never below the stove top, and over its edge the fist with the mug clears it: on the shorter hero, right up at the stove, the mug sank under the top, collide shoved the fist 13 cm down and back out of the stove and the kettle chased it down through his hips *//* never below the stove top: on the shorter hero the lowered mug sank under it and the kettle followed it down through his hips */return hp;/* right up at the stove the mug keeps off its top edge: nearer the belly, out to the side */};// mug held in front of the belly (lower while he pours: the spout comes over it with the fist at his chest)
    /* KITCHEN: step up facing the mug (reaching sideways for it from the sink spot bent him over to one side) */
    goTo('sink',()=>approachTo(a,rest.mug.clone(),.42,()=>{a.step='take';a.t=0;play(IDLE(),{fade:.4});}));
    a.ik=null;
-   a.update=dt=>{a.t+=dt;a.cd=(a.cd||0)+(((a.step==='pour')?.06:0)-(a.cd||0))*Math.min(1,dt*3);a.cfw=(a.cfw||0)+(((a.step==='pour')?.03:0)-(a.cfw||0))*Math.min(1,dt*3);/* while he pours the mug goes out over the stove's front edge (above its top): right in front of his belly the kettle's handle came back into his chest */
+   a.update=dt=>{a.t+=dt;a.cd=(a.cd||0)+(((a.step==='pour')?.2:0)-(a.cd||0))*Math.min(1,dt*3);{const k=Math.min(1,dt*4),ns=/^(kreach|pour|kback)$/.test(a.step);a.nf=(a.nf==null?(ns?1:0):a.nf)+((ns?1:0)-(a.nf==null?0:a.nf))*k;const cu=a.step==='kreach'?.1:ns?.04:0;a.cup=(a.cup==null?cu:a.cup)+(cu-(a.cup==null?cu:a.cup))*k;}a.cfw=(a.cfw||0)+(((a.step==='pour')?.03:0)-(a.cfw||0))*Math.min(1,dt*3);/* while he pours the mug goes out over the stove's front edge (above its top): right in front of his belly the kettle's handle came back into his chest */
     if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
     if(a.step==='take'){H.look=rest.mug.clone();H.lookW=1;/* the mug comes up from the counter into his hand in front of the belly (it never drops to dangle by his side) */a.ik=[[hand,rest.mug.clone().add(V(0,.05,0)).lerp(cupAt(),smooth(.9,1.4,a.t)),smooth(.1,.8,a.t)]];
      if(a.t>.85&&!H.hold[hand]){grab(mug,hand,hand==='Right'?[-.05,.136,.035]:[.05,.136,.035],[0,0,hand==='Right'?-Math.PI/2:Math.PI/2])/* KITCHEN: by its handle (the handle in the palm, not the mug's bottom on an open hand) */;}
-     if(a.t>1.4){a.ik=null;if(!ket()){a.step='drink';a.t=0;a.turn=rnd(-1.1,-.5);return;}a.step='tostove';const kp=ket().getWorldPosition(V());const nn=nearNode(kp)||'stove';goTo(nn,()=>{a.pushR=.14;/* right up to the stove front: the kettle is on the back ring */approachTo(a,kp,.3,()=>{a.step='kreach';a.t=0;});a.pushR=undefined;});}return;}
+     if(a.t>1.4){a.ik=null;if(!ket()){a.step='drink';a.t=0;a.turn=rnd(-1.1,-.5);return;}a.step='tostove';const kp=ket().getWorldPosition(V());const nn=nearNode(kp)||'stove';goTo(nn,()=>{a.pushR=.3;/* right up to the stove front: the kettle is on the back ring */approachTo(a,kp,.3,()=>{a.step='kreach';a.t=0;});a.pushR=undefined;});}return;}
     if(a.step==='tostove'||a.step==='go')return;
-    if(a.step==='kreach'){const h=kHandle();H.look=h;H.lookW=1;a.ik=[[oth,h,smooth(0,.6,a.t)],[hand,cupAt(),smooth(0,.6,a.t)]];
+    if(a.step==='kreach'){const h=kHandle().add(V(0,.025,0));/* the fist round the top of the arch, its fingers not down in the lid (collide: 4-6 cm into the kettle) */H.look=h;H.lookW=1;a.ik=[[oth,h,smooth(0,.6,a.t)],[hand,cupAt(),smooth(0,.6,a.t)]];
      if((a.t>.3&&palmTo(oth,h)<.04)||a.t>1.3){try{a.k0=(window.__grab&&window.__grab.gripPoint?window.__grab.gripPoint(oth):bones[oth+'Hand'].getWorldPosition(V())).clone().add(V(0,.04,0));a.w0=bones[oth+'Hand'].getWorldPosition(V());a.d0=a.k0.clone().sub(a.w0);bones[oth+'Hand'].attach(ket());/* as it stands, upright, the palm on its handle: no re-seat (a spec seat swung it, then the wrist snapped it level) */a.kh=1;AU('cloth');
       /* holding it, the grip point is the kettle's own (its GRIP spec), not the empty fist's: measure it again, or the fist was pulled 8-14 cm down onto the old point (a 27 cm pop after the pops filter) */{const G=window.__grab;if(G&&G.palmTarget){try{G.hold&&G.hold(oth,ket(),null);}catch(e){}/* registered first: until post2 told grab.js, gripPoint was still the empty fist's and the first pour frame threw the kettle 38 cm down (gate orig, LeftHand jump) */const g0=G.gripPoint(oth).clone();a.pa0=G.palmTarget(oth,g0).clone();a.k0=g0.add(V(0,.04,0));a.ik=[['palm',a.pa0.clone(),1],[hand,cupAt(),1]];a.lk0=h.clone();}H.noPop={side:oth,until:performance.now()+250};/* motion.js: the palm stays put while the arm's IK solution changes (the pop filter turned that into an 11 cm jerk) */}}catch(e){}a.step='pour';a.t=0;}return;}
     if(a.step==='pour'){// lift, bring the spout over the mug, tip it for ~2 s, level it again
@@ -776,7 +797,7 @@ export function createHero(ctx){
     if(a.step==='kback'){const hm=toolHome('kettle');if(!a.kbL){a.kbL=(H.look||hm).clone();}H.look=a.kbL.clone().lerp(hm,smooth(0,.5,a.t));H.lookW=1;const t=gripHome('kettle')||hm;a.ik=[[hand,cupAt(),1],[oth,t,1]];
      /* back to the ring by the palm, from where the pour left it (the grip target with full weight at once dropped the fist 5 cm, 20 after the pops filter) */{const G=window.__grab;if(!a.rel&&G&&G.palmTarget&&ket()&&ket().parent===bones[oth+'Hand']){if(!a.pk)a.pk=G.palmTarget(oth,G.gripPoint(oth)).clone();a.ik=[[hand,cupAt(),1],['palm',a.pk.clone().lerp(G.palmTarget(oth,t.clone()),smooth(0,.7,a.t)),1]];}}
      if(!a.rel&&((a.t>.5&&palmTo(oth,t)<.03)||a.t>1.3)){a.rel=1;a.tr=a.t;try{P.release('kettle',{blend:.14});}catch(e){}}
-     if(a.rel){a.ik=[[hand,cupAt(),1],[oth,t,1-smooth(a.tr+.1,a.tr+.9,a.t)]];if(a.t>a.tr+.95){a.step='drink';a.t=0;a.turn=rnd(-.8,.8);a.ik=null;{const b=fwd(root.rotation.y);H.slide={x:-b.x*.16,z:-b.z*.16,yaw:0,k:0,d:.5};a.y0=root.rotation.y;}/* a step back off the stove before he turns: right up at it, the turn swept the hanging hand through its corner */}}return;}
+     if(a.rel){const u=smooth(a.tr,a.tr+.6,a.t);const off=t.clone().addScaledVector(fwd(root.rotation.y),-.36*u).add(V(0,.05*u,0));/* let go, the hand comes up and back off the stove top before it drops (straight down from the handle it went through the stove's front edge, 4-5 cm) */a.ik=[[hand,cupAt(),1],[oth,off,1-smooth(a.tr+.6,a.tr+1.2,a.t)]];if(a.t>a.tr+1.25){a.step='drink';a.t=0;a.turn=rnd(-.8,.8);a.ik=null;{const b=fwd(root.rotation.y);H.slide={x:-b.x*.16,z:-b.z*.16,yaw:0,k:0,d:.5};a.y0=root.rotation.y;}/* a step back off the stove before he turns: right up at it, the turn swept the hanging hand through its corner */}}return;}
     if(a.step==='drink'){// turn toward the window, sip slowly, rest between sips
      const w=N.kwin?N.kwin.p:root.position;H.face=a.y0!=null&&a.t<.5?a.y0:Math.atan2(w.x-root.position.x,w.z-root.position.z)+a.turn*.3;H.look=w.clone().add(V(0,1.5,2));H.lookW=.5;
      // a sip: the mug up to the lips by the arm (no clip miming it at the hip), a moment, down to the belly, a pause
@@ -786,8 +807,9 @@ export function createHero(ctx){
    // the mug stays upright in his hand (the wrist turns it level; it hung upside down off the IK'd hand); tilted toward him only at the lips
    const level=w=>{if(w<.01||mug.parent!==bones[hand+'Hand'])return;const hb=bones[hand+'Hand'];mug.updateMatrixWorld(true);const u=V(0,1,0).applyQuaternion(mug.getWorldQuaternion(new THREE.Quaternion()));
     const q=new THREE.Quaternion().slerp(new THREE.Quaternion().setFromUnitVectors(u,V(0,1,0)),w);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cq=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(q.multiply(cq)));hb.updateMatrixWorld(true);};
-   a.post=dt=>{/* carrying the mug: held upright in front of him while he walks */if(H.hold[hand]&&/^(tostove|go|approach)$/.test(a.step))reachGrip(hand,cupAt(),1);
-    a.post2();REACH_LEAN=.6;const lv=()=>{if(H.hold[hand])level(a.step==='drink'?1-(a.sk||0):a.step==='take'?smooth(.85,1.3,a.t):1);};lv();
+   a.post=dt=>{dt=dt||1/60;{/* life at the stove and by the window: a breath and the eyes always; the weight shift only while he just stands and sips (at the kettle the pour solve owns the body) */const on=/^(take|kreach|pour|kback|drink|putmug)$/.test(a.step);a.lw=(a.lw||0)+((on?1:0)-(a.lw||0))*Math.min(1,dt*1.5);a.lsw=(a.lsw||0)+((a.step==='drink'?1:0)-(a.lsw||0))*Math.min(1,dt*1.2);lifePre(a,dt,a.lw,{sw:a.lsw});}
+    /* carrying the mug: held upright in front of him while he walks */if(H.hold[hand]&&/^(tostove|go|approach)$/.test(a.step))reachGrip(hand,cupAt(),1);
+    a.post2();REACH_LEAN=.6;if(a.step==='drink')lifeLook(a,dt,a.lw,.03);const lv=()=>{if(H.hold[hand])level(a.step==='drink'?1-(a.sk||0):a.step==='take'?smooth(.85,1.3,a.t):1);};lv();
     /* the gaze (lookAt) turns the chest a quarter of the head's yaw AFTER this: at the stove that carried the mug hand 18 cm off its spot and the spout chased it; the hands are put back once the look is done */a.relook=()=>{if(!a.re||!a.re.length)return;REACH_LEAN=0;for(const f of a.re)f();REACH_LEAN=.6;lv();};
     // a sip: the mug itself is posed at the mouth (rim on the lips, tipped toward him, handle out to his side) and the hand follows it
     if(a.step==='drink'&&(a.sk||0)>.01&&mug.parent===bones[hand+'Hand']){const k=a.sk;const f=fwd(root.rotation.y);const up=V(0,1,0);const rs=V(-f.z,0,f.x).multiplyScalar(hand==='Right'?1:-1);
@@ -820,10 +842,10 @@ export function createHero(ctx){
        fist: on the shorter hero it never settled (the kettle swung 20-50 cm, through his hips and shins; gate orig) */
       const G=window.__grab;const dir=rgt().multiplyScalar(oth==='Left'?1:-1).addScaledVector(fwd(root.rotation.y),-.3).normalize();a.kDir=dir.clone();/* across and a little back towards him: the kettle body stays out in front, off his chest */
       if(!a.kOff)a.kOff=dir.clone().multiplyScalar(.17).add(V(0,-.1,0));/* spout from the grip point: 17 cm across, 10 down (tipped) */
-      const cy=bones.Spine2.getWorldPosition(V()).y+.08;/* the fist at chest height at most: lifted to fix the spout height it went up to his forehead, the forearm across the face (watch r24) */
+      const cyT=bones.Spine2.getWorldPosition(V()).y;if(a.cyv==null)a.cyv=Math.max(cyT,(G&&G.gripPoint?G.gripPoint(oth).y:cyT));a.cyv+=(cyT-a.cyv)*.06;const cy=Math.max(cyT,a.cyv);/* the cap comes down to the chest over ~0.7 s from where the fist is: clamped at once it pulled the kettle fist down 10-20 cm in a frame *//* the fist at chest height at most: lifted to fix the spout height it went up to his forehead, the forearm across the face (watch r24) */
       const g=t.clone().sub(a.kOff);if(g.y>cy)g.y=cy;const k0=a.k0?a.k0.clone().add(V(0,-.04,0)):g;const gb=k0.clone().lerp(g,w);
       const pp=a.pa0&&G?a.pa0.clone().add(gb.clone().sub(a.k0).add(V(0,.04,0))):null;
-      const put=()=>{reachTo(oth,a.k0||gb,1-w);/* the stoop he reached the ring with straightens as the kettle comes in (no snap upright) */if(pp)kPalm(pp);else reachGrip(oth,gb,1);levelK();yawK(dir,w);tipNow();
+      const put=()=>{if(!pp)reachTo(oth,a.k0||gb,1-w);/* the stoop he reached the ring with straightens as the kettle comes in (no snap upright); kPalm leans by itself: a second lean toward the grip point on top of it pushed his head 6 cm forward on the first pour frame (gate: head 14 cm) */if(pp)kPalm(pp);else reachGrip(oth,gb,1);levelK();yawK(dir,w);tipNow();
        if(pp&&G){k.updateMatrixWorld(true);const e=t.clone().sub(kSpout()).multiplyScalar(w);if(e.length()>.15)e.setLength(.15);const gy=G.gripPoint(oth).y;if(gy+e.y>cy)e.y=Math.min(0,cy-gy);/* one correction: the fist turned with the kettle, the spout came out a few cm off */kPalm(pp.clone().add(e));levelK();yawK(dir,w);tipNow();}
        if(G&&w>.5){k.updateMatrixWorld(true);const o=kSpout().sub(G.gripPoint(oth));a.kOff.lerp(o,.3);}};
       put();a.re.push(put);/* again after the gaze turned the chest */
@@ -875,7 +897,8 @@ export function createHero(ctx){
    if(!ok)continue;if(++tries>45)return null;const q=V(x,p.y,z);const y=armsYaw(q,Math.atan2(ux,uz),clip);if(y!=null)return {q,yaw:y};yield null;}
   return null;}
  function approachTo(a,sp,stand,then){const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz)||1e-3;H.face=a.faceYaw!=null?a.faceYaw:Math.atan2(dx,dz);/* faceYaw: the job's own facing (a window pane), turned to during the slide, not on the spot after it */
-  const move=Math.max(0,Math.min(1.2,d-stand));const q=p.clone().add(V(dx/d*move,0,dz/d*move));if(!a.noPush)pushOut(q,a.pushR);headroom(q,dx/d,dz/d);const dur=Math.max(.3,move/.8,Math.abs(wrapA(H.face-root.rotation.y))/2.4);/* never faster than ~140 deg/s */
+  let cap=1.2;if(a.reach&&d-stand>1.2){/* WEAR: a fault far from the walk graph (a long kitchen board's lifted end, 2.7 m off the node): walk on to it when the floor between is clear and level */const qq=p.clone().add(V(dx/d*(d-stand),0,dz/d*(d-stand)));let ok=segClear(p,qq);for(let t=.25;ok&&t<1;t+=.25){const y=floorAt(p.x+(qq.x-p.x)*t,p.y+.3,p.z+(qq.z-p.z)*t,.45,.5);if(y==null||Math.abs(y-p.y)>.06)ok=false;}if(ok)cap=Math.min(a.reach,d-stand);}
+  const move=Math.max(0,Math.min(cap,d-stand));const q=p.clone().add(V(dx/d*move,0,dz/d*move));if(!a.noPush)pushOut(q,a.pushR);headroom(q,dx/d,dz/d);const dur=Math.max(.3,move/.8,Math.abs(wrapA(H.face-root.rotation.y))/2.4);/* never faster than ~140 deg/s */
   const mv=Math.hypot(q.x-p.x,q.z-p.z);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:wrapA(H.face-root.rotation.y),k:0,d:dur};if(mv>.35){/* a real step over there: face the way he goes, turn to the work at the end (no gliding sideways) */const yT=Math.atan2(q.x-p.x,q.z-p.z);H.slide.y0=root.rotation.y;H.slide.yT=root.rotation.y+wrapA(yT-root.rotation.y);H.slide.yF=H.slide.yT+wrapA(H.face-yT);
    /* WALK: three phases with their own time: turn toward the spot (<=150 deg/s, it used to be 30% of the slide: up to 380 deg/s), step there, turn to the work */
    const t1=Math.abs(wrapA(yT-root.rotation.y))/2.6,t2=mv/.8,t3=Math.abs(wrapA(H.face-yT))/2.6;H.slide.d=Math.max(dur,t1+t2+t3);H.slide.a=t1/H.slide.d;H.slide.b=(t1+t2)/H.slide.d;}if(move>.08)play('30',{fade:.3,speed:1});else if(H.cur&&H.cur===actions['30']&&!window.__keepWalk)play(IDLE(),{fade:.3});/* already there: the route's walk does not go on in place */
@@ -974,7 +997,7 @@ export function createHero(ctx){
   // hand targets glide too (a switch of target is a move, not a jump)
   const glide=(key,v,dt,k=12,from)=>{if(!a[key]){a[key]=(from||v).clone();}a[key].lerp(v,1-Math.exp(-dt*k));return a[key];};
   // hands (contacts slot): weights ramp, never snap
-  a.post=dt=>{const st=a.step;const k=x=>Math.min(1,x);REACH_LEAN=H.seated===seat||st==='sit'||st==='up'?.12:st==='pdown'?.5:.3;/* he never folds over the plate: the plate comes to him */try{post2(dt);}finally{REACH_LEAN=.6;}};
+  a.post=dt=>{const st=a.step;const k=x=>Math.min(1,x);REACH_LEAN=H.seated===seat||st==='sit'||st==='up'?.12:st==='pdown'?.5:.3;/* he never folds over the plate: the plate comes to him */const sat=H.seated===seat&&st!=='up';a.lw=(a.lw||0)+((sat?1:0)-(a.lw||0))*Math.min(1,(dt||1/60)*1.5);lifePre(a,dt||1/60,a.lw,{shift:false});/* seated: a breath, no weight shift */try{post2(dt);}finally{REACH_LEAN=.6;}lifeLook(a,dt||1/60,a.lw,.025);};
   const post2=dt=>{const st=a.step;
    const wantL=a.plate==='hand'||st==='take'&&a.t<.7||st==='place'||st==='pdown'&&a.t<1.1||st==='lift'||(st==='eat'||st==='pick'||st==='putspoon');
    const wantR=a.spoon==='hand'||(st==='spoon'&&a.t<.55)||(st==='pick'&&a.t<.6)||(st==='putspoon')||(st==='spoonback');
@@ -1057,7 +1080,7 @@ export function createHero(ctx){
    if(a.step==='shelf'){if(a.t>1.0){D.settle(a.piece.i,'shelf');AU('plate',shelfP);a.piece=null;say('back');}return;}
    if(a.step==='back'){if(a.t>.35)next();return;}
    if(a.step==="end"){if(a.t>1.7||a.t>.5&&a.wL<.03&&a.wR<.03)endTask({ok:true});return;}};
-  a.post=dt=>{const st=a.step;const f=face2(),r=V(-f.z,0,f.x),up=V(0,1,0);const hp=bones.Hips.getWorldPosition(V());
+  a.post=dt=>{const st=a.step;a.lw=(a.lw||0)+((/^(go|approach)$/.test(st)?0:1)-(a.lw||0))*Math.min(1,dt*1.5);lifePre(a,dt,a.lw,{sw:.5});/* life at the sink: weight shift, breath (before the hands are placed) */const f=face2(),r=V(-f.z,0,f.x),up=V(0,1,0);const hp=bones.Hips.getWorldPosition(V());
    let look=sinkP;let tR=null,tL=null;
    if(st==='reachR'){const from=a.kind==='shelf'?'rack':'dirty';const st2=D.state();const i=Array.from({length:4},(_,k)=>k).find(k=>D.where(k)===from);if(i!=null){const s=D.slot(i,from).pos;tR=s.clone().add(V(0,from==='dirty'?.05:.03,0));look=s;}
     if(a.kind==='wash')tL=holdC().addScaledVector(r,-.1).add(V(0,.07,0)).addScaledVector(f,-.06);/* waits up over the front of the basin: the elbow stays above the countertop */}
@@ -1078,7 +1101,7 @@ export function createHero(ctx){
    if(st==='back'&&a.relL&&a.t<.3)tL=a.relL.clone().add(V(0,.1*smooth(0,.3,a.t),0)).addScaledVector(f,-.05*smooth(0,.3,a.t));/* let go off the top edge: up and back, never down through the plate */
    else if(st==='back'&&a.kind==='wash'){a.relL=null;tL=holdC().addScaledVector(r,-.08);}
    /* a hand with nothing to do goes back to the clip (weights ramp, the hand glides) */a.wR+=((tR?1:0)-a.wR)*Math.min(1,dt*3.5);a.wL+=((tL?1:0)-a.wL)*Math.min(1,dt*3.5);
-   H.look=lk=lk?lk.lerp(look,1-Math.exp(-dt*6)):look.clone();H.lookW=.85;
+   H.look=lk=lk?lk.lerp(look,1-Math.exp(-dt*6)):look.clone();H.lookW=.85;lifeLook(a,dt,a.lw,.03);
    /* the hand glides to its target, lifted over the counter / basin edge on the way (never through the furniture) */
    const C=window.__collide;const clear=q=>{if(!C||!C.depthAt)return q;for(let i=0;i<20;i++){let hit=false;for(const dy of [-.04,-.015,0])if(C.depthAt(q.x,q.y+dy,q.z)>.003){hit=true;break;}if(!hit)break;q.y+=.01;}return q;};
    const gl=(k,v,from)=>{if(!a[k])a[k]=from.clone();if(v){const g=a[k];let w=v;
@@ -1163,7 +1186,7 @@ export function createHero(ctx){
   const sp=()=>(typeof o.pt==='function'?o.pt():o.pt)||(o.node&&N[o.node]?N[o.node].p.clone().addScaledVector(fwd(N[o.node].face??0),.5).add(V(0,1,0)):root.position.clone().add(V(0,1,0)));
   const dur=o.dur?rnd(o.dur[0],o.dur[1]):(o.clip&&!o.loop&&has(o.clip)?durOf(o.clip)*(o.reps||1):8);a.jdur=dur;
   const tools=(o.tools||[]).filter(([n])=>hasTool(n));
-  const begin=()=>{const tk=tools.length&&!a.fetched;a.step=tk?'take':'work';a.t=0;o.start&&o.start(a);if(!tk)work();};
+  const begin=()=>{a.standAt=root.position.clone();const tk=tools.length&&!a.fetched;a.step=tk?'take':'work';a.t=0;o.start&&o.start(a);if(!tk)work();};
   const work=()=>{a.step='work';a.t=0;if(o.clip&&has(o.clip)){if(o.loop)play(o.clip,{fade:window.__fadeIn??o.fadeIn??.5,speed:o.speed||1});else once(o.clip,{fade:.45,speed:o.speed||1,then:()=>{if(a.step==='work'&&a.T<dur-1)play(o.idle&&has(o.idle)?o.idle:IDLE(),{fade:.5});}});}else play(IDLE(),{fade:.5});};
   const go=()=>{const s=sp();if(o.pushR!=null)a.pushR=o.pushR;/* how close to the furniture box he may stand (the pot: right up at the stove) */if(o.node){goTo(o.node,()=>{if(o.slide===false){H.face=N[o.node].face??H.face;begin();}else approachTo(a,s,o.stand??.45,begin);});}
    else{const nn=nearNode(s);a.nn=nn;/* o.via: a point to step to first, so the turn on the way happens in the open (gate: the telescope turn kicked a deck post) */const fin=()=>{const v=o.via&&o.via(s);if(v)approachTo(a,v,0,()=>{a.noPush=true;const fy=a.faceYaw;if(o.viaFace)a.faceYaw=o.viaFace();approachTo(a,s,o.stand??.45,()=>{a.noPush=false;a.faceYaw=fy;begin();});});/* the last short step straight in: the obstacle box round the work (the tripod) pushed the target out past it, behind the rail */else approachTo(a,s,o.stand??.45,begin);};if(nn)goTo(nn,fin);else fin();}};
@@ -1184,9 +1207,10 @@ export function createHero(ctx){
     const low=!bl&&h.y<root.position.y+.7;jobSquat(a,dt,h,hand,!a.gotIt);if(o.clear)kneesClear(o.clear,dt);/* low down: he bends his knees to it (feet stay on the boards) */
     if(a.gotIt&&low){/* GRAB: taken off the floor, the tool rises with him in front of his shins (it used to swing back through them) */if(a.sq0==null)a.sq0=H.squat||0;const up=Math.max(0,a.sq0-(H.squat||0));if(H.squat>.02)a.tsU=a.t;
      a.rg=[hand,h.clone().add(V(0,up+.06*smooth(0,.3,a.t-a.tg),0)),1-smooth(0,.35,a.t-(a.tsU??a.t))];}
+    else if(a.gotIt&&o.keepGrip){/* POT: the ladle stays up at the stove and goes straight into the stir (it fell to his hip first: the ladle through his shins, arm and head on the way back up) */a.kgP=h.clone().add(V(0,.05*smooth(0,.2,a.t-a.tg),0));a.rg=[hand,a.kgP,1];}
     else a.rg=[hand,h,(low?smooth(.4,.85,a.t):smooth(0,.45,a.t))*(a.gotIt?1-smooth(0,.35,a.t-a.tg):1)];
     if(!a.gotIt&&a.t>(low?.8:.45)&&(palmTo(hand,h)<.06||a.t>(low?1.5:1.6))){a.gotIt=true;a.tg=a.t;grabTool(n,hand);if(H.belt===n)H.belt=null;AU('cloth');}
-    if(a.gotIt&&a.t-a.tg>.4&&!(H.squat>0)&&(!low||a.t-(a.tsU??0)>.35)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;a.sq0=null;a.tsU=null;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else if(o.restand){const q=o.restand();q.y=root.position.y;const s=sp();const fy=a.faceYaw;a.faceYaw=Math.atan2(s.x-q.x,s.z-q.z);play('30',{fade:.3,speed:1});approachTo(a,q,0,()=>{a.faceYaw=fy;a.fetched=true;work();});/* GRAB: the step in for the tool left him beside its shelf; he steps back to a stand of the work's own (the watering can: the pour swept the can through the table's end) */}else work();}}return;}
+    if(a.gotIt&&a.t-a.tg>(o.keepGrip?.2:.4)&&!(H.squat>0)&&(!low||a.t-(a.tsU??0)>.35)){a.held.push(n);a.gotIt=false;a.t=0;a.rg=null;a.st=0;a.sq0=null;a.tsU=null;if(a.held.length>=tools.length){if(a.afterTake){const f=a.afterTake;a.afterTake=null;f();}else if(o.restand){const q=o.restand();q.y=root.position.y;const s=sp();const fy=a.faceYaw;a.faceYaw=Math.atan2(s.x-q.x,s.z-q.z);play('30',{fade:.3,speed:1});approachTo(a,q,0,()=>{a.faceYaw=fy;a.fetched=true;work();});/* GRAB: the step in for the tool left him beside its shelf; he steps back to a stand of the work's own (the watering can: the pour swept the can through the table's end) */}else if(a.standAt&&!a.reApp&&Math.hypot(a.standAt.x-root.position.x,a.standAt.z-root.position.z)>.12){/* REPAIRS: the step to the tool took him off his work spot: back to it first (he hammered a wall 1.1 m away, from beside the bench) */a.reApp=1;approachTo(a,sp(),o.stand??.45,work);}else work();}}return;}
    if(a.step==='work'){a.T+=dt;H.look=o.look?o.look(a):s;H.lookW=o.lookW??.85;o.tick&&o.tick(a,dt);
     // small variations so a long job is never a frozen loop: pause and look round, scratch, stretch, sigh
     if(o.vary!==false&&dur>14){a.vt=(a.vt??rnd(9,16))-dt;if(a.vt<=0&&!a.pause){a.vt=rnd(10,18);const r=Math.random();
@@ -1195,7 +1219,7 @@ export function createHero(ctx){
      if(a.pause){a.pause-=dt;H.look=a.pl;H.lookW=.7;if(a.pause<=0){a.pause=0;if(o.clip&&o.loop&&has(o.clip))play(o.clip,{fade:.6,speed:o.speed||1});else if(o.clip&&has(o.clip))once(o.clip,{fade:.45,speed:o.speed||1});}}}
     if(!o.loop&&o.clip&&o.reps&&!H.once&&!a.pause&&a.T<dur-1)once(o.clip,{fade:.4,speed:o.speed||1});
     if(a.T>=dur){a.step='put';a.t=0;o.end&&o.end(a);play(IDLE(),{fade:.5});}return;}
-   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';if(!a.carried&&awayHome(n)){/* GRAB: a long tool is walked home in the hand and put there */a.carried=true;a.step='carry';a.t=0;const hh=toolHome(n);const back=()=>approachTo(a,hh.clone().setY(root.position.y),.42,()=>{a.step='put';a.t=0;a.st=0;});const me=nearNode(root.position.clone());if(me)H.node=me;/* he swept away from the job's node */const nn=nearNode(hh);if(nn)goTo(nn,back);else back();return;}
+   if(a.step==='put'){const n=a.held[a.held.length-1];if(!n){finish();return;}const hand=(tools.find(t=>t[0]===n)||[])[1]||'Right';if(!a.carried&&(awayHome(n)||farHome(n)&&window.__belt!==true)){/* GRAB: a tool is walked home in the hand and put there; a small one used to go on the belt and rode on his hip all day (critic W1: the bench hammer through cooking, sleep and trips) */a.carried=true;a.step='carry';a.t=0;const hh=toolHome(n);const back=()=>approachTo(a,hh.clone().setY(root.position.y),.42,()=>{a.step='put';a.t=0;a.st=0;});const me=nearNode(root.position.clone());if(me)H.node=me;/* he swept away from the job's node */const nn=nearNode(hh);if(nn)goTo(nn,back);else back();return;}
     if(a.toBelt==null)a.toBelt=farHome(n);const bt=a.toBelt;const h=bt?beltPt():gripHome(n)||toolHome(n)||s;H.look=bt?null:h;H.lookW=1;
     /* a far home: the tool goes on the belt (right hip), no trip back across the house and no flying home */
     // GRAB: the hand carries the tool onto its hook / spot and lets go there (the release only eases the last few mm), never from afar
@@ -1306,8 +1330,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    armIK(side,wrist,sidePole(side),w);const pq=hb.parent.getWorldQuaternion(new THREE.Quaternion());const cur=hb.getWorldQuaternion(new THREE.Quaternion());hb.quaternion.copy(pq.invert().multiply(cur.slerp(Qh,w)));hb.updateMatrixWorld(true);
    Fw=hb.getWorldPosition(V()).sub(bones[side+'ForeArm'].getWorldPosition(V())).normalize();}
   return true;}
+ // KITCHEN: a hand goes to the pot over the top: from where it hangs it rises in an arc and comes down onto the handle (Walk aca2dc2)
+ function reachArc(a,side,t,dt){const R=a.arc||(a.arc={});let r=R[side];if(!r){r=R[side]={p0:bones[side+'Hand'].getWorldPosition(V()),k:0};}r.k=Math.min(1,r.k+dt/.7);const k=smooth(0,1,r.k);
+  if(r.k>=1)return t;/* up first, then over, then a few cm down onto it: no loop above the target (the old arc lifted the shorter hero's fist over his shoulder, a 12 cm jump and a 40 cm jitter, gate orig) */const ky=smooth(0,.4,r.k),kx=smooth(.2,1,r.k);const q=r.p0.clone().lerp(t,kx);q.y=r.p0.y+(t.y-r.p0.y)*ky+.05*Math.sin(Math.PI*kx);return q;}
  function stirPost(a,dt){const P=PP();const pot=P&&P.tools&&P.tools.pot,la=P&&P.tools&&P.tools.ladle;if(!pot||!la||la.parent!==bones.RightHand)return;
-  a.sw=Math.min(1,(a.sw||0)+dt/.6);a.sa=(a.sa||0)+dt*4.6;pot.updateMatrixWorld(true);const c=pot.localToWorld(V(0,.07,0));const sh=bones.RightArm.getWorldPosition(V());
+  a.sw=Math.min(1,(a.sw||0)+dt/.6);a.sa=(a.sa||0)+dt*4.6;if(a.kgP&&a.sw<1)gripNoLean('Right',a.kgP,1);/* the stir blends in from the fist where the take left it, not from the clip's hanging arm */pot.updateMatrixWorld(true);const c=pot.localToWorld(V(0,.07,0));const sh=bones.RightArm.getWorldPosition(V());
   const toMe=V(sh.x-c.x,0,sh.z-c.z).normalize();const B=c.clone().add(V(Math.cos(a.sa)*.045,0,Math.sin(a.sa)*.045));// the bowl in the soup
   // the handle leans toward him; pick the lean (and a little to his right) that keeps the fist a comfortable ~0.42 m from the shoulder
   /* POT (watch R25-7): the fist on the upper third of the handle (grab.js ladle grip, 24 cm from the bowl), 15-20 cm over the rim, the
@@ -1316,17 +1343,21 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const sp0=window.__grab&&window.__grab.GRIP&&window.__grab.GRIP.ladle;const L=sp0?.16+sp0.g[1]:.29;const rim=pot.localToWorld(V(0,.115,0)).y;
   const rt=V(-toMe.z,0,toMe.x);let Gp=null,bd=9;for(const el of [1.4,1.3,1.2,1.1,1.0,.9,.8])for(const sd of [0,.35,-.2]){const dir=toMe.clone().multiplyScalar(Math.cos(el)).addScaledVector(rt,sd*Math.cos(el)).add(V(0,Math.sin(el),0)).normalize();
    const g=B.clone().addScaledVector(dir,L);const dy=g.y-rim;const e=Math.max(0,.15-dy)+Math.max(0,dy-.2)+.5*Math.abs(g.distanceTo(sh)-.32)+(sd?.02:0);if(e<bd){bd=e;Gp=g;}}
-  a.gs=a.gs?a.gs.lerp(Gp,1-Math.exp(-dt*10)):Gp.clone();Gp=a.gs;
-  const G=window.__grab;if(G){G.hold('Right',pot.parent||pot,null);G.hold('Left',pot.parent||pot,null);a.stirHold=1;}/* the stove and pot are what his hands work at: collide.js leaves them there */
+  a.gs=a.gs?a.gs.lerp(Gp,1-Math.exp(-dt*10)):Gp.clone();Gp=reachArc(a,'Right',a.gs,dt);/* the ladle comes over the stove top, not through its front (Walk aca2dc2, folded in) */
+  const G=window.__grab;if(G){G.hold('Right',pot.parent||pot,null);a.stirHold=1;}/* the stove and pot are what his hands work at: collide.js leaves them there */
   /* W10: no torso lean toward the pot; he stands close instead */holdToolAt('Right','ladle',Gp,B,a.sw);a.dbg=[Gp,B];{const G2=window.__grab,sw=a.sw;if(G2&&G2.late)G2.late(()=>holdToolAt('Right','ladle',Gp,B,sw));}
   // left hand on the pot handle nearer his left
   const hs=[pot.localToWorld(V(-.1,.09,0)),pot.localToWorld(V(.1,.09,0))];const ls=bones.LeftArm.getWorldPosition(V());const lh=hs[0].distanceTo(ls)<hs[1].distanceTo(ls)?hs[0]:hs[1];
-  /* the left hand comes onto the stove top from above and in front, never up through its front from where it hung (gate: 10 cm into the stove, both heroes) */
-  const over=p=>{const u=smooth(.45,1,a.sw);return p.clone().add(V(0,.18*(1-u),0)).addScaledVector(toMe,.14*(1-u));};const lw=Math.min(1,a.sw*1.8);
-  if(lh.distanceTo(ls)<armLen*.95+PALM)gripNoLean('Left',over(lh),lw*.95);
+  /* KITCHEN: the left hand is let into the stove only while it is really on the pot or the stove edge, and it comes there over the top
+     in an arc (reachArc); a hand left hanging by his side is collide's again (gate pot: 10 cm inside the stove front) */
+  let lOn=false;if(lh.distanceTo(ls)<armLen*.95+PALM){gripNoLean('Left',reachArc(a,'Left',lh,dt),.95*Math.min(1,a.sw*1.8));lOn=true;}
   else{// KITCHEN: the handle is out of reach: the left palm rests flat on the stove's front edge beside the pot (steadying himself), never stretched or leaning
    if(!a.sbox){const st=pot.parent;a.sbox=new THREE.Box3().setFromObject(st);a.sy=pot.getWorldPosition(V()).y;}const b=a.sbox;
-   const e=V(clamp(ls.x,b.min.x+.04,b.max.x-.04),a.sy+.012,clamp(ls.z,b.min.z+.04,b.max.z-.04));if(e.distanceTo(ls)<armLen*.98+PALM)gripNoLean('Left',over(e),lw*.9);}
+   const e0=V(clamp(ls.x,b.min.x+.04,b.max.x-.04),a.sy+.012,clamp(ls.z,b.min.z+.04,b.max.z-.04));
+   /* the palm only where it lies on top of something with nothing over it (the kettle beside the pot, the taller counter): walk the spot toward the pot until the collide grid has room for a hand */
+   const C=window.__collide;const pc=pot.getWorldPosition(V());let e=null;for(let k=0;k<=5&&!e;k++){const q=e0.clone().lerp(V(pc.x,e0.y,pc.z),k*.12);if(!C||!C.depthAt||(C.depthAt(q.x,q.y+.035,q.z)<=0&&C.depthAt(q.x,q.y+.07,q.z)<=0))e=q;}
+   if(e&&e.distanceTo(ls)<armLen*.98+PALM){gripNoLean('Left',reachArc(a,'Left',e,dt),.9*Math.min(1,a.sw*1.8));lOn=true;}}
+  if(G){if(lOn&&a.sw>.5)G.hold('Left',pot.parent||pot,null);else G.free&&G.free('Left');}
   // a scrape each half turn (Sound): the bowl along the pot side
   const half=Math.floor(a.sa/Math.PI);if(half!==a.sh){a.sh=half;try{window.__audio&&window.__audio.contact&&window.__audio.contact({tool:'spoon',kind:'scrape',pos:B.toArray(),strength:.45,dur:Math.PI/4.6});}catch(e){}}}
  // KITCHEN chop: the knife tip stays on the board beyond the carrot, the handle rocks down through it (a cut every ~0.5 s: slow lift,
@@ -1336,8 +1367,29 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  let SLM=null;function chopSlice(a,bd,x){if(!SLM)SLM=new THREE.MeshStandardMaterial({color:0xE07A2A,roughness:.6});a.sl=a.sl||[];
   for(const m of a.sl)m.position.x+=Math.sign(x||1)*.007;let m=a.sl.length>=6?a.sl.shift():new THREE.Mesh(new THREE.CylinderGeometry(.014,.015,.006,12),SLM);
   if(m.parent!==bd)bd.add(m);m.position.set(x,.026,.008+(Math.random()-.5)*.012);m.rotation.set(0,0,Math.PI/2*.15*Math.sign(x||1));m.userData.t=0;a.sl.push(m);}
+
+ // ===== KITCHEN: life while he works at a counter (coordinator round 27): a slow weight shift from one leg to the other (the pelvis
+ // slides 1.5-2 cm over the loaded foot and drops a little on the free side, the feet stay planted by a two-bone leg IK), a breath in
+ // the chest, and the eyes wandering a few cm over the work with quick saccades. lifePre runs before the hands are placed (so the
+ // hands stay on their targets), lifeLook after the task has set H.look. w: 0..1 (fade in/out with the work).
+ /* its own PRNG: drawing from Math.random here would shift every later random choice of the shared (seeded) stream */
+ let lifeS=12345;const lr=(a=0,b=1)=>{lifeS=(lifeS*1103515245+12345)%2147483648;return a+(b-a)*lifeS/2147483648;};
+ function lifePre(a,dt,w=1,o={}){const L=a.life||(a.life={t:lr(0,20),T:lr(5,8),ph:lr(0,6.28),lk:V(),lkT:V(),nx:lr(.8,2)});L.t+=dt;if(window.__noLife)w=0;if(w<.01)return;
+  const LB=[bones.Hips,bones.Spine,bones.Spine1,bones.Spine2].filter(Boolean),base=LB.map(b=>[b.position.clone(),b.quaternion.clone()]);
+  const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+  const sw=o.shift===false?0:(o.sw??1);if(sw*w>.01){const Hb=bones.Hips;const pre={};for(const sd of ['Left','Right']){const F=bones[sd+'Foot'];if(F)pre[sd]=[F.getWorldPosition(V()),F.getWorldQuaternion(new THREE.Quaternion())];}
+   const x=sw*Math.sin(L.t*2*Math.PI/L.T+L.ph);/* -1..1: which foot carries him */
+   const d=r.clone().multiplyScalar(.018*x*w).add(V(0,-.006*Math.abs(x)*w,0));const wp=Hb.getWorldPosition(V()).add(d);Hb.position.copy(Hb.parent.worldToLocal(wp));Hb.updateMatrixWorld(true);
+   rotW(Hb,f,-.035*x*w);rotW(bones.Spine,f,.022*x*w);rotW(bones.Spine1,f,.013*x*w);/* the pelvis drops on the free side, the chest stays upright */root.updateMatrixWorld(true);
+   for(const sd of ['Left','Right']){const P=pre[sd];if(!P)continue;const U=bones[sd+'UpLeg'],Lg=bones[sd+'Leg'],F=bones[sd+'Foot'];const k=Lg.getWorldPosition(V()),hp=U.getWorldPosition(V());const pole=k.clone().sub(hp.clone().add(P[0]).multiplyScalar(.5));if(pole.lengthSq()<1e-6)pole.copy(f);pole.normalize().lerp(f,.3);
+    ik2(U,Lg,F,P[0],k.clone().add(pole),w*sw,false);/* weighted by the fade: at its first frames a full re-solve snapped the knee into the pole plane (a 12 cm leg jump); the slide left is (1-w)·w·1.8 cm, under 5 mm */const pq=F.parent.getWorldQuaternion(new THREE.Quaternion());F.quaternion.copy(pq.invert().multiply(P[1]));F.updateMatrixWorld(true);}}
+  {const b=Math.sin(L.t*2*Math.PI/4.3);rotW(bones.Spine2,r,-.012*b*w);/* a breath: the chest rises and opens a little */}root.updateMatrixWorld(true);
+  lifeUndo=LB.map((b,i)=>[b,b.position.clone().sub(base[i][0]),b.quaternion.clone().invert().premultiply(new THREE.Quaternion()).multiply(base[i][1])]);if(!lifeReg){lifeReg=1;stage('pre',()=>{/* next frame's start, before the clip: take our offset back off. A bone the clip rewrites loses it anyway; one it leaves (a held or slowed pose) must not pile it up */if(!lifeUndo)return;for(const [b,dp,dq] of lifeUndo){b.position.sub(dp);b.quaternion.multiply(dq);}lifeUndo=null;});}}
+ let lifeUndo=null,lifeReg=0;
+ function lifeLook(a,dt,w=1,amp=.035){const L=a.life;if(window.__noLife)return;if(!L||w<.01||!H.look||!H.look.isVector3)return;L.nx-=dt;if(L.nx<=0){L.nx=lr(.7,2.4);L.lkT.set(lr(-1,1),lr(-.6,.6),lr(-1,1)).multiplyScalar(amp);}
+  L.lk.lerp(L.lkT,1-Math.exp(-dt*14));/* a saccade: quick, then still */if(L.lo&&H.look===L.lo)H.look=L.lb;/* a look target not set again this frame: offset the base, never pile it up */L.lb=H.look;H.look=H.look.clone().addScaledVector(L.lk,w);L.lo=H.look;}
  function chopPost(a,dt){const P=PP();const bd=P&&P.tools&&P.tools.board,kn=P&&P.tools&&P.tools.knife;if(!bd||!kn||kn.parent!==bones.RightHand)return;
-  a.cw=Math.min(1,(a.cw||0)+dt/.7);bd.updateMatrixWorld(true);const L=v=>bd.localToWorld(v);
+  a.cw=Math.min(1,(a.cw||0)+dt/.7);lifePre(a,dt,smooth(.3,1,a.cw));bd.updateMatrixWorld(true);const L=v=>bd.localToWorld(v);
   const sh=bones.RightArm.getWorldPosition(V());const c0=L(V(0,.022,.045));const toMe=V(sh.x-c0.x,0,sh.z-c0.z).normalize();
   const xr=L(V(1,0,0)).sub(L(V(0,0,0)));xr.y=0;xr.normalize();const rt=V(-toMe.z,0,toMe.x).multiplyScalar(-1);/* his right */const sx=xr.dot(rt)>=0?1:-1;// board +x on his right?
   // the cut moves along the carrot toward its thin end, then starts again
@@ -1357,11 +1409,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
      the counter's front edge); it is carried at full IK from where it was, up over the edge in an arc, and down onto the carrot */
   if(!a.lh0)a.lh0=bones.LeftHand.getWorldPosition(V());const e=smooth(0,1,a.cw);const lp=a.lh0.clone().lerp(lp0,e).add(V(0,.16*Math.sin(Math.PI*Math.min(1,e*1.15)),0));if(e>=1)lp.copy(lp0);
   const lw=Math.min(1,a.cw*4)*.95;gripNoLean('Left',lp,lw);if(G&&G.late)G.late(()=>gripNoLean('Left',lp,lw));
-  H.look=cut;H.lookW=1;}
+  H.look=cut;H.lookW=1;lifeLook(a,dt,smooth(.3,1,a.cw),.03);}
  Object.assign(MAKE,{
   // kitchen
   chop:(o)=>job({pt:()=>PT('board'),stand:.3,/* KITCHEN (watcher B8): no hy_chop clip (it chopped at hip height under the worktop, bow-legged, the left hand hanging): he stands upright at the board, the knife is held by hand IK and rocks on its tip over the carrot, the left hand holds the carrot */loop:true,dur:[22,40],tools:[['knife','Right']],vary:false,post:(a,dt)=>chopPost(a,dt),end:a=>{if(a.sl){for(const m of a.sl)m.parent&&m.parent.remove(m);a.sl=null;}if(a.chHold){a.chHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
-  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.4,pushR:.15,/* POT (watch R25-7): close to the stove, so the stirring fist is low and the elbow stays down by his side *//* KITCHEN: no hy_stir clip (it sways the whole body and mimes beside the pot): the stirring arm is hand IK (stirPost), the body stands calm */loop:true,dur:[25,45],tools:[['ladle','Right']],vary:false,post:(a,dt)=>stirPost(a,dt),end:a=>{if(a.stirHold){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
+  pot:(o)=>job({pt:()=>PT('pot')||PT('pan'),stand:.45,pushR:.23,/* the oven door's handle bar stands out past the stove box: 3 cm more room for his toes *//* POT: standing right up at the stove (pushR .15) put his feet in the oven door and the fist through the stove front: back at .45 *//* KITCHEN: no hy_stir clip (it sways the whole body and mimes beside the pot): the stirring arm is hand IK (stirPost), the body stands calm */loop:true,dur:[25,45],tools:[['ladle','Right']],keepGrip:true,vary:false,post:(a,dt)=>stirPost(a,dt),end:a=>{if(a.stirHold){a.stirHold=0;try{window.__grab.free('Left');window.__grab.free('Right');}catch(e){}}}}),
   stoke:(o)=>{// KITCHEN: logs from the woodpile into the oven, all by hand. Squat at the pile, both palms on the logs, the armful goes into the
    // left arm; walk over cradling it; squat at the oven, the right hand takes the door handle and lowers the door as far as the hand carries it;
    // one log after another: the right hand takes it out of the left arm and pushes it into the fire; the right hand lifts the door shut; stand up.
@@ -1410,10 +1462,19 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     if(a.step==='up'){const h=o.handle(V());a.ik=[['Right',h,1-smooth(0,.7,a.t)]];sqTo(0,dt,.9);if(a.t>.75&&(H.squat||0)<.01){cleanup();play(IDLE(),{fade:.5});if(a.lvCb){const c=a.lvCb;a.lvCb=null;a.step='done';c();return;}endTask({ok:true});a.step='done';}return;}};
    // while squatting at the oven the armful rests on his left thigh (the left forearm across it), never dangling to the floor
    const lap=()=>{const hp=bones.Hips.getWorldPosition(V());const f=fwd(root.rotation.y);return hp.addScaledVector(f,.34).addScaledVector(rightOf(),-.14).add(V(0,-.02,0));};
-   a.post=()=>{/* the gaze glides between the handle, the fire and the logs (a new look target turned head and spine at once: the head jumped 16 cm and the arms with it) */if(H.look){a.lk=a.lk?a.lk.lerp(H.look,1-Math.exp(-6/60)):H.look.clone();H.look=a.lk.clone();}
+   a.post=dt=>{dt=dt||1/60;{const on=/^(ovsq|open|let|log|shut)$/.test(a.step);a.lw=(a.lw||0)+((on?1:0)-(a.lw||0))*Math.min(1,dt*1.5);lifePre(a,dt,a.lw,{shift:false});/* squatting at the oven: a breath, no weight shift */}/* the gaze glides between the handle, the fire and the logs (a new look target turned head and spine at once: the head jumped 16 cm and the arms with it) */if(H.look){a.lk=a.lk?a.lk.lerp(H.look,1-Math.exp(-6/60)):H.look.clone();H.look=a.lk.clone();}lifeLook(a,dt,a.lw,.04);
     const ik=(a.ik||[]).slice();if(/^(ovsq|open|let|log|shut)$/.test(a.step)&&a.got&&logs.some(l=>l.visible&&l.parent!==bones.RightHand)){ik.unshift(['Left',lap(),a.step==='ovsq'?smooth(0,.6,a.t):1]);a.lapW=1;}
     else if((a.lapW||0)>0){/* the last log gone: the left arm leaves his lap slowly (it dropped 7-15 cm at once) */a.lapW=Math.max(0,a.lapW-1/60/.5);ik.unshift(['Left',lap(),smooth(0,1,a.lapW)]);}
-    for(const [sd,t,w] of ik)if(t&&w>.01)reachGrip(sd,t,Math.min(1,w));};
+    for(const [sd,t,w] of ik)if(t&&w>.01)reachGrip(sd,t,Math.min(1,w));
+    /* the armful lies ACROSS his arms (logs left-right, hugged to the belly), not end-on along his line of sight: held that way its far end
+       ran back through his shins on the squat at the pile and the walk to the oven (gate: 10-11 cm for 2-3 s). Turned about the fist,
+       eased in after the grab */
+    {const ar=arm();if(ar&&ar.parent===bones.LeftHand&&/^(pksq|carry|go|approach|ovsq)$/.test(a.step)){a.xw=Math.min(1,(a.xw||0)+1/60/.4);const k=a.xw*a.xw*(3-2*a.xw);
+      ar.updateMatrixWorld(true);const q=ar.getWorldQuaternion(new THREE.Quaternion());const L=V(0,0,1).applyQuaternion(q);L.y=0;const r=rightOf();
+      if(L.lengthSq()>1e-4){L.normalize();const piv=bones.LeftHand.getWorldPosition(V());if(!a.xD){const c0=new THREE.Box3().setFromObject(ar).getCenter(V()).sub(piv);const hp=bones.Hips.getWorldPosition(V());let bd=1e9;for(const sg of [1,-1]){const D=r.clone().multiplyScalar(sg);const c=c0.clone().applyQuaternion(new THREE.Quaternion().setFromUnitVectors(L,D)).add(piv);const d=Math.hypot(c.x-hp.x,c.z-hp.z);if(d<bd){bd=d;a.xD=sg;}}}/* the way that lays the bundle across his belly, not out past his left hip */
+       const D=r.clone().multiplyScalar(a.xD);const full=new THREE.Quaternion().setFromUnitVectors(L,D);const qr=new THREE.Quaternion().slerp(full,k);const wp=ar.getWorldPosition(V()).sub(piv).applyQuaternion(qr).add(piv);const wq=q.clone().premultiply(qr);
+       const pq=ar.parent.getWorldQuaternion(new THREE.Quaternion()).invert();ar.position.copy(ar.parent.worldToLocal(wp));ar.quaternion.copy(pq.multiply(wq));ar.updateMatrixWorld(true);}}
+     else{a.xw=0;a.xD=0;}}};
    function cleanup(){const ar=arm();try{logs.forEach((l,i)=>{if(ar&&l.parent!==ar)ar.attach(l);if(home[i]){l.position.copy(home[i].p);l.quaternion.copy(home[i].q);l.visible=home[i].v;}});P.release('logArmful');}catch(e){}
     try{window.__audio&&window.__audio.carry&&window.__audio.carry(false);}catch(e){}H.carry=null;H.squat=0;H.kSquat=0;kSlow(false);a.ik=[];}
    a.leave=cb=>{const o=OV();/* GRAB: called away with the door down: his hand shuts it first (it used to snap shut by itself) */if(o&&o.open>.01&&/^(open|let|log|shut)$/.test(a.step)&&!a.lvCb){a.lvCb=cb;if(a.step!=='shut'){a.step='shut';a.sh=0;a.t=0;}return;}
@@ -1687,14 +1748,14 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  const REPAIR={
   /* a slate at the eave (Brain picks one; pickSlate keeps it only if he can reach it): he walks out only as far as the boards carry him
      and hammers it standing, bent over a chest-high one, straight up for a head-high one */
-  fix_shingle:{clip:pos=>hamClip(pos,'hy_shingle'),tools:[['benchHammer','Right']],stand:.55,standFn:pos=>has('hy_standhammer')?safeStand(pos,.38,null,[1.15,1.4]):.55,nail:'roof',def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
+  fix_shingle:{clip:pos=>hamClip(pos,'hy_shingle'),tools:[['benchHammer','Right']],stand:.55,standFn:pos=>has('hy_standhammer')?safeStand(pos,.38,nodeP(pos),[1.15,1.4]):.55,nail:'roof',def:()=>N.deck&&N.deck.p.clone().add(V(0,.2,-.5))},
   /* one knee down on the boards, bent ~70 deg over the board Brain picked (kneel + hammer mocap, lean baked into the clip data) */
   fix_board:{clip:has('hy_kneelfloor')?'hy_kneelfloor':'hy_nailboard',tools:[['benchHammer','Right']],stand:has('hy_kneelfloor')?.45:.5,nail:'floor',def:()=>root.position.clone().addScaledVector(fwd(root.rotation.y),.8)},
-  fix_wall:{nail:'wall',clip:pos=>hamClip(pos,'hy_patchwall'),tools:[['benchHammer','Right']],stand:.45,standFn:pos=>has('hy_standhammer')?safeStand(pos,.36):.45,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
+  fix_wall:{nail:'wall',clip:pos=>hamClip(pos,'hy_patchwall'),tools:[['benchHammer','Right']],stand:.45,standFn:pos=>has('hy_standhammer')?safeStand(pos,.5,nodeP(pos)):.45/* a blow at a wall needs the elbow's room: from .36 m his shoulder was a hand from the boards and the arm folded shut at every blow */,def:()=>{const w=pick(WINDOWS);const n=N[w];const f=fwd(n.face??0);return n.p.clone().addScaledVector(f,.55).add(V(-f.z*.9,1.2,f.x*.9));}},
   fix_rope:{clip:has('hy_squatwork')?'hy_squatwork':'hy_ropeknot',wipe:'rope',node:'gate',stand:.45,def:()=>N.gate&&N.gate.p.clone().add(V(0,.3,.6))},
   fix_hinge:{clip:null,wipe:'hinge',tools:[['benchWrench','Right']],stand:.45,def:()=>{const P=window.__props||P3;return P&&P.door&&P.door.handle?P.door.handle(V()):null;}},
   fix_window:{clip:null,wipe:true,stand:.5,def:()=>{const ps=panes();const near=ps.filter(q=>Math.abs(q.floor-root.position.y)<.8);const q=pick(near.length?near:ps);if(q){winPick=q;return q.p.clone();}winPick=null;const w=pick(WINDOWS);return N[w].p.clone().addScaledVector(fwd(N[w].face??0),.5).add(V(0,1.3,0));}},
-  fix_railing:{nail:'rail',clip:pos=>hamClip(pos,'hy_railing'),standFn:pos=>has('hy_standhammer')?safeStand(pos,.38):.45,tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
+  fix_railing:{nail:'rail',clip:pos=>hamClip(pos,'hy_railing'),standFn:pos=>has('hy_standhammer')?safeStand(pos,.38,nodeP(pos)):.45,tools:[['benchHammer','Right']],stand:.45,def:()=>N.deck&&N.deck.p.clone().add(V(0,1,.6))},
   clear_roof:{clip:'hy_clearleaves',floorHands:true,fadeIn:1,/* 50 cm down into the crouch: over a second, not at 1 m/s from a standstill */stand:.6,def:()=>N.deck&&N.deck.p.clone().add(V(-.6,0,-.3))},
   fix_chimney:{clip:null,wipe:'chimney',stand:.45,def:()=>V(-3.2,KT+1.5,1.53)}};
  // ---- the body goes to the work, not the arm ----
@@ -1714,10 +1775,13 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   return dy<.72&&has('hy_kneelhammer')?'hy_kneelhammer':dy>1.1&&has('hy_hammerhigh')?'hy_hammerhigh':'hy_standhammer';}
  // how close he can stand to a work point out over the edge: walk the line toward it, keep only boards at his own level (and a hand's
  // width beyond his toes), never inside a wall or under a beam; returns the stand-off for approachTo
+ /* the stand is measured from the walk-graph node the part was checked from (reachOK), not from wherever his root stopped: 8 cm off the
+    workshop step node, the line crossed the step edge and the stand came out 1.14 m instead of 0.39 (he hammered a wall from a metre away) */
+ const nodeP=pos=>{const n=nearNode(pos);return n&&N[n]?N[n].p:null;};
  function safeStand(pt,min,from,hs){const p0=from||root.position;const g0=floorAt(p0.x,p0.y+.3,p0.z,.45,.9);const p=V(p0.x,g0!=null?g0:p0.y,p0.z);/* a graph node may sit above the boards (a ladder top) */const dx=pt.x-p.x,dz=pt.z-p.z,d=Math.hypot(dx,dz);if(d<1e-3)return min;const ux=dx/d,uz=dz/d;const C=window.__collide;
   let ok=0;for(let t=0;t<=d-min+1e-6;t+=.05){let good=true;for(const e of [0,.22]){const x=p.x+ux*(t+e),z=p.z+uz*(t+e);const g=floorAt(x,p.y+.3,z,.45,.5);if(g==null||Math.abs(g-p.y)>.12){good=false;break;}}
    if(good&&C&&C.depthAt){const x=p.x+ux*t,z=p.z+uz*t;for(const hy of hs||[.2,.5,.75,1,1.25])if(C.depthAt(x,p.y+hy,z)>.01){good=false;break;}}
-   /* furniture has no collider: the desk, the bench, a barrel stop him like a wall does (he stood behind the bedroom desk, a hammer's length short of the wall) */if(good&&!window.__noFurnStand){const x=p.x+ux*t,z=p.z+uz*t,r=.2;for(const o of OBST){if(Math.abs(o.y-p.y)>.5)continue;if(p.x>o.x0-r&&p.x<o.x1+r&&p.z>o.z0-r&&p.z<o.z1+r)continue;/* he starts beside it already */if(x>o.x0-r&&x<o.x1+r&&z>o.z0-r&&z<o.z1+r){good=false;break;}}}if(!good)break;ok=t;}
+   /* furniture has no collider: the desk, the bench, a barrel stop him like a wall does (he stood behind the bedroom desk, a hammer's length short of the wall) */if(good&&!window.__noFurnStand){const x=p.x+ux*t,z=p.z+uz*t,r=.2;for(const o of OBST){if(Math.abs(o.y-p.y)>.5)continue;const rr=p.x>o.x0-r&&p.x<o.x1+r&&p.z>o.z0-r&&p.z<o.z1+r?0:r;/* he starts beside it already: only the furniture itself stops him (the bunk end by the node let him plan a stand behind the bunk, 1.2 m short of the wall) */if(x>o.x0-rr&&x<o.x1+rr&&z>o.z0-rr&&z<o.z1+rr){good=false;break;}}}if(!good)break;ok=t;}
   return Math.max(min,d-ok);}
  // a part he can really reach (Pavel: the body goes to the work): from the walkable spot next to it, standing where the boards end, the
  // nail must be within an arm and a hammer, at a height one of the work poses serves, with room for his body. Brain's pick stays when it
@@ -1728,7 +1792,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    for(const t of [.35,.55,.8]){const x=q.x+u.x*t,z=q.z+u.z*t;const g=floorAt(x,f.y+.3,z,.45,.5);if(g==null||Math.abs(g-f.y)>.1)return false;if(C&&C.depthAt)for(const hy of [.15,.5,.9])if(C.depthAt(x,f.y+hy,z)>.01)return false;}
    if(C&&C.depthAt&&C.depthAt(q.x,f.y+.25,q.z)>.01)return false;return true;}
   const g=floorAt(f.x,f.y+.3,f.z,.45,.9);const dy=q.y-(g!=null?g:f.y);if(dy<L.lo||dy>L.hi)return false;const st=safeStand(q,.38,f,L.hs);/* approachTo walks at most 1.2 m off the node */const dd=Math.hypot(q.x-f.x,q.z-f.z);if(!(st<=L.st&&dd-st<=1.19))return false;
-  /* and his head fits there (approachTo steps back from a low eave: then the part would be out of reach) */if(C&&C.depthAt&&dd>1e-3){const k=(dd-st)/dd,x=f.x+(q.x-f.x)*k,z=f.z+(q.z-f.z)*k,y=g!=null?g:f.y;for(const hy of [1.5,1.68,1.82])if(C.depthAt(x,y+hy,z)>.005)return false;}return true;}
+  /* and his head fits there (approachTo steps back from a low eave: then the part would be out of reach) */if(dd>1e-3){const k=(dd-st)/dd,S=V(f.x+(q.x-f.x)*k,g!=null?g:f.y,f.z+(q.z-f.z)*k),S2=S.clone();pushOut(S2);if(S2.distanceTo(S)>.05)return false;}/* nor is he pushed off it by furniture (approachTo's pushOut: 1.1 m from the wall at the workbench) */if(C&&C.depthAt&&dd>1e-3){const k=(dd-st)/dd,x=f.x+(q.x-f.x)*k,z=f.z+(q.z-f.z)*k,y=g!=null?g:f.y;for(const hy of [1.5,1.68,1.82])if(C.depthAt(x,y+hy,z)>.005)return false;}return true;}
 
  const PKIND={fix_shingle:'shingle',fix_railing:'beam',fix_wall:'wall',fix_board:'floor'};
  /* a floor board to kneel at needs room round it for the hammer arm and the knee (not tight against the bunk bed or a chest) */
@@ -1737,9 +1801,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  let FB=null;function furnBoxes(){if(FB)return FB;FB=[];let s=root;while(s.parent)s=s.parent;s.traverse(o=>{if(/^(stove|counter|fridge|bunkbed|chair|toolwall|telescope|woodpile|pantry|table|chest|barrel|bench)$/i.test(o.name||'')){const b=new THREE.Box3().setFromObject(o);if(!b.isEmpty())FB.push(b);}});return FB;}
  function roomyFloor(o){const p=V(...o.pos);const g0=floorAt(p.x,p.y+.3,p.z,.45,.6);const y=g0!=null?g0:p.y;if(floorClear(p.x,y,p.z))return;
   for(const r of [.3,.6,.9,1.2])for(let i=0;i<12;i++){const a=i*Math.PI/6,x=p.x+Math.sin(a)*r,z=p.z+Math.cos(a)*r;const g=floorAt(x,y+.3,z,.45,.6);if(g==null||Math.abs(g-y)>.05)continue;if(floorClear(x,g,z)){o.pos=[x,g,z];return;}}}
- function pickPart(k,o){if(PKIND[k]&&!o.pos&&REPAIR[k].def){const d=REPAIR[k].def();if(d)o.pos=d.toArray();}if(PKIND[k]==='floor'&&o.pos){try{roomyFloor(o);}catch(e){}}const kind=PKIND[k];const P=window.__planks;if(!kind||!P||!P.list||!o.pos)return;if(reachOK(kind,o.pos))return;const want=V(...o.pos);
-  let best=null,bs=1e9;for(const c of P.list(kind)){const d=Math.hypot(c.pos[0]-want.x,c.pos[1]-want.y,c.pos[2]-want.z);const sc=d*.3+(c.fresh||0)*2;if(sc>=bs||!reachOK(kind,c.pos))continue;bs=sc;best=c;}
-  if(best){o.pos=best.pos.slice();o.target=best.id;}}
+ function pickPart(k,o){window.__pk=window.__pk||[];window.__pk.push({k,in:o.pos&&o.pos.slice()});if(PKIND[k]&&!o.pos&&REPAIR[k].def){const d=REPAIR[k].def();if(d)o.pos=d.toArray();}if(PKIND[k]==='floor'&&o.pos){try{roomyFloor(o);}catch(e){}}const kind=PKIND[k];const P=window.__planks;if(!kind||!P||!P.list||!o.pos)return;const Wr=window.__wear;const fpt=id=>{const f=Wr&&Wr.fault&&id!=null?Wr.fault(id):null;return f?f.p:null;};/* WEAR: a damaged part is judged by its fault (a post's centre is knee-high, its leaning top is where the work is) */if(reachOK(kind,fpt(o.target)||o.pos))return;const want=V(...o.pos);
+  let best=null,bs=1e9;for(const c of P.list(kind)){const d=Math.hypot(c.pos[0]-want.x,c.pos[1]-want.y,c.pos[2]-want.z);const sc=d*.3+(c.fresh||0)*2;if(sc>=bs||!reachOK(kind,fpt(c.dmg>0?c.id:null)||c.pos))continue;bs=sc;best=c;}
+  if(best){o.pos=best.pos.slice();o.target=best.id;}window.__pk.at(-1).out=o.pos&&o.pos.slice();window.__pk.at(-1).ok=reachOK(kind,o.pos);{const q=V(...o.pos),nn=nearNode(q);window.__pk.at(-1).nn=nn;window.__pk.at(-1).np=N[nn]&&N[nn].p.toArray();window.__pk.at(-1).st=safeStand(q,.38,N[nn].p,PART[kind].hs);window.__pk.at(-1).st2=safeStand(q,.36);}}
  // where the hammer face lands: the floor board's top, the wall / rail / slate point itself; and the surface normal the blow comes down along
  function nailOf(R,pos){if(!pos)return null;let q=pos.clone();if(R.nail==='roof'){/* the slate's lower edge, the side toward him */const h=V(root.position.x-q.x,0,root.position.z-q.z);if(h.lengthSq()>1e-4){h.normalize();q.addScaledVector(h,.1).y-=.06;}
    /* the first roof surface on the way from his shoulder (the eave edge is nearer than a slate's middle) */
@@ -1759,7 +1823,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // (60-70 %), rest. The wrist target is corrected by the face's measured miss (the hammer hangs off the fist), the left hand steadies the work.
  const HFACE=[.102,.146,0];
  function repairHammer(a,dt,nail,nrm){const P=window.__props||P3;const hm=P&&P.tools&&P.tools.benchHammer;if(!hm||!nail||!bones.RightArm)return;a.nail=nail;
-  const sh=bones.RightArm.getWorldPosition(V());const S=a.hm||(a.hm={ph:Math.random()*.3,w:0,n:0,T:rnd(.72,.9)});
+  const sh=bones.RightArm.getWorldPosition(V());const S=a.hm||(a.hm={ph:Math.random()*.3,w:0,n:0,T:rnd(.72,.9),noWF:!window.__wristFit});
   /* out of reach (hysteresis, so it never flickers): the IK fades out over half a second and the clip swings alone */
   const dn=sh.distanceTo(nail);a.hmFar=a.hmFar?dn>armLen+.42:dn>armLen+.5;const fade=a.endIn!=null&&a.endIn<.9;S.w=a.hmFar||fade?Math.max(0,S.w-dt/(S.fastOut?.33:fade?.7:.5)):Math.min(1,S.w+dt/.6);if(S.w<=0)return;S.ph+=dt;if(S.ph>S.T){S.ph-=S.T;S.T=rnd(.72,.9);S.hit=0;S.n++;if(S.n%6===5)S.ph-=rnd(.6,1.1);}
   H.noPop={side:'Right',until:performance.now()+150};/* motion.js: the blow is sharp on purpose */
@@ -1767,6 +1831,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const up=nrm.clone().normalize();const d=nail.clone().sub(sh);d.addScaledVector(up,-d.dot(up));if(d.lengthSq()<1e-4)d.set(0,0,1);d.normalize();
   // fist at impact: a handle's length back toward him and a little up; lifted: up and back round the elbow
   const hit=nail.clone().addScaledVector(d,-.24).addScaledVector(up,.06);const T=hit.clone().addScaledVector(up,.15*lift).addScaledVector(d,-.07*lift);
+  /* an arm folds no shorter than this from the shoulder: at a wall a hand from his chest the lifted fist came up onto the shoulder itself */for(const q of [hit,T]){const r=q.clone().sub(sh),l=r.length();if(l<.3&&l>1e-4)q.copy(sh).addScaledVector(r,.3/l);}
   const pole=V(0,-1,0).addScaledVector(d,-.3);
   const w=S.w;const solve=()=>{root.updateMatrixWorld(true);const PG0=window.__poseGuard;
    /* still out of reach: he leans in from the hips (spine bent toward the nail, eased, at most ~30 deg), never the arm stretching */
@@ -1780,7 +1845,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
       b.quaternion.copy(pq.invert().multiply(qw.multiply(bw)));b.updateMatrixWorld(true);}}}
    /* the back inside its range before the arm is solved on it (else the guard straightens it afterwards and carries the fist off the nail) */
    if(PG0&&PG0.fit&&!window.__noFit){for(const n of ['Spine','Spine1','Spine2'])if(bones[n])PG0.fit(bones[n]);if(PG0.fitSpine)PG0.fitSpine();bones.Hips.updateMatrixWorld(true);}
-   {const ls=bones.LeftArm.getWorldPosition(V());const k=d.clone().cross(up).normalize();const lp=nail.clone().addScaledVector(k,-.13).addScaledVector(d,-.05).addScaledVector(up,.045);/* the wrist a palm above the surface: the hand rests ON it */if(ls.distanceTo(lp)<armLen*.95)armIK('Left',lp,V(0,-1,0),w*.9);}
+   {const ls=bones.LeftArm.getWorldPosition(V());const k=d.clone().cross(up).normalize();const lp=nail.clone().addScaledVector(k,-.13).addScaledVector(d,-.05).addScaledVector(up,.045);/* the wrist a palm above the surface: the hand rests ON it *//* in reach or not, the hand eases on and off the boards (at the edge of reach it flickered between the two every few frames: gate fix_wall LeftHand jitter) */const lr=ls.distanceTo(lp);S.lw=(S.lw||0)+(clamp((armLen*.97-lr)/(armLen*.06),0,1)-(S.lw||0))*(1-Math.exp(-dt*5));if(S.lw>.01)armIK('Left',lp,V(0,-1,0),w*.9*S.lw);}
    /* the face, not the fist, goes onto the nail: the hammer is turned whole (handle along the blow, face toward the surface, raised
       back round the wrist while lifting), the hand follows it, and the wrist target is corrected by the face's measured miss */
    const k=d.clone().cross(up).normalize();
@@ -1802,8 +1867,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const AB=[bones.RightArm,bones.RightForeArm,hb],q0=AB.map(b=>b.quaternion.clone());
    const PG=window.__poseGuard,fit=PG&&PG.fit&&!window.__noFit?b=>PG.fit(b):()=>0;
    const fa=bones.RightForeArm,qy=new THREE.Quaternion(),Y1=V(0,1,0);let PS=0,Qh=null,want=null,TT=null;
-   const poseAt=(tgt,free)=>{armIK('Right',tgt,pole,1);if(!window.__noArmFit)fit(bones.RightArm);if(PS)fa.quaternion.multiply(qy.setFromAxisAngle(Y1,PS));if(!free)fit(fa);bones.RightArm.updateMatrixWorld(true);
-     hb.quaternion.copy(fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(Qh));if(!free)fit(hb);hb.updateMatrixWorld(true);hm.updateMatrixWorld(true);};
+   const poseAt=(tgt,free)=>{armIK('Right',tgt,pole,1);if(!window.__noArmFit)fit(bones.RightArm);if(PS)fa.quaternion.multiply(qy.setFromAxisAngle(Y1,PS));if(!free&&!S.noWF)fit(fa);bones.RightArm.updateMatrixWorld(true);
+     hb.quaternion.copy(fa.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(Qh));if(!free&&!S.noWF)fit(hb);hb.updateMatrixWorld(true);hm.updateMatrixWorld(true);};
    let tEnd=null;
    const run=(n,free,st)=>{AB.forEach((b,i)=>b.quaternion.copy(q0[i]));bones.RightArm.updateMatrixWorld(true);let tgt=(st||TT).clone(),err=9;tEnd=tgt;for(let i=0;i<n;i++){poseAt(tgt,free);
      const f=hm.localToWorld(V(...HFACE));const e=want.clone().sub(f);err=e.length();if(err<.004)break;tgt.addScaledVector(e,free?1:(window.__gainF||.45));const off=tgt.clone().sub(TT);if(off.length()>.45)tgt.copy(TT).add(off.setLength(.45));}return err;};
@@ -1821,7 +1886,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
      S.al=bb[0];S.yw=bb[1];S.ps=bb[2];}
     else{if(S.al==null)S.al=al;if(S.yw==null)S.yw=0;if(S.ps==null)S.ps=0;}
     const k0=key(0,[Tf(0),...(S.K?[S.K.t0]:[])]);const km=key(.5,[k0.t.clone().add(Tf(.5)).sub(Tf(0)),Tf(.5)]);const k1=key(1,[km.t.clone().add(Tf(1)).sub(Tf(.5)),Tf(1),k0.t.clone().add(Tf(1)).sub(Tf(0))]);
-    /* mid-blow the new keys are blended in over 0.2 s (a fresh solve can land on a different elbow: no jump) */if(S.K&&S.K.n===S.n){S.Ko=S.K;S.kb=0;}else S.Ko=null;
+    /* mid-blow the new keys are blended in over 0.2 s (a fresh solve can land on a different elbow: no jump) */if(S.K){S.Ko=S.K;S.kb=0;}else S.Ko=null;/* a new blow's keys can land on the other elbow too (gate fix_wall: 28 cm in one frame): always blended in */
     S.K={n:S.n,sh:shNow.clone(),q0:k0.q,qm:km.q,q1:k1.q,t0:k0.t,t1:k1.t,e0:k0.e};}
    /* this frame: between the two keys by the lift */
    const at=(K,i)=>lift<=.5?K.q0[i].clone().slerp(K.qm[i],lift*2):K.qm[i].clone().slerp(K.q1[i],lift*2-1);if(S.Ko){S.kb=Math.min(1,(S.kb||0)+dt/.2);if(S.kb>=1)S.Ko=null;}
@@ -1835,11 +1900,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    /* never a one-frame teleport of the fist (QA: 83 cm/frame2 on the kitchen-ladder railing, an elbow flip near full reach): against the
       motion of the last two frames the wrist may deviate at most 8 cm per frame (the blow itself stays well inside that) */
    {const hp=hb.getWorldPosition(V());const fresh=S.lt!=null&&Math.abs(a.T-S.lt-dt)<1e-3;S.lt=a.T;
-    if(fresh&&S.p1&&S.T1&&!window.__noClamp&&!S.K){const pred=S.p1.clone().add(T).sub(S.T1);/* where the fist would be if it only followed the blow's own target */const dv=hp.clone().sub(pred);if(dv.length()>.08){poseAt(pred.add(dv.setLength(.08)));hp.copy(hb.getWorldPosition(V()));}}
+    if(fresh&&S.p1&&S.T1&&!window.__noClamp){const pred=S.p1.clone().add(T).sub(S.T1);/* where the fist would be if it only followed the blow's own target */const dv=hp.clone().sub(pred);if(dv.length()>.08){poseAt(pred.add(dv.setLength(.08)));hp.copy(hb.getWorldPosition(V()));}}
     else if(!fresh){S.p1=null;}S.p1=hp;S.T1=T.clone();S.wp=hp.clone();}};
   /* after look / collide have moved the chest (grab.js late slot), else right here */
   const G=window.__grab;if(G&&G.late)G.late(solve);else solve();
-  if(u>=.8&&!S.hit&&S.w>.9&&!a.hmFar){S.hit=1;AU('nails',nail);}}
+  if(u>=.8&&!S.hit&&S.w>.9&&!a.hmFar){S.hit=1;AU('nails',nail);if(a.onHit)try{a.onHit(nail,nrm);}catch(e){}}}
  /* the window pane / wall he works on: the nearest solid surface round the spot at chest height (ray in 16 directions) */
  /* the real window panes (thin, nearly clear glass in the house walls; the walk graph's window nodes face the open front instead):
     centre, the side the room is on, and the floor under it. Found once in the scene */
@@ -1895,26 +1960,28 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
       b.quaternion.copy(pq.invert().multiply(qw.multiply(bw)));b.updateMatrixWorld(true);}}}
    armIK('Right',rt,V(0,-1,0).addScaledVector(s,.5),w);armIK('Left',lt,V(0,-1,0).addScaledVector(s,-.5),w*.9);};
   if(G&&G.late)G.late(solve);else solve();}
- for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{if(has('hy_standhammer'))try{pickPart(k,o);}catch(e){}const pos=o.pos?V(...o.pos):(R.def?R.def():null);
+ for(const [k,R] of Object.entries(REPAIR))MAKE[k]=(o={})=>{if(has('hy_standhammer'))try{pickPart(k,o);}catch(e){}const WF=o.target!=null&&window.__wear&&window.__wear.fault?window.__wear.fault(o.target):null;/* WEAR: he goes to the fault itself (a long floor board lifts at its far end, 1.5 m from its centre) */const pos=WF?V(...WF.p):o.pos?V(...o.pos):(R.def?R.def():null);
   const hamr=/benchHammer/.test(JSON.stringify(R.tools||[]));const clip=typeof R.clip==='function'?R.clip(o.pos?pos:null):R.clip;
   const D=rnd(18,35);/* known here, so the blow's IK fades out before the job ends (no snap back to the clip) */
   const W0=R.wipe==='hinge'?hingeW():R.wipe==='rope'?ropeW():R.wipe==='chimney'?chimneyW():R.wipe&&pos?(winPick&&winPick.p.distanceTo(pos)<.01?{p:winPick.p.clone(),n:winPick.n.clone(),t:0}:wallNear(pos)):null;/* the window: walk up to the pane itself, not to a point in front of it */
   const J=job({noCut:!!(R.standFn&&o.pos),/* the stand is measured from the node the part was checked from: no short cut off the route */faceYaw:W0?Math.atan2(-W0.n.x,-W0.n.z):null,pt:()=>W0?(W0.at?W0.at.clone():W0.p.clone().addScaledVector(W0.n,.42)):pos,/* the spot ~42 cm in front of the pane, then he turns to face it */node:pos?null:R.node,get stand(){return W0?.02:R.standFn&&o.pos?R.standFn(pos):R.stand;},clip,loop:true,dur:[D,D],tools:R.tools||[],fadeIn:R.fadeIn,vary:hamr&&has('hy_standhammer')?false:undefined,/* no look-round pauses mid-blow */lookW:R.wipe==='rope'?.45:undefined,/* fix_rope: eyes down on the low knots without folding the neck past 70 deg over the squat's bent chest (gate owl-head 72) */
-   post:R.floorHands?(a,dt)=>{squatDrop(a,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,D-a.T<.6);handsOnFloor(floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y);}:R.wipe&&pos?(a,dt)=>{const W=a.win||(a.win=W0);if(W&&W.upd)W.upd(a,dt);if(R.wipe==='rope')squatDrop(a,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,D-a.T<.6);wipeWindow(a,dt,W,D-a.T<.8);}:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{if(R.nail==='floor')kneelDrop(a,dt,floorOf(pos),D-a.T<.6);/* a floor nail is placed once he has knelt (the pelvis still turns for the first moments of the kneel) */if(R.nail==='floor'&&(a.nlT=(a.nlT||0)+dt)<1.2&&!window.__nail0)a.nl=null;const n=a.nl||(a.nl=nailOf(R,pos));
+   post:R.floorHands?(a,dt)=>{squatDrop(a,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,D-a.T<.6);handsOnFloor(floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y);}:R.wipe&&pos?(a,dt)=>{const W=a.win||(a.win=W0);if(W&&W.upd)W.upd(a,dt);if(R.wipe==='rope')squatDrop(a,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,D-a.T<.6);wipeWindow(a,dt,W,D-a.T<.8);}:hamr&&has('hy_standhammer')&&pos?(a,dt)=>{if(R.nail==='floor')kneelDrop(a,dt,floorOf(pos),D-a.T<.6);/* a floor nail is placed once he has knelt (the pelvis still turns for the first moments of the kneel) */if(R.nail==='floor'&&(a.nlT=(a.nlT||0)+dt)<1.2&&!window.__nail0)a.nl=null;/* WEAR: the blow goes to the fault itself (the lifted end, the sprung end, the post top, the loose rail end, the slate's edge) */const n=a.nl||(a.nl=(()=>{const Wr=window.__wear;const f=Wr&&Wr.fault&&o.target!=null?Wr.fault(o.target):null;if(f&&(R.nail==='floor'?(()=>{const hp=bones.Hips.getWorldPosition(V());return Math.hypot(hp.x-f.p[0],hp.z-f.p[2])<.6;})():bones.RightArm.getWorldPosition(V()).distanceTo(V(...f.p))<(R.nail==='roof'?.8:.9))){/* an arm (0.4 m) and a hammer, with the lean: further up a roof he folded flat over the eave */a.fn=V(...f.n).normalize();return V(...f.p);}/* out of his reach from where he could kneel or stand: the same part, nailed where he can */a.fn=null;return nailOf(R,pos);})());if(a.nlRe&&a.fn){const f=window.__wear&&window.__wear.fault(o.target);if(f)n.lerp(V(...f.p),Math.min(1,dt*3));}if(!a.onHit&&o.target!=null)a.onHit=(q,nr)=>{const Wr=window.__wear;if(!Wr)return;a.nb=(a.nb||0)+1;if(Wr.blow)Wr.blow(o.target,.22);if(a.nb===1&&Wr.nail)Wr.nail(q.clone(),(a.fn||nr).clone(),o.target);if(a.fn)a.nlRe=1;/* the part moved back: the aim glides after it (a reset here made the arm snap 15-20 cm at every blow) */};
      /* a wall or rail nail right under his chin can't be struck with a hammer held in a real wrist: the blow goes a little to his right
         along the board instead (the same board, ~0.58 m from the shoulder) */
-     if(!a.nlFix&&R.nail!=='floor'&&R.nail!=='roof'&&!window.__nail0&&a.T>.3){a.nlFix=1;const sh=bones.RightArm.getWorldPosition(V());const nr=nrmOf(R,n).clone().normalize();
+     if(!a.nlFix&&!a.fn&&R.nail!=='floor'&&R.nail!=='roof'&&!window.__nail0&&a.T>.3){a.nlFix=1;const sh=bones.RightArm.getWorldPosition(V());const nr=nrmOf(R,n).clone().normalize();
       if(sh.distanceTo(n)<.55){const f=V(Math.sin(H.face),0,Math.cos(H.face)),rt=V(-f.z,0,f.x);
        /* candidate directions along the surface (his right first), each kept only if the same surface is still there (a ray back along the normal) */
        const dirs=[rt,rt.clone().add(f).normalize(),f,rt.clone().negate(),rt.clone().negate().add(f).normalize()].map(d=>d.addScaledVector(nr,-d.dot(nr))).filter(d=>d.lengthSq()>.05).map(d=>d.normalize());
        for(const tg of dirs){const w0=n.clone().sub(sh);const b=w0.dot(tg),c=w0.lengthSq()-.58*.58;const sl=Math.min(.4,Math.max(0,-b+Math.sqrt(Math.max(0,b*b-c))));if(sl<.02)continue;
         const q=n.clone().addScaledVector(tg,sl);const o=q.clone().addScaledVector(nr,.08);const r=new RAPIER.Ray({x:o.x,y:o.y,z:o.z},{x:-nr.x,y:-nr.y,z:-nr.z});
         const hh=world.castRay(r,.14,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});const t=hh?(hh.toi??hh.timeOfImpact):null;
-        if(t!=null&&Math.abs(t-.08)<.02){n.copy(q);break;}}}}
-     a.endIn=D-a.T;repairHammer(a,dt,n,nrmOf(R,n));}:undefined,
+        /* nrmOf is only the way back to him, not the wall's own normal: an oblique wall answers nearer or further, so any hit close by is the surface (taken where the ray met it) */if(t!=null&&t>.02&&t<.14){a.nlTo=o.addScaledVector(nr,-t);break;}}}}
+     /* the aim glides to the better spot (a copy in one frame threw the fist 13 cm) */if(a.nlTo){n.lerp(a.nlTo,Math.min(1,dt*4));if(n.distanceTo(a.nlTo)<.003)a.nlTo=null;}
+     a.endIn=D-a.T;repairHammer(a,dt,n,a.fn||nrmOf(R,n));}:undefined,
    tick:(a,dt)=>{if(!/hammer|nail/i.test(JSON.stringify(R.tools||[])))return;if(hamr&&a.hm&&!a.hmFar)return;a.ct=(a.ct||0)+dt;if(a.ct>1.3){a.ct=0;AU('nails',pos);}},result:()=>({ok:true,target:o.target})});
   /* called away mid-blow (Brain, the tour): the arm eases back to the clip over a third of a second instead of snapping */
   if(J.post){const p0=J.post;J.post=dt=>{p0(dt);if(J.step!=='work'&&J.ww>0)wipeWindow(J,dt,J.win,true);if(J.step!=='work'&&J.sw2>0)squatDrop(J,dt,floorAt(root.position.x,root.position.y+.3,root.position.z,.45,.6)??root.position.y,true);if(J.step!=='work'&&J.kw>0&&R.nail==='floor')kneelDrop(J,dt,floorOf(pos),true);if(J.step!=='work'&&J.hm&&J.hm.w>0&&J.nl){J.endIn=0;J.hm.fastOut=1;repairHammer(J,dt,J.nl,nrmOf(R,J.nl));}};}
+  if(WF)J.reach=3;
   return J;};
  // ===================== gear: a skinned coat that really follows the body, bow and quiver from the workshop wall =====================
  // the coat is cut from the body mesh itself (torso + arms, pushed out 1.5 cm along the normals) and shares the skeleton
@@ -2033,13 +2100,49 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function gearOn(a,o,then){const seq=[];
   if(o.jacket&&!GEAR.coat&&COAT)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketon',[[.14,()=>{try{PP().setHere&&PP().setHere('jacket',false);}catch(e){}COAT.on=true;GEAR.coat=true;}],[.55,()=>AU('zip')]]/* no rigid jacket in the hand: it leaves the peg at the touch and settles on the body (skinned coat fades in) */,next));
   if(o.bow&&!GEAR.bow)seq.push(next=>bowVisit(a,'hy_bowtake',[[.35,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}}],[.7,()=>{onBack('quiver',quiverSpot(),[0,0,-.18]);onBack('bow',V(-.02,.03,-.18),[0,0,.55]);/* OUTDOOR: slung across the back, both hands free for the ladder (Pavel: bow on the back) */GEAR.bow=true;}]],next));
-  if(o.lantern&&!GEAR.lantern&&hasTool('lantern'))seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{PP().grab('lantern',bones.RightHand,{offset:V(0,.06,.03)});window.__lights&&window.__lights.attachHand&&window.__lights.attachHand(bones.RightHand);window.__lights.set('hand',true);}catch(e){}GEAR.lantern=true;}]],next));
+  if(o.lantern&&!GEAR.lantern&&hasTool('lantern'))seq.push(next=>lanternBench(a,true,next));
   const run=i=>{if(a.leaving)return;if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
+ /* OUTDOOR: the lantern off the bench and back by hand, at bench height: the palm goes to the bail, closes, and the lantern comes
+    down to his side (hy_take, a high-shelf clip, swung it up over his head and back down: watch) */
+ const LB={s:null};let lbOn=0;
+ function lanternBench(a,take,then){const home=toolHome('lantern');if(!home){then();return;}const pt=home.clone();
+  const run=()=>approachTo(a,pt,.3,()=>{if(a.leaving&&take){then();return;}a.step='clip';a.t=0;a.hits=[];a.clipDur=1.5;a.pt=pt.clone().add(V(0,.15,0));play(IDLE(),{fade:.3});
+   LB.s={act:a,take,t:0,did:0,home:pt};if(!lbOn){lbOn=1;lateFn(lbLate);}
+   H.wait={t:1.6,then:()=>{const S=LB.s;LB.s=null;if(S&&!S.did)lbDo(S);a.step='next';then();}};});const nn=nearNode(pt);if(nn)goTo(nn,run);else run();}
+ function lbDo(S){S.did=1;const P=PP();try{if(S.take){P.grab('lantern',bones.RightHand,{offset:V(0,.06,.03)});const Lg=window.__lights;if(Lg){Lg.attachHand&&Lg.attachHand(bones.RightHand);Lg.set('hand',true);}GEAR.lantern=true;}
+  else{const Lg=window.__lights;if(Lg){Lg.set('hand',false);Lg.detachHand();}P.release('lantern',{blend:.3});GEAR.lantern=false;}}catch(e){}AU('cloth');}
+ function lbLate(){const S=LB.s;if(!S||act!==S.act){LB.s=null;return;}S.t+=1/60;const t=S.t;const P=PP();const l=P.tools&&P.tools.lantern;if(!l)return;
+  const G=window.__grab;const g=V(...((G&&G.GRIP&&G.GRIP.lantern&&G.GRIP.lantern.g)||[0,.24,0]));const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+  const bail=S.take&&!S.did?l.localToWorld(g.clone()):S.home.clone().add(g.clone().multiply(l.getWorldScale(V())));/* the bail on the bench (the put: where it will be once set down) */
+  const side=bones.Hips.getWorldPosition(V()).addScaledVector(r,.22).addScaledVector(f,.08).add(V(0,.15,0));/* where his carrying fist holds it once the reach lets go (lower, it rose 30 cm as the reach faded) */
+  let tg,w;if(S.take){w=smooth(0,.45,t)*(1-smooth(1.05,1.45,t));const hold=S.act.lswNext;if(hold)w=smooth(0,.45,t);tg=t<.6?bail:bail.clone().lerp(side,smooth(.6,1.15,t));if(!hold)tg.lerp(odPalm('Right'),smooth(1.1,1.5,t));if(hold)LB.end={act:S.act,p:tg.clone()};}/* down into where his own carrying pose holds it this frame: a reach fading out between two arm poses sagged the fist 20 cm and sprang it back */
+  else{w=smooth(0,.5,t)*(1-smooth(.85,1.3,t));tg=t<.6?side.clone().lerp(bail,smooth(.1,.6,t)).add(V(0,.04*Math.sin(Math.PI*clamp(t/.6,0,1)),0)):bail;}
+  S.ls=S.ls||{};if(w>.01||(S.ls.v||0)>.002)reachTo('Right',tg,Math.max(w,.0101),S.ls);/* kept on till the lean has eased off (dropped with the reach, the shoulder sprang 18 cm up) *//* with a rate-limited lean from the hips: the bail at the bench's front edge is past arm's length from where the bench lets him stand */if(!S.did&&t>.62&&(S.take?odPalm('Right').distanceTo(bail)<.09||t>.8:true))lbDo(S);
+  H.look=S.home;H.lookW=.7*(1-smooth(1,1.4,t));if(S.did===+!!S.take)lanternPlumb();/* in the fist (taken, or not yet set down) *//* hanging from its bail as it comes off the bench, not lying on its side in the fist */}
  function gearOff(a,then){const seq=[];
-  if(GEAR.lantern)seq.push(next=>visit(a,toolHome('lantern'),.45,'hy_take',[[.45,()=>{try{window.__lights.set('hand',false);window.__lights.detachHand();PP().release('lantern',{blend:.3});}catch(e){}GEAR.lantern=false;}]],next));
+  if(GEAR.lantern)seq.push(next=>lanternBench(a,false,next));
   if(GEAR.bow)seq.push(next=>bowVisit(a,'hy_bowhang',[[.2,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}/* off the back into the hand first */}],[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.4});}catch(e){}GEAR.bow=false;}]],next));
   if(GEAR.coat)seq.push(next=>visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],next));
   const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
+ /* OUTDOOR: the lantern on a water run (Lights: at night he went to the pond in the dark). The take and the put-back are the
+    right hand's (hy_take at the bench); the bucket is the right hand's too, so in between the lantern goes over into the LEFT
+    hand: standing, both fists meet in front of his belly, the left closes on the bail beside the right, the right lets go */
+ const LSW={a:null};let lswOn=0;
+ function lanternLeft(){const l=PP().tools&&PP().tools.lantern;return !!(l&&l.parent===bones.LeftHand);}
+ function lanternSwap(a,from,to,then){const l=PP().tools&&PP().tools.lantern;if(!l||l.parent!==bones[from+'Hand']){then();return;}
+  play(IDLE(),{fade:.3});H.path.length=0;const E=LB.end&&LB.end.act===a&&from==='Right'?LB.end.p:null;LB.end=null;LSW.a={act:a,from,to,t:0,done:0,then,p0:E};H.wait={t:1.25,then:()=>{const S=LSW.a;LSW.a=null;if(S&&!S.done)lswHand(S);then();}};
+  if(!lswOn){lswOn=1;lateFn(lswLate);}}
+ function lswHand(S){S.done=1;try{PP().grab('lantern',bones[S.to+'Hand'],{offset:V(0,.06,.03)});const Lg=window.__lights;if(Lg&&GEAR.lantern){Lg.detachHand();Lg.attachHand(bones[S.to+'Hand']);Lg.set('hand',true);}}catch(e){}AU('cloth');}
+ function lswLate(){const S=LSW.a;if(!S||act!==S.act){LSW.a=null;return;}S.t+=1/60;const t=S.t;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
+  const M=bones.Hips.getWorldPosition(V()).addScaledVector(f,.27).add(V(0,.1,0));/* in front of the belly, the lantern hanging below the fists */
+  const sd=s=>s==='Right'?1:-1;const wF=(S.p0?1:smooth(0,.4,t))*(1-smooth(.62,.95,t)),wT=smooth(.15,.5,t)*(1-smooth(.85,1.2,t));
+  if(wF>.01){const mf=M.clone().addScaledVector(r,.035*sd(S.from));odReach(S.from,S.p0?S.p0.clone().lerp(mf,smooth(0,.4,t)):mf,wF);}/* straight on from where the take left the fist at his side */if(wT>.01)odReach(S.to,M.clone().addScaledVector(r,.035*sd(S.to)).add(V(0,.01,0)),wT);
+  if(!S.done&&t>.55)lswHand(S);H.look=M;H.lookW=.6*Math.max(wF,wT);
+  /* it hangs plumb from its bail the whole time: the fists turn to meet and it lay over on its side between them (film) */
+  lanternPlumb();}
+ function lanternPlumb(){const l=PP().tools.lantern;if(l&&(l.parent===bones.LeftHand||l.parent===bones.RightHand)){const G=window.__grab;const g=V(...((G&&G.GRIP&&G.GRIP.lantern&&G.GRIP.lantern.g)||[0,.24,0]));l.updateMatrixWorld(true);const gw=l.localToWorld(g.clone()),sc=l.getWorldScale(V());
+   const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,root.rotation.y,0,'YXZ'));const wp=gw.sub(g.clone().multiply(sc).applyQuaternion(q));const M2=new THREE.Matrix4().compose(wp,q,sc);l.parent.updateWorldMatrix(true,false);M2.premultiply(l.parent.matrixWorld.clone().invert());M2.decompose(l.position,l.quaternion,l.scale);l.updateMatrixWorld(true);}}
+ function lswLeave(a){const S=LSW.a;if(S&&S.act===a){LSW.a=null;H.wait=null;if(!S.done)lswHand(S);}}
  function gearSync(){try{const T=PP().tools||{};const on=o=>{for(let p=o&&o.parent;p;p=p.parent)if(p===root)return true;return false;};if(on(T.bow)||on(T.quiver))GEAR.bow=true;if(on(T.lantern))GEAR.lantern=true;}catch(e){}}
  function dropGearNow(){if(GEAR.coat&&COAT){COAT.on=false;try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}
   for(const n of ['bow','quiver','lantern','meatBag','logArmful','waterBucket','drainBucket','plate'])try{PP().release(n);}catch(e){}
@@ -2084,17 +2187,48 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   {const G=window.__ground;let bs=-1e9;for(let i=0;i<16;i++){const a=i*Math.PI/8;const v=V(Math.sin(a),0,Math.cos(a));let sc=0;for(const k of [.5,1.05,1.6]){const x=c.x+v.x*k,z=c.z+v.z*k;sc+=G&&G.rootD?Math.min(.8,G.rootD(x,z)):0;}
     const q=c.clone().addScaledVector(v,1.05);for(const n of ['logpile','sawhorse']){const o=PP().objects&&PP().objects[n];if(o&&o.userData.box){const bb=o.userData.box;const dx=Math.max(bb.min.x-q.x,0,q.x-bb.max.x),dz=Math.max(bb.min.z-q.z,0,q.z-bb.max.z);sc-=Math.max(0,.7-Math.hypot(dx,dz))*3;}}
     sc+=.15*v.dot(u);if(sc>bs){bs=sc;u.copy(v);}}}const p=c.clone().addScaledVector(u,1.05);const G=window.__ground;p.y=G&&G.heightAt?G.heightAt(p.x,p.z):b.y;
-  N.g_block={p,face:Math.atan2(-u.x,-u.z)};(adj.g_block=adj.g_block||[]).push({to:best});(adj[best]=adj[best]||[]).push({to:'g_block'});}
+  N.g_block={p,face:Math.atan2(-u.x,-u.z)};
+  /* WALK: the straight line from the nearest node to the block ran over the oak's big root (70 cm high): the body walked through
+     it at 20 cm while the feet stood on top, knees up at the hips (gate: splitwood right leg 20-54 cm jumps). Walk round the roots:
+     a grid search over the root map, kept as tight waypoints */
+  const way=G&&G.rootTop?rootDetour(b,p):null;let prev=best;if(way)way.forEach((q,i)=>{const k='g_blk'+i;N[k]={p:q,tight:true};(adj[prev]=adj[prev]||[]).push({to:k});(adj[k]=adj[k]||[]).push({to:prev});prev=k;});
+  (adj.g_block=adj.g_block||[]).push({to:prev});(adj[prev]=adj[prev]||[]).push({to:'g_block'});}
+ // waypoints from a to b over the ground that stay off the roots (rootTop < 12 cm within a sole's reach); null if the line is clear
+ function rootDetour(a,b){const G=window.__ground;const R=(x,z)=>{let m=0;for(const [ox,oz] of [[0,0],[.22,0],[-.22,0],[0,.22],[0,-.22]])m=Math.max(m,G.rootTop(x+ox,z+oz));return m;};
+  const clear=(p,q)=>{const n=Math.ceil(Math.hypot(q.x-p.x,q.z-p.z)/.08);for(let i=0;i<=n;i++){const t=i/n;if(R(p.x+(q.x-p.x)*t,p.z+(q.z-p.z)*t)>.12)return false;}return true;};
+  if(clear(a,b))return null;const S=.25,x0=Math.min(a.x,b.x)-4,z0=Math.min(a.z,b.z)-4,nx=Math.ceil((Math.abs(a.x-b.x)+8)/S),nz=Math.ceil((Math.abs(a.z-b.z)+8)/S);
+  const id=(i,j)=>i*nz+j,cx=i=>x0+i*S,cz=j=>z0+j*S,ok=new Uint8Array(nx*nz);for(let i=0;i<nx;i++)for(let j=0;j<nz;j++)ok[id(i,j)]=R(cx(i),cz(j))<=.12?1:0;
+  const ia=Math.round((a.x-x0)/S),ja=Math.round((a.z-z0)/S),ib=Math.round((b.x-x0)/S),jb=Math.round((b.z-z0)/S);ok[id(ia,ja)]=ok[id(ib,jb)]=1;
+  const g=new Float32Array(nx*nz).fill(1e9),from=new Int32Array(nx*nz).fill(-1),done=new Uint8Array(nx*nz);g[id(ia,ja)]=0;const open=[id(ia,ja)];
+  while(open.length){let bi=0;for(let k=1;k<open.length;k++)if(g[open[k]]+Math.hypot(cx((open[k]/nz)|0)-b.x,cz(open[k]%nz)-b.z)<g[open[bi]]+Math.hypot(cx((open[bi]/nz)|0)-b.x,cz(open[bi]%nz)-b.z))bi=k;
+   const c=open.splice(bi,1)[0];if(done[c])continue;done[c]=1;if(c===id(ib,jb))break;const ci=(c/nz)|0,cj=c%nz;
+   for(let di=-1;di<=1;di++)for(let dj=-1;dj<=1;dj++){if(!di&&!dj)continue;const i=ci+di,j=cj+dj;if(i<0||j<0||i>=nx||j>=nz)continue;const n=id(i,j);if(!ok[n]||done[n])continue;const ng=g[c]+S*Math.hypot(di,dj);if(ng<g[n]){g[n]=ng;from[n]=c;open.push(n);}}}
+  if(from[id(ib,jb)]<0)return null;const cells=[];for(let c=id(ib,jb);c>=0;c=from[c])cells.push(V(cx((c/nz)|0),0,cz(c%nz)));cells.reverse();cells[0]=a.clone();cells[cells.length-1]=b.clone();
+  // keep only the corners: from each kept point, the farthest cell still in clear sight
+  const out=[];let k=0;while(k<cells.length-1){let f=k+1;for(let m=cells.length-1;m>k+1;m--)if(clear(cells[k],cells[m])){f=m;break;}if(f<cells.length-1){const q=cells[f].clone();q.y=G.heightAt?G.heightAt(q.x,q.z):a.y;out.push(q);}k=f;}
+  return out.length?out:null;}
  function splitStock(S,n){// the rounds he sawed earlier stand by the block; topped up only while he is away from it (never under his eyes)
   if(S.stack.length>=n)return;const G=window.__ground;const c=S.top;const st=N.g_block?N.g_block.p.clone():root.position.clone();const d=V(c.x-st.x,0,c.z-st.z).normalize();const r=V(d.z,0,-d.x);/* his left */
   while(S.stack.length<n+1){const i=S.stack.length;const m=roundMesh();const p=st.clone().addScaledVector(r,.3+(i%2)*.24).addScaledVector(d,.42-Math.floor(i/2)*.24);/* in front, to his left: the squat reaches it */p.y=G&&G.heightAt?G.heightAt(p.x,p.z):p.y-.42;m.position.copy(p);m.rotation.y=Math.random()*6;scene.add(m);S.stack.push(m);}
   while(S.halves.length>12){const h=S.halves.shift();scene.remove(h);}}
  let rdLateOn=0;function roundLock(a,rd){const hb=bones.LeftHand;hb.updateWorldMatrix(true,false);const wp=odPalm('Left').sub(a.rOff);if(a.cTop&&Math.hypot(wp.x-a.cTop.x,wp.z-a.cTop.z)<.42)wp.y=Math.max(wp.y,a.cTop.y+.003);/* over the block it rests on its top, never sinks into it */const M=new THREE.Matrix4().compose(wp,a.rQ,rd.getWorldScale(V()));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(rd.position,rd.quaternion,rd.scale);rd.updateMatrixWorld(true);a.rW=wp.clone();}
+ /* OUTDOOR: deep down for a round the heels come up off the ground: past what an ankle bends (his standing angle + 24 deg) the foot
+    turns about its planted toes, the ankle rises and the knee and hip take the rest (gate: floor pick, ankle bent up 43-44 deg past neutral) */
+ function ankAng(s){const K=bones[s+'Leg'].getWorldPosition(V()),A=bones[s+'Foot'].getWorldPosition(V()),T=bones[s+'ToeBase'].getWorldPosition(V());return A.clone().sub(K).normalize().angleTo(T.clone().sub(A).normalize());}
+ function heelUp(a){if(!a.ank0)return;for(const s of ['Left','Right']){const L=bones[s+'Leg'],F=bones[s+'Foot'],Tb=bones[s+'ToeBase'];if(!L||!F||!Tb)continue;
+   const lim=a.ank0[s]+.42;let ang=ankAng(s);if(ang<=lim)continue;
+   const K=L.getWorldPosition(V()),A=F.getWorldPosition(V()),T=Tb.getWorldPosition(V());const sh=A.clone().sub(K).normalize(),ft=T.clone().sub(A);const ax=sh.clone().cross(ft).normalize();if(ax.lengthSq()<1e-6)continue;
+   /* the foot turned about the toe by the excess (toe stays, heel rises): its new ankle */const ft2=ft.clone().applyAxisAngle(ax,-(ang-lim));const A2=T.clone().sub(ft2);
+   const hp=bones[s+'UpLeg'].getWorldPosition(V());const pole=K.clone().sub(hp.clone().add(A).multiplyScalar(.5)).normalize();
+   ik2(bones[s+'UpLeg'],L,F,A2,pole,1,true);
+   /* the toes back on their spot */const A3=F.getWorldPosition(V()),cur=Tb.getWorldPosition(V()).sub(A3),want=T.clone().sub(A3);const ax2=cur.clone().cross(want);const an=cur.angleTo(want);if(ax2.lengthSq()>1e-9&&an>1e-3)rotW(F,ax2.normalize(),an);}}
+ let huOn=0;
  function splitPost(a,dt,S){const P=PP();const ax=P&&P.tools&&P.tools.axe;if(!ax||!a.axeOn)return;
   const T=SPL_T;a.pt+=dt;const c=S.top;const rp=root.position;const d=V(c.x-rp.x,0,c.z-rp.z);const hd=d.length();d.normalize();const r=V(-d.z,0,d.x),up=V(0,1,0);
   H.face=Math.atan2(d.x,d.z);
   const hits=a.plan[a.ri];if(hits==null){a.w=Math.max(0,(a.w||0)-dt/.4);H.squat=0;return;}
-  if(a.ph==='lead'){axeRest(a,d,smooth(0,.5,a.pt));if(a.pt>.6){a.ph='place';a.pt=0;}return;}
+  if(!huOn){huOn=1;lateFn(()=>{const A=act;if(A&&A.axeOn&&A.ph==='place')heelUp(A);});}
+  if(a.ph==='lead'){axeRest(a,d,smooth(0,.5,a.pt));if(a.pt>.45&&!a.ank0)a.ank0={Left:ankAng('Left'),Right:ankAng('Right')};/* his standing ankle, for heelUp */if(a.pt>.6){a.ph='place';a.pt=0;}return;}
   // 1. a round from the stack onto the block: squat, left palm on its top, lift, stand it on the block
   if(a.ph==='place'){a.cTop=c;const u=a.pt/T.place;let rd=a.rd;if(!rd){rd=a.rd=S.stack.pop()||(()=>{const m=roundMesh();m.position.copy(c).addScaledVector(r,.5);m.position.y-=.42;scene.add(m);return m;})();a.r0=rd.position.clone();}
    // the body: real mocap squat-and-lift (hy_pickground, CMU: hips lowest 0.9-1.3 s); without it a code squat
@@ -2123,12 +2257,12 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(a.ph==='swing'){// the body is real mocap (hy_axechop, CMU: slow lift 1.2 s, fast drop 0.35 s, hit at 1.57 s of 1.9 s); the axe angle follows its phase
    const C='hy_axechop',cd=has(C)?durOf(C):1.9;if(!a.clipOn&&has(C)){a.clipOn=1;play(C,{fade:.3});const A=actions[C];if(A)A.time=0;}
    const A=has(C)?actions[C]:null;const u=A?(A.time%cd)/cd:a.pt/T.swing;if(a.lu!=null&&u<a.lu-.5){a.struck=0;a.cyc=(a.cyc||0)+1;}a.lu=u;
-   const last=a.hit+1>=hits;const thT=1.68,UT=.63,US=.82;/* top of the backswing just past vertical: further back the hands went behind his head and the body guard pulled them off the handle (film) */let th;
+   const last=a.hit+1>=hits;const thT=1.5,UT=.63,US=.82;/* top of the backswing just past vertical: further back the hands went behind his head and the body guard pulled them off the handle (film) */let th;
    if(u<UT)th=thS+(thT-thS)*smooth(0,UT,u);else if(u<US){const k=(u-UT)/(US-UT);th=thT+(thS-.05-thT)*k*k*(2.2-1.2*k);/* fast through the drop, a touch less at the very end: it slammed from full speed to a dead stop in one frame (gate: fist 11 cm/frame²) */}else th=thS-.05;
    if(u>=US&&!a.struck){a.struck=1;a.hit++;try{window.__audio&&window.__audio.contact?window.__audio.contact({tool:'axe',kind:'hit',pos:tgt.toArray(),strength:rnd(.8,1)}):AU('chop',tgt);}catch(e){AU('chop',tgt);}
     if(a.hit>=hits)splitRound(a,S,d,r);}
    if(u>US&&a.rd&&u<.95)th+=Math.sin((u-US)*60)*.025;/* stuck: rock the handle to free it */
-   a.wl=Math.min(1,(a.wl??(a.w||0))+dt/.4);a.w=smooth(0,1,a.wl);H.squat=.04;/* eased in: the linear ramp kicked the fists 10 cm/frame² at the start of the swing (gate) */
+   a.wl=Math.min(1,(a.wl??(a.w||0))+dt/.6);a.w=smooth(0,1,a.wl);H.squat=.04*a.w;/* eased in too: switched on at once it dropped the hips 4 cm in a frame *//* eased in: the linear ramp kicked the fists 10 cm/frame² at the start of the swing (gate) */
    holdAxe(a,piv,d,r,th,rH,a.w);
    if(a.hit>=hits&&u>.97){a.wl=null;a.pt=0;a.struck=0;a.clipOn=0;a.lu=null;a.ph='after';play(IDLE(),{fade:.6});}return;}
   if(a.ph==='after'){const u=a.pt/T.after;a.w=Math.max(0,1-smooth(0,.6,u));H.squat=.04*(1-u);axeRest(a,d,1);if(a.w>.01)holdAxe(a,piv,d,r,thS-.05+.3*smooth(0,.6,u),rH,a.w);
@@ -2202,7 +2336,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   // the pond is shallow at the edge: the bucket lies over on its side to scoop, its bottom never in the mud of the bed
   {let g=want.y-1;try{g=window.__ground.heightAt(want.x,want.z);}catch(e){}want.y=Math.max(want.y,g+.12);}
   if(want.distanceTo(R)>.005)odReach('Right',want,1);
-  const L=odPalm('Left');odReach('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too */
+  const L=odPalm('Left');if(!lanternLeft())odReach('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too (not with the lantern in it: one-handed, the lantern held up beside) */
   odHang('waterBucket',1.3*a.dip);}
  // a bucket in the fist hangs plumb from its handle (world upright, turned with him), tipped only when he tips it; never
  // follows the wrist's twist (it was swinging out at the hip or upside down at the feet)
@@ -2254,8 +2388,10 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // the rope it hangs by: from the handle up over the right shoulder, across the chest to the left hip and round the back again
  let strap=null;const strapMat=new THREE.MeshStandardMaterial({color:0x6b4a2a,roughness:1});
  function strapTo(o,f,hs,ty,hip){const r=V(-f.z,0,f.x),l=r.clone().negate();const top=o.localToWorld(V(0,ty,0));const sp=bones.Spine2.getWorldPosition(V()),hp=bones.Hips.getWorldPosition(V());let pts;
-  if(hip){const ls=bones.LeftShoulder.getWorldPosition(V());/* bandolier: handle -> up the back -> over the left shoulder -> across the chest -> down to the handle */
-   pts=[top,sp.clone().addScaledVector(f,-.13).addScaledVector(r,.05),ls.clone().addScaledVector(f,-.06).add(V(0,.045,0)),ls.clone().addScaledVector(f,.07).add(V(0,.035,0)),sp.clone().addScaledVector(f,.15).addScaledVector(r,.03),hp.clone().addScaledVector(f,.1).addScaledVector(r,.2).add(V(0,.1,0)),top.clone().addScaledVector(f,.05)];}
+  if(hip){/* bandolier: handle -> straight up the back (the load pulls it taut) -> lying ON the left shoulder (between the collar bone and the arm,
+     not 4.5 cm over the clavicle bone: it floated) -> across the chest -> down to the handle; extra points keep the taut runs straight, not a hoop (watch R29-1) */
+   /* the torso's own axes, not the root's: bent over the ladder rungs his back faces up, and 'behind Spine2' along the root forward stood 20 cm clear of it (the hoop over his back, film) */const rb=bones.RightArm.getWorldPosition(V()).sub(bones.LeftArm.getWorldPosition(V())).normalize(),ub=bones.Neck.getWorldPosition(V()).sub(hp).normalize(),fb=ub.clone().cross(rb).normalize(),ls=bones.LeftShoulder.getWorldPosition(V()).lerp(bones.LeftArm.getWorldPosition(V()),.45);const b1=sp.clone().addScaledVector(fb,-.13).addScaledVector(rb,.05),s1=ls.clone().addScaledVector(fb,-.05).addScaledVector(ub,.03),s2=ls.clone().addScaledVector(fb,.06).addScaledVector(ub,.025),c1=sp.clone().addScaledVector(fb,.15).addScaledVector(rb,.03),h1=hp.clone().addScaledVector(f,.1).addScaledVector(r,.2).add(V(0,.1,0)),t2=top.clone().addScaledVector(f,.05);
+   pts=[top,top.clone().lerp(b1,.5),b1,b1.clone().lerp(s1,.6),s1,s2,s2.clone().lerp(c1,.5),c1,c1.clone().lerp(h1,.5),h1,h1.clone().lerp(t2,.5),t2];}
   else{const sh=bones.RightShoulder.getWorldPosition(V());pts=[top,sh.clone().addScaledVector(f,-.1).add(V(0,.07,0)),sh.clone().addScaledVector(f,.06).add(V(0,.05,0)),sp.clone().addScaledVector(f,.14).addScaledVector(l,.02),hp.clone().addScaledVector(f,.1).addScaledVector(l,.15).add(V(0,.05,0)),
    hp.clone().addScaledVector(l,.19).add(V(0,.08,0)),hp.clone().addScaledVector(f,-.14).addScaledVector(l,.08).add(V(0,.12,0)),top.clone().addScaledVector(r,.05).add(V(0,-.02,0))];}
   const g=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts,true,'centripetal'),48,.012,6,true)/* centripetal: no loop overshooting above the shoulder (film: a hoop over his head on the ladder) */;
@@ -2304,7 +2440,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const piv=Q.localToWorld(V(0,-.45,0)),top=Q.localToWorld(V(0,.17,0));const up=top.clone().sub(piv).normalize();const bk=bones.Spine2.getWorldPosition(V()).sub(bones.Spine2.localToWorld(V(0,0,.1))).normalize();/* away from the back mostly, never out sideways off the shoulder */const aw=(QV.d||bk).clone().multiplyScalar(.35).addScaledVector(bk,.65).normalize();const ax=up.clone().cross(aw);if(ax.lengthSq()<1e-6)return;ax.normalize();
   const th=Math.min(.35,QV.x/.6);const qr=new THREE.Quaternion().setFromAxisAngle(ax,th);const wq=Q.getWorldQuaternion(new THREE.Quaternion()).premultiply(qr);const wp=Q.getWorldPosition(V()).sub(piv).applyQuaternion(qr).add(piv);
   Q.parent.updateWorldMatrix(true,false);const pq=Q.parent.getWorldQuaternion(new THREE.Quaternion());Q.position.copy(Q.parent.worldToLocal(wp));Q.quaternion.copy(pq.invert().multiply(wq));Q.updateMatrixWorld(true);}
- const EASE_T=['waterBucket','drainBucket','axe','logArmful'],easeSt={};
+ const EASE_T=['waterBucket','drainBucket','axe','logArmful','lantern'],easeSt={};
  function toolEase(){const P=PP();if(!P||!P.tools)return;const dt=1/60;
   for(const n of EASE_T){const o=P.tools[n];if(!o)continue;const S=easeSt[n];
    /* set once (a grab): nothing re-placed it since our blend last frame, so its real place is the one under the blend */if(S&&S.e&&S.tl&&S.par===o.parent&&o.position.equals(S.lp)&&o.quaternion.equals(S.lq)){o.position.copy(S.tl.p);o.quaternion.copy(S.tl.q);o.scale.copy(S.tl.s);}
@@ -2315,13 +2451,16 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
      const M=new THREE.Matrix4().compose(p,q,o.getWorldScale(V()));o.parent.updateWorldMatrix(true,false);M.premultiply(o.parent.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);wp.copy(p);wq.copy(q);}}
    easeSt[n]={par:o.parent,w:wp,q:wq,vis:o.visible,e:S&&S.e||null,tl,lp:o.position.clone(),lq:o.quaternion.clone()};}}
  function isHeroPart(x){for(let q=x;q;q=q.parent)if(q===root)return true;return false;}
- let slAge=0;
+ let slAge=0,slLad=0,slOX=.27,slOZ=-.24,slPlOn=0;
  function slungPost(){const P=PP();if(!P||!P.tools)return;lateReg();
   for(const n in unsl){const U=unsl[n];const o=P.tools[n];if(!o||o.parent!==scene||H.lad||(H.path[0]&&H.path[0].t==='ladder')){delete unsl[n];continue;}U.t+=1/60;
    const g=o.localToWorld((o.userData.grip||V()).clone());odReach(U.hand,g,smooth(0,.3,U.t));
    if((U.t>.25&&odPalmTo(U.hand,g)<.07)||U.t>.7){delete unsl[n];slung[n]=0;try{P.grab(n,bones[U.hand+'Hand'],{offset:V(...U.ho)});AU('cloth');}catch(e){}unslF[n]={t:0,hand:U.hand,g};}}
-  for(const n in unslF){const F=unslF[n];F.t+=1/60;if(F.t>=.35||H.lad){delete unslF[n];continue;}odReach(F.hand,F.g,1-smooth(0,.35,F.t));}unslingIdle(P);let f=null,any=false;
-  slAge=(H.lad||(H.path[0]&&H.path[0].t==='ladder'))?0:slAge+1/60;
+  for(const n in unslF){const F=unslF[n];F.t+=1/60;if(F.t>=.35||H.lad){delete unslF[n];continue;}odReach(F.hand,F.g,1-smooth(0,.35,F.t));}unslingIdle(P);
+  slAge=(H.lad||(H.path[0]&&H.path[0].t==='ladder'))?0:slAge+1/60;if(!slPlOn){slPlOn=1;lateFn(slungPlace);}}
+ /* placed at the guard stage, from the body as it is drawn: placed with the act's post the ladder pose was not on him yet, and the rope ran
+    to where his shoulder would be standing upright, a stiff hoop 20 cm over his bent back (watch R29-1) */
+ function slungPlace(){const P=PP();if(!P||!P.tools)return;let f=null,any=false;
   for(const n in SLUNG_AT){const o=P.tools[n];if(!o||!slung[n]||(o.parent!==bones.Spine2&&o.parent!==scene))continue;
    /* a load is on the rope only for a climb: 2.5 s off any ladder with no hand going for it, it is not on him (the supply bucket, back on its shelf,
       was still flagged and dragged along at his hip with its rope loop through his arm and the oven: watch R26-3) */
@@ -2333,7 +2472,16 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    let pos=sp.clone().addScaledVector(f,back-sp.dot(f)-S[0]).add(V(0,S[1]*hs,0));
    // a bucket hangs at his right hip on a rope across the chest from the left shoulder: rim below the shoulder blades, out
    // beside the thigh (watchers: on the back it either covered his head or read as round his waist)
-   if(n!=='meatBag'){const r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());pos=hp.clone().addScaledVector(r,.27).addScaledVector(f,-.24);pos.y=hp.y-.46;/* behind the hip: clear of the right arm reaching down the rungs */}
+   if(n!=='meatBag'){const r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());slLad=clamp(slLad+(H.lad?1:-1)/60/.6,0,1);const kb=smooth(0,1,slLad);let dz=-.24-.08*kb,dx=.27-.17*kb;if(H.lad){/* the boards round the hatch: the bucket must hang where nothing is between its bottom and his shoulders, so on the ladder he pulls it in tight behind him, into the opening, until the deck is above it */const clear=(x,z)=>{const fy=floorAt(x,hp.y+.95,z,.05,1.45);return !(fy!=null&&fy>hp.y-.42);};/* and clear of his own seat and thighs, which stick out behind the hips on the rungs (the bucket round his backside once it was placed from the drawn pose) */const bR=back-hp.dot(f)-.16;let ok=0;for(let [cx,cz] of [[dx,dz],[.06,-.2],[.03,-.14],[0,-.09],[0,-.05]]){cz=Math.min(cz,bR);const c=hp.clone().addScaledVector(r,cx).addScaledVector(f,cz);let free=1;for(const [ox,oz] of [[0,0],[.13,0],[-.13,0],[0,.13],[0,-.13]])if(!clear(c.x+ox,c.z+oz)){free=0;break;}if(free){dx=cx;dz=cz;ok=1;break;}}if(!ok){dx=0;dz=Math.min(-.05,bR);}}
+   slOX+=(dx-slOX)*Math.min(1,6/60*4);slOZ+=(dz-slOZ)*Math.min(1,6/60*4);if(!H.lad&&slLad<=0){slOX=dx;slOZ=dz;}
+   /* never in his body: the hips, thighs, shins and feet in the bucket's height band push it back along his back (gate: on the rungs the
+      bent legs and seat went 10-13 cm into it; the bone centres alone are not his surface) */
+   {if(!o.userData.slR){const bb=new THREE.Box3().setFromObject(o),sz=bb.getSize(V());o.userData.slR=Math.max(sz.x,sz.z)/2/o.getWorldScale(V()).x;o.userData.slH=sz.y/o.getWorldScale(V()).y;}
+    const R=o.userData.slR*hs+.13,y0=hp.y-.3-.04,y1=y0+o.userData.slH*hs+.08;const pts=[];const B=bones;const add=(a,b,n)=>{if(!B[a]||!B[b])return;const pa=B[a].getWorldPosition(V()),pb=B[b].getWorldPosition(V());for(let k=0;k<=n;k++)pts.push(pa.clone().lerp(pb,k/n));};
+    add('Hips','Spine',1);for(const q of pts)q.addScaledVector(f,-.04);/* the seat is further back than the hip joint */add('LeftUpLeg','LeftLeg',3);add('RightUpLeg','RightLeg',3);add('LeftLeg','LeftFoot',3);add('RightLeg','RightFoot',3);add('LeftFoot','LeftToeBase',1);add('RightFoot','RightToeBase',1);
+    const ho=hp.dot(f);let lim=9;for(const q of pts){if(q.y<y0||q.y>y1)continue;const c=hp.clone().addScaledVector(r,slOX);const lat=Math.abs(q.clone().sub(c).dot(r));if(lat>=R)continue;lim=Math.min(lim,q.dot(f)-ho-Math.sqrt(R*R-lat*lat));}
+    if(slOZ>lim)slOZ+=(lim-slOZ)*kb;}/* eased in with the climb: at the sling, out at his side, it eased from the fist straight back through his shins (full gate) */
+   pos=hp.clone().addScaledVector(r,slOX).addScaledVector(f,slOZ);pos.y=hp.y-.3;/* where the boards of the hatch edge are at its height it is pulled in tight behind him and comes down through the opening with him *//* on the ladder it swings round behind him, into the open hatch at his back: out at his side it went through the deck boards and the post going down (film) *//* off the boards: at .46 under the hips its bottom sat on the deck at the hatch while he turned to go down (watch R29-1) *//* behind the hip: clear of the right arm reaching down the rungs */}
    const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,root.rotation.y,0,'YXZ'));const par=o.parent;par.updateWorldMatrix(true,false);
    const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);if(!any){any=true;strapTo(o,f,hs,S[2],n!=='meatBag');}}
   if(!any&&strap)strap.visible=false;}
@@ -2378,7 +2526,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function huntStart(a,res,goOut){a.step='hunt';a.hp='draw';a.ht=0;a.hres=res;a.goOut=goOut;const f=fwd(N.g_out.face??H.face);H.face=N.g_out.face??H.face;
   const e=root.position;const hp=e.clone().addScaledVector(f,2.6).addScaledVector(V(f.z,0,-f.x),rnd(-.15,.15));/* on the path out, not in the bushes beside it */hp.y=gH(hp.x,hp.z,e.y);a.hareAt=hp;
   hareObj=hareObj||hareMesh();hareTidy();hareObj.position.copy(hp);hareObj.rotation.set(0,Math.atan2(-f.x,-f.z)+rnd(-.8,.8),0);hareObj.visible=true;scene.add(hareObj);
-  play(IDLE(),{fade:.4});H.look=hp.clone().add(V(0,.2,0));H.lookW=.5;const p0=a.post;a.post=dt=>{p0&&p0(dt);if(a.step==='hunt'&&(a.hp==='draw'||a.hp==='stow')&&a.rk!=null)bowReach(a,a.rk,a.hp==='draw');if(a.step==='hunt'&&a.hp==='pick'){if(a.ph2)hareCarry(a);else if(hareObj&&hareObj.parent===scene){hareObj.updateMatrixWorld(true);const g=hareObj.localToWorld(V(0,.06,-.14));a.hg0=g;const w=smooth(.3,.75,a.ht);if(w>.01)odReach('Right',g,w);}}};}
+  play(IDLE(),{fade:.4});H.look=hp.clone().add(V(0,.2,0));H.lookW=.5;const p0=a.post;a.post=dt=>{p0&&p0(dt);if(a.step==='hunt'&&a.hp==='shoot')shotPost(a);if(a.step==='hunt'&&(a.hp==='draw'||a.hp==='stow')&&a.rk!=null)bowReach(a,a.rk,a.hp==='draw');if(a.step==='hunt'&&a.hp==='pick'){if(a.ph2)hareCarry(a);else if(hareObj&&hareObj.parent===scene){hareObj.updateMatrixWorld(true);const g=hareObj.localToWorld(V(0,.06,-.14));a.hg0=g;const w=smooth(.3,.75,a.ht);if(w>.01)odReach('Right',g,w);}}};}
  /* the hare never stays in his hand after the hunt is over, however the task ended */
  let hareGuard=0;function hareTidy(){if(!hareGuard){hareGuard=1;stage('pre',()=>{if(hareObj&&hareObj.parent&&hareObj.parent!==scene&&!(act&&act.step==='hunt')){hareObj.parent.remove(hareObj);}});}}
  /* up from the ground the hare is carried out in front and round the outside of his right thigh into the sack, never back
@@ -2386,7 +2534,31 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function hareCarry(a){const t=a.ht;const L=(x,y,z)=>root.localToWorld(V(x,y,z));
   const P1=L(-.14,.62,.36),P2=L(-.34,.82,.06);const t0=a.pkT||(a.pkT=t);const at=t<t0+.65?a.hg0.clone().lerp(P1,smooth(t0,t0+.65,t)):P1.clone().lerp(P2,smooth(1.55,2.15,t));
   const w=1-smooth(2.25,2.7,t);if(w>.01)odReach('Right',at,w);}
- function huntEnd(a){if(hareObj&&hareObj.parent)hareObj.parent.remove(hareObj);if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);
+ /* HUNT: a real shot, by hand. The right hand goes back over the shoulder into the quiver and draws an arrow, brings it to the bow,
+    nocks it on the string and pulls the string back to the cheek (the string bends to the fingers); on the release that same arrow
+    leaves from where it lay. (It used to appear out of nothing at the bow hand at the release, the string never moved: watch, v6 at night) */
+ let bowStr=null,handArrow=null,shotOn=0,shotA=null;
+ function bowString(nock){const bw=PP().tools&&PP().tools.bow;if(!bw)return;
+  if(bw.userData.strMesh===undefined){bw.userData.strMesh=null;bw.traverse(o=>{if(o.isMesh&&o.material&&o.material.color&&o.material.color.getHex()===0xE8E2D0)bw.userData.strMesh=o;});}
+  const base=bw.userData.strMesh;
+  if(!bowStr){const m=new THREE.MeshStandardMaterial({color:0xE8E2D0,roughness:.6});bowStr=[0,1].map(()=>{const c=new THREE.Mesh(new THREE.CylinderGeometry(.0025,.0025,1,4),m);c.castShadow=true;c.frustumCulled=false;c.visible=false;c.name='bowString';scene.add(c);return c;});}
+  if(!nock||!bw.visible||!base){if(base)base.visible=true;for(const c of bowStr)c.visible=false;return;}
+  base.visible=false;bw.updateMatrixWorld(true);const tips=[bw.localToWorld(V(0,.56,.002)),bw.localToWorld(V(0,-.56,.002))];
+  tips.forEach((t,i)=>{const c=bowStr[i];const d=nock.clone().sub(t);const L=d.length();c.position.copy(t).addScaledVector(d,.5);c.quaternion.setFromUnitVectors(V(0,1,0),d.normalize());c.scale.set(1,L,1);c.visible=true;});}
+ const SHOT={reach0:.4,reach1:1.25,take:1.3,back0:1.35,back1:2.15,nock:2.15,rel:3.95};/* slow in and out: a 0.4 s reach jumped the right hand 7-11 cm a frame (gate) */
+ function shotPost(a){const t=a.ht;const Q=PP().tools&&PP().tools.quiver;if(!Q||Q.parent!==bones.Spine2)return;
+  /* into the quiver: the fingers to the fletchings at its mouth */const w=smooth(SHOT.reach0,SHOT.reach1,t)*(1-smooth(SHOT.back0,SHOT.back1,t));if(w>.01&&!a.rel)odReach('Right',Q.localToWorld(V(0,.1,0)),.65*w);/* most of the way to the quiver mouth, eased: at full weight the shoulder could not follow behind the head and the hand jumped 8-11 cm */
+  shotA=a;if(!shotOn){shotOn=1;lateFn(()=>{const A=shotA;shotA=null;if(A&&act===A&&A.step==='hunt'&&A.hp==='shoot')shotLate(A);else if(handArrow&&handArrow.visible&&!(act&&act.ar)){handArrow.visible=false;bowString(null);}});}}
+ function shotLate(a){const t=a.ht;const Q=PP().tools.quiver,bw=PP().tools.bow;if(a.rel){bowString(null);return;}
+  if(t<SHOT.take){if(handArrow)handArrow.visible=false;bowString(null);return;}
+  if(!handArrow){handArrow=arrowMesh();handArrow.name='handArrow';scene.add(handArrow);}if(!handArrow.visible){handArrow.visible=true;AU('cloth');}
+  const palm=odPalm('Right');const grip=bw?bw.localToWorld(V(0,.03,.02)):odPalm('Left');
+  const up=Q.localToWorld(V(0,1,0)).sub(Q.localToWorld(V(0,0,0))).normalize();const toBow=grip.clone().sub(palm).normalize();
+  const k=smooth(SHOT.take,SHOT.nock,t);const dir=up.clone().lerp(toBow,k).normalize();
+  /* held at the nock end between the fingers; once on the string the shaft runs from the fingers over the bow hand */
+  const pos=palm.clone().addScaledVector(dir,.31);handArrow.position.copy(pos);handArrow.lookAt(pos.clone().add(dir));handArrow.updateMatrixWorld(true);
+  bowString(t>=SHOT.nock?palm.clone().lerp(grip,1-smooth(SHOT.nock,SHOT.nock+.4,t)):null);}
+ function huntEnd(a){if(hareObj&&hareObj.parent)hareObj.parent.remove(hareObj);if(handArrow&&handArrow.parent)handArrow.parent.remove(handArrow);handArrow=null;try{bowString(null);}catch(e){}if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);
   try{const bw=PP().tools.bow;if(bw&&bw.parent===bones.LeftHand)onBack('bow',V(-.02,.03,-.18),[0,0,.55]);}catch(e){}H.look=null;H.lookW=0;H.slide=null;}
  /* the bow changes parent (back <-> fist) without a jump: from where it was it eases into its new place over 0.35 s */
  function bowMove(a,fn){const bw=PP().tools&&PP().tools.bow;if(!bw)return;bw.updateMatrixWorld(true);const M0=bw.matrixWorld.clone();try{fn();}catch(e){}a.bt={M0,tp:bw.position.clone(),tq:bw.quaternion.clone(),ts:bw.scale.clone(),k:0};}
@@ -2396,7 +2568,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(a.hp==='draw'){a.rk=t/1.6;if(t>.6&&!a.bg){a.bg=1;bowMove(a,()=>PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)}));AU('cloth');}
    if(t>1.6){a.hp='shoot';a.ht=0;once('hy_bowshoot',{fade:.35});AU('arrow');}return;}
   if(a.hp==='shoot'){if(t>1.8&&!a.dr){a.dr=1;AU('bow_draw',root.position);}
-   if(t>3.95&&!a.rel){a.rel=1;AU('bow_release',root.position);arrowObj=arrowObj||arrowMesh();const from=bones.LeftHand.getWorldPosition(V());arrowObj.position.copy(from);scene.add(arrowObj);arrowObj.visible=true;
+   if(t>SHOT.rel&&!a.rel){a.rel=1;AU('bow_release',root.position);if(handArrow&&handArrow.visible){if(arrowObj&&arrowObj.parent)arrowObj.parent.remove(arrowObj);arrowObj=handArrow;handArrow=null;}/* the nocked arrow itself flies */else{arrowObj=arrowObj||arrowMesh();arrowObj.position.copy(bones.LeftHand.getWorldPosition(V()));}const from=arrowObj.position.clone();scene.add(arrowObj);arrowObj.visible=true;bowString(null);
     const to=a.hareAt.clone().add(V(0,.1,0));if(!ok)to.addScaledVector(V(fwd(H.face).z,0,-fwd(H.face).x),.5).addScaledVector(fwd(H.face),2.5);arrowObj.lookAt(to);a.ar={from,to,t:0};}
    if(a.ar){const A=a.ar;A.t+=dt/(ok?.18:.3);const k=Math.min(1,A.t);arrowObj.position.lerpVectors(A.from,A.to,k);if(k>=1){a.ar=null;if(ok){hareObj.attach(arrowObj);a.fall=0;}else arrowObj.visible=false;}}
    if(ok&&a.fall!=null&&a.fall<1){a.fall=Math.min(1,a.fall+dt/.25);hareObj.rotation.z=smooth(0,1,a.fall)*Math.PI/2*.95;hareObj.position.y=a.hareAt.y+.0;}
@@ -2445,23 +2617,34 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   eat:(o={})=>eatAction(o),
   // water: the tap bucket from the pond, the drain bucket emptied outside
   fetchwater:(o={})=>{const a={step:'go',t:0};const P=PP();const pond=window.__ground&&window.__ground.pond&&window.__ground.pond.fill;
-   shelfVisit(a,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
+   const lit=!!(o.lantern&&hasTool('lantern'));const home=then=>{if(!GEAR.lantern){then();return;}lanternSwap(a,'Left','Right',()=>gearOff(a,then));};
+   if(lit&&!GEAR.lantern){a.lswNext=1;gearOn(a,{lantern:true},()=>{a.lswNext=0;if(a.leaving)return;lanternSwap(a,'Right','Left',()=>{if(!a.leaving)fwGo();});});}else if(lanternLeft()||!GEAR.lantern)fwGo();else lanternSwap(a,'Right','Left',fwGo);
+   function fwGo(){shelfVisit(a,'hy_take',[[.45,()=>{try{P.grab('waterBucket',bones.RightHand,{offset:V(0,.06,.02)});}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
     const spot=pond?pond.clone?pond.clone():V(pond.x,pond.y,pond.z):(N.g_exit1?N.g_exit1.p.clone().add(V(.6,0,.6)):null);
     const fill=()=>{a.step='fill';a.ft=0;a.fdone=()=>{try{window.__audio.carry(true);}catch(e){}play(IDLE(),{fade:.4});H.look=root.position.clone().addScaledVector(fwd(H.face),2.5);H.lookW=.6;/* a breath at the water before carrying it home */
-      H.wait={t:rnd(1.5,2.5),then:()=>{a.step='back';a.put=1;H.look=null;H.lookW=0;/* no stale gaze up the ladder (he walked off it staring at the sky) */shelfVisit(a,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};};};
+      H.wait={t:rnd(1.5,2.5),then:()=>{a.step='back';a.put=1;H.look=null;H.lookW=0;/* no stale gaze up the ladder (he walked off it staring at the sky) */shelfVisit(a,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>home(()=>endTask({ok:true})));}};};};
     if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
-    if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});
+    if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});}
    a.update=dt=>{if(a.step==='fill'){pondFill(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
    a.post=()=>{if(a.step==='fill'&&a.dip){H.bucketTilt=true;pondFillPost(a);}else if(!shelfPath(a))odHang('waterBucket',0);};
-   a.leave=cb=>{try{slung.waterBucket=0;relLoad('waterBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+   /* OUTDOOR: called away with the bucket on him (in the fist, or on the rope up a ladder) he first carries it to the sink and sets
+      it down there by hand: dropped back onto the shelf in one frame, or left on the rope, it rode along into the next jobs for hours
+      (critic W3) and then jumped home */
+   a.leave=cb=>{a.leaving=true;if(a.step==='clip'){H.once=null;a.hits=[];}gearSync();lswLeave(a);H.wait=null;const o=P.tools.waterBucket;
+    const done=()=>{try{slung.waterBucket=0;window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});cb();};
+    const onHim=o&&(o.parent===bones.RightHand||slung.waterBucket||onHeroT('waterBucket'));
+    if(onHim){a.step='back';a.put=1;a.dip=0;H.bucketTilt=false;shelfVisit(a,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>home(done));}
+    else home(done);};return a;},
   setbucket:(o={})=>{const a={step:'go',t:0,put:1,post:()=>{if(!shelfPath(a))odHang('waterBucket',0);}};const P=PP();shelfVisit(a,'hy_take',[[.5,()=>{try{P.release('waterBucket',{blend:.3});}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));
    a.update=dt=>{stepTick(a,dt);};return a;},
   dumpwater:(o={})=>{const a={step:'go',t:0};const P=PP();
-   drainVisit(a,'hy_pickground',[[.45,()=>{try{P.grab('drainBucket',bones.RightHand,{offset:V(0,.06,.02)});window.__audio.carry(true);}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
+   const lit=!!(o.lantern&&hasTool('lantern'));const home=then=>{if(!GEAR.lantern){then();return;}lanternSwap(a,'Left','Right',()=>gearOff(a,then));};
+   if(lit&&!GEAR.lantern){a.lswNext=1;gearOn(a,{lantern:true},()=>{a.lswNext=0;if(a.leaving)return;lanternSwap(a,'Right','Left',()=>{if(!a.leaving)dwGo();});});}else if(lanternLeft()||!GEAR.lantern)dwGo();else lanternSwap(a,'Right','Left',dwGo);
+   function dwGo(){drainVisit(a,'hy_pickground',[[.45,()=>{try{P.grab('drainBucket',bones.RightHand,{offset:V(0,.06,.02)});window.__audio.carry(true);}catch(e){}H.carry=BUCKET();}]],()=>{a.step='out';
     goTo('gate',()=>{H.face=N.gate.face??0;a.step='pour';a.t=0;play(IDLE(),{fade:.4});/* hy_water (a watering clip) twisted him 90 deg off the edge: the pour is the arms' own work */
      // long enough to empty it (the stream runs 5 s for a full bucket); emptied for sure at the end, else the brain sent him again and again
      let lv=.6;try{lv=P.water.dirty;}catch(e){}a.D=clamp(1.9+lv*5.2,2.8,6.5);H.wait={t:a.D,then:()=>{try{P.water.pour('drainBucket',false);P.water.setDirty(0);}catch(e){}
-      a.step='back';a.back=1;drainVisit(a,'hy_pickground',[[.47,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>endTask({ok:true}));}};});});
+      a.step='back';a.back=1;drainVisit(a,'hy_pickground',[[.47,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>home(()=>endTask({ok:true})));}};});});}
    a.update=dt=>{if(stepTick(a,dt))return;carryOv();if(a.step==='pour'){/* up to the very edge (the gap in the rail for the ladder) so the stream goes over it, not onto the boards */if(!a.e0){a.e0=root.position.clone();}const ef=fwd(root.rotation.y);const k=smooth(0,.6,a.t)*(1-smooth(a.D-.6,a.D,a.t));root.position.x=a.e0.x+ef.x*.2*k;root.position.z=a.e0.z+ef.z*.2*k;if(a.t>.8&&!a.p){a.p=1;try{P.water.pour('drainBucket',true);}catch(e){}AU('bucket_dump',root.position);}}};
    // OUTDOOR: the pour: the fist lifts the bucket out over the edge, the other hand under its bottom tips it right over, then back
    // taking it from under the sink and putting it back: the fist carries it on a clean path between its spot and his side,
@@ -2471,8 +2654,12 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
      const u=a.back?smooth(.12,.45,k):1-smooth(.5,.85,k);const mid=hg.clone().addScaledVector(r,.36);mid.y=Math.max(mid.y,cy.y);/* out to the right at the bay first, then back to his side: never back past the shins */odReach('Right',u>.5?mid.lerp(hg,smooth(.5,1,u)):cy.clone().lerp(mid,smooth(0,.5,u)),1);odHang('drainBucket',0,true);return;}
     if(a.step!=='pour'){odHang('drainBucket',0);return;}H.bucketTilt=true;const D=a.D||2.8;const t=a.t;const w=smooth(0,.5,t)*(1-smooth(D-.5,D,t));const f=fwd(root.rotation.y);
     if(w>.01)odReach('Right',root.position.clone().addScaledVector(f,.62).addScaledVector(V(-f.z,0,f.x),.2).add(V(0,.85,0)),w);/* from the waist, leaning out over the edge: the tipped pail hangs in front of his belly, never up before his face (phone watch f1040) */const tilt=1.6*smooth(.45,.95,t)*(1-smooth(D-.8,D-.25,t));odHang('drainBucket',tilt);
-    const bk=PP().tools.drainBucket;if(bk&&w>.01){const bt=bk.localToWorld(V(0,.02,0));odReach('Left',bt,.85*w*smooth(.3,.6,t));odHang('drainBucket',tilt);}};
-   a.leave=cb=>{try{slung.drainBucket=0;P.water.pour('drainBucket',false);relLoad('drainBucket');window.__audio.carry(false);}catch(e){}H.carry=null;cb();};return a;},
+    const bk=PP().tools.drainBucket;if(bk&&w>.01&&!lanternLeft()){const bt=bk.localToWorld(V(0,.02,0));odReach('Left',bt,.85*w*smooth(.3,.6,t));odHang('drainBucket',tilt);}/* with the lantern in the left hand he tips it one-handed */};
+   a.leave=cb=>{a.leaving=true;if(a.step==='clip'){H.once=null;a.hits=[];}gearSync();lswLeave(a);H.wait=null;try{P.water.pour('drainBucket',false);}catch(e){}const o=P.tools.drainBucket;
+    const done=()=>{try{slung.drainBucket=0;window.__audio.carry(false);}catch(e){}H.carry=null;play(IDLE(),{fade:.4});cb();};
+    const onHim=o&&(o.parent===bones.RightHand||slung.drainBucket||onHeroT('drainBucket'));/* back under the sink by hand first, as for the water bucket (critic W3) */
+    if(onHim){a.step='back';a.back=1;drainVisit(a,'hy_pickground',[[.47,()=>{try{P.release('drainBucket',{blend:.3});window.__audio.carry(false);}catch(e){}H.carry=null;}]],()=>home(done));}
+    else home(done);};return a;},
   // OUTDOOR (Сделать вылазки наружу естественными): splitting firewood at the chopping block by the oak with the real axe.
   // He takes the axe out of the block, picks a round from the little stack beside it (squat, left hand), stands it on the block,
   // then swings two-handed: the axe goes up over his head round the shoulders and comes down so its edge lands on the round's top
@@ -2494,7 +2681,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  });
  {const cookBase=MAKE.cook;MAKE.cook=(o={})=>{if(!o.fromFridge)return cookBase(o);const a={step:'go',t:0};const P=PP();
   fridgeVisit(a,'out',()=>{
-   try{P.release('meatBag');P.pan&&P.pan.setMeat&&P.pan.setMeat(true);}catch(e){}const inner=cookBase(o);act=inner;inner.name='cook';const cd=rnd(22,34);let ct=0;const iu=inner.update;inner.update=dt=>{iu&&iu(dt);ct+=dt;if(ct>cd&&!inner.left){inner.left=true;inner.leave(()=>{try{P.pan&&P.pan.setMeat&&P.pan.setMeat(false);P.plate&&P.plate.setFood&&P.plate.setFood(1);}catch(e){}endTask({ok:true});});}};});
+   const inner=cookBase(Object.assign({},o,{meat:true}));act=inner;inner.name='cook';const cd=rnd(22,34);let ct=0;const iu=inner.update;inner.update=dt=>{iu&&iu(dt);ct+=dt;if(ct>cd&&!inner.left){inner.left=true;inner.leave(()=>{try{P.pan&&P.pan.setMeat&&P.pan.setMeat(false);P.plate&&P.plate.setFood&&P.plate.setFood(1);}catch(e){}endTask({ok:true});});}};});
   a.update=dt=>{stepTick(a,dt);};a.leave=cb=>{const go=()=>{try{P.release('meatBag');P.fridge.openTo(0,.4);}catch(e){}cb();};if(fridgeLeave(a,go))return;go();};return a;};}
 
  // ---------- sitting, lying down, getting up ----------
@@ -2552,14 +2739,18 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     if(SP.t>=SP.dur){SP.to=null;bedPress(true);}}
    else if((SP.next-=dt)<=0||(window.__sleepPose&&window.__sleepPose!==SP.name)){const n=window.__sleepPose||sleepPick();SP.from={...SP.cur};SP.to={...SLEEP_POSES[n]};SP.name=n;SP.t=0;SP.dur=rnd(2.4,3.4);SP.next=rnd(45,140);sfx&&sfx.rustle&&sfx.rustle();}}
   const c=SP.cur,w=SP.w;root.updateMatrixWorld(true);
+  /* TURNING OVER without pops (Pavel: no twitches): every switch here is continuous. The side he lies on comes from the roll's sign, the
+     side/back/belly blends from how far he has rolled, and the 'mid-turn' easing of the arms and legs follows the turn's own sine
+     (the old on/off flags made 5-16 cm/frame jumps of the hands and feet at the start and end of every turn) */
+  const ar=Math.abs(c.roll);SP.sS=smooth(.3,.9,ar);SP.sB=smooth(1.8,2.2,ar);SP.mid=SP.to?Math.sin(Math.PI*Math.min(1,SP.t/SP.dur)):0;
   const hp=wp(bones.Hips),nk=wp(bones.Neck);const ax=nk.clone().sub(hp).setY(0).normalize();// roll about the bed's long axis (a tilted axis would swing the legs up)
   rotW(bones.Hips,ax,c.roll*w);
   // after the roll: the body's front, and each limb bends toward it
   const lft=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).normalize();const front=V().crossVectors(lft,ax).normalize();// character's left x up = front
   const bend=(a,b,ang,toFront=true)=>{if(!a||!b)return;const d=wp(b).sub(wp(a)).normalize();const axis=V().crossVectors(d,toFront?front:front.clone().negate());if(axis.lengthSq()<1e-6)return;rotW(a,axis.normalize(),ang*w);};
-  const down=Math.abs(c.roll)>.3?(wp(bones.LeftUpLeg).y<wp(bones.RightUpLeg).y?'Left':'Right'):null;// the side he lies on
-  for(const sd of ['Left','Right']){const top=down&&sd!==down;bend(bones[sd+'UpLeg'],bones[sd+'Leg'],c.flex*(top?1.15:.9));bend(bones[sd+'Leg'],bones[sd+'Foot'],c.knee*(top?1.1:.9),false);
-   bend(bones[sd+'Arm'],bones[sd+'ForeArm'],c.armF*(top?.3:1));bend(bones[sd+'ForeArm'],bones[sd+'Hand'],c.elb*(top?.5:1));}
+  const down=c.roll>0?'Left':'Right';// the side he lies on (rolled to +roll he is on his left)
+  for(const sd of ['Left','Right']){const tp=sd!==down?SP.sS:0;bend(bones[sd+'UpLeg'],bones[sd+'Leg'],c.flex*lerp(.9,1.15,tp));bend(bones[sd+'Leg'],bones[sd+'Foot'],c.knee*lerp(.9,1.1,tp),false);
+   bend(bones[sd+'Arm'],bones[sd+'ForeArm'],c.armF*lerp(1,.3,tp));bend(bones[sd+'ForeArm'],bones[sd+'Hand'],c.elb*lerp(1,.5,tp));}
   if(bones.Neck&&Math.abs(c.turnH)>.01)rotW(bones.Neck,ax,-c.turnH*w);
   // breathing: about 13 breaths a minute, the chest rises a little
   SP.br+=dt*2*Math.PI/4.6;const lat=V().crossVectors(ax,front).normalize();rotW(bones.Spine1,lat,Math.sin(SP.br)*.025*w);rotW(bones.Spine2,lat,Math.sin(SP.br-.4)*.015*w);
@@ -2580,30 +2771,92 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const vis=o=>{for(let q=o;q;q=q.parent)if(!q.visible)return false;return true;};let low=1e9;const v=V();
    for(const e of HU.idx){if(!vis(e.o))continue;const P=e.o.geometry.attributes.position;e.o.updateMatrixWorld();for(const i of e[sd]){v.fromBufferAttribute(P,i);e.o.applyBoneTransform(i,v);v.applyMatrix4(e.o.matrixWorld);if(v.y<low)low=v.y;}}
    if(low<1e8){const ay=wp(bones[sd+'Foot']).y;R.v=clamp(ay-low,0,.12);}}catch(e){}return R.v;}
- function sleepLegRest(w,c,down){const B=FIT.bed;if(!B||Math.abs(c.roll)>2.2)return;
+ function sleepLegRest(w,c,down){const B=FIT.bed;if(!B)return;const kk=w*(1-.5*(SP.mid||0))*(1-(SP.sB||0));if(kk<.002)return;
   // on his back: knees only a little up, heels on the mattress (the clip held both feet ~15 cm in the air); the head tips forward a
-  // touch so the skull rests in the pillow rather than through it
-  if(!down){const k=w*(SP.to?.5:1);for(const sd of ['Left','Right']){dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],B.mat+.13,k);dropTo(bones[sd+'Leg'],bones[sd+'Foot'],B.mat+heelUnder(sd)-.018,k);}
-   if(bones.Neck&&bones.Head){const nk=wp(bones.Neck),hd=wp(bones.Head);const d=hd.clone().sub(nk).normalize();const ax=V().crossVectors(d,V(0,1,0));if(ax.lengthSq()>1e-6)rotW(bones.Neck,ax.normalize(),.18*k);}return;}const top=down==='Left'?'Right':'Left';const k=w*(SP.to?.5:1);
-  dropTo(bones[top+'UpLeg'],bones[top+'Leg'],B.mat+.17,k);dropTo(bones[top+'Leg'],bones[top+'Foot'],B.mat+.1,k);}
+  // touch so the skull rests in the pillow rather than through it. On his side the upper leg rests on the mattress. Blended by the roll.
+  const sS=SP.sS||0,kb=kk*(1-sS),ks=kk*sS;
+  if(kb>.002){for(const sd of ['Left','Right']){dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],B.mat+.13,kb);dropTo(bones[sd+'Leg'],bones[sd+'Foot'],B.mat+heelUnder(sd)-.018,kb);}
+   if(bones.Neck&&bones.Head){const nk=wp(bones.Neck),hd=wp(bones.Head);const d=hd.clone().sub(nk).normalize();const ax=V().crossVectors(d,V(0,1,0));if(ax.lengthSq()>1e-6)rotW(bones.Neck,ax.normalize(),.18*kb);}}
+  if(ks>.002){const top=down==='Left'?'Right':'Left';dropTo(bones[top+'UpLeg'],bones[top+'Leg'],B.mat+.17,ks);dropTo(bones[top+'Leg'],bones[top+'Foot'],B.mat+.1,ks);}}
  // BED: the arms rest on something while he sleeps (watcher B3: the right forearm stayed raised with a stiff claw hand all night).
  // Back: left hand on the mattress beside the hip, right hand on the stomach. Side: the lower hand on the pillow by the face, the
  // upper one on the mattress in front of the chest. Stomach: both hands up by the head. Fingers relax toward the open bind pose.
  const FINGERS=[];root.traverse(o=>{if(o.isBone&&/Hand(Index|Middle|Ring|Pinky|Thumb)\d/.test(o.name))FINGERS.push({b:o,q0:o.quaternion.clone()});});
  function sleepArms(w,c,ax,front,lft,down){const B=FIT.bed;if(!B||w<.01)return;const mat=B.mat;const hp=wp(bones.Hips),ch=bones.Spine2?wp(bones.Spine2):hp.clone().addScaledVector(ax,.3),nk=wp(bones.Neck);
-  const belly=Math.abs(c.roll)>2;const side=!belly&&Math.abs(c.roll)>.6;const k=w*(SP.to?.6:1);
-  for(const sd of ['Left','Right']){const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'],Hn=bones[sd+'Hand'];if(!Hn)continue;const out=lft.clone().multiplyScalar(sd==='Left'?1:-1);let t,pole;
-   if(belly){t=nk.clone().addScaledVector(out,.24).addScaledVector(ax,-.02);t.y=mat+.06;pole=out.clone().add(V(0,-.3,0)).addScaledVector(ax,-.5);}
-   else if(side){if(sd===down){t=nk.clone().addScaledVector(front,.2).addScaledVector(ax,.06);t.y=mat+.1;pole=ax.clone().negate().add(V(0,-.4,0));}
-    else{t=ch.clone().addScaledVector(front,.26).addScaledVector(ax,-.08);t.y=mat+.07;pole=out.clone().add(ax.clone().multiplyScalar(-.4));}}
-   else{if(sd==='Left'){t=hp.clone().addScaledVector(out,.24).addScaledVector(ax,.06);t.y=mat+.05;}else{t=hp.clone().addScaledVector(ax,.2).addScaledVector(out,.04);t.y=hp.y+.12;}pole=out.clone().add(V(0,-.3,0));}
-   ik2(A,Fa,Hn,t,pole.normalize(),k,false);}
+  const sB=SP.sB||0,sS=(SP.sS||0)*(1-sB),sK=1-sS-sB;const k=w*(1-.4*(SP.mid||0));
+  for(const sd of ['Left','Right']){const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'],Hn=bones[sd+'Hand'];if(!Hn)continue;const out=lft.clone().multiplyScalar(sd==='Left'?1:-1);
+   const t=V(),pole=V();const add=(tt,pp,ww)=>{if(ww<1e-4)return;t.addScaledVector(tt,ww);pole.addScaledVector(pp.normalize(),ww);};
+   if(sB>0){const tt=nk.clone().addScaledVector(out,.24).addScaledVector(ax,-.02);tt.y=mat+.06;add(tt,out.clone().add(V(0,-.3,0)).addScaledVector(ax,-.5),sB);}
+   if(sS>0){if(sd===down){const tt=nk.clone().addScaledVector(front,.2).addScaledVector(ax,.06);tt.y=mat+.1;add(tt,ax.clone().negate().add(V(0,-.4,0)),sS);}
+    else{const tt=ch.clone().addScaledVector(front,.26).addScaledVector(ax,-.08);tt.y=mat+.07;add(tt,out.clone().add(ax.clone().multiplyScalar(-.4)),sS);}}
+   if(sK>0){let tt;if(sd==='Left'){tt=hp.clone().addScaledVector(out,.24).addScaledVector(ax,.06);tt.y=mat+.05;}else{tt=hp.clone().addScaledVector(ax,.2).addScaledVector(out,.04);tt.y=hp.y+.12;}add(tt,out.clone().add(V(0,-.3,0)),sK);}
+   if(pole.lengthSq()<1e-6)pole.copy(out);ik2(A,Fa,Hn,t,pole.normalize(),k,false);
+   {/* whatever the blend: a hand over the mattress rests ON it (in mid-turn it sank 6 cm into the front edge, gate) */root.updateMatrixWorld(true);const h=wp(Hn),lo=mat+.035;if(h.x>B.x0&&h.x<B.x1&&h.z<B.z1+.01&&h.y<lo){const tg=h.clone();tg.y=lo;if(tg.z>B.z1-.03)tg.z=B.z1-.03;ik2(A,Fa,Hn,tg,pole,Math.min(1,w*3),false);}}}
   for(const f of FINGERS)f.b.quaternion.slerp(f.q0,.65*w);root.updateMatrixWorld(true);}
  // eyes: shut while he sleeps (and as he lies down / until he sits up), a blink every few seconds when awake
  const BL={t:rnd(2,5),k:0};
  function lidTick(dt){let want=0;const b=H.bedB;if(H.inBed&&!b)want=1;if(H.bedC)want=H.bedC.dir>0?smooth(.75,1,H.bedC.u):1-smooth(0,.3,H.bedC.u);else if(b)want=smooth(.55,.9,b.u)*(b.dir>0?1:smooth(.75,.95,b.u));
+  /* the quilt is pulled up and thrown back with his eyes open; they shut once it is over him */if(H.inBed&&QH.on)want=QH.mode==='up'?smooth(QH.tr+QH.tm,QH.tr+QH.tm+QH.trl,QH.t):0;
   BL.t-=dt;if(BL.t<=0){BL.t=rnd(2.5,6);if(Math.random()<.2)BL.t=.25;BL.b=0;}if(BL.b!=null){BL.b+=dt;const k=BL.b<.07?BL.b/.07:1-(BL.b-.07)/.1;if(k<=0)BL.b=null;else want=Math.max(want,k);}
+  if(FACE.lid>want)want=FACE.lid;/* a yawn squeezes the eyes half shut; effort narrows them */
   BL.k+=(want-BL.k)*Math.min(1,dt*(want>BL.k?25:8));setLids(BL.k);}
+ // FACE (v6 head, pipeline/hero2/facemorph.mjs): morph targets 'effort' (brows down and together, cheeks up, lips pressed)
+ // and 'yawn' (jaw drops, brows up; the 'mouth' node's own 'yawn' opens a dark oval over the lips). Heads without them: no-op.
+ // effort: from the task (how heavy the work is) times how hard the hand is moving right now (peaks on each strike or lift).
+ // yawn: the stretch_yawn clip, now and then when he is tired (late evening, on his way to bed), a little open when asleep;
+ // chewing moves the jaw while he eats. Own PRNG: Math.random would shift the seeded gate stream.
+ const FACE=(()=>{const tg=[];let mo=null;root.traverse(o=>{if(!o.morphTargetDictionary)return;if(o.name==='mouth')mo=o;else if(o.morphTargetDictionary.effort!=null)tg.push(o);});
+  if(mo)mo.castShadow=false;
+  return {tg,mo,e:0,y:0,lid:0,yt:null,next:40,seed:7177,hp:null,sm:0,sun:0,sunT:0,fl:null,wx:0,br:null};})();
+ const FX_EFF={splitwood:1,saw:.85,repair:.7,hammer:.7,craft:.6,dumpwater:.7,firewood:.6,water:.55,fetchwater:.55,stoke:.45,chop:.35,hunt:.5,sweep:.25};
+ function faceRnd(){FACE.seed=(FACE.seed*16807)%2147483647;return FACE.seed/2147483647;}
+ // reactions to the world (face only, no bones):
+ //  thunder: a wince (brows down, eyes squeezed shut for a moment), stronger the louder it is
+ //  low morning sun in his eyes: a squint (sun in front of him and not blocked: rays through the collide grid, 4x a second)
+ //  telescope / radio: a small smile while he is at it
+ //  cold night outdoors (open sky above him): breath vapour, a few soft sprites from the mouth on each out-breath
+ const SUN=(h,o)=>{const sa=(h-6)/14*Math.PI;return o.set(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();};/* index.html sunDir */
+ function rayFree(p,d,a,b,st){const C=window.__collide;if(!C||!C.depthAt)return true;for(let s=a;s<=b;s+=st){if(C.depthAt(p.x+d.x*s,p.y+d.y*s,p.z+d.z*s)>.005)return false;}return true;}
+ function faceWorld(dt,t){const WX=window.__weather;
+  if(!FACE.wx&&WX&&typeof WX.on==='function'){FACE.wx=1;try{WX.on('thunder',e=>{const k=e&&e.loud!=null?e.loud:.5;if(k>.12&&!H.inBed)FACE.fl={t:0,k:Math.min(1,.45+k*.8),v:0};});}catch(e){}}
+  if(FACE.fl){const F=FACE.fl;F.t+=dt;F.v=F.k*smooth(0,.07,F.t)*(1-smooth(.3,1.2,F.t));if(F.t>1.2)FACE.fl=null;}
+  const hd=bones.Head;FACE.sunT-=dt;let st=null;try{st=WX&&WX.state?WX.state():null;}catch(e){}
+  if(FACE.sunT<=0&&hd){FACE.sunT=.25;const h=hour();let want=0;const hp=hd.getWorldPosition(V());
+   if(h>6.2&&h<10&&!H.inBed&&(!st||st.state==='clear'||st.state==='calm')){const sd=SUN(h,V());const q=hd.getWorldQuaternion(new THREE.Quaternion());const f=V(0,0,1).applyQuaternion(q);
+    const fa=f.x*sd.x+f.z*sd.z;const fl=Math.hypot(f.x,f.z)*Math.hypot(sd.x,sd.z)||1;const dd=fa/fl;if(dd>.45&&rayFree(hp,sd,.25,6,.25))want=smooth(.45,.85,dd)*(1-smooth(9,10,h))*smooth(6.2,6.8,h);}
+   FACE.sunW=want;
+   // breath vapour: cold (feels < 7.5 C: late evening, night, dawn, wind or rain) and open sky over his head
+   const cold=st&&st.feels!=null?st.feels<7.5:false;FACE.out=cold&&!H.inBed&&rayFree(hp,V(0,1,0),.3,5,.35);}
+  FACE.sun+=((FACE.sunW||0)-FACE.sun)*Math.min(1,dt*2);
+  const smT=(t==='telescope'||t==='radio')&&act&&act.step==='work'?.55+.15*Math.sin(actT*.7):0;FACE.sm+=(smT-FACE.sm)*Math.min(1,dt*(smT>FACE.sm?1.2:2));
+  breathTick(dt);}
+ function breathTick(dt){const B=FACE.br||(FACE.br={ps:[],t:0,mat:null});
+  if(!FACE.out&&!B.ps.some(p=>p.s.visible))return;
+  if(!B.mat){const c=document.createElement('canvas');c.width=c.height=32;const g=c.getContext('2d');const gr=g.createRadialGradient(16,16,0,16,16,16);gr.addColorStop(0,'rgba(255,255,255,1)');gr.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=gr;g.fillRect(0,0,32,32);
+   const tx=new THREE.CanvasTexture(c);B.mat=tx;for(let i=0;i<3;i++){const s=new THREE.Sprite(new THREE.SpriteMaterial({map:tx,color:0xdfe6ee,transparent:true,opacity:0,depthWrite:false,fog:true}));s.visible=false;s.renderOrder=2;scene.add(s);B.ps.push({s,t:9,v:V()});}}
+  const walking=H.path.length>0;const per=walking?2.2:3.6;B.t+=dt;
+  if(FACE.out&&B.t>=per){B.t=0;const p=B.ps.find(q=>q.t>1.8);if(p){const m=window.__hero&&window.__hero.mouth?window.__hero.mouth(V()):bones.Head.getWorldPosition(V());const q=bones.Head.getWorldQuaternion(new THREE.Quaternion());const f=V(0,0,1).applyQuaternion(q);
+    p.t=0;p.s.position.copy(m).addScaledVector(f,.03);p.v.copy(f).multiplyScalar(.28).add(V(0,.08,0));p.s.visible=true;}}
+  for(const p of B.ps){if(!p.s.visible)continue;p.t+=dt;const u=p.t/1.8;if(u>=1){p.s.visible=false;p.s.material.opacity=0;continue;}
+   p.s.position.addScaledVector(p.v,dt);p.v.multiplyScalar(Math.exp(-dt*1.5));p.s.scale.setScalar(.04+.17*Math.sqrt(u));p.s.material.opacity=.28*smooth(0,.12,u)*(1-smooth(.35,1,u));}}
+ function faceTick(dt){if(!FACE.tg.length||dt<=0)return;const t=H.task||'';let base=FX_EFF[t]||(/^fix/.test(t)?.6:0);
+  if(H.inBed||H.seated&&t!=='saw')base=0;if(H.path.length||H.trans||H.lad||H.slide)base=/^(firewood|water|fetchwater)$/.test(t)?base*.5:0;/* on the way there: nothing to strain at (a load in his arms: a little) */
+  const hp=bones.RightHand?root.worldToLocal(bones.RightHand.getWorldPosition(V())):null;/* relative to his body: walking is not a strike */let sp=0;if(hp&&FACE.hp){sp=hp.distanceTo(FACE.hp)/dt;}if(hp)FACE.hp=(FACE.hp||V()).copy(hp);
+  const eT=base*(.4+.6*smooth(.2,1.4,sp));FACE.e+=(eT-FACE.e)*Math.min(1,dt*(eT>FACE.e?6:2.5));
+  // yawns
+  const yc=actions.stretch_yawn;let yT=0;if(yc&&H.cur===yc&&yc.isRunning()){const u=yc.time/Math.max(.1,yc.getClip().duration);yT=smooth(.18,.38,u)*(1-smooth(.62,.85,u));}
+  const h=hour();const tired=(h>=21.5||h<6)||t==='sleep'&&!H.inBed&&!H.bedB;
+  if(t!==FACE.lt){FACE.lt=t;if(t==='sleep'&&!H.inBed&&faceRnd()<.7){FACE.next=1.5+faceRnd()*2.5;FACE.yq=1;}}/* off to bed: usually a yawn on the way */
+  FACE.next-=dt;if(FACE.next<=0){FACE.next=25+faceRnd()*50;if(tired&&base===0&&t!=='eat'&&!H.inBed&&!H.bedB&&!H.bedC&&!FACE.yt&&(FACE.yq||faceRnd()<.55))FACE.yt={t:0,d:2.8+faceRnd()*1.2};FACE.yq=0;}
+  if(FACE.yt){const Y=FACE.yt;Y.t+=dt;const u=Y.t/Y.d;yT=Math.max(yT,smooth(0,.32,u)*(1-smooth(.68,1,u)));if(u>=1||base>0||H.inBed)FACE.yt=null;}
+  if(H.inBed&&!H.bedB&&!H.bedC)yT=Math.max(yT,.1);/* asleep: lips just apart */
+  if(t==='eat'&&act&&act.step==='eat'&&!act.rest&&act.cu>.68&&act.cu<.98)yT=Math.max(yT,.13*Math.max(0,Math.sin((act.cu-.68)*Math.PI*2*5))*(1-smooth(.85,.98,act.cu)));/* chewing, in step with the head */
+  FACE.y+=(yT-FACE.y)*Math.min(1,dt*(yT>FACE.y?5:3.5));
+  faceWorld(dt,t);
+  const fl=FACE.fl?FACE.fl.v:0;const ef=Math.max(FACE.e*(1-FACE.y),fl,.38*FACE.sun);FACE.lid=Math.max(.5*smooth(.3,.9,FACE.y),.22*ef,.3*FACE.sun,FACE.fl&&FACE.fl.t<.16?FACE.fl.k:0);
+  for(const o of FACE.tg){const D=o.morphTargetDictionary;o.morphTargetInfluences[D.effort]=ef;o.morphTargetInfluences[D.yawn]=FACE.y;if(D.smile!=null)o.morphTargetInfluences[D.smile]=FACE.sm*(1-FACE.y);}
+  if(FACE.mo)FACE.mo.morphTargetInfluences[FACE.mo.morphTargetDictionary.yawn]=FACE.y;
+  window.__face={e:+ef.toFixed(3),y:+FACE.y.toFixed(3)};window.__faceDbg=()=>[+FACE.sm.toFixed(2),+FACE.sun.toFixed(2),FACE.fl?+FACE.fl.v.toFixed(2):0,!!FACE.out,FACE.br?FACE.br.ps.filter(p=>p.s.visible).length:0];}
  // the quilt and mattress sink under him (props.js bedPress)
  function bedPress(on){const P=window.__props||P3;if(!P)return;const hp=on?bones.Hips.getWorldPosition(V()):null;// asleep he lies under the quilt (props bedCover: a body-shaped mound)
   try{if(P.bedCover)P.bedCover(hp);/* BED: no bedPress(null) after it: both share one state, so that switched the cover off and the quilt never rose over him */else if(P.bedPress)P.bedPress(hp);}catch(e){}}
@@ -2616,7 +2869,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // and lies folded at the foot of the bed; he puts it on again standing (hy_jacketon).
  const VEST=root.getObjectByName('vest'),BOOTS=root.getObjectByName('boots');
  const _bbm=new THREE.Matrix4(),_bm2=new THREE.Matrix4();
- const BT={init:false,side:{},vestProp:null,vestOn:true,sockU:{value:0}};
+ const BT={init:false,side:{},vestProp:null,vestOn:true,sockU:{value:new THREE.Vector2(0,0)}};
  function bootInit(){if(BT.init)return BT.ok;BT.init=true;try{
   let body=null;root.traverse(o=>{if(o.isSkinnedMesh&&o!==BOOTS&&o!==VEST&&o.name!=='eyelids'&&o.name!=='coat'&&(!body||o.geometry.attributes.position.count>body.geometry.attributes.position.count))body=o;});
   const src=BOOTS||body;if(!src)return BT.ok=false;const S=src.skeleton,g=src.geometry;const SI=g.attributes.skinIndex,SW=g.attributes.skinWeight,P=g.attributes.position;
@@ -2648,7 +2901,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    BT.side[sd]=B;}
   if(BOOTS&&BT.side.Left&&BT.side.Right)BOOTS.visible=false;
   // original hero: the foot under the boot becomes a wool sock while the boot is off
-  if(!BOOTS&&body&&(BT.side.Left||BT.side.Right)){const m=new Float32Array(P.count);for(let i=0;i<P.count;i++)m[i]=(sel.Left[i]||sel.Right[i])?1:0;g.setAttribute('sock',new THREE.BufferAttribute(m,1));
+  if(!BOOTS&&body&&(BT.side.Left||BT.side.Right)){const m=new Float32Array(P.count);for(let i=0;i<P.count;i++)m[i]=sel.Left[i]?1:sel.Right[i]?2:0;/* per foot: 1 left, 2 right */g.setAttribute('sock',new THREE.BufferAttribute(m,1));
    // BED (Pavel: the vest comes off before sleep, on this hero too): the vest is painted into the one body texture, so the torso's
    // brown leather texels become the mustard shirt under it while the vest is off, and a folded copy of the vest's own triangles
    // lies on the quilt. The mask: torso-weighted vertices whose texel is the vest's brown (not the shirt, skin or trousers).
@@ -2671,17 +2924,17 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     BT.dv={geo:sg,bb,mat:mat0.clone()};}
    const mats=Array.isArray(body.material)?body.material:[body.material];body.material=mats.map(m0=>{const m=m0.clone();m.onBeforeCompile=sh=>{sh.uniforms.sockK=BT.sockU;sh.uniforms.vestK=BT.vestU||{value:0};const hv=!!BT.vestU;
      sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float sock;varying float vSock;'+(hv?'attribute float vest;varying float vVest;':'')).replace('#include <begin_vertex>','#include <begin_vertex>\nvSock=sock;'+(hv?'vVest=vest;':''));
-     sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float sockK;varying float vSock;'+(hv?'uniform float vestK;varying float vVest;':'')).replace('#include <map_fragment>','#include <map_fragment>\n{float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.27,.25,.23)*(.8+.5*l),vSock*sockK);}'+
+     sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform vec2 sockK;varying float vSock;'+(hv?'uniform float vestK;varying float vVest;':'')).replace('#include <map_fragment>','#include <map_fragment>\n{float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.27,.25,.23)*(.8+.5*l),(step(.5,vSock)*step(vSock,1.5)*sockK.x+step(1.5,vSock)*sockK.y));}'+
       (hv?'\n{float lv=dot(diffuseColor.rgb,vec3(.3,.59,.11));vec3 sh=vec3('+[BT.shirt.x,BT.shirt.y,BT.shirt.z].map(x=>Math.pow(x,2.2).toFixed(4)).join(',')+')*mix(.94,1.04,smoothstep(.0,'+(2*Math.pow(BT.shirtL,2.2)).toFixed(4)+',lv));/* canvas texels are sRGB, the shader works in linear */vec3 sc=pow(max(diffuseColor.rgb,vec3(0.)),vec3(1./2.2));float mx=max(sc.r,max(sc.g,sc.b)),mn=min(sc.r,min(sc.g,sc.b)),sat=mx>0.?(mx-mn)/mx:0.,gr=sc.g/max(sc.r,.001);/* vest = everything on the torso that is not the mustard shirt, not skin and not the green trousers: the leather is brown, dark grey and black with metal studs */float vb=(1.-smoothstep(.02,.06,sc.g-max(sc.r,sc.b)))*(1.-smoothstep(.64,.74,mx)*(1.-smoothstep(.38,.5,sat))*smoothstep(.08,.16,sc.r-sc.b));/* BED (watcher R18-3, R19-2): the shirt texels are repainted too, all in one shirt colour with only a faint shading: keeping the shirt texels and the leather shading left the vest outline, collar and pockets drawn in olive on the shirt */vestMix=smoothstep(.2,.6,vVest)*vb*vestK;diffuseColor.rgb=mix(diffuseColor.rgb,min(sh,vec3(1.)),vestMix);}':''));
      /* the vest relief (normal map: pocket flaps, seams, collar) and the leather shine go with it */if(hv){sh.fragmentShader=sh.fragmentShader.replace('uniform float vestK;','uniform float vestK;float vestMix=0.;').replace('#include <normal_fragment_begin>','#include <normal_fragment_begin>\nvec3 vestN0=normal;').replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=normalize(mix(normal,vestN0,vestMix));').replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,max(roughnessFactor,.85),vestMix);');}};
-     m.customProgramCacheKey=()=>BT.vestU?'hero-sock-vest4':'hero-sock';return m;});if(body.material.length===1)body.material=body.material[0];}
+     m.customProgramCacheKey=()=>BT.vestU?'hero-sock2-vest4':'hero-sock2';return m;});if(body.material.length===1)body.material=body.material[0];}
   return BT.ok=true;}catch(e){console.error('boots',e);return BT.ok=false;}}
  // world matrix the static boot needs to sit exactly where the skinned boot is drawn right now
  function bootWorld(B,out){root.updateMatrixWorld(true);const S=B.S;out.copy(B.foot.matrixWorld).multiply(S.boneInverses[B.fi]).multiply(_bm2.makeTranslation(B.c0.x,B.c0.y,B.c0.z));
   if(B.src.bindMode==='detached'){/* not used by these rigs */}return out;}
  function bootSpot(sd){{const B=BT.side[sd];if(B&&B.spot)return {p:B.spot.p.clone(),yaw:B.spot.yaw};}const ed=N.bededge;const hd=FIT.bed&&FIT.bed.headDir||1;// beside the bed, to his right (the foot end), toes to the room
   const k=sd==='Right'?0:1;return {p:V(ed.p.x-hd*(.42+k*.14),(ed.floor??floorTop(BD)),(FIT.bed?FIT.bed.z1:ed.p.z)+.16+k*.03),yaw:(sd==='Right'?.18:-.12)};}
- function bootShow(sd,on){const B=BT.side[sd];if(!B)return;B.on=on;if(B.skin)B.skin.visible=on;if(!BOOTS){BT.sockU.value=(BT.side.Left&&!BT.side.Left.on||BT.side.Right&&!BT.side.Right.on)?1:0;}}
+ function bootShow(sd,on){const B=BT.side[sd];if(!B)return;B.on=on;if(B.skin)B.skin.visible=on;if(!BOOTS){/* each foot its own sock: one boot off left the other foot a grey sock with no boot (orig, watcher) */BT.sockU.value.set(BT.side.Left&&!BT.side.Left.on?1:0,BT.side.Right&&!BT.side.Right.on?1:0);}}
  function bootPark(sd){const B=BT.side[sd];if(!B)return;const s=bootSpot(sd);const pm=B.prop;scene.attach(pm);pm.position.copy(s.p);pm.rotation.set(0,s.yaw,0);pm.scale.setScalar(BT.sc||1);pm.visible=true;}
  // the boot leaves the foot in his hand: the prop takes the skinned boot's exact place, then rides with the hand bone
  function bootToHand(sd,hand){const B=BT.side[sd];if(!B)return;const pm=B.prop;bootWorld(B,_bbm);scene.add(pm);pm.matrix.copy(_bbm);pm.matrix.decompose(pm.position,pm.quaternion,pm.scale);pm.visible=true;bones[hand+'Hand'].attach(pm);bootShow(sd,false);}
@@ -2717,11 +2970,12 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   SP.forEach((b,j)=>b.quaternion.copy(q0[j]));bones.Hips.quaternion.copy(qh0);LG.forEach((b,j)=>b.quaternion.copy(ql0[j]));root.updateMatrixWorld(true);const st=dt||1/60;const want=need*w;BRC.a=want>BRC.a?Math.min(want,BRC.a+3*st):Math.max(want,BRC.a-2*st);
   if(BRC.a>.002)leanB(ax,BRC.a);root.updateMatrixWorld(true);romArmIK(side,tg,sidePole(side),w,null);R.last={tg:tg.clone(),ax:ax.clone(),side};}
  // lean (eased) and arm IK so the wrist reaches tg; returns the lean axis
- function bendReach(side,tg,w,dt,cap){cap=cap||1.8;const sh=bones[side+'Arm'];const reach=armLen*(cap>2?.99:.97);const SP=['Spine','Spine1','Spine2'].map(n=>bones[n]);const q0=SP.map(b=>b.quaternion.clone());const LG=[bones.LeftUpLeg,bones.RightUpLeg];const qh0=bones.Hips.quaternion.clone(),ql0=LG.map(b=>b.quaternion.clone());
+ function bendReach(side,tg,w,dt,cap,fitG){cap=cap||1.8;const sh=bones[side+'Arm'];const reach=armLen*(cap>2?.99:.97);const SP=['Spine','Spine1','Spine2'].map(n=>bones[n]);const q0=SP.map(b=>b.quaternion.clone());const LG=[bones.LeftUpLeg,bones.RightUpLeg];const qh0=bones.Hips.quaternion.clone(),ql0=LG.map(b=>b.quaternion.clone());
   root.updateMatrixWorld(true);const hp=wp(bones.Hips);const dh=V(tg.x-hp.x,0,tg.z-hp.z);if(dh.lengthSq()<1e-4)dh.set(0,0,1);dh.normalize();{const pf=pelvisFwdGeo();if(FIT.bed&&pf.z<0)pf.negate();dh.multiplyScalar(.9).add(pf).normalize();}
   const ax=V(0,1,0).cross(dh).normalize();let need=0;for(let i=0;i<16;i++){root.updateMatrixWorld(true);const ex=wp(sh).distanceTo(tg)-reach;if(ex<=.005||need>=cap)break;const a=Math.min(cap-need,ex*2.5+.03);need+=a;leanB(ax,a);}
   SP.forEach((b,j)=>b.quaternion.copy(q0[j]));bones.Hips.quaternion.copy(qh0);LG.forEach((b,j)=>b.quaternion.copy(ql0[j]));root.updateMatrixWorld(true);const st=dt||1/60;const want=need*w;BRC.a=want>BRC.a?Math.min(want,BRC.a+3*st):Math.max(want,BRC.a-2*st);
-  if(BRC.a>.002)leanB(ax,BRC.a);root.updateMatrixWorld(true);if(w>.001)romArmIK(side,tg,sidePole(side),w,null);return ax;}
+  if(BRC.a>.002)leanB(ax,BRC.a);if(fitG){/* the lean as the pose guard will let it stand: the arm is solved on that back (solved on the deeper bend, the guard took it back after and the hand flew up 30-60 cm) */const PG=window.__poseGuard;if(PG&&PG.fit&&!window.__noFit)for(const n of ['Spine','Spine1','Spine2',side+'Shoulder'])if(bones[n])PG.fit(bones[n]);root.updateMatrixWorld(true);guardSpine();}
+  root.updateMatrixWorld(true);if(w>.001)romArmIK(side,tg,sidePole(side),w,null);return ax;}
  // MORNING, boots on: the same bend in reverse - the hand goes down onto the boot standing on the floor, closes on its top and brings it up
  function bootPickReach(dt,R){const sd=R.sd,Bs=BT.side[sd];const pm=Bs&&Bs.prop;if(!pm){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}const t=R.t||0;const held=pm.parent&&/Hand$/.test(pm.parent.name);if(held&&!R.picked){R.picked=true;R.pt=t;}
   if(!held&&!R.picked){const w=smooth(R.at-1.0,R.at-.4,t);if(w<.001){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}root.updateMatrixWorld(true);_hb.setFromObject(pm);const top=_hb.getCenter(V());top.y=_hb.max.y;{/* the near rim of the collar, the side facing him: that is where fingers hook it */const hq=wp(bones.Hips);const d=V(hq.x-top.x,0,hq.z-top.z);const L=d.length();if(L>1e-3)top.add(d.multiplyScalar(Math.min(.045,L)/L));}
@@ -2731,8 +2985,14 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const L=R.last;if(!L){BRC.a=Math.max(0,BRC.a-(dt||1/60)*2);return;}const t0=R.pt!=null?R.pt:R.at;const w2=1-smooth(t0,t0+.6,t);BRC.a=Math.max(0,BRC.a-(dt||1/60)*1.4);if(w2>.001)bendReach(sd,L.tg.clone().add(V(0,.12*(1-w2),0)),w2,dt,2.2);}
  // a boot just pulled off and carried down to the floor stays out of the legs: the arm carries it around the shins, not through them
  const _hb=new THREE.Box3(),HBC={Left:V(),Right:V()};function heldBootClear(dt){const st=dt||1/60;for(const sd of ['Left','Right']){const B=BT.side[sd];const pm=B&&B.prop;if(!pm||!pm.visible||!pm.parent||!/Hand$/.test(pm.parent.name))continue;
-   const side=/Left/.test(pm.parent.name)?'Left':'Right';root.updateMatrixWorld(true);_hb.setFromObject(pm);const c=_hb.getCenter(V());const q=c.clone();bootClearShins(q,.27);const dl=q.sub(c);dl.y=0;const E=HBC[/Left/.test(pm.parent.name)?'Left':'Right'];/* eased, so the pop filter does not hold it back */E.lerp(dl,Math.min(1,st*14));if(E.lengthSq()<2.5e-5)continue;dl.copy(E);
+   const side=/Left/.test(pm.parent.name)?'Left':'Right';root.updateMatrixWorld(true);_hb.setFromObject(pm);const c=_hb.getCenter(V());const q=c.clone();bootClearShins(q,.27);const dl=q.sub(c);dl.y=0;const E=HBC[/Left/.test(pm.parent.name)?'Left':'Right'];/* eased, so the pop filter does not hold it back (and slower: when the nearest shin changes the push turns round, 11 cm/frame) */E.lerp(dl,Math.min(1,st*6));if(E.lengthSq()<2.5e-5)continue;dl.copy(E);
    const A=bones[side+'Arm'],Fa=bones[side+'ForeArm'],Hd=bones[side+'Hand'];const el=wp(Fa),mid=wp(A).add(wp(Hd)).multiplyScalar(.5);ik2(A,Fa,Hd,wp(Hd).add(dl),el.sub(mid).normalize(),1,true);}}
+ // the folded vest in his hand stays out of his thighs and hips (in his lap it sat 3.5 cm into them, gate): the hand is eased off them
+ const VHC=V();function vestHeldClear(dt){const pm=BT.vestProp;const st=dt||1/60;if(!pm||!pm.visible||!pm.parent||!/Hand$/.test(pm.parent.name)||VD.on||VR.on){VHC.multiplyScalar(Math.max(0,1-st*6));return;}
+  const side=/Left/.test(pm.parent.name)?'Left':'Right';root.updateMatrixWorld(true);_hb.setFromObject(pm);const R=.11;const push=V();let worst=0;
+  for(const kn of ['LeftLeg','RightLeg']){const a=wp(bones.Hips),b=wp(bones[kn]);for(let k=0;k<=6;k++){const q=a.clone().lerp(b,k/6);const cp=_hb.clampPoint(q,V());const d=cp.distanceTo(q);if(d<R&&R-d>worst){worst=R-d;push.copy(d>1e-4?cp.sub(q).normalize():V(0,1,0)).multiplyScalar(R-d);}}}
+    if(push.y<0)push.y=0;VHC.lerp(push,Math.min(1,st*6));if(VHC.lengthSq()<2.5e-5)return;
+  const A=bones[side+'Arm'],Fa=bones[side+'ForeArm'],Hd=bones[side+'Hand'];const el=wp(Fa),mid=wp(A).add(wp(Hd)).multiplyScalar(.5);ik2(A,Fa,Hd,wp(Hd).add(VHC),el.sub(mid).normalize(),1,true);H.noPop={side,until:performance.now()+150};}
  function bootDown(sd){const B=BT.side[sd];if(!B)return;const R=BSEQ.r;if(R&&R.down&&R.plan&&R.sd===sd){/* the hand brings it as low as a seated arm goes, then lets it drop the last few cm onto the floor (real gravity, a thud); the gate's no-touch check skips a prop while userData.freeFall is set */
    const pm=B.prop;root.updateMatrixWorld(true);scene.attach(pm);_hb.setFromObject(pm);const fl=R.plan.p.y;const yaw=new THREE.Quaternion().setFromAxisAngle(V(0,1,0),R.plan.yaw);
    const q0=pm.quaternion.clone(),h0=_hb.min.y-fl;pm.quaternion.copy(yaw);pm.updateMatrixWorld(true);_hb.setFromObject(pm);const lift=pm.position.y-_hb.min.y;pm.quaternion.copy(q0);pm.updateMatrixWorld(true);/* standing upright on the floor: its origin this high over the sole */
@@ -2753,7 +3013,10 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   for(let i=0;i<P.count;i++){const x=pos[i*3]-c.x,y=pos[i*3+1]-c.y,z=pos[i*3+2]-c.z;pos[i*3]=x*.55;pos[i*3+1]=z*.35+.025;pos[i*3+2]=-y*.45;}
   const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.BufferAttribute(pos,3));if(g.attributes.uv)sg.setAttribute('uv',g.attributes.uv);sg.setIndex(g.index);sg.computeVertexNormals();
   const pm=new THREE.Mesh(sg,m);pm.castShadow=true;pm.visible=false;pm.name='vestFolded';scene.add(pm);return BT.vestProp=pm;}
- function vestPark(on){const pm=vestProp();if(!pm)return;if(on){const B=FIT.bed;const hd=B.headDir||1;pm.position.set(hd>0?B.x0+.3:B.x1-.3,B.mat+.83,B.z1-.2)/* on the upper bunk, foot end: out of his way in bed (on the lower mattress his legs lay on it) */;pm.rotation.set(0,.35,0);pm.scale.setScalar(BT.sc||1);}pm.visible=on;}
+ function vestPark(on){const pm=vestProp();if(!pm)return;if(on){const sp=vestSpot();pm.position.copy(sp.p);pm.rotation.set(0,sp.yaw,0);pm.scale.setScalar(BT.sc||1);}pm.visible=on;}
+ // the folded vest lies on the floor in front of the bed edge, between his boots and a little further out: he sets it down there by
+ // hand sitting (the upper bunk and the ladder were out of a seated arm's reach) and picks it up from there in the morning
+ function vestSpot(){{const P=PP();const st=P&&P.objects&&P.objects.bedstool;if(st&&P.surfaces&&P.surfaces.bedStool){/* on the bedside stool: in a seated arm's reach (the floor is not: the pose guard will not fold his back that far) */return {p:V(st.position.x,P.surfaces.bedStool+.002,st.position.z-.05),yaw:.5};}}const B=FIT.bed;const hd=B.headDir||1;const ed=N.bededge;const fl=(ed&&ed.floor)??floorTop(BD);const x=ed?ed.p.x:(B.x0+B.x1)/2;return {p:V(x-.14*hd,fl+.012,B.z1+.36),yaw:-.3};}/* in front of his RIGHT foot (his right is the foot end, -headDir): at +x it was across his body, the lean became a side bend the guard took back and the hand flew up 60 cm */
  function vestShow(on){BT.vestOn=on;if(VEST)VEST.visible=on;else if(BT.vestU)BT.vestU.value=on?0:1;}
  // instant state (spawned in bed, reset): no clips
  function undress(off,quiet){bootInit();for(const sd of ['Left','Right']){const B=BT.side[sd];if(!B)continue;for(let i=BTW.length-1;i>=0;i--)if(BTW[i].pm===B.prop)BTW.splice(i,1);if(off){bootShow(sd,false);bootPark(sd);}else{B.prop.visible=false;scene.attach(B.prop);bootShow(sd,true);}}
@@ -2761,7 +3024,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // a seated clip with beats at clip seconds; the lifted foot may leave the floor (H.fit.liftOK), the planted one stays put
  const BSEQ={a:null,b:[],then:null,r:null};
  function seatedClip(name,beats,then,reach){const a=actions[name];if(!a){then&&then();return;}H.fit&&(H.fit.liftOK=true);BSEQ.a=a;BSEQ.r=reach||null;BSEQ.b=beats.slice().sort((x,y)=>x[0]-y[0]);BSEQ.then=then;
-  once(name,{fade:.45,speed:1.3,then:()=>{for(const [,f] of BSEQ.b)f();if(BSEQ.r&&BSEQ.r.dropNow){BSEQ.r.dropNow=false;bootDown(BSEQ.r.sd);}if(BSEQ.r&&BSEQ.r.pickNow){BSEQ.r.pickNow=false;const pb=BT.side[BSEQ.r.sd];if(pb&&pb.prop&&!(pb.prop.parent&&/Hand$/.test(pb.prop.parent.name)))bootPick(BSEQ.r.sd,BSEQ.r.sd);}if(BSEQ.r&&BSEQ.r.onNow){BSEQ.r.onNow=false;bootOn(BSEQ.r.sd);}BSEQ.a=null;BSEQ.r=null;BSEQ.b=[];if(H.fit)H.fit.liftOK=false;then&&then();}});}
+  once(name,{fade:.45,speed:1.3,then:()=>{for(const [,f] of BSEQ.b)f();if(BSEQ.r&&BSEQ.r.dropNow){BSEQ.r.dropNow=false;bootDown(BSEQ.r.sd);}if(BSEQ.r&&BSEQ.r.pickNow){BSEQ.r.pickNow=false;const pb=BT.side[BSEQ.r.sd];if(pb&&pb.prop&&!(pb.prop.parent&&/Hand$/.test(pb.prop.parent.name)))bootPick(BSEQ.r.sd,BSEQ.r.sd);}if(BSEQ.r&&BSEQ.r.onNow){BSEQ.r.onNow=false;bootOnStart(BSEQ.r.sd);}BSEQ.a=null;BSEQ.r=null;BSEQ.b=[];if(H.fit)H.fit.liftOK=false;then&&then();}});}
  // seated on the bunk edge the upper body may lean forward, never far back: the clip's backward recline (lifting a foot onto
  // the knee) laid him down across the mattress with an arm out; the spine is turned so the chest stays at most ~8 degrees behind
  // the pelvis, spread over the three spine bones
@@ -2792,15 +3055,47 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  const BOOT_OFF={grab:2.05/1.25,down:4.1/1.25},BOOT_ON=BOOTREV.R?{pick:BOOTREV.R-4.1/1.25+.05,on:BOOTREV.R-2.05/1.25}:{pick:.55/1.25,on:2.1/1.25},VEST_OFF={off:2.0};
  function undressSeq(done){bootInit();const steps=[];
   for(const sd of ['Right','Left']){const B=BT.side[sd];if(!B||!B.on||!has('hy_bootsoff'+sd[0]))continue;
-   steps.push(n=>seatedClip('hy_bootsoff'+sd[0],[[BOOT_OFF.grab,()=>{if(B.on)bootToHand(sd,sd);}],[BOOT_OFF.down,()=>{if(B.prop.parent!==scene&&!B.on){const R=BSEQ.r;if(R&&R.down&&R.plan&&R.sd===sd)R.dropNow=true;/* let go in the grab slot, after the hand is down */else bootDown(sd);}}]],n,{sd,at:BOOT_OFF.down,down:1}));}
-  if(hasVest()&&BT.vestOn&&has('hy_vestoff'))steps.push(n=>seatedClip('hy_vestoff',[[VEST_OFF.off,()=>{vestShow(false);AU('unzip',root.position);}],[VEST_OFF.off+.6,()=>vestPark(true)]],n));
+   steps.push(n=>seatedClip('hy_bootsoff'+sd[0],[[BOOT_OFF.grab,()=>{if(B.on)bootPullStart(sd);}],[BOOT_OFF.down,()=>{if(B.prop.parent!==scene&&!B.on){const R=BSEQ.r;if(R&&R.down&&R.plan&&R.sd===sd)R.dropNow=true;/* let go in the grab slot, after the hand is down */else bootDown(sd);}}]],n,{sd,at:BOOT_OFF.down,down:1}));}
+  if(hasVest()&&BT.vestOn&&has('hy_vestoff')){steps.push(n=>seatedClip('hy_vestoff',[[VEST_OFF.off,()=>{vestShow(false);vestToHand();AU('unzip',root.position);}],[VEST_OFF.off+.35,()=>vestPutAway(null)]],n));steps.push(n=>{/* laid on the stool while the clip still plays out (held on its last frame for the whole reach, the gate saw the clip slowed to half speed) */const w=()=>{if(VD.on)setTimeoutGame(.05,w);else n();};w();});}
   else if(hasVest()&&BT.vestOn){vestShow(false);vestPark(true);}
   let i=0;const next=()=>{if(i<steps.length)steps[i++](next);else done&&done();};next();}
  function dressSeq(done){bootInit();const steps=[];
   for(const sd of ['Right','Left']){const B=BT.side[sd];if(!B||B.on)continue;if(!has('hy_bootson'+sd[0])){bootShow(sd,true);B.prop.visible=false;continue;}
    steps.push(n=>seatedClip('hy_bootson'+sd[0],[[BOOT_ON.pick,()=>{const R=BSEQ.r;if(R&&R.pick&&R.sd===sd){if(!R.picked)R.pickNow=true;}/* taken into the hand at the start of the next frame, from the pose shown */else bootPick(sd,sd);}],[BOOT_ON.on,()=>{const R=BSEQ.r;if(R&&R.pick&&R.sd===sd)R.onNow=true;/* from the pose shown, not the raw clip hand */else bootOn(sd);}]],n,{sd,at:BOOT_ON.pick,pick:1}));}
+  if(hasVest()&&!BT.vestOn&&BT.vestProp&&BT.vestProp.visible&&has('hy_jacketon'))steps.push(n=>vestPickSeated(n));
   let i=0;const next=()=>{if(i<steps.length)steps[i++](next);else done&&done();};next();}
- function vestOnStanding(){if(!hasVest()||BT.vestOn)return;if(has('hy_jacketon')){overlay('hy_jacketon',{fade:.4,speed:1.2});setTimeoutGame(.9,()=>{vestPark(false);vestShow(true);AU('zip',root.position);});}else{vestPark(false);vestShow(true);}}
+ // EVENING, the vest: as it comes off it is in his right hand (folded), and he lays it on the upper bunk by hand (it used to vanish
+// from him and appear up there 0.6 s later)
+function vestToHand(){const pm=vestProp();if(!pm)return;vestPark(true);pm.visible=true;pm.updateMatrixWorld(true);VD.home={p:pm.position.clone(),q:pm.quaternion.clone()};/* where it will lie */
+ root.updateMatrixWorld(true);const Hn=bones[VSD+'Hand'];const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(VSD):wp(Hn);{/* held out from the lap on the palm's outer side (in the lap it sat 4-5 cm into his thighs and belly: gate prop-through-body) */const hp=wp(bones.Hips);const o=palm.clone().sub(hp);o.y=0;if(o.lengthSq()>1e-6)o.normalize();pm.position.copy(palm).addScaledVector(o,.06).add(V(0,.03,0));/* held up on its edge, hanging from the fist like a folded garment (flat it lay across his thighs) */const ax=V(0,1,0).cross(o);if(ax.lengthSq()>1e-6){pm.updateMatrixWorld(true);pm.rotateOnWorldAxis(ax.normalize(),1.15);}}Hn.attach(pm);}
+const VSD='Left';/* the vest is folded in the left hand: the bedside stool is to his left (the right side is the boots' and the walk's) */
+const VD={on:false};
+function vestPutAway(next){const pm=BT.vestProp;if(!pm||!VD.home||!(pm.parent&&/Hand$/.test(pm.parent.name))){vestPark(true);next&&next();return;}Object.assign(VD,{on:true,t:0,pm,next,let:false,q0:null,drop:!(PP()&&PP().objects&&PP().objects.bedstool)});}
+function vestPutTick(dt){if(!VD.on)return;const st=dt||1/60;VD.t+=st;const t=VD.t,pm=VD.pm,sd=VSD;const w=t<.9?smooth(0,.85,t):1-smooth(1.0,1.5,t);
+ if(!VD.let){root.updateMatrixWorld(true);const Hn=bones[sd+'Hand'];const off=wp(Hn).sub(pm.getWorldPosition(V()));VD.tg=VD.home.p.clone().add(V(0,VD.drop?.2:.03,0)).add(off);}
+ if(VD.tg){/* over his knee, not through it: the hand goes out high and comes down onto the stool; and back up again after letting go */VD.arc=.14*(1-smooth(.35,.8,t))+.14*smooth(.95,1.3,t);}/* as low as a seated arm goes without folding the back past what the guard allows (it took a deeper bend back and the hand flew up 60 cm), then it drops the last 20 cm */
+ if(!VD.let&&pm.parent){/* turned flat on the way down: it lands as it will lie */if(!VD.q0)VD.q0=pm.quaternion.clone();pm.parent.updateMatrixWorld(true);const pq=pm.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(VD.home.q);pm.quaternion.slerpQuaternions(VD.q0,pq,smooth(.15,.8,t));}
+ if(VD.tg&&w>.001){bendReach(sd,VD.tg.clone().add(V(0,VD.arc||0,0)),w,st,1.2,true);H.noPop={side:sd,until:performance.now()+150};}
+ if(!VD.let&&t>=.9){VD.let=true;root.updateMatrixWorld(true);scene.attach(pm);/* let go: it falls flat onto the floor right under the hand (real gravity, a soft thud), no glide to a spot */
+  const fl=VD.home.p.y;_hb.setFromObject(pm);const q0=pm.quaternion.clone(),h0=_hb.min.y-fl;pm.quaternion.copy(VD.home.q);pm.updateMatrixWorld(true);_hb.setFromObject(pm);const lift=pm.position.y-_hb.min.y;pm.quaternion.copy(q0);pm.updateMatrixWorld(true);
+  BFALL.push({pm,v:0,lift,fl,q0,q1:VD.home.q.clone(),h0});pm.userData.freeFall=true;}
+ if(t>=1.5){VD.on=false;const f=VD.next;VD.next=null;f&&f();}}
+// MORNING, the vest (Pavel: nothing moved by magic): standing up he reaches to the upper bunk, takes the folded vest in his right hand,
+// and only then puts it on (hy_jacketon); the worn vest appears as the clip pulls it over his shoulders
+const VR={on:false};
+function vestPickSeated(next){const pm=BT.vestProp;if(!pm||!pm.visible){next&&next();return;}Object.assign(VR,{on:true,t:0,pm,took:false,pick:true,then:next});}
+function vestOnStanding(then){const done=()=>{then&&then();};if(!hasVest()||BT.vestOn){done();return;}const pm=BT.vestProp;
+ if(pm&&pm.visible&&pm.parent&&/Hand$/.test(pm.parent.name)){/* picked up sitting: on with it now */overlay('hy_jacketon',{fade:.4,speed:1.2});setTimeoutGame(.9,()=>{scene.attach(pm);pm.visible=false;vestShow(true);AU('zip',root.position);});done();return;}
+ if(!has('hy_jacketon')||!pm||!pm.visible){if(has('hy_jacketon')){overlay('hy_jacketon',{fade:.4,speed:1.2});setTimeoutGame(.9,()=>{vestPark(false);vestShow(true);AU('zip',root.position);});}else{vestPark(false);vestShow(true);}done();return;}
+ Object.assign(VR,{on:true,t:0,pm,took:false,pick:false,then:done});}
+function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=VR.t,pm=VR.pm;const sd=VR.pick?VSD:'Right';
+ const T1=VR.pick?.9:.55,T2=VR.pick?1.5:1.0;const w=t<T1?smooth(0,T1-.05,t):1-smooth(T1+.05,T2,t);
+ if(!VR.took&&w>.001){root.updateMatrixWorld(true);_hb.setFromObject(pm);const c=_hb.getCenter(V());c.y=_hb.max.y;const Hn=bones[sd+'Hand'];const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);
+  VR.tg=c.add(wp(Hn).sub(palm)).add(V(0,.02,0));}
+ if(VR.tg&&w>.001){if(VR.pick)bendReach(sd,VR.tg,w,st,1.2,true);else romArmIK(sd,VR.tg,sidePole(sd),w,null);H.noPop={side:sd,until:performance.now()+150};}
+ if(!VR.took&&t>=T1){VR.took=true;root.updateMatrixWorld(true);bones[sd+'Hand'].attach(pm);AU('cloth',root.position);if(!VR.pick)overlay('hy_jacketon',{fade:.4,speed:1.2});
+  if(!VR.pick)setTimeoutGame(.9,()=>{scene.attach(pm);pm.visible=false;vestShow(true);AU('zip',root.position);});}
+ if(t>=T2){VR.on=false;VR.pick=false;const f=VR.then;VR.then=null;f&&f();}}
  const GT=[];function setTimeoutGame(t,f){GT.push({t,f});}function gtTick(dt){for(let i=GT.length-1;i>=0;i--){if((GT[i].t-=dt)<=0){const f=GT[i].f;GT.splice(i,1);f();}}}
  // ===== BED: lying down and getting up are real motion (bed thread, 2026-11-24) =====
  // The seated pose -> sleep clip blend went through impossible frames (spine folded backwards, head at the foot end, forearms over the
@@ -2829,11 +3124,13 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function bedClipTick(dt){const c=H.bedC;if(!c)return;c.t=Math.min(c.dur,c.t+dt);const u=c.u=c.t/c.dur;
   // across the bed: first along the edge toward the pillow, then in under the upper bunk (getting up: out first)
   if(c.hx0!=null){bones.Hips.position.x=c.hx0;bones.Hips.position.z=c.hz0;}
-  const kx=c.dir>0?smooth(.05,.6,u):smooth(.1,.6,u),kz=c.dir>0?smooth(.4,.95,u):smooth(0,.42,u);
+  const kx=c.dir>0?smooth(.05,.6,u):smooth(.1,.6,u),kz=c.dir>0?smooth(.22,.74,u):smooth(0,.42,u);/* lying down: in from the edge as soon as his chest is down, so the hips are on the mattress when the back lands (R23-2: they stayed 14 cm past the edge, the body hovered) */
   root.position.x=lerp(c.from.x,c.to.x,kx);root.position.z=lerp(c.from.z,c.to.z,kz);H.fit.y=lerp(c.y0,c.y1,c.dir>0?smooth(.1,.7,u):smooth(.3,.9,u));
   c.plant=c.dir>0?1-smooth(.12,.38,u):smooth(.62,.9,u);
   // getting up he pushes the quilt off as he rises: it follows his body for the first moments, then settles flat
-  if(c.dir<0&&!c.qoff&&u>.22){c.qoff=true;bedPress(false);}
+  /* BED: lying down the cover starts as his legs come over the mattress, so they slide in UNDER the quilt (it rose over him only after he lay down, he sank into it) */if(c.dir>0&&!c.qon&&u>.3){c.qon=true;bedPress(true);}
+  {const P=window.__props||P3;if(P&&P.quiltLive)P.quiltLive(.1);}
+  if(c.dir<0&&!c.qoff&&u>.5){c.qoff=true;bedPress(false);}/* the legs are out from under it first */
   bedClipGuard();
   if(c.t>=c.dur){H.bedC=null;c.then&&c.then();}}
  // the Fal bed clips were made on a low bed: played on the bunk they kicked both legs up toward the upper bunk and, getting up, rolled
@@ -2856,22 +3153,62 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const nkY=wp(bones.Neck).y,lyK=c.dir>0?1-smooth(B.mat+.42,B.mat+.62,nkY):1-smooth(B.mat+.42,B.mat+.62,nkY);
   for(const sd of ['Left','Right']){const Hn=bones[sd+'Hand'];if(!Hn)continue;const hw=wp(Hn);
    // a hand pressing into the mattress (the clip's bed was lower) rests ON it: collide.js used to throw the whole arm ~40 cm up out of it
-   const lying=lyK>.05||(c.dir>0&&c.u>.3)||(c.dir<0&&c.u<.35);/* lying, an arm never hangs over the front edge toward the floor (watcher f2115) */const over=hw.x>B.x0-.02&&hw.x<B.x1+.02&&hw.z<B.z1+(lying?.7:.2)&&hw.z>B.z1-.95;if(over&&hw.y<B.mat+.12){const wl=hw.z>B.z1+.2?Math.max(lyK,c.dir>0?smooth(.3,.48,c.u):1-smooth(.2,.35,c.u)):1;let tg=V(hw.x,Math.max(hw.y,B.mat+.1),Math.min(hw.z,B.z1-.1));if(lying){/* lying: the hand rests beside the hip, a pose the shoulder can hold (pose.js rom pulled a far reach back into the mattress) */const bh=hp2.clone().addScaledVector(lr,sd==='Left'?.24:-.24);bh.y=B.mat+.1;bh.z=Math.min(bh.z,B.z1-.1);tg.lerp(bh,.75);}romArmIK(sd,tg,sidePole(sd),wl,B.mat+.06);continue;}/* and off the front rail: a forearm across the rail made collide.js flip the whole arm up */
+   const lying=lyK>.05||(c.dir>0&&c.u>.3)||(c.dir<0&&c.u<.35);/* lying, an arm never hangs over the front edge toward the floor (watcher f2115) */const over=hw.x>B.x0-.02&&hw.x<B.x1+.02&&hw.z<B.z1+(lying?.7:.2)&&hw.z>B.z1-.95;if(over&&hw.y<B.mat+.12){const wl=hw.z>B.z1+.2?Math.max(lyK,c.dir>0?smooth(.3,.48,c.u):1-smooth(.2,.35,c.u)):1;let tg=V(hw.x,Math.max(hw.y,B.mat+.1),Math.min(hw.z,B.z1-.1));if(lying){/* lying: the hand rests beside the hip, a pose the shoulder can hold (pose.js rom pulled a far reach back into the mattress) */const bh=hp2.clone().addScaledVector(lr,sd==='Left'?.24:-.24);bh.y=B.mat+.1;bh.z=Math.min(bh.z,B.z1-.1);tg.lerp(bh,.75);}/* getting up: one fixed elbow direction (romArmIK's search of three poles picked a different arm each frame here: the hand shook 30 cm/frame, u .26-.47) */if(c.dir<0)armIK(sd,tg,sidePole(sd),wl);else romArmIK(sd,tg,sidePole(sd),wl,B.mat+.06);continue;}/* and off the front rail: a forearm across the rail made collide.js flip the whole arm up */
    const ex=hw.y-(B.mat+.35);if(ex<=0)continue;
    const t=hp2.clone().addScaledVector(lr,sd==='Left'?.27:-.27);t.y=B.mat+.04;armIK(sd,t,sidePole(sd),clamp(ex/.15,0,1));}
   // BED (watcher R19-2 f2700): lying down, the clip ended with one hand up in the air over the quilt. Once he is down the arms
   // settle into the same resting places the sleep pose uses (left hand beside the hip, right hand on the stomach), and that weight
   // carries straight into the sleep layer, so nothing pops when the clip hands over
   if(c.dir>0){const aw=lyK*smooth(.3,.7,c.u);SP.aw=Math.max(SP.aw||0,aw);if(SP.aw>.01){const ax=wp(bones.Neck).sub(hp2).setY(0).normalize();const lf=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).normalize();sleepArms(SP.aw,{roll:0},ax,V().crossVectors(lf,ax).normalize(),lf,null);}}}
+ // ===== BED (Pavel 2026-11-24: "the quilt just appears on top of him, he never covers himself"): the quilt moves only in his hand =====
+ // props.js folds the quilt's head flap over a hinge (quiltFold 0 flat .. 1 turned down) and says where its free edge is (quiltEdge).
+ // Evening, sitting on the edge: his left hand (the pillow side) takes the edge and turns the flap down. Lying: his left hand, resting
+ // by the hip, takes the turned-down edge there and pulls it up over his chest. Morning: the same hand throws it back down. The palm
+ // rides on the edge the whole time (no cloth moving by itself); the quilt over his legs rises over them as they slide in under it.
+ // the pose guard's spine chain limit (pose.js chain(): the chest turns <= 35 deg / tips <= 80 deg from the pelvis, soft), applied
+ // BEFORE a hand is placed: the guard otherwise straightens the spine after the IK and carries the hand 10-15 cm off what it holds
+ const GCq=[new THREE.Quaternion(),new THREE.Quaternion(),new THREE.Quaternion(),new THREE.Quaternion(),new THREE.Quaternion(),new THREE.Quaternion()];
+ function guardSpine(){const PG=window.__poseGuard;if(!PG||!PG.rest||window.__poseOff)return;const bs=['Spine','Spine1','Spine2'].map(n=>bones[n]);if(bs.some(b=>!b))return;const rs=bs.map(b=>PG.rest(b));if(rs.some(r=>!r))return;
+  const D2R=Math.PI/180,[q1,q2,q3,q4,qs,qt]=GCq;const soft=(v,lo,hi)=>{const m=Math.min(6,(hi-lo)/4);if(v>hi-m)return hi-m+m*Math.tanh((v-hi+m)/m);if(v<lo+m)return lo+m-m*Math.tanh((lo+m-v)/m);return v;};
+  q3.set(0,0,0,1);q4.set(0,0,0,1);for(let i=0;i<3;i++){q3.multiply(bs[i].quaternion);q4.multiply(rs[i]);}q1.copy(q4).invert().multiply(q3);
+  let {x,y,z,w}=q1;if(w<0){x=-x;y=-y;z=-z;w=-w;}const th=Math.atan2(y,w),c=Math.cos(th),sn=Math.sin(th);const sx=x*c+z*sn,sz=z*c-x*sn,sw=w*c+y*sn;const sl=Math.hypot(sx,sz),a=sl<1e-9?2:2*Math.atan2(sl,sw)/sl;
+  const dx=sx*a/D2R,dz=sz*a/D2R,dt=2*th/D2R;const swg=Math.hypot(dx,dz),k=swg>1e-6?soft(swg,-80,80)/swg:1,t=soft(dt,-35,35);if(Math.abs(t-dt)+swg*(1-k)<.05)return;
+  const ax=dx*k*D2R,az=dz*k*D2R,ang=Math.hypot(ax,az);if(ang<1e-9)qs.set(0,0,0,1);else{const f=Math.sin(ang/2)/ang;qs.set(ax*f,0,az*f,Math.cos(ang/2));}qt.set(0,Math.sin(t*D2R/2),0,Math.cos(t*D2R/2));q2.multiplyQuaternions(qs,qt);
+  const tgt=q4.clone().multiply(q2);const C=new THREE.Quaternion().multiplyQuaternions(tgt,q3.clone().invert());
+  for(let i=0;i<3;i++){const b=bs[i],f=1/(3-i);const Ca=new THREE.Quaternion().slerp(C,f);const ql=b.quaternion.clone();b.quaternion.premultiply(Ca);C.premultiply(Ca.invert());C.premultiply(ql.clone().invert()).multiply(ql);}
+  root.updateMatrixWorld(true);}
+ const QH={on:false};
+ function quiltHand(mode,sd,then){const P=window.__props||P3;if(!P||!P.quiltFold||!P.quiltEdge||!FIT.bed){if(P&&P.quiltFold)P.quiltFold(mode==='up'?0:1);then&&then();return;}
+  const f0=P.quiltFold(),f1=mode==='up'?0:1;if(Math.abs(f1-f0)<.02){then&&then();return;}
+  Object.assign(QH,{on:true,cut:false,mode,sd,t:0,f0,f1,tr:mode==='up'?.6:!H.inBed?.9:.75,rel:.56,tm:mode==='up'?1.35:mode==='down'?1.05:.9,trl:.6,then});}
+ function quiltHandTick(dt){if(!QH.on)return;const P=window.__props||P3;const B=FIT.bed;if(!P||!B){QH.on=false;return;}QH.t+=dt;/* woken while still pulling it up (getting up already): he lets go at once and the flap falls by itself; his arm goes with the get-up (the two fought: the hand shook 30 cm a frame) */if(QH.mode==='up'&&(H.bedC&&H.bedC.dir<0||!H.inBed)&&QH.t<QH.tr+QH.tm){QH.t=QH.tr+QH.tm;QH.cut=true;}const {tr,tm,trl,sd}=QH;const t=QH.t;
+  /* lying, pulling it up: his hand takes the turned-down edge over his chest until the flap is mostly over, then lets go and the
+     last of it falls flat by itself (a hand pressed beside his own shoulder is past what an elbow folds to) */
+  let fv;if(QH.mode==='up'){if(t<tr+tm)fv=lerp(QH.f0,QH.rel,smooth(tr,tr+tm,t));else{const u=(t-tr-tm)/.38;fv=QH.rel*Math.max(0,1-u*u);}}else fv=lerp(QH.f0,QH.f1,smooth(tr,tr+tm,t));
+  P.quiltFold(fv);if(P.quiltLive)P.quiltLive(.15);
+  const w=(t<tr?smooth(0,tr,t):t<tr+tm?1:1-smooth(tr+tm,tr+tm+trl,t))*(QH.cut?1-smooth(tr+tm,tr+tm+.2,t):1);const Hn=bones[sd+'Hand'];root.updateMatrixWorld(true);
+  const hp=wp(bones.Hips);let e=P.quiltEdge(V(hp.x,hp.y,B.z1),QH.mode==='up'?.75:!H.inBed?.5:.6,QH.mode==='down'&&H.inBed?.39:.33);if(e)e.y+=QH.mode==='down'?.02:.06;/* lying, the edge lies on the mattress: the palm on top of it, fingers curled round, not under it (gate: hand 6.6 cm into the mattress) *//* the palm on the quilt's thickness: the fingers curl round the edge, not into the mattress (gate: hand 6.6 cm in) */if(QH.mode==='up'){if(t<tr+tm)QH.eRel=e&&e.clone();else if(QH.eRel)e=QH.eRel.clone();}
+  if(e){const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);const tg=e.clone().add(wp(Hn).sub(palm));
+   const pole=()=>{if(QH.mode==='down')return sidePole(sd);const out=wp(bones[sd+'UpLeg']).sub(hp).setY(0).normalize();return out.add(V(0,.5,0)).normalize();};
+   if(QH.mode==='down')bendReach(sd,tg,w,dt,1.2);/* seated: he leans toward the pillow end to reach it (the lean, then the arm) */
+   {const PG=window.__poseGuard;if(PG&&PG.fit&&!window.__noFit){for(const n of ['Spine','Spine1','Spine2',sd+'Shoulder'])if(bones[n])PG.fit(bones[n]);root.updateMatrixWorld(true);}guardSpine();}/* the lean as the pose guard will let it stand, so the hand is placed from the body actually shown */
+   if(w>.001){/* the palm, not the wrist, goes onto the cloth: the forearm turns the palm with it, so the wrist target is corrected on a
+     full-weight trial solve, then the arm is set once at the action's weight */const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'];const q0=[A.quaternion.clone(),Fa.quaternion.clone()];
+    const IKq=(t,ww)=>{if(QH.mode==='up'&&H.inBed)armIK(sd,t,pole(),ww);else romArmIK(sd,t,pole(),ww,null);};/* lying: one fixed pole (romArmIK's three poles flipped the elbow 9-16 cm between frames) */
+    for(let k=0;k<4;k++){IKq(tg,1);root.updateMatrixWorld(true);const pq=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);const d=e.clone().sub(pq);if(d.length()<.008)break;tg.add(d);}
+    A.quaternion.copy(q0[0]);Fa.quaternion.copy(q0[1]);root.updateMatrixWorld(true);IKq(tg,w);}
+   if(w>.001&&H.inBed)elbowAbove(sd,B.mat+.07);/* lying: the elbow swings up round the shoulder-wrist line, never down into the mattress (gate: elbow 8-11 cm in) */
+   if(w>.001)H.noPop={side:sd,until:performance.now()+150};/* the hand is IK'd on the cloth every frame */}
+  if(t>=tr+tm+trl&&(QH.mode!=='down'||BRC.a<.002)){QH.on=false;P.quiltFold(QH.f1);const f=QH.then;QH.then=null;f&&f();}}
  function lieDown(then){const ed=N.bededge;H.face=0;
-  sitDown(ed,()=>{H.trans=true;undressSeq(()=>{H.wait={t:rnd(.3,.6),then:()=>{bedClip(1,()=>{
+  sitDown(ed,()=>{H.trans=true;undressSeq(()=>{H.wait={t:rnd(.3,.6),then:()=>quiltHand('down','Left',()=>{H.wait={t:.15,then:()=>{bedClip(1,()=>{
    // hand over to the sleep clip: the root eases onto the lying spot while the poses cross-fade
    const li=N.bedlie;if(has('hy_bedlie'))play(SLEEPB,{fade:1.1});H.slide={x:li.p.x-root.position.x,z:li.p.z-root.position.z,yaw:0,k:0,d:1.1};
-   H.trans=false;H.inBed=true;bedPress(true);H.seated=null;then&&then();});}};});});}
+   H.trans=false;H.inBed=true;H.lieT=1.6;bedPress(true);H.seated=null;H.wait={t:.25,then:()=>quiltHand('up','Left')};then&&then();});}};})};});});}
  function getUp(then){H.trans=true;const ed=N.bededge;
-  H.wait={t:rnd(.4,.9),then:()=>{H.inBed=false;if(!has('hy_bedgetup')||!FIT.bed||(FIT.bed.headDir||1)<0)bedPress(false);bedClip(-1,()=>{const er=H.edgeRoot||V(ed.p.x,root.position.y,ed.p.z);
+  H.wait={t:rnd(.4,.9),then:()=>quiltHand('down','Left',()=>{H.inBed=false;if(!has('hy_bedgetup')||!FIT.bed||(FIT.bed.headDir||1)<0)bedPress(false);bedClip(-1,()=>{const er=H.edgeRoot||V(ed.p.x,root.position.y,ed.p.z);
    hold(STAND,0,.6);H.slide={x:er.x-root.position.x,z:er.z-root.position.z,yaw:0,k:0,d:.6};H.seated=ed;
-   H.wait={t:rnd(.6,1),then:()=>{dressSeq(()=>{hold(STAND,0,.5);H.wait={t:.35,then:()=>standUp(ed,()=>{vestOnStanding();if(!hasVest()&&has('hy_stretch')&&Math.random()<.8&&armsFree(root.position,root.rotation.y,'hy_stretch'))overlay('hy_stretch',{fade:.5,speed:1.1});then&&then();})};});}};});}};}
+   H.wait={t:rnd(.6,1),then:()=>{dressSeq(()=>{hold(STAND,0,.5);H.wait={t:.35,then:()=>standUp(ed,()=>{vestOnStanding(()=>{if(!hasVest()&&has('hy_stretch')&&Math.random()<.8&&armsFree(root.position,root.rotation.y,'hy_stretch'))overlay('hy_stretch',{fade:.5,speed:1.1});then&&then();});})};});}};});})};}
  function swingTick(dt){const s=H.swing;if(!s)return;if(s.k===0){if(s.hold)hold(s.hold[0],s.hold[1],s.fade);else play(s.clip,{fade:s.fade});H.fit=H.fit||{mode:'hold',base:floorTop(BD),y:s.from.y};H.fit.mode='hold';}
   s.k=Math.min(1,s.k+dt/s.dur);const k=smooth(0,1,s.k);
   root.position.x=lerp(s.from.p.x,s.to.p.x,k);root.position.z=lerp(s.from.p.z,s.to.p.z,k);root.rotation.y=s.from.yaw+wrapA(s.to.yaw-s.from.yaw)*smooth(.1,.9,s.k);H.face=root.rotation.y;H.fit.y=lerp(s.from.y,s.to.y,k);
@@ -2896,10 +3233,85 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // frame: hand 9.00 before the collide stage, 9.57 after). While a bed clip plays, a hand above ~35 cm over the mattress is put back down
  // beside the hip, on the mattress.
  /* a boot is let go from the hand as it was shown (after the pop filter and the pose guard, which wraps the whole update), so it stays exactly where the hand had it */
- stage('pre',()=>{const R=BSEQ.r;if(R&&R.dropNow){R.dropNow=false;bootDown(R.sd);}if(R&&R.onNow){R.onNow=false;bootOn(R.sd);}if(R&&R.pickNow){R.pickNow=false;const B=BT.side[R.sd];const pm=B&&B.prop;if(pm&&!(pm.parent&&/Hand$/.test(pm.parent.name))){root.updateMatrixWorld(true);_hb.setFromObject(pm);const top=_hb.getCenter(V());top.y=_hb.max.y;{const hq=wp(bones.Hips);const d=V(hq.x-top.x,0,hq.z-top.z);const L=d.length();if(L>1e-3)top.add(d.multiplyScalar(Math.min(.045,L)/L));}const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(R.sd):wp(bones[R.sd+'Hand']);/* the hand is on it: it simply closes; still out of reach (should not happen): the old short lift into the hand */const dd=palm.distanceTo(top);if(dd<.09||(dd<.2&&(R.t||0)>=R.at+.15)){pm.visible=true;R.fl=_hb.min.y;if(R.last)R.last.tg=wp(bones[R.sd+'Hand']);/* from here the hand only goes up: it was still settling onto the rim */bones[R.sd+'Hand'].attach(pm);}else if((R.t||0)<R.at+.15)R.pickNow=true;/* not on it yet: the hand keeps reaching, he takes it a moment later */else bootPick(R.sd,R.sd);}}});/* next frame's start: the bones still hold the pose last shown */
+ stage('pre',()=>{const R=BSEQ.r;if(R&&R.dropNow){R.dropNow=false;bootDown(R.sd);}if(R&&R.onNow){R.onNow=false;bootOnStart(R.sd);}if(R&&R.pickNow){R.pickNow=false;const B=BT.side[R.sd];const pm=B&&B.prop;if(pm&&!(pm.parent&&/Hand$/.test(pm.parent.name))){root.updateMatrixWorld(true);_hb.setFromObject(pm);const top=_hb.getCenter(V());top.y=_hb.max.y;{const hq=wp(bones.Hips);const d=V(hq.x-top.x,0,hq.z-top.z);const L=d.length();if(L>1e-3)top.add(d.multiplyScalar(Math.min(.045,L)/L));}const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(R.sd):wp(bones[R.sd+'Hand']);/* the hand is on it: it simply closes; still out of reach (should not happen): the old short lift into the hand */const dd=palm.distanceTo(top);if(dd<.09||(dd<.2&&(R.t||0)>=R.at+.15)){pm.visible=true;R.fl=_hb.min.y;if(R.last)R.last.tg=wp(bones[R.sd+'Hand']);/* from here the hand only goes up: it was still settling onto the rim */bones[R.sd+'Hand'].attach(pm);}else if((R.t||0)<R.at+.15)R.pickNow=true;/* not on it yet: the hand keeps reaching, he takes it a moment later */else bootPick(R.sd,R.sd);}}});/* next frame's start: the bones still hold the pose last shown */
  /* a boot just taken from the floor never goes back down through the boards (after the pop filter, which held the hand low for a few frames) */
  stage('guard',()=>{const R=BSEQ.r;if(!R||!R.pick||R.fl==null)return;const B=BT.side[R.sd];const pm=B&&B.prop;if(!pm||!pm.parent||!/Hand$/.test(pm.parent.name))return;root.updateMatrixWorld(true);_hb.setFromObject(pm);const dn=R.fl+.004-_hb.min.y;if(dn<=0)return;const sd=/Left/.test(pm.parent.name)?'Left':'Right';const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'],Hd=bones[sd+'Hand'];const el=wp(Fa),mid=wp(A).add(wp(Hd)).multiplyScalar(.5);ik2(A,Fa,Hd,wp(Hd).add(V(0,dn,0)),el.sub(mid).normalize(),1,true);root.updateMatrixWorld(true);});
- stage('grab',dt=>{if(BSEQ.a){seatFootGap(dt);bootReach(dt);heldBootClear(dt);}else{SFG.v=0;BRC.a=0;HBC.Left.set(0,0,0);HBC.Right.set(0,0,0);}});
+ stage('grab',dt=>{if(BSEQ.a||BPL.on||BPL.rel>0||BON.on){seatFootGap(dt);bootOnTick(dt);bootPullTick(dt);bootReach(dt);heldBootClear(dt);vestHeldClear(dt);}else{SFG.v=0;if(!QH.on&&!VD.on&&!VR.on)BRC.a=0;HBC.Left.set(0,0,0);HBC.Right.set(0,0,0);}});
+ // BOOTS OFF, readable (Pavel: "you can't see that he is taking them off"): his hand goes to the heel of the boot first, takes it,
+// and pulls: the boot slides off over the toes along the foot (the sock comes out of it) while the clip slows to the pull, and
+// only then is it in his hand and goes down to the floor. Before, the boot jumped from the foot into the hand in one frame.
+const BPL={on:false,rel:0};
+function bootHeel(sd,out){root.updateMatrixWorld(true);const f=wp(bones[sd+'Foot']),tb=bones[sd+'ToeBase']?wp(bones[sd+'ToeBase']):f.clone().add(fwd(root.rotation.y).multiplyScalar(.12));
+ const d=tb.clone().sub(f);const L=d.length()||1;d.multiplyScalar(1/L);out.copy(f).addScaledVector(d,-.07);out.y-=.035;return d;}
+function heelTarget(sd,pt){const Hn=bones[sd+'Hand'];const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);return pt.clone().add(wp(Hn).sub(palm));}
+function bootPullStart(sd){const B=BT.side[sd];if(!B||!B.on)return;const pm=B.prop;bootWorld(B,_bbm);scene.add(pm);pm.matrix.copy(_bbm);pm.matrix.decompose(pm.position,pm.quaternion,pm.scale);pm.visible=true;pm.userData.offFoot=sd;/* sliding off its own foot: the foot is inside it on purpose */bootShow(sd,false);
+ const a=BSEQ.a;Object.assign(BPL,{on:true,sd,t:0,d:.6,a,ts:a?a.timeScale:1,rel:0,tg:null});if(a)a.timeScale=(a.timeScale||1)*.35;AU&&AU('cloth',root.position);}
+const _bpm=new THREE.Matrix4(),_bpt=new THREE.Matrix4();
+// BOOTS ON, readable (the mirror of taking them off): the boot in his hand goes to the toes, then slides up over the foot to the heel
+// in ~0.6 s while his hand holds it at the back and pulls; only then is it the worn boot again (it used to jump on in 0.25 s)
+const BON={on:false};const _bnq=new THREE.Quaternion(),_bnp=V(),_bns=V();
+function bootOnStart(sd){const B=BT.side[sd];if(!B)return;const pm=B.prop;root.updateMatrixWorld(true);scene.attach(pm);pm.visible=true;pm.userData.offFoot=sd;
+ const a=BSEQ.a;Object.assign(BON,{on:true,sd,t:0,d:.75,P0:pm.position.clone(),Q0:pm.quaternion.clone(),a,ts:a?a.timeScale:1});if(a)a.timeScale=(a.timeScale||1)*.35;}
+function bootOnTick(dt){if(!BON.on)return;const st=dt||1/60;const B=BT.side[BON.sd];const pm=B&&B.prop;if(!pm){BON.on=false;return;}BON.t+=st;const u=Math.min(1,BON.t/BON.d);
+ const ea=smooth(0,.35,u),eb=smooth(.3,1,u);bootWorld(B,_bpm);const h=V();const d=bootHeel(BON.sd,h);const off=d.clone().multiplyScalar(.17*(1-eb)).add(V(0,-.02*(1-eb),0));
+ _bpt.makeTranslation(off.x,off.y,off.z).multiply(_bpm);_bpt.decompose(_bnp,_bnq,_bns);pm.position.copy(BON.P0).lerp(_bnp,ea);pm.quaternion.copy(BON.Q0).slerp(_bnq,ea);pm.updateMatrixWorld(true);
+ const tg=heelTarget(BON.sd,h.add(off));const hw=wp(bones[BON.sd+'Hand']);const tg2=hw.lerp(tg,ea);bendReach(BON.sd,tg2,1,st,.25);H.noPop={side:BON.sd,until:performance.now()+150};BPL.tg=tg;BPL.sd=BON.sd;
+ if(u>=1){pm.visible=false;delete pm.userData.offFoot;bootShow(BON.sd,true);AU('thud',root.position);if(BON.a)BON.a.timeScale=BON.ts;BON.on=false;BPL.rel=.5;BPL.rt=.5;BPL.out=null;}}
+function bootPullTick(dt){const st=dt||1/60;
+ // reaching for the heel before the pull: the palm closes on the back of the boot
+ if(!BPL.on&&BPL.rel<=0){const R=BSEQ.r;const a=BSEQ.a;if(R&&R.down&&a){const B=BT.side[R.sd];const t=a.time;if(B&&B.on&&t>BOOT_OFF.grab-.55&&t<BOOT_OFF.grab+.05){const w=smooth(BOOT_OFF.grab-.55,BOOT_OFF.grab-.12,t);const h=V();bootHeel(R.sd,h);BPL.hp=h;BPL.sd=R.sd;romArmIK(R.sd,heelTarget(R.sd,h),sidePole(R.sd),w,null);H.noPop={side:R.sd,until:performance.now()+150};}}return;}
+ if(BPL.on){const B=BT.side[BPL.sd];const pm=B&&B.prop;if(!pm){BPL.on=false;return;}BPL.t+=st;const e=smooth(0,BPL.d,BPL.t);
+  bootWorld(B,_bpm);const h=V();const d=bootHeel(BPL.sd,h);const off=d.clone().multiplyScalar(.17*e).add(V(0,-.02*e,0));
+  _bpt.makeTranslation(off.x,off.y,off.z).multiply(_bpm);_bpt.decompose(pm.position,pm.quaternion,pm.scale);pm.updateMatrixWorld(true);
+  const tg=heelTarget(BPL.sd,h.add(off));BPL.tg=tg;BPL.hp=h;bendReach(BPL.sd,tg,1,st,.25);H.noPop={side:BPL.sd,until:performance.now()+150};
+  if(BPL.t>=BPL.d){root.updateMatrixWorld(true);bones[BPL.sd+'Hand'].attach(pm);delete pm.userData.offFoot;if(BPL.a)BPL.a.timeScale=BPL.ts;BPL.on=false;BPL.rel=.5;BPL.rt=.5;BPL.out=null;}return;}
+ // let the arm go back to the clip with the boot in hand
+ BPL.rel-=st;const w=Math.max(0,BPL.rel/BPL.rt);if(BPL.tg&&w>.001){/* the boot comes out from between his legs to his own side first, then the clip takes it down */if(!BPL.out){root.updateMatrixWorld(true);const hp=wp(bones.Hips);const o=BPL.tg.clone().sub(hp);o.y=0;BPL.out=o.normalize();}
+  const u=1-w;const tg2=BPL.tg.clone().addScaledVector(BPL.out,.1*smooth(0,.7,u)).add(V(0,.03*smooth(0,.7,u),0));/* the target walks back to where the clip has the hand (blending the arm's angles instead swung the elbow round, 11 cm/frame) */root.updateMatrixWorld(true);const cw=wp(bones[BPL.sd+'Hand']);const tg3=cw.lerp(tg2,smooth(0,1,w));bendReach(BPL.sd,tg3,Math.min(1,w*5),st,Math.max(.01,.25*w));H.noPop={side:BPL.sd,until:performance.now()+150};}}
+// the elbow turned up round the line from the shoulder to the wrist (the hand stays where it is) until it is over y
+function elbowAbove(sd,y){const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'],Hd=bones[sd+'Hand'];if(!A||!Fa||!Hd)return;root.updateMatrixWorld(true);if(wp(Fa).y>=y)return;
+ const s0=wp(A),ax=wp(Hd).sub(s0);if(ax.lengthSq()<1e-6)return;ax.normalize();const e=wp(Fa).sub(s0);const c=ax.clone().multiplyScalar(e.dot(ax));const r=e.clone().sub(c);
+ const up=V(0,1,0).addScaledVector(ax,-ax.y);if(up.lengthSq()<1e-6||r.lengthSq()<1e-8)return;up.normalize();r.normalize();
+ /* the elbow's highest point on its circle, then only as far toward it as needed (one direction, no flipping between frames) */
+ const tmax=Math.atan2(V().crossVectors(r,up).dot(ax),r.dot(up));const q0=A.quaternion.clone();const at=a=>{A.quaternion.copy(q0);A.updateMatrixWorld(true);rotW(A,ax,a);return wp(Fa).y;};
+ if(at(tmax)<y)return;let lo=0,hi=tmax;for(let k=0;k<10;k++){const m=(lo+hi)/2;if(at(m)>=y)hi=m;else lo=m;}at(hi);}
+// LYING DOWN, the last of it: the clip ends propped up (chest ~10 cm high, chin on the chest) and the sleep pose only took over
+// ~0.4 s later, so his head hung 15 cm over the pillow (gate HARD, sleep f1493). From the end of the lie-down until he is settled,
+// the chest goes down and the head tips back onto the pillow. Only lowers: a pose already down is left as it is.
+const LS={w:0};function lieSettle(dt){const c=H.bedC;const on=(c&&c.dir>0&&c.u>.38)||(H.inBed&&!c&&(H.lieT||0)>0&&!window.__sleepPose);if(H.lieT>0)H.lieT-=dt;
+ LS.w=on?Math.min(1,LS.w+dt*3):Math.max(0,LS.w-dt*3);if(LS.w<.01||!bones.Neck||!bones.Head||!bones.Spine1)return;const w=LS.w*(c?smooth(.38,.7,c.u):1);/* the back down onto the mattress while the legs come up, not after (R23-2: it hovered 10-20 cm for 0.7 s) */
+ root.updateMatrixWorld(true);const lat=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).normalize();const hy=wp(bones.Hips).y;
+ const tryRot=(b,f,ang)=>{const q=b.quaternion.clone();const f0=f();rotW(b,lat,ang);const f1=f();if(f1>f0){b.quaternion.copy(q);b.updateMatrixWorld(true);rotW(b,lat,-ang);if(f()>f0){b.quaternion.copy(q);b.updateMatrixWorld(true);}}};
+ // the chest down to the mattress: the neck ~4 cm under the hips
+ const nkH=()=>wp(bones.Neck).y;const dy=nkH()-(hy-.01);if(dy>.005)tryRot(bones.Spine1,nkH,Math.min(.5,Math.asin(Math.min(1,dy/.38)))*w);
+}
+// the back of the head ON the pillow, all the time he lies (not only while settling: the sleep poses left one hero's head 7 cm in the pillow)
+const HPW={w:0};function headPillow(dt){const c=H.bedC;const on=(H.inBed&&!c)||(c&&c.dir>0&&c.u>.3)||(c&&c.dir<0&&c.u<.25);HPW.w=on?Math.min(1,HPW.w+dt*3):Math.max(0,HPW.w-dt*4);if(HPW.w<.01){HPW.a=0;HPW.t=null;}const w=HPW.w*(c?(c.dir>0?smooth(.3,.6,c.u):1-smooth(0,.25,c.u)):1);/* from when the head comes down to the pillow */
+ if(w<.01||!bones.Neck||!bones.Head||!bones.Spine2)return;root.updateMatrixWorld(true);const lat=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).normalize();
+ // one eased bend, carried frame to frame (a fresh try-this-way-or-that each frame flipped and shook the quilt hand 37 mm)
+ const S1=bones.Spine1||bones.Spine2;const app=a=>{rotW(S1,lat,a*.3);rotW(bones.Spine2,lat,a*.35);rotW(bones.Neck,lat,a*.35);root.updateMatrixWorld(true);};/* spread down the back: the pillow lifts head and shoulders together */const q1=S1.quaternion.clone(),q2=bones.Spine2.quaternion.clone(),qn=bones.Neck.quaternion.clone();const rst=()=>{S1.quaternion.copy(q1);bones.Spine2.quaternion.copy(q2);bones.Neck.quaternion.copy(qn);root.updateMatrixWorld(true);};
+ app(HPW.a||0);const g0=headLow()-.004;rst();app((HPW.a||0)+.04);const g1=headLow()-.004;rst();const sl=(g1-g0)/.04;
+ let want=HPW.a||0;if(Math.abs(sl)>.02&&Math.abs(g0)>.004)want+=Math.max(-.6,Math.min(.6,-g0/sl));want=Math.max(-1.0,Math.min(1.0,want));
+ HPW.t=HPW.t==null?want:HPW.t+(want-HPW.t)*Math.min(1,dt*6);/* the aim itself low-passed: the lowest skin point hops between hair and scalp */HPW.a=(HPW.a||0)+Math.max(-1.2*dt,Math.min(1.2*dt,HPW.t-(HPW.a||0)));/* at most ~70 deg/s */if(w<.999)HPW.a*=1;app(HPW.a*w);}
+// lying, a hand over the mattress rests ON it, whichever pose or blend put it there (after the quilt was let go it sank 6 cm in, gate)
+const HOB={Left:0,Right:0};function handsOnBed(dt){const B=FIT.bed;const on=!!(B&&H.inBed&&!H.bedC&&!(QH.on&&QH.mode==='down'));for(const sd of ['Left','Right']){const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'],Hn=bones[sd+'Hand'];if(!Hn)continue;
+  root.updateMatrixWorld(true);const h=wp(Hn);const lo=B?B.mat+.05:0;const need=on&&h.x>B.x0&&h.x<B.x1&&h.z<B.z1+.01&&h.y<lo;HOB[sd]=need?Math.min(1,HOB[sd]+dt*4):Math.max(0,HOB[sd]-dt*4);if(HOB[sd]<.01||!B)continue;
+  const tg=h.clone();tg.y=Math.max(h.y,lo);if(tg.z>B.z1-.03)tg.z=B.z1-.03;const el=wp(Fa),mid=wp(A).add(h).multiplyScalar(.5);const pole=el.sub(mid);if(pole.lengthSq()<1e-6)pole.set(0,-1,0);ik2(A,Fa,Hn,tg,pole.normalize(),HOB[sd],false);H.noPop={side:sd,until:performance.now()+150};}}
+// the top of the bed (pillow, mattress, quilt) under a point, from the bunk's own meshes; cached on a 2 cm grid
+const BTOP=new Map();const _btr=new THREE.Raycaster();function bedTopAt(x,z){const k=Math.round(x*50)+','+Math.round(z*50);if(BTOP.has(k))return BTOP.get(k);const P=PP();const bk=P&&P.objects&&P.objects.bunkbed;let y=null;
+ if(bk&&FIT.bed){_btr.set(V(x,FIT.bed.mat+.45,z),V(0,-1,0));_btr.far=.7;const hs=_btr.intersectObject(bk,true).filter(h=>h.object.isMesh&&h.object.material!==(P.quiltMat||null));/* the lower quilt is pressed by his body: the pillow and mattress under it count */const q=hs.find(h=>h.point.y<FIT.bed.mat+.3);if(q)y=q.point.y;}
+ if(BTOP.size>4000)BTOP.clear();BTOP.set(k,y);return y;}
+// the lowest point of the head's own skin (each hero's head is shaped differently: one bone height left one 7 cm in the pillow, the other 14 cm over it)
+const HLV={L:[],key:null};const _hlv=new THREE.Vector3();
+// the head's own skin, lowest point measured against the bed right under each point (a hero with a separate head mesh: the first skinned mesh
+// held only the neck seam, so the head was lifted 15 cm off the pillow; one gap under the head bone missed the pillow's slope)
+function headSkin(){const ms=[];root.traverse(o=>{if(o.isSkinnedMesh&&o.visible&&o.skeleton&&o.skeleton.bones.includes(bones.Head)&&!/shadow|eyelid|mouth|vest|coat|boot/i.test(o.name))ms.push(o);});const key=ms.map(m=>m.uuid).join();if(HLV.key===key)return HLV;
+ const L=[];for(const sk of ms){const bi=sk.skeleton.bones.indexOf(bones.Head);const SI=sk.geometry.attributes.skinIndex,SW=sk.geometry.attributes.skinWeight;const ix=[];if(SI&&SW)for(let i=0;i<SI.count;i++){for(let k=0;k<4;k++)if(GCMP(SI,i,k)===bi&&GCMP(SW,i,k)>.6){ix.push(i);break;}}
+  if(ix.length>=20){const st=Math.max(1,Math.floor(ix.length/250));L.push({m:sk,ix:ix.filter((_,j)=>j%st===0)});}}/* every body mesh with head skin (one hero's head is split over several meshes; the shadow proxy and eyelids are not the head) */
+ Object.assign(HLV,{key,L});return HLV;}
+function headLow(){const S=headSkin();let lo=1e9;for(const {m,ix} of S.L)for(const i of ix){m.getVertexPosition(i,_hlv);m.localToWorld(_hlv);const t=bedTopAt(_hlv.x,_hlv.z);if(t==null)continue;const g=_hlv.y-t;if(g<lo)lo=g;}
+ if(lo>1e8){const h=wp(bones.Head);const t=bedTopAt(h.x,h.z);return t==null?.05:h.y-.1-t;}return lo;}
+stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(dt);vestPutTick(dt);handsOnBed(dt);});
  stage('grab',()=>{const c=H.bedC,B=FIT.bed;if(!c||!B)return;root.updateMatrixWorld(true);
   /* lying down he swings his legs in with the thighs about level, not both knees thrown ~20 cm over the hips (watcher r12 f2520-2544) */if(c.dir>0){const kw=smooth(.12,.25,c.u)*(1-smooth(.8,.95,c.u));if(kw>.001){for(const sd of ['Left','Right'])dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],wp(bones[sd+'UpLeg']).y+.08,kw);root.updateMatrixWorld(true);}}const hp=wp(bones.Hips),lr=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).setY(0).normalize();
   for(const sd of ['Left','Right']){const Hn=bones[sd+'Hand'];if(!Hn)continue;const ex=wp(Hn).y-(B.mat+.35);if(ex<=0)continue;
@@ -2990,7 +3402,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(motion){try{motion.post(dt);}catch(e){console.error('motion',e);motion=null;}}
   runSlot('motion',dt);
   if(act&&act.preLeg&&!window.__sqLate){try{act.preLeg(dt);}catch(e){console.error('preLeg',e);}}/* REPAIRS: squatting work lowers the pelvis before the soles are planted */
-  sleepTick(dt);lidTick(dt);coatTick(dt);
+  sleepTick(dt);faceTick(dt);lidTick(dt);coatTick(dt);
   root.updateMatrixWorld(true);
   // soles on the boards when the body is lifted or lowered (chair, bed edge, uneven boards)
   const g=H.ground&&!H.fit?H.floorY:(H.fit&&!H.inBed&&!H.swing?H.fit.base:null);
@@ -3028,7 +3440,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    H.fit={mode:'hold',base:s.floor,y:s.seat+SEAT_CLEAR};play(READ,{fade:0});act=MAKE.read({seated:true});act.name='read';lastAct=['read'];actDur=rnd(25,40);return;}
   if(task==='sleep'&&!o.walking&&N.bedlie){const li=N.bedlie,ed=N.bededge;root.position.set(li.p.x,floorTop(BD),li.p.z);root.rotation.y=0;H.face=0;H.node='bed_app';H.ground=false;H.inBed=true;try{undress(true,true);}catch(e){}
    H.edgeRoot=V(ed.p.x,root.position.y,ed.p.z);H.fit={mode:'hold',base:floorTop(BD),y:li.seat+LIE_CLEAR};play(SLEEPB,{fade:0});H.task='sleep';act=MAKE.sleep({inBed:true});act.name='sleep';
-   H.wait={t:.05,then:()=>bedPress(true)};return;}
+   {const P=window.__props||P3;if(P&&P.quiltFold)P.quiltFold(0);}H.wait={t:.05,then:()=>bedPress(true)};return;}
   const A=ACT[task]||{};let at=typeof A.at==='string'?A.at:null;if(task==='window')at=pick(WINDOWS);
   let from=o.from&&N[o.from]?o.from:at&&N[at]&&!N[at].seat&&!o.walking?at:null;/* o.from: tests start him on a given node */
   if(!from){const keys=Object.keys(N).filter(k=>N[k]&&N[k].p&&N[k].seat==null&&!N[k].tight&&adj[k]&&k!==at);from=pick(keys);}
@@ -3038,7 +3450,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // default start: reading at the table (a brain can call spawn() for a random start)
  spawn('read');
 
- return {spawn,openEdge,H,hero:H,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
+ return {spawn,openEdge,H,hero:H,qh:QH,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
   setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,inv:INV,get act(){return act;},setMotion:m=>{motion=m||null;},setClimb:m=>{climb=m||null;if(climb){climb.init({THREE,bones,ik2,turnBone,root,H,actions,play,floorAt,idle:()=>IDLE()||'0'});if(!climb._staged)climb._staged=stage('contacts',dt=>{if(climb&&!window.__noClimb)climb.post(dt);});}},/* CLIMB HOOK: ladders in the contacts slot */root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};

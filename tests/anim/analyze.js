@@ -143,7 +143,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    if(Math.max(before,after)>.05&&Math.max(before,after)/Math.max(.02,Math.min(before,after))>2.5)add('robot',i,{bone:'root',value:+(Math.max(before,after)/Math.max(.02,Math.min(before,after))).toFixed(1),unit:'x speed change at the ladder ('+before.toFixed(2)+' -> '+after.toFixed(2)+' m/s)',limit:2.5,what:'ladder '+(b?'entry':'exit')+': '+(after>before?'speeds up':'slows down')+' abruptly'});}}
  // ---- 9b. posture: torso lean (hips -> neck) forward/back and sideways, from positions only (no bone axes).
  // Walking or standing upright should not hunch or tilt; tasks that bend (sweep, chop, wash ...) get a looser forward limit.
- {const BEND=/sweep|chop|wash|dishes|fetchwater|dumpwater|water|saw|hammer|sharpen|fix_|stoke|firewood|cook|pot|store|craft|hatch|trip|eat|tea/;let ev=null;
+ {const BEND=/sweep|chop|wash|dishes|fetchwater|dumpwater|water|saw|hammer|sharpen|fix_|stoke|firewood|splitwood|cook|pot|store|craft|hatch|trip|eat|tea/;let ev=null;
   const flush=()=>{if(ev&&ev.i1-ev.i0>=12)add('posture',ev.ip,{bone:'Spine',value:ev.v,unit:'deg '+ev.k,limit:ev.lim,dur:+((ev.i1-ev.i0+1)*lim.dt).toFixed(2),from:F[ev.i0].f,to:F[ev.i1].f,what:ev.k+' lean while '+ev.a});ev=null;};
   F.forEach((f,i)=>{if(f.fl.includes('B')||f.fl.includes('S')||f.fl.includes('L')||f.fl.includes('W')||f.fl.includes('F')||f.fl.includes('T')){flush();return;}
    const hp=bone(f,'Hips'),nk=bone(f,'Neck'),lt=sub(bone(f,'LeftUpLeg'),bone(f,'RightUpLeg'));const v=sub(nk,hp);const L=len(v)||1;
@@ -158,16 +158,17 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  if(F[0].q){const QI={Spine2:0,Neck:1,Head:2,LeftFoot:3,RightFoot:4,LeftToeBase:5,RightToeBase:6};const Q=(f,n)=>f.q.slice(QI[n]*4,QI[n]*4+4);const qi=q=>[-q[0],-q[1],-q[2],q[3]];
   const fw=f=>[Math.sin(f.ry),0,Math.cos(f.ry)],rt=f=>[Math.cos(f.ry),0,-Math.sin(f.ry)],up=()=>[0,1,0];
   const cal=F.filter((f,i)=>i%7===0&&f.fl==='P'&&!f.fl.includes('L'));// walking frames: body faces where he goes
+  const calOK=cal.length>=5;// no walking in the window (e.g. gate --only read): no head calibration, so no head angle checks
   const loc=(get,wv)=>{let a=[0,0,0];for(const f of cal){const v=qrot(qi(get(f)),wv(f));a=[a[0]+v[0],a[1]+v[1],a[2]+v[2]];}return n3(a);};
   const aH=loc(f=>Q(f,'Head'),fw),aC=loc(f=>Q(f,'Spine2'),fw),uC=loc(f=>Q(f,'Spine2'),up),aP=loc(f=>f.hq,fw),uP=loc(f=>f.hq,up);
   const yaw=(qa,a,qb,b,ub)=>{const h=qrot(qa,a),c=qrot(qb,b),u=n3(qrot(qb,ub));const pr=v=>{const d=dot(v,u);return [v[0]-u[0]*d,v[1]-u[1]*d,v[2]-u[2]*d];};const hp=pr(h),cp=pr(c);const sg=dot(cross(cp,hp),u)>=0?1:-1;return sg*angd(hp,cp);};
   const neck=F.map(f=>yaw(Q(f,'Head'),aH,Q(f,'Spine2'),aC,uC)),body=F.map(f=>/[WBST]/.test(f.fl)||qrot(f.hq,uP)[1]<.85||qrot(Q(f,'Spine2'),uC)[1]<.7?0:yaw(Q(f,'Head'),aH,f.hq,aP,uP));
   const uH=loc(f=>Q(f,'Head'),up);const tilt=F.map(f=>angd(qrot(Q(f,'Head'),uH),qrot(Q(f,'Spine2'),uC)));
-  runs(i=>tilt[i]>lim.headTilt?tilt[i]:null,2,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head tipped vs chest (nod/side bend)',limit:lim.headTilt,what:'head bent further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]>lim.headTilt?tilt[i]:null,2,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head tipped vs chest (nod/side bend)',limit:lim.headTilt,what:'head bent further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
   const pct=(a,p)=>{const b=a.map(Math.abs).sort((x,y)=>x-y);return +b[Math.floor((b.length-1)*p)].toFixed(1);};
   tempo.anatomy.neckYaw={p50:pct(neck,.5),p99:pct(neck,.99),max:pct(neck,1)};tempo.anatomy.headVsHips={p50:pct(body,.5),p99:pct(body,.99),max:pct(body,1)};
-  runs(i=>tilt[i]<50&&Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
-  runs(i=>tilt[i]<50&&Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]<50&&Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]<50&&Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
   // feet: ankle angle (shin vs foot) against his own neutral, toe bend, roll of a planted foot
   for(const sd of ['Left','Right']){const ank=F.map(f=>angd(sub(bone(f,sd+'Foot'),bone(f,sd+'Leg')),sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot'))));
    const toe=F.map(f=>angd(sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot')),sub(bone(f,sd+'Toe_End'),bone(f,sd+'ToeBase'))));
@@ -186,10 +187,12 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   const near=p=>{let m=9;for(const r of R){if(Math.abs(r.c[1]-p[1])>.6||Math.abs(r.c[0]-p[0])>1||Math.abs(r.c[2]-p[2])>1)continue;const d=dseg(p,r);if(d<m)m=d;}return m;};
   const palm=(f,sd)=>{const h=bone(f,sd+'Hand'),a=bone(f,sd+'ForeArm');const v=n3(sub(h,a));return [h[0]+v[0]*.07,h[1]+v[1]*.07,h[2]+v[2]*.07];};
   const LIMB=[['LeftHand',f=>palm(f,'Left'),.09],['RightHand',f=>palm(f,'Right'),.09],['LeftFoot',f=>bone(f,'LeftToeBase'),.09],['RightFoot',f=>bone(f,'RightToeBase'),.09]];
+  /* a foot still on the floor at the ladder's foot (before the first rung, after the last) stands on the boards, not on air: its gap is to the floor there (planted-boot toe height ~.12) */
+  const onFloor=(f,nm)=>{const g=f.gnd&&f.gnd[nm==='LeftFoot'?1:nm==='RightFoot'?3:-1];if(g==null)return false;const y=bone(f,nm==='LeftFoot'?'LeftToeBase':'RightToeBase')[1]-g;return y>-.03&&y<.13;};
   tempo.ladderGrip=[];let s0=-1;
   for(let i=0;i<=F.length;i++){const on=i<F.length&&F[i].fl.includes('L')&&/^43[57]$/.test(String(F[i].clip));if(on&&s0<0)s0=i;if(!on&&s0>=0){const i1=i-1;if(i1-s0>30){
      const row={f:F[s0].f,dur:+((i1-s0)*lim.dt).toFixed(1)};
-     for(const [nm,pt,tol] of LIMB){const ds=[];for(let k=s0+2;k<=i1;k++){const p=pt(F[k]),q=pt(F[k-2]);if(len(sub(p,q))/(2*lim.dt)<.12)ds.push(near(p));}
+     for(const [nm,pt,tol] of LIMB){const ds=[];for(let k=s0+2;k<=i1;k++){const p=pt(F[k]),q=pt(F[k-2]);if(len(sub(p,q))/(2*lim.dt)<.12){const dn=near(p);ds.push(nm.includes('Foot')&&dn>.15&&onFloor(F[k],nm)?0:dn);}}
       ds.sort((x,y)=>x-y);const med=ds.length?ds[ds.length>>1]:null;row[nm]=med==null?'never still':+(med*100).toFixed(1);
       if(med!=null&&med<5&&med>tol)add('ladder-grip',s0+((i1-s0)>>1),{bone:nm,value:+(med*100).toFixed(1),unit:'cm from the nearest rung while holding still',limit:tol*100,what:nm.includes('Hand')?'hand grips air, not the rung':'foot stands on air, not on a rung',from:F[s0].f,to:F[i1].f,dur:row.dur,still:ds.length});
       if(ds.length<.1*(i1-s0))add('ladder-grip',s0,{bone:nm,value:ds.length,unit:'still frames on the whole climb',limit:Math.round(.1*(i1-s0)),what:nm+' never rests on a rung (slides with the canned clip)',from:F[s0].f,to:F[i1].f,dur:row.dur});}
