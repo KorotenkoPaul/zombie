@@ -10,7 +10,7 @@
 // list() reports dmg and lowers `fresh` by it, so Brain's and hero.js pickPart's "oldest part" choice goes to a damaged one.
 // The rope mends while he works the knots (fix_rope). QA runs (__fixedStart) get no wear unless ?wear is in the URL.
 const sstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows = [] }) {
+export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayPrep = null, solid = null, hour, hero, ladder, windows = [] }) {
   const OFF = (window.__fixedStart && !/[?&]wear\b/.test(location.search)) || /[?&]nowear\b/.test(location.search);
   // own random stream: never draws from Math.random (the QA harness seeds it; other code must keep its numbers)
   let seed = (Date.now() ^ 0x9E3779B9) >>> 0;
@@ -34,15 +34,31 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
       b.getSize(sz); if (sz.x > 3 || sz.z > 3 || sz.y > 3 || b.max.y < 2) return; boxes.push(b.clone()); });
     return boxes;
   }
-  function clear(c, ax, sz, pad) {
-    const B = propBoxes(), q = V();
+  function clear(c, ax, sz, pad, floor) {
+    const B = propBoxes(), q = V(), C = window.__collide;
+    if (floor && solid) for (const a of [-.45, 0, .45]) { q.copy(c).addScaledVector(ax[sz.indexOf(Math.max(...sz))], a * Math.max(...sz)); if (solid(q.x, c.y + .03, q.z)) return false; }
+    if (floor && C && C.depthAt) for (let a = -1, Li = sz.indexOf(Math.max(...sz)); a <= 1; a += .5) { q.copy(c).addScaledVector(ax[Li], a * sz[Li] / 2 * .9); const top = c.y + .03; for (const h of [.02, .1, .3]) if (C.depthAt(q.x, top + h, q.z) > .005) return false; }   // merged furniture and rugs are not in the boxes
     for (let a = -1; a <= 1; a += .5) for (let w = -1; w <= 1; w += 1) {
       q.copy(c).addScaledVector(ax[0], a * sz[0] / 2).addScaledVector(ax[1], w * sz[1] / 2).addScaledVector(ax[2], w * sz[2] / 2);
       for (const bx of B) if (q.x > bx.min.x - pad && q.x < bx.max.x + pad && q.y > bx.min.y - pad && q.y < bx.max.y + pad && q.z > bx.min.z - pad && q.z < bx.max.z + pad) return false;
     }
     return true;
   }
+  // the spot 0.45 m short of the fault, toward the node: on the boards, level, clear of furniture (+0.2 m) and walls, and a clear line to it
+  function kneelOK(fp, node) {
+    const C = window.__collide, d = V(node.x - fp.x, 0, node.z - fp.z), L = d.length(); if (L < .3) return false; d.divideScalar(L);
+    const B = propBoxes();
+    for (let t = .45; t <= L; t += .2) { const x = fp.x + d.x * t, z = fp.z + d.z * t;
+      const g = floorAt ? floorAt(x, fp.y + .3, z, .45, .5, true) : fp.y; if (g == null || Math.abs(g - fp.y) > .03) return false;
+      if (solid && solid(x, g + .02, z)) return false;
+      if (C && C.depthAt) for (const h of [.1, .4, .9]) if (C.depthAt(x, g + h, z) > .005) return false;
+      for (const bx of B) if (x > bx.min.x - .2 && x < bx.max.x + .2 && z > bx.min.z - .2 && z < bx.max.z + .2 && g + .1 > bx.min.y && g < bx.max.y) return false;
+      if (t === .45) for (const [ox, oz] of [[.25, 0], [-.25, 0], [0, .25], [0, -.25]]) { const gg = floorAt ? floorAt(x + ox, fp.y + .3, z + oz, .45, .5, true) : g; if (gg == null || Math.abs(gg - g) > .03) return false; }   // not at a landing edge
+    }
+    return true;
+  }
   function candidates() {
+    if (rayPrep) rayPrep();
     for (const kind of ['floor', 'wall', 'beam', 'shingle']) for (const it of planks.list(kind)) {
       const pl = planks.part && planks.part(it.id); if (!pl || !pl.mesh) continue;
       pl.mesh.getMatrixAt(pl.i, M); M.decompose(P, Q, S);
@@ -52,13 +68,16 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
       const hd = Math.hypot(n.x - c.x, n.z - c.z), dy = c.y - n.y;
       const long = ax[L], thin = ax[T];
       let ok = false, mode = kind;
-      if (kind === 'floor') ok = Math.abs(thin.y) > .95 && sz[L] > .8 && hd < 2.2 && Math.abs(dy) < .2;
+      if (kind === 'floor') { ok = Math.abs(thin.y) > .95 && sz[L] > .8 && hd < 2.2 && Math.abs(dy) < .2;
+        if (ok) { const aw = V(c.x - n.x, 0, c.z - n.z); const u = long.clone().multiplyScalar(long.dot(aw) >= 0 ? -1 : 1); const fp = c.clone().addScaledVector(u, sz[L] / 2 - .08);
+          let fn = null, fd = 1e9; for (const q of nodes) { if (Math.abs(q.y - fp.y) > .3) continue; const d = Math.hypot(q.x - fp.x, q.z - fp.z); if (d < fd) { fd = d; fn = q; } }
+          ok = !!fn && fd < 1.2 && kneelOK(fp, fn); } }
       else if (kind === 'wall') ok = Math.abs(thin.y) < .2 && sz[L] > .8 && sz[T] < .08 && hd < 1.6 && dy > .4 && dy < 1.35;
       else if (kind === 'beam') {
         if (Math.abs(long.y) > .97 && Math.abs(sz[L] - .94) < .03 && sz[Wd] < .14) { ok = hd < 1.6 && dy > .3 && dy < .7; mode = 'post'; }
         else if (Math.abs(long.y) < .1 && sz[Wd] < .1 && sz[L] > .6 && sz[L] < 4) { ok = hd < 1.6 && dy > .4 && dy < 1.05; mode = 'brace'; }
       } else if (kind === 'shingle') ok = hd < 1.5 && dy > .75 && dy < 1.3;
-      if (ok && (mode === 'floor' || mode === 'wall' || mode === 'post' || mode === 'brace') && !clear(c, ax, sz, mode === 'floor' ? .04 : .07)) ok = false;
+      if (ok && (mode === 'floor' || mode === 'wall' || mode === 'post' || mode === 'brace') && !clear(c, ax, sz, mode === 'floor' ? .04 : .07, mode === 'floor')) ok = false;
       if (!ok) continue;
       parts.set(it.id, { id: it.id, kind, mode, mesh: pl.mesh, i: pl.i, home: M.clone(), c, ax, sz, L, Wd, T, n: n.clone(), d: 0, vis: 0, sgn: rnd() < .5 ? -1 : 1, sgn2: rnd() < .5 ? -1 : 1 });
     }
@@ -72,8 +91,7 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
     const long = p.ax[p.L].clone(), wid = p.ax[p.Wd].clone(), thin = p.ax[p.T].clone(), hl = p.sz[p.L] / 2;
     const away = V(p.c.x - p.n.x, 0, p.c.z - p.n.z); if (away.lengthSq() < 1e-6) away.set(1, 0, 0); away.normalize();
     if (p.mode === 'floor') {
-      // pivot at the end nearer to where he kneels, the far end lifts (his knee and boots stay on the flat end)
-      const u = long.clone().multiplyScalar(long.dot(away) >= 0 ? 1 : -1);
+      const u = long.clone().multiplyScalar(long.dot(away) >= 0 ? -1 : 1);   // the end toward his walkway lifts: he kneels beside it (Repairs: he can reach it)
       const pivot = p.c.clone().addScaledVector(u, -hl), n = thin.y > 0 ? thin : thin.clone().negate();
       about(m, pivot, u.clone().cross(n).normalize(), (.014 * d + .04 * sstep(.5, .9, d)) / (2 * hl));   // a bad one: the end stands up ~5 cm (its collider moves too: his boots step onto it)
       about(m, p.c.clone().addScaledVector(u, hl * .5), u, .035 * d * p.sgn);   // cupped/twisted: one edge up a few mm
@@ -203,6 +221,52 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
   }
   function setPane(p, d) { p.d = d; const on = d > 0; p.pm.visible = !on; p.shards.visible = on; p.cracks.visible = on; }
 
+  // ---------- the old board he took off: it lies beside the repair until he carries it away (hero.js: takeOld / dropOld) ----------
+  // Grey, split, nail holes; put down on the floor 0.6-1.3 m from where he stood, off every walk line and clear of furniture and walls.
+  const segs = []; for (const [a, b, t] of E) { if (t || !N[a] || !N[b]) continue; segs.push([N[a].p, N[b].p]); }
+  const segD = (x, y, z) => { let m = 1e9; for (const [A, B] of segs) { if (Math.abs(A.y - y) > .4 && Math.abs(B.y - y) > .4) continue; const dx = B.x - A.x, dz = B.z - A.z, l2 = dx * dx + dz * dz || 1; const t = Math.max(0, Math.min(1, ((x - A.x) * dx + (z - A.z) * dz) / l2)); m = Math.min(m, Math.hypot(A.x + dx * t - x, A.z + dz * t - z)); } return m; };
+  let oldTex = null;
+  function oldWoodTex() {
+    if (oldTex) return oldTex; const c = document.createElement('canvas'); c.width = 256; c.height = 64; const g = c.getContext('2d');
+    g.fillStyle = '#7d7468'; g.fillRect(0, 0, 256, 64);
+    for (let k = 0; k < 70; k++) { const y = rnd(0, 64), l = rnd(.15, .8); g.strokeStyle = `rgba(${rnd() < .5 ? '60,52,44' : '150,142,128'},${rnd(.15, .45)})`; g.lineWidth = rnd(.5, 1.8); g.beginPath(); g.moveTo(rnd(-40, 256), y); g.bezierCurveTo(80, y + rnd(-2, 2), 160, y + rnd(-2, 2), 256 * l + 120, y + rnd(-3, 3)); g.stroke(); }
+    for (let k = 0; k < 3; k++) { const x = rnd(20, 236), y = rnd(14, 50); g.fillStyle = 'rgba(70,58,42,.5)'; g.beginPath(); g.ellipse(x, y, rnd(5, 9), rnd(3, 5), 0, 0, 7); g.fill(); }   // water stains
+    for (const x of [10, 246]) for (const y of [18, 46]) { g.fillStyle = '#2a211b'; g.beginPath(); g.arc(x + rnd(-2, 2), y + rnd(-2, 2), 2.2, 0, 7); g.fill(); g.fillStyle = 'rgba(120,60,25,.55)'; g.beginPath(); g.arc(x, y + 3, 3.5, 0, 7); g.fill(); }   // nail holes, rust runs
+    g.strokeStyle = 'rgba(30,24,18,.85)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(256, rnd(25, 40)); g.lineTo(rnd(150, 200), rnd(28, 36)); g.stroke();   // a split from one end
+    oldTex = new THREE.CanvasTexture(c); oldTex.colorSpace = THREE.SRGBColorSpace; oldTex.anisotropy = 4; return oldTex;
+  }
+  const olds = [];   // {mesh, from (part id), held}
+  const dbg = k => { const D = window.__oldDbg; if (D) D[k] = (D[k] || 0) + 1; };
+  function spawnOld(id, at) {
+    if (olds.filter(o => !o.held).length >= 3) return null;   // three lie about already: he leaves the rest on (it waits for a trip to the woodpile)
+    const f = frameOf(id); if (!f || f.kind === 'shingle' || f.kind === 'roof' || !at) return null;
+    const len = Math.min(f.sz[f.L], .9), w = Math.max(.06, Math.min(f.sz[f.Wd], .22)), t = Math.max(.02, Math.min(f.sz[f.T], .06));
+    if (rayPrep) rayPrep();   // the physics may have been asleep: rays must see the boards where they are now
+    const C = window.__collide, B = propBoxes(), y0 = at.y;
+    let best = null;
+    for (const r of [.75, .95, 1.15, 1.3]) for (let k = 0; k < 16 && !best; k++) {
+      const a = rnd(0, Math.PI * 2), x = at.x + Math.sin(a) * r, z = at.z + Math.cos(a) * r, yaw = rnd(0, Math.PI);
+      const g = floorAt ? floorAt(x, y0 + .3, z, .45, .5, true) : y0; if (g == null || Math.abs(g - y0) > .06) { dbg('floor0'); continue; }
+      const ux = Math.cos(yaw), uz = -Math.sin(yaw); let ok = true;
+      for (const e of [-.5, 0, .5]) { const px = x + ux * len * e, pz = z + uz * len * e;
+        const gg = floorAt ? floorAt(px, g + .3, pz, .45, .5, true) : g; if (gg == null || Math.abs(gg - g) > .02) { ok = false; dbg('floorE'); break; }
+        if (Math.hypot(px - at.x, pz - at.z) < .6 || segD(px, g, pz) < .45 || nodes.some(q => Math.abs(q.y - g) < .4 && Math.hypot(q.x - px, q.z - pz) < .5)) { ok = false; dbg('path'); break; }
+        if (solid && solid(px, g + .02, pz)) { ok = false; dbg('trunk'); break; }   // the bark: floor boards run on inside it
+        if (C && C.depthAt) for (const h of [.03, .12, .3, .6, .9, 1.25]) if (C.depthAt(px, g + h, pz) > .005) { ok = false; dbg('wall'); break; }   // a rug, furniture, nothing overhead (not under the bench)
+        for (const bx of B) if (px > bx.min.x - .08 && px < bx.max.x + .08 && pz > bx.min.z - .08 && pz < bx.max.z + .08 && g + .1 > bx.min.y && g < bx.max.y) { ok = false; dbg('prop'); break; }
+        for (const o of olds) if (!o.held && o.mesh.position.distanceTo(V(px, g, pz)) < .35) { ok = false; break; }
+        if (!ok) break; }
+      if (ok) best = { x, z, g, yaw };
+    }
+    if (!best) return null;
+    const geo = new THREE.BoxGeometry(len, t, w);
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: oldWoodTex(), color: 0xD8D0C4, roughness: .95 }));
+    m.name = 'oldBoard'; m.castShadow = true; m.receiveShadow = true;
+    m.position.set(best.x, best.g + t / 2 + .001, best.z); m.rotation.set(0, best.yaw, rnd(-.02, .02));
+    scene().add(m); const o = { mesh: m, from: id, held: false, len, w, t }; olds.push(o); return o;
+  }
+  const scene = () => { let r = planks.meshes.boards; while (r.parent) r = r.parent; return r; };
+
   // ---------- wear over time ----------
   const windy = () => { try { const w = window.__wind; const g = w && (w.strength ? w.strength() : w.gust ? w.gust() : 0); return Math.max(0, Math.min(1, +g || 0)); } catch (e) { return 0; } };
   const raining = () => { try { const W = window.__weather; const s = W && W.state ? W.state() : null; if (s) return !!s.rain && s.rain !== 'none'; const w = window.__wind; return !!(w && w.raining && w.raining()); } catch (e) { return false; } };
@@ -235,7 +299,7 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
     if (!(p.fr > 0)) { setFresh0(p.id, -ROT[p.mode] * p.vis); p.fr = 0; } }
 
   // repairs: Brain marks the parts he fixed as fresh; anything at >= .7 is fixed
-  planks.setFresh = (id, f) => { const r = setFresh0(id, f); const p = parts.get(id); if (p) { p.fr = f; if (f >= .7) { p.d = 0; p.cap = null; } } if (f >= .99) { if (nailedBy.has(id)) nailedBy.delete(id); else try { nailPart(id); } catch (e) {} } return r; };
+  planks.setFresh = (id, f) => { const r = setFresh0(id, f); const p = parts.get(id); if (p) { p.fr = f; if (f >= .7) { p.d = 0; p.cap = null; } } if (f >= .99) { if (nailedBy.has(id)) nailedBy.delete(id); else try { nailPart(id); } catch (e) {} if (!OFF) try { const H = hero && hero(); if (H && H.pos) spawnOld(id, H.pos.clone()); } catch (e) {} } return r; };
   const nailedBy = new Set();   // parts whose nails hero.js already placed blow by blow
   planks.list = k => { const L = list0(k); for (const it of L) { const p = parts.get(it.id); const d = p ? +p.d.toFixed(2) : 0; it.dmg = d; if (d) { it.fresh = Math.min(it.fresh, -.7 * d); if (p.cur) it.pos = p.cur.toArray().map(v => +v.toFixed(2)); } } return L; };   // pos: where the part is now (a slipped slate, a hanging rail)
 
@@ -276,7 +340,7 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
     const long = p.ax[p.L], wid = p.ax[p.Wd], thin = p.ax[p.T], hl = p.sz[p.L] / 2, ht = p.sz[p.T] / 2;
     const away = V(p.c.x - p.n.x, 0, p.c.z - p.n.z); if (away.lengthSq() < 1e-6) away.set(1, 0, 0); away.normalize();
     const toward = away.clone().negate();
-    if (p.mode === 'floor') { const u = long.clone().multiplyScalar(long.dot(away) >= 0 ? 1 : -1), n = thin.y > 0 ? thin.clone() : thin.clone().negate(); return [p.c.clone().addScaledVector(u, hl - .08).addScaledVector(n, ht), n]; }
+    if (p.mode === 'floor') { const u = long.clone().multiplyScalar(long.dot(away) >= 0 ? -1 : 1), n = thin.y > 0 ? thin.clone() : thin.clone().negate(); return [p.c.clone().addScaledVector(u, hl - .08).addScaledVector(n, ht), n]; }
     if (p.mode === 'wall') { const u = long.clone().multiplyScalar(p.sgn), n = thin.dot(away) >= 0 ? thin.clone().negate() : thin.clone(); return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(n, ht), n]; }   // his side of it
     if (p.mode === 'post') { const hw = Math.min(p.sz[p.Wd], p.sz[p.T]) / 2; return [p.c.clone().addScaledVector(UP, hl - .05).addScaledVector(toward, hw), toward]; }
     if (p.mode === 'brace') { const u = long.clone().multiplyScalar(p.sgn), hw = p.sz[p.Wd] / 2; return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(toward, hw), toward]; }
@@ -291,6 +355,11 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
   }
   const api = {
     fault,
+    // old boards lying about, for a trip to the woodpile / the oven (hero.js): take(i) hands the mesh over (he parents it to a hand), drop(i) ends it there (burnt / stacked)
+    oldBoards: () => olds.map((o, i) => ({ i, held: o.held, pos: o.mesh.getWorldPosition(V()).toArray().map(v => +v.toFixed(2)), len: o.len, from: o.from })).filter(o => !o.held),
+    takeOld: i => { const o = olds[i]; if (!o || o.held) return null; o.held = true; return o.mesh; },
+    dropOld: i => { const o = olds[i]; if (!o) return false; if (o.mesh.parent) o.mesh.parent.remove(o.mesh); o.mesh.geometry.dispose(); o.mesh.material.dispose(); olds[i] = { held: true, mesh: o.mesh, gone: true }; return true; },
+    spawnOld: (id, pos) => { const o = spawnOld(id, pos ? V(...pos) : (hero && hero() ? hero().pos.clone() : null)); return o ? olds.indexOf(o) : -1; },
     blow: (id, k = .25) => { const p = parts.get(id); if (!p || !(p.d > 0)) return false; p.cap = Math.max(0, (p.cap != null ? Math.min(p.cap, p.vis) : p.vis) - k); return +p.cap.toFixed(2); },
     mesh: fray && fray.mesh, update,
     state: () => ({ parts: parts.size, damaged: damaged().map(p => ({ id: p.id, kind: p.mode, d: +p.d.toFixed(2), pos: p.c.toArray().map(v => +v.toFixed(2)) })), rope: fray ? +fray.d.toFixed(2) : null, windows: panes.filter(p => p.d > 0).map(p => p.room), nails: nails.count }),
