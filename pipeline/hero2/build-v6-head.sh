@@ -20,6 +20,7 @@ print(json.dumps({'L':L,'R':R,'skin':f(-0.06,0.735),'lash':f(-0.0388,0.7535),'of
 PRIM=1,2 node lids.mjs Gt.glb GL.glb "$L" | tail -1
 [ -n "$SHADOW" ] && node shadowproxy.mjs GL.glb GL.glb $SHADOW
 [ -n "$FACEM" ] && node facemorph.mjs GL.glb GL.glb "$FACEM" | tail -1
+[ -n "$HANDM" ] && node handmorph.mjs GL.glb GL.glb "$HANDM" | grep ring
 HEADS=1024 node ktxtex.mjs GL.glb K.glb 2048 1024 2>&1 | grep -E "KB$" >/dev/null
 node quant.mjs K.glb Q.glb && node optim.mjs Q.glb $2 0.65 >/dev/null && base64 -w0 $2 > ${2%.glb}.txt && ls -la ${2%.glb}.txt
 node hp2.mjs Gt.glb | head -3
