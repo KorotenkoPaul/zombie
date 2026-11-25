@@ -239,7 +239,7 @@ export function createGrab({ THREE, bones }) {
   // the stroke into the carry, no upright moment) and out within a metre of the broom's corner, where it is stood back upright ----
   const BC = { w: 0 }; api_dbg.BC = BC;
   /* the sweep task carries the broom there and back too (steps take / work / put / carry): only its work step is sweeping */
-  const sweepStep = () => { const A = HHref && HHref.act || (window.__dbg && window.__dbg.HH && window.__dbg.HH.act); const st = A && A.step; return !st || st === 'work'; };
+  const sweepStep = () => { const A = HHref && HHref.act || (window.__dbg && window.__dbg.HH && window.__dbg.HH.act); const st = A && A.step; return !st || st === 'work' || st === 'take'; }; // the take as before (from the corner straight into the stroke grip)
   function broomCarry(dt) { const P = PROPS || window.__props; const b = P && P.tools && P.tools.broom; const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero);
     const held = !!(b && b.parent === bones.RightHand && b.visible !== false && H); let k = 0;
     if (held && !(H.task === 'sweep' && sweepStep()) && !window.__noBroomCarry) { const hm = b.userData.home; const hp0 = bones.Hips.getWorldPosition(V());
