@@ -49,7 +49,7 @@ export function dressHero({ THREE, root }) {
   const hipsI = m => m.skeleton.bones.findIndex(x => /Hips$/.test(x.name));
   const toBody = m => hipsI(m) < 0 || hipsI(meshes.body) < 0 ? m.bindMatrix.clone() : meshes.body.bindMatrix.clone().multiply(meshes.body.skeleton.boneInverses[hipsI(meshes.body)].clone().invert()).multiply(m.skeleton.boneInverses[hipsI(m)]).multiply(m.bindMatrix);
   const uVest = { value: 1 };
-  const jointSet = m => m === meshes.body ? ['LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'] : m === meshes.boots ? ['LeftLeg', 'LeftFoot', 'RightLeg', 'RightFoot'] : null;
+  const jointSet = m => m === meshes.body || m.name === 'heroHull' ? ['LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'] : m === meshes.boots || m.name === 'bootsHull' ? ['LeftLeg', 'LeftFoot', 'RightLeg', 'RightFoot'] : null;
   const mbi = (m, n) => m.skeleton.bones.findIndex(b => b.name.replace('mixamorig', '').replace(':', '') === n);
   const v = new THREE.Vector3(), n3 = new THREE.Vector3(), nm = new THREE.Matrix3();
   function attrs(mesh, cls) {
@@ -93,12 +93,14 @@ export function dressHero({ THREE, root }) {
     // collapses towards the bone into a flat sharp wedge (critic pass 22, fridge). For that band the shader turns the point about the
     // knee joint instead (direction interpolated, distance from the joint kept): a round knee. kq = (share, shin part) per side.
     /* the boots do the same about the ankle: deep in a crouch the shaft folded into a sharp beak over the instep */
-    const JS = jointSet(mesh); if (JS) { const kq = new Float32Array(cnt * 4); const ix = JS.map(n => mbi(mesh, n));
-      for (let i = 0; i < cnt; i++) for (let sd = 0; sd < 2; sd++) { let wu = 0, wl = 0; for (let c = 0; c < 4; c++) { const j = GC(SI, i, c), w = GC(SW, i, c); if (j === ix[sd * 2]) wu += w; if (j === ix[sd * 2 + 1]) wl += w; }
-        if (wu > .01 && wl > .01) { kq[i * 4 + sd * 2] = wu + wl; kq[i * 4 + sd * 2 + 1] = wl / (wu + wl); } }
-      g.setAttribute('kq', new THREE.BufferAttribute(kq, 4)); }
+    kqOf(mesh);
     g.setAttribute('kp', new THREE.BufferAttribute(kp, 3)); g.setAttribute('kn', new THREE.BufferAttribute(kn, 3)); g.setAttribute('kx', new THREE.BufferAttribute(kx, 3));
   }
+  function kqOf(mesh) { const g = mesh.geometry, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight, cnt = g.attributes.position.count;
+    const JS = jointSet(mesh); if (JS && SI) { const kq = new Float32Array(cnt * 4); const ix = JS.map(n => mbi(mesh, n));
+      for (let i = 0; i < cnt; i++) for (let sd = 0; sd < 2; sd++) { let wu = 0, wl = 0; for (let c = 0; c < 4; c++) { const j = GC(SI, i, c), w = GC(SW, i, c); if (j === ix[sd * 2]) wu += w; if (j === ix[sd * 2 + 1]) wl += w; }
+        if (wu > .01 && wl > .01) { kq[i * 4 + sd * 2] = wu + wl; kq[i * 4 + sd * 2 + 1] = wl / (wu + wl); } }
+      g.setAttribute('kq', new THREE.BufferAttribute(kq, 4)); } }
   // the joints (knee for the body, ankle for the boots) in each mesh's own skinning space of the bind pose, and the bones' slots
   const KU = mesh => { const JS = jointSet(mesh); const ix = JS ? JS.map(n => mbi(mesh, n)) : [-1, -1, -1, -1];
     const jp = i => i < 0 ? new THREE.Vector3() : new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[i].clone().invert());
@@ -188,5 +190,11 @@ if(hcAmp>0.){vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition);float dhx=dF
     m.needsUpdate = true;
   }
   hook(meshes.body, 0); hook(meshes.vest, 1); if (meshes.boots) hook(meshes.boots, 2); if (meshes.under) hook(meshes.under, 0);
-  return { S, meshes: Object.keys(meshes), vestOn(on) { uVest.value = on ? 1 : 0; } };
+  // game style's outline hulls (herolook.js) skin from the same weights: without the knee turn their knee folded into the flat
+  // wedge the body no longer has, drawn as a dark outline around the crouching thigh (critic 24, style=game). Same turn for them.
+  function knee(h) { if (!jointSet(h)) return; kqOf(h); const KUh = KU(h); const m = h.material, ob = m.onBeforeCompile, ck = m.customProgramCacheKey;
+    m.onBeforeCompile = (sh, r) => { ob && ob.call(m, sh, r); Object.assign(sh.uniforms, KUh);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 kq;uniform vec4 uKI;uniform vec3 uKC0;uniform vec3 uKC1;uniform float uKOn;').replace('#include <skinning_vertex>', '#include <skinning_vertex>\n' + KNEE_GLSL); };
+    m.customProgramCacheKey = () => (ck ? ck.call(m) : '') + '-knee'; m.needsUpdate = true; }
+  return { S, meshes: Object.keys(meshes), knee, vestOn(on) { uVest.value = on ? 1 : 0; } };
 }
