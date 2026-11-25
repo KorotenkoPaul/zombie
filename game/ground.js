@@ -189,7 +189,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
       // and shifted so no rows show), each leaf its own size, turn and colour (rust, ochre, brown, a few pale yellow, some dark and
       // rotting), a midrib, a shade at its curled edge and a soft contact shadow, gathered in drifts with bare moss between.
       litA*=.45+.9*fbm(vGW*1.7+3.);litA=clamp(litA,0.,.95);
-      vec2 lq=vGW*7.;vec2 lw=fwidth(lq);float far=smoothstep(.25,.7,max(lw.x,lw.y));
+      vec2 lq=vGW*8.;vec2 lw=fwidth(lq);float far=smoothstep(.1,.3,max(lw.x,lw.y));/* [ENV] Props phone pass: leaves under ~4 px became a crawling grid of orange dashes; they melt into their average colour sooner */
       vec3 lcol=vec3(0.);float lm=0.,lsh=0.;
       for(int L=0;L<${MOBILE?1:2};L++){/* phones: one layer (fill rate) */float sc=L==0?8.:5.5;float ra=L==0?0.:.83;vec2 pq=mat2(cos(ra),-sin(ra),sin(ra),cos(ra))*vGW*sc+float(L)*vec2(.37,.71);
        vec2 li=floor(pq),lf=fract(pq)-.5;float lh=fract(sin(dot(li+float(L)*17.3,vec2(12.9898,78.233)))*43758.5453);
@@ -204,7 +204,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
        lsh=max(lsh,sh*(1.-lm));lcol=mix(lcol,cc,m);lm=max(lm,m);}
       vec3 avg=vec3(.5,.3,.1);float ff=1.-pathK*.6;
       diffuseColor.rgb*=1.-.3*lsh*(1.-lm)*(1.-far)*ff;
-      float k=mix(lm,litA*.8,far)*ff;diffuseColor.rgb=mix(diffuseColor.rgb,mix(lcol*vec3(2.3,1.45,1.15),avg*vec3(1.6,1.3,1.2),far)*(.75+.6*lum),k);}`);};
+      float k=mix(lm,litA*.6,far)*ff;diffuseColor.rgb=mix(diffuseColor.rgb,mix(lcol*vec3(2.3,1.45,1.15),avg*vec3(1.6,1.3,1.2),far)*(.75+.6*lum),k);}`);};
   {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');};}
   mat.customProgramCacheKey=()=>'groundFloor-litter3';/* [ENV] explicit key (SHADERS rule) */
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);G.ground=ground;
