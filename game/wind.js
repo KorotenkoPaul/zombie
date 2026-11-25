@@ -198,8 +198,8 @@ export function createWind(opt = {}) {
         if (!dawn) fb.tried = false;
         if (dawn && !fb.on && !fb.tried && hour < 6.4) { fb.tried = true;
           if (R() < 0.6 + 0.35 * U.uWet.value) { /* most mornings, nearly always after a wet night */ fb.on = true; fb.front = -SPAN; if (mode === 'calm' && !forced) { mode = 'breeze'; target = rr(0.25, 0.4); spellLeft = rr(90, 160); } emit('fogbank', { on: true }); } }
-        if (fb.on) { fb.front += dt * (0.35 + base * 0.6); fb.k += ((hour < 7.6 ? 1 : 0) - fb.k) * Math.min(1, dt / (hour < 7.6 ? 20 : 40));
-          if (hour >= 9 || (hour > 7.6 && fb.k < 0.02)) { fb.on = false; fb.k = 0; fb.front = -1e4; emit('fogbank', { on: false }); } }
+        if (fb.on) { fb.front += dt * (0.35 + base * 0.6); fb.k += ((hour < 7.3 ? 1 : 0) - fb.k) * Math.min(1, dt / (hour < 7.3 ? 20 : 26));   // [ENV] burns off from 7.3 h, mostly gone by ~8.2 (it lingered as a milky veil past 8.5 h)
+          if (hour >= 9 || (hour > 7.3 && fb.k < 0.02)) { fb.on = false; fb.k = 0; fb.front = -1e4; emit('fogbank', { on: false }); } }
         U.uFogBank.value.set ? U.uFogBank.value.set(fb.front, fb.k) : (U.uFogBank.value[0] = fb.front, U.uFogBank.value[1] = fb.k);
       }
       if (hour != null) { if (lastHr != null && hour < lastHr - 12) dayN++; lastHr = hour; hourNow = hour;
