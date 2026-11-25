@@ -509,7 +509,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const opts = [];
     if (has('hy_stretch') && (h < 10 || tired > .5)) opts.push('stretch', 'stretch');
     if (has('336')) opts.push('around', 'around');
-    if (has('11')) opts.push('breathe');
+    /* 'breathe' (catching his breath) is off: Pavel 2026-11-25 does not want him to breathe */
     if (has('hy_inspect') && mood > .5) opts.push('inspect');
     if (!opts.length) return false;
     const m = MICRO[pick(opts)];
