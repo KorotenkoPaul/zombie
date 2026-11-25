@@ -1771,12 +1771,15 @@ export function buildProps(ctx) {
     o[0] = px - yo * Math.sin(th); o[1] = py + yo * Math.cos(th); return o; }
   out.quiltFold = (v) => { if (v == null) return fold.a / Math.PI; fold.a = clamp01(v) * Math.PI; };
   out.quiltLive = (t) => { press.fast = Math.max(press.fast || 0, t); };
+  // R61 (watch: 'the quilt pops up into a tent by itself'): while his hand pulls it up the cover rises only as far as the hand has
+  // taken it (0..1); null hands it back to the usual ramp. Never held longer than 8 s
+  out.coverK = (v) => { press.kx = v == null ? null : Math.max(0, Math.min(1, v)); press.kxT = 8; };
   // the flap's free edge in the world, at the z of the given world point (kept off the corners): where his fingers hold it
   out.quiltEdge = (pw, sf = 1, zm = .33) => { if (!quiltMesh) return null; bunk.updateMatrixWorld(true); const pl = bunk.worldToLocal(pw.clone()); const zl = Math.max(-zm, Math.min(zm, pl.z));/* zm: up to its side hem */
     foldPt(qHinge + FL * sf, .012, fold.a, _fp);/* sf: how far along the flap the hand holds it (1 = its free edge) */ let X = _fp[0], Y = _fp[1]; if (press.cover && press.k > .001 && cb.length) Y += liftAt(X, zl, Y) * press.k; return bunk.localToWorld(V(X, Y, zl)); };
   out._quiltFoldDbg = () => ({ qxMax, qHinge, qFlat, a: fold.a });
   function pressQuilt(dt) {
-    if (!quiltMesh) return; press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * (press.cover ? 6 : 1.5));/* the cover drops as fast as it rises: getting up, his legs went out through the slowly sinking box *//* covering: the cloth is over him at once (rising over 2 s it let the sweater through, items thread) */ if (press.fast > 0) press.fast -= dt;
+    if (!quiltMesh) return; if (press.kx != null && (press.kxT -= dt) <= 0) press.kx = null; if (press.kx != null && press.on && press.cover) press.k = press.kx; else press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * (press.cover ? 6 : 1.5));/* the cover drops as fast as it rises: getting up, his legs went out through the slowly sinking box *//* covering: the cloth is over him at once (rising over 2 s it let the sweater through, items thread) */ if (press.fast > 0) press.fast -= dt;
     const cover = press.cover && (press.on || press.k > .01) && (cb.length || findCoverBones()); coverT -= dt;
     const folded = Math.abs(fold.a - fold.shown) > 1e-3;
     if (cover) { if (!(coverT <= 0 || press.fast > 0 || folded || Math.abs(press.k - press.shown) >= .01)) return; }
