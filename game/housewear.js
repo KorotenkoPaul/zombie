@@ -17,7 +17,9 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
   const rnd = (a = 0, b = 1) => { seed = (seed + 0x6D2B79F5) >>> 0; let t = seed; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return a + (b - a) * (((t ^ t >>> 14) >>> 0) / 4294967296); };
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
   const UP = V(0, 1, 0);
-  const crackMat = new THREE.MeshBasicMaterial({ color: 0xDDE6EA, transparent: true, opacity: .55, depthWrite: false, side: THREE.DoubleSide });
+  // lit, not basic: an unlit pale line glowed white at night like a spider web drawn on the glass. A real crack only catches
+  // light that falls on it, so it is dark at night and pale by day
+  const crackMat = new THREE.MeshStandardMaterial({ color: 0xD6DEE2, roughness: .3, metalness: 0, transparent: true, opacity: .5, depthWrite: false, side: THREE.DoubleSide });
   const nodes = []; for (const k in N) { const n = N[k]; if (n && n.p && n.seat == null) nodes.push(n.p); }
   const nearNode = p => { let b = null, bd = 1e9; for (const q of nodes) { const d = Math.hypot(q.x - p.x, q.z - p.z) + Math.abs(q.y - p.y) * 2; if (d < bd) { bd = d; b = q; } } return b; };
 
