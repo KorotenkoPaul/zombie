@@ -127,7 +127,10 @@ float hcTwill(float t,float s){return .5+.5*sin(6.28318*(s+t)/.0024);}
     m.onBeforeCompile = sh => {
       sh.uniforms.uVestOn = uVest; Object.assign(sh.uniforms, KUm);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 kp;attribute vec3 kn;attribute vec3 kx;attribute vec4 kq;uniform vec4 uKI;uniform vec3 uKC0;uniform vec3 uKC1;uniform float uKOn;varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;')
-        .replace('#include <skinning_vertex>', '#include <skinning_vertex>\n' + KNEE_GLSL).replace('#include <begin_vertex>', '#include <begin_vertex>\nvKp=kp;vKn=kn;vKx=kx;');
+        .replace('#include <skinning_vertex>', '#include <skinning_vertex>\n' + KNEE_GLSL).replace('#include <begin_vertex>', '#include <begin_vertex>\nvKp=kp;vKn=kn;vKx=kx;')
+        // the vest lies a few mm over the body (same triangles): where a coarse collar or hem triangle tilts, the body won the depth
+        // test and showed through as dark teeth / sweater patches. Depth-only nudge of the vest 12 mm toward the eye (screen xy unchanged).
+        .replace('#include <project_vertex>', '#include <project_vertex>\n' + (cls === 1 ? '{vec4 q=mvPosition;q.xyz+=normalize(-q.xyz)*'+(+(new URLSearchParams(location.search).get('vestz')||.012)).toFixed(4)+';vec4 c=projectionMatrix*q;gl_Position.z=c.z/c.w*gl_Position.w;}' : ''));
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uVestOn;varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;' + GLSL_NOISE + '\nfloat hcHgt=0.;float hcAmp=0.;float hcRough=-1.;')
         .replace('#include <map_fragment>', '#include <map_fragment>\n{' +
           `vec3 sc=pow(max(diffuseColor.rgb,vec3(0.)),vec3(1./2.2));float mx=max(sc.r,max(sc.g,sc.b)),mn=min(sc.r,min(sc.g,sc.b)),sat=mx>0.?(mx-mn)/mx:0.;
