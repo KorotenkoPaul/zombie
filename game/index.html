@@ -345,7 +345,10 @@ vec3 plank(vec3 lp,vec3 sz,float sd){
  float ex=face==0.?(vN0.z>0.?vWx.x:vWx.y):max(vWx.x,vWx.y)*.6;
  float e=ex*(.35+.65*pH(sd+12.))*smoothstep(.25,.8,pN(m.xy*vec2(.7,5.)+sd)+.2*pN(m.xy*vec2(3.,30.)))*old;
  vec3 grey=vec3(dot(col,vec3(.3,.55,.15)))*vec3(1.08,.98,.86);
- col=mix(col,grey*mix(1.05,1.2,uNails),e*.5);pRgh=mix(pRgh,.93,e);dH*=1.+e*1.2;
+ // [PROPS boards round] outside wood that has stood years in rain and sun: the whole face is a little sun-faded (less
+ // orange), and the silvered streaks along the grain go further (they were a faint tint, the decks read as new pine)
+ col=mix(col,vec3(dot(col,vec3(.3,.55,.15)))*vec3(1.06,.98,.88),ex*old*.2);
+ col=mix(col,grey*mix(1.05,1.2,uNails),e*.72);pRgh=mix(pRgh,.93,e);dH*=1.+e*1.2;
  // upright outside boards: rain runs down from their top end (under the eaves, under a sill) in dark streaks; splash at the foot
  if(abs(vUpX)>.7){float tp=lp.x*sign(vUpX);float st=pow(pN(vec2(m.y*38.+sd*5.,m.x*.9)),3.)*smoothstep(-.4,.45,tp);float spl=smoothstep(-.32,-.5,tp);
   col*=1.-ex*old*(.5*st+.2*spl);}

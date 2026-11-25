@@ -554,7 +554,7 @@ function stove() {
   g.userData.oven = {
     door, handle: () => door.localToWorld(V(0, dh - .05, .075)), flameMat, fireGroup: fire,
     setOpen(k) { openK = clamp01(k); door.rotation.x = openK * 1.45; }, get open() { return openK; },
-    setSpread(k) { flameU.uSpread.value = k; }, setHeat(k) { M.fire.emissiveIntensity = .25 + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 + .6 * k; heatK = k; },
+    setSpread(k) { flameU.uSpread.value = k; }, setHeat(k) { const em = Math.min(1, k * 6); /* a cold stove's coal bed is dead black, embers glow only while there is heat */ M.fire.emissiveIntensity = .25 * em + 2.2 * k; M.ovenGlass.emissiveIntensity = .1 * em + .6 * k; heatK = k; },
     flicker(t) { fire.visible = heatK > .05; if (!fire.visible) return; flameU.uT.value = t; flameU.uHeat.value = heatK; flameMat.opacity = .55 + heatK * .4; M.fire.emissiveIntensity = (.25 + 2.2 * heatK) * (.88 + Math.sin(t * 13) * .08 + Math.sin(t * 31) * .05); },
   };
   return g;
