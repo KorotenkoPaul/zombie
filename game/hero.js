@@ -901,7 +901,19 @@ export function createHero(ctx){
    for(let t=.08;ok&&t<r;t+=.08){const xx=p.x+ux*t,zz=p.z+uz*t;if(!lvl(xx,zz)||inObst(xx,zz)||(C&&C.room&&C.room(xx,p.y,zz)>.004))ok=false;}/* room: legs and the swinging arms of the walk */
    if(!ok)continue;if(++tries>45)return null;const q=V(x,p.y,z);const y=armsYaw(q,Math.atan2(ux,uz),clip);if(y!=null)return {q,yaw:y};yield null;}
   return null;}
- function approachTo(a,sp,stand,then){const p=root.position;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz)||1e-3;H.face=a.faceYaw!=null?a.faceYaw:Math.atan2(dx,dz);/* faceYaw: the job's own facing (a window pane), turned to during the slide, not on the spot after it */
+ // COLLIDE (R43-2: stoke walked from the ladder foot kl_b straight through the kitchen ladder to the woodpile behind it): an approach
+ // whose straight line would take the body through something (ladder rails and rungs, a post, furniture) goes round it: two legs via
+ // the nearest clear point to the side (collide.js clearance: knee to head height, 18 cm round the line). The end spot itself may be
+ // tight (he works close to things), so the last 15% of the line is not checked.
+ function viaAround(p,sp,stand){const C=window.__collide;if(!C||!C.sweep||window.__noVia)return null;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);if(d-stand<.3)return null;
+  const q=V(p.x+dx/d*(d-stand),p.y,p.z+dz/d*(d-stand));const lim=.015;
+  const legOk=(A,B,t0,t1)=>C.sweep(A.x,A.z,B.x,B.z,p.y,.09,t0,t1,.003,.25)<=.003&&C.sweep(A.x,A.z,B.x,B.z,p.y,.18,t0,t1,lim)<=lim;/* core line: nothing at all (a thin rung); full width: grazes only */
+  if(legOk(p,q,.15,.85))return null;
+  const m=V((p.x+q.x)/2,p.y,(p.z+q.z)/2),L=Math.hypot(q.x-p.x,q.z-p.z),u=V(-(q.z-p.z)/L,0,(q.x-p.x)/L);
+  for(let off=.3;off<=1.01;off+=.1)for(const sg of [1,-1]){const v=m.clone().addScaledVector(u,off*sg);const y=floorAt(v.x,p.y+.3,v.z,.45,.5);if(y==null||Math.abs(y-p.y)>.06)continue;
+   if(legOk(p,v,.1,1)&&legOk(v,q,0,.85))return v;}
+  return null;}
+ function approachTo(a,sp,stand,then){const p=root.position;if(!a._via){const v=viaAround(p,sp,stand);if(v){const fy=a.faceYaw;a._via=1;a.faceYaw=Math.atan2(v.x-p.x,v.z-p.z);approachTo(a,v,0,()=>{a.faceYaw=fy;a._via=1;approachTo(a,sp,stand,then);a._via=0;});a._via=0;return;}}const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz)||1e-3;H.face=a.faceYaw!=null?a.faceYaw:Math.atan2(dx,dz);/* faceYaw: the job's own facing (a window pane), turned to during the slide, not on the spot after it */
   let cap=1.2;if(a.reach&&d-stand>1.2){/* WEAR: a fault far from the walk graph (a long kitchen board's lifted end, 2.7 m off the node): walk on to it when the floor between is clear and level */const qq=p.clone().add(V(dx/d*(d-stand),0,dz/d*(d-stand)));let ok=segClear(p,qq);for(let t=.25;ok&&t<1;t+=.25){const y=floorAt(p.x+(qq.x-p.x)*t,p.y+.3,p.z+(qq.z-p.z)*t,.45,.5);if(y==null||Math.abs(y-p.y)>.06)ok=false;}if(ok)cap=Math.min(a.reach,d-stand);}
   const move=Math.max(0,Math.min(cap,d-stand));const q=p.clone().add(V(dx/d*move,0,dz/d*move));if(!a.noPush)pushOut(q,a.pushR);headroom(q,dx/d,dz/d);const dur=Math.max(.3,move/.8,Math.abs(wrapA(H.face-root.rotation.y))/2.4);/* never faster than ~140 deg/s */
   const mv=Math.hypot(q.x-p.x,q.z-p.z);H.slide={x:q.x-p.x,z:q.z-p.z,yaw:wrapA(H.face-root.rotation.y),k:0,d:dur};if(mv>.35){/* a real step over there: face the way he goes, turn to the work at the end (no gliding sideways) */const yT=Math.atan2(q.x-p.x,q.z-p.z);H.slide.y0=root.rotation.y;H.slide.yT=root.rotation.y+wrapA(yT-root.rotation.y);H.slide.yF=H.slide.yT+wrapA(H.face-yT);
