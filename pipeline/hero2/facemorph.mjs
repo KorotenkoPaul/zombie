@@ -1,5 +1,6 @@
 // Face life for the v6 head (painted face, no face rig): morph targets on Mesh_0 (all primitives; the body's are zero, sparse):
 //   effort: brows down and together, cheeks up (squint), mouth corners pulled out, lips pressed
+//   smile:  mouth corners up and out, cheeks up
 //   yawn:   jaw drops 13 mm (lower face only), upper lip up, brows up
 // plus a 'mouth' node (skinned to Head, own dark material) whose 'yawn' target opens an oval over the stretched lips.
 // Coordinates: mesh space of the v6 graft (mouth centre 0,.678; brows +-.058,.822; face front z>.05).
@@ -12,14 +13,17 @@ function eff(x,y,z){const f=sm(.05,.08,z);if(f<=0)return [0,0,0];let dx=0,dy=0,d
  for(const s of [-1,1]){const b=g(x,y,s*C.bx,C.by,.035);dy-=.0035*b;dx-=s*.0025*b;const bi=g(x,y,s*.03,C.by-.004,.02);dy-=.002*bi;
   const ch=g(x,y,s*.06,.72,.028);dy+=.0025*ch;dz+=.001*ch;const mc=g(x,y,s*.04,C.my,.018);dx+=s*.0035*mc;dy-=.0012*mc;}
  dz-=.001*g(x,y,0,C.my,.02);return [dx*f,dy*f,dz*f];}
+function smile(x,y,z){const f=sm(.05,.08,z);if(f<=0)return [0,0,0];let dx=0,dy=0,dz=0;
+ for(const s of [-1,1]){const mc=g(x,y,s*.04,C.my,.02);dx+=s*.003*mc;dy+=.0045*mc;dz+=.001*mc;const ch=g(x,y,s*.055,.715,.03);dy+=.003*ch;dz+=.0015*ch;}
+ dy+=.001*g(x,y,0,C.my-.008,.02);return [dx*f,dy*f,dz*f];}
 function jawW(x,y,z){return sm(C.my+.006,C.my-.014,y)*(1-sm(.05,.11,Math.abs(x)))*sm(0,.06,z);}
 function yawn(x,y,z){const f=sm(.05,.08,z);const w=jawW(x,y,z);let dy=-C.jaw*w,dz=-.003*w;dy+=.002*g(x,y,0,C.my+.012,.025)*f;
  for(const s of [-1,1])dy+=.004*g(x,y,s*C.bx,C.by,.035)*f;return [0,dy,dz];}
 const buf=root.listBuffers()[0];const A=(t,a)=>d.createAccessor().setType(t).setArray(a).setBuffer(buf);
-for(const [k,p] of prims.entries()){const P=p.getAttribute('POSITION').getArray();const nv=P.length/3;const E=new Float32Array(nv*3),Y=new Float32Array(nv*3);let ne=0;
- if(p.getMaterial()?.getName()==='head')for(let i=0;i<nv;i++){const x=P[i*3],y=P[i*3+1],z=P[i*3+2];const e=eff(x,y,z),q=yawn(x,y,z);E.set(e,i*3);Y.set(q,i*3);if(Math.abs(e[1])+Math.abs(q[1])>1e-4)ne++;}
- p.addTarget(d.createPrimitiveTarget('effort').setAttribute('POSITION',A('VEC3',E)));p.addTarget(d.createPrimitiveTarget('yawn').setAttribute('POSITION',A('VEC3',Y)));console.log('prim',k,'moved',ne);}
-mesh.setWeights([0,0]).setExtras(Object.assign({},mesh.getExtras(),{targetNames:['effort','yawn']}));
+for(const [k,p] of prims.entries()){const P=p.getAttribute('POSITION').getArray();const nv=P.length/3;const E=new Float32Array(nv*3),Y=new Float32Array(nv*3),SM=new Float32Array(nv*3);let ne=0;
+ if(p.getMaterial()?.getName()==='head')for(let i=0;i<nv;i++){const x=P[i*3],y=P[i*3+1],z=P[i*3+2];const e=eff(x,y,z),q=yawn(x,y,z);E.set(e,i*3);Y.set(q,i*3);SM.set(smile(x,y,z),i*3);if(Math.abs(e[1])+Math.abs(q[1])>1e-4)ne++;}
+ p.addTarget(d.createPrimitiveTarget('effort').setAttribute('POSITION',A('VEC3',E)));p.addTarget(d.createPrimitiveTarget('yawn').setAttribute('POSITION',A('VEC3',Y)));p.addTarget(d.createPrimitiveTarget('smile').setAttribute('POSITION',A('VEC3',SM)));console.log('prim',k,'moved',ne);}
+mesh.setWeights([0,0,0]).setExtras(Object.assign({},mesh.getExtras(),{targetNames:['effort','yawn','smile']}));
 // mouth oval: cast on the head's front surface
 const HP=prims.filter(p=>p.getMaterial()?.getName()==='head');const tris=[];for(const p of HP){const P=p.getAttribute('POSITION').getArray(),I=p.getIndices().getArray();for(let t=0;t<I.length;t+=3){const a=I[t],b=I[t+1],c=I[t+2];if(P[a*3+2]>.05&&Math.abs(P[a*3+1]-C.my)<.05)tris.push([P.slice(a*3,a*3+3),P.slice(b*3,b*3+3),P.slice(c*3,c*3+3)]);}}
 const ray=new T.Ray(),tg=new T.Vector3(),va=new T.Vector3(),vb=new T.Vector3(),vc=new T.Vector3();
