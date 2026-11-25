@@ -84,9 +84,13 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     const sl = H.slide; return !!(sl && sl.k < 1 && Math.hypot(sl.x, sl.z) > .3);
   }
   function neutral(s, pos, yaw) { return pos.clone().addScaledVector(rightOf(yaw), footX[s] * .85).setY(pos.y + ankY); }
+  const sm = x => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
   function update(dt) {
     if (!(dt > 0)) return; dt = Math.min(dt, .05);
     const pos = root.position, yaw = root.rotation.y;
+    // a teleport (spawn at the reading chair, a task reset): the planted feet are somewhere else entirely; drop the walk at once
+    // (gate: after spawn('read') the feet reached for the previous floor 1.1 m down and pulled the root with them)
+    if (ST.prevPos && (Math.hypot(pos.x - ST.prevPos.x, pos.z - ST.prevPos.z) > .5 || Math.abs(pos.y - ST.prevPos.y) > .4)) { ST.w = 0; ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; ST.L = null; ST.va = null; ST.prevPos = null; ST.settled = true; }
     if (ST.prevPos) { const sp = Math.hypot(pos.x - ST.prevPos.x, pos.z - ST.prevPos.z) / dt; ST.v += (Math.min(sp, 2.5) - ST.v) * (1 - Math.exp(-dt * 14)); { const k = 1 - Math.exp(-dt * 14), cl = sp > 2.5 ? 2.5 / sp : 1; ST.vx += ((pos.x - ST.prevPos.x) / dt * cl - ST.vx) * k; ST.vz += ((pos.z - ST.prevPos.z) / dt * cl - ST.vz) * k; } ST.av += (wrapA(yaw - ST.prevYaw) / dt - ST.av) * (1 - Math.exp(-dt * 10)); }
     ST.prevPos = pos.clone(); ST.prevYaw = yaw;
     const want = active();
@@ -163,10 +167,10 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
           const e = u * u * u * (u * (u * 6 - 15) + 10); // smootherstep: a clear push-off and landing, no step in acceleration
           const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp(L / .3, .4, 1.2);
           ST.feet[s + 'Shown'] = fp; lift[s] = u;
-          roll[s] = u < .25 ? .45 * (1 - u / .25) : u > .8 ? -.25 * (u - .8) / .2 : 0; // toe-off, then the toes up for the heel strike
+          roll[s] = sw.quick != null ? 0 : u < .3 ? .35 * (1 - sm(u / .3)) : u > .75 ? -.22 * sm((u - .75) / .25) : 0; // toe-off peel ends early in the swing, the toes come up for the heel strike; continuous with the stance roll at both ends (it jumped .3 -> .45 rad at lift-off, and from any stance roll to .45 on a quick step)
         }
       }
-      if (!ST.swing[s]) { ST.feet[s + 'Shown'] = ST.feet[s].clone(); ST.feet[s + 'Shown'].y = pos.y + ankY; const pst = Math.min(1, p / Dt); /* a foot that landed from a quick step stands through its swing window: p/Dt went to 1.66 and the toes pitched 75 deg down and back (gate: 'knee bends forward' x71) */ roll[s] = pst < .12 ? -.25 * (1 - pst / .12) : pst > .8 ? .3 * (pst - .8) / .2 : 0; }
+      if (!ST.swing[s]) { ST.feet[s + 'Shown'] = ST.feet[s].clone(); ST.feet[s + 'Shown'].y = pos.y + ankY; const pst = Math.min(1, p / Dt); /* a foot that landed from a quick step stands through its swing window: p/Dt went to 1.66 and the toes pitched 75 deg down and back (gate: 'knee bends forward' x71) */ roll[s] = pst < .15 ? -.22 * (1 - sm(pst / .15)) : pst > .7 ? .35 * sm((pst - .7) / .3) : 0; }
     }
     // ---------- save the pose underneath (for blending), then build ours from the bind pose ----------
     NAMES.forEach((n, i) => saved[i].copy(B[n].quaternion)); savedHip.copy(B.Hips.position);
