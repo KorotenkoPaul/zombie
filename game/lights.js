@@ -474,14 +474,19 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // Lockdown (the brain bars the house for zombies): drawn shut, and the window leaks only a faint glow.
   // On desktop the kitchen and bedroom lanterns cast real shadows, so the curtains throw folds of shadow in the room.
   const CUR_COL = { kitchen: 0xB0473A, bedroom: 0xD8B886, workshop: 0x6F7C55 };
-  const curGeo = (() => { const g = new THREE.PlaneGeometry(1, 1, 14, 1); g.translate(.5, 0, 0); const P = g.attributes.position;
-    for (let i = 0; i < P.count; i++) P.setZ(i, Math.sin(P.getX(i) * Math.PI * 7) * .018); g.computeVertexNormals(); return g; })();
-  // All curtains and rods of the house are ONE mesh (was 3 draws per window): vertex colours give each room its cloth and
-  // the rods their iron; the panels are moved on the CPU when they draw (a few hundred vertices, only while moving);
+  // [PROPS] The panels are real cloth now, not a flat card with a ripple: a gathered heading hung from rings on the rod,
+  // folds whose depth follows how much fabric is bunched (the cloth keeps its length: pulled aside the folds go deep,
+  // drawn shut they open out), folds that wander a little and widen toward the weighted hem, and a hem that flares a
+  // touch when the panel is gathered. Each panel is a 42 x 9 indexed grid (~750 tris) laid on the CPU only while it moves.
+  const CNX = 42, CNY = 9, CNV = (CNX + 1) * (CNY + 1);
+  const curIdx = (() => { const a = []; for (let j = 0; j < CNY; j++) for (let i = 0; i < CNX; i++) { const q = j * (CNX + 1) + i; a.push(q, q + 1, q + CNX + 1, q + 1, q + CNX + 2, q + CNX + 1); } return a; })();
+  const ringGeo = (() => { const g = new THREE.TorusGeometry(.011, .0024, 3, 6); g.rotateY(Math.PI / 2); return g; })();
+  // All curtains, rods and rings of the house are ONE mesh (was 3 draws per window): vertex colours give each room its
+  // cloth and the rods their iron; the panels are moved on the CPU when they draw (only while moving);
   // aGlow (per vertex, per frame) is the lamp shining through the cloth; the hem sway in a draught is in the vertex
   // shader with one slot per window (aWin), fed from Wind's own per-window uniforms (see windSlots below).
   const curtains = [], CUR_MAX = 8;
-  const curParts = [];   // {c, side (0 = rod), base geometry (panel-local), start index in the merged buffer}
+  const curParts = [];   // {c, kind panel|rod|ring, side, geo (rod/ring, window-local), start vertex in the merged buffer, n}
   for (const w of windows) {
     const glassM = w.g && w.g.children.find(c => c.geometry && c.geometry.type === 'PlaneGeometry');
     if (!glassM || !w.n || curtains.length >= CUR_MAX) continue;
@@ -490,56 +495,93 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // Wind's hook (housewind.js) wants a material per curtain: a stand-in that is never drawn; its uniforms are read back
     const c = { w, W, H, sz, idx: curtains.length, mat: new THREE.MeshStandardMaterial(), closed: 0, dirty: true, col: new THREE.Color(CUR_COL[w.room] || 0xC9A57A) };
     c.pos = w.g.getWorldPosition(V());
+    c.Lf = (W / 2 + .05) * 1.75;                       // fabric width of one panel (fullness 1.75)
+    c.nf = Math.min(6, Math.max(4, Math.round(c.Lf / .15)));   // pleats per panel (7 grid columns each)
     curtains.push(c);
-    for (const side of [-1, 1]) curParts.push({ c, side, geo: curGeo });
-    const rg = new THREE.CylinderGeometry(.008, .008, W + .16, 6).toNonIndexed(); rg.rotateZ(Math.PI / 2); rg.translate(0, H / 2 + .085, sz * .075);
-    curParts.push({ c, side: 0, geo: rg });
+    for (const side of [-1, 1]) { curParts.push({ c, kind: 'panel', side, n: CNV, seed: c.idx * 2.3 + side * .9 });
+      for (let k = 0; k <= c.nf; k++) curParts.push({ c, kind: 'ring', side, k, geo: ringGeo }); }
+    const rg = new THREE.CylinderGeometry(.008, .008, W + .16, 6); rg.rotateZ(Math.PI / 2); rg.translate(0, H / 2 + .085, sz * .075);
+    curParts.push({ c, kind: 'rod', side: 0, geo: rg });
     w.leak = 1;
   }
-  let curMesh = null, curPosA = null, curNorA = null, curGlowA = null;
+  let curMesh = null, curPosA = null, curNorA = null, curGlowA = null, curAOA = null;
   const curU = { uCT: { value: 0 }, uCK: { value: new Array(CUR_MAX).fill(0) }, uCS: { value: new Array(CUR_MAX).fill(0) },
     uCN: { value: Array.from({ length: CUR_MAX }, () => V()) }, uCX: { value: Array.from({ length: CUR_MAX }, () => V()) } };
   if (curParts.length) {
-    const pg = curGeo.index ? curGeo.toNonIndexed() : curGeo; const pN = pg.attributes.position.count;
-    let n = 0; for (const p of curParts) { p.g = p.side ? pg : p.geo; p.start = n; n += p.g.attributes.position.count; }
+    let n = 0; const idx = [];
+    for (const p of curParts) { p.start = n; if (p.kind !== 'panel') p.n = p.geo.attributes.position.count;
+      const ix = p.kind === 'panel' ? curIdx : p.geo.index.array; for (let i = 0; i < ix.length; i++) idx.push(ix[i] + n); n += p.n; }
     const geo = new THREE.BufferGeometry();
     curPosA = new THREE.BufferAttribute(new Float32Array(n * 3), 3); curNorA = new THREE.BufferAttribute(new Float32Array(n * 3), 3);
     curGlowA = new THREE.BufferAttribute(new Float32Array(n), 1);
+    curAOA = new THREE.BufferAttribute(new Float32Array(n).fill(1), 1);   // cavity light: the deep of a fold sees less of the room
     const col = new Float32Array(n * 3), win = new Float32Array(n), loc = new Float32Array(n * 2), iron = new THREE.Color(0x2C2F35);
-    for (const p of curParts) { const P = p.g.attributes.position, k = p.c.col, cc = p.side ? k : iron;
-      for (let i = 0; i < P.count; i++) { const j = p.start + i; col.set([cc.r, cc.g, cc.b], j * 3); win[j] = p.side ? p.c.idx : -1;
-        loc[j * 2] = p.side ? P.getX(i) : 0; loc[j * 2 + 1] = p.side ? P.getY(i) : .5; } }
+    for (const p of curParts) { const k = p.c.col, pan = p.kind === 'panel', cc = pan ? k : iron;
+      for (let i = 0; i < p.n; i++) { const j = p.start + i; col.set([cc.r, cc.g, cc.b], j * 3); win[j] = pan ? p.c.idx : -1;
+        loc[j * 2] = pan ? (i % (CNX + 1)) / CNX : 0; loc[j * 2 + 1] = pan ? Math.floor(i / (CNX + 1)) / CNY - .5 : .5; } }
+    geo.setIndex(idx);
     geo.setAttribute('position', curPosA); geo.setAttribute('normal', curNorA); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    geo.setAttribute('aGlow', curGlowA); geo.setAttribute('aWin', new THREE.BufferAttribute(win, 1)); geo.setAttribute('aLoc', new THREE.BufferAttribute(loc, 2));
+    geo.setAttribute('aGlow', curGlowA); geo.setAttribute('aAO', curAOA); curAOA.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('aWin', new THREE.BufferAttribute(win, 1)); geo.setAttribute('aLoc', new THREE.BufferAttribute(loc, 2));
     curPosA.setUsage(THREE.DynamicDrawUsage); curNorA.setUsage(THREE.DynamicDrawUsage); curGlowA.setUsage(THREE.DynamicDrawUsage);
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, side: THREE.DoubleSide });
     mat.onBeforeCompile = sh => { Object.assign(sh.uniforms, curU);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
-attribute float aGlow, aWin; attribute vec2 aLoc; varying float vGlow;
+attribute float aGlow, aWin, aAO; attribute vec2 aLoc; varying float vGlow, vAO;
 uniform float uCT, uCK[${CUR_MAX}], uCS[${CUR_MAX}]; uniform vec3 uCN[${CUR_MAX}], uCX[${CUR_MAX}];`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>
-vGlow = aGlow;
+vGlow = aGlow; vAO = aAO;
 if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   float hw = clamp(.5 - aLoc.y, 0., 1.); hw *= hw;     // the hem moves, the rod end stays (same draught as housewind.js)
   float wv = sin(uCT * 2.1 + aLoc.x * 5. + sd) * .6 + sin(uCT * 3.3 - aLoc.x * 8. + sd * 2.) * .4;
   transformed += uCN[wi] * (k * hw * (.04 + .05 * wv)) + uCX[wi] * (k * hw * .02 * sin(uCT * 1.7 + sd)); }`);
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlow;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlow, vAO;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vAO;')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vGlow;'); };
-    mat.customProgramCacheKey = () => 'curtainsMerged';
+    mat.customProgramCacheKey = () => 'curtainsMerged2';
     curMesh = new THREE.Mesh(geo, mat); curMesh.castShadow = true; curMesh.receiveShadow = true; curMesh.userData.noHang = true; curMesh.name = 'curtains';
     scene.add(curMesh);
   }
   const _cm = new THREE.Matrix4(), _cn = new THREE.Matrix3(), _cv = V(), _pm = new THREE.Matrix4();
-  function layCurtain(c) {      // panel transforms in the window's frame -> world, written into the merged buffer
+  const _cg = new Float32Array(CNV * 3), _ca = V(), _cb = V(), _cq = new THREE.Quaternion(), _c1 = V(1, 1, 1);
+  function layCurtain(c) {      // cloth and rings in the window's frame -> world, written into the merged buffer
     c.w.g.updateMatrixWorld(true);
     const half = c.W / 2 + .05, wd = .1 + (half - .1) * c.closed;     // each panel: bunched 10 cm .. meets in the middle
+    // the cloth keeps its width: a sine of nf periods over wd with arc length ~Lf has this depth (eased, clamped)
+    const r = c.Lf / wd, a = Math.min(.036, Math.max(.009, wd / (Math.PI * c.nf) * Math.sqrt(Math.max(0, r * r - 1)) * .75));
+    const Hc = c.H + .12, y0 = .02 - Hc / 2, zr = c.sz * .075;
+    _cm.copy(c.w.g.matrixWorld); _cn.getNormalMatrix(_cm);
     for (const p of curParts) { if (p.c !== c) continue;
-      if (p.side) _pm.compose(V(p.side * (c.W / 2 + .03), .02, c.sz * .075), new THREE.Quaternion(), V(-p.side * wd, c.H + .12, 1)); else _pm.identity();
-      _cm.multiplyMatrices(c.w.g.matrixWorld, _pm); _cn.getNormalMatrix(_cm);
-      const P = p.g.attributes.position, N = p.g.attributes.normal;
+      if (p.kind === 'panel') {
+        const s = p.side, x0 = s * (c.W / 2 + .03), sd = p.seed;
+        for (let j = 0; j <= CNY; j++) { const v = j / CNY, lo = 1 - v;
+          const flare = 1 + .1 * lo * lo * (1 - c.closed);                    // a gathered panel spreads a little at the hem
+          const head = v > .93 ? .75 : 1;                                     // the heading is stitched flatter under the rings
+          for (let i = 0; i <= CNX; i++) { const u = i / CNX, q = (j * (CNX + 1) + i) * 3;
+            const ph = Math.PI * 2 * c.nf * u + lo * .55 * Math.sin(u * 7.1 + sd) + .3 * Math.sin(u * 13.7 + sd * 2.1) * lo;
+            const av = a * head * (.85 + .35 * lo) * (1 + .2 * Math.sin(u * c.nf * 1.7 + sd * 3));
+            const edge = Math.min(1, u * CNX / 1.5);                          // the outer edge is held to the wall
+            _cg[q] = x0 - s * Math.min(u * wd * flare, half + .02);
+            _cg[q + 1] = y0 + v * Hc - (u > .9 ? .006 * lo * (u - .9) * 10 : 0);   // the leading corner drops a hair
+            const sn = Math.sin(ph); _cg[q + 2] = zr + c.sz * (a * .35 + av * sn * edge);
+            // the trough between two pleats is shaded by its neighbours (deeper fold, darker trough)
+            curAOA.array[p.start + q / 3] = 1 - Math.min(.55, av / .036 * .5) * edge * (1 - sn) * .5; } }
+        curAOA.needsUpdate = true;
+        for (let j = 0; j <= CNY; j++) for (let i = 0; i <= CNX; i++) { const q = (j * (CNX + 1) + i) * 3;
+          const il = Math.max(0, i - 1) * 3, ir = Math.min(CNX, i + 1) * 3, jd = Math.max(0, j - 1) * (CNX + 1) * 3, ju = Math.min(CNY, j + 1) * (CNX + 1) * 3, row = j * (CNX + 1) * 3, cl = i * 3;
+          _ca.set(_cg[row + ir] - _cg[row + il], _cg[row + ir + 1] - _cg[row + il + 1], _cg[row + ir + 2] - _cg[row + il + 2]);
+          _cb.set(_cg[ju + cl] - _cg[jd + cl], _cg[ju + cl + 1] - _cg[jd + cl + 1], _cg[ju + cl + 2] - _cg[jd + cl + 2]);
+          _cv.crossVectors(_ca, _cb).applyMatrix3(_cn).normalize(); curNorA.setXYZ(p.start + q / 3, _cv.x, _cv.y, _cv.z);
+          _cv.set(_cg[q], _cg[q + 1], _cg[q + 2]).applyMatrix4(_cm); curPosA.setXYZ(p.start + q / 3, _cv.x, _cv.y, _cv.z); }
+        continue; }
+      if (p.kind === 'ring') {     // a ring on the rod over every pleat crest of the heading
+        const u = (p.k + .25) / c.nf; _pm.compose(_cb.set(p.side * (c.W / 2 + .03) - p.side * Math.min(u * wd, half + .02), c.H / 2 + .085, zr), _cq, _c1);
+        _pm.premultiply(_cm); } else _pm.copy(_cm);
+      _cn.getNormalMatrix(_pm);
+      const P = p.geo.attributes.position, N = p.geo.attributes.normal;
       for (let i = 0; i < P.count; i++) { const j = p.start + i;
-        _cv.fromBufferAttribute(P, i).applyMatrix4(_cm); curPosA.setXYZ(j, _cv.x, _cv.y, _cv.z);
-        _cv.fromBufferAttribute(N, i).applyMatrix3(_cn).normalize(); curNorA.setXYZ(j, _cv.x, _cv.y, _cv.z); } }
+        _cv.fromBufferAttribute(P, i).applyMatrix4(_pm); curPosA.setXYZ(j, _cv.x, _cv.y, _cv.z);
+        _cv.fromBufferAttribute(N, i).applyMatrix3(_cn).normalize(); curNorA.setXYZ(j, _cv.x, _cv.y, _cv.z); }
+      _cn.getNormalMatrix(_cm); }
     curPosA.needsUpdate = true; curNorA.needsUpdate = true; c.dirty = false;
     // sway axes for the shader: the window's in/out direction and its width direction, in world space
     curU.uCN.value[c.idx].set(0, 0, 1).transformDirection(c.w.g.matrixWorld); curU.uCX.value[c.idx].set(1, 0, 0).transformDirection(c.w.g.matrixWorld);
@@ -569,7 +611,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       c.closed += (want - c.closed) * Math.min(1, dt * .5);
       if (Math.abs(c.closed - (c.laid ?? -1)) > .002) { c.laid = c.closed; layCurtain(c); }
       const wr = Math.min(1, warm[c.w.room] || 0) * (1 - dayK) * .55;
-      if (Math.abs(wr - (c.glow ?? -1)) > .003) { c.glow = wr; for (const p of curParts) if (p.c === c && p.side) curGlowA.array.fill(wr, p.start, p.start + p.g.attributes.position.count); curGlowA.needsUpdate = true; }
+      if (Math.abs(wr - (c.glow ?? -1)) > .003) { c.glow = wr; for (const p of curParts) if (p.c === c && p.kind === 'panel') curGlowA.array.fill(wr, p.start, p.start + p.n); curGlowA.needsUpdate = true; }
       c.w.leak = 1 - .3 * Math.min(1, c.closed / .5) - .62 * Math.max(0, (c.closed - .5) / .5);
     }
     if (curMesh) windSlots();
