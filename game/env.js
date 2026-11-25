@@ -362,7 +362,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
    const su=renderer.shadowMap.autoUpdate;renderer.shadowMap.autoUpdate=false;scene.overrideMaterial=depthMat;scene.background=null;renderer.setRenderTarget(depthRT);renderer.clear(false,true,false);renderer.render(scene,camera);
    renderer.setRenderTarget(prev);renderer.shadowMap.autoUpdate=su;scene.overrideMaterial=ov;scene.background=bg;hid.forEach(o=>o.visible=true);}U.t.value=T;/* U.wind is driven by game/wind.js now */
   const fc=tmp.copy(P.fog);
-  fogU.col.value.copy(fc).lerp(new THREE.Color(0x80B6D6),(.34+nightK*.1)*(1-mornK))/* [ENV] the photo's blue mist by day too */.lerp(dawnC,mornK*.45);const dusk=hour===undefined?0:smooth(17.3,19.5,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.36+eve*.64+mornK*.2+rainK*.2;/* [ENV] coordinator / photo: a dense blue mist lies over the roots by day as well (was .15 by day: no fog to speak of) */fogU.cam.value.copy(camera.position);
+  fogU.col.value.copy(fc).lerp(new THREE.Color(0x80B6D6),(.34+nightK*.3)*(1-mornK))/* [ENV] the photo's blue mist by day too */.lerp(dawnC,mornK*.45);const dusk=hour===undefined?0:smooth(17.3,19.5,hour)*(hour<23?1:0);const eve=Math.max(nightK,lampOn||0,dusk);const dens=.36+eve*.64+mornK*.2+rainK*.2;/* [ENV] coordinator / photo: a dense blue mist lies over the roots by day as well (was .15 by day: no fog to speak of) */fogU.cam.value.copy(camera.position);
   for(const m of sheets){m.material.uniforms.op.value=.22*dens*m.userData.k*(1+.3*(1-eve));m.material.uniforms.cam.value.copy(camera.position);m.material.uniforms.col.value.copy(fogU.col.value);m.material.uniforms.t.value=T;}
   puffU.op.value=.38*dens*(1+.7*(1-eve));/* [ENV] day: the billows over the roots read like the photo's mist (night unchanged) */for(const m of mistBands)m.material.uniforms.op.value=m.userData.k*(.25+.75*Math.min(1,dens));
   {const L=halos.filter(h=>h.l.intensity>.05).map(h=>{h.l.getWorldPosition(tmpV);return [tmpV.x,tmpV.y,tmpV.z,Math.min(1,h.l.intensity/5)*h.size/1.6];}).sort((a,b)=>a[1]-b[1]);
@@ -388,7 +388,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
  // the painting, so at night the phone gets a denser pale-blue ground fog, a hazier far forest, brighter moonlit bark with a
  // stronger blue rim and a cooler lift in the shadows. Uniform tweaks only: no extra draw calls or passes.
- const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:2.2,sheet:1.8,mist:2.4,fill:1.7,rim:1.6,moonRim:1.8,haze:.8,lift:new THREE.Color(0x122c52)};env.phoneNightK=PH;
+ const PH={foldF:.75,foldR:.5,leafK:1,trunk:.3,front:.8,puff:3.3,sheet:2.6,mist:4,fill:1.7,rim:1.6,moonRim:1.8,haze:.95,/* [ENV] photo check (Lights): the photo's night has a thick softly glowing blue bank round the roots and a hazier forest */lift:new THREE.Color(0x122c52)};env.phoneNightK=PH;
  const liftBase=env.gradePass.uniforms.lift.value.clone(),liftTmp=new THREE.Color();
  function phoneNight(eve,rainK){const k=eve;PH.cur=k;const f=x=>1+(x-1)*k;
   puffU.op.value*=f(PH.puff);for(const m of sheets)m.material.uniforms.op.value*=f(PH.sheet);for(const m of mistBands)m.material.uniforms.op.value*=f(PH.mist);
