@@ -747,6 +747,14 @@ const LG=LG_,LL=2.45,LC=3.4+HY,WS=3.6+HY,KT=5.0+HY,BD=7.4+HY,DK=9.0+HY;
 // hollow landing (right, low) with the glowing doorway in the trunk
 floorBoards(.4,2.9,LG,.9,3.2,{shape:disc(1.62,1.95,1.05,.9),radial:[1.62,1.95,1.05,.9]});
 for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,pz-.03),.13);/* short posts down into the soil */
+/* a short open-tread stair from the soil up to the door landing: a door and a landing in the air with no way up made no sense */
+{const c0=V(1.62,LG,1.95),dir=V(.68,0,.8).normalize(),side=V(-dir.z,0,dir.x),T=c0.clone().addScaledVector(dir,.98);T.y=LG-.02;
+ const run=1.05,Bx=T.x+dir.x*run,Bz=T.z+dir.z*run,gy=(GROUND.standAt?GROUND.standAt(Bx,Bz):0)-.04,B=V(Bx,gy,Bz),rise=T.y-gy;
+ if(rise>.45&&rise<2.2){const up=B.clone().sub(T).multiplyScalar(-1).normalize(),L=T.distanceTo(B)+.12;
+  for(const s of [-1,1]){const m=T.clone().add(B).multiplyScalar(.5).addScaledVector(side,s*.27);const ex=up.clone(),ez=side.clone(),ey=ez.clone().cross(ex).normalize();
+   board(m,L,.15,.045,new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,ez)),{dark:true});}
+  const n=Math.max(2,Math.round(rise/.27));for(let k=1;k<n;k++){const p=B.clone().lerp(T,k/n);p.y-=.01;const ex=side.clone(),ey=V(0,1,0),ez=ex.clone().cross(ey).normalize();
+   board(p,.58,.035,.2,new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,ez)),{tint:rnd(.85,1)});}}}
 // ---- the trunk door like the photo: a thick plank frame set into the bark round the arch (jambs + arch pieces, hiding the
 // ragged bark edge), a worn threshold, and a plank floor running into the warm cave. Instances only, no physics.
 {const D=DOORP,ax=TAX[0],az=TAX[1],H=D.y1-D.y0;const rc=new THREE.Raycaster();
