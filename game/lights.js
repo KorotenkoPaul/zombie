@@ -183,6 +183,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // bounce: the bench and floor under the cone throw warm light back over the whole room (the photo's workshop is warm
     // wall to wall; ours was a bright corner under the dome and a dark left half). Unshadowed, phones take it from the pool.
     const wb = new THREE.PointLight(0xFFB066, 0, 3.4, 2); wb.position.copy(wPos).add(V(-1.0, -.7, .15)); scene.add(wb);
+    // phones: light bounced off the bench and floor travels UP (walls, pegboard, the hero's body and face), so its pool cone
+    // looks up and stops at the ceiling; a down cone lit only the floor under the bench and left him and the walls dark
+    wb.userData.poolUp = WS + 3.3;
     add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 11.5 }, { l: wb, I: MOBILE ? 2.9 : 2.6 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
@@ -665,16 +668,32 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   function wisp(s) {
     const top = s.pos.clone().add(V(0, s.kind === 'candle' ? .02 : .08, 0));
     for (let i = 0; i < 5; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: 0xB8B4AE, transparent: true, opacity: 0, depthWrite: false }));
-      sp.position.copy(top); sp.scale.setScalar(.03); scene.add(sp); wisps.push({ sp, age: -i * .25, life: 2.6, x0: top.x, z0: top.z, y0: top.y, ph: Math.random() * 6 }); }
+      sp.position.copy(top); sp.scale.setScalar(.03); sp.visible = false; scene.add(sp); wisps.push({ sp, age: -i * .25, life: 2.6, x0: top.x, z0: top.z, y0: top.y, ph: Math.random() * 6 }); }
   }
   function updateWisps(dt) {
     for (let i = wisps.length - 1; i >= 0; i--) { const w = wisps[i]; w.age += dt; const a = Math.max(0, w.age) / w.life;
       if (a >= 1) { scene.remove(w.sp); w.sp.material.dispose(); wisps.splice(i, 1); continue; }
       w.sp.position.set(w.x0 + Math.sin(w.age * 2.2 + w.ph) * .03 * a, w.y0 + a * .38, w.z0 + Math.cos(w.age * 1.7 + w.ph) * .02 * a);
-      w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); }
+      w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); w.sp.visible = w.sp.material.opacity > .004; }
   }
   let cookT = 0, t = 0, frame = 0;
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
+  // [PERF] a lamp's shadow map only needs redrawing when what it sees has moved, and the one thing that moves under a lamp
+  // is the hero. So besides the cadence, a redraw needs the hero (root, head, hands, feet: everything he holds moves with
+  // them) to have moved more than 1 cm since this map was last drawn; a still hero (diary, sitting, reading at the lamp)
+  // costs no shadow passes (~30 draws each). Every 2 s near the lamp it redraws anyway (hatch, curtains, carried props).
+  const poseNow = new Float32Array(18), _pv = V(); let poseBones = null, poseOK = false, shadowDraws = 0, shadowChances = 0;
+  function samplePose() {
+    const d = window.__dbg; poseOK = false; if (!d || !d.hero || !d.hero.root) return;
+    if (!poseBones) { const B = d.heroBones || {}; poseBones = [d.hero.root, ...['Head', 'LeftHand', 'RightHand', 'LeftFoot', 'RightFoot'].map(n => B[n]).filter(Boolean)]; }
+    for (let i = 0; i < poseBones.length && i < 6; i++) { _pv.setFromMatrixPosition(poseBones[i].matrixWorld); poseNow[i * 3] = _pv.x; poseNow[i * 3 + 1] = _pv.y; poseNow[i * 3 + 2] = _pv.z; }
+    poseOK = true;
+  }
+  function poseMoved(L) {
+    if (!poseOK) return true; if (!L.pose) { L.pose = new Float32Array(18); return true; }
+    for (let i = 0; i < 18; i += 3) { const dx = poseNow[i] - L.pose[i], dy = poseNow[i + 1] - L.pose[i + 1], dz = poseNow[i + 2] - L.pose[i + 2]; if (dx * dx + dy * dy + dz * dz > 1e-4) return true; }
+    return false;
+  }
 
   // smooth 1D value noise in [-1, 1]: flames breathe instead of pulsing like a sine
   const hash = n => { const x = Math.sin(n * 127.1) * 43758.5453; return (x - Math.floor(x)) * 2 - 1; };
@@ -692,6 +711,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
 
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
     t += dt; frame++;
+    samplePose();
     // cooking, or stoking (the log goes in while the little door is open): the fire is fed
     const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
     cookT = cooking ? 78 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s)
@@ -730,7 +750,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
         if (L.l.castShadow) { const lit = k > .01;
           // the lamp's shadows only change when the hero (the one thing that moves) is in its reach: an empty lit room keeps its map
           const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root, near = !hr || hr.position.distanceTo(L.l.position) < (L.l.shadow.camera.far || 6) + .5;
-          if (lit && (!L.wasLit || (near && (frame + s.idx) % shadowEvery === 0))) L.l.shadow.needsUpdate = true; L.wasLit = lit; }
+          if (lit && L.wasLit && near && (frame + s.idx) % shadowEvery === 0) shadowChances++;
+          if (lit && (!L.wasLit || (near && (frame + s.idx) % shadowEvery === 0 && (poseMoved(L) || t - (L.drawnT || 0) > 2)))) {
+            L.l.shadow.needsUpdate = true; L.drawnT = t; if (L.pose) L.pose.set(poseNow); else { L.pose = new Float32Array(poseNow); } shadowDraws++; }
+          L.wasLit = lit; }
       }
       for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
@@ -856,9 +879,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       v.getWorldPosition(l.position); l.color.copy(v.color); l.distance = v.distance; l.decay = v.decay;
       if (v.isSpotLight) { v.target.getWorldPosition(l.target.position); l.angle = v.angle; l.penumbra = v.penumbra; }
       else {
-        l.target.position.copy(l.position).y -= 1; l.angle = Math.PI / 2 * .97; l.penumbra = .3;
-        const fy = pool.clip.has(v) ? pool.clip.get(v)() : null;
-        if (fy != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, l.position.y - fy + .06));
+        const up = v.userData.poolUp;
+        l.target.position.copy(l.position).y += up != null ? 1 : -1; l.angle = Math.PI / 2 * .97; l.penumbra = .3;
+        const fy = up != null ? null : pool.clip.has(v) ? pool.clip.get(v)() : null;
+        if (up != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, up - l.position.y + .06));   // ceiling clip (the cone looks up)
+        else if (fy != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, l.position.y - fy + .06));
       }
       l.intensity = v.intensity * sl.w;
     }
@@ -923,7 +948,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
-    _dbg: () => ({ scene, cam, pool }),
+    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances, rimU }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,
     set: (n, on) => { const s = src.get(n); if (!s) return false; s.manual = !!on; setOn(s, !!on); return true; },
