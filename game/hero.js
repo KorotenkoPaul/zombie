@@ -303,7 +303,10 @@ export function createHero(ctx){
    let want=0;if(bend>.06&&ll<l1+l2-.02&&!kneel&&td.dot(fh)>.5){const ang=Math.atan2(off.dot(inw),off.dot(pf));want=smooth(.15,.4,ang);}/* radians toward the other leg, 9..23 deg */
    /* once a frame from the pose as the clip and the legs left it; a later pass (the planted crouch re-solves the legs) only re-applies it */
    const first=KOT.f[s]!==FRN;if(first){KOT.f[s]=FRN;KOT.b[s]=KOT[s];KOT.w[s]=want;}else KOT.w[s]=Math.max(KOT.w[s],want);KOT[s]=KOT.b[s]+clamp(KOT.w[s]-KOT.b[s],-dt*4,dt*4);if(KOT[s]<.01||(!first&&want<.01))continue;
-   ik2(U,L,F,a,pf.clone().addScaledVector(inw,-.15).normalize(),KOT[s],true);}}
+   /* WALK: the turn is eased by blending the knee's DIRECTION and solving fully: an ik2 at partial weight leaves the ankle off its own
+      target (both bones turn part-way), and the foot swung 7 cm in a frame as the weight ramped (gate firewood, right foot jump 10) */
+   const pw=pf.clone().addScaledVector(inw,-.15).normalize();const p0=off.clone().multiplyScalar(1/Math.max(bend,1e-6));const pole=bend>1e-4?p0.lerp(pw,KOT[s]).normalize():pw;
+   ik2(U,L,F,a,pole,1,true);}}
  // WALK + carry: a load hanging from a fist (the meat sack, a bucket, the lantern) never passes through the legs: when a stepping leg
  // reaches it, it swings aside about the fist the least that clears the legs' own skin, and swings back to hanging straight after
  // (gate store: the sack went 4.6-10.4 cm into the shins, depending on when he arrived). Measured on the final pose, every frame.
