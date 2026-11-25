@@ -95,3 +95,12 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - Before: 78 area visits, median stay 76-113 s, 5 stays < 40 s, 2 A-B-A round trips < 30 s, no idle gaps, sleep 20:54-22:48. Meals: after every stew he ate BOTH portions in a row (eat, eat), and tea took .3 hunger a cup, so some days had one meal and no cooking.
 - Fixes: hotMeal (one plate straight after cooking, the second portion later when hungry); tea hunger -.015 -> -.005 per s; the last log is kept for the stew (no stoking it away while there is meat and no meal); wood gets the hunger value when there is meat but no log; a hunt is allowed with one portion left and an empty fridge; visits younger than 40 s: elsewhere -2 (was -1.2).
 - After: 77 visits, median 86-97 s, 3 stays < 40 s, 1 A-B-A (a night noise from the bedroom), 2 meals a day (cook in the morning or after a hunt, eat 1-3 h apart), no idle gaps, hunts/wood 8:30-13:00.
+
+## Variety and weather round (2026-11-25, 3 seeds × 120 game h, forced drizzle/rain/storm spells + natural weather)
+- Pavel's 20 approved actions, counts per 5 days (3 seeds) before -> after:
+  sweep 0/1/0 -> 3/3/3, watering 0/1/0 -> 3/3/3, fixlamp 0/0/1 -> 3/3/3, firewood up 0/1/1 -> 1/1/2, saw 2/0/1 -> 3/2/4, hammer 1/0/2 -> 4/2/4, sharpen 1/0/2 -> 2/4/4, window 1/4/1 -> 3/2/4, listen 1/4/1 -> 3/3/3, radio 3/3/2 -> 4/3/3; tea 14/9/8 -> 6/3/2 (was 3-4 cups a day).
+- Habit: HABITS + lastDone (absH game hours). Each approved EXTRA gets +1.1 per day since it was last done (after half a day, max +1.4), only at an hour where its own habit bonus is >= -.25 (so sweeping in the morning, the radio in the evening, nothing outdoors in rain). 'window' the same by day. Start: each one "last done" 0-30 h ago at random.
+- Weather: jobs (trips, water, dump) in a storm -30, in rain -2.2 (water with an empty bucket -.8), drizzle -.6. Before: a water run in a storm, a hunt in heavy rain.
+- Tea: third and later cups a day -.6 each.
+- Firewood up the ladder: habit-eligible when logs <= 3 (was only <= 1).
+- JS errors seen in these runs are the body's: "grab late TypeError: Cannot read properties of null (reading '_x')" (grab.js), reported.

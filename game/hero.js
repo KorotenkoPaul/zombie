@@ -1907,7 +1907,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    /* never a one-frame teleport of the fist (QA: 83 cm/frame2 on the kitchen-ladder railing, an elbow flip near full reach): against the
       motion of the last two frames the wrist may deviate at most 8 cm per frame (the blow itself stays well inside that) */
    {const hp=hb.getWorldPosition(V());const fresh=S.lt!=null&&Math.abs(a.T-S.lt-dt)<1e-3;S.lt=a.T;
-    if(fresh&&S.p1&&S.T1&&!window.__noClamp){const pred=S.p1.clone().add(T).sub(S.T1);/* where the fist would be if it only followed the blow's own target */const dv=hp.clone().sub(pred);if(dv.length()>.08){poseAt(pred.add(dv.setLength(.08)));hp.copy(hb.getWorldPosition(V()));}}
+    if(fresh&&S.p1&&S.T1&&!window.__noClamp){/* GRAB: on frames that reuse the blow's key poses no hand turn (Qh) was made this frame: the clamp keeps the turn the hand has now (poseAt multiplied by null: 'grab late TypeError _x' every frame of fix_wall) */if(!Qh)Qh=hb.getWorldQuaternion(new THREE.Quaternion());const pred=S.p1.clone().add(T).sub(S.T1);/* where the fist would be if it only followed the blow's own target */const dv=hp.clone().sub(pred);if(dv.length()>.08){poseAt(pred.add(dv.setLength(.08)));hp.copy(hb.getWorldPosition(V()));}}
     else if(!fresh){S.p1=null;}S.p1=hp;S.T1=T.clone();S.wp=hp.clone();}};
   /* after look / collide have moved the chest (grab.js late slot), else right here */
   const G=window.__grab;if(G&&G.late)G.late(solve);else solve();
