@@ -29,12 +29,12 @@ const _v = new THREE.Vector3();
 const EMBERS = (() => { try { return new URLSearchParams(location.search).get('embers') === '1'; } catch (e) { return false; } })();
 const DECKLAMP = (() => { try { return new URLSearchParams(location.search).get('decklamp') === '1'; } catch (e) { return false; } })();
 const GLOW = (() => { try { return new URLSearchParams(location.search).get('glow') === '1'; } catch (e) { return false; } })();
-const GLOW_K = { kitchen: 1.8, workshop: 1.6, oven: 1.3, bedroom: 1.1 }, GLOW_C = new THREE.Color(0xFFD9A0);
+const GLOW_K = { kitchen: 1.8, workshop: 1.15, oven: 1.3, bedroom: 1.1 }   // workshop was 1.6: since the room gains (photo-matched) it overshot the photo by 20%; kitchen and bedroom still land on it, GLOW_C = new THREE.Color(0xFFD9A0);
 const KINDS = {
   oil:      { on: .7,  off: .5,  flick: 'flame' },   // oil lanterns: catch, flare, settle
   electric: { on: .12, off: .08, flick: 'bulb' },    // dome lamp: quick, a small stutter
   candle:   { on: 1.0, off: .35, flick: 'candle' },
-  fire:     { on: 4.5, off: 14,  flick: 'fire' },    // oven: the fire takes, the embers die slowly
+  fire:     { on: 9,   off: 14,  flick: 'fire' },    // oven: the kindling catches, the fire spreads over the logs (~9 s); the embers die slowly
   door:     { on: 1.5, off: 1.5, flick: 'flame' },
   glow:     { on: .4,  off: .3,  flick: 'bulb' },     // a radio dial, an indicator: emissive only
 };
@@ -65,7 +65,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       o.castShadow = false;
       if (pm.lampGlass && o.material === pm.lampGlass) {
         if (!panes.length) panes.push(pm.lampGlass.clone());
-        const m = panes[0]; m.emissive = new THREE.Color(0xFFA852); m.emissiveIntensity = 0; o.material = m;
+        const m = panes[0]; if (!m.userData.pane) { m.emissive = new THREE.Color(0xFFA852); m.emissiveIntensity = 0;
+          // clear, not milky: by day the sky in Props' pale glass (35%, env x1.2) made the lantern a white box from the home view.
+          // Out, the panes are thin, faintly grey-green and you see the burner through them; lit, the glass fills with light (update)
+          m.color.set(0x8FA3A6); m.opacity = .16; m.envMapIntensity = .45; m.userData.pane = true; }
+          o.material = m;
       }
     });
     return panes;
@@ -239,8 +243,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // is in the room); a weak unshadowed fill keeps the corners and the walls above the cone from going black.
     const l = new THREE.PointLight(0xFFB866, 0, MOBILE ? 5.5 : 5, MOBILE ? 1.4 : 1.6); l.position.copy(bPos); scene.add(l);
     // a narrower cone keeps the 512 map sharp enough (no self-shadowing)
-    const bs = new THREE.SpotLight(0xFFB866, 0, 6, .95, .8, 1.4); bs.position.copy(bPos).add(V(0, -.15, .06));   // just under the lantern's base plate (it would shade the whole cone)
-    bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
+    const bs = new THREE.SpotLight(0xFFB866, 0, 6, .95, .8, 1.4); bs.position.copy(bPos).add(BL ? V(0, -.03, 0) : V(0, -.15, .06));   /* on Props' hook (BL): from the flame itself */   // just under the lantern's base plate (it would shade the whole cone)
+    if (BL) bs.target.position.set(-2.0, BD + .75, 2.05); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
@@ -255,8 +259,26 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   if (PL.candle) {
     const cPos = PL.candle.pos.clone();
     let lights = [];
-    if (!MOBILE) { const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l); lights = [{ l, I: 1.6, sway: .012 }]; }
-    add('candle', 'bedroom', 'candle', cPos, { lights, opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
+    // the light sits a little above the flame: a point light 6 cm from the wax burned the candle and its holder to white,
+    // which no candle does (the wax glows softly through instead, below)
+    if (!MOBILE) { const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .09, 0)); scene.add(l); lights = [{ l, I: 1.3, sway: .012 }]; }
+    // a real candle: a black wick standing out of a little pool of melted wax, a flame with a hot near-white core (drawn after
+    // the glass and not tone-mapped, like the lanterns'), and wax, not cloth, that the flame lights from inside near the top
+    const fmC = PL.candle.mats[0] || pm.candleFlame, cObj = PL.candle.obj, cEmis = [];
+    if (fmC) { fmC.blending = THREE.NormalBlending; fmC.color.setRGB(2.3, 1.45, .62); fmC.toneMapped = false; fmC.needsUpdate = true; }
+    if (cObj) {
+      let flameMesh = null, waxMesh = null;
+      cObj.traverse(o => { if (!o.isMesh) return; if (o.material === fmC) { flameMesh = o; return; } o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox;
+        if (bb.max.x - bb.min.x < .045 && bb.max.y - bb.min.y > .07) waxMesh = o; });
+      if (flameMesh) { flameMesh.renderOrder = 3; flameMesh.scale.set(.9, 1.05, .9); flameMesh.position.y += .005; }   // lifted off the wax: the wick shows black in the flame's foot
+      if (waxMesh) { const wm = new THREE.MeshStandardMaterial({ color: 0xEDE2CC, roughness: .42, emissive: 0xFFB25E, emissiveIntensity: 0 }); waxMesh.material = wm; cEmis.push([wm, .22]); }
+      const top = waxMesh ? (waxMesh.geometry.boundingBox.max.y + waxMesh.position.y) : .105;
+      const wick = new THREE.Mesh(new THREE.CylinderGeometry(.0013, .0016, .016, 5).translate(0, .008, 0), new THREE.MeshStandardMaterial({ color: 0x161210, roughness: .9 }));
+      wick.position.set(0, top - .001, 0); wick.rotation.z = .12; wick.castShadow = false; cObj.add(wick);
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(.014, 14).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xF6EBD4, roughness: .15, emissive: 0xFFB25E, emissiveIntensity: 0 }));
+      pool.position.set(0, top + .0006, 0); pool.castShadow = false; cObj.add(pool); cEmis.push([pool.material, .55]);
+    }
+    add('candle', 'bedroom', 'candle', cPos, { lights, emis: cEmis, opac: [[fmC, .95]], haloSize: .45,
       // lit when he reads in the dark; only the hero puts it out (lights.set('candle', false) at lights.pos('candle'))
       autoFn: () => false });
   }
@@ -322,11 +344,33 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       patch.position.copy(d0).addScaledVector(fwd, .42 + .62).setY(KT + .028);   // above the kitchen rug (it lies over the boards here)
       patch.name = 'ovenFloorGlow'; patch.renderOrder = 2; patch.visible = false; patch.userData.noHang = true; scene.add(patch);
     }
-    add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: (k, f) => {
+    // lighting it: a pine splinter (kindling) laid across the left log catches first and burns down from its tip while the
+    // flames spread from it across the logs one by one (Props' flame shader: uSpread), and the light grows with the fire;
+    // going out, the flames drop out in reverse until only the coals breathe, then cool
+    const OV = P3 && P3.oven; let spl = null, splM = null, splF = null, splDir = null;
+    if (OV && OV.fireGroup && OV.fireGroup.parent) {
+      splM = new THREE.MeshStandardMaterial({ color: 0xC9A570, roughness: .9, emissive: 0xFF6A1E, emissiveIntensity: 0 });
+      spl = new THREE.Mesh(new THREE.BoxGeometry(.2, .007, .012).translate(.1, 0, 0), splM);   // origin at the held (unburnt) end: it burns down toward it
+      spl.position.copy(OV.fireGroup.position).add(V(.08, .07, .035)); spl.rotation.set(0, Math.PI + .2, -.22);   // laid over the logs from the right, the tip down among the left flames, where the fire starts
+      spl.castShadow = false; spl.visible = false; OV.fireGroup.parent.add(spl);
+      // its burning tip: a small flame where the wood is being eaten (the stick itself only chars)
+      splF = new THREE.Mesh(flameGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.4, .55), transparent: true, depthWrite: false, toneMapped: false }));
+      splF.renderOrder = 3; splF.castShadow = false; splF.visible = false; OV.fireGroup.parent.add(splF);
+      splDir = V(1, 0, 0).applyEuler(spl.rotation);
+    }
+    let ovenS = null;
+    ovenS = add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: (k, f) => {
+      if (ovenS && OV) { const L = ovenS.level, up = ovenS.on;
+        if (OV.setSpread) OV.setSpread(up ? smooth(.04, .7, L) : smooth(.22, .72, L));
+        if (spl) { const burn = up ? smooth(.02, .5, L) : 1; spl.visible = up && burn < .98;
+          splF.visible = spl.visible;
+          if (spl.visible) { spl.scale.x = 1 - burn * .85; splM.emissiveIntensity = .12 * smooth(0, .05, L);
+            const fk = smooth(0, .04, L) * (1 - smooth(.35, .5, L)) * (.85 + .3 * noise(t * 8));
+            splF.position.copy(spl.position).addScaledVector(splDir, .2 * spl.scale.x - .004); splF.scale.set(.9 * fk, 1.1 * fk, .9 * fk); } } }
       // index.html passes this level to props.update(), which calls oven.setHeat once per frame
       const open = P3.oven ? P3.oven.open || 0 : 0; l.userData.open = open;
       // embers: as the fire dies the bed of coals keeps breathing (slow, uneven), until it is cold
-      const emb = smooth(0, .25, k) * (1 - smooth(.3, .7, k)) * (.55 + .45 * noise(t * .5 + 3) * noise(t * 1.3 + 9));
+      const emb = (ovenS && ovenS.on ? 0 : 1) * smooth(0, .25, k) * (1 - smooth(.3, .7, k)) * (.55 + .45 * noise(t * .5 + 3) * noise(t * 1.3 + 9));   // only while it dies: lighting, there are no coals yet
       if (pm.fire) pm.fire.emissiveIntensity = 2.45 * k * (f || 1) + .9 * emb;
       if (pm.ovenGlass) pm.ovenGlass.emissiveIntensity = .7 * k * (f || 1) + .25 * emb;
       // firelight on the walls: with the door open the flames throw a restless light, so the lit patch drifts a few
@@ -1044,7 +1088,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
             L.l.shadow.needsUpdate = true; L.drawnT = t; if (L.pose) L.pose.set(poseNow); else { L.pose = new Float32Array(poseNow); } shadowDraws++; }
           L.wasLit = lit; }
       }
-      for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
+      for (const [m, I] of s.emis) { m.emissiveIntensity = I * k * f; if (m.userData.pane) m.opacity = .16 + .3 * clamp01(k); }
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
       if (s.extra) s.extra(k, f);
       if (!s.lights.length && s.haloObj) s.haloObj.intensity = (s.kind === 'glow' ? .5 : 4.5) * k * f;
@@ -1254,7 +1298,9 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // them back to the clock (open by day, half drawn at night). __brain.locked does the same on its own.
     curtains: on => { curForce = !!on; return curForce; },
     onChange: cb => listeners.push(cb),
-    level: n => src.has(n) ? src.get(n).level : 0,
+    // the oven's 'level' is its heat (Props' coal bed and flame height, Wind's chimney smoke, the kettle's steam): lighting,
+    // the kindling burns for a while before any coals form (heat lags the fire); going out, the coals keep their heat longest
+    level: n => { const s = src.get(n); if (!s) return 0; if (s.kind !== 'fire') return s.level; return s.on ? Math.pow(s.level, 1.5) : Math.pow(s.level, .8); },
     // hand lantern: attachHand(bone, offset?) shows it in the hero's hand (then set('hand', true) lights it);
     // detachHand() hides it again (and puts it out)
     // attachHand(bone): if that hand already holds Props' lantern, the light and flame go inside it (no second lantern);

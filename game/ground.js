@@ -189,7 +189,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
       // and shifted so no rows show), each leaf its own size, turn and colour (rust, ochre, brown, a few pale yellow, some dark and
       // rotting), a midrib, a shade at its curled edge and a soft contact shadow, gathered in drifts with bare moss between.
       litA*=.45+.9*fbm(vGW*1.7+3.);litA=clamp(litA,0.,.95);
-      vec2 lq=vGW*7.;vec2 lw=fwidth(lq);float far=smoothstep(.25,.7,max(lw.x,lw.y));
+      vec2 lq=vGW*8.;vec2 lw=fwidth(lq);float far=smoothstep(.1,.3,max(lw.x,lw.y));/* [ENV] Props phone pass: leaves under ~4 px became a crawling grid of orange dashes; they melt into their average colour sooner */
       vec3 lcol=vec3(0.);float lm=0.,lsh=0.;
       for(int L=0;L<${MOBILE?1:2};L++){/* phones: one layer (fill rate) */float sc=L==0?8.:5.5;float ra=L==0?0.:.83;vec2 pq=mat2(cos(ra),-sin(ra),sin(ra),cos(ra))*vGW*sc+float(L)*vec2(.37,.71);
        vec2 li=floor(pq),lf=fract(pq)-.5;float lh=fract(sin(dot(li+float(L)*17.3,vec2(12.9898,78.233)))*43758.5453);
@@ -204,7 +204,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
        lsh=max(lsh,sh*(1.-lm));lcol=mix(lcol,cc,m);lm=max(lm,m);}
       vec3 avg=vec3(.5,.3,.1);float ff=1.-pathK*.6;
       diffuseColor.rgb*=1.-.3*lsh*(1.-lm)*(1.-far)*ff;
-      float k=mix(lm,litA*.8,far)*ff;diffuseColor.rgb=mix(diffuseColor.rgb,mix(lcol*vec3(2.3,1.45,1.15),avg*vec3(1.6,1.3,1.2),far)*(.75+.6*lum),k);}`);};
+      float k=mix(lm,litA*.6,far)*ff;diffuseColor.rgb=mix(diffuseColor.rgb,mix(lcol*vec3(2.3,1.45,1.15),avg*vec3(1.6,1.3,1.2),far)*(.75+.6*lum),k);}`);};
   {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');};}
   mat.customProgramCacheKey=()=>'groundFloor-litter3';/* [ENV] explicit key (SHADERS rule) */
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;scene.add(ground);G.ground=ground;
@@ -508,7 +508,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     // a bright sky in it even at the low home-view angle, so the pond reads as water from afar (day and night)
     vec3 sky=mix(uSky*1.,uSky*1.35,smoothstep(.2,.9,R.y));sky=mix(uSky*.2,sky,smoothstep(tl-.03,tl+.05,R.y));
     ${refl?'vec4 ru=vRU;ru.xy+=waterSlope(vW)*.03*ru.w;sky=texture2DProj(tDiffuse,ru).rgb*color;':''}
-    vec3 c=mix(uDeep,sky,clamp(fr*1.1+.05,0.,1.));
+    /* [ENV] a forest pool, not a blue plate: tea-dark water under the mirror, the mirror with more contrast (dark reeds and crowns in it, the sky gaps bright), and a touch deeper in the middle */${refl?'sky=sky*sky*1.35;':''}vec3 c=mix(uDeep*mix(1.,.7,smoothstep(-.2,-.8,vD)),sky,clamp(fr*1.25+.06,0.,1.));
     c+=vec3(.85,.92,1.)*pow(max(dot(R,uMoon),0.),220.)*uNight*2.5;
     // night: darker open water inside a thin moonlit waterline, so its shape still reads through the blue mist
     c*=1.-.35*uNight*smoothstep(-.1,-.5,vD);
@@ -617,7 +617,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   let spI=0;G.pond.splash=(x,z,k=1)=>{const u=water.material.uniforms[spI?'uSp1':'uSp0'];spI^=1;u.value.set(x,z,WU.uT.value,Math.min(2,k));
    const L=LST.pond;if(L)for(const f of L){try{f({act:'splash',pos:[x,level,z],k});}catch(e){console.error(e);}}};
   G._pond=(dt,cam)=>{WU.uT.value+=dt;upLeaves(dt);const E2=window.__env;if(E2&&E2.moonRim){WU.uMoon.value.copy(E2.moonRim.dir.value);WU.uNight.value=E2.moonRim.strength.value;}
-   const fc=scene.fog&&scene.fog.color;if(fc){WU.uSky.value.copy(fc);WU.uDeep.value.copy(fc).multiplyScalar(.12).add(Col.setRGB(.01,.018,.016));}};}
+   const fc=scene.fog&&scene.fog.color;if(fc){WU.uSky.value.copy(fc);WU.uDeep.value.copy(fc).multiplyScalar(.085).add(Col.setRGB(.016,.017,.01));}};}
 
  // ================= footprints in the mud =================
  // After rain the path turns to mud: the hero's boots leave prints (a ring of the last ~48 steps, left/right alternate),
