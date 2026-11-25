@@ -3322,9 +3322,9 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   root.position.x=lerp(c.from.x,c.to.x,kx);root.position.z=lerp(c.from.z,c.to.z,kz);H.fit.y=lerp(c.y0,c.y1,c.dir>0?smooth(.1,.7,u):smooth(.3,.9,u));
   c.plant=c.dir>0?1-smooth(.12,.38,u):smooth(.62,.9,u);
   // getting up he pushes the quilt off as he rises: it follows his body for the first moments, then settles flat
-  /* BED: lying down the cover starts as his legs come over the mattress, so they slide in UNDER the quilt (it rose over him only after he lay down, he sank into it) */if(c.dir>0&&!c.qon&&u>.3&&(u>.75||!FIT.bed||['Left','Right'].every(sd=>!bones[sd+'Leg']||wp(bones[sd+'Leg']).z<FIT.bed.z1-.02))){c.qon=true;bedPress(true);}/* R56-1: only once both knees are over the mattress: the quilt can't reach past its hem, so a knee still out over the edge stood up through its top as it rose */
+  /* BED: lying down the cover starts as his legs come over the mattress, so they slide in UNDER the quilt (it rose over him only after he lay down, he sank into it) */if(c.dir>0&&!c.qon&&u>.3&&(u>.75||!FIT.bed||['Left','Right'].every(sd=>!bones[sd+'Leg']||wp(bones[sd+'Leg']).z<FIT.bed.z1-.02))){c.qon=true;{const P=window.__props||P3;if(P&&P.coverK)P.coverK(0);}/* R61: it stays flat until his hand pulls it up over his legs */bedPress(true);}/* R56-1: only once both knees are over the mattress: the quilt can't reach past its hem, so a knee still out over the edge stood up through its top as it rose */
   {const P=window.__props||P3;if(P&&P.quiltLive)P.quiltLive(.1);}
-  if(c.dir<0&&!c.qoff&&(u>.5||FIT.bed&&['Left','Right'].some(sd=>bones[sd+'Leg']&&wp(bones[sd+'Leg']).z>FIT.bed.z1-.12))){c.qoff=true;bedPress(false);}/* as soon as a knee nears the edge: the raised quilt's hanging side stood in their way and the legs went out through it (morning) *//* the legs are out from under it first */
+  if(c.dir<0){const P=window.__props||P3;if(P&&P.coverK&&!c.kxr){c.kxr=1;P.coverK(null);}}if(c.dir<0&&!c.qoff&&(u>.5||FIT.bed&&['Left','Right'].some(sd=>bones[sd+'Leg']&&wp(bones[sd+'Leg']).z>FIT.bed.z1-.12))){c.qoff=true;bedPress(false);}/* as soon as a knee nears the edge: the raised quilt's hanging side stood in their way and the legs went out through it (morning) *//* the legs are out from under it first */
   bedClipGuard();
   if(c.t>=c.dur){H.bedC=null;c.then&&c.then();}}
  // the Fal bed clips were made on a low bed: played on the bunk they kicked both legs up toward the upper bunk and, getting up, rolled
@@ -3373,7 +3373,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   for(let i=0;i<3;i++){const b=bs[i],f=1/(3-i);const Ca=new THREE.Quaternion().slerp(C,f);const ql=b.quaternion.clone();b.quaternion.premultiply(Ca);C.premultiply(Ca.invert());C.premultiply(ql.clone().invert()).multiply(ql);}
   root.updateMatrixWorld(true);}
  const QH={on:false};
- function quiltHand(mode,sd,then){const P=window.__props||P3;if(!P||!P.quiltFold||!P.quiltEdge||!FIT.bed){if(P&&P.quiltFold)P.quiltFold(mode==='up'?0:1);then&&then();return;}
+ function quiltHand(mode,sd,then){const P=window.__props||P3;if(mode==='up'&&P&&P.coverK&&!(P.quiltFold&&P.quiltEdge&&FIT.bed&&Math.abs(P.quiltFold())>=.02))P.coverK(null);/* no pull to drive it: the usual ramp */if(!P||!P.quiltFold||!P.quiltEdge||!FIT.bed){if(P&&P.quiltFold)P.quiltFold(mode==='up'?0:1);then&&then();return;}
   const f0=P.quiltFold(),f1=mode==='up'?0:1;if(Math.abs(f1-f0)<.02){then&&then();return;}
   Object.assign(QH,{on:true,cut:false,mode,sd,t:0,f0,f1,tr:mode==='up'?.6:!H.inBed?.9:.75,rel:.56,tm:mode==='up'?1.35:mode==='down'?1.05:.9,trl:.6,then});}
  function quiltHandTick(dt){if(!QH.on)return;const P=window.__props||P3;const B=FIT.bed;if(!P||!B){QH.on=false;return;}QH.t+=dt;/* woken while still pulling it up (getting up already): he lets go at once and the flap falls by itself; his arm goes with the get-up (the two fought: the hand shook 30 cm a frame) */if(QH.mode==='up'&&(H.bedC&&H.bedC.dir<0||!H.inBed)&&QH.t<QH.tr+QH.tm){QH.t=QH.tr+QH.tm;QH.cut=true;}const {tr,tm,trl,sd}=QH;const t=QH.t;
@@ -3381,6 +3381,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
      last of it falls flat by itself (a hand pressed beside his own shoulder is past what an elbow folds to) */
   let fv;if(QH.mode==='up'){if(t<tr+tm)fv=lerp(QH.f0,QH.rel,smooth(tr,tr+tm,t));else{const u=(t-tr-tm)/.38;fv=QH.rel*Math.max(0,1-u*u);}}else fv=lerp(QH.f0,QH.f1,smooth(tr,tr+tm,t));
   P.quiltFold(fv);if(P.quiltLive)P.quiltLive(.15);
+  if(QH.mode==='up'&&P.coverK){if(H.inBed&&!QH.cut)P.coverK(smooth(tr*.6,tr+tm*.85,t));else P.coverK(null);}/* R61: the cloth rises over his legs as his hand draws it up, not by itself */
   const w=(t<tr?smooth(0,tr,t):t<tr+tm?1:1-smooth(tr+tm,tr+tm+trl,t))*(QH.cut?1-smooth(tr+tm,tr+tm+.2,t):1);const Hn=bones[sd+'Hand'];root.updateMatrixWorld(true);
   const hp=wp(bones.Hips);let e=P.quiltEdge(V(hp.x,hp.y,B.z1),QH.mode==='up'?.75:!H.inBed?.5:.6,QH.mode==='down'&&H.inBed?.39:.33);if(e)e.y+=QH.mode==='down'?.02:.06;/* lying, the edge lies on the mattress: the palm on top of it, fingers curled round, not under it (gate: hand 6.6 cm into the mattress) *//* the palm on the quilt's thickness: the fingers curl round the edge, not into the mattress (gate: hand 6.6 cm in) */if(QH.mode==='up'){if(t<tr+tm)QH.eRel=e&&e.clone();else if(QH.eRel)e=QH.eRel.clone();}
   if(e){const G=window.__grab;const palm=G&&G.gripPoint?G.gripPoint(sd):wp(Hn);const tg=e.clone().add(wp(Hn).sub(palm));
@@ -3394,7 +3395,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
     A.quaternion.copy(q0[0]);Fa.quaternion.copy(q0[1]);root.updateMatrixWorld(true);IKq(tg,w);}
    if(w>.001&&H.inBed)elbowAbove(sd,B.mat+.07);/* lying: the elbow swings up round the shoulder-wrist line, never down into the mattress (gate: elbow 8-11 cm in) */
    if(w>.001)H.noPop={side:sd,until:performance.now()+150};/* the hand is IK'd on the cloth every frame */}
-  if(t>=tr+tm+trl&&(QH.mode!=='down'||BRC.a<.002)){QH.on=false;P.quiltFold(QH.f1);const f=QH.then;QH.then=null;f&&f();}}
+  if(t>=tr+tm+trl&&(QH.mode!=='down'||BRC.a<.002)){QH.on=false;if(QH.mode==='up'&&P.coverK)P.coverK(null);P.quiltFold(QH.f1);const f=QH.then;QH.then=null;f&&f();}}
  function lieDown(then){const ed=N.bededge;H.face=0;
   sitDown(ed,()=>{H.trans=true;undressSeq(()=>{H.wait={t:rnd(.3,.6),then:()=>quiltHand('down','Left',()=>{H.wait={t:.15,then:()=>{bedClip(1,()=>{
    // hand over to the sleep clip: the root eases onto the lying spot while the poses cross-fade
@@ -3473,7 +3474,7 @@ function elbowAbove(sd,y){const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'],Hd=bone
 // LYING DOWN, the last of it: the clip ends propped up (chest ~10 cm high, chin on the chest) and the sleep pose only took over
 // ~0.4 s later, so his head hung 15 cm over the pillow (gate HARD, sleep f1493). From the end of the lie-down until he is settled,
 // the chest goes down and the head tips back onto the pillow. Only lowers: a pose already down is left as it is.
-const LS={w:0};function lieSettle(dt){const c=H.bedC;const on=(c&&c.dir>0&&c.u>.38)||(H.inBed&&!c&&(H.lieT||0)>0&&!window.__sleepPose);if(H.lieT>0)H.lieT-=dt;
+const LS={w:0};function lieSettle(dt){if(H.inBed&&(H.lieT||0)>0){const P=window.__props||P3;if(P&&P.quiltLive)P.quiltLive(.1);}/* R61: the cloth follows his legs every frame while he settles (at 5 a second the shin came through its top) */const c=H.bedC;const on=(c&&c.dir>0&&c.u>.38)||(H.inBed&&!c&&(H.lieT||0)>0&&!window.__sleepPose);if(H.lieT>0)H.lieT-=dt;
  LS.w=on?Math.min(1,LS.w+dt*3):Math.max(0,LS.w-dt*3);if(LS.w<.01||!bones.Neck||!bones.Head||!bones.Spine1)return;const w=LS.w*(c?smooth(.38,.7,c.u):1);/* the back down onto the mattress while the legs come up, not after (R23-2: it hovered 10-20 cm for 0.7 s) */
  root.updateMatrixWorld(true);const lat=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg)).normalize();const hy=wp(bones.Hips).y;
  const tryRot=(b,f,ang)=>{const q=b.quaternion.clone();const f0=f();rotW(b,lat,ang);const f1=f();if(f1>f0){b.quaternion.copy(q);b.updateMatrixWorld(true);rotW(b,lat,-ang);if(f()>f0){b.quaternion.copy(q);b.updateMatrixWorld(true);}}};
