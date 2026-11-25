@@ -335,7 +335,7 @@ export function createHero(ctx){
    if(!inHand||o.visible===false){if(S)U.lsw=null;continue;}
    const W=U.lsw||(U.lsw={a:0,b:0});W.base={p:o.position.clone(),q:o.quaternion.clone()};W.set=null;
    let ta=0,tb=0;root.updateMatrixWorld(true);_lb.setFromObject(o);
-   if(moving&&!H.lad&&!_lb.isEmpty()&&_lb.min.y<hand.getWorldPosition(V()).y-.12){
+   if((moving||!window.__loadMoveOnly)&&!H.lad&&!_lb.isEmpty()&&_lb.min.y<hand.getWorldPosition(V()).y-.12){
     /* the pivot: the top of the load, where the fist holds its neck or bail */const pv=_lb.getCenter(V());pv.y=_lb.max.y;
     const fw=V(Math.sin(root.rotation.y),0,Math.cos(root.rotation.y)),lf=V(Math.cos(root.rotation.y),0,-Math.sin(root.rotation.y));
     const M0=o.matrixWorld.clone(),Hi=hand.matrixWorld.clone().invert();
@@ -343,10 +343,10 @@ export function createHero(ctx){
      Hi.clone().multiply(Mw).decompose(o.position,o.quaternion,new THREE.Vector3());o.updateMatrixWorld(true);};
     const p0=loadPen(o);
     if(p0>-.01||Math.abs(W.a)+Math.abs(W.b)>.01){/* touching, or still swung out: find the smallest swing that clears the legs (a leg knocks a hanging sack aside; it does not pass through it) */
-     let best=null;const C=[[0,0]];for(const m of [.12,.24,.36,.5,.65])for(const [x,y] of [[1,0],[-1,0],[0,1],[0,-1]])C.push([x*m,y*m]);
+     let best=null;const C=[[0,0]];for(const m of [.12,.24,.36,.5,.65,.8,.95])for(const [x,y] of [[1,0],[-1,0],[0,1],[0,-1],[.7,.7],[-.7,.7],[.7,-.7],[-.7,-.7]])C.push([x*m,y*m]);/* GRAB: diagonals and up to 55 deg: in a crouch the knee comes out under a sack at the hip (10 cm into the shins rising from the fridge shelf) */
      for(const [a,b] of C){pose(a,b);const pe=loadPen(o);const cost=Math.hypot(a-W.a,b-W.b)*.08+Math.hypot(a,b)*.04;if(pe<=-.025){if(!best||!best.ok||cost<best.c)best={a,b,c:cost,ok:true};}else if(!best||(!best.ok&&pe<best.pe))best={a,b,pe,c:cost,ok:false};}
-     ta=best.a;tb=best.b;}
-    const r=dt*12;/* a kicked sack swings fast */W.a+=clamp(ta-W.a,-r,r);W.b+=clamp(tb-W.b,-r,r);
+     ta=best.a;tb=best.b;W.p0=p0;}
+    const r=dt*(W.p0>.03?40:12);W.p0=0;/* a kicked sack swings fast; one the knee is already deep in is knocked aside within the frame */W.a+=clamp(ta-W.a,-r,r);W.b+=clamp(tb-W.b,-r,r);
     if(Math.abs(W.a)+Math.abs(W.b)>1e-4){pose(W.a,W.b);W.set={p:o.position.clone(),q:o.quaternion.clone()};}else{o.position.copy(W.base.p);o.quaternion.copy(W.base.q);}}
    else if(Math.abs(W.a)+Math.abs(W.b)>1e-4){/* swing back to hanging straight */const r=dt*3;W.a+=clamp(-W.a,-r,r);W.b+=clamp(-W.b,-r,r);const pv=_lb.getCenter(V());pv.y=_lb.max.y;
     const fw=V(Math.sin(root.rotation.y),0,Math.cos(root.rotation.y)),lf=V(Math.cos(root.rotation.y),0,-Math.sin(root.rotation.y));const R=new THREE.Matrix4().makeRotationAxis(fw,W.a).multiply(new THREE.Matrix4().makeRotationAxis(lf,W.b));
