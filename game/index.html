@@ -773,8 +773,8 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  const R0=surf(D.ang+(D.w/2+.2)/2.2,D.y0+.6)||surf(D.ang-(D.w/2+.2)/2.2,D.y0+.6)||2.2;
  const at=(side,y,inset)=>{let r=surf(D.ang+Math.sign(side||1)*(Math.abs(side)+.12)/R0,y)||R0;const a=D.ang+side/r;r=(surf(a+Math.sign(side||1)*.05/r,y)||r)-inset;return V(ax+Math.cos(a)*r,y,az+Math.sin(a)*r);};
  const out=V(Math.cos(D.ang),0,Math.sin(D.ang)),sideV=V(-Math.sin(D.ang),0,Math.cos(D.ang));
- const piece=(a,b,wd,dp,kind)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();const ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex))).normalize();const ey=ez.clone().cross(ex);
-  const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(rnd(.85,1)));
+ const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();const ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex))).normalize();const ey=ez.clone().cross(ex);
+  const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(tn||rnd(.85,1)));
    const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
  const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
  // jambs, a little proud of the bark and sunk into it
@@ -787,15 +787,21 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  {const a=at(-hw-.06,D.y0+.02,.04),b=at(hw+.06,D.y0+.02,.04);piece(a,b,.24,.08,'board');}
  // the reveal: the doorway runs ~1 m through the bark into the cave. Its sides and top were open, so from the side the lit
  // cave showed through between the jamb and the bark as an orange slit (critic T25). Lined with planks like a real passage.
- {const dep=[.22,.5,.78],dd=.29;
-  for(const sd of [-1,1])for(const ins of dep)piece(at(sd*(D.w/2+.03),D.y0-.02,ins),at(sd*(D.w/2+.03),yS+.03,ins),.045,dd,'board');
+ {const dep=[.2,.46],dd=.27;/* shallow and dark like old weathered wood: from the home view the lit planks of a 1 m lining read as boards leaning in the doorway */
+  for(const sd of [-1,1])for(const ins of dep)piece(at(sd*(D.w/2+.03),D.y0-.02,ins),at(sd*(D.w/2+.03),yS+.03,ins),.045,dd,'board',rnd(.42,.5));
   for(const ins of dep){let pv=at(-(D.w/2+.03),yS,ins);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*(D.w/2+.03),yS+Math.sin(t)*(ah-fw*.45+.03),ins);
-   piece(pv.clone().addScaledVector(pv.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(pv).normalize(),.03),.045,dd,'board');pv=p;}}}
+   piece(pv.clone().addScaledVector(pv.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(pv).normalize(),.03),.045,dd,'board',rnd(.42,.5));pv=p;}}}
  // plank floor into the cave, boards running inward, slightly lower than the threshold
  {const c0=at(0,D.y0+.03,.14);for(let k=-2;k<=2;k++){const a=c0.clone().addScaledVector(sideV,k*.205),b=a.clone().addScaledVector(out,-.95);piece(b,a,.19,.05,'board');}}
  boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
 // left low landing
-floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
+floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});/* photo: a short ladder down to the small left platform (the barrel had no way up there). A plain nailed wooden ladder from its
+   outer edge up to the rim of the centre landing; not a climb route (not in __ladders), so the hero's paths do not change */
+{const B=V(-3.36,LL,1.18),T=V(-3.2,LC+.62,1.24),ex=T.clone().sub(B).normalize(),ez=V(0,0,1).sub(ex.clone().multiplyScalar(ex.z)).normalize(),ey=ez.clone().cross(ex).normalize(),eu=new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,ez)),L=B.distanceTo(T);
+ for(const sd of [-1,1])board(B.clone().add(T).multiplyScalar(.5).addScaledVector(ez,sd*.23),L,.075,.05,eu,{tint:rnd(.7,.8)});
+ const ru=new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ez,ey.clone().negate(),ex));
+ for(let y=LL+.3;y<LC-.05;y+=.3){const t=(y-B.y)/(T.y-B.y);board(B.clone().lerp(T,t).addScaledVector(ey,.058),.56,.045,.07,ru,{tint:rnd(.8,.95)});}}
+brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
 // center landing (half disc around the trunk front) + gate over the ground ladder
 floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-1.0,3.0,frontZ(-1.0,3.0)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(-.15,1.3,frontZ(-.15,1.3)-.08),V(-.05,LC-.13,3.45),.15);/* critic T19: kept left of the hollow's mouth */
 if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
@@ -1247,6 +1253,7 @@ $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
 // ================= post & camera =================
+const STORM_FOG=new THREE.Color(),STORM_DAY=new THREE.Color(0x7D8896),STORM_NIGHT=new THREE.Color(0x1E2C42);
 const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);{/* [CAMERA] K4: one NaN/Inf pixel from any shader was blurred by bloom over the whole screen (black frames on desktop at night). The bright-pass now drops non-finite texels. */const hm=bloom.materialHighPassFilter;hm.fragmentShader=hm.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );','vec4 texel = texture2D( tDiffuse, vUv );\n\t\t\tif(any(isnan(texel))||any(isinf(texel))||!(abs(texel.r)+abs(texel.g)+abs(texel.b)<6e4))texel=vec4(0.0);\n\t\t\ttexel.rgb=min(texel.rgb,vec3(16.0));/* [ENV] a finite but blown-out pixel (a blade or leaf edge-on to a light) bloomed into a screen-wide green blob too */');hm.needsUpdate=true;}if(MOBILE)bloom.enabled=false;{const OUTP=new OutputPass();ENV.foldGrade(OUTP);composer.addPass(OUTP);}/* the colour grade runs inside the output pass (env.js foldGrade) */
 // [PERF] shared quality governor + FPS readout (game/perf.js). Steps run cheapest-looking first and undo when the phone keeps up again.
 const PERF=createPerf({renderer,MOBILE});const DPR=PR;PERF.addStep('plankLod',()=>{PLOD.value=.5;},()=>{PLOD.value=1;},40);/* (Planks) board/slate fine detail only up close */
@@ -1329,7 +1336,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
  sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)));sun.shadow.radius=3+nightK*3;/* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI*(1-rainK*dayK*.4);hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp*(1-rainK*dayK*.15);/* [LIGHTS] a storm by day is dark overcast, not a flat grey: the sky fill drops too, and the lit windows read warm against it */
- scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4).multiplyScalar(1-rainK*dayK*.28);/* [LIGHTS] storm by day: a darker slate veil, not a milky grey one */scene.fog.near=rig.dist*.95-mornK*12-rainK*6;scene.fog.far=rig.dist+70-mornK*30-rainK*25-nightK*35;
+ scene.fog.color.copy(P.fog).lerp(STORM_FOG.copy(STORM_DAY).lerp(STORM_NIGHT,nightK),rainK*.4).multiplyScalar(1-rainK*dayK*.28);/* [LIGHTS] storm by day: a darker slate veil, not a milky grey one; at night a deep cold blue (a light grey veil washed the warm house grey-blue and the night went milky: the photo's mood is warm windows in a cold blue night) */scene.fog.near=rig.dist*.95-mornK*12-rainK*6;scene.fog.far=rig.dist+70-mornK*30-rainK*25-nightK*35;
  moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  // no warm room fill: daylight only; at night rooms are lit by their lamps alone (game/lights.js)

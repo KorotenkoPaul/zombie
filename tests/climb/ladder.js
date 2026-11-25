@@ -1,5 +1,5 @@
 // Ladder climb test: every ladder up and down, frame by frame.
-// node tests/climb/ladder.js [--off] [--shots DIR] [--only kh_b-kh_t]
+// node tests/climb/ladder.js [--off] [--shots DIR] [--only kh_b-kh_t] [--fixcam --max N --every N]: --fixcam films each run from one fixed far camera aimed at the ladder
 // Per frame: wrist / ball-of-foot distance to the nearest real rung while that limb is still (holding / standing),
 // root speed jumps, the time each ladder takes. --off = old canned clip (window.__noClimb).
 const {open}=require('../anim/lib.js');const fs=require('fs');
@@ -8,14 +8,14 @@ const FINE=process.argv.includes("--fine");const PRE=+(arg('--pre')||0); /* fram
 const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll_b','ll_t'],['ll_t','ll_b'],['g_foot','gate'],['gate','g_foot']].filter(r=>!ONLY||ONLY.split(',').includes(r.join('-')));if(ONLY)for(const q of ONLY.split(','))if(!RUNS.some(r=>r.join('-')===q))RUNS.push(q.split('-')); // any node pair (e.g. walk in from kmid: the real mount)
 (async()=>{const {b,p,errs}=await open({seed:5,vp:{width:560,height:700},query:arg('--query')||''});await p.evaluate(()=>__qa.start());
  await p.evaluate(([off,co])=>{window.__noClimb=off;window.__noPops=window.__NP;window.__ladFlip=co===2;window.__wcam=1;if(co===true)window.__colOff={legs:true,arms:true};const HH=__dbg.HH;HH.setBrain({tick(){}});if(HH.inv){HH.inv.on=true;HH.inv.reset();}},[OFF,process.argv.includes("--flip")?2:process.argv.includes("--coloff")]);
- await p.evaluate(f=>{window.__fine=f;},FINE);await p.evaluate(v=>{window.__NP=v;},process.argv.includes('--nopops'));if(arg('--flags'))await p.evaluate(fl=>{for(const f of fl.split(','))window[f]=true;},arg('--flags'));
+ await p.evaluate(f=>{window.__fine=f;},FINE);await p.evaluate(v=>{window.__fixcam=v;},process.argv.includes('--fixcam'));await p.evaluate(v=>{window.__NP=v;},process.argv.includes('--nopops'));if(arg('--flags'))await p.evaluate(fl=>{for(const f of fl.split(','))window[f]=true;},arg('--flags'));
  await p.evaluate(h=>{window.__holdT=h;},arg("--hold"));if(process.argv.includes('--hatch'))await p.evaluate(()=>{const h=window.__house&&window.__house.hatch;if(h&&h.open)h.open();});
  if(SHOTS){fs.mkdirSync(SHOTS,{recursive:true});await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});}
  if(process.argv.includes('--pen')){await p.evaluate(`(${require('../anim/sampler.js')})({})`);await p.evaluate(()=>{window.__pen=1;});}
  const res=[];
  for(const [a,z] of RUNS){
   await p.evaluate(([a,z,PRE])=>{const HH=__dbg.HH,H=HH.H;HH.spawn('nothing');const P=HH.N[a].p;HH.root.position.copy(P);const f=HH.floorAt(P.x,P.y+.3,P.z,.5);if(f!=null)HH.root.position.y=f;H.floorY=HH.root.position.y;H.node=a;
-   const n=HH.N[z].p;HH.root.rotation.y=Math.atan2(n.x-P.x,n.z-P.z);H.face=HH.root.rotation.y;if(window.__holdT){try{window.__props.grab(window.__holdT,HH.bones.LeftHand,{offset:new __dbg.THREE.Vector3(0,.08,.03)});}catch(e){}}if(PRE)__qa.step(PRE,1/60);HH.goTo(z);window.__rec=[];},[a,z,PRE]);
+   const n=HH.N[z].p;HH.root.rotation.y=Math.atan2(n.x-P.x,n.z-P.z);H.face=HH.root.rotation.y;if(window.__holdT){try{window.__props.grab(window.__holdT,HH.bones.LeftHand,{offset:new __dbg.THREE.Vector3(0,.08,.03)});}catch(e){}}if(PRE)__qa.step(PRE,1/60);HH.goTo(z);window.__rec=[];window.__camC=null;},[a,z,PRE]);
   let done=false,fr=0,tail=0;const shots=[];
   while(!done&&fr<60*40){
    const r=await p.evaluate(()=>{__qa.step(window.__fine?1:2,1/60,window.__pen?(f=>__A.sample(f,1/60,0,'')):undefined);const HH=__dbg.HH,H=HH.H,B=HH.bones,T=__dbg.THREE;const w=o=>o.getWorldPosition(new T.Vector3()).toArray();
@@ -24,9 +24,9 @@ const RUNS=[['kh_b','kh_t'],['kh_t','kh_b'],['kl_b','bl_t'],['bl_t','kl_b'],['ll
    fr+=2;
    const EVERY=+(arg('--every')||14);
    const RG=arg('--range')?arg('--range').split(',').map(Number):[0,1e9];
-   if(SHOTS&&(r.lad||tail>0)&&fr%EVERY===0&&fr>=RG[0]&&fr<=RG[1]&&shots.length<48){shots.push(fr);
+   if(SHOTS&&(r.lad||tail>0)&&fr%EVERY===0&&fr>=RG[0]&&fr<=RG[1]&&shots.length<+(arg('--max')||48)){shots.push(fr);
     for(const [vi,yaw,pitch,dist] of (arg('--views')?JSON.parse(arg('--views')):[[0,.55,.1,1.7],[1,-.8,.05,1.6]])){const file=`${SHOTS}/${a}-${z}_${String(fr).padStart(5,'0')}_${vi}.png`;
-     await p.evaluate(([yaw,pitch,dist])=>{const T=__dbg.THREE;const h=__dbg.HH.bones.Hips.getWorldPosition(new T.Vector3());const c=[h.x,h.y+.1,h.z];const R=window.__camera&&window.__camera.rig;
+     await p.evaluate(([yaw,pitch,dist])=>{const T=__dbg.THREE;const h=__dbg.HH.bones.Hips.getWorldPosition(new T.Vector3());let c=[h.x,h.y+.1,h.z];/* --fixcam: one fixed far camera per run, aimed at the middle of the nearest ladder */if(window.__fixcam){if(!window.__camC){let best=null,bd=1e9;for(const l of window.__ladders||[]){const d=Math.hypot(l.x-h.x,l.z-h.z);if(d<bd){bd=d;best=l;}}window.__camC=best?[best.x,(best.y0+best.y1)/2,best.z]:c;}c=window.__camC;}const R=window.__camera&&window.__camera.rig;
       if(window.__camera&&window.__camera.dof)window.__camera.dof(false);const yw=window.__wcam?yaw:yaw+__dbg.HH.root.rotation.y+Math.PI;const cam=__qaCamera;cam.position.set(c[0]+Math.sin(yw)*Math.cos(pitch)*dist,c[1]+Math.sin(pitch)*dist,c[2]+Math.cos(yw)*Math.cos(pitch)*dist);cam.lookAt(c[0],c[1],c[2]);cam.updateMatrixWorld();
       // hide whatever stands between the camera and him (walls, beams), keep the hero and the ladders
       const hid=[];const rc=new T.Raycaster();const isHero=o=>{for(let q=o;q;q=q.parent)if(q===__dbg.HH.root)return true;return false;};

@@ -104,7 +104,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     // the pose underneath going down (a task's squat or kneel at the hatch, the stove, the woodpile): no settle step over it, the
     // legs go to the task now (a settle kept the hips at walking height-then-sinking for 0.3 s: knees 13-14 cm/frame²)
     const crouch = !want && ((H.squat || 0) > .02 || B.Hips.getWorldPosition(V()).y - pos.y < hipY - .06); // a squat lowers the root itself
-    const settling = !want && !crouch && !ST.settled && ST.w > 0 && !ladderSoon() && !window.__noGameWalk && (far('Left') || far('Right')) && H.ground && !H.fit && !H.lad && !H.seated;
+    const settling = !want && !crouch && !ST.settled && ST.w > 0 && !ladderSoon() && !window.__noGameWalk && (far('Left') || far('Right')) && H.ground && !H.fit && !H.lad && !H.seated && !H.inBed && !H.bedB && !H.bedC && !H.swing && !H.trans;
     if (!want && !settling && ST.w > 0) ST.settled = true; // one settle per stop: after it the idle underneath owns him (an idle turn moved the neutral spots and he kept re-stepping at 83%)
     const tw = want || settling ? 1 : 0;
     if (tw && ST.w === 0) { // entering: plant both feet where the pose underneath has them
@@ -115,13 +115,17 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       ST.ph = dl < dr ? P.duty - .001 : P.duty - .501;
       if (ST.ph < 0) ST.ph += 1;
     }
-    ST.w = clamp(ST.w + (tw ? dt / .3 : -dt / .3), 0, 1);
+    // sitting down, getting into bed, a fitted pose: the clip owns the legs now. The walk does not step on through the hand-over
+    // (the planted foot kept its roll into the sit: foot-bend 45 deg) and hands over in 0.15 s
+    const seatIn = !tw && !!(H.fit || H.seated || H.inBed || H.bedB || H.bedC || H.swing || H.trans);
+    ST.w = clamp(ST.w + (tw ? dt / .3 : -dt / (seatIn ? .15 : .3)), 0, 1);
     if (ST.w <= 0) { ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; ST.L = null; ST.va = null; return; }
     // fading out (a ladder ahead, a task takes the legs): the gait goes on as it was while the blend hands him over; a stop
     // in the middle of it (step length and cadence to 0) moved the landing spots and the hips in the same 0.3 s (knee 8 cm/frame²)
     let v, L, rate;
     if (tw) ST.walking = want; // what he was doing when the fade began: a walk is cut off mid-stride, a settle has finished
-    if (!tw && ST.walking && ST.L != null) { v = ST.v; L = ST.L; rate = ST.rate; }
+    if (seatIn) { v = 0; L = 0; rate = 0; ST.rate = 0; }
+    else if (!tw && ST.walking && ST.L != null) { v = ST.v; L = ST.L; rate = ST.rate; }
     else {
       v = want ? Math.max(ST.v, H.v || 0) : 0;
       // step length grows with speed; cadence = v / L, never slower than a brisk settle step
@@ -169,7 +173,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
         if (!sw.to) sw.to = land; else sw.to.lerp(land, 1 - Math.exp(-dt * 10));
         if (ST.swing[s]) {
           const e = u * u * u * (u * (u * 6 - 15) + 10); // smootherstep: a clear push-off and landing, no step in acceleration
-          const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp(L / .3, .4, 1.2);
+          const fp = sw.from.clone().lerp(sw.to, e).addScaledVector(rightOf(yaw), Math.sign(footX[s]) * P.passOut * Math.sin(Math.PI * u)); fp.y = pos.y + ankY + P.lift * Math.sin(Math.PI * Math.min(1, u * 1.1)) * clamp((sw.L ??= L) / .3, .4, 1.2) /* the swing keeps the lift it started with: a stop mid-step (L -> 0) dropped the foot 4 cm in one frame */;
           // the swing clears what it passes over (a root, a stone, a beam end): a little more lift while the sole would be in it
           { const C = window.__collide; ST.xl = ST.xl || { Left: 0, Right: 0 }; let need = 0;
             if (C && C.soleDepth && u > .05 && u < .95) { const sd = C.soleDepth(fp.x, fp.y - ankY + ST.xl[s], fp.z, f.x, f.z); if (sd > .004) need = Math.min(.12, ST.xl[s] + sd + .015); }
@@ -243,8 +247,8 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
       aim(B[s + 'ForeArm'], B[s + 'Hand'], dFA);
       // walking along a counter or the bunk: the swing narrows while the hand (8 cm ahead along its swing, 4 cm out) would be
       // in something (gate collide: right hand 6.6 cm into the kitchen counter)
-      { const C = window.__collide; let hit = false; if (C && C.depthAt) { const h = B[s + 'Hand'].getWorldPosition(V()).addScaledVector(f, Math.sign(sw) * .08).addScaledVector(side, .04); hit = C.depthAt(h.x, h.y, h.z) > 0; }
-        const tk = hit ? .25 : 1; ST.armK[s] += (tk - ST.armK[s]) * (1 - Math.exp(-dt * (hit ? 12 : 2))); }
+      { const C = window.__collide; let hit = false; if (C && C.depthAt) { const h0 = B[s + 'Hand'].getWorldPosition(V()); for (const [a, b] of [[.12, .07], [-.12, .07], [0, .1]]) { const h = h0.clone().addScaledVector(f, a).addScaledVector(side, b); if (C.depthAt(h.x, h.y, h.z) > 0) { hit = true; break; } } }
+        const tk = hit ? .25 : 1; ST.armK[s] += (tk - ST.armK[s]) * (1 - Math.exp(-dt * (hit ? 25 : 2))); }
     }
     // ---------- blend with the pose underneath ----------
     const w = smooth(ST.w);
