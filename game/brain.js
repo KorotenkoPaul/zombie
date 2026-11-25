@@ -98,7 +98,7 @@ const EXTRA = {
   fix_railing: { room: 'outside',  give: { wear: -.2, safety: -.05 }, label: 'чинит перила',    when: h => (h >= 9 && h < 17 ? .05 : -1.2) },
   clear_roof:  { room: 'outside',  give: { wear: -.15, tidy: -.05 }, label: 'сметает листья с крыши', when: h => (h >= 9 && h < 17 ? .3 : -1.5) },
   fix_chimney: { room: 'outside',  give: { wear: -.25, comfort: -.05 }, label: 'чистит трубу',  when: (h, c) => (h >= 10 && h < 16 && !c.ovenLit ? .1 : -2) },
-  firewood:  { room: 'outside',  give: { comfort: -.05 }, label: 'носит дрова снизу',     when: (h, c) => (c.logs <= 1 ? .5 : -.4) + (h >= 8 && h < 18 ? 0 : -1) },
+  firewood:  { room: 'outside',  give: { comfort: -.05 }, label: 'носит дрова снизу',     when: (h, c) => (c.logs <= 1 ? .5 : c.logs <= 3 ? 0 : -.4) + (h >= 8 && h < 18 ? 0 : -1) },   // a few logs up before the stack runs low
 };
 const isN = h => !(h >= 6 && h < 20);
 // graph node -> room (for lights and "where am I")
@@ -275,6 +275,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     else if (A.room && A.room === roomNow) s += Math.max(0, .4 - roomT / 120);   // first chain what is at hand in this room
     const i = recent.indexOf(name);
     if (i === 0) s -= .9; else if (i === 1) s -= .35; else if (i === 2) s -= .15;
+    if (name === 'window' && !isN(h)) { const days = sinceDays('window'); s += Math.min(1.2, Math.max(0, days - .5)); }   // the window is one of Pavel's everyday actions
+    if (name === 'tea' && (day.teas || 0) >= 2) s -= .6 * (day.teas - 1);   // a third or fourth cup a day only if nothing else
     if (mood < .35 && (name === 'read' || name === 'tea')) s += .25;   // low mood: comfort first
     if (mood > .7 && (name === 'craft' || name === 'look')) s += .15;
     s += rnd(0, .3);
@@ -296,7 +298,8 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (n === 'dump') { if (!WATER() || stock.dirtyW < .55) s = -99; }
     if ((n === 'fetch' || n === 'dump') && (h < 6.5 || h > 20.5)) s -= n === 'fetch' && stock.clean < .15 ? .6 : 1.6;
     if (n === 'eat') { if (!stock.meal || (need.hunger < .3 && !hotMeal)) s = -9; else s += .3 + (hotMeal ? 1.5 : 0); }   /* hotMeal: one plate while it is hot, not both portions in a row (3-day watch: eat, eat) */   // a pot of stew: two portions   // cooked: sits down to eat while it is hot
-    if (raining() && JOBS[n].task === 'trip') s -= 1;
+    // weather: a drizzle is put up with, a proper rain keeps him in unless he must, a storm always (5-day watch: water run in a storm)
+    if (n !== 'eat' && raining()) { const w = weather(), k = w ? w.rain : 'rain'; s -= k === 'storm' ? 30 : k === 'drizzle' ? .6 : (n === 'fetch' && stock.clean < .1 ? .8 : 2.2); }
     if (locked && n !== 'eat') s -= 20;             // lockdown: no trips, no water runs
     const i = recent.indexOf(n); if (i === 0 && n !== 'eat') s -= .6;
     return { name: n, s: s + rnd(0, .25), top: top || JOBS[n].top };
@@ -304,8 +307,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // the small chores: each go fixes a little; habits of the hour; never the same thing twice in a row
   const day = { hadTea: false, bolted: false, justWoke: false, justAte: false };
   const lanternTime = h => h >= 18.5 || h < 6.6;   // dusk already needs the lantern outside (the room lamps are on from ~17:36); dark(h) stays for lamps and washFace
+  // the approved everyday actions (Pavel): absH counts game hours since the start, lastDone[name] when he last did it
+  const HABITS = ['tea', 'splitwood', 'pot', 'stoke', 'dishes', 'saw', 'hammer', 'sharpen', 'fixlamp', 'stretch', 'diary', 'sweep', 'water', 'window', 'listen', 'bolt', 'supplies', 'radio', 'telescope', 'ledge', 'firewood'];
+  let absH = 0, lastHr = null; const lastDone = {};
+  const sinceDays = n => (absH - (lastDone[n] ?? (lastDone[n] = -rnd(0, 30)))) / 24;   // at the start: each one was done some hours ago
   const lateHours = h => h >= 19 || h < 5;   // evening and night: bolt and hatch-shut time
   const canDo = n => { const E = EXTRA[n]; if (E.task) return true; return !!(HH.hasTask && HH.hasTask(n)); };
+  const habitCtx = h => ({ logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
   function extraScore(n, h) {
     if (!canDo(n)) return null;
     const E = EXTRA[n];
@@ -314,8 +322,12 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // the door bolt is a before-bed thing (Pavel; critic B2: bolted at 13:00): only in the evening / night, or in a lockdown
     if (n === 'bolt' && !locked && !lateHours(h)) return null;
     let { s, top } = value(effOf(n));
-    s += E.when(h, { logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
+    s += E.when(h, habitCtx(h));
     s += weatherBonus(n, h);
+    // Pavel's 20 approved actions: each one is part of his life, not a rare chance. The longer since he last did it, the more
+    // it calls him, but only at an hour that suits it (its habit bonus is not negative) - 3-day watch: sweep, the plant,
+    // the radio and carrying firewood up never happened in 9 game days
+    if (HABITS.includes(n)) { const hb = E.when(h, habitCtx(h)); if (hb > -.25) { const days = sinceDays(n); s += Math.min(1.4, Math.max(0, days - .5) * 1.1); } }
     // a house that is in good shape needs no repairs: he waits until wear has built up (a full-day watch: 6 repairs at wear ~0)
     if (/^fix_/.test(n) && need.wear < .15) s -= 2.5 * (1 - need.wear / .15);
     // autumn litter on the roofs and deck (wind.js): he sweeps when it is leafy, skips it when clean
@@ -424,7 +436,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if (w && WATER() && !W) { stock.clean = clamp(stock.clean - w); stock.dirtyW = clamp(stock.dirtyW + w * .9); showStock(); }
       // tea and cooking take water from the tap bucket too (the body's dishes task runs the tap itself)
       else if (W && (st.task === 'tea' || st.task === 'cook') && W.setClean) { W.setClean(W.clean - w); W.setDirty(W.dirty + w * .8); } }
-    if (extra) { recent.unshift(extra); recent.length = 4; }
+    if (extra) { recent.unshift(extra); recent.length = 4; lastDone[extra] = absH; }
     // he stops reading: from now on the candle is his to blow out (or to forget)
     if (cur && cur.name === 'read' && st.task !== 'read' && hasCandle) lights.set('candle', candleOn());
     expected = st.task;
@@ -434,13 +446,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
         else if (a && a === visit.area) visit.left = Math.max(0, visit.left - 1);
         else if (a) { visit.area = a; visit.since = nowT; visit.left = 1 + Math.floor(Math.random() * 3); } } }
     tr('start:' + (st.extra || st.job || st.task) + (st.task === 'switch' && st.opts ? ':' + st.opts.light + (st.opts.on ? '+' : '-') : '')); trace[trace.length - 1].room = roomOfTask(st.extra || st.job || st.task);
-    if (st.task === 'tea') day.hadTea = true;
+    if (st.task === 'tea') { day.hadTea = true; day.teas = (day.teas || 0) + 1; }
     // reading in the dark: the candle lights itself when he sits down (lights.js); only putting it out is his job
     if (st.task === 'read' && hasCandle && lights.auto) lights.auto('candle');
     const A = ACTS[st.task];
     cur = st.cmd ? { name: st.task, t: 0, opts: st.opts, dur: A ? A.dur[1] * .7 : 0, min: A ? A.dur[0] * .7 : 0, cmd: true }
       : { name: st.task, t: 0, opts: st.opts, dur: A ? rnd(A.dur[0], A.dur[1]) : 0, min: A ? Math.max(8, A.dur[0] * .8) : 0 };
-    if (A) { recent.unshift(st.task); recent.length = 4; }
+    if (A) { recent.unshift(st.task); recent.length = 4; lastDone[st.task] = absH; }
     setGait();
     HH.startTask(st.task, st.opts);
     return true;
@@ -577,6 +589,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (!reachCache && (warmT += dt) > 3) { try { const P = planks(); if (P && P.list) reachable(P.list('shingle')); } catch (e) {} }
     const dh = gameHours();
     measureClock(dt); nowT += dt;
+    { const hh = hour(); if (lastHr != null) { let d = hh - lastHr; if (d < 0) d += 24; if (d < 3) absH += d; } lastHr = hh; }
     if (lockAsk) { lockAsk = false; brain.lockdown(true); }
     // the clock was set by hand (debug, tests): needs fit the new hour, as on a fresh start; what he is doing goes on
     if (jumped) { jumped = false; const h = hour(); const keep = { ...stock }, c = cur, e = expected, pl = plan.splice(0); brain.prime(h); Object.assign(stock, keep); cur = c; expected = e; plan.push(...pl); showStock(); tr('clockjump'); }
@@ -616,7 +629,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if ((h >= wake && h < 12 && need.energy > .6) || (h >= wake + 1.2 && h < 12) || nap) {
         wake = rnd(5.6, 6.6); bedTime = rnd(20.8, 21.6);
         if (locked && h < 12) brain.lockdown(false);   // morning: the night is over (not after an evening nap)
-        if (h < 12) { day.hadTea = false; day.bolted = false; day.retried = {}; day.justWoke = true; day.wokeAt = h; day.justAte = false; }   // a new day (not after a nap)
+        if (h < 12) { day.hadTea = false; day.bolted = false; day.retried = {}; day.teas = 0; day.justWoke = true; day.wokeAt = h; day.justAte = false; }   // a new day (not after a nap)
         tr('wake'); const d = decide(h); planFor(d.name, h, 'проснулся, хочет: ' + reasonOf(d));
         if (locked) { const rest = plan.splice(0); lockSteps(); plan.push(...rest); }
         startNext();
