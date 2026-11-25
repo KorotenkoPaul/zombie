@@ -206,11 +206,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
     // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
-    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); scene.add(bb);
+    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
     const hg = housing(bPos); lastHang = null; hang(bPos, .23, true); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, { l: bb, I: MOBILE ? 1.35 : 1.25 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
