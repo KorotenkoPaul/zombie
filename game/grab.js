@@ -153,7 +153,7 @@ export function createGrab({ THREE, bones }) {
   const api_dbg = {}; let HHref = null; const SW = { w: 0, ph: 0, ox: null };
   function setHandQ(side, Qh, w) { const hb = bones[side + 'Hand']; const pq = hb.parent.getWorldQuaternion(new THREE.Quaternion()); const cur = hb.getWorldQuaternion(new THREE.Quaternion()); hb.quaternion.copy(pq.invert().multiply(cur.slerp(Qh, w))); hb.updateMatrixWorld(true); }
   function sweepDrive(dt) { const P = PROPS || window.__props; const b = P && P.tools && P.tools.broom; const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero);
-    const on = !!(b && b.parent === bones.RightHand && H && H.task === 'sweep' && !window.__noSweepDrive); SW.w = Math.max(0, Math.min(1, SW.w + (on ? dt : -dt) / .5)); if (SW.w < .01 || !b || b.parent !== bones.RightHand) return false;
+    const on = !!(b && b.parent === bones.RightHand && H && H.task === 'sweep' && sweepStep() && !window.__noSweepDrive); SW.w = Math.max(0, Math.min(1, SW.w + (on ? dt : -dt) / .5)); if (SW.w < .01 || !b || b.parent !== bones.RightHand) return false;
     const hips = bones.Hips; const hp = hips.getWorldPosition(V()); const fw = V(0, 0, 1).applyQuaternion(hips.getWorldQuaternion(new THREE.Quaternion())); fw.y = 0; fw.normalize(); const rt = V(0, 1, 0).cross(fw).normalize().negate();
     // the clip folds him nearly double over the broom: the chest is held to at most ~35 deg forward (a sweeper's stoop)
     { const sp2 = bones.Spine2; if (sp2 && SW.w > .01) { const up = V(0, 1, 0).applyQuaternion(sp2.getWorldQuaternion(new THREE.Quaternion())); const pitch = Math.atan2(up.dot(fw), up.y); const tg = Math.max(0, pitch - .6) * SW.w; SW.ex = (SW.ex || 0) + Math.max(-1.2 * dt, Math.min(1.2 * dt, tg - (SW.ex || 0))); const ex = SW.ex; // eased: no jerk
@@ -233,9 +233,31 @@ export function createGrab({ THREE, bones }) {
       hb.updateMatrixWorld(true); const h = hb.getWorldPosition(V()), fp = fa.getWorldPosition(V()); const pm = h.add(h.clone().sub(fp).normalize().multiplyScalar(.07)); // = hero.js odPalm
       const g = o.userData.grip ? o.userData.grip.clone() : V(0, .35, 0); const ws = o.getWorldScale(V()).x; const pos = pm.sub(g.multiplyScalar(ws).applyQuaternion(_bq));
       const M = new THREE.Matrix4().compose(pos, _bq, V(ws, ws, ws)); M.premultiply(hb.matrixWorld.clone().invert()); M.decompose(o.position, o.quaternion, o.scale); o.updateMatrixWorld(true); } }
-  function twoHands(dt) { try { hangBuckets(); } catch (e) { console.error('grab bucket', e); } try { doorDrive(dt); } catch (e) { console.error('grab door', e); } const P = PROPS || window.__props; if (!P || !P.tools) return; if (sweepDrive(dt)) return;
+  // ---- carrying the broom (to its corner, after the sweep): the clip held it upright before his chest, the stick's top at his mouth
+  // (watch R25-1). Carried like a child carries a long broom: the fist low at his right hip, the handle slanting ~50 deg from upright, the
+  // bristles ahead of him above the boards (as the sweep left them), the top end behind the hip. It eases in as the sweep lets go (one move from
+  // the stroke into the carry, no upright moment) and out within a metre of the broom's corner, where it is stood back upright ----
+  const BC = { w: 0 }; api_dbg.BC = BC;
+  /* the sweep task carries the broom there and back too (steps take / work / put / carry): only its work step is sweeping */
+  const sweepStep = () => { const A = HHref && HHref.act || (window.__dbg && window.__dbg.HH && window.__dbg.HH.act); const st = A && A.step; return !st || st === 'work'; };
+  function broomCarry(dt) { const P = PROPS || window.__props; const b = P && P.tools && P.tools.broom; const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero);
+    const held = !!(b && b.parent === bones.RightHand && b.visible !== false && H); let k = 0;
+    if (held && !(H.task === 'sweep' && sweepStep()) && !window.__noBroomCarry) { const hm = b.userData.home; const hp0 = bones.Hips.getWorldPosition(V());
+      const A = HHref && HHref.act || (window.__dbg && window.__dbg.HH && window.__dbg.HH.act); const st = A && A.step; k = st === 'take' ? 0 : 1; /* the take has its own hand; carried so up to the put (upright again near the corner it swept through his shins) */ if (k && hm && hm.pos && window.__broomNearFade) { const hw = hm.parent && hm.parent.localToWorld ? hm.parent.localToWorld(hm.pos.clone()) : hm.pos; const d = Math.hypot(hw.x - hp0.x, hw.z - hp0.z); k = Math.max(0, Math.min(1, (d - .6) / .5)); } }
+    BC.w = Math.max(0, Math.min(1, BC.w + Math.max(-dt / .45, Math.min(dt / .45, k - BC.w)))); if (BC.w < .01) { BC.last = null; return false; }
+    if (!held) { if (BC.last) { const w = BC.w * BC.w * (3 - 2 * BC.w); ik2('Right', BC.last.wrist, w); setHandQ('Right', BC.last.Qh, w); } return false; } /* the broom set down: the hand leaves from where it let go, eased (it snapped back to the clip in a frame) */
+    const hips = bones.Hips; const hp = hips.getWorldPosition(V()); const fw = V(0, 0, 1).applyQuaternion(hips.getWorldQuaternion(new THREE.Quaternion())); fw.y = 0; fw.normalize(); const rt = V(0, 1, 0).cross(fw).normalize().negate();
+    const fy = H.root ? H.root.position.y : hp.y - .95; const sp = GRIP.broom; const bs = b.getWorldScale(V()).x;
+    const dir = V(0, .6, 0).addScaledVector(fw, -.8).addScaledVector(rt, -.12).normalize(); // bristles -> top: the top end low behind his right hip, the bristles ahead of him and off the boards (trailing behind, they swept through his shins on the way)
+    const Gp = hp.clone().addScaledVector(rt, .23).addScaledVector(fw, .08); Gp.y = hp.y - .12; // the bristles out to his right of the walking feet
+    const low = Gp.y - dir.y * sp.g[1] * bs; if (low < fy + .06) Gp.y += fy + .06 - low; // the bristles never on (or through) the boards
+    const z = fw.clone().addScaledVector(dir, -fw.dot(dir)).normalize(); const x = dir.clone().cross(z).normalize(); const Qt = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, dir, z));
+    const Qh = Qt.clone().multiply(b.quaternion.clone().invert()); const hs = bones.RightHand.getWorldScale(V()).x;
+    const gl = V(...sp.g).multiplyScalar(b.scale.x).applyQuaternion(b.quaternion).add(b.position).multiplyScalar(hs); const wrist = Gp.clone().sub(gl.applyQuaternion(Qh));
+    const w = BC.w * BC.w * (3 - 2 * BC.w); ik2('Right', wrist, w); setHandQ('Right', Qh, w); BC.last = { wrist: wrist.clone(), Qh: bones.RightHand.getWorldQuaternion(new THREE.Quaternion()) }; return true; }
+  function twoHands(dt) { try { hangBuckets(); } catch (e) { console.error('grab bucket', e); } try { doorDrive(dt); } catch (e) { console.error('grab door', e); } const P = PROPS || window.__props; if (!P || !P.tools) return; const swOn = sweepDrive(dt); const bcOn = broomCarry(dt); if (swOn) return;
     for (const side of ['Left', 'Right']) { const other = side === 'Left' ? 'Right' : 'Left'; const ho = bones[other + 'Hand'], hs = bones[side + 'Hand']; let tool = null, nm = null;
-      for (const k in P.tools) { const o = P.tools[k]; if (o && o.parent === ho && o.visible !== false && GRIP[k] && GRIP[k].two) { tool = o; nm = k; break; } }
+      for (const k in P.tools) { const o = P.tools[k]; if (o && o.parent === ho && o.visible !== false && GRIP[k] && GRIP[k].two && !(k === 'broom' && bcOn)) { tool = o; nm = k; break; } } /* carried one-handed at the hip: the left hand stays free */
       let busy = false; for (const ch of hs.children) if (ch.isObject3D && !ch.isBone && ch.visible && !/mixamorig/.test(ch.name)) busy = true; if (grip[side]) busy = true;
       let ok = !!tool; if (tool) { tool.updateMatrixWorld(true); const p = tool.localToWorld(V(...GRIP[nm].two)); const sh = bones[side + 'Arm'].getWorldPosition(V()); const hips = bones.Hips; const fw = V(0, 0, 1).applyQuaternion(hips.getWorldQuaternion(new THREE.Quaternion())); fw.y = 0; fw.normalize();
         const hp = hips.getWorldPosition(V()); ok = p.y < sh.y - .05 && p.clone().sub(hp).dot(fw) > .05 && p.distanceTo(sh) < .62; } // only where a real second hand would go: below the shoulder, in front of him, within reach
