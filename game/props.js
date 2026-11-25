@@ -1738,13 +1738,13 @@ export function buildProps(ctx) {
   const COVER_SEG = [['Hips', 'Spine1', .15], ['Spine1', 'Spine2', .16], ['Spine2', 'Neck', .13], ['LeftUpLeg', 'RightUpLeg', .12],
     ['LeftUpLeg', 'LeftLeg', .105], ['RightUpLeg', 'RightLeg', .105], ['LeftLeg', 'LeftFoot', .085], ['RightLeg', 'RightFoot', .085],
     ['LeftFoot', 'LeftToeBase', .09], ['RightFoot', 'RightToeBase', .09],
-    ['LeftShoulder', 'LeftArm', .075], ['RightShoulder', 'RightArm', .075], ['LeftArm', 'LeftForeArm', .06], ['RightArm', 'RightForeArm', .06]];/* forearms and hands stay out (on top of the quilt), they tented it into peaks */
+    ['LeftShoulder', 'LeftArm', .075], ['RightShoulder', 'RightArm', .075], ['LeftArm', 'LeftForeArm', .06], ['RightArm', 'RightForeArm', .06], ['LeftForeArm', 'LeftHand', .06, 1], ['RightForeArm', 'RightHand', .06, 1]];/* R54-1: a forearm and fist lying low beside him (under the hips' height) are covered too: the fist stood out through the quilt's side. Up on his chest or stomach they stay out on top *//* forearms and hands stay out (on top of the quilt), they tented it into peaks */
   let coverBones = null, coverT = 0; const cb = [];
   function findCoverBones() { if (coverBones) return coverBones; if (!press.at) return null; const at = bunk.localToWorld(press.at.clone()); let sk = null, best = 1e9;
     const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
     const byName = {}; for (const bn of sk.bones) byName[bn.name.replace(/^.*[:_]/, '').replace(/^mixamorig/, '')] = bn;
-    const list = []; for (const [a, b, r] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r, f: /Leg|Foot|Toe/.test(a + b) ? .75 : 1.05 }); return (coverBones = list.length >= 8 ? list : null); }
+    const list = []; for (const [a, b, r, low] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r, f: /Leg|Foot|Toe/.test(a + b) ? .75 : 1.05, low: !!low, hips: byName.Hips }); return (coverBones = list.length >= 8 ? list : null); }
   out._quiltDbg = () => ({ qTop, qBot, m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V(), _cw = V();
   // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
@@ -1779,7 +1779,7 @@ export function buildProps(ctx) {
     else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
     press.shown = press.k; fold.shown = fold.a;
     if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
-      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f: q.f || 1 }); } } }
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f: q.f || 1 }); } } }
     const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
     for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
       let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }
