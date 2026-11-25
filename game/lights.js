@@ -304,7 +304,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(.035, 10, 8), bm); bulb.position.y = -.17; g.add(bulb);
     // a carried oil lantern lights a pool of ground ~3 m round him and the fog around it (the halo, and Environment's fog
     // puffs pick up the lowest lit halos). Indoors it is dimmer so it doesn't fight the room lamps.
-    const l = new THREE.PointLight(0xFFC373, 0, 3.8, 1.5); l.position.y = -.17; g.add(l);   // short reach: no shadow map, so it must not climb through the floors above
+    const l = new THREE.PointLight(0xFFB458, 0, 4.2, 1.5); l.position.y = -.17; g.add(l);   // short reach: no shadow map, so it must not climb through the floors above
     hand.bulbPos = bulb; hand.light = l; hand.bulb = bulb;
     const s0 = add('hand', 'outside', 'oil', V(), { lights: [{ l, I: 3.4 }], emis: [[bm, 5]], haloSize: 1.5, autoFn: () => false });
     hand.L = s0.lights[0];
@@ -313,9 +313,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const g = hand.g, hs = src.get('hand');
     if (!hand.attached) { if (hs && hs.manual) hs.manual = null; return; }     // nothing to light while nobody carries it
     hand.bulbPos.getWorldPosition(hs.pos);
-    // outdoors (below the house floors or out on the open ground) the lantern is the only light around: full strength
+    // outdoors (below the house floors or out on the open ground) the lantern is the only light around: full strength,
+    // enough for a warm pool on the dark grass and roots through the blue ground fog (at 4.2 the fog swallowed it)
     const outdoors = hs.pos.y < (LV.LC || 4.4) - .3 || hs.pos.z > 4.7; hand.outdoors = outdoors;
-    hand.L.I += ((outdoors ? 4.2 : 1.6) - hand.L.I) * Math.min(1, dt * 2);
+    hand.L.I += ((outdoors ? 7.5 : 1.6) - hand.L.I) * Math.min(1, dt * 2);
     if (hand.fixed) { hand.g.quaternion.identity(); return; }
     // hangs from the fingers, stays upright and swings a little with the walk
     const pq = hand.attached.getWorldQuaternion(new THREE.Quaternion()).invert();
