@@ -49,6 +49,8 @@ export function dressHero({ THREE, root }) {
   const hipsI = m => m.skeleton.bones.findIndex(x => /Hips$/.test(x.name));
   const toBody = m => hipsI(m) < 0 || hipsI(meshes.body) < 0 ? m.bindMatrix.clone() : meshes.body.bindMatrix.clone().multiply(meshes.body.skeleton.boneInverses[hipsI(meshes.body)].clone().invert()).multiply(m.skeleton.boneInverses[hipsI(m)]).multiply(m.bindMatrix);
   const uVest = { value: 1 };
+  const jointSet = m => m === meshes.body ? ['LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'] : m === meshes.boots ? ['LeftLeg', 'LeftFoot', 'RightLeg', 'RightFoot'] : null;
+  const mbi = (m, n) => m.skeleton.bones.findIndex(b => b.name.replace('mixamorig', '').replace(':', '') === n);
   const v = new THREE.Vector3(), n3 = new THREE.Vector3(), nm = new THREE.Matrix3();
   function attrs(mesh, cls) {
     const g = mesh.geometry; const P = g.attributes.position, N = g.attributes.normal, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight; if (!P || !N || !SI) return;
@@ -90,16 +92,18 @@ export function dressHero({ THREE, root }) {
     // knees: plain linear skinning blends the thigh and shin positions straight across, so deep in a crouch the knee's blend band
     // collapses towards the bone into a flat sharp wedge (critic pass 22, fridge). For that band the shader turns the point about the
     // knee joint instead (direction interpolated, distance from the joint kept): a round knee. kq = (share, shin part) per side.
-    if (mesh === meshes.body) { const kq = new Float32Array(cnt * 4); const ix = ['LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'].map(bi);
+    /* the boots do the same about the ankle: deep in a crouch the shaft folded into a sharp beak over the instep */
+    const JS = jointSet(mesh); if (JS) { const kq = new Float32Array(cnt * 4); const ix = JS.map(n => mbi(mesh, n));
       for (let i = 0; i < cnt; i++) for (let sd = 0; sd < 2; sd++) { let wu = 0, wl = 0; for (let c = 0; c < 4; c++) { const j = GC(SI, i, c), w = GC(SW, i, c); if (j === ix[sd * 2]) wu += w; if (j === ix[sd * 2 + 1]) wl += w; }
         if (wu > .01 && wl > .01) { kq[i * 4 + sd * 2] = wu + wl; kq[i * 4 + sd * 2 + 1] = wl / (wu + wl); } }
       g.setAttribute('kq', new THREE.BufferAttribute(kq, 4)); }
     g.setAttribute('kp', new THREE.BufferAttribute(kp, 3)); g.setAttribute('kn', new THREE.BufferAttribute(kn, 3)); g.setAttribute('kx', new THREE.BufferAttribute(kx, 3));
   }
-  // knee joints in the skinning space of the bind pose, and the leg bones' slots: uniforms of the body's shader
-  const KU = (() => { const ix = ['LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'].map(bi); const kp0 = n => { const p = bindPos(n); return p ? p : new THREE.Vector3(); };
+  // the joints (knee for the body, ankle for the boots) in each mesh's own skinning space of the bind pose, and the bones' slots
+  const KU = mesh => { const JS = jointSet(mesh); const ix = JS ? JS.map(n => mbi(mesh, n)) : [-1, -1, -1, -1];
+    const jp = i => i < 0 ? new THREE.Vector3() : new THREE.Vector3().setFromMatrixPosition(mesh.skeleton.boneInverses[i].clone().invert());
     const on = new URLSearchParams(location.search).get('knee') !== '0' && ix.every(i => i >= 0);
-    return { uKI: { value: new THREE.Vector4(...ix.map(i => Math.max(0, i))) }, uKC0: { value: kp0('LeftLeg') }, uKC1: { value: kp0('RightLeg') }, uKOn: { value: on ? 1 : 0 } }; })();
+    return { uKI: { value: new THREE.Vector4(...ix.map(i => Math.max(0, i))) }, uKC0: { value: jp(ix[1]) }, uKC1: { value: jp(ix[3]) }, uKOn: { value: on ? 1 : 0 } }; };
   const KNEE_GLSL = `#ifdef USE_SKINNING
 if(uKOn>.5&&kq.x+kq.z>0.){for(int s=0;s<2;s++){float m=s==0?kq.x:kq.z;if(m<=0.)continue;float t=s==0?kq.y:kq.w;
  mat4 Mu=getBoneMatrix(s==0?uKI.x:uKI.z),Ml=getBoneMatrix(s==0?uKI.y:uKI.w);vec3 c=(Ml*vec4(s==0?uKC0:uKC1,1.)).xyz;
@@ -118,10 +122,10 @@ float hcKnit(float t,float s){float cw=.0062,rh=.0050;float x=fract(t/cw)-.5,y=f
 float hcTwill(float t,float s){return .5+.5*sin(6.28318*(s+t)/.0024);}
 `;
   function hook(mesh, cls) {
-    attrs(mesh, cls);
+    attrs(mesh, cls); const KUm = KU(mesh);
     const m = mesh.material;
     m.onBeforeCompile = sh => {
-      sh.uniforms.uVestOn = uVest; Object.assign(sh.uniforms, KU);
+      sh.uniforms.uVestOn = uVest; Object.assign(sh.uniforms, KUm);
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 kp;attribute vec3 kn;attribute vec3 kx;attribute vec4 kq;uniform vec4 uKI;uniform vec3 uKC0;uniform vec3 uKC1;uniform float uKOn;varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;')
         .replace('#include <skinning_vertex>', '#include <skinning_vertex>\n' + KNEE_GLSL).replace('#include <begin_vertex>', '#include <begin_vertex>\nvKp=kp;vKn=kn;vKx=kx;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uVestOn;varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;' + GLSL_NOISE + '\nfloat hcHgt=0.;float hcAmp=0.;float hcRough=-1.;')
