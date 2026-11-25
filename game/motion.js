@@ -264,11 +264,15 @@ export function createMotion({ hero, db, opts = {} }) {
     const np = H.noPop && H.noPop.until > T0() ? H.noPop.side : null;
     for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; const q = B.quaternion; fRaw[b*4] = q.x; fRaw[b*4+1] = q.y; fRaw[b*4+2] = q.z; fRaw[b*4+3] = q.w; }
     let any = false, hit = 0; const thr = FP.hot > 0 ? FP.thrHot : FP.thr;
+    // the game walk (gamewalk.js, ?style=game) plants each foot in the world and solves the legs to it: a 'pop' it makes in a thigh or a
+    // shin is the leg reaching its next planned ankle, and easing that bone from last frame's angle took the planted foot off its spot
+    // (stage trace, style=game trip: the pop filter alone added 8 cm/frame² to a standing foot). Lower-body bones take no new pops then.
+    const gwPlant = !!(window.__gamewalk && window.__gamewalk.S && window.__gamewalk.S.w > .01);
     // a snap spread over a chain (spine, spine1, spine2, neck, head each 8-12 deg in one frame) stays under the per-bone limit but
     // throws the head 25-30 cm: deviations are summed down the chain and a chain over the limit is caught as a whole
     for (let b = 0; b < NB; b++) { fDv[b] = -1; fHit[b] = 0; const B = HB[b]; if (!B) continue;
       const offB = off || (np && names[b] && new RegExp('^' + np + '(Arm|ForeArm|Hand)$').test(names[b]));
-      if (!offB && !climbIK && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01)) fDv[b] = devAngle(fRaw, b*4, fr1, fr2, b*4);
+      if (!offB && !climbIK && fN >= 2 && !(S.on && isLower[b] && legSide[b] >= 0 && lock[legSide[b]].w > .01) && !(gwPlant && isLower[b])) fDv[b] = devAngle(fRaw, b*4, fr1, fr2, b*4);
       const p = par[b]; fAcc[b] = (fDv[b] > FP.chainMin ? fDv[b] : 0) + (p >= 0 && fDv[p] >= 0 ? fAcc[p] : 0);
       if (fDv[b] > thr) fHit[b] = 1;
       else if (fDv[b] > FP.chainMin && fAcc[b] > Math.max(FP.chainFloor, thr * FP.chainK)) { fHit[b] = 1; for (let q = par[b]; q >= 0 && fDv[q] > FP.chainMin; q = par[q]) fHit[q] = 1; } }
