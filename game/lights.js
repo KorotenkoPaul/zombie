@@ -505,6 +505,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const spill = new THREE.SpotLight(0xFFA04C, 0, 9, .75, 1, 1.4);
     spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
     spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
+    /* phones: the doorway's warm wedge on the doorstep is the brightest warm spot at the foot of the photo and always in the
+       home view; scored on the hero's distance alone it lost its pool slot whenever he was up in the house (doorstep 82 vs
+       the photo's 118). It counts x3 in the slot race (only while lit, and a lantern by the hero still wins its slot back) */
+    spill.userData.poolPri = 3;
     add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 2.0, haloTint: 0xFF9E52,
       // the photo's brightest warm spot at the foot of the tree (door moved down into view, ab2ddf4): a hotter hollow and spill
       extra: (k, f) => { if (glow) glow.value = 4.6 * k * f; }, autoFn: c => c.lamps > .3 });
@@ -1138,7 +1142,20 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // Pavel: the bedroom textiles must read warm, not moon-blue. Environment's interior mask (a LightProbe used as a parameter)
     // turns the leftover blue night fill warm inside the rooms, same luminance (no brighter room); the moon stays outside.
     if (!inProbe) scene.traverse(o => { if (o.isLightProbe && o.name === 'envInteriorK') inProbe = o; });
-    if (inProbe) inProbe.sh.coefficients[0].y = .85 * (1 - dayK);
+    if (inProbe) {
+      inProbe.sh.coefficients[0].y = .85 * (1 - dayK);
+      /* per room (Env's box order: kitchen, bedroom, workshop): the warm tint only where the hero is or a lamp/fire burns.
+         An empty dark room keeps the cool moonlit fill, so from outside it reads dark, not lamp-lit (phones: the empty
+         workshop read orange, as if its lamp were on). Eased over ~1 s so walking in never pops. */
+      const B = window.__env && window.__env.interiorBoxes, hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root;
+      const c1 = inProbe.sh.coefficients[1], kk = 1 - Math.exp(-dt * 2.5);
+      ['kitchen', 'bedroom', 'workshop'].forEach((room, i) => {
+        let t = roomLevel(room) > .02 ? 1 : 0;
+        if (!t && hr && B && B[i]) { const p = hr.position, r = B[i]; if (p.x > r[0] - .2 && p.x < r[1] + .2 && p.y > r[2] - .3 && p.y < r[3] && p.z > r[4] - .2 && p.z < r[5] + .2) t = 1; }
+        if (!B) t = 1;
+        c1.setComponent(i, c1.getComponent(i) + (t - c1.getComponent(i)) * kk);
+      });
+    }
     // the bedroom by day: its walls read red-orange in daylight (blue ~10/255); half the kitchen's honey toward the photo's
     // tone, by day only, so the approved cosy, dim night bedroom is exactly as before
     if (window.__wearHy) window.__wearHy[1] = .5 * smooth(.3, .8, dayK);
@@ -1215,7 +1232,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const hp = hr ? pool.hero.copy(hr.position).add(V(0, 1, 0)) : null;
     const score = l => { if (l.intensity < .02) return 0; l.getWorldPosition(wp);
       const dh = hp ? wp.distanceTo(hp) : 99, dc = cam ? wp.distanceTo(cam.position) * .7 : 99, d = Math.min(dh, dc);
-      return l.intensity / (.5 + d * d); };
+      return l.intensity * (l.userData.poolPri || 1) / (.5 + d * d); };
     const sc = new Map(); for (const l of virt) sc.set(l, score(l));
     for (const sl of slots) sl.sc = sl.v ? sc.get(sl.v) : 0;
     // a lit source without a slot takes a free one at once; it takes a busy one only from a source that went dark,
