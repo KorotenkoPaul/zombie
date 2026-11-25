@@ -1020,7 +1020,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    else{s.up=Math.max(0,s.up-dt*5);if(go(s.to,3.2)){sq.visible=false;S0=null;wait=rr(60,150);return;}}
    // sitting up: tilt back on the haunches, a quick tail flick
    sq.position.copy(s.pos);sq.rotation.set(-.55*s.up+(s.ph==='sit'?Math.max(0,Math.sin(s.sit*9))*.08:0),s.yaw,0,'YXZ');};}
- G.updateLife=(dt,cam)=>{G._gw(dt);G._moths(dt);G._critters(dt);G._mist(dt);if(G._pond)G._pond(dt,cam);G._butter(dt);G._birds(dt);G._squirrel(dt);};
+ G.updateLife=(dt,cam)=>{if(G._skitter)G._skitter(dt);G._gw(dt);G._moths(dt);G._critters(dt);G._mist(dt);if(G._pond)G._pond(dt,cam);G._butter(dt);G._birds(dt);G._squirrel(dt);};
  // ---- one draw call for the litter: fallen leaves, acorns and mushrooms baked into one static mesh with a two-cell atlas
  // (left: the oak-leaf picture, right: plain white for the vertex-coloured acorns and mushrooms); mushroom caps keep their glow ----
  if(G.leaves&&G.acorns&&G.shrooms){const leafTex=G.leaves.material.map;const cv=document.createElement('canvas');cv.width=384;cv.height=128;const x=cv.getContext('2d');
@@ -1040,6 +1040,36 @@ export function createGround(C){const __before=new Set(C.scene.children);
   mat.onBeforeCompile=sh=>{addWet(sh,'.45');sh.uniforms.uGlow=glowU;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aCap;varying float vCap;').replace('#include <begin_vertex>','#include <begin_vertex>\nvCap=aCap;');
    sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float uGlow;varying float vCap;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.2)*vCap*uGlow;');};
   const litter=new THREE.Mesh(mergeGeometries(parts),mat);litter.name='litter';litter.receiveShadow=true;scene.add(litter);G.litter=litter;}
+ // ---- the litter stirs: a gust rolling over the clearing (Wind) picks single leaves off the floor and sends them skittering and
+ // tumbling downwind a metre or three; they fetch up against a root, the bank or a stone and lie there. His boots kick one up now
+ // and then when he walks through the leaves. One small instanced mesh (MOBILE 10 / desktop 18 leaves), the litter's own atlas cell.
+ {const NK=MOBILE?10:18;const g=new THREE.PlaneGeometry(1,1,2,2).rotateX(-Math.PI/2);{const p=g.attributes.position,uv=g.attributes.uv;for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setY(i,x*x*.35+z*z*.12);uv.setX(i,Math.min(.98,Math.max(.02,uv.getX(i)))/3);}g.computeVertexNormals();}
+  const lm=G.litter.material,km=new THREE.MeshStandardMaterial({map:lm.map,alphaTest:.5,side:THREE.DoubleSide,roughness:.78});
+  const im=new THREE.InstancedMesh(g,km,NK);im.name='leafSkitter';im.frustumCulled=false;im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);im.receiveShadow=true;
+  const pal=[[.07,.7,.36],[.04,.65,.3],[.1,.65,.4],[.16,.45,.32],[.12,.4,.26],[.09,.8,.46]];const Z=new THREE.Matrix4().makeScale(0,0,0);
+  for(let i=0;i<NK;i++){const c=pal[i%pal.length];Col.setHSL(c[0],c[1],c[2]);im.setColorAt(i,Col);im.setMatrixAt(i,Z);}scene.add(im);G.skitter=im;
+  const K=[];for(let i=0;i<NK;i++)K.push({on:0,t:0});let acc=0,hp=null,kickAcc=0;const q=new THREE.Quaternion(),e=new THREE.Euler(),m=new THREE.Matrix4(),p3=V(),sc=V();
+  const ok=(x,z)=>rootD(x,z)>.06&&pondD(x,z)>.15;
+  const start=(x,z,vx,vz,hop)=>{let l=K.find(k=>!k.on);if(!l){l=K.reduce((a,b)=>a.t>b.t?a:b);}/* all busy: the longest-resting one goes */
+   Object.assign(l,{on:1,x,z,vx,vz,ph:rr(0,6.3),hop,run:rr(.7,2.2),t:0,yaw:rr(0,6.3),roll:rr(0,6.3),rs:rr(5,11)*(R()<.5?-1:1),sz:rr(.1,.16),k:0,rest:0});};
+  G._skitter=dt=>{const W=C.wind;if(!W||!W.sample)return;
+   // gusts: a leaf goes where the gust is strong (sampled at a random spot in the clearing each frame)
+   const a=rr(0,6.28),r=Math.sqrt(rr(2.5*2.5,13*13)),x=Math.cos(a)*r,z=Math.sin(a)*r*.9;const w=W.sample({x,z});
+   acc+=dt*Math.max(0,w.s-.62)*(MOBILE?5:8);if(acc>=1){acc=0;if(ok(x,z)&&pathD(x,z)>-.2){const sp=1.1+R()*.9;start(x,z,w.x/Math.max(.3,w.s)*sp*Math.min(1.6,w.s),w.z/Math.max(.3,w.s)*sp*Math.min(1.6,w.s),rr(.04,.12));}}
+   // his boots in the leaves
+   const h=window.__dbg&&window.__dbg.hero&&window.__dbg.hero.root;if(h){const hpp=h.position;if(hp){const d=Math.hypot(hpp.x-hp[0],hpp.z-hp[1]);const v=d/Math.max(dt,1e-3);
+     if(v>.5&&v<4&&hpp.y-groundH(hpp.x,hpp.z)<.15&&Math.hypot(hpp.x,hpp.z)>2.3){kickAcc+=dt*.45;if(kickAcc>=1){kickAcc=0;const dx=(hpp.x-hp[0])/d,dz=(hpp.z-hp[1])/d;const sx=hpp.x+dx*.15+rr(-.12,.12),sz2=hpp.z+dz*.15+rr(-.12,.12);if(ok(sx,sz2))start(sx,sz2,dx*rr(.5,.9)+rr(-.2,.2),dz*rr(.5,.9)+rr(-.2,.2),rr(.03,.07));}}}
+    hp=[hpp.x,hpp.z];}
+   let any=false;for(let i=0;i<NK;i++){const l=K[i];if(!l.on)continue;any=true;l.t+=dt;
+    if(!l.rest){const f=Math.max(0,1-l.t/l.run);/* slows as the gust passes */const nx=l.x+l.vx*f*dt,nz=l.z+l.vz*f*dt;
+     if(!ok(nx,nz)){l.rest=1;}else{l.x=nx;l.z=nz;}l.ph+=dt*(6+8*f);l.roll+=l.rs*dt*f;l.yaw+=dt*f*1.5;if(l.t>l.run)l.rest=1;}
+    l.k=Math.min(1,l.k+dt*8);
+    const air=l.rest?0:Math.abs(Math.sin(l.ph))*l.hop*Math.max(0,1-l.t/l.run);const y=meshH(l.x,l.z)+.014+air;
+    // tumbling about the wind axis while it skips; flat (a little curled up) once it lies
+    const tilt=l.rest?0:Math.sin(l.roll)*1.2;q.setFromEuler(e.set(tilt*.6,l.yaw,tilt,'YXZ'));
+    if(l.rest&&l.t>l.run+40){l.k-=dt*.04;if(l.k<=0){l.on=0;im.setMatrixAt(i,Z);continue;}}/* after a while it has blended into the litter */
+    m.compose(p3.set(l.x,y,l.z),q,sc.set(l.sz*l.k,l.sz*l.k,l.sz*1.15*l.k));im.setMatrixAt(i,m);}
+   if(any)im.instanceMatrix.needsUpdate=true;};}
  // everything this module added to the scene (for the perf budget checks)
  G.objects=C.scene.children.filter(o=>!__before.has(o));
  return G;
