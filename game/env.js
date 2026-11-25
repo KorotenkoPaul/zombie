@@ -233,8 +233,10 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const SOFT_GLSL=`
 #include <packing>
 uniform sampler2D tDepth;uniform vec2 uRes;uniform float cNear,cFar,soft,softS;
-float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float sd=texture2D(tDepth,su).x;
- float sz=-perspectiveDepthToViewZ(sd,cNear,cFar);float fz=-perspectiveDepthToViewZ(gl_FragCoord.z,cNear,cFar);return clamp((sz-fz)/(range*softS),0.,1.);}`;
+float softK1(vec2 su,float fz,float range){float sz=-perspectiveDepthToViewZ(texture2D(tDepth,su).x,cNear,cFar);return clamp((sz-fz)/(range*softS),0.,1.);}
+float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes,o=1.25/uRes;float fz=-perspectiveDepthToViewZ(gl_FragCoord.z,cNear,cFar);if(softS<.5)return softK1(su,fz,range);/* phones (the shared fog pass, softS .22): one tap */
+ /* [ENV] 4 taps around the pixel: the half-res depth of leaf cards made a stair-stepped unfogged band around the bushes (Ground) */
+ float k=.25*(softK1(su+vec2(o.x,o.y),fz,range)+softK1(su+vec2(-o.x,o.y),fz,range)+softK1(su+vec2(o.x,-o.y),fz,range)+softK1(su-o,fz,range));return k*k*(3.-2.*k);}`;
  let depthRT=null;const depthMat=new THREE.MeshBasicMaterial({colorWrite:false});const aDepth=new WeakMap();
  if(SOFT){depthRT=new THREE.WebGLRenderTarget(4,4,{depthBuffer:true});depthRT.depthTexture=new THREE.DepthTexture(4,4);depthRT.depthTexture.type=THREE.UnsignedIntType;softU.tDepth.value=depthRT.depthTexture;}
  // wind (wind.js, window.__wind): fog noise drifts downwind and puffs lean/churn with the gusts
