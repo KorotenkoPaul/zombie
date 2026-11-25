@@ -1064,9 +1064,15 @@ if(!/[?&]noplcull/.test(location.search)){const VW=[],_fr=new THREE.Frustum(),_p
    const is=a.itemSize,sa=a.array,da=d.array;for(let j=0;j<k;j++){const i=v.vis[j];for(let q=0;q<is;q++)da[j*is+q]=sa[i*is+q];}d.needsUpdate=true;v.ver.set(key,a.version);}
   v.n=n;v.k=k;};
  const prevB=scene.onBeforeRender,prevA=scene.onAfterRender;
- scene.onBeforeRender=function(r,sc,cam,...a){if(prevB)prevB.call(this,r,sc,cam,...a);if(window.__noPlCull)return;
+ /* [COLLIDE] re-entrant: a render inside the render (the desktop pond / puddle Reflector, and the shader warm-up draw that shows it)
+    ran this again while the real meshes were already hidden: it marked them not hidden, so the outer onAfterRender never showed
+    them again and the boards, beams and ladders stayed hidden outside the render for good (collide.js and every raycast lost the
+    house's walls, floors and ladders; on desktop the house planks were drawn only through the view copies). Only the outermost
+    render culls; a nested one draws with what the outer set up. A render that threw (no onAfterRender) is not waited for >1 s. */
+ let plDepth=0,plT=0;
+ scene.onBeforeRender=function(r,sc,cam,...a){if(prevB)prevB.call(this,r,sc,cam,...a);const now=performance.now();if(plDepth>0&&now-plT>1000)plDepth=0;if(plDepth++>0)return;plT=now;if(window.__noPlCull)return;
   for(const v of VW){if(!v.S.visible){v.hid=false;continue;}try{update(v,cam);}catch(e){console.warn('plank cull off',e);window.__noPlCull=true;return;}v.D.count=v.k;v.S.visible=false;v.hid=true;}};
- scene.onAfterRender=function(...a){for(const v of VW){if(v.hid){v.S.visible=true;v.hid=false;}v.D.count=0;}if(prevA)prevA.apply(this,a);};
+ scene.onAfterRender=function(...a){if(plDepth>1){plDepth--;if(prevA)prevA.apply(this,a);return;}plDepth=0;for(const v of VW){if(v.hid){v.S.visible=true;v.hid=false;}v.D.count=0;}if(prevA)prevA.apply(this,a);};
  window.__plView=VW;}
 window.__planks={meshes:{boards,beams,shingles:SHING},part:id=>PL[id]/* [PROPS] housewear.js: the instance behind an id */,list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
  setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,-1,1))/* below 0: worn, water-stained (housewear.js) */;A.needsUpdate=true;return true;},
