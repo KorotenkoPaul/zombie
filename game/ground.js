@@ -169,8 +169,8 @@ export function createGround(C){const __before=new Set(C.scene.children);
  const heroU={value:new THREE.Vector3(0,-99,0)};
  // his last few footfalls on the ground (x, ground y, z, strength): grass and ferns under a boot are pressed flat and spring back over ~7 s
  const NSTEP=6,stepsU={value:Array.from({length:NSTEP},()=>new THREE.Vector4(0,-99,0,0))};G.steps=stepsU.value;const stepT=new Float32Array(NSTEP).fill(-99);let stepHead=0,stepSide=1,stepLast=null,stepClock=0;
- const STEP_GLSL=`uniform vec4 uSteps[${NSTEP}];float stepPress(vec2 p,float r){float k=0.;for(int i=0;i<${NSTEP};i++){vec4 st=uSteps[i];k=max(k,smoothstep(r,r*.25,length(p-st.xz))*st.w);}return k;}`;
- const tickSteps=(dt,p)=>{stepClock+=dt;for(let i=0;i<NSTEP;i++){const age=stepClock-stepT[i];const v=stepsU.value[i];v.w=age<0||age>7?0:(age<.15?age/.15:1-Math.pow((age-.15)/6.85,.6));}
+ const STEP_GLSL=`uniform vec4 uSteps[${NSTEP}];float stepPress(vec2 p,float r){float k=0.;for(int i=0;i<${NSTEP};i++){vec4 st=uSteps[i];k=max(k,smoothstep(r,r*.25,length(p-st.xz))*st.w);}return k;}vec3 stepNear(vec2 p,float r){vec3 b=vec3(1.,0.,0.);for(int i=0;i<${NSTEP};i++){vec4 st=uSteps[i];vec2 d=p-st.xz;float l=length(d);float k=smoothstep(r,r*.25,l)*st.w;if(k>b.z)b=vec3(l>.001?d/l:vec2(1.,0.),k);}return b;}`;
+ const tickSteps=(dt,p)=>{if(G.stepsHold)return;/* test hook: freeze the footfalls as set */stepClock+=dt;for(let i=0;i<NSTEP;i++){const age=stepClock-stepT[i];const v=stepsU.value[i];v.w=age<0||age>7?0:(age<.15?age/.15:1-Math.pow((age-.15)/6.85,.6));}
   if(!p||p.y>groundH(p.x,p.z)+.25){stepLast=null;return;}if(!stepLast){stepLast=p.clone();return;}const d=Math.hypot(p.x-stepLast.x,p.z-stepLast.z);if(d<.33)return;
   const yaw=Math.atan2(p.x-stepLast.x,p.z-stepLast.z);const ox=Math.cos(yaw)*.09*stepSide,oz=-Math.sin(yaw)*.09*stepSide;stepSide=-stepSide;
   stepsU.value[stepHead].set(p.x+ox,p.y,p.z+oz,0);stepT[stepHead]=stepClock;stepHead=(stepHead+1)%NSTEP;stepLast.copy(p);};
@@ -321,7 +321,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
      float f=smoothstep(.55,.1,dd)*step(abs(ipw.y-uHero.y),.6)*uv.y;vec2 pd=dd>.001?dv/dd:vec2(1.,0.);
      transformed+=windLocal(vec3(pd.x*.22,-.12,pd.y*.22)*f*length(instanceMatrix[1].xyz)*.6);
      // where a boot came down: the tuft is pressed flat outwards from the print and slowly rises again
-     {float sp=stepPress(ipw.xz,.24)*uv.y;if(sp>.001){vec2 sd=pd;transformed+=windLocal(vec3(sd.x*.16,-.3,sd.y*.16)*sp*length(instanceMatrix[1].xyz)*.6);}}
+     {vec3 sn=stepNear(ipw.xz,.32);if(sn.z>.001){float hv=max(0.,(instanceMatrix*vec4(transformed,1.)).y-ipw.y);transformed+=windLocal(vec3(sn.x*hv*.85,-hv*.72,sn.y*hv*.85)*sn.z);}}/* blades laid down outwards, height for height */
      // a hedgehog or mouse parts the grass too (smaller radius)
      vec2 cv=ipw.xz-uCrit.xz;float cd=length(cv);float cf=smoothstep(.28,.05,cd)*uv.y;vec2 cdn=cd>.001?cv/cd:vec2(1.,0.);transformed+=windLocal(vec3(cdn.x*.14,-.06,cdn.y*.14)*cf*length(instanceMatrix[1].xyz)*.6);}
     #include <project_vertex>`);
@@ -330,7 +330,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    /* [ENV] a blade seen edge-on to a light (its back-face normal is not flipped, see NOFLIP) can give one huge specular pixel; bloom smeared it into a
       screen-wide green blob in a storm (Lights, frame 931). A blade never outshines a lamp: clamp it, and drop NaN */
    s.fragmentShader=s.fragmentShader.replace('#include <opaque_fragment>','outgoingLight=(outgoingLight.r+outgoingLight.g+outgoingLight.b<1e3)?min(outgoingLight,vec3(1.6)):vec3(0.);\n#include <opaque_fragment>');};
-  {const ob2=grassMat.onBeforeCompile;grassMat.onBeforeCompile=s=>{ob2(s);addLan(s,'4.');};}grassMat.customProgramCacheKey=()=>'groundGrass-clamp1-lan-step1';}
+  {const ob2=grassMat.onBeforeCompile;grassMat.onBeforeCompile=s=>{ob2(s);addLan(s,'4.');};}grassMat.customProgramCacheKey=()=>'groundGrass-clamp1-lan-step2';}
  // variants: tall spiky (the photo's tufts), short dense, and a cheap far version
  const tuftA=tuftGeo(MOBILE?8:13,MOBILE?3:6,11,.2,.46,.1),tuftB=tuftGeo(MOBILE?6:15,MOBILE?2:4,23,.08,.2,.16),tuftF=tuftGeo(MOBILE?4:7,2,37,.22,.5,.14);
  // Grass is cut into 14 m chunks (24 m far out), one InstancedMesh per chunk and detail level, so the camera's frustum culls what is
@@ -776,8 +776,8 @@ export function createGround(C){const __before=new Set(C.scene.children);
    .replace('#include <begin_vertex>',`#include <begin_vertex>\n{float k=aK;const float SW=.05;${SWAY}}
    /* he wades through: fronds within reach bow away from his legs, and the ones under a boot are pressed down for a while */
    {vec3 fw=(instanceMatrix*vec4(transformed,1.)).xyz;vec2 fv=fw.xz-uHero.xz;float fd=length(fv);vec2 fdn=fd>.001?fv/fd:vec2(1.,0.);
-    float fh=smoothstep(.7,.15,fd)*step(abs(instanceMatrix[3][1]-uHero.y),.7)*aK;float fs=stepPress(fw.xz,.32)*aK;
-    if(fh+fs>.001)transformed+=windLocal(vec3(fdn.x*(.28*fh+.1*fs),-.1*fh-.22*fs,fdn.y*(.28*fh+.1*fs)));}`);addLan(s,'3.5');};fm.customProgramCacheKey=()=>'groundFern-lan1-step1';
+    float fh=smoothstep(.7,.15,fd)*step(abs(instanceMatrix[3][1]-uHero.y),.7)*aK;vec3 sn=stepNear(fw.xz,.4);float fs=sn.z;float fy=max(0.,fw.y-instanceMatrix[3][1]);
+    if(fh+fs>.001)transformed+=windLocal(vec3(fdn.x*.28*fh+sn.x*fy*.7*fs,-.1*fh-fy*.6*fs,fdn.y*.28*fh+sn.y*fy*.7*fs));}`);addLan(s,'3.5');};fm.customProgramCacheKey=()=>'groundFern-lan1-step2';
   const geos=MOBILE?[mk(8,.7,3)]:[mk(7,.75,3),mk(9,.6,8)];// phones: one variant (one draw call)
   geos.forEach((fg,vi)=>{const NF=MOBILE?32:80;const im=new THREE.InstancedMesh(fg,fm,NF);let n=0;
    for(let i=0;i<NF*30&&n<NF;i++){const s=pick(R()<.5?ring(2.6,8):ring(10,24),(x,z)=>{const d=rootD(x,z);return d>.25&&d<(Math.hypot(x,z)>10?99:2.2)&&pathD(x,z)>.2;},6);if(!s)continue;const [x,z]=s;
