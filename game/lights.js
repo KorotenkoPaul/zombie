@@ -206,11 +206,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
     // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
-    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); scene.add(bb);
+    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
     const hg = housing(bPos); lastHang = null; hang(bPos, .23, true); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, { l: bb, I: MOBILE ? 1.35 : 1.25 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -398,9 +398,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const spill = new THREE.SpotLight(0xFFA04C, 0, 9, .75, 1, 1.4);
     spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
     spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
-    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 1.4, haloTint: 0xFF9E52,
+    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 2.0, haloTint: 0xFF9E52,
       // the photo's brightest warm spot at the foot of the tree (door moved down into view, ab2ddf4): a hotter hollow and spill
-      extra: (k, f) => { if (glow) glow.value = 3.4 * k * f; }, autoFn: c => c.lamps > .3 });
+      extra: (k, f) => { if (glow) glow.value = 4.6 * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
@@ -421,11 +421,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   let cam = null;
   { const prev = scene.onBeforeRender; scene.onBeforeRender = function (r, sc, c, ...a) { cam = c; if (prev) prev.call(this, r, sc, c, ...a); }; }
   for (const [room, R] of Object.entries(ROOMS)) {
-    if (MOBILE) continue;      // phones: no separate bounce light; the room lantern has a softer, longer falloff instead
     // bounce = light thrown back by the lit walls: no falloff inside the room (decay 0, soft cut at the walls), so it
     // never makes a hot spot on whatever stands next to it (the upper bunk sat 10 cm from the old one and burned white)
-    const b = new THREE.PointLight(0xFFCB90, 0, 3.6, 0); b.position.copy(R.c); scene.add(b);
-    glows.push({ room, l: b, I: R.bounce * .5 });
+    // Phones too (it joins the light pool): without it a phone room was a lamp hot spot in dark red-brown walls, ~35%
+    // darker than desktop and the photo's warm-tan wall-to-wall glow. A pool light is a downward half-space, so on phones
+    // it sits higher (near head height) to reach the walls as well as the floor.
+    const b = new THREE.PointLight(0xFFCB90, 0, 3.6, 0); b.position.copy(R.c); if (MOBILE) b.position.y += .9; scene.add(b);
+    glows.push({ room, l: b, I: R.bounce * .5, bounce: true });
   }
   for (const w of windows) {
     if (!w.g || !ROOMS[w.room]) continue;
@@ -677,6 +679,12 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); w.sp.visible = w.sp.material.opacity > .004; }
   }
   let cookT = 0, t = 0, frame = 0;
+  // Phone and desktop light a room differently (phones: four pooled half-space cones, no point shadows; desktop: omni
+  // lights and bloom), so the same lamp read ~40% too bright on desktop in the workshop and 25-45% too dark on phones.
+  // One gain per room and platform brings both to the reference photo's room brightness (home view, one room lit with the
+  // hero in it; mean luminance photo/desktop/phone: bedroom 89/80/68 (cosy, kept under the photo), kitchen 108/91/87, workshop 84/94/83).
+  const ROOM_GAIN = MOBILE ? { bedroom: 2.3, kitchen: 1.2, workshop: 1 } : { bedroom: 1, kitchen: 1, workshop: .45 };
+  const roomGain = r => { const o = window.__lgain; return (o && o[r] != null ? o[r] : ROOM_GAIN[r]) ?? 1; };
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
   // [PERF] a lamp's shadow map only needs redrawing when what it sees has moved, and the one thing that moves under a lamp
   // is the hero. So besides the cadence, a redraw needs the hero (root, head, hands, feet: everything he holds moves with
@@ -745,7 +753,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       }
       const open = s.extra && s.lights[0] && s.lights[0].l.userData.open || 0;
       for (const L of s.lights) {
-        L.l.intensity = L.I * k * f * (s.name === "oven" ? .45 + 1.2 * open : 1 + open * 1.2);   // oven shut: only what the small glass lets out
+        L.l.intensity = L.I * k * f * (s.name === "oven" ? .45 + 1.2 * open : 1 + open * 1.2) * roomGain(s.room);   // oven shut: only what the small glass lets out
         if (L.sway) { if (!L.home) L.home = L.l.position.clone(); const a = T * 1.7 + s.seed * 5; L.l.position.set(L.home.x + noise(a) * L.sway, L.home.y + noise(a + 40) * L.sway * .6, L.home.z + noise(a + 80) * L.sway); }
         if (L.l.castShadow) { const lit = k > .01;
           // the lamp's shadows only change when the hero (the one thing that moves) is in its reach: an empty lit room keeps its map
@@ -765,6 +773,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     wgSrc.forEach((w, i) => { const v = w.k() * (1 - dayK); wgC.value[i].set(1.0 * v, .64 * v, .32 * v); });
     for (const g of glows) {
       let v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8) * (g.win ? g.win.leak ?? 1 : 1);
+      if (g.bounce) v *= roomGain(g.room);
       if (g.l) g.l.intensity = v;
       if (g.halo) {
         // seen from inside the room (or right at the pane) the window is just glass: no glow sprite in front of your eyes
@@ -833,6 +842,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     else console.warn('lights: spot floor clip not installed (three changed)');
     const virt = [];
     for (const s of src.values()) for (const L of s.lights) if ((L.l.isPointLight || (L.l.isSpotLight && !L.l.castShadow)) && L.l !== doorCave) virt.push(L.l);
+    for (const g of glows) if (g.bounce) virt.push(g.l);
     for (const l of virt) { l.visible = false; l.castShadow = false; }
     if (doorCave) doorCave.visible = false;
     const slots = Array.from({ length: POOL_N }, () => { const l = new THREE.SpotLight(0xFFC373, 0, 5, Math.PI / 2 * .97, .3, 1.5); scene.add(l, l.target); return { l, v: null, w: 0, sc: 0 }; });
@@ -845,6 +855,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       if (s.name === 'hand') clip.set(L.l, () => { const r = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; return hand.outdoors || !r ? null : r.position.y; });
       else if (FLOOR[s.room] != null) clip.set(L.l, () => FLOOR[s.room]);
     }
+    for (const g of glows) if (g.bounce && FLOOR[g.room] != null) clip.set(g.l, () => FLOOR[g.room]);
     pool = { virt, slots, clip, wp: V(), hero: V(), tp: V(), stats: { swaps: 0, frames: 0, missFrames: 0, maxMiss: 0 } };
   }
   function updatePool(dt) {
