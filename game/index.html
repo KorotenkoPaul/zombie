@@ -411,11 +411,14 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
 /* [PERF] lamp shadows: the whole bark (43k tris) and the merged house props (~36k) were drawn into every lamp's shadow map,
    though a lamp's cone only reaches a small part of them. Per (lamp, big static caster) we keep only the triangles whose box
    touches the lamp's shadow frustum (the rest can't put a single texel into the map) as a hidden mesh sharing the caster's
-   vertices, and draw that instead. Each crop is checked once on the lamp's own turn: the map is drawn with the crop and with
-   the full caster (the hero left out of both) and read back, and the crop is only kept if not one texel differs.
-   A lamp that moves or changes its cone is redone. ?lampskip=off or __lampSkipOff=true draws everything. */
- const lampSt=new Map();let lampTestF=-1e9;const _lp=new THREE.Vector3(),_lt=new THREE.Vector3();if(/[?&]lampskip=off/.test(location.search))window.__lampSkipOff=true;
- const lampCands=()=>{const c=[];if(TREE&&TREE.bark&&TREE.bark.castShadow)c.push(TREE.bark);if(PSG)PSG.traverse(m=>{if(m.isMesh&&m.castShadow&&!m.userData.lampCrop)c.push(m);});return c;};
+   vertices, and draw that instead: one caster per 250 ms, CPU only. ?lampcheck also draws each lamp's map with the crop and
+   with the full caster (the hero left out of both), reads both back and keeps the crop only if not one texel differs
+   (checked 2026-11-24: byte-identical for both lamps). A lamp that moves or changes its cone is redone. ?lampskip=off or __lampSkipOff=true draws everything. */
+ const lampSt=new Map(),lampStat=window.__lampStat={resets:0,tests:0};let lampTestF=-1e9;const _lp=new THREE.Vector3(),_lt=new THREE.Vector3();if(/[?&]lampskip=off/.test(location.search))window.__lampSkipOff=true;
+ const LCHECK=/[?&]lampcheck/.test(location.search);
+ // only casters whose depth pass is plain geometry (no alpha cut-outs, morphs, skinning, instancing or custom depth shader) may be cropped
+ const plainCaster=m=>m.isMesh&&m.castShadow&&!m.userData.lampCrop&&!m.isInstancedMesh&&!m.isSkinnedMesh&&!m.customDepthMaterial&&!m.customDistanceMaterial&&m.material&&!Array.isArray(m.material)&&!(m.material.alphaTest>0)&&!m.material.alphaMap&&!m.material.displacementMap&&!(m.geometry.morphAttributes&&m.geometry.morphAttributes.position)&&m.geometry.groups.length<=1;
+ const lampCands=()=>{const c=[];if(TREE&&TREE.bark&&plainCaster(TREE.bark))c.push(TREE.bark);if(PSG)PSG.traverse(m=>{if(plainCaster(m))c.push(m);});return c;};
  const readMap=l=>{const m=l.shadow.map;if(!m)return null;const b=new Uint8Array(m.width*m.height*4);renderer.readRenderTargetPixels(m,0,0,m.width,m.height,b);return b;};
  const _cv=new THREE.Vector3(),_cb=new THREE.Box3();
  // the caster's triangles that touch the lamp's shadow frustum (sharing its vertex buffer); null = none touch, 'full' = all do
@@ -425,12 +428,13 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
   const cg=new THREE.BufferGeometry();cg.setAttribute('position',pa);cg.setIndex(I);
   const pm=new THREE.Mesh(cg,new THREE.MeshBasicMaterial({colorWrite:false,side:c.material.side,shadowSide:c.material.shadowSide}));pm.castShadow=true;pm.visible=false;pm.frustumCulled=false;pm.userData.lampCrop=1;pm.raycast=()=>{};pm.matrixAutoUpdate=false;c.add(pm);return pm;}
  function lampDraw(l,sc,cam){let st=lampSt.get(l);l.getWorldPosition(_lp);(l.target||l).getWorldPosition(_lt);
-  const key=[l.angle,l.distance,l.shadow.camera.near,l.shadow.camera.far].join();if(!st||st.key!==key||st.p.distanceToSquared(_lp)>1e-6||st.t.distanceToSquared(_lt)>1e-6){if(st)for(const pm of st.sub.values())if(pm&&pm.parent){pm.parent.remove(pm);pm.geometry.dispose();pm.material.dispose();}st={key,p:_lp.clone(),t:_lt.clone(),sub:new Map(),tested:new Set()};lampSt.set(l,st);}
+  const key=[l.angle,l.distance,l.shadow.camera.near,l.shadow.camera.far].join();if(!st||st.key!==key||st.p.distanceToSquared(_lp)>1e-6||st.t.distanceToSquared(_lt)>1e-6){if(st)for(const pm of st.sub.values())if(pm&&pm.parent){pm.parent.remove(pm);pm.geometry.dispose();pm.material.dispose();}lampStat.resets++;st={key,p:_lp.clone(),t:_lt.clone(),sub:new Map(),tested:new Set()};lampSt.set(l,st);}
   const now=performance.now();const test=now-lampTestF>250&&(sm.autoUpdate||sm.needsUpdate)?lampCands().find(c=>!st.tested.has(c)):null;
   const on=[],shown=[];const use=(c,pm)=>{if(!c.castShadow)return;c.castShadow=false;on.push(c);if(pm){pm.visible=true;shown.push(pm);}};
   for(const [c,pm] of st.sub)use(c,pm);
   try{if(!test){r0([l],sc,cam);return;}
-   lampTestF=now;st.tested.add(test);l.shadow.updateMatrices(l);const pm=cropOf(test,l.shadow.getFrustum());if(pm==='full'){r0([l],sc,cam);return;}
+   lampTestF=now;lampStat.tests++;st.tested.add(test);l.shadow.updateMatrices(l);const pm=cropOf(test,l.shadow.getFrustum());if(pm==='full'){r0([l],sc,cam);return;}
+   if(!LCHECK){st.sub.set(test,pm);use(test,pm);r0([l],sc,cam);return;}/* the crop is exact by construction; ?lampcheck verifies it texel by texel (3 map draws per test) */
    const heroM=[];let hr=null;try{hr=hero&&hero.root;}catch(e){}/* declared further down */if(hr&&hr.traverse)hr.traverse(o=>{if(o.isMesh&&o.castShadow){heroM.push(o);o.castShadow=false;}});const nu=sm.needsUpdate;let A,B;
    try{test.castShadow=false;if(pm)pm.visible=true;l.shadow.needsUpdate=true;r0([l],sc,cam);A=readMap(l);test.castShadow=true;if(pm)pm.visible=false;l.shadow.needsUpdate=true;sm.needsUpdate=nu;r0([l],sc,cam);B=readMap(l);}
    finally{test.castShadow=true;if(pm)pm.visible=false;for(const o of heroM)o.castShadow=true;}
@@ -997,11 +1001,13 @@ const freshAttr=m=>m===boards?aFresh:m===beams?dFresh:sFresh;
 //  wear(x,y,z,amt)    -> add foot wear on the floor at that point (0..1)
 // [PERF] static house parts this thread owns: matrices frozen (no updateMatrix per frame). Instances still move via instanceMatrix.
 {const fr=o=>{o.updateMatrix();o.matrixAutoUpdate=false;o.updateMatrixWorld(true);};for(const m of [boards,beams,SHING])fr(m);scene.traverse(o=>{if(o.userData.plStatic)o.traverse(fr);});}
-window.__planks={meshes:{boards,beams,shingles:SHING},list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
- setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,0,1));A.needsUpdate=true;return true;},
+window.__planks={meshes:{boards,beams,shingles:SHING},part:id=>PL[id]/* [PROPS] housewear.js: the instance behind an id */,list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
+ setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,-1,1))/* below 0: worn, water-stained (housewear.js) */;A.needsUpdate=true;return true;},
  fresh:id=>PL[id]?freshAttr(PL[id].mesh).getX(PL[id].i):null,
  near:(x,y,z,r=.5,k)=>PL.map((p,id)=>[p,id]).filter(([p])=>(!k||p.kind===k)&&p.c.distanceTo(V(x,y,z))<r).map(([,id])=>id),
  wear:(x,y,z,a=.1)=>WEAR.stamp(x,y,z,a)&&(WEAR.tex.needsUpdate=true)};
+// [PROPS] house wear you can see (game/housewear.js): loose floor boards, warped wall boards, leaning rail posts, slipped slates, a fraying gate rope; repairs put them right
+let HWEAR=null;try{HWEAR=(await import(new URL(ASSET+'housewear.js',document.baseURI).href)).createHouseWear({THREE,planks:window.__planks,N,hour:()=>hour,hero:()=>({pos:hero.root.position,task:hero.task,still:!hero.path.length}),ladder:{x:0,z:4.0,top:LC+.1}});if(HWEAR.mesh)scene.add(HWEAR.mesh);window.__wear=HWEAR;}catch(e){console.error('housewear',e);}
 const bow=makeBow();heroBones.LeftHand.add(bow);bow.position.set(0,.07,.03);bow.rotation.set(0,0,0);bow.scale.setScalar(1/Math.max(.001,heroBones.LeftHand.getWorldScale(V()).x));bow.visible=false;/* the old guard bow: hidden until a guard task (the game loop sets it each frame, but the QA stepper and watchers never run that loop and saw it in his hand and over his shoulder during chores) */
 function play(c,name,{loop=true,fade=.25,speed=1}={}){const a=c.actions[name];if(!a||c.cur===a)return a;a.reset();a.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce,loop?Infinity:1);a.clampWhenFinished=!loop;a.timeScale=speed;a.enabled=true;if(c.cur)c.cur.crossFadeTo(a,fade,false);a.play();c.cur=a;return a;}
 
@@ -1223,6 +1229,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour,moonIll});
  WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
  RAIN.update(dt,T,rainK,scene.fog.color);
+ if(HWEAR)HWEAR.update(dt);
  if(AUDIO)AUDIO.update(dt);
  // --- spawn ---
  if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){if(!zombG)loadZombie();else{spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}}
