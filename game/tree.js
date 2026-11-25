@@ -399,6 +399,17 @@ export function buildTree(THREE, o) {
 `)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(vec3(.38,.37,.47),vec3(1.06,1.05,1.02),pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
+    // [ENV] limbs (Pavel / photo: smooth bark with long folds following the wood): the trunk's folds are carved in the mesh, the
+    // limbs only had the painted crackle. Shading-only grooves that run along each limb (axis estimated from the trunk outwards),
+    // wandering and merging, darkened in the furrow and caught on the ridge; they fade out where they would be under a pixel.
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vOkW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvOkW=(modelMatrix*vec4(transformed,1.)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vOkW;')
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{vec3 wp=vOkW;float dT=length(wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));float bw=max(smoothstep(3.3,4.4,dT),smoothstep(9.6,10.8,wp.y));
+ if(bw>0.){vec3 wn=normalize((vec4(normal,0.)*viewMatrix).xyz);vec3 ax=normalize(wp-vec3(${AX.toFixed(3)},wp.y*.6,${AZ.toFixed(3)}));
+  vec3 u=normalize(cross(ax,vec3(0.,1.,0.))+vec3(1e-4,0.,0.));vec3 w=cross(ax,u);float an=atan(dot(wn,w),dot(wn,u));float al=dot(wp,ax);
+  float ph=an*7.+1.4*sin(al*.8+an*2.)+.7*sin(al*2.1-an*3.);float gr=smoothstep(.55,.97,abs(sin(ph)));float aa=1.-smoothstep(.6,1.6,fwidth(an*7.));
+  float k=bw*aa;diffuseColor.rgb*=1.-.42*gr*k;diffuseColor.rgb*=1.+.1*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
     // warm bark round the house at night (Environment drives env.barkWarm): diffuse only, the bark stays matte
     const BW = (o.env || window.__env || {}).barkWarm;
     if (BW) {
@@ -419,6 +430,7 @@ export function buildTree(THREE, o) {
     }
   };
   mat.userData.doorGlow = { value: 0 };
+  mat.customProgramCacheKey = () => 'oakBark-grooves1'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
 
   // ---------- leaves: clumps of painted oak-leaf cards, facing outwards like the painted crown ----------
