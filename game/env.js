@@ -293,8 +293,8 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     float n=fbm(p+vec2(fbm(p*1.7+t*.01),0.)*1.3);float a=smoothstep(.35,.8,n)*smoothstep(0.,.25,vUv.y)*smoothstep(1.,.45,vUv.y)*op;
     /* [ENV] rain far away: soft grey veils falling between the distant trunks (the rain streaks only exist round the oak, so the
        forest looked dry); tall thin noise moving down ~9 m/s, gathered into gusty sheets. Same draw, two more texture reads. */
-    float sx=ang*length(vW.xz);float rn=texture2D(tNoise,vec2(sx*.04+vW.y*.006,vW.y*.005+t*.045)).g;float rg=texture2D(tNoise,vec2(sx*.005-t*.006,.37)).r;
-    float ra=rain*(.05+.3*smoothstep(.45,.85,rn)*smoothstep(.3,.7,rg))*smoothstep(0.,.08,vUv.y)*smoothstep(1.,.75,vUv.y);
+    float ra=0.;if(rain>.001){/* [ENV] perf: the rain veils' two reads only in rain (uniform branch: same path for every pixel) */float sx=ang*length(vW.xz);float rn=texture2D(tNoise,vec2(sx*.04+vW.y*.006,vW.y*.005+t*.045)).g;float rg=texture2D(tNoise,vec2(sx*.005-t*.006,.37)).r;
+    ra=rain*(.05+.3*smoothstep(.45,.85,rn)*smoothstep(.3,.7,rg))*smoothstep(0.,.08,vUv.y)*smoothstep(1.,.75,vUv.y);}
     gl_FragColor=vec4(mix(col*(.9+.3*n),col*1.12+.04,ra/(a+ra+1e-4)),min(1.,a+ra));}`});
  const mistBands=[];(MOBILE?[[30,9,.5],[52,12,.6]]:[[24,8,.42],[36,10,.5],[52,13,.6]]).forEach(([rad,h,k])=>{
   const g=new THREE.CylinderGeometry(rad,rad,h,40,1,true,Math.PI*.45,Math.PI*1.1);g.translate(0,h/2-.5,0);
