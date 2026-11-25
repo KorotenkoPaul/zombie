@@ -1274,7 +1274,7 @@ export function buildProps(ctx) {
   const chairO = place('chair', chair(), -.74 + TX, BD, 2.26, { ry: Math.PI, seat: true }); out.surfaces.chairSeat = chairO.userData.floorY + chairO.userData.info.seat;
   const tbl = place('table', table(), -.35 + TX, BD, 1.37); const tTop = tbl.userData.floorY + .74;
   const bk = book({ cover: M.covers[0] }); bk.position.set(-.33 + TX, tTop, 1.6 + TZ); bk.rotation.y = 0; scene.add(bk); out.book = bk.userData.book; out.book.obj = bk; bk.userData.noProxy = true; out.tools.book = bk; bk.userData.home = { parent: scene, pos: bk.position.clone(), quat: bk.quaternion.clone() };
-  { const m = bake(mug(M.glazeBlue)); m.position.set(-.06 + TX, tTop, 1.35 + TZ); scene.add(m); const c = bake(candle()); c.position.set(-.62 + TX, tTop, 1.32 + TZ); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.62 + TX, tTop, 1.6 + TZ); for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
+  { const m = bake(mug(M.glazeBlue)); m.position.set(-.06 + TX, tTop, 1.35 + TZ); scene.add(m); const c = bake(candle()); c.position.set(-.62 + TX, tTop, 1.32 + TZ); scene.add(c); candleObj = c; const st2 = new THREE.Group(); st2.position.set(-.585 + TX, tTop, 1.61 + TZ); /* 3.5 cm right: room for the watering can at the table's end */ for (let i = 0; i < 3; i++) { const b = closedBook(.03, .16 - i * .012, .21 - i * .012, M.covers[(i + 2) % 7]); b.rotation.z = Math.PI / 2; b.position.set(.08 - i * .006, .015 + .03 * i, 0); b.rotation.y = rr(-.15, .15); st2.add(b); } scene.add(st2); bake(st2); }
   // door in Tree's opening of the right wall (z 2.3..3.25, up to BD+2.0); hinge at the front (z≈3.2), opens into the room.
   // It rests open (~95°) along z≈3.2 so the way in stays clear; __props.door.setOpen(k) swings it (0 shut), setBolt(k) slides the bolt (1 locked).
   { const dg = place('door', plankDoor(1.9, .77), .4, BD, 2.775, { ry: -Math.PI / 2, solid: false }); const D = dg.userData.door;
@@ -1476,8 +1476,10 @@ export function buildProps(ctx) {
     out.radio = { obj: rad, get on() { return rs.on; }, setOn(k) { rs.on = clamp01(k); R.dm.emissiveIntensity = rs.on * 1.6; }, setTune(k) { rs.tune = clamp01(k); R.needle.position.x = -.05 + .1 * rs.tune; R.knob.rotation.y = rs.tune * 5; }, knob(t = V()) { return rad.localToWorld(t.copy(R.knobLocal)); }, dialMat: R.dm };
     out.radio.setTune(.3); PT.radio = [rad, R.knobLocal.clone()]; }
   tool('broom', broom(), scene, -1.02, floorAt(-1.02, BD, 1.0), 1.0, [0, Math.PI / 2, .1]); /* GRAB: 6 cm further off the bunk's corner post (his fist brushed it taking the broom) */
+  // bedside stool in front of the bunk's head end (bed thread): at night he lays his folded vest on it and in the morning takes it back, both sitting on the bed edge (the floor is out of a seated arm's reach)
+  { const bs = place('bedstool', stool(.38), -2.4 + TX + .31, BD, 1.71 + .8, { ry: .4 }); out.surfaces.bedStool = bs.userData.floorY + .38; }
   const plantO = place('plant', plant(), -.88, BD, 1.36); /* in front of the crate nightstand, off the kitchen hatch and the oak limb */ PT.plant = [plantO, V(0, .3, 0)];
-  tool('wateringCan', wateringCan(), scene, -.65, floorAt(-.65, BD, 1.33), 1.33, [0, -1.2 + Math.PI, 0]); /* the spout to the wall, not toward the room: it stuck out 29 cm at toe height toward where he stands and walks (gate: toes in it 7 cm) */ /* GRAB: off his path from the reading chair, 55 cm from the walk lines (Collision measured; at 45 cm his shins still clipped it) */
+  tool('wateringCan', wateringCan(), scene, -.44, tTop, 1.39, [0, Math.PI, 0]); /* on the reading table's left end between the candle and the book pile, the spout out over its end toward the plant: from the floor the handle (26 cm up) was out of reach, the palm stopped 17 cm short in a full squat and the ankles bent 60 deg (gate); up here he takes it standing */
   // diary + pencil sit beside the reading book, a forearm in from the edge (they used to lie 42 cm deep, past an arm's reach from the chair side)
   tool('diary', diary(), scene, -.16 + TX, tTop, 1.5 + TZ, [0, .22, 0]); tool('pencil', pencil(), scene, -.05 + TX, tTop, 1.53 + TZ, [0, .5, 0]);
   PT.table = [tbl, V(0, .76, 0)]; PT.chair = [chairO, V(0, .46, 0)];
@@ -1545,6 +1547,7 @@ export function buildProps(ctx) {
   }
   // ---- the quilt sinks where someone lies on it: Character calls __props.bedPress(worldHipPos) / bedPress(null) ----
   const quiltMesh = (() => { let q = null; bunk.traverse(o => { if (o.isMesh && o.material === M.quilt && (!q || o.position.y < q.position.y)) q = o; }); return q; })(); // the LOWER bunk's quilt (he sleeps there; the last match was the upper one, so the cover never rose over him)
+  out.quiltMat = M.quilt; // bed thread: hero.js bedTopAt() looks through the quilt to the pillow and mattress
   const qBase = quiltMesh ? quiltMesh.geometry.attributes.position.array.slice() : null, nBase = quiltMesh ? quiltMesh.geometry.attributes.normal.array.slice() : null;
   const press = { at: null, k: 0, shown: -1, cover: false };
   const qBot = (() => { if (!qBase) return 0; let m = 1e9; for (let i = 1; i < qBase.length; i += 3) if (qBase[i] < m) m = qBase[i]; return m; })();
