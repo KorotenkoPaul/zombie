@@ -211,9 +211,9 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
   function hit(kind) {
     const pool = [...parts.values()].filter(p => p.kind === kind); if (!pool.length) return null;
     const bad = pool.filter(p => p.d > 0);
-    if (bad.length && (bad.length >= CAP[kind] || rnd() < .4)) { const p = bad[Math.floor(rnd() * bad.length)]; p.d = Math.min(1, p.d + rnd(.25, .45)); return p; }
+    if (bad.length && (bad.length >= CAP[kind] || rnd() < .4)) { const p = bad[Math.floor(rnd() * bad.length)]; p.d = Math.min(1, p.d + rnd(.25, .45)); p.cap = null; return p; }
     const p = pool[Math.floor(rnd() * pool.length)]; if (p.d > 0 || (planks.fresh && planks.fresh(p.id) > .01)) return null;   // a part he just fixed holds for a while
-    p.d = rnd(.45, .8); return p;
+    p.d = rnd(.45, .8); p.cap = null; return p;
   }
   const KINDS = ['shingle', 'shingle', 'beam', 'floor', 'wall', 'floor', 'beam', 'wall'];
   function crackPane() { if (!panes.length || panes.some(p => p.d > 0)) return null; const p = panes[Math.floor(rnd() * panes.length)]; setPane(p, 1); p.work = 0; return { kind: 'window', id: p.room, d: 1 }; }
@@ -235,7 +235,7 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
     if (!(p.fr > 0)) { setFresh0(p.id, -ROT[p.mode] * p.vis); p.fr = 0; } }
 
   // repairs: Brain marks the parts he fixed as fresh; anything at >= .7 is fixed
-  planks.setFresh = (id, f) => { const r = setFresh0(id, f); const p = parts.get(id); if (p) { p.fr = f; if (f >= .7) p.d = 0; } if (f >= .99) { if (nailedBy.has(id)) nailedBy.delete(id); else try { nailPart(id); } catch (e) {} } return r; };
+  planks.setFresh = (id, f) => { const r = setFresh0(id, f); const p = parts.get(id); if (p) { p.fr = f; if (f >= .7) { p.d = 0; p.cap = null; } } if (f >= .99) { if (nailedBy.has(id)) nailedBy.delete(id); else try { nailPart(id); } catch (e) {} } return r; };
   const nailedBy = new Set();   // parts whose nails hero.js already placed blow by blow
   planks.list = k => { const L = list0(k); for (const it of L) { const p = parts.get(it.id); const d = p ? +p.d.toFixed(2) : 0; it.dmg = d; if (d) { it.fresh = Math.min(it.fresh, -.7 * d); if (p.cur) it.pos = p.cur.toArray().map(v => +v.toFixed(2)); } } return L; };   // pos: where the part is now (a slipped slate, a hanging rail)
 
@@ -252,8 +252,9 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
     }
     // eases: a fault creaks in over a few seconds, a repair settles it in under a second
     for (const p of parts.values()) {
-      if (Math.abs(p.vis - p.d) < 1e-3) continue;
-      const k = p.d > p.vis ? .6 : 2.2; p.vis += Math.sign(p.d - p.vis) * Math.min(Math.abs(p.d - p.vis), k * dt);
+      const tgt = p.cap != null ? Math.min(p.d, p.cap) : p.d;   // blows press it back bit by bit (hero.js __wear.blow)
+      if (Math.abs(p.vis - tgt) < 1e-3) continue;
+      const k = tgt > p.vis ? .6 : (p.cap != null ? 1.8 : 2.2); p.vis += Math.sign(tgt - p.vis) * Math.min(Math.abs(tgt - p.vis), k * dt);
       apply(p);
     }
     if (fray) {
@@ -270,7 +271,27 @@ export function createHouseWear({ THREE, planks, N, hour, hero, ladder, windows 
     for (const m of dirty) m.instanceMatrix.needsUpdate = true; dirty.clear();
   }
 
+  // where the fault is, on the part's visible (displaced) surface, and the outward normal there (hero.js aims the hammer / the palm at it)
+  function faultLocal(p) {
+    const long = p.ax[p.L], wid = p.ax[p.Wd], thin = p.ax[p.T], hl = p.sz[p.L] / 2, ht = p.sz[p.T] / 2;
+    const away = V(p.c.x - p.n.x, 0, p.c.z - p.n.z); if (away.lengthSq() < 1e-6) away.set(1, 0, 0); away.normalize();
+    const toward = away.clone().negate();
+    if (p.mode === 'floor') { const u = long.clone().multiplyScalar(long.dot(away) >= 0 ? 1 : -1), n = thin.y > 0 ? thin.clone() : thin.clone().negate(); return [p.c.clone().addScaledVector(u, hl - .08).addScaledVector(n, ht), n]; }
+    if (p.mode === 'wall') { const u = long.clone().multiplyScalar(p.sgn), n = thin.dot(away) >= 0 ? thin.clone().negate() : thin.clone(); return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(n, ht), n]; }   // his side of it
+    if (p.mode === 'post') { const hw = Math.min(p.sz[p.Wd], p.sz[p.T]) / 2; return [p.c.clone().addScaledVector(UP, hl - .05).addScaledVector(toward, hw), toward]; }
+    if (p.mode === 'brace') { const u = long.clone().multiplyScalar(p.sgn), hw = p.sz[p.Wd] / 2; return [p.c.clone().addScaledVector(u, hl - .06).addScaledVector(toward, hw), toward]; }
+    if (p.mode === 'shingle') { const lu = Math.abs(long.y) > Math.abs(wid.y); const up = (lu ? long : wid).clone(), hu = (lu ? p.sz[p.L] : p.sz[p.Wd]) / 2; if (up.y < 0) up.negate(); const n = thin.y > 0 ? thin.clone() : thin.clone().negate(); return [p.c.clone().addScaledVector(up, -hu * .85).addScaledVector(n, ht), n]; }
+    return [p.c.clone(), UP.clone()];
+  }
+  const _inv = new THREE.Matrix4(), _dl = new THREE.Matrix4(), _nm = new THREE.Matrix3();
+  function fault(id) {
+    const p = parts.get(id); if (!p || !(p.d > 0)) return null; const [q, n] = faultLocal(p);
+    _dl.multiplyMatrices(pose(p, p.vis), _inv.copy(p.home).invert()); q.applyMatrix4(_dl); _nm.setFromMatrix4(_dl); n.applyMatrix3(_nm).normalize();
+    return { p: q.toArray().map(v => +v.toFixed(3)), n: n.toArray().map(v => +v.toFixed(3)) };
+  }
   const api = {
+    fault,
+    blow: (id, k = .25) => { const p = parts.get(id); if (!p || !(p.d > 0)) return false; p.cap = Math.max(0, (p.cap != null ? Math.min(p.cap, p.vis) : p.vis) - k); return +p.cap.toFixed(2); },
     mesh: fray && fray.mesh, update,
     state: () => ({ parts: parts.size, damaged: damaged().map(p => ({ id: p.id, kind: p.mode, d: +p.d.toFixed(2), pos: p.c.toArray().map(v => +v.toFixed(2)) })), rope: fray ? +fray.d.toFixed(2) : null, windows: panes.filter(p => p.d > 0).map(p => p.room), nails: nails.count }),
     set: (id, d) => { if (!ready) init(); const p = parts.get(id); if (!p) return false; p.d = Math.max(0, Math.min(1, d)); return true; },
