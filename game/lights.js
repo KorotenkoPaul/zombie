@@ -191,6 +191,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const kPos = PL.kitchenLamp ? PL.kitchenLamp.pos.clone() : V(-2.3, KT + 1.78, 1.75);
   {
     const l = new THREE.PointLight(0xFFC373, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
+    // on Props' wall bracket by the fridge the light sat 15 cm off the wall and burned it white beside the fridge while the stove
+    // side (the photo's warmest corner) stayed dim: the light's centre a little out into the room, as the glass throws it
+    if (PL.kitchenLamp) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
     const panes = claimHousing(kPos);
     const fo = oilFlame(kPos, null);
     add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 5.2 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
@@ -242,6 +245,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // bunk, so the upper bunk throws its shadow over the lower one (one 512/1024 spot map, redrawn only while the hero
     // is in the room); a weak unshadowed fill keeps the corners and the walls above the cone from going black.
     const l = new THREE.PointLight(0xFFB866, 0, MOBILE ? 5.5 : 5, MOBILE ? 1.4 : 1.6); l.position.copy(bPos); scene.add(l);
+    if (BL) { const c = V(-1.9, bPos.y, 2.3).sub(bPos); c.y = 0; l.position.addScaledVector(c.normalize(), .35); }   // on the door-side hook: the fill a step into the room (the wall by the door burned white, the bunk sat dim; photo: the bunk is the lit heart of the room)
     // a narrower cone keeps the 512 map sharp enough (no self-shadowing)
     const bs = new THREE.SpotLight(0xFFB866, 0, 6, .95, .8, 1.4); bs.position.copy(bPos).add(BL ? V(0, -.03, 0) : V(0, -.15, .06));   /* on Props' hook (BL): from the flame itself */   // just under the lantern's base plate (it would shade the whole cone)
     if (BL) bs.target.position.set(-2.0, BD + .75, 2.05); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
@@ -501,6 +505,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const spill = new THREE.SpotLight(0xFFA04C, 0, 9, .75, 1, 1.4);
     spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
     spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
+    /* phones: the doorway's warm wedge on the doorstep is the brightest warm spot at the foot of the photo and always in the
+       home view; scored on the hero's distance alone it lost its pool slot whenever he was up in the house (doorstep 82 vs
+       the photo's 118). It counts x3 in the slot race (only while lit, and a lantern by the hero still wins its slot back) */
+    spill.userData.poolPri = 3;
     add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 2.0, haloTint: 0xFF9E52,
       // the photo's brightest warm spot at the foot of the tree (door moved down into view, ab2ddf4): a hotter hollow and spill
       extra: (k, f) => { if (glow) glow.value = 4.6 * k * f; }, autoFn: c => c.lamps > .3 });
@@ -515,8 +523,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // bounce light in the middle of the room stands in for the light the warm planks throw back.
   // Light also leaves through the back windows onto the trunk (desktop: a small spill light; phones: halo only).
   const ROOMS = {
-    kitchen:  { c: V(-2.65, KT + 1.05, 2.5), bounce: 2.0 },
-    bedroom:  { c: V(-1.9, BD + 1.1, 2.3), bounce: .9 },   // cosy: little bounce, the corners stay dusky
+    kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: 2.0 },   // toward the stove: the lamp now hangs by the fridge
+    bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: .9 },   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
     workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
   };
   const glows = [];
@@ -860,7 +868,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // One gain per room and platform brings both to the reference photo's room brightness (home view, one room lit with the
   // hero in it; mean luminance photo/desktop/phone: bedroom 89/80/68 (cosy, kept under the photo), kitchen 108/91/87, workshop 84/94/83).
   // (re-measured after the clear lantern glass and the bedroom lantern's move to its hook: kitchen and bedroom had dropped ~12%)
-  const ROOM_GAIN = MOBILE ? { bedroom: 2.8, kitchen: 1.7, workshop: 1.05 } : { bedroom: 1.2, kitchen: 1.35, workshop: .42 };
+  const ROOM_GAIN = MOBILE ? { bedroom: 2.8, kitchen: 1.7, workshop: 1.05 } : { bedroom: 1.2, kitchen: 1.45, workshop: .42 };
   const roomGain = r => { const o = window.__lgain; return (o && o[r] != null ? o[r] : ROOM_GAIN[r]) ?? 1; };
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
   // [PERF] a lamp's shadow map only needs redrawing when what it sees has moved, and the one thing that moves under a lamp
@@ -1134,7 +1142,20 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // Pavel: the bedroom textiles must read warm, not moon-blue. Environment's interior mask (a LightProbe used as a parameter)
     // turns the leftover blue night fill warm inside the rooms, same luminance (no brighter room); the moon stays outside.
     if (!inProbe) scene.traverse(o => { if (o.isLightProbe && o.name === 'envInteriorK') inProbe = o; });
-    if (inProbe) inProbe.sh.coefficients[0].y = .85 * (1 - dayK);
+    if (inProbe) {
+      inProbe.sh.coefficients[0].y = .85 * (1 - dayK);
+      /* per room (Env's box order: kitchen, bedroom, workshop): the warm tint only where the hero is or a lamp/fire burns.
+         An empty dark room keeps the cool moonlit fill, so from outside it reads dark, not lamp-lit (phones: the empty
+         workshop read orange, as if its lamp were on). Eased over ~1 s so walking in never pops. */
+      const B = window.__env && window.__env.interiorBoxes, hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root;
+      const c1 = inProbe.sh.coefficients[1], kk = 1 - Math.exp(-dt * 2.5);
+      ['kitchen', 'bedroom', 'workshop'].forEach((room, i) => {
+        let t = roomLevel(room) > .02 ? 1 : 0;
+        if (!t && hr && B && B[i]) { const p = hr.position, r = B[i]; if (p.x > r[0] - .2 && p.x < r[1] + .2 && p.y > r[2] - .3 && p.y < r[3] && p.z > r[4] - .2 && p.z < r[5] + .2) t = 1; }
+        if (!B) t = 1;
+        c1.setComponent(i, c1.getComponent(i) + (t - c1.getComponent(i)) * kk);
+      });
+    }
     // the bedroom by day: its walls read red-orange in daylight (blue ~10/255); half the kitchen's honey toward the photo's
     // tone, by day only, so the approved cosy, dim night bedroom is exactly as before
     if (window.__wearHy) window.__wearHy[1] = .5 * smooth(.3, .8, dayK);
@@ -1211,7 +1232,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const hp = hr ? pool.hero.copy(hr.position).add(V(0, 1, 0)) : null;
     const score = l => { if (l.intensity < .02) return 0; l.getWorldPosition(wp);
       const dh = hp ? wp.distanceTo(hp) : 99, dc = cam ? wp.distanceTo(cam.position) * .7 : 99, d = Math.min(dh, dc);
-      return l.intensity / (.5 + d * d); };
+      return l.intensity * (l.userData.poolPri || 1) / (.5 + d * d); };
     const sc = new Map(); for (const l of virt) sc.set(l, score(l));
     for (const sl of slots) sl.sc = sl.v ? sc.get(sl.v) : 0;
     // a lit source without a slot takes a free one at once; it takes a busy one only from a source that went dark,

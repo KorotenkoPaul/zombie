@@ -136,12 +136,14 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
    bs.add(bim);const oc=new THREE.OrthographicCamera(-4.8,4.8,4.8,-4.8,.1,30);oc.position.set(0,0,12);oc.lookAt(0,0,0);
    const prev=renderer.getRenderTarget(),cc=renderer.getClearColor(new THREE.Color()),ca=renderer.getClearAlpha();renderer.setRenderTarget(rt);renderer.setClearColor(0x000000,0);renderer.clear();renderer.render(bs,oc);
    renderer.setRenderTarget(prev);renderer.setClearColor(cc,ca);bim.geometry.dispose();bm.dispose();
-   const imat=new THREE.MeshBasicMaterial({map:rt.texture,alphaTest:.45,fog:false});
+   const imat=new THREE.MeshBasicMaterial({map:rt.texture,alphaTest:.45,fog:false});imat.customProgramCacheKey=()=>'forestImp-wind'+(window.__wind&&window.__wind.hook?1:0);env.forestImpMat=imat;/* env is built before wind.js: recompiled once the wind exists (env.update) */
    // own haze instead of the scene fog: at 50-80 m the distance fog swallowed the forest whole; this keeps it a dark wall
    // that leans into the fog colour with depth and sinks into the ground mist at its feet
    const hazeU={hz:{value:new THREE.Color()},hzK:{value:.4}};env.forestHaze=hazeU;
-   imat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,hazeU);sh.vertexShader='varying vec3 vHz;\n'+sh.vertexShader.replace('#include <project_vertex>',`vec3 ctr=instanceMatrix[3].xyz;float isz=length(instanceMatrix[0].xyz);
-     vec3 rgt=normalize(vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]));vec4 mvPosition=viewMatrix*vec4(ctr+rgt*transformed.x*isz+vec3(0.,transformed.y*length(instanceMatrix[1].xyz),0.),1.);gl_Position=projectionMatrix*mvPosition;vHz=ctr+vec3(0.,transformed.y*length(instanceMatrix[1].xyz),0.);`);
+   imat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,hazeU);const FW=window.__wind;if(FW&&FW.hook)FW.hook(sh);sh.vertexShader='varying vec3 vHz;\n'+sh.vertexShader.replace('#include <project_vertex>',`vec3 ctr=instanceMatrix[3].xyz;float isz=length(instanceMatrix[0].xyz);
+     /* [ENV] the far crowns bend with the same wind and gust front as the oak (a gust reaches them first: it comes from behind); the top moves, the foot stays */
+     vec3 fSw=vec3(0.);${FW&&FW.hook?'{vec2 sw=windSway(ctr,1.15);fSw=vec3(sw.x,0.,sw.y)*isz*.045*clamp(transformed.y+.5,0.,1.);}':''}
+     vec3 rgt=normalize(vec3(viewMatrix[0][0],viewMatrix[1][0],viewMatrix[2][0]));vec4 mvPosition=viewMatrix*vec4(ctr+fSw+rgt*transformed.x*isz+vec3(0.,transformed.y*length(instanceMatrix[1].xyz),0.),1.);gl_Position=projectionMatrix*mvPosition;vHz=ctr+vec3(0.,transformed.y*length(instanceMatrix[1].xyz),0.);`);
     sh.fragmentShader='uniform vec3 hz;uniform float hzK;varying vec3 vHz;\n'+sh.fragmentShader.replace('#include <fog_fragment>',`{float d=length(vHz.xz-cameraPosition.xz);float k=hzK*(.75+.5*smoothstep(45.,85.,d));k=max(k,smoothstep(3.5,-.5,vHz.y)*.85);gl_FragColor.rgb=mix(gl_FragColor.rgb,hz,clamp(k,0.,.92));}`);};
    // an octagon just around the clump's round silhouette instead of the full quad: 17% fewer pixels to shade
    const oct=new THREE.CircleGeometry(.5/Math.cos(Math.PI/8),8);{const op=oct.attributes.position,ou=oct.attributes.uv;for(let i=0;i<op.count;i++)ou.setXY(i,op.getX(i)+.5,op.getY(i)+.5);}
@@ -332,7 +334,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
     // (hue ~20 -> ~30 deg) and the warm glow added on the bright ones is gold
     x.g+=(x.r-x.g)*.14*wk*night;x+=vec3(.045,.035,0.)*wk*hi0(l)*night;x=mix(x,x*vec3(.9,.98,1.2),ck*.4*night);x=mix(x,vec3(l)*vec3(.92,1.,1.1),ck*.25*night);x*=1.+.14*ck*night*(1.-smoothstep(.3,.7,l));/* the photo's night blues are lighter: lift the cold mid/darks, not the warm rooms *//* cold darks less saturated (the photo's night blues are muted, not deep teal) */
     // night greens (oak leaves, grass, moss) muted toward the photo's dark blue-teal instead of bright leaf green
-    float gk=clamp((x.g-max(x.r,x.b))*4.,0.,1.);x=mix(x,vec3(l)*vec3(.8,1.02,1.12),gk*.3*night);
+    float gk=clamp((x.g-max(x.r,x.b))*4.,0.,1.);x=mix(x,vec3(l)*vec3(.8,1.02,1.12),gk*.3*night);{float gkN=clamp((x.g-max(x.r,x.b))*10.,0.,1.);x=mix(x,vec3(dot(x,vec3(.3,.59,.11)))*vec3(.86,1.06,1.04),gkN*.75*night);}/* [ENV] photo night crown: leaf green measured ~half as saturated as ours (sat .25 vs .5, same hue and lightness) */
     // autumn daylight: leaf greens lean a little to yellow-olive (night keeps the blue-teal above)
     x.r+=(x.g-x.r)*.24*gk*(1.-night);x.b*=1.-.15*gk*(1.-night);
     x=(x-.5)*con+.5;
@@ -364,7 +366,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  let a2cAge=1e9,a2cN=0;const a2cOn=!/[?&](msaa=0|a2c=0)/.test(location.search);
  const a2cScan=()=>{if(!a2cOn||a2cAge++<(a2cN<30?100:900))return;a2cAge=0;a2cN++;scene.traverse(o=>{if(!o.isMesh)return;const ms=Array.isArray(o.material)?o.material:[o.material];for(const m of ms){if(!m||m.userData.a2c||!(m.alphaTest>0)||m.transparent||m.isShaderMaterial||!m.map||!m.depthWrite)continue;m.userData.a2c=1;m.alphaToCoverage=true;m.defines=Object.assign({},m.defines,{A2C:''});m.needsUpdate=true;}});};
  window.__a2c=()=>{a2cAge=1e9;a2cScan();};
- env.update=(s)=>{a2cScan();const {T,P,nightK,mornK,rainK,lampOn,camera,hour}=s;{const pd=window.__ground&&window.__ground.pond;if(pd)pondU.pond.value.set(pd.x,pd.z,pd.r||pd.radius||1.5);}const moonIll=s.moonIll===undefined?1:s.moonIll;
+ let fwDone=0;env.update=(s)=>{a2cScan();if(!fwDone&&env.forestImpMat&&window.__wind&&window.__wind.hook){fwDone=1;const fm=env.forestImpMat;fm.defines=Object.assign({},fm.defines,{FWIND:''});/* a define, so the program key changes even under camera.js nearFade's own key */fm.needsUpdate=true;}const {T,P,nightK,mornK,rainK,lampOn,camera,hour}=s;{const pd=window.__ground&&window.__ground.pond;if(pd)pondU.pond.value.set(pd.x,pd.z,pd.r||pd.radius||1.5);}const moonIll=s.moonIll===undefined?1:s.moonIll;
   {const W=window.__wind;const dt=lastT===null?0:Math.min(.1,Math.max(0,T-lastT));lastT=T;
    if(W&&W.sample){const w=W.sample(wTmp.set(0,1,0))||{};const x=w.x||0,z=w.z||0,sp=w.s!==undefined?w.s:Math.hypot(x,z);const L=Math.hypot(x,z)||1;
     windU.wdir.value.set(x/L,z/L);windU.wlv.value=Math.min(1.5,sp);windU.drift.value.x+=x*dt*1.6;windU.drift.value.y+=z*dt*1.6;}}
@@ -450,9 +452,9 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes;float
  // outside keeps it. No new uniform in every material: a LightProbe carries the strength (lightProbe[0].x) and its own
  // irradiance term is dropped, so the probe is a pure parameter. The mask uses the world position from the fog chunk (vFogW).
  const inProbe=new THREE.LightProbe();inProbe.name='envInteriorK';
- env.setInterior=rooms=>{env.interiorBoxes=rooms;/* [HERO] read by hero.js: no breath vapour indoors */const box=rooms.map(r=>`k=max(k,ib(p,vec3(${r[0].toFixed(3)},${r[2].toFixed(3)},${r[4].toFixed(3)}),vec3(${r[1].toFixed(3)},${r[3].toFixed(3)},${r[5].toFixed(3)})));`).join('');
+ env.setInterior=rooms=>{env.interiorBoxes=rooms;/* [HERO] read by hero.js: no breath vapour indoors */const box=rooms.map((r,i)=>`{float q=ib(p,vec3(${r[0].toFixed(3)},${r[2].toFixed(3)},${r[4].toFixed(3)}),vec3(${r[1].toFixed(3)},${r[3].toFixed(3)},${r[5].toFixed(3)}));k=max(k,q);kw=max(kw,q*${i<3?`lightProbe[1][${i}]`:'1.'});}`).join('');/* [LIGHTS] kw: per-room share of the warm tint (lightProbe[1].xyz = rooms 0..2): warm only in the room the hero is in or a lamp lights; an empty dark room keeps the cool moonlit fill, so from outside it no longer reads lamp-lit */
   const c=THREE.ShaderChunk;c.lights_fragment_begin=c.lights_fragment_begin.replace('irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );','')
-   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.;'+box+'irradiance*=1.-k*lightProbe[0].x;/* [LIGHTS] inside, the moon-blue fill turns warm (no brighter on screen: warm reads brighter after the grade, so it is scaled down): lightProbe[0].y = how much */irradiance=mix(irradiance,vec3(dot(irradiance,vec3(.3,.59,.11)))*vec3(.66,.5,.37),k*lightProbe[0].y);}\n#endif');
+   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.,kw=0.;'+box+'irradiance*=1.-k*lightProbe[0].x;/* [LIGHTS] inside, the moon-blue fill turns warm (no brighter on screen: warm reads brighter after the grade, so it is scaled down): lightProbe[0].y = how much */irradiance=mix(irradiance,vec3(dot(irradiance,vec3(.3,.59,.11)))*mix(vec3(.5,.53,.58),vec3(.66,.5,.37),kw),k*lightProbe[0].y);/* [LIGHTS] same dimming for every room (luminance of both tints ~.53); kw only picks warm vs a cool moonlit grey */}\n#endif');
   c.lights_pars_begin=c.lights_pars_begin+'\nfloat ib(vec3 p,vec3 a,vec3 b){vec3 d=min(p-a,b-p);return smoothstep(-.13,-.06,min(d.x,min(d.y,d.z)));}';
   scene.add(inProbe);env.interiorOn=true;};env.interiorK=.75;/* share of the fill cut inside at full night (Lights: ~25% left) */
  // desktop: the forest impostors are unlit too; give them what a lit leaf card would get from the scene's lights (same as foldLights)
