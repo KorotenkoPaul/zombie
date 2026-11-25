@@ -258,7 +258,7 @@ function makeMaterials(renderer) {
     darkInside: std({ color: 0x15100D, roughness: 1, side: THREE.BackSide }),
     fire: std({ color: 0x2A120A, emissive: 0xFF6A1E, emissiveIntensity: 1.2, roughness: 1 }),
     ovenGlass: std({ color: 0x2A160C, emissive: 0xFF7A2A, emissiveIntensity: .8, roughness: .1, metalness: 0, envMap: env, envMapIntensity: 1.2, transparent: true, opacity: .55, depthWrite: false }),
-    covers: [0x8E3B2E, 0x2F5D7C, 0x4E6B3A, 0xB2803A, 0x6B4A7A, 0x9C5B2E, 0x3E4C5E].map(c => std({ color: c, roughness: .7 })),
+    covers: [0x8E3B2E, 0x2F5D7C, 0x4E6B3A, 0xB2803A, 0x6B4A7A, 0x9C5B2E, 0x3E4C5E].map(c => std({ color: c, roughness: .85, ...bookClothOf() })), /* book cloth: a fine weave, rubbed pale at the edges and corners (were flat plastic colours) */
     cans: [['#B8442E', '#E9D7A8'], ['#3F6E9A', '#F0E6CC'], ['#6E8F4A', '#F3E2B0'], ['#C99A3A', '#5A3A22']].map(([a, b]) => std({ map: texOf(labelCanvas(a, b)), metalness: .5, roughness: .4, envMap: env, envMapIntensity: .8 })),
   };
   // linen (pillows, bolster, lampshade): a real weave with slubs, soft washed-out stains and a faint ticking stripe,
@@ -917,13 +917,22 @@ function twillOf() { if (_twill) return _twill; let ls = 3131; const LR = () => 
   const t = texOf(c); t.repeat.set(9, 9); const b = texOf(c, { srgb: false }); b.repeat.set(9, 9); _twill = { map: t, bumpMap: b, bumpScale: 1.2 }; return _twill; }
 // leather (quiver, bow grip, diary): was a flat brown at roughness .7 and read as plastic close up. Pebbled grain, fine
 // creases, darker worn patches and paler scuffs, with the same pattern as a bump map so the grain catches the light.
+let _bcloth = null;
+function bookClothOf() { if (_bcloth) return _bcloth; let ls = 9191; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
+  const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#DADADA'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 2) { g.fillStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.1 + LR() * .14})`; g.fillRect(0, y, w, 1); }
+    for (let x = 0; x < w; x += 2) { g.fillStyle = `rgba(${LR() < .5 ? '150,150,150' : '255,255,255'},${.08 + LR() * .12})`; g.fillRect(x, 0, 1, h); } // the weave
+    const e = g.createLinearGradient(0, 0, w, 0); e.addColorStop(0, 'rgba(255,250,235,.45)'); e.addColorStop(.06, 'rgba(255,250,235,0)'); e.addColorStop(.94, 'rgba(255,250,235,0)'); e.addColorStop(1, 'rgba(255,250,235,.45)'); g.fillStyle = e; g.fillRect(0, 0, w, h);
+    const f = g.createLinearGradient(0, 0, 0, h); f.addColorStop(0, 'rgba(255,250,235,.4)'); f.addColorStop(.05, 'rgba(255,250,235,0)'); f.addColorStop(.95, 'rgba(255,250,235,0)'); f.addColorStop(1, 'rgba(255,250,235,.4)'); g.fillStyle = f; g.fillRect(0, 0, w, h); // edges rubbed pale
+    for (let k = 0; k < 14; k++) { const x = LR() * w, y = LR() * h, r = 8 + LR() * 26; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, LR() < .5 ? 'rgba(40,30,20,.18)' : 'rgba(255,245,225,.16)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  const t = texOf(c); const b = texOf(c, { srgb: false }); _bcloth = { map: t, bumpMap: b, bumpScale: .9 }; return _bcloth; }
 let _leather = null;
 function leatherOf() { if (_leather) return _leather; let ls = 7171; const LR = () => { ls = (ls * 16807) % 2147483647; return (ls - 1) / 2147483646; };
   const c = canvas(256, 256, (g, w, h) => { g.fillStyle = '#E8E8E8'; g.fillRect(0, 0, w, h);
-    for (let k = 0; k < 2600; k++) { const x = LR() * w, y = LR() * h, r = .8 + LR() * 2.2; g.fillStyle = `rgba(${LR() < .55 ? '120,120,120' : '255,255,255'},${.12 + LR() * .22})`; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill(); } // pebble grain
-    for (let k = 0; k < 30; k++) { g.strokeStyle = `rgba(80,80,80,${.15 + LR() * .25})`; g.lineWidth = .6 + LR() * .8; g.beginPath(); let x = LR() * w, y = LR() * h; g.moveTo(x, y); for (let j = 0; j < 4; j++) { x += (LR() - .5) * 26; y += (LR() - .3) * 10; g.lineTo(x, y); } g.stroke(); } // creases
-    for (let k = 0; k < 18; k++) { const x = LR() * w, y = LR() * h, r = 12 + LR() * 34; const gr = g.createRadialGradient(x, y, 0, x, y, r); const pale = LR() < .4; gr.addColorStop(0, pale ? 'rgba(255,245,225,.22)' : 'rgba(40,30,20,.22)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
-  const t = texOf(c); t.repeat.set(2, 2); const b = texOf(c, { srgb: false }); b.repeat.set(2, 2); _leather = { map: t, bumpMap: b, bumpScale: 1.6 }; return _leather; }
+    for (let k = 0; k < 2600; k++) { const x = LR() * w, y = LR() * h, r = .6 + LR() * 1.4; g.fillStyle = `rgba(${LR() < .55 ? '140,140,140' : '255,255,255'},${.06 + LR() * .1})`; g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill(); } // pebble grain
+    for (let k = 0; k < 30; k++) { g.strokeStyle = `rgba(90,90,90,${.1 + LR() * .15})`; g.lineWidth = .6 + LR() * .8; g.beginPath(); let x = LR() * w, y = LR() * h; g.moveTo(x, y); for (let j = 0; j < 4; j++) { x += (LR() - .5) * 26; y += (LR() - .3) * 10; g.lineTo(x, y); } g.stroke(); } // creases
+    for (let k = 0; k < 18; k++) { const x = LR() * w, y = LR() * h, r = 12 + LR() * 34; const gr = g.createRadialGradient(x, y, 0, x, y, r); const pale = LR() < .4; gr.addColorStop(0, pale ? 'rgba(255,245,225,.14)' : 'rgba(40,30,20,.12)'); gr.addColorStop(1, 'rgba(128,128,128,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); } });
+  const t = texOf(c); t.repeat.set(2, 2); const b = texOf(c, { srgb: false }); b.repeat.set(2, 2); _leather = { map: t, bumpMap: b, bumpScale: .9 }; return _leather; }
 function mx() { if (MX) return MX; const s = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, ...o });
   /* terracotta: fired-clay mottling, white salt bloom up by the rim, a darker damp band at the foot, scuffs (was a flat orange) */
   const tc = canvas(256, 128, (g, w, h) => { g.fillStyle = '#B5623C'; g.fillRect(0, 0, w, h);
