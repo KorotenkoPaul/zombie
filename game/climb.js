@@ -172,7 +172,7 @@ export function createClimb() {
     const FF = { [h]: ff(h).setZ(A.edge - zD * .24), [l]: ff(l).setZ(A.P.z - zD * .02) };
     if (feetTop) { FF.LF = feetTop.LF.clone(); FF.RF = feetTop.RF.clone(); }
     const P = rootTop ? rootTop.clone() : A.P.clone();
-    const fromClimb = A.mode === 'climb'; A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: dir > 0 ? 1.35 : 1.55, h, l, FF, P, ys: dir > 0 && fromClimb ? A.y : top(A, L[l].r), hold: 0, idle: false };
+    const fromClimb = A.mode === 'climb'; A.mode = 'over'; A.C = { s: dir > 0 ? 0 : 1, dir, T: dir > 0 ? 1.15 : 1.25, /* was 1.35 / 1.55: from the far camera the over stage read as a stop at every ladder (outdoor film: 0.8-0.9 s of standing) */ h, l, FF, P, ys: dir > 0 && fromClimb ? A.y : top(A, L[l].r), hold: 0, idle: false };
   }
   function overTick(A, dt, p) {
     const c = A.C; if (c.hold > 0) c.hold -= dt; else c.s = Math.min(1, Math.max(0, c.s + c.dir * dt / c.T));
@@ -202,7 +202,7 @@ export function createClimb() {
       const out = sh.clone().sub(hp).setY(0); if (out.lengthSq() > 1e-6) out.normalize();
       const hang = sh.clone().add(V(0, -.5, 0)).addScaledVector(out, .1); /* clear of a tool hung on the hip (gate: forearm 2 cm through the belt hammer at bl_t / kh_t) */ hang.z -= A.zDir * .03;
       const q = f.lerp(hang, e); q.addScaledVector(out, Math.sin(Math.PI * e) * .06); return q; }
-    const [a, b, lift] = c.dir < 0 ? (k === c.h ? [.24, .54, .13] : [.46, .76, .18]) : (k === c.h ? [.2, .62, .13] : [.6, .95, .18]); // going down a foot leaves the floor only once the body is low enough to reach the rung
+    const [a, b, lift] = c.dir < 0 ? (k === c.h ? [.24, .56, .13] : [.42, .8, .18]) : (k === c.h ? [.2, .62, .13] : [.55, .97, .18]); // going down a foot leaves the floor only once the body is low enough to reach the rung
     const e = sine((s - a) / (b - a)); const from = restTarget(A, k, L.r), to = c.FF[k];
     // up first, then over the edge, then down onto the boards (a straight line clipped the floor's edge beam: gate, feet 5 cm into it)
     const eh = sine((e - .25) / .75), ev = sine(e / .75); /* gentle and overlapping (gate: foot and knee jumps stepping onto the boards) */ const q = from.clone().lerp(to, eh); q.y = lerp(from.y, to.y, ev) + Math.sin(Math.PI * e) * lift; return q;
@@ -217,7 +217,7 @@ export function createClimb() {
     if (A.mode === 'over') { const r = overTick(A, dt, p); if (r === 'off') { S.act = null; S.wTarget = 0; S.fade = .35; } return r; }
     C.play('437', { speed: 0, fade: .3 });
     // take hold first: hands go to their rungs, the body settles, then the steps start
-    if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .45); const e = ease(A.grab); A.y = lerp(A.y0, A.up ? A.o.yBot : top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), e); placeRoot(A, p);
+    if (A.grab < 1) { A.grab = Math.min(1, A.grab + dt / .36); const e = ease(A.grab); A.y = lerp(A.y0, A.up ? A.o.yBot : top(A, Math.min(A.limb.LF.r, A.limb.RF.r)), e); placeRoot(A, p);
       if (A.p0) { p.x = lerp(A.p0.x, p.x, e); p.z = lerp(A.p0.z, p.z, e); } return null; } // from where the walk left him onto the ladder's line, eased (motion: root x snapped 4 cm and y 4 cm in one frame at every mount)
     if (A.mode === 'land') { // both feet on the floor: let go of the rungs, stand up
       A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1; /* the hands come down by IK (fading to the climb clip left both arms up at shoulder height while he stepped back: watch R28-3) */
