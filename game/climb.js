@@ -222,7 +222,7 @@ export function createClimb() {
     if (A.mode === 'land') { // both feet on the floor: let go of the rungs, stand up
       A.lt += dt; A.limb.LH.w = A.limb.RH.w = 1; /* the hands come down by IK (fading to the climb clip left both arms up at shoulder height while he stepped back: watch R28-3) */
       // a step back off the ladder before walking away (gate: arms, hips and shins swept through the rail when he turned off at the foot)
-      if (A.BK == null) { A.BK = A.lad.rope && A.lad.y0 < .5 ? .5 : BACK; A.lf = A.BK > .3 ? 1.25 : 1; { const e = headRoom(A, p); if (e != null && !A.lad.rope) S.duck = { ez: p.z + A.zDir * e.d, yb: e.y, zd: A.zDir, w: 0, t: 0 }; } } /* at the foot of a rope ladder the ropes' tails lie out on the earth ~45 cm: he steps back clear of them before he turns (watch R35-1: he walked off sideways through the rope) */
+      if (A.BK == null) { A.BK = A.lad.rope && A.lad.y0 < .5 ? .5 : BACK; A.lf = A.BK > .3 ? 1.25 : 1; { const e = headRoom(A, p); if (e != null && e.d < BACK + .2 && !A.lad.rope) S.duck = { ez: p.z + A.zDir * e.d, yb: e.y, zd: A.zDir, w: 0, t: 0 }; } } /* at the foot of a rope ladder the ropes' tails lie out on the earth ~45 cm: he steps back clear of them before he turns (watch R35-1: he walked off sideways through the rope) */
       A.back = A.BK * sstep(.15 * A.lf, .75 * A.lf, A.lt);
       if (A.lt > .8 * A.lf) { S.act = null; S.wTarget = 0; S.fade = .3; return 'bottom'; } /* the root stays where the last hip correction put it (gate: root 14 cm in one frame at the end) */
       placeRoot(A, p); return null; }
@@ -247,10 +247,10 @@ export function createClimb() {
   // ...so he ducks under it: the upper back bows forward until the back of the skull is clear of the beam's edge, for as long as his head is near it
   // (the step back stays: shorter, the walk away swept his arm and shin through the ladder's rail, gate)
   function duckPost(dt) { const D = S.duck; if (!D) return; D.t += dt; const B = C.bones; if (!B.Head || !B.Spine1 || !B.Neck) { S.duck = null; return; } const hd = B.Head.getWorldPosition(V());
-    const under = hd.y + .25 > D.yb ? 1 : 0; /* the back of the skull is ~13 cm behind the head bone: 3 cm to spare */
+    const under = (!S.act || S.act.mode === 'land') && hd.y + .25 > D.yb ? 1 : 0; /* not on the rungs: climbing again it eases out (it fought the climb: head jumps at the mount, gate) */ /* the back of the skull is ~13 cm behind the head bone: 3 cm to spare */
     const need = under * Math.max(0, (hd.z - (D.ez - D.zd * .16)) * D.zd + D.w);
-    D.w += (Math.min(.14, need) - D.w) * Math.min(1, dt * 8); if (D.w > .001) { const nk = B.Neck.getWorldPosition(V()), g = nk.clone(); g.z -= D.zd * D.w; C.turnBone(B.Spine1, nk, g, 1); }
-    if (D.t > 4 || (D.t > .5 && D.w < .001 && !under)) S.duck = null; }
+    D.w1 = (D.w1 || 0) + (Math.min(.09, need) - (D.w1 || 0)) * Math.min(1, dt * 5); D.w += (D.w1 - D.w) * Math.min(1, dt * 5); /* two eased stages, at most 9 cm (a 14 cm bow leant him 32 deg walking off, and a one-stage ease jerked the head: gate) */ if (D.w > .001) { const nk = B.Neck.getWorldPosition(V()), g = nk.clone(); g.z -= D.zd * D.w; C.turnBone(B.Spine1, nk, g, 1); }
+    if (D.t > 3 && D.w1 < .001 || D.t > 6 || (D.t > .5 && D.w < .001 && !under)) S.duck = null; }
   function placeRoot(A, p) { p.y = A.y; p.x = A.lad.x; p.z = A.o.cz + A.zDir * (A.back || 0); } // hips are fixed exactly in post()
 
   // highest wrist the arm reaches with the body standing on a foot at rootY (shoulder over the hips, ~a hip distance from the rungs)
