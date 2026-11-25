@@ -924,7 +924,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const AO = (() => {
     const TOP = .035;   // board tops sit ~3.5 cm above the level
     const RM = [
-      { room: 'kitchen', y: KT, x0: -4.4, x1: -.9, z0: 1.0, z1: 4.6, holes: [[-1.5, -.92, 3.0, 3.9]] },
+      { room: 'kitchen', y: KT, x0: -4.4, x1: -.9, z0: 1.0, z1: 4.6, holes: [[-1.5, -.92, 3.0, 4.08]] },
       { room: 'bedroom', y: BD, x0: -4.2, x1: .4, z0: .95, z1: 3.95, holes: [[-4.3, -3.55, 2.32, 3.25]] },
       { room: 'workshop', y: WS, x0: .9, x1: 4.6, z0: 1.2, z1: 5.3, holes: [] },
       // outside: the deck and the three round landings (index.html floorBoards with disc(cx, cz, r, zmin) shapes)
