@@ -460,7 +460,7 @@ uniform float tdCool;` + NOISE)
     let n = 0;
     for (let k = 0; k < NUP * 4 && n < NUP; k++) {
       const s = (k % 3 === 2 ? limbs : roots)(); if (!s) continue;
-      const { p } = s; if (blocked(p.x, p.y, p.z, 0.15) || nearDoor(p.x, p.y, p.z)) continue;
+      const { p } = s; if (blocked(p.x, p.y, p.z, 0.28) || nearDoor(p.x, p.y, p.z)) continue;
       // grow in small colonies: keep a sample only if the big moss noise is high here (matches the shader patches loosely)
       if (Math.sin(p.x * 1.3 + p.z * 0.9) + Math.sin(p.y * 1.7 - p.x * 0.6) < -0.3) continue;
       // a colony of a few small domed cushions, not one wide flat sheet (critic: a 0.5 m flat patch read as green felt laid on
@@ -468,7 +468,7 @@ uniform float tdCool;` + NOISE)
       const tA = V(1, 0, 0).cross(s.n); if (tA.lengthSq() < 1e-4) tA.set(0, 0, 1); tA.normalize(); const tB = s.n.clone().cross(tA);
       for (let j = 0, m = 2 + Math.floor(R() * 3); j < m && n < NUP; j++) {
         const a = rr(0, 6.28), d = j ? rr(0.05, 0.15) : 0, q = p.clone().addScaledVector(tA, Math.cos(a) * d).addScaledVector(tB, Math.sin(a) * d);
-        const sz = rr(0.045, 0.11) * (j ? 0.8 : 1) * (p.y > 3 ? 0.8 : 1);
+        const sz = rr(0.045, 0.11) * (j ? 0.8 : 1) * (p.y > 3 ? 0.8 : 1); if (j && blocked(q.x, q.y, q.z, 0.12 + sz)) continue; /* [house exterior round] a colony member under a floor's edge poked up through the board ends as a flat green disc */
         M4.compose(q.addScaledVector(s.n, -sz * 0.2), orient(s.n, rr(0, 6.28)), S.set(sz * rr(1, 1.35), sz * rr(0.45, 0.65), sz * rr(0.85, 1.15)));
         im.setMatrixAt(n, M4);
         const v = rr(0.85, 1.15); col.setRGB(0.085 * v, 0.125 * v * rr(0.95, 1.08), 0.03 * v); im.setColorAt(n, col); n++; } /* sunlit cushion moss is a lively yellow-green (it read as a dark sponge close up) */
@@ -502,9 +502,9 @@ uniform float tdCool;` + NOISE)
         if (p.z > AZ + 2.2 && R() < 0.8) continue; // mostly the back / trunk side
         if (Math.sin(p.x * 3.1 + p.z * 2.3) + Math.sin(p.z * 1.7 - p.x * 2.2) < 0.2) continue;
         if (R() < 0.55) continue; // only a thin creep of moss at the board ends
-        const sz = rr(0.035, 0.07);
-        M4.compose(p, orient(UP, rr(0, 6.28)), S.set(sz * rr(1.2, 2.0), sz * 0.22, sz * rr(0.8, 1.2))); im.setMatrixAt(n, M4);
-        const v = rr(0.8, 1.2); col.setRGB(0.05 * v, 0.075 * v, 0.024 * v); im.setColorAt(n++, col);
+        const sz = rr(0.022, 0.04), ax = rr(0, 6.28); /* [house exterior round] a few small domes, not one flat squashed disc (read as a green blot painted on the board) */
+        for (let j = 0, m = 2 + Math.floor(R() * 2); j < m && n < N; j++) { const q = p.clone().add(V(Math.cos(ax) * (j - (m - 1) / 2) * sz * 1.5, -sz * .12, Math.sin(ax) * (j - (m - 1) / 2) * sz * 1.5)), z = sz * rr(.7, 1.1); M4.compose(q, orient(UP, rr(0, 6.28)), S.set(z * rr(1, 1.3), z * .6, z * rr(.85, 1.1))); im.setMatrixAt(n, M4);
+        const v = rr(0.8, 1.2); col.setRGB(0.06 * v, 0.088 * v, 0.026 * v); im.setColorAt(n++, col); }
       }
     }
     // the house grown into the tree: where a post, beam or landing board meets the trunk, moss creeps over the joint -
