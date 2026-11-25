@@ -195,7 +195,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     .replace('#include <color_fragment>','#include <color_fragment>\n diffuseColor.rgb=mix(diffuseColor.rgb,pathC,pathK);').replace('#include <map_fragment>',`
      // two texture scales blended by noise: no visible tiling. The far scale is softened so the painted clumps read as ground, not stickers.
      float pathK=0.;vec3 pathC=vec3(0.);float pondMud=0.,pondWet=0.,forK=0.;
-     vec4 g1=texture2D(map,vGW/4.6);vec4 g2=texture2D(map,vGW/12.7+.37);float bn=fbm(vGW*.09);vec3 gc=mix(g1.rgb,g2.rgb,smoothstep(.35,.65,bn));
+     vec2 gw=vGW+(vec2(fbm(vGW*.21),fbm(vGW*.21+3.7))-.5)*2.4;/* domain warp: the painted moss clumps stop repeating as same-size round blobs */vec4 g1=texture2D(map,gw/4.6);vec4 g2=texture2D(map,vGW/12.7+.37);float bn=fbm(vGW*.09);vec3 gc=mix(g1.rgb,g2.rgb,smoothstep(.35,.65,bn));
      // close to the camera a finer third scale adds crisp detail (the far scales blur when you zoom in)
      vec3 g0=texture2D(map,vGW/1.5+.71).rgb;float nearK=1.-smoothstep(2.5,11.,length(vViewPosition));gc=mix(gc,g0,.6*nearK);
      vec3 gm=texture2D(map,vGW/.55+.13).rgb;gc=mix(gc,gc*(.55+3.4*dot(gm,vec3(.3,.55,.15))),.35*nearK);gc*=1.+(fbm(vGW*26.)-.5)*.3*nearK;
@@ -229,13 +229,13 @@ export function createGround(C){const __before=new Set(C.scene.children);
       vec3 lcol=vec3(0.);float lm=0.,lsh=0.;
       for(int L=0;L<${MOBILE?1:2};L++){/* phones: one layer (fill rate) */float sc=L==0?8.:5.5;float ra=L==0?0.:.83;vec2 pq=mat2(cos(ra),-sin(ra),sin(ra),cos(ra))*vGW*sc+float(L)*vec2(.37,.71);
        vec2 li=floor(pq),lf=fract(pq)-.5;float lh=fract(sin(dot(li+float(L)*17.3,vec2(12.9898,78.233)))*43758.5453);
-       float on=step(lh,litA*(L==0?1.05:.8));float la=fract(lh*91.7)*6.283;vec2 lr=mat2(cos(la),-sin(la),sin(la),cos(la))*(lf-(vec2(fract(lh*17.),fract(lh*29.))-.5)*.22);
-       float sz=.78+.27*fract(lh*41.);lr/=sz;float u=lr.x/.36;float pr=sqrt(max(0.,1.-u*u))*(1.-.25*u);
+       float on=step(lh,litA*(L==0?1.05:.8)*mix(.05,1.8,smoothstep(.42,.6,fbm(vGW*.55+13.))));/* drifts and bare moss between, not an even confetti */float la=fract(lh*91.7)*6.283;vec2 lr=mat2(cos(la),-sin(la),sin(la),cos(la))*(lf-(vec2(fract(lh*17.),fract(lh*29.))-.5)*.22);
+       float sz=.58+.47*fract(lh*41.);lr/=sz;float u=lr.x/.36;float pr=sqrt(max(0.,1.-u*u))*(1.-.25*u);
        float lob=.74+.26*abs(sin((u+1.)*5.5+lh*3.));float w=.155*pr*lob;float e=fwidth(lr.y)+.003;float d=abs(lr.y)-w;
        float m=(1.-smoothstep(-e,e,d))*step(abs(u),1.);m=max(m,(1.-smoothstep(.007,.007+e,abs(lr.y)))*step(.95,u)*step(u,1.3));m*=on;
        float sh=(1.-smoothstep(0.,.09,d))*step(abs(u),1.2)*on;
        float c=fract(lh*7.);vec3 cc=c<.3?vec3(.58,.24,.07):c<.55?vec3(.66,.44,.13):c<.75?vec3(.38,.22,.1):c<.87?vec3(.76,.6,.22):vec3(.2,.14,.08);
-       cc*=1.+.55*fract(lh*53.);float mid=1.-smoothstep(0.,.012+e,abs(lr.y));float edge=smoothstep(.45,1.,abs(lr.y)/max(w,.01));
+       cc*=.8+.55*fract(lh*53.);cc=mix(cc,vec3(.16,.11,.06),step(.72,fract(lh*37.))*.6);/* a share of them dark, wet and rotting */float mid=1.-smoothstep(0.,.012+e,abs(lr.y));float edge=smoothstep(.45,1.,abs(lr.y)/max(w,.01));
        cc*=(1.-.3*mid)*(1.-.35*edge)*(.9+.2*sign(lr.y)*fract(lh*5.));
        lsh=max(lsh,sh*(1.-lm));lcol=mix(lcol,cc,m);lm=max(lm,m);}
       vec3 avg=vec3(.5,.3,.1);float ff=1.-pathK*.6;
