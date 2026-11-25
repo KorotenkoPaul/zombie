@@ -659,8 +659,8 @@ function sinkCounter() {
   add(lst, new THREE.CylinderGeometry(.006, .008, .07, 10), M.chrome, 0, .035, 0); add(lst, new THREE.SphereGeometry(.014, 12, 10), M.ceramic, 0, .074, 0);
   g.userData.lever = lst;
   // on the counter: cutting board with bread, jar, canister
-  add(g, lathe([[0, 0], [.06, 0], [.075, .05], [.07, .13], [.045, .17], [.04, .19], [0, .19]], 22), M.glazeCream, -.38, H, -.2); add(g, lathe([[0, 0], [.048, 0], [.05, .01], [.03, .03], [0, .034]], 16), M.glazeCream, -.38, H + .19, -.2);
-  add(g, lathe([[0, 0], [.045, 0], [.047, .11], [.035, .12], [0, .12]], 18), M.glazeBlue, -.12, H, -.2);
+  add(g, lathe([[0, 0], [.06, 0], [.075, .05], [.07, .13], [.045, .17], [.04, .19], [0, .19]], 22), M.glazeCream, -.43, H, -.22); add(g, lathe([[0, 0], [.048, 0], [.05, .01], [.03, .03], [0, .034]], 16), M.glazeCream, -.43, H + .19, -.22);
+  add(g, lathe([[0, 0], [.045, 0], [.047, .11], [.035, .12], [0, .12]], 18), M.glazeBlue, -.45, H, -.05);
   bake(g); g.userData.info = { top: H }; return g;
 }
 function barrel(h = .78, mat) { const g = new THREE.Group(); const r0 = h * .3, b = h * .055; const pts = []; for (let i = 0; i <= 12; i++) { const y = i / 12 * h; pts.push([r0 + b * Math.sin(Math.PI * i / 12), y]); } pts.push([r0 - .02, h], [r0 - .02, h - .03], [0, h - .03]);
@@ -1493,7 +1493,7 @@ export function buildProps(ctx) {
   const pantry = place('pantry', pantryShelf(1.25), -4.372, KT + .56, 1.33, { ry: Math.PI / 2, wall: true, solid: false }); for (const [k, o] of Object.entries(pantry.userData.tools)) { homeOf(o); out.tools[k] = o; }
   PT.pantry = [pantry, V(0, .6, .3)];
   const cn = placed.counter, cTop = cn.userData.floorY + .9;
-  tool('board', choppingBoard(), scene, -2.62, cTop, 1.4, [0, .05, 0]); tool('knife', knife(), scene, -2.6, cTop + .023, 1.33, [0, -.15, 0]);
+  tool('board', choppingBoard(), scene, -2.65, cTop, 1.51, [0, .05, 0]); tool('knife', knife(), scene, -2.63, cTop + .023, 1.46, [0, -.15, 0]);
   const plateO = tool('plate', fine(() => bake(plateOfFood())), st, .21, .915, .13); /* serving plate waits by the pan on the stove, front right (in reach; at the back he folded over the hot pan) */ const food = []; plateO.traverse(o => { if (o.isMesh && o.material !== M.ceramic) food.push(o); });
   // food on the plate: setFood(1) full, (.5) half eaten, (0) empty. (Meshes are merged per material, so we scale the food meshes down.)
   out.plate = { obj: plateO, setFood(k) { k = clamp01(k); for (const m of food) { m.visible = k > .02; m.scale.setScalar(.35 + .65 * k); } } }; out.plate.setFood(0);
@@ -1512,7 +1512,7 @@ export function buildProps(ctx) {
     const BX = .23, BZ = .04, BY = .9 - .2;
     const inSink = [[BX - .06, BY + .1 * Math.cos(.4) + .004, BZ - .06, [0, 0, Math.PI / 2 - .4]], [BX + .05, BY + .002, BZ + .08, [0, 0, .05]], [BX + .07, BY + .002, BZ - .1, [0, 0, 0]], [BX - .03, BY + .045, BZ + .13, [0, 0, Math.PI / 2]]];
     // drying rack on the counter between the board and the basin (counter local)
-    const rack = new THREE.Group(); rack.position.set(-.085, .9, .11); cn.add(rack); rack.userData.live = true;
+    const rack = new THREE.Group(); rack.position.set(-.085, .9, .19); cn.add(rack); rack.userData.live = true;
     { const rg = new THREE.Group(); W(rg, .17, .012, .21, 0, .006, 0, { mat: M.woodLight, r: .004 }); for (const z of [-.08, .08]) { W(rg, .17, .02, .02, 0, .022, z, { mat: M.woodLight, r: .005 }); for (let i = 0; i < 6; i++) add(rg, new THREE.CylinderGeometry(.004, .004, .1, 6), M.woodLight, -.075 + i * .03, .07, z); } bake(rg); rack.add(rg); }
     const inRack = [[-.06, .112, 0, [0, 0, Math.PI / 2]], [-.03, .112, 0, [0, 0, Math.PI / 2]], [.0, .074, 0, [0, 0, Math.PI / 2]], [.055, .074, -.02, [Math.PI, 0, 0]]];
     // the shelf over the window: plates stacked, the cup in the bowl
@@ -1545,12 +1545,12 @@ export function buildProps(ctx) {
     const H0 = .3, r0 = H0 * .5, r1 = H0 * .62;
     const mkB = (metal, mat) => { const g = new THREE.Group(); const b = bucket(H0, metal); g.add(b); const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 28), mat); disc.rotation.x = -Math.PI / 2; disc.renderOrder = 2; disc.userData.live = true; g.add(disc); g.userData.water = { disc, level: 0 }; g.userData.grip = V(0, H0 + .05, 0); return g; };
     // shelf + supply bucket with a spigot and a hose down to the tap
-    const shX = -1.9, shY = KT + 1.28, shZ = 1.03, shD = .42;
-    { const sh = new THREE.Group(); W(sh, .3, .035, shD, 0, 0, shD / 2, { mat: M.woodLight }); for (const s of [-1, 1]) { const b = new THREE.Shape(); b.moveTo(0, 0); b.lineTo(.3, 0); b.quadraticCurveTo(.1, -.06, 0, -.26); b.lineTo(0, 0); add(sh, EX(b, .03, .004), M.woodDark, s * .11, -.018, .0, 0, -Math.PI / 2, 0); } bake(sh); sh.position.set(shX, shY, shZ); scene.add(sh); }
+    const shX = -2.47, shY = cTop + .062, shZ = 1.04, shD = .26, shR = 3 * Math.PI / 4; // [PROPS] a low stand on the counter's back left, bail ~1.33 m over the floor: in his reach (Integrator: fetchwater)
+    { const sh = new THREE.Group(); W(sh, shD + .03, .025, shD + .03, 0, .0675, 0, { mat: M.woodLight, r: .004 }); for (const s of [-1, 1]) W(sh, .045, .055, shD, s * .11, .0275, 0, { mat: M.woodDark, r: .004 }); bake(sh); sh.position.set(shX, cTop, shZ + .22); sh.rotation.y = .12; scene.add(sh); }
     const wb = mkB(true, wm); { const sp = new THREE.Group(); add(sp, new THREE.CylinderGeometry(.011, .011, .05, 10), M.brass, 0, 0, .025, Math.PI / 2); add(sp, rb(.012, .03, .012, .003), M.brass, 0, .02, .04); sp.position.set(0, .04, r0 + .01); wb.add(sp); bake(sp); }
-    tool('waterBucket', wb, scene, shX, shY + .018, shZ + .22);
-    const tapW = cn.localToWorld(V(.23, .9 + .015, -.23)); const spW = V(shX, shY + .018 + .04, shZ + .22 + r0 + .06);
-    { const c = new THREE.CatmullRomCurve3([spW, V(spW.x - .02, spW.y - .2, spW.z + .03), V(tapW.x + .05, tapW.y + .02, tapW.z - .02), tapW.clone().add(V(.02, .01, -.04))].map(q => q.clone().sub(spW))); const hm = add(scene, new THREE.TubeGeometry(c, 24, .008, 6), std2(0x2A2A2A), spW.x, spW.y, spW.z); hm.castShadow = false; }
+    tool('waterBucket', wb, scene, shX, shY + .018, shZ + .22, [0, shR, 0]);
+    const tapW = cn.localToWorld(V(.23, .9 + .015, -.23)); const spW = V(shX + Math.sin(shR) * (r0 + .06), shY + .018 + .04, shZ + .22 + Math.cos(shR) * (r0 + .06));
+    { const c = new THREE.CatmullRomCurve3([spW, V(spW.x + .05, cTop + .014, spW.z - .03), V(tapW.x - .07, tapW.y, tapW.z - .02), tapW.clone().add(V(-.01, .01, -.04))].map(q => q.clone().sub(spW))); const hm = add(scene, new THREE.TubeGeometry(c, 24, .008, 6), std2(0x2A2A2A), spW.x, spW.y, spW.z); hm.castShadow = false; }
     // drain bucket in the bay
     const db = mkB(false, dm); tool('drainBucket', db, cn, .23, .08, .04);
     // tap stream and drips
