@@ -556,10 +556,18 @@ export function createHero(ctx){
   for(const k in sc){if(lastAct[0]===k)sc[k]-=1;if(lastAct[1]===k)sc[k]-=.35;sc[k]+=rnd(0,.35);}
   return Object.keys(sc).sort((a,b)=>sc[b]-sc[a])[0];}
  const WINDOWS=['bwin','kwin','wwin'];
+ const DOOR_E=(a,b)=>(a==='bdoor'&&b==='bdoor2')||(a==='bdoor2'&&b==='bdoor')||(a==='bdoor2'&&b==='ledge')||(a==='ledge'&&b==='bdoor2')||(a==='bdoor'&&b==='ledge')||(a==='ledge'&&b==='bdoor');
+ function doorShut(){const P=window.__props;const D=P&&P.door;return !!(D&&typeof D.open==='number'&&(D.bolt>.1||D.open<.4));}
  function goTo(node,then){if(node===H.node&&!H.path.length){then&&then();return;}
   // on a ladder: finish this rung run first, the new route starts where the ladder ends (QA: H.lad left set, then a 67 cm teleport)
   if(H.lad&&H.path[0]&&H.path[0].t==='ladder'){const first=H.path[0];H.path=[first,...(first.node===node?[]:route(first.node,node))];H.then=then;return;}
-  H.path=route(H.node,node);if(!H.path.length){then&&then();return;}H.then=then;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));}
+  H.path=route(H.node,node);if(!H.path.length){then&&then();return;}
+  /* BRAIN (critic W6): never through the bedroom door leaf while it is bolted or not open (open < .4). The walk stops at the
+     door node on this side and H.doorBlocked asks for the door; the brain puts bolt {lock:false, open:true} first, and once
+     the leaf is open the same walk goes on (update below). The bolt task itself walks only to the knob, inside. */
+  if(H.task!=='bolt'&&doorShut()){let a=H.node;for(let i=0;i<H.path.length;i++){const b=H.path[i].node;if(DOOR_E(a,b)){H.path.length=i;const nd=node,th=then;H.doorBlocked=null;
+   const block=()=>{H.doorBlocked={node:nd,then:th,t:0};};if(!H.path.length){block();return;}H.then=block;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));return;}a=b;}}
+  H.doorBlocked=null;H.then=then;H.av=0;H.walkV=WALK_V*(brain?lerp(.86,1.04,clamp(((gait.speed||1)-.7)/.42,0,1)):rnd(.92,1.04));}
  const sidePole=(side,down=1)=>{const f=fwd(root.rotation.y);const right=V(-f.z,0,f.x);return right.multiplyScalar(side==='Right'?1:-1).add(V(0,-down,0)).add(f.clone().multiplyScalar(-.3));};
  function ikList(list){if(!list)return;for(const [s,t,w] of list)if(t&&w>.001)armIK(s,t,sidePole(s),clamp(w,0,1));}
 
@@ -571,7 +579,7 @@ export function createHero(ctx){
 
  // the activity currently running: a small state machine with its own update
  let act=null;
- function startTask(name,opts){if(name===H.task&&act&&!act.left&&(!opts||!Object.keys(opts).length)&&name!=='micro'&&name!=='switch')return;if(H.trans||H.lad){H.pending=name;H.pendingOpts=opts;return;}
+ function startTask(name,opts){if(name===H.task&&act&&!act.left&&(!opts||!Object.keys(opts).length)&&name!=='micro'&&name!=='switch')return;H.doorBlocked=null;if(H.trans||H.lad){H.pending=name;H.pendingOpts=opts;return;}
   if(act&&act.leave&&!act.left){const nm=name;act.left=true;H.trans=true;act.leave(()=>{H.trans=false;act=null;startTask(nm,opts);});return;}
   /* GRAB P1: a task that is already putting its tools back (its leave runs) finishes that first; the new task waits for it (it used to drop the act, the ladle stayed in his fist) */
   if(act&&(act.left||act.stow)&&(act.lq=(act.lq||0)+1)<1200){H.pending=name;H.pendingOpts=opts;return;}
@@ -1626,7 +1634,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const follow=(a,dt)=>{const p=root.position,q=route(p,want());const dx=q.x-p.x,dz=q.z-p.z,m=Math.hypot(dx,dz);a.v=Math.min(.75,Math.max(0,(a.v||0)+(m>.03?2:-3)*dt),Math.sqrt(2*2*m));const st=Math.min(m,a.v*dt);/* eased start and stop: no jerk in the feet */if(m>1e-4){p.x+=dx/m*st;p.z+=dz/m*st;}
     const lk=D.open>.02?spot(D.open*1.66,.62):D.boltKnob(V());const yF=Math.atan2(lk.x-p.x,lk.z-p.z);const dy=wrapA(yF-root.rotation.y);root.rotation.y+=Math.sign(dy)*Math.min(Math.abs(dy),2.4*dt);H.face=root.rotation.y;
     const mv=st/dt>.12;if(mv&&!a.walk){a.walk=1;play('30',{fade:.25,speed:.8});}else if(!mv&&a.walk&&m<.03){a.walk=0;play(IDLE(),{fade:.4});}return m;};
-   return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.42,clip:null,dur:[14,14],vary:false,
+   return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.42,node:'bdoor'/* W7: always from the room side (the knob's nearest node is bdoor2 in the doorway: he walked into the shut leaf to x .55) */,clip:null,dur:[14,14],vary:false,
    look:a=>D.open>.02?spot(D.open*1.66,.62).setY(root.position.y+.95):D.boltKnob(V()),
    start:a=>{a.ds=wantOpen&&D.bolt<1e-3?'open':'shut';a.dt=0;},
    tick:(a,dt)=>{a.dt+=dt;const m=follow(a,dt);
@@ -2095,6 +2103,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  /* GRAB: called away at the open fridge: the hand shuts it first (it used to swing shut by itself, openTo) */
  function fridgeLeave(a,cb){const F=PP().fridge,R=a.fr;if(!R||!F||F.open<=.01||a.step!=='fridge'||a.lvF)return false;a.lvF=1;R.then=cb;
   if(R.st==='open'||R.st==='reachO'){R.st='close';R.t=0;}else if(R.st==='close'||R.st==='reachC'||R.st==='after'){}else{if(R.st==='move')R.nx='in';else{R.st='in';R.t=0;}R.did=1;R.tdid=-1;}return true;}
+ const FR_IN=.19;/* KITCHEN: the meat goes on the FRONT of the low shelf: deeper in, his head hit the fridge front and collide pushed the arm 20 cm back */
  function fridgeTick(a,dt){const F=PP().fridge,R=a.fr;R.t+=dt;const R0=armLen*.92+PALM-.03;const tmp=V();const p=root.position;
   const grip=()=>{const G=window.__grab;return G&&G.gripPoint?G.gripPoint('Right'):bones.RightHand.getWorldPosition(V());};
   const hk=F.handle(V());H.look=R.st==='in'?R.ins:hk;H.lookW=1;
@@ -2112,12 +2121,12 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(R.st==='reachO'||R.st==='reachC'){const mbH=PP().tools&&PP().tools.meatBag;/* with the sack in that fist the arm waits for the walk to settle: the stepping knees kicked the sack as it came up in front of them */if(!(mbH&&mbH.parent===bones.RightHand&&R.t<.35))R.w=Math.min(1,R.w+dt/.35);R.tgt='h';if((R.w>=1&&grip().distanceTo(hk)<.03)||R.t>1.2){R.st=R.st==='reachO'?'open':'close';R.t=0;}}
   else if(R.st==='open'){keep();F.setOpen(Math.min(.6,F.open+1.0*dt));if(F.open>=.6){F.openTo(.92);/* a last pull and it swings wide */R.w=Math.max(.0,R.w);R.st='letgo';R.t=0;}}
   else if(R.st==='letgo'){R.w=Math.max(0,R.w-dt/.25);if(R.w<=0){const fr=R.ins.clone().sub(fridgeAt(F,0,tmp).clone().setY(R.ins.y)).setY(0);const front=R.ins.clone().addScaledVector(R.nrm,.5);/* KITCHEN: half a metre back, so the knees bend and the head stays out of the fridge */slideTo(front,R.ins,'in');}}
-  else if(R.st==='in'){R.tgt='i';R.w=Math.min(1,R.w+dt/.35);if(R.t>.3&&!R.did&&(grip().distanceTo(R.ins.clone().addScaledVector(R.nrm,.12))<.05||R.t>2.2)){R.did=1;R.tdid=R.t;try{if(R.mode==='in'){PP().release('meatBag');window.__audio.carry(false);H.carry=null;}else PP().grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}}
+  else if(R.st==='in'){R.tgt='i';R.w=Math.min(1,R.w+dt/.35);if(R.t>.3&&!R.did&&(grip().distanceTo(R.ins.clone().addScaledVector(R.nrm,FR_IN))<.05||R.t>2.2)){R.did=1;R.tdid=R.t;try{if(R.mode==='in'){PP().release('meatBag',{blend:.25});/* eased onto the shelf from where the fist set it down */window.__audio.carry(false);H.carry=null;}else PP().grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}}
    if(R.did&&R.t>R.tdid+.25){R.w=Math.max(0,R.w-dt/.2);if(R.w<=0){const ho=F.handle(V());slideTo(ho.clone().addScaledVector(R.nrm,.28).addScaledVector(V(ho.x-R.ins.x,0,ho.z-R.ins.z).normalize(),.1),ho,'reachC');}}}
   else if(R.st==='close'){keep();F.setOpen(Math.max(0,F.open-1.0*dt));if(F.open<=.3){F.openTo(0);/* a push and it swings shut */R.st='after';R.t=0;}}
   else if(R.st==='after'){R.w=Math.max(0,R.w-dt/.3);if(R.w<=0&&!(R.mode==='out'&&R.cw>0&&(R.cf??1)>0)){if(!R.bk&&R.mode!=="out"){R.bk=1;/* GRAB: a small step back off the shut door before he turns away (his toes caught its front) */const q=p.clone().addScaledVector(R.nrm,.08);slideTo(q,hk,'after');return;}a.fr=null;H.squat=0;H.kSquat=0;a.step='next';R.then();}}}
  function fridgePost(a){const R=a.fr;if(!R)return;const mb0=PP().tools&&PP().tools.meatBag;const bag=R.mode==='out'&&mb0&&mb0.parent===bones.RightHand;if(R.w<=.01&&!bag)return;const F=PP().fridge;const G=window.__grab;
-  const t=R.tgt==='i'?R.ins.clone().addScaledVector(R.nrm,.12):F.handle(V());/* the meat at the front of the shelf, not its back wall */if(R.w>.01)reachGrip('Right',t,R.w);/* the meat taken out: between the shelf and the door handle the sack hangs in his fist at his right hip, not swinging in front of his shins */if(R.mode==='out'&&R.w<.999){const mb=PP().tools&&PP().tools.meatBag;if(mb&&mb.parent===bones.RightHand){const hp=bones.Hips.getWorldPosition(V());const fw=fwd(root.rotation.y);const cp=hp.addScaledVector(V(-fw.z,0,fw.x),.28).addScaledVector(fw,.16).add(V(0,.16,0));R.cw=Math.min(1,(R.cw||0)+1/60/.4);{const l=root.worldToLocal(cp.clone());R.cs=R.cs?R.cs.lerp(l,.15):l;}/* eased in his own frame: the hips lurch as the walk starts */{const G=window.__grab;if(R.st==='after')R.cf=Math.max(0,(R.cf??1)-1/60/.28);const w=(1-R.w)*smooth(0,1,R.cw)*smooth(0,1,R.cf??1);/* eased off as the fridge step ends: it used to stop at once, a 20 cm drop of the fist */const c=root.localToWorld(R.cs.clone());/* full weight on a blended target: reachGrip's fist correction only runs at w>.98 and switched on with a 14 cm drop */reachGrip('Right',G&&G.gripPoint&&w<.999?G.gripPoint('Right').lerp(c,w):c,1);}H.noPop={side:'Right',until:performance.now()+150};/* the pop filter dragged the carry arm back toward the walk swing, the sack into the hips */}}if(G){if(R.st==='open'||R.st==='close'||((R.st==='reachO'||R.st==='reachC')&&R.w>.6))G.hold('Right',F.obj,()=>F.handle(V()));else G.free(F.obj);}}
+  const t=R.tgt==='i'?R.ins.clone().addScaledVector(R.nrm,FR_IN):F.handle(V());/* the meat at the front of the shelf, not its back wall */if(R.w>.01){if(R.tgt==='i')REACH_LEAN=0;try{reachGrip('Right',t,R.w);}finally{REACH_LEAN=.6;}}if(!a.relook||a.relook.fr){const rl=()=>{const R=a.fr;if(!R||R.tgt!=='i'||R.w<=.01)return;REACH_LEAN=0;try{reachGrip('Right',R.ins.clone().addScaledVector(R.nrm,FR_IN),R.w);}finally{REACH_LEAN=.6;}};rl.fr=1;a.relook=rl;relookReg();}/* and once more after the gaze has turned his chest (it carried the fist 5 cm off the shelf) *//* at the shelf he stays upright on bent knees: the waist lean put his head into the fridge front, and collide's push on the head carried the arm 20 cm back */ /* the meat taken out: between the shelf and the door handle the sack hangs in his fist at his right hip, not swinging in front of his shins */if(R.mode==='out'&&R.w<.999){const mb=PP().tools&&PP().tools.meatBag;if(mb&&mb.parent===bones.RightHand){const hp=bones.Hips.getWorldPosition(V());const fw=fwd(root.rotation.y);const cp=hp.addScaledVector(V(-fw.z,0,fw.x),.28).addScaledVector(fw,.16).add(V(0,.16,0));R.cw=Math.min(1,(R.cw||0)+1/60/.4);{const l=root.worldToLocal(cp.clone());R.cs=R.cs?R.cs.lerp(l,.15):l;}/* eased in his own frame: the hips lurch as the walk starts */{const G=window.__grab;if(R.st==='after')R.cf=Math.max(0,(R.cf??1)-1/60/.28);const w=(1-R.w)*smooth(0,1,R.cw)*smooth(0,1,R.cf??1);/* eased off as the fridge step ends: it used to stop at once, a 20 cm drop of the fist */const c=root.localToWorld(R.cs.clone());/* full weight on a blended target: reachGrip's fist correction only runs at w>.98 and switched on with a 14 cm drop */reachGrip('Right',G&&G.gripPoint&&w<.999?G.gripPoint('Right').lerp(c,w):c,1);}H.noPop={side:'Right',until:performance.now()+150};/* the pop filter dragged the carry arm back toward the walk swing, the sack into the hips */}}if(G){if(R.st==='open'||R.st==='close'||((R.st==='reachO'||R.st==='reachC')&&R.w>.6))G.hold('Right',F.obj,()=>F.handle(V()));else G.free(F.obj);}}
  function stepTick(a,dt){a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return true;}if(a.step==='fridge'){if(a.fr)fridgeTick(a,dt);return true;}
   if(a.step==='clip'){H.look=a.pt;H.lookW=.9;const k=a.t/Math.max(.3,a.clipDur);while(a.hits.length&&k>=a.hits[0][0]){a.hits.shift()[1]();}return true;}return false;}
  // the same one-off clip n times in a row (gathering logs, scooping), each with a small shift of the gaze
@@ -2311,7 +2320,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const Ls=bones.LeftArm.getWorldPosition(V()),Rs=bones.RightArm.getWorldPosition(V());const piv=Ls.clone().add(Rs).multiplyScalar(.5).addScaledVector(d,.06).add(V(0,-.04,0));
   const tgt=c.clone().add(V(0,SPL_RH-.015,0));const q=tgt.clone().sub(piv);const qh=V(q.x,0,q.z).length();const rH=q.length();const thS=Math.atan2(q.y,qh);
   if(a.ph==='swing'){// the body is real mocap (hy_axechop, CMU: slow lift 1.2 s, fast drop 0.35 s, hit at 1.57 s of 1.9 s); the axe angle follows its phase
-   const C='hy_axechop',cd=has(C)?durOf(C):1.9;if(!a.clipOn&&has(C)){a.clipOn=1;play(C,{fade:.3});const A=actions[C];if(A)A.time=0;}
+   const C='hy_axechop',cd=has(C)?durOf(C):1.9;if(!a.clipOn&&has(C)){a.clipOn=1;a.cyc0=a.cyc||0;play(C,{fade:.3});const A=actions[C];if(A)A.time=0;}
    const A=has(C)?actions[C]:null;const u=A?(A.time%cd)/cd:a.pt/T.swing;if(a.lu!=null&&u<a.lu-.5){a.struck=0;a.cyc=(a.cyc||0)+1;}a.lu=u;
    const last=a.hit+1>=hits;const thT=1.5,UT=.63,US=.82;/* top of the backswing just past vertical: further back the hands went behind his head and the body guard pulled them off the handle (film) */let th;
    if(u<UT)th=thS+(thT-thS)*smooth(0,UT,u);else if(u<US){const k=(u-UT)/(US-UT);th=thT+(thS-.05-thT)*k*k*(2.2-1.2*k);/* fast through the drop, a touch less at the very end: it slammed from full speed to a dead stop in one frame (gate: fist 11 cm/frame²) */}else th=thS-.05;
@@ -2319,7 +2328,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     if(a.hit>=hits)splitRound(a,S,d,r);}
    if(u>US&&a.rd&&u<.95)th+=Math.sin((u-US)*60)*.025;/* stuck: rock the handle to free it */
    a.wl=Math.min(1,(a.wl??(a.w||0))+dt/.6);a.w=smooth(0,1,a.wl);H.squat=.04*a.w;/* eased in too: switched on at once it dropped the hips 4 cm in a frame *//* eased in: the linear ramp kicked the fists 10 cm/frame² at the start of the swing (gate) */
-   holdAxe(a,piv,d,r,th,rH,a.w);
+   {/* OUTDOOR (watcher R42-4): the first raise comes up from the axe hanging at his side; in the shoulders' middle plane the handle swung
+     level across his forehead on the way. Up over the right shoulder instead (a real splitter lifts it past his ear), back to the middle for the drop */
+    const k=(a.cyc||0)===(a.cyc0||0)?smooth(.02,.35,u)*(1-smooth(.4,UT,u)):0;holdAxe(a,k>.001?piv.clone().addScaledVector(r,.1*k).add(V(0,.02*k,0)):piv,d,r,th,rH,a.w,k>.001?th+(thT-th)*.75*k:null);}/* and the wrists cocked: the head of the axe comes up ahead of the hands, so the handle stands up past his ear while the fists go by his face (it lay level across his forehead) */
    if(a.hit>=hits&&u>.97){a.wl=null;a.pt=0;a.struck=0;a.clipOn=0;a.lu=null;a.ph='after';play(IDLE(),{fade:.6});}return;}
   if(a.ph==='after'){const u=a.pt/T.after;a.w=Math.max(0,1-smooth(0,.6,u));H.squat=.04*(1-u);axeRest(a,d,1);if(a.w>.01)holdAxe(a,piv,d,r,thS-.05+.3*smooth(0,.6,u),rH,a.w);
    if(u>=1){a.ri++;a.ph=a.plan[a.ri]!=null?'place':'done';a.pt=0;a.hit=0;}}}
@@ -2328,8 +2339,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   // squatting, the head is never in the ground: the handle leans forward until the head just rests on the earth
   let gy=0;try{gy=window.__ground.heightAt(gp.x,gp.z);}catch(e){}const room=gp.y-(gy+.07);if(AXE_G*-dn.y>room){const v=clamp(room/AXE_G,-.2,1);dn=d.clone().setY(0).normalize().multiplyScalar(Math.sqrt(1-v*v)).add(V(0,-v,0)).normalize();}axeWorld(gp.clone().addScaledVector(dn,AXE_G),dn,d.clone());}
  // both hands on the axe handle: right hand at the tool's grip, left hand at the handle's end; the blade faces the way it swings
- function holdAxe(a,piv,d,r,th,rH,w){const dir=d.clone().multiplyScalar(Math.cos(th)).add(V(0,Math.sin(th),0));const tan=d.clone().multiplyScalar(-Math.sin(th)).add(V(0,Math.cos(th),0));
-  const gR=piv.clone().addScaledVector(dir,rH-AXE_G);const gL=piv.clone().addScaledVector(dir,Math.max(.22,rH-.67)).addScaledVector(r,.01);
+ function holdAxe(a,piv,d,r,th,rH,w,thA){const dirG=d.clone().multiplyScalar(Math.cos(th)).add(V(0,Math.sin(th),0));if(thA==null)thA=th;const dir=d.clone().multiplyScalar(Math.cos(thA)).add(V(0,Math.sin(thA),0));const tan=d.clone().multiplyScalar(-Math.sin(thA)).add(V(0,Math.cos(thA),0));
+  const gR=piv.clone().addScaledVector(dirG,rH-AXE_G);const gL=gR.clone().addScaledVector(dir,-(rH-AXE_G-Math.max(.22,rH-.67))).addScaledVector(r,.01);/* thA: the handle's own angle (cocked wrists); the left fist stays on the handle below the right */
   odReach('Right',gR,w);odReach('Left',gL,w*.95);/* right first: its trunk lean moved the left shoulder and slid the left hand off the handle */
   // the axe goes where the right fist really is (contact first); while blending out it hangs from the fist
   const pR=odPalm('Right');const hang=V(0,-1,0).addScaledVector(d,.22).normalize();const dd=hang.lerp(dir,w).normalize();axeWorld(pR.clone().addScaledVector(dd,AXE_G),dd,tan.clone().negate().lerp(d,1-w));a.dbg=[gR,gL];a.axeLate={w,dd:dd.clone(),blade:tan.clone().negate().lerp(d,1-w)};
@@ -3461,6 +3472,8 @@ stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(d
   /* GRAB: tools hung at the hip for a ladder that is no longer on his way (the plan changed): the hands take them back */
   if(H.stowPre)H.stowPre=H.stowPre.filter(([h,n])=>onHeroT(n)||slung[n]);if(H.stowPre&&!H.stowPre.length)H.stowPre=null;/* GRAB: a tool the last (cut-off) task put back is not handed to him again by the next one (gate: the water bucket came back into his hand in dumpwater) */
   if(H.stowPre&&!STW&&!H.lad&&!(H.path.length&&(H.path[0].t==='ladder'||(H.path[1]&&H.path[1].t==='ladder')))){STW={mode:'on',t:0,items:H.stowPre.map(([h,n,pp,pq,ps])=>({h,n,pp,pq,ps}))};H.stowPre=null;}
+  /* the door asked for above is open now: the walk it stopped goes on (a new task drops the request: startTask -> goTo) */
+  if(H.doorBlocked&&!H.path.length&&!H.trans){H.doorBlocked.t+=dt;if(!doorShut()){const B=H.doorBlocked;H.doorBlocked=null;goTo(B.node,B.then);}}
   if(H.path.length){const step=H.path[0];if(step.t==='ladder')ladderStep(dt);else walkStep(dt);if(!H.path.length&&H.then){const f=H.then;H.then=null;H.state='work';f();}}
   else if(H.state==='walk'){H.state='work';H.v=0;}
   if(!H.path.length){if(!H.swing&&!H.trans&&!H.seated&&!H.inBed){const da=wrapA(H.face-root.rotation.y);const wav=clamp(da*3.5,-2.6,2.6);H.av=H.slide&&(H.slide.yT!=null||Math.abs(H.slide.yaw||0)>1e-3)?0:(H.av||0)+clamp(wav-(H.av||0),-6*dt,6*dt);/* a slide that turns him (approachTo) sets the yaw itself: the follower turned him as well, twice the turn (telescope: 45 deg past the tube and back) */if(Math.abs(da)<.002&&Math.abs(H.av)<.02)H.av=0;root.rotation.y+=H.av*dt;
