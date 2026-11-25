@@ -448,7 +448,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  const waitN=new Map();const due=l=>l.castShadow&&l.shadow&&!l.shadow.autoUpdate&&l.shadow.needsUpdate;
  sm.render=(L,sc,cam)=>{const held=[];const D=L.filter(due);if(D.length>1){D.sort((a,b)=>(waitN.get(b)||0)-(waitN.get(a)||0)||(a===sun?-1:b===sun?1:0));
    const go=D[0]===sun?[sun]:[D[0]];for(const l of D){if(go.includes(l)){waitN.set(l,0);continue;}l.shadow.needsUpdate=false;held.push(l);waitN.set(l,(waitN.get(l)||0)+1);}}
-  for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}try{draw(L,sc,cam);}finally{for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
+  for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}const PV=window.__plView||[];for(const v of PV)if(v.hid){v.S.visible=true;v.D.visible=false;}/* the shadow passes see the real plank meshes */try{draw(L,sc,cam);}finally{for(const v of PV)if(v.hid){v.S.visible=false;v.D.visible=true;}for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
 /* [PERF] chunked draw ranges: the bark (43k tris), the merged house props (propsStatic, ~66k), the forest trunks (18k) and the
    ground litter (8.5k) are single meshes, so even
    zoomed in on one room the whole of them was drawn (~340k tris at the closest zoom vs ~355k at home). Their triangles are
@@ -1039,6 +1039,35 @@ const freshAttr=m=>m===boards?aFresh:m===beams?dFresh:sFresh;
 //  wear(x,y,z,amt)    -> add foot wear on the floor at that point (0..1)
 // [PERF] static house parts this thread owns: matrices frozen (no updateMatrix per frame). Instances still move via instanceMatrix.
 {const fr=o=>{o.updateMatrix();o.matrixAutoUpdate=false;o.updateMatrixWorld(true);};for(const m of [boards,beams,SHING])fr(m);scene.traverse(o=>{if(o.userData.plStatic)o.traverse(fr);});}
+/* [PERF] the house planks (boards, beams, roof shingles: ~1400 instances, 44 tris each, ~60k tris) were all drawn in every
+   frame, zoomed in on one room too. Each frame the main camera sees, per plank mesh, a "view" copy holding only the instances
+   whose bounding sphere (+0.1 m) is inside the view frustum, copied (matrix, colour, aRow/aTile/aWx/aFresh...) from the real
+   mesh whenever the camera or any of its instance data changed. The real meshes stay as they are for everything else
+   (housewear.js, repairs, loose boards, collide, raycasts, the box shadow proxies): they are only hidden while the scene renders,
+   and outside a render the view copies draw nothing (count 0). Exact frustum culling: the picture can't change. ?noplcull */
+if(!/[?&]noplcull/.test(location.search)){const VW=[],_fr=new THREE.Frustum(),_pm=new THREE.Matrix4(),_sp=new THREE.Sphere(),_c=new THREE.Vector3();
+ for(const S of [boards,beams,SHING]){const g=S.geometry;if(!g.boundingSphere)g.computeBoundingSphere();const dg=new THREE.BufferGeometry();dg.setIndex(g.index);
+  for(const k in g.attributes){const a=g.attributes[k];dg.setAttribute(k,a.isInstancedBufferAttribute?new THREE.InstancedBufferAttribute(new a.array.constructor(a.array.length),a.itemSize):a);}
+  const D=new THREE.InstancedMesh(dg,S.material,S.instanceMatrix.count);D.count=0;D.frustumCulled=false;D.castShadow=false;D.receiveShadow=S.receiveShadow;D.layers.mask=S.layers.mask;D.renderOrder=S.renderOrder;
+  D.raycast=()=>{};D.name=(S.name||'planks')+'View';D.matrixAutoUpdate=false;D.matrix.copy(S.matrixWorld);D.matrixWorld.copy(S.matrixWorld);D.userData.planksView=true;scene.add(D);
+  VW.push({S,D,g,dg,ver:new Map(),mv:-1,n:-1,cen:new Float32Array(S.instanceMatrix.count*3),rad:new Float32Array(S.instanceMatrix.count),vis:new Int32Array(S.instanceMatrix.count),k:0,cam:new THREE.Matrix4(),hid:false});}
+ const srcAttrs=v=>{const L=[['instanceMatrix',v.S.instanceMatrix,'m']];if(v.S.instanceColor)L.push(['instanceColor',v.S.instanceColor,'c']);for(const k in v.g.attributes){const a=v.g.attributes[k];if(a.isInstancedBufferAttribute)L.push([k,a,'g']);}return L;};
+ const update=(v,cam)=>{const S=v.S,n=S.count,L=srcAttrs(v);let dirty=n!==v.n;for(const [k,a] of L)if(v.ver.get(k)!==a.version){dirty=true;}
+  const persp=cam&&cam.isPerspectiveCamera;if(persp){_pm.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);if(!_pm.equals(v.cam)){v.cam.copy(_pm);dirty=true;}}
+  if(!dirty)return;
+  if(S.instanceMatrix.version!==v.mv||n!==v.n){const e=S.instanceMatrix.array,bs=v.g.boundingSphere,mw=S.matrixWorld;v.D.matrix.copy(mw);v.D.matrixWorld.copy(mw);
+   for(let i=0;i<n;i++){const o=i*16;_pm.fromArray(e,o).premultiply(mw);_sp.copy(bs).applyMatrix4(_pm);v.cen[i*3]=_sp.center.x;v.cen[i*3+1]=_sp.center.y;v.cen[i*3+2]=_sp.center.z;v.rad[i]=_sp.radius+.1;}
+   v.mv=S.instanceMatrix.version;if(persp)_pm.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);}
+  let k=0;if(persp){_fr.setFromProjectionMatrix(_pm);for(let i=0;i<n;i++){_sp.center.set(v.cen[i*3],v.cen[i*3+1],v.cen[i*3+2]);_sp.radius=v.rad[i];if(_fr.intersectsSphere(_sp))v.vis[k++]=i;}}else for(let i=0;i<n;i++)v.vis[k++]=i;
+  for(const [key,a,w] of L){let d=w==='m'?v.D.instanceMatrix:w==='c'?v.D.instanceColor:v.dg.attributes[key];
+   if(!d){d=new THREE.InstancedBufferAttribute(new a.array.constructor(a.array.length),a.itemSize);if(w==='c')v.D.instanceColor=d;else v.dg.setAttribute(key,d);}
+   const is=a.itemSize,sa=a.array,da=d.array;for(let j=0;j<k;j++){const i=v.vis[j];for(let q=0;q<is;q++)da[j*is+q]=sa[i*is+q];}d.needsUpdate=true;v.ver.set(key,a.version);}
+  v.n=n;v.k=k;};
+ const prevB=scene.onBeforeRender,prevA=scene.onAfterRender;
+ scene.onBeforeRender=function(r,sc,cam,...a){if(prevB)prevB.call(this,r,sc,cam,...a);if(window.__noPlCull)return;
+  for(const v of VW){if(!v.S.visible){v.hid=false;continue;}try{update(v,cam);}catch(e){console.warn('plank cull off',e);window.__noPlCull=true;return;}v.D.count=v.k;v.S.visible=false;v.hid=true;}};
+ scene.onAfterRender=function(...a){for(const v of VW){if(v.hid){v.S.visible=true;v.hid=false;}v.D.count=0;}if(prevA)prevA.apply(this,a);};
+ window.__plView=VW;}
 window.__planks={meshes:{boards,beams,shingles:SHING},part:id=>PL[id]/* [PROPS] housewear.js: the instance behind an id */,move:(id,m)=>{const p=PL[id];if(!p)return false;const b=B.find(b=>b.mesh===p.mesh&&b.i===p.i);if(!b||b.loose)return false;const q=new THREE.Quaternion(),c=V();m.decompose(c,q,V());b.rb.setTranslation({x:c.x,y:c.y,z:c.z},true);b.rb.setRotation({x:q.x,y:q.y,z:q.z,w:q.w},true);physWake=Math.max(physWake,3);return true;}/* [PROPS] housewear.js: a worn board's collider follows it */,list:k=>PL.map((p,id)=>({id,kind:p.kind,pos:p.c.toArray().map(v=>+v.toFixed(2)),fresh:+freshAttr(p.mesh).getX(p.i).toFixed(2)})).filter(p=>!k||p.kind===k),
  setFresh:(id,f)=>{const p=PL[id];if(!p)return false;const A=freshAttr(p.mesh);A.setX(p.i,clamp(f,-1,1))/* below 0: worn, water-stained (housewear.js) */;A.needsUpdate=true;return true;},
  fresh:id=>PL[id]?freshAttr(PL[id].mesh).getX(PL[id].i):null,
