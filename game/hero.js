@@ -1277,7 +1277,7 @@ export function createHero(ctx){
  function relTool(hand,n){const P=window.__props||P3;try{if(P&&P.release)P.release(n,{blend:.35});}catch(e){}if(H.hold[hand]&&H.hold[hand].tool===n)H.hold[hand]=null;}
  function teleParts(){const P=window.__props||P3;let t=P&&P.placed&&P.placed.telescope;if(!t){t=null;scene.traverse(o=>{if(!t&&o.name==='telescope'&&o.userData&&o.userData.tube)t=o;});if(!t)scene.traverse(o=>{if(!t&&o.userData&&o.userData.tube&&o.userData.tube.parent)t=o;});}const tube=t&&t.userData&&t.userData.tube;if(!tube||!tube.parent)return null;
   const W=(x,y,z)=>{tube.updateMatrixWorld(true);return tube.localToWorld(V(x,y,z));};
-  return {t,tube,yoke:tube.parent,eye:()=>W(-.5,0,0),dir:()=>W(1,0,0).sub(W(0,0,0)).normalize(),gripR:()=>W(-.12,.05,0)/* LEISURE: on top of the tube a hand-width ahead of the left one, not at arm's full stretch */,gripL:()=>W(-.3,-.045,0),floor:t.position.y};}
+  return {t,tube,yoke:tube.parent,eye:()=>W(-.5,0,0),dir:()=>W(1,0,0).sub(W(0,0,0)).normalize(),gripR:()=>W(-.12,.075,0)/* LEISURE: on top of the tube a hand-width ahead of the left one, not at arm's full stretch (GRAB: the fist's ring 2.7 cm over the 4.75 cm tube, the curled fingers rest on it: at .05 they were 4 cm inside it) */,gripL:()=>W(-.3,-.06,0)/* GRAB: the cupped fist under the 3 cm barrel (was 3 cm inside) */,floor:t.position.y};}
  function teleStand(T){const E=T.eye(),d=T.dir();const dh=V(d.x,0,d.z).normalize();return E.clone().addScaledVector(dh,-.24).setY(T.floor);}
  // a hand onto a point by the arm alone (no leaning the body toward it): for holds while the body has its own pose to keep
  const PALM=.06;/* palm centre to wrist */
@@ -1652,7 +1652,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    // to retune, and switches it off by hand before he goes (QA: the dial turned while his palms were 60-100 cm away)
    const D=rnd(30,60);const kn=()=>R.knob(V());
    const reachK=(a,dt,on)=>{a.kw=clamp((a.kw||0)+(on?dt/.6:-dt/.5),0,1);const k=kn();const kh=k.y-root.position.y;if(on&&!a.sq&&kh<.8&&has('cm_squat')){a.sq=1;play('cm_squat',{fade:.55});}else if(!on&&a.sq&&a.kw<.35){a.sq=0;play(IDLE(),{fade:.6});}/* a real crouch (CMU squat) to the low crate, not a stoop */
-    a.kp=k;const G=window.__grab;return G&&G.gripPoint?G.gripPoint('Right').distanceTo(k)<.06:a.kw>.95;};/* the fingers on the dial (Grab's grip point): gripNoLean in post */
+    a.kp=k.clone().addScaledVector(fwd(R.obj.rotation.y),.025);/* GRAB: the fist's ring 2.5 cm out from the dial, the curled fingers on its rim (on the dial itself they were 5 cm inside the radio) */const G=window.__grab;return G&&G.gripPoint?G.gripPoint('Right').distanceTo(a.kp)<.06:a.kw>.95;};/* the fingers on the dial (Grab's grip point): gripNoLean in post */
    // the stand spot: half a metre in front of the dial, 30 cm clear of the watering can (QA: the can went through his shins and
    // chest in the crouch; beside the crate he had to fold over 50 deg between it and the bunk); the approach line is aimed so he stops there
    const S0=()=>{const o3=R.obj;const f=fwd(o3.rotation.y),r=V(-f.z,0,f.x);const q=kn().addScaledVector(f,.58).addScaledVector(r,.05);q.y=root.position.y;return q;};/* square in front of the dial, in the 47 cm gap between the bunk end (x -1.15) and the watering can (gate: at +12 cm right the squat hit the bunk, at -6 cm the can) */
