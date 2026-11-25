@@ -1354,11 +1354,21 @@ export function buildProps(ctx) {
     apply(); }
   place('hooks', bake(coatHooks()), .17, BD + 1.6, .97, { solid: false, wall: true });
   { const b = closedBook(.035, .2, .15, M.covers[4]); b.rotation.set(0, .6, Math.PI / 2); b.position.set(.25, 1.07 + .045 + .15 + .03, .12); bunk.add(b); }
-  // light switch: flush on the solid wall just inside the room, beside the door opening (the opening is z 2.3..3.25),
-  // ~15 cm past the frame at 1.15 m (Pavel: it used to float in the opening). hero.js reads out.switches for the 'switch' task.
-  // On the latch side (z 2.15): the door is hinged at z 3.25 and its open leaf stands into the room at z ~3.2, so a plate at z 3.5
-  // was behind the open door (gate: he squeezed into the leaf and the frame, 3-5 cm, to reach it).
-  { const s = switchPlate(); s.position.set(.372, BD + 1.15, 2.15); s.rotation.y = -Math.PI / 2; scene.add(s); out.switches = { bedroom: s.position.clone() }; out.switchN = { bedroom: new THREE.Vector3(0, 0, 1).applyQuaternion(s.quaternion).setY(0).normalize() }; }
+  // bedroom lantern: there is no electricity in this world, so no wall switch (it used to switch a lamp hung out of reach under
+  // the ceiling). An oil lantern hangs on a forged wall bracket just inside the door, on the latch side (where the switch was),
+  // with the wick at ~1.58 m over the floor: he lights it with a match like the others and pinches it out before sleep.
+  // The bracket: a wall plate with two nails, an arm out over the lantern, a diagonal brace, the lantern's ring on the arm's hook.
+  // lights.js builds only the wick, flame and light at out.lights.bedroomLamp.pos (own: true); hero.js reaches the lamp
+  // itself now that out.switches has no 'bedroom'.
+  out.switches = {}; out.switchN = {};
+  { const g = new THREE.Group(); g.add(lanternHousing(.025)); const wx = .192, ay = .245;
+    add(g, rb(.02, .17, .06, .004), M.iron, wx, ay - .05, 0);
+    for (const y of [ay + .01, ay - .11]) add(g, new THREE.CylinderGeometry(.006, .006, .012, 6), M.iron, wx - .012, y, 0, 0, 0, Math.PI / 2);
+    add(g, new THREE.BoxGeometry(wx - .01, .014, .012), M.iron, wx / 2, ay, 0);                              // the arm
+    add(g, new THREE.TorusGeometry(.012, .004, 5, 10), M.iron, 0, ay - .006, 0, 0, Math.PI / 2, 0);              // hook at its tip
+    const b0 = V(wx - .01, ay - .12, 0), b1 = V(wx * .45, ay, 0), bd = b1.clone().sub(b0);
+    const br = add(g, new THREE.BoxGeometry(.01, bd.length(), .01), M.iron, (b0.x + b1.x) / 2, (b0.y + b1.y) / 2, 0); br.rotation.z = -Math.atan2(bd.x, bd.y);
+    place('blamp', g, .18, BD + 1.65, 1.95, { solid: false, wall: true }); }
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   { const s = wallShelf(.7); for (let i = 0, x = -.28; i < 7; i++) { const bw = rr(.025, .04); const b = closedBook(bw, rr(.16, .22), .15, M.covers[i]); b.position.set(x + bw / 2, .018, .12); s.add(b); x += bw + .003; } const j = jar(.1, .04, M.glazeCream); j.position.set(.22, .018, .12); s.add(j); bake(s); place('bshelf', s, -.35, BD + 1.25, .99, { solid: false, wall: true }); }
 
@@ -1698,10 +1708,11 @@ export function buildProps(ctx) {
   // ---------- light sources (computed before the static merge below, from the real positions) for lights.js: world positions + the emissive materials to switch ----------
   // each: { pos: Vector3 (world), obj, mats: [materials whose emissive/opacity show the source is on] }
   { const wp = (o, x = 0, y = 0, z = 0) => { o.updateMatrixWorld(true); return o.localToWorld(V(x, y, z)); };
-    const st = placed.stove, kl = placed.klamp, wl = placed.wlamp;
+    const st = placed.stove, kl = placed.klamp, wl = placed.wlamp, bl = placed.blamp;
     out.lights = {
       oven: { pos: wp(st, 0, .3, .05), obj: st, mats: [M.fire, M.ovenGlass, out.oven.flameMat], setHeat: out.oven.setHeat },
       kitchenLamp: { pos: wp(kl, 0, 0, 0), obj: kl, mats: [M.glass] },
+      bedroomLamp: { pos: wp(bl, 0, 0, 0), obj: bl, mats: [M.glass], own: true },
       workshopLamp: { pos: wp(wl, 0, .06, 0), obj: wl, mats: [wl.userData.inner] },
       candle: { pos: wp(candleObj, 0, .13, 0), obj: candleObj, mats: [candleObj.userData.flame] },
     };
@@ -1713,7 +1724,7 @@ export function buildProps(ctx) {
   // perf: phones get a stricter shadow budget (only furniture-sized parts cast)
   const MOB = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); const CAST_R = MOB ? .35 : .2; out.mobile = MOB;
   const NOMERGE = /[?&]nomerge/.test(location.search); /* debug: keep every prop as built (support checks) */
-  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp']); /* stove merged too: its door, fire and pots are live */
+  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp', 'blamp']); /* stove merged too: its door, fire and pots are live */
     const roots = []; for (let i = nScene0; i < scene.children.length; i++) { const o = scene.children[i]; if (KEEP.has(o.name) || o.userData.live || o.userData.book || Object.values(out.tools).includes(o)) continue; roots.push(o); }
     const by = new Map(); const kill = []; const MST = out._mergeStats = {}; out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;
