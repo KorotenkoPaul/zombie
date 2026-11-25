@@ -175,30 +175,39 @@ const hemi=new THREE.HemisphereLight(0xC9DAF5,0x4A5233,.7);scene.add(hemi);const
 const sun=new THREE.DirectionalLight(0xFFE2B5,2.6);sun.castShadow=true;sun.shadow.mapSize.set(MOBILE?1024:2048,MOBILE?1024:2048);
 Object.assign(sun.shadow.camera,{left:-12,right:12,top:14,bottom:-4,near:1,far:120});sun.shadow.bias=-.0003;sun.shadow.normalBias=.04;sun.shadow.radius=3;
 scene.add(sun);sun.target.position.set(0,5,1);scene.add(sun.target);
-const skyU={top:{value:new THREE.Color()},hor:{value:new THREE.Color()},sunDir:{value:V(0,1,0)},sunCol:{value:new THREE.Color()},star:{value:0},t:{value:0},tN:{value:null},cloudK:{value:0},glowK:{value:0}};
+const CDR_P=new THREE.Vector3(0,30,0),CDR_V=new THREE.Vector2();const skyU={cdr:{value:new THREE.Vector2()}/* [ENV] cloud drift carried by the wind */,top:{value:new THREE.Color()},hor:{value:new THREE.Color()},sunDir:{value:V(0,1,0)},sunCol:{value:new THREE.Color()},star:{value:0},t:{value:0},tN:{value:null},moonDir:{value:V(0,1,0)},moonK:{value:0},flash:{value:0},flDir:{value:V(0,.3,-1)},cloudK:{value:0},glowK:{value:0}};
 scene.add(new THREE.Mesh(new THREE.SphereGeometry(220,32,16),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:skyU,
  vertexShader:`varying vec3 vD;void main(){vD=normalize(position);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
- fragmentShader:`uniform vec3 top,hor,sunDir,sunCol;uniform float star,t,cloudK,glowK;uniform sampler2D tN;varying vec3 vD;float h(vec3 p){return fract(sin(dot(p,vec3(12.9,78.2,37.7)))*43758.5);}
+ fragmentShader:`uniform vec3 top,hor,sunDir,sunCol,moonDir,flDir;uniform float star,t,cloudK,glowK,moonK,flash;uniform vec2 cdr;uniform sampler2D tN;varying vec3 vD;float h(vec3 p){return fract(sin(dot(p,vec3(12.9,78.2,37.7)))*43758.5);}
  void main(){float y=max(vD.y,0.);vec3 c=mix(hor,top,pow(y,.5));float s=max(dot(vD,sunDir),0.);
   // [ENV] dawn/dusk: a wide warm glow around the low sun, then two thin cloud layers (baked noise, 3 reads) lit from the sun side
   float lowSun=smoothstep(.35,-.05,sunDir.y)*smoothstep(-.35,-.02,sunDir.y);c+=sunCol*pow(s,4.)*.35*glowK*lowSun;
-  c+=sunCol*(pow(s,700.)*5.+pow(s,10.)*.3);vec3 q=floor(vD*280.);float stars=step(.9975,h(q))*star*smoothstep(0.,.3,vD.y)*(.6+.4*sin(t*2.+h(q)*30.));
-  if(cloudK>.001){vec2 p=vD.xz/(vD.y+.18);vec2 n1=texture2D(tN,p*.09+vec2(t*.0012,t*.0004)).rg;float n2=texture2D(tN,p*.23+n1*.35-vec2(t*.002,0.)).r;float n3=texture2D(tN,p*.6+n2*.2+vec2(0.,t*.003)).g;
+  c+=sunCol*(pow(s,700.)*5.+pow(s,10.)*.3);
+  /* [ENV] sky round 2: moonlight scatters round the moon (a soft halo, the photo's lighter night blue), stars are round soft points at a
+     random spot in their cell (were square cells), slower twinkle, varied brightness */
+  float mo=max(dot(vD,moonDir),0.);c+=vec3(.5,.62,.8)*moonK*(pow(mo,60.)*.35+pow(mo,8.)*.07+pow(mo,2.)*.025);
+  float stars=0.;if(star>.001){/* [ENV] perf: no star field by day (uniform branch) */vec3 g=vD*280.;float spx=max(length(fwidth(g)),1e-4);/* derivative outside the per-pixel branch */vec3 q=floor(g);float sr=h(q);if(sr>.9965){vec3 sf=fract(g)-(.2+.6*vec3(h(q+1.7),h(q+2.3),h(q+3.1)));sf-=dot(sf,vD)*vD;
+  stars=smoothstep(1.5,.25,length(sf)/spx)*(.35+.9*h(q+5.3))*star*smoothstep(0.,.3,vD.y)*(.8+.2*sin(t*1.3+sr*60.))*(1.-.7*moonK*pow(mo,4.));}}
+  if(cloudK>.001){vec2 p=vD.xz/(vD.y+.18)-cdr;vec2 n1=texture2D(tN,p*.09+vec2(t*.0012,t*.0004)).rg;float n2=texture2D(tN,p*.23+n1*.35-vec2(t*.002,0.)).r;float n3=texture2D(tN,p*.6+n2*.2+vec2(0.,t*.003)).g;
    float d=n1.r*.55+n2*.32+n3*.13;float cov=smoothstep(.4,.66,d)*cloudK*smoothstep(.0,.16,vD.y);
-   float lit=pow(s,3.)*lowSun;vec3 cc=mix(mix(hor,top,.35)*.62,hor*1.05,smoothstep(.55,.85,d))+sunCol*lit*(.9-.5*smoothstep(.55,.9,d))*glowK;
+   float lit=pow(s,3.)*lowSun;vec3 cc=mix(mix(hor,top,.35)*.62,hor*1.05,smoothstep(.55,.85,d))+sunCol*lit*(.9-.5*smoothstep(.55,.9,d))*glowK;/* [ENV] at night the clouds are darker than the sky with silver moonlit edges (they were invisible: same blue as the sky) */cc=mix(cc,cc*.7+vec3(.55,.65,.8)*(pow(mo,3.)*.35+.05)*(1.-smoothstep(.5,.85,d))*1.4,moonK);
+   /* [ENV] lightning lights the storm clouds from inside: brightest toward the strike, thin cloud glows, dense cores stay darker */
+   if(flash>.002){float fd=max(dot(normalize(vec3(vD.x,max(vD.y,.05),vD.z)),flDir),0.);cc+=vec3(.6,.72,1.)*flash*(.1+.9*pow(fd,6.)+.3*pow(fd,2.))*(1.15-.6*smoothstep(.5,.85,d));}
    c=mix(c,cc,cov*.85);stars*=1.-cov;}
-  c+=vec3(stars);gl_FragColor=vec4(c,1.);}`})));
+  if(flash>.002){float fd=max(dot(vD,flDir),0.);c+=vec3(.6,.68,.85)*flash*(.06+.5*pow(fd,8.))*smoothstep(-.05,.2,vD.y);}
+  c+=vec3(stars);/* [ENV] dither: the dark night gradient banded in 8 bits on phones */c*=1.+(h(vec3(gl_FragCoord.xy,fract(t)))-.5)*.035;gl_FragColor=vec4(c,1.);}`})));
 // [ENV] the moon has phases: one step of the cycle per night (8 nights round), starting from a random phase. moonIll = lit fraction.
 let MOON0=Math.random();let moonIll=1;window.__moon={ill:()=>moonIll,setPhase:f=>{MOON0=((f-dayNo/8)%1+1)%1;}};/* setPhase(.5)=full, 0=new */const moonU={ph:{value:Math.PI}};
+const FL_C=new THREE.Color(.82,.88,1.);
 const moon=new THREE.Mesh(new THREE.SphereGeometry(4,24,16),new THREE.ShaderMaterial({uniforms:moonU,fog:false,
- vertexShader:`varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
- fragmentShader:`uniform float ph;varying vec3 vN;void main(){vec3 L=vec3(sin(ph),0.,-cos(ph));float d=smoothstep(-.06,.12,dot(normalize(vN),L));
-  float rim=pow(1.-max(vN.z,0.),3.);vec3 c=mix(vec3(.05,.07,.1)/* earthshine */,vec3(.95,.94,.9),d)*(1.-rim*.25);gl_FragColor=vec4(c,1.);}`}));scene.add(moon);
+ vertexShader:`varying vec3 vN,vO;void main(){vN=normalize(normalMatrix*normal);vO=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+ fragmentShader:`uniform float ph;varying vec3 vN,vO;float mh(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);float n=dot(i,vec3(1.,57.,113.));vec4 a=fract(sin(vec4(n,n+1.,n+57.,n+58.))*43758.5),b=fract(sin(vec4(n,n+1.,n+57.,n+58.)+113.)*43758.5);a=mix(a,b,f.z);a.xy=mix(a.xy,a.zw,f.y);return mix(a.x,a.y,f.x);}void main(){vec3 L=vec3(sin(ph),0.,-cos(ph));float d=smoothstep(-.06,.12,dot(normalize(vN),L));
+  float rim=pow(1.-max(vN.z,0.),3.);/* [ENV] maria: soft grey seas so the full moon is not a flat painted disc */float m=mh(vO*2.2+3.)*.65+mh(vO*5.)*.35;vec3 c=mix(vec3(.05,.07,.1)/* earthshine */,vec3(.95,.94,.9)*(1.-.32*smoothstep(.45,.7,m)),d)*(1.-rim*.35);gl_FragColor=vec4(c,1.);}`}));scene.add(moon);
 
 // ================= ground, forest, fog, grading: see env.js =================
 const ENVM=await import(new URL(ASSET+'env.js',document.baseURI).href);const ENV=ENVM.createEnv({scene,MOBILE,barkT,groundT,leafT,renderer});skyU.tN.value=ENV.noiseTex;
 // one global wind for leaves, grass, ferns, bushes and ropes (game/wind.js): calm spells, breezes, rolling gusts
-const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).createWind({THREE,legacy:ENV.U.wind});window.__wind=WIND;window.__weather=WIND.weather;/* [WIND] weather state for Brain/Sound */
+const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).createWind({THREE,legacy:ENV.U.wind});window.__wind=WIND;window.__weather=WIND.weather;/* [WIND] weather state for Brain/Sound */try{WIND.on('lightning',e=>{if(e&&e.dir&&!e.unseen)skyU.flDir.value.set(e.dir[0],.28,e.dir[1]).normalize();});}catch(e){}/* [ENV] the flash comes from the strike's side of the sky */
 
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
@@ -550,11 +559,11 @@ vec3 slate(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] sam
  vec2 off=vec2(sH(sd+.7),sH(sd+1.9))*5.;
  vec2 uv=(top>.5?m.xz:(an.x>an.z?m.zy:m.xy))/.9+off;
  vec3 tx=texture2D(tSlate,uv).rgb;float lum=dot(tx,vec3(.3,.6,.1));
- vec3 col=pow(tx,vec3(1.1))*vec3(.66);
+ vec3 col=pow(tx,vec3(1.1))*vec3(.95);
  // the scan is quite blue (mean 89,104,120) and the night ambient is blue too: keep only a hint of the blue-grey so the roof
  // reads dark slate under the moon, not saturated blue
  /* [PROPS roof round] the photo's slate is a cool blue-grey with paler weathered faces, not charcoal: brighter, more of the scan's blue kept */
- col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,.62)*vec3(.97,1.,1.04);
+ col=mix(vec3(dot(col,vec3(.3,.59,.11))),col,.85)*vec3(.88,1.,1.15);/* [TREE, 2026-11-25] lighter and bluer: at night the roofs read near-black vs the photo's blue slate */
  // each slate its own tone: some bluer, some greener-grey, some rust-brown stained, a few pale weathered
  float t=sH(sd+2.2);col*=mix(vec3(.8,.8,.84),vec3(1.1,1.06,1.0),t);
  if(sH(sd+7.)<.12)col*=vec3(1.18,1.02,.86);
@@ -580,13 +589,13 @@ vec3 slate(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] sam
   vec3 mc=textureGrad(tMoss,vW.xz*1.7+vec2(vW.y*.7),wx.xz*1.7+vec2(wx.y*.7),wy.xz*1.7+vec2(wy.y*.7)).rgb;col=mix(col,mc*vec3(.36,.44,.3),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
-shingleMat.customProgramCacheKey=()=>'slate2';
+shingleMat.customProgramCacheKey=()=>'slate3';
 shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT},uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);vDn=1.;\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;vDn=-sign((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).y+1e-6);\n#endif')
   .replace('#include <begin_vertex>','vec3 transformed=vec3(position);\n#ifdef USE_INSTANCING\ntransformed+=aBev*min(.018,.3*min(vSz.x,min(vSz.y,vSz.z)))/vSz;vW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;\n#else\nvW=(modelMatrix*vec4(transformed,1.)).xyz;\n#endif\nvSeed=aRow;vFresh=aFresh;vLP=transformed;');
  sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nvarying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;\n'+SHING_GLSL)
-  .replace('#include <map_fragment>','diffuseColor.rgb*=slate(vLP,vSz,vSeed);')
+  .replace('#include <map_fragment>','diffuseColor.rgb*=slate(vLP,vSz,vSeed);\n/* [TREE] at night (the lights are moon-blue) the slate goes muted blue-grey like the photo: blue moonlight on the blue scan read electric blue. By day and in the golden hour the sun is white or warm, so nothing changes */\n#if NUM_DIR_LIGHTS>0\n{vec3 ls=vec3(0.);for(int i=0;i<NUM_DIR_LIGHTS;i++)ls+=directionalLights[i].color;float nb=smoothstep(.05,.35,(ls.b-ls.r)/max(ls.b,.001));float gy=dot(diffuseColor.rgb,vec3(.3,.59,.11));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(gy*1.35)*vec3(1.,1.,1.03),nb*.8);}\n#endif')
   .replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\nroughnessFactor=sRgh;')
   .replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\nnormal=snArb(-vViewPosition,normal,sDH,faceDirection);');};
 const shingGeo=bevelBoxGeo();const sRow=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aRow',sRow);const sFresh=new THREE.InstancedBufferAttribute(new Float32Array(2000),1);shingGeo.setAttribute('aFresh',sFresh);
@@ -603,13 +612,13 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
-  const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.38,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
+  const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.38,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.userData.tint=1.75;/* photo: weathered lighter roof edge, not a black band (own instance tint; other beams unchanged) */slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
   // inside the room the roof is not a dark slab: honey sheathing boards run down the slope over chunky rafters (instances, no new calls)
   {slab.updateMatrix();const SM=g.matrixWorld.clone().multiply(slab.matrix);const ex=V(1,0,0),ey=V(0,0,1),ez=V(0,-1,0);const B0=new THREE.Matrix4().makeBasis(ex,ey,ez);if(B0.determinant()<0)B0.makeBasis(ex,ey.clone().negate(),ez);
    const put=(mesh,cx,cy,cz,L,W,T,roll,seed)=>{const m=SM.clone().multiply(new THREE.Matrix4().makeTranslation(cx,cy,cz)).multiply(B0).multiply(new THREE.Matrix4().makeRotationX(roll)).multiply(new THREE.Matrix4().makeScale(L,W,T));
     if(mesh===beams){beamInst(m,'roof');dWx.setXY(beams.count-1,0,.2);return;}const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,seed);aWx.setXY(i,0,.3);boards.setColorAt(i,new THREE.Color().setScalar(rnd(.8,.95)));
     {const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'roof',c:p,q});}};
-   for(let z=-d/2+.13;z<d/2-.05;z+=.25)put(boards,0,-.19-.013,z+rnd(-.004,.004),sl-.02,rnd(.226,.243),.025,rnd(-.02,.02),rnd(0,97)+100);
+   const oe=Math.max(0,(s>0?ov-(gx1-x1):ov)-.05)/Math.cos(ang);/* [TREE] the honey sheathing is the room's ceiling: it stops at the wall line, so the eave overhang outside shows the dark slab underside (it glowed orange under every eave at night, lit like the room) */for(let z=-d/2+.13;z<d/2-.05;z+=.25)put(boards,-s*oe/2,-.19-.013,z+rnd(-.004,.004),sl-.02-oe,rnd(.226,.243),.025,rnd(-.02,.02),rnd(0,97)+100);
    for(let z=-d/2+.35;z<d/2;z+=.85)put(beams,0,-.19-.026-.07,z,sl-.1,.1,.14,0,0);
    boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
   // shingles: rows from the ridge down, each row overlapping the one below, staggered
@@ -637,7 +646,7 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7
  for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<gx1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
   if(inTrunk(xx,y+hg/2,gz,.05))continue;board(V(xx,y+hg/2+.02,gz),hg+.04,.305,.05,new THREE.Euler(0,rnd(-.03,.03),Math.PI/2),{tint:rnd(.93,1.07),wall:true});}
  // gable trim boards on the front like the photo's dark fascia
- for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.castShadow=true;g.add(t);}
+ for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.userData.tint=1.9;t.castShadow=true;g.add(t);}
  meshesToBeams(g);bakeStatic(g); SHING.instanceMatrix.needsUpdate=true;sRow.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
  world.createCollider(RAPIER.ColliderDesc.cuboid((x1-x0)/2,h*.45,(z1-z0)/2).setTranslation((x0+x1)/2,y+h*.45,(z0+z1)/2));}
 function post(x,y0,y1,z){board(V(x,(y0+y1)/2,z),y1-y0,.2,.2,new THREE.Euler(0,0,Math.PI/2),{dark:true});}
@@ -666,7 +675,7 @@ function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z)
    /* [LIGHTS] o.sub (rooms): a dark subfloor under the boards. The gaps between the boards are real, and at night the bright fog and sky below showed through them as glowing blue lines in the lit rooms (Props). One dark sheet per run, a hair wider than the row, 6 cm under the boards' tops */
    if(o.sub)for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12))subSheet(V(x,y+.035-.09,(a0+b0)/2),b0-a0,.262,.016,new THREE.Euler(-Math.PI/2,-Math.PI/2,0,'YXZ'));}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
- if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
+ if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true,tint:o.edgeTint});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
 // split a run [a,b] into pieces lo..hi long with a gap g between them (first piece random, so joints stagger)
 function cutRun(a,b,lo,hi,g){const out=[];let s=a;if(b-a>hi){s=a+rnd(lo*.4,hi*.8);out.push([a,s-g/2]);s+=g/2;}while(b-s>hi){const e=s+rnd(lo,hi);if(b-e<lo*.5)break;out.push([s,e-g/2]);s=e+g/2;}out.push([s,b]);return out;}
@@ -788,7 +797,7 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
    const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
  const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
  // jambs, a little proud of the bark and sunk into it
- for(const sd of [-1,1])piece(at(sd*hw,D.y0-.04,.1),at(sd*hw,yS+.02,.1),fw,.34,'beam');
+ for(const sd of [-1,1]){const tp=at(sd*hw,yS+.02,.1),bt=at(sd*hw,D.y0-.04,.1);/* [TREE] plumb jambs like the photo's frame: the bottom keeps the top's line (the flaring trunk foot pushed it out, so both jambs leaned outwards) and is sunk a little into the bark */piece(V(tp.x*.7+bt.x*.3,bt.y,tp.z*.7+bt.z*.3),tp,fw,.34,'beam');}
  // arch: short chunky pieces round the top
  const N=7;let prev=at(-hw,yS,.08);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*hw,yS+Math.sin(t)*ah,.08);piece(prev.clone().addScaledVector(prev.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(prev).normalize(),.03),fw,.3,'beam');prev=p;}
  // a keystone block on top
@@ -798,7 +807,7 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  // the reveal: the doorway runs ~1 m through the bark into the cave. Its sides and top were open, so from the side the lit
  // cave showed through between the jamb and the bark as an orange slit (critic T25). Lined with planks like a real passage.
  {const dep=[.2,.46],dd=.27;/* shallow and dark like old weathered wood: from the home view the lit planks of a 1 m lining read as boards leaning in the doorway */
-  for(const sd of [-1,1])for(const ins of dep)piece(at(sd*(D.w/2+.03),D.y0-.02,ins),at(sd*(D.w/2+.03),yS+.03,ins),.045,dd,'board',rnd(.42,.5));
+  for(const sd of [-1,1])for(const ins of dep){const tp=at(sd*(D.w/2+.03),yS+.03,ins);/* [TREE] plumb like the jambs (the flaring foot slanted these into a diagonal plank across the doorway) */piece(V(tp.x,D.y0-.02,tp.z),tp,.045,dd,'board',rnd(.42,.5));}
   for(const ins of dep){let pv=at(-(D.w/2+.03),yS,ins);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*(D.w/2+.03),yS+Math.sin(t)*(ah-fw*.45+.03),ins);
    piece(pv.clone().addScaledVector(pv.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(pv).normalize(),.03),.045,dd,'board',rnd(.42,.5));pv=p;}}}
  // plank floor into the cave, boards running inward, slightly lower than the threshold
@@ -825,8 +834,7 @@ post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start abo
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
-/* photo: the bedroom floor is a thick deck that overhangs the kitchen front like a porch roof (was flush at 3.95) */
-floorBoards(BX0-.1,BX1+.05,BD,.5,4.4,{holes:[[-4.3,-3.55,2.32,3.25]],sub:true});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
+floorBoards(BX0-.1,BX1+.05,BD,.5,4.4,/* photo: the bedroom floor overhangs the kitchen front as a thick deck (was flush at 3.95) */{holes:[[-4.3,-3.55,2.32,3.25]],sub:true,edgeTint:1.7});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
 const HATCH=(()=>{/* own plank materials: plain meshes sharing boardMat's instanced program came out flat white (critic T20) */const hB=boardMat.clone();plankShader(hB);const hD=boardMat.clone();plankShader(hD);hD.color.setScalar(.5);const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
@@ -982,7 +990,7 @@ win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+
   const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;gm.emissiveIntensity=.12;gm.opacity=.1;WINS.push({mat:gm,room:'trunk',g});
   const pane=new THREE.Mesh(new THREE.PlaneGeometry(W,H),gm);pane.position.z=D-.09;pane.renderOrder=2;g.add(pane);
   // the frame: jambs, a lintel and a deep sill that run past them, a cross bar in the glass
-  const fb=(w,h,d,x,y,z,rz=0)=>{g.updateMatrixWorld(true);const v=h>w;const q=g.quaternion.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rz+(v?Math.PI/2:0))));board(V(x,y,z).applyMatrix4(g.matrixWorld),v?h:w,v?w:h,d,new THREE.Euler().setFromQuaternion(q),{wall:true,tint:rnd(.76,.92)});};/* photo: a honey-wood frame: real plank instances (grain, bevels, wear, shading like the walls; critic T27), not one flat-coloured mesh *//* photo: a honey-wood frame (own warm wood, not the dark beam board) */
+  const fb=(w,h,d,x,y,z,rz=0)=>{g.updateMatrixWorld(true);const v=h>w;const q=g.quaternion.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rz+(v?Math.PI/2:0))));board(V(x,y,z).applyMatrix4(g.matrixWorld),v?h:w,v?w:h,d,new THREE.Euler().setFromQuaternion(q),{tint:rnd(.66,.8)});};/* photo: a honey-wood frame (not wall-kind: the interior night warmth lit it like a lamp, critic T27): real plank instances (grain, bevels, wear, shading like the walls; critic T27), not one flat-coloured mesh *//* photo: a honey-wood frame (own warm wood, not the dark beam board) */
   // the casing runs from the face right back into the bark, so the lit lining never shows from the side
   fb(.11,H+.16,L+.02,-W/2-.055,0,zc+.01,.012);fb(.11,H+.16,L+.02,W/2+.055,.005,zc+.005,-.01);fb(W+.2,.09,L,0,H/2+.08,zc-.01);fb(W+.2,.07,L,0,-H/2-.07,zc-.01);
   fb(W+.44,.12,.16,.01,H/2+.1,D-.03,.018);fb(W+.38,.075,.24,-.01,-H/2-.075,D+.01,-.012);
@@ -1215,8 +1223,8 @@ if(BRAIN&&!/start=fixed/.test(location.search)&&!window.__fixedStart){try{hour=M
 function isNight(h){return !(h>=6&&h<20);}
 function hps(){return 1/60;}// a day of 24 minutes, 1 game hour = 1 real minute (Pavel 2026-11-23)
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
-const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0x8F9BB4,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xAAB5C4,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xA9BFD0,0xFFE0B0,2.6,.75,1.05],
- [13,0x3F7BC4,0xC8DEF2,0xB3C8D8,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xADB4BC,0xFFC07A,2.4,.68,1.06],[18.5,0x3A6A98,0xD8A07E,0x6E86A2,0xFFA468,1.6,.76,1.02],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
+const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0x8F9BB4,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xAAB5C4,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xB2BCC2,0xFFE0B0,2.6,.75,1.05],
+ [13,0x3F7BC4,0xC8DEF2,0xBEC4C3,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xADB4BC,0xFFC07A,2.4,.68,1.06],[18.05,0x456FA8,0xF4B47E,0xB8ACA2,0xFFAA58,2.3,.66,1.06]/* [ENV] golden hour: low warm sun and a warm sunlit haze (it went straight from the grey afternoon to blue dusk) */,[18.6,0x3A6A98,0xD89878,0x8A8AA2,0xFF9A5C,1.5,.74,1.02],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
 function pal0(h){h=((h%24)+24)%24;let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=clamp((h-a[0])/(b[0]-a[0]),0,1);const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 // [ENV] the palette is linear between keys and then averaged over +-0.4 h: no ease-in/ease-out stall at every key and no
 // sudden speed-up between them (dawn and dusk change at an even pace, no pops when time runs fast)
@@ -1352,14 +1360,14 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  if(!over&&wasN&&!nowN){dayNo++;toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
  // --- light & sky ---
  {const ph=((MOON0+dayNo/8)%1)*Math.PI*2;moonU.ph.value=ph;moonIll=.5-.5*Math.cos(ph);}
- const P=pal(hour);rainK=lerp(rainK,weather==='rain'?WIND.rainAmt():0,dt*.6);/* [WIND] drizzle .35, rain .75, storm 1 */const dim=1-rainK*.45;
+ const P=pal(hour);rainK=lerp(rainK,weather==='rain'?WIND.rainAmt():0,dt*.3);/* [WIND] drizzle .35, rain .75, storm 1 *//* [ENV] eases in over ~5 game minutes (was ~2: a storm switched on) */const CL=WIND.cloud?Math.max(0,WIND.cloud()-rainK):0;/* [ENV] dry overcast: grey sky, softer sun */const dim=1-rainK*.45-CL*.12;
  const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));
- skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
+ skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6+CL*.3);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+Math.min(1,rainK+CL)*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;if(WIND.sample){const w=WIND.sample(CDR_P);if(w)skyU.cdr.value.add(CDR_V.set(w.x||0,w.z||0).multiplyScalar(Math.min(.05,dt)*.035));}/* [ENV] clouds drift downwind, faster in a windy spell (~2x the base drift in a breeze); the sample is taken above the crown */
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
- sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)));sun.shadow.radius=3+nightK*3;/* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI*(1-rainK*dayK*.4);hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp*(1-rainK*dayK*.15);/* [LIGHTS] a storm by day is dark overcast, not a flat grey: the sky fill drops too, and the lit windows read warm against it */
+ sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)))*(1-CL*.8*dayK);/* [ENV] overcast: the sun is behind cloud, soft weak shadows (.8: at .55 a grey day read almost clear) */sun.shadow.radius=3+nightK*3+CL*dayK*6;/* [ENV] overcast: blurrier shadow edges *//* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI*(1-rainK*dayK*.4)*(1+CL*dayK*.6);/* [ENV] overcast: the whole sky fills in what the sun lost, so shadows go faint, not black */hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp*(1-rainK*dayK*.15);/* [LIGHTS] a storm by day is dark overcast, not a flat grey: the sky fill drops too, and the lit windows read warm against it */
  scene.fog.color.copy(P.fog).lerp(STORM_FOG.copy(STORM_DAY).lerp(STORM_NIGHT,nightK),rainK*.4).multiplyScalar(1-rainK*dayK*.28);/* [LIGHTS] storm by day: a darker slate veil, not a milky grey one; at night a deep cold blue (a light grey veil washed the warm house grey-blue and the night went milky: the photo's mood is warm windows in a cold blue night) */scene.fog.near=rig.dist*.95-mornK*12-rainK*6;scene.fog.far=rig.dist+70-mornK*30-rainK*25-nightK*35;
- moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;
+ moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;skyU.moonDir.value.copy(moonDir);skyU.moonK.value=nightK*moonIll*(1-rainK);
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  // no warm room fill: daylight only; at night rooms are lit by their lamps alone (game/lights.js)
  ambL.intensity=dayK*(1-rainK*.3)*.55;
@@ -1368,7 +1376,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.visible=rayMat.uniforms.o.value>.002;/* [ENV] skip the three big additive planes when they add nothing (night, rain) */rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour,moonIll});
- WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */WIND.update({dt,T,rainK,hour});FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
+ WIND.update({dt,T,rainK,hour});/* [ENV] update first: the flash lit the frame after its own (one frame late, the first, brightest flicker was lost) */WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */{/* [ENV] the flash is a hard cold light with shadows (it was a flat grey wash): the shadowed key light (the moon's direction, so the shadow map stays valid) jumps; the sky shader lights the clouds toward the strike */const f=WIND.flash?WIND.flash():0;skyU.flash.value=f*(1-dayK*.6);if(f>.002){sun.intensity+=f*1.8*(1-dayK*.5);sun.color.lerp(FL_C,f*.85);/* a flash is a cold crisp white light: the warm night grade lets go, contrast up, colour down */const g=ENV.gradePass&&ENV.gradePass.uniforms;if(g){g.night.value*=1-.65*f;g.con.value+=.14*f;g.sat.value*=1-.4*f;}}}FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
  RAIN.update(dt,T,rainK,scene.fog.color);if(RAIN.ready&&!RAIN._warm){RAIN._warm=1;/* [PERF] the splash and drip meshes are built once the rain map is ready (after the loading screen's shader prewarm): compile their shaders now, quietly, instead of as a hitch at the first rain */const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);/* same output target as the real draw, so the program keys match */for(const m of [RAIN.mesh.splash,RAIN.mesh.drips])if(m)try{renderer.compile(m,camera,scene);}catch(e){}renderer.setRenderTarget(rt0);}
  if(HWEAR)HWEAR.update(dt);
  if(AUDIO)AUDIO.update(dt);
