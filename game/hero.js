@@ -961,7 +961,7 @@ export function createHero(ctx){
   const np=N[a.nn]&&N[a.nn].p;if(!np||N[a.nn].tight||Math.abs(np.y-p.y)>.3)return;
   const dx=s.x-p.x,dz=s.z-p.z,d=Math.hypot(dx,dz);if(d>stand+.9||d<1e-3)return;
   let L=0,c=p;for(const x of H.path){const q=N[x.node]&&N[x.node].p;if(!q)return;L+=Math.hypot(q.x-c.x,q.z-c.z);c=q;}
-  const move=Math.max(0,d-stand);if(L<move+(window.__cutOld?.6:.3))return;/* WALK: also a short last leg (0.7 m) that ends past the work: he walked on to the node and turned 150 deg back (gate turn-back water, clear_roof) */
+  const move=Math.max(0,d-stand);if(L<move+.6)return;
   const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);headroom(q,dx/d,dz/d);q.y=p.y;if(!segClear(p,q))return;
   a.cut=1;N.__stand={p:q};H.path=[{node:'__stand',t:last.t}];const th=H.then;H.then=()=>{H.node=a.nn;th&&th();};}
  // meal: how far reachTo / reachGrip may bend the spine towards a far point (seated at a table: a little); the helpers are the kitchen / outdoor ones
