@@ -79,7 +79,8 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     return false; }
   const _dp = V();
   function doorBusy() { const PR = window.__props; if (!PR) return false;
-    for (const d of [PR.fridge, PR.ovenDoor, PR.oven]) { if (!d || !(d.open > .02)) continue; const o = d.obj || d.door || d.group;
+    if (H.path.length) return false; // walking in: the walk keeps the legs; only the fridge door (the oven door is worked from a crouch)
+    for (const d of [PR.fridge]) { if (!d || !(d.open > .02)) continue; const o = d.obj || d.door || d.group;
       if (!o || !o.getWorldPosition) return true; o.getWorldPosition(_dp); if (Math.hypot(_dp.x - root.position.x, _dp.z - root.position.z) < 1.5 && Math.abs(_dp.y - root.position.y) < 1.5) return true; }
     return false; }
   function active() {
@@ -94,7 +95,8 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     if (doorBusy()) return false;
     if (H.path.length > 0 && !H.slide) return true;
     // turning on the spot (the hero turns to face the work with the walk clip playing in place): real steps, the toes were in the air
-    ST.turning = Math.abs(ST.av) > (ST.turning ? .35 : .9) && (H.cur && H.cur._clip && H.cur._clip.name === '30');
+    ST.turning = Math.abs(ST.av) > (ST.turning ? .35 : .9) && (H.cur && H.cur._clip && H.cur._clip.name === '30')
+      && (ST.turning || H.face == null || Math.abs(wrapA(H.face - root.rotation.y)) > 1.0); // a small square-up at work (the radio dial, a switch: 0.5-0.8 rad) pivots on the planted feet as in classic; the turning steps shook the legs
     if (ST.turning) return true;
     // the last bit up to a work spot (approachTo, slideTo: 0.3-1.2 m): real steps too, MM glided there on two standing feet
     const sl = H.slide; return !!(sl && sl.k < 1 && (Math.hypot(sl.x, sl.z) > .3 || Math.abs(sl.yaw || 0) > .6 || (sl.yT != null && Math.abs(sl.yT - sl.y0) + Math.abs((sl.yF ?? sl.yT) - sl.yT) > .6))); // and a turn on the spot: steps, not the walk clip shuffling with the toes in the air
