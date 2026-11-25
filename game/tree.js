@@ -459,7 +459,8 @@ export function buildTree(THREE, o) {
       sh.uniforms.bwC = BW.color; sh.uniforms.bwS = BW.strength;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vBW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvBW=(modelMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vBW;uniform vec3 bwC;uniform float bwS;')
-        .replace('#include <opaque_fragment>', `outgoingLight+=diffuseColor.rgb*bwC*bwS*smoothstep(1.,3.,vBW.y)*smoothstep(12.,10.,vBW.y)*smoothstep(-1.5,1.,vBW.z-(${AZ.toFixed(3)}));
+        .replace('#include <opaque_fragment>', `{vec2 bwd=vBW.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)});/* down to the ground on the camera side, fading out over the roots (Env, photo: warm lower trunk) */
+outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,smoothstep(1.,3.,vBW.y))*smoothstep(12.,10.,vBW.y)*smoothstep(-1.5,1.,bwd.y)*smoothstep(7.,3.2,length(bwd));}
 #include <opaque_fragment>`);
     }
     if (ARCH) {
