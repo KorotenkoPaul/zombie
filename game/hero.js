@@ -2213,10 +2213,10 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   else{w=smooth(0,.5,t)*(1-smooth(.85,1.3,t));tg=t<.6?side.clone().lerp(bail,smooth(.1,.6,t)).add(V(0,.04*Math.sin(Math.PI*clamp(t/.6,0,1)),0)):bail;}
   S.ls=S.ls||{};if(w>.01||(S.ls.v||0)>.002)reachTo('Right',tg,Math.max(w,.0101),S.ls);/* kept on till the lean has eased off (dropped with the reach, the shoulder sprang 18 cm up) *//* with a rate-limited lean from the hips: the bail at the bench's front edge is past arm's length from where the bench lets him stand */if(!S.did&&t>.62&&(S.take?odPalm('Right').distanceTo(bail)<.09||t>.8:true))lbDo(S);
   H.look=S.home;H.lookW=.7*(1-smooth(1,1.4,t));if(S.did===+!!S.take)lanternPlumb();/* in the fist (taken, or not yet set down) *//* hanging from its bail as it comes off the bench, not lying on its side in the fist */}
- function gearOff(a,then){const seq=[];
-  if(GEAR.lantern)seq.push(next=>lanternBench(a,false,next));
+ function gearOff(a,then,only){const seq=[];
+  if(GEAR.lantern&&!only)seq.push(next=>lanternBench(a,false,next));
   if(GEAR.bow)seq.push(next=>{/* GRAB: the left hand takes the bow to its peg: on the grip spot as it lets go */a.cr=[{hand:'Left',at:()=>gripHome('bow'),k0:.42,k1:.68,hold:.03,k2:.93,lin:1}];bowVisit(a,'hy_bowhang',[[.2,()=>{try{PP().grab('bow',bones.LeftHand,{offset:V(0,.08,.03)});}catch(e){}/* off the back into the hand first */}],[.4,()=>{try{PP().release('quiver',{blend:.4});}catch(e){}}],[.7,()=>{try{PP().release('bow',{blend:.4});}catch(e){}GEAR.bow=false;}]],()=>{a.cr=null;next();});});
-  if(GEAR.coat)seq.push(next=>{/* GRAB: the right hand hangs the jacket on its peg: there as it appears on the peg */a.cr=[{hand:'Right',at:()=>gripHome('jacket'),k0:.45,k1:.69,hold:.04,k2:.95,lin:1}];visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],()=>{a.cr=null;next();});});
+  if(GEAR.coat&&!only)seq.push(next=>{/* GRAB: the right hand hangs the jacket on its peg: there as it appears on the peg */a.cr=[{hand:'Right',at:()=>gripHome('jacket'),k0:.45,k1:.69,hold:.04,k2:.95,lin:1}];visit(a,peg('jacketPeg'),.45,'hy_jacketoff',[[.25,()=>AU('unzip')],[.55,()=>{COAT.on=false;}],[.7,()=>{try{PP().setHere&&PP().setHere('jacket',true);}catch(e){}GEAR.coat=false;}]],()=>{a.cr=null;next();});});
   const run=i=>{if(i>=seq.length){then();return;}seq[i](()=>run(i+1));};run(0);}
  /* OUTDOOR: the lantern on a water run (Lights: at night he went to the pond in the dark). The take and the put-back are the
     right hand's (hy_take at the bench); the bucket is the right hand's too, so in between the lantern goes over into the LEFT
@@ -2757,7 +2757,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     const unload=next=>{if(!a.haul){next();return;}const P=PP();
      if(a.haul==='meatBag'){try{P.grab('meatBag',bones.RightHand,{offset:V(0,.1,.02)});}catch(e){}fridgeVisit(a,'in',next);}
      else visit(a,PT('woodpile'),.5,'hy_droplogs',[[.6,()=>{try{P.release('logArmful');window.__audio.carry(false);}catch(e){}H.carry=null;}]],next);};
-    a.unload=unload;if(a.leaving)return;unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);}));};
+    a.unload=unload;if(a.leaving)return;(GEAR.bow&&!(window.__noDuck||/noduck/.test(location.search))?n=>gearOff(a,n,'bow'):n=>n())(()=>unload(()=>gearOff(a,()=>{play(IDLE(),{fade:.4});endTask(res);})));};/* CLIMB HOOK: the bow and quiver go back on the workshop wall (on the landing) before the meat goes up the hatch ladder: with them on his back he could not pass the hatch (the quiver went right through the kitchen floor's edge beam, the bow tip through the open hatch lid) */
    if(kind==='hunt'&&(o.hit!=null?!o.hit:Math.random()<.3))res={ok:false};else res=kind==='hunt'?{ok:true,meat:2}:{ok:true,logs:rnd(0,1)<.5?2:3};
    const goOut=()=>{if(a.leaving)return;a.step='out';goTo('g_out',()=>{if(a.leaving)return;a.step='away';a.t=0;root.visible=false;});};
    /* OUTDOOR hunt (phone watch: three game hours of nothing behind a bush): at the forest edge, in sight, he takes the bow off
