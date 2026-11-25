@@ -203,15 +203,15 @@ const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).create
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
-const HY=1.0,LG_=1.15;/* the hollow landing and the trunk door sit low at the trunk foot, as in the photo (at 2.3 the workshop deck hid them from the home view) */// house raised 1 m to match the photo (all levels below read HY)
+const HY=1.0,LG_=1.4;/* the hollow landing and the trunk door sit low at the trunk foot, as in the photo (at 2.3 the workshop deck hid them from the home view) */// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
-const DOORP={x:1.0,ang:1.25,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95};// the glowing hollow (tree.js); its plank frame is built with the boards
+const DOORP={x:1.0,ang:1.05,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95};// the glowing hollow (tree.js); its plank frame is built with the boards
 const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:1.9,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:.95,top:.42,clear:.45}],door:DOORP,
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
-const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,wind:WIND,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;
+const GROUND=(await import(new URL(ASSET+'ground.js',document.baseURI).href)).createGround({scene,MOBILE,leafT,groundT,U:ENV.U,wind:WIND,shroomGlow:ENV.shroomGlow,obstacles:[TREE.group]});window.__ground=GROUND;/* [LIGHTS] the hand lantern's ground shadow asks standAt() */window.__ground=GROUND;
 const barkTris=TREE.tris;
 // ================= physics world =================
 const world=new RAPIER.World({x:0,y:-9.81,z:0});world.timestep=1/60;
@@ -745,8 +745,8 @@ function barricade(name,center,len){const g={name,boards:[],center};groups[name]
 // heights match the photo: the house sits high in the oak, the flared trunk and roots show below it
 const LG=LG_,LL=2.45,LC=3.4+HY,WS=3.6+HY,KT=5.0+HY,BD=7.4+HY,DK=9.0+HY;
 // hollow landing (right, low) with the glowing doorway in the trunk
-floorBoards(-.2,2.1,LG,1.2,3.5,{shape:disc(.98,2.3,1.05,1.2),radial:[.98,2.3,1.05,1.2]});
-for(const [px,pz] of [[1.6,2.95],[.3,2.9]])brace(V(px,-.25,pz),V(px+.02,LG-.1,pz-.03),.13);/* short posts down into the soil */
+floorBoards(.4,2.9,LG,.9,3.2,{shape:disc(1.62,1.95,1.05,.9),radial:[1.62,1.95,1.05,.9]});
+for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,pz-.03),.13);/* short posts down into the soil */
 // ---- the trunk door like the photo: a thick plank frame set into the bark round the arch (jambs + arch pieces, hiding the
 // ragged bark edge), a worn threshold, and a plank floor running into the warm cave. Instances only, no physics.
 {const D=DOORP,ax=TAX[0],az=TAX[1],H=D.y1-D.y0;const rc=new THREE.Raycaster();
@@ -888,7 +888,7 @@ barricade('Калитка',V(0,LC+.55,3.86),1.3);
 barricade('Забор кухни',V(-3.0,KT+.55,3.88),2.8);
 barricade('Забор мастерской',V(3.0,WS+.55,4.43),3.15);
 boards.instanceMatrix.needsUpdate=true;beams.instanceMatrix.needsUpdate=true;aRow.needsUpdate=true;aTile.needsUpdate=true;dRow.needsUpdate=true;dTile.needsUpdate=true;
-const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+3.5,1.0,4.2],[WX0+.05,WX1-.05,WS+.05,WS+3.3,1.25,5.3]];
+const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+4.3,1.0,4.2]/* up to the gable peak: at BD+3.5 the moonlit fill lit a hard-edged triangle in the bedroom's gable at night (Lights) */,[WX0+.05,WX1-.05,WS+.05,WS+3.3,1.25,5.3]];
 if(ENV.setInterior)ENV.setInterior(ROOMS);/* [ENV] interior night ambient cut (Lights) */
 // ---- age (round 3): which face of each board is outside. Floors inside a room are sheltered, landings/deck are not;
 // a wall's outer face is the one facing away from its room; beams, posts and frames are out in the weather.
@@ -1303,8 +1303,8 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+rainK*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour+4)/10)*Math.PI;const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=dayK>.5?sunDir:moonDir;sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
- sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)));sun.shadow.radius=3+nightK*3;/* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI;hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp;
- scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4);scene.fog.near=rig.dist*.95-mornK*12-rainK*6;scene.fog.far=rig.dist+70-mornK*30-rainK*25-nightK*35;
+ sun.color.copy(P.sun);sun.intensity=P.sunI*dim*(1-nightK*(1-(.28+.72*moonIll)*(1-rainK*.85)));sun.shadow.radius=3+nightK*3;/* [ENV] at night the shadow light is the moon: weaker at a thin moon, almost gone under rain clouds */hemi.intensity=P.hemiI*(1-rainK*dayK*.4);hemi.color.copy(P.hor).lerp(new THREE.Color(0xFFFFFF),.35);hemi.groundColor.copy(P.fog).multiplyScalar(.6);renderer.toneMappingExposure=P.exp*(1-rainK*dayK*.15);/* [LIGHTS] a storm by day is dark overcast, not a flat grey: the sky fill drops too, and the lit windows read warm against it */
+ scene.fog.color.copy(P.fog).lerp(new THREE.Color(0x7D8896),rainK*.4).multiplyScalar(1-rainK*dayK*.28);/* [LIGHTS] storm by day: a darker slate veil, not a milky grey one */scene.fog.near=rig.dist*.95-mornK*12-rainK*6;scene.fog.far=rig.dist+70-mornK*30-rainK*25-nightK*35;
  moon.position.copy(moonDir).multiplyScalar(170);moon.visible=nightK>.05;
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  // no warm room fill: daylight only; at night rooms are lit by their lamps alone (game/lights.js)
