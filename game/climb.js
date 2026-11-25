@@ -327,7 +327,7 @@ export function createClimb() {
     if (!A && C.bones.LeftFoot && C.bones.RightFoot) S.ft = { LF: C.bones.LeftFoot.getWorldPosition(V()), RF: C.bones.RightFoot.getWorldPosition(V()) }; /* the feet as the earlier stages left them (foot locks): the mount starts from there */
     S.fr = (S.fr || 0) + 1; if (!A && C.bones.LeftLeg && C.bones.RightLeg) { S.kn = { Left: C.bones.LeftLeg.getWorldPosition(V()).sub(C.bones.LeftUpLeg.getWorldPosition(V())), Right: C.bones.RightLeg.getWorldPosition(V()).sub(C.bones.RightUpLeg.getWorldPosition(V())) }; /* from the hip */ S.knF = S.fr; if (C.bones.LeftHand && C.bones.RightHand) S.hq0 = { Left: C.bones.LeftHand.quaternion.clone(), Right: C.bones.RightHand.quaternion.clone() }; } /* and the knees: the climb clip's first frame swung them 8-10 cm (gate: knee jump at the climb start, kl_b / ll_b) */
     if (A) { if (A.age == null) { A.age = 0; A.kn0 = S.kn && S.knF === S.fr - 1 ? S.kn : null; } else A.age += dt; }
-    if (S.W <= .001 && !A) { S.last = null; if (S.gwOff) { S.gwOff = false; window.__noGameWalk = false; } if (S.npOff) { S.npOff = false; window.__noPops = false; } return; }
+    if (S.W <= .001 && !A) { S.last = null; if (S.gwOff) { S.gwOff = false; window.__noGameWalk = false; } return; }
     const B = C.bones, root = C.root, wp = b => b.getWorldPosition(V());
     root.updateMatrixWorld(true);
     let tg, hw;
@@ -384,8 +384,6 @@ export function createClimb() {
     /* the game-style walk (gamewalk.js, ?style=game) plants its feet where the pose under the IK has them: on the first frame after the climb that is still the
        climb clip's (feet 30-50 cm off), so it stepped from there at full speed (feet 6-8 cm/frame² right after the ladder). It waits until the feet are handed back */
     { const hold = !!A || (W > .01 && !!S.last.fo); if (hold && !S.gwOff && !window.__noGameWalk) { S.gwOff = true; window.__noGameWalk = true; } else if (!hold && S.gwOff) { S.gwOff = false; window.__noGameWalk = false; } }
-    /* the pop filter (motion.js) is off while the climb solves the limbs; in the hand-back it caught the walk clip coming in and pushed the planted foot 4 cm in a frame: kept off until the feet are handed back */
-    { const hb = !A && W > .01 && !!S.last.fo; if (hb && !S.npOff && !window.__noPops) { S.npOff = true; window.__noPops = true; } else if (!hb && S.npOff) { S.npOff = false; window.__noPops = false; } }
     if (!A && tg && W > .01 && S.last.fo) for (const s of ['Left', 'Right']) { const k = s[0] + 'F', F = B[s + 'Foot']; if (!F || !S.last.fo[k]) continue; const raw = wp(F); const t = S.last.fo[k].clone().lerp(raw, 1 - W);
         /* the knee goes over to the walk's knee with the feet (the climb's knee pole kept to the end swung the knee 10 cm in the frame the hand-back stopped) */
         const hp = wp(B[s + 'UpLeg']), kn = wp(B[s + 'Leg']).sub(hp.clone().add(raw).multiplyScalar(.5)), cp = V((s === 'Left' ? -1 : 1) * zDir * .3, .55, -zDir).normalize(); const pole = kn.lengthSq() > 1e-6 ? kn.normalize().lerp(cp, W) : cp;
