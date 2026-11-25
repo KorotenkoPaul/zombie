@@ -319,7 +319,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes,o=1.2
     gl_FragColor=vec4(col*(.9+.35*n)+vec3(1.,.6,.28)*hk*.35,a);}`});
  bankMat.customProgramCacheKey=()=>'envCornerBank2';
  const bank=new THREE.Mesh(bg,bankMat);bank.frustumCulled=false;bank.renderOrder=6;scene.add(bank);env.cornerBank=bank;
- env.mist=[...mistBands,bank];env.lampPts=puffU.lp;/* the 6 lowest lit lamps (world xyz, w = strength), for rain.js */
+ env.mist=[...mistBands,bank];env.lampPts=puffU.lp;/* [ENV] the see-through fog, haze and backdrop geometry never takes a raycast (taps, probes, tooling hit what is behind it) */for(const o of [...sheets,puffs,...mistBands,bank,env.backdrop,...farRings])if(o)o.raycast=()=>{};/* the 6 lowest lit lamps (world xyz, w = strength), for rain.js */
 
  // ================= fireflies =================
  // a few soft yellow-green lights that wander low between the roots and the forest edge and blink slowly (dusk and night)
