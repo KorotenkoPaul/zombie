@@ -121,7 +121,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   let lastChain = null, lastHang = null;  // [WIND] what the last hang() built, so a lantern outside can swing in the wind
   function hang(pos, topOff = .23, wallOnly = false) {
     const top = pos.clone().add(V(0, topOff, 0)), list = solids();
-    rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up = wallOnly ? null : rc.intersectObjects(list, false)[0];
+    rc.set(top, V(0, 1, 0)); rc.far = 2.6; const up0 = wallOnly ? null : rc.intersectObjects(list, false)[0], up = up0 && up0.distance < 1.3 ? up0 : null; /* [props] a ceiling within 1.3 m only: since the bedroom deck overhangs the kitchen front (8b0c1e6) the landing lantern's chain ran 2.5 m up past the kitchen window */
     if (up) { const ch = chain(top, up.point.clone().add(V(0, .02, 0))); const hook = new THREE.Mesh(new THREE.TorusGeometry(.025, .006, 4, 10), ironM); hook.position.copy(up.point).add(V(0, -.02, 0)); scene.add(hook);
       ch.geometry = bakeGeo([ch, hook]); ch.position.set(0, 0, 0); ch.quaternion.identity(); ch.scale.set(1, 1, 1); scene.remove(hook); lastHang = { top: up.point.clone(), chain: ch }; return 'chain'; }
     // bracket: find the nearest vertical surface around the lantern's top
