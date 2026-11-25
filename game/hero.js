@@ -2660,7 +2660,10 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const P1=root.position.clone().addScaledVector(f,.42).addScaledVector(r,.06);P1.y=fl+1.18;
   const P0=bones.Hips.getWorldPosition(V()).addScaledVector(r,.28).addScaledVector(f,.06).add(V(0,-.12,0));
   const u=a.put?smooth(.08,.47,k):1-smooth(.47,.95,k);/* 1 = at the shelf */const seg=(A,B,x)=>A.clone().lerp(B,smooth(0,1,x));
-  /* off the board out over its edge first, then down: the pail's bottom never goes through the shelf */const at=u>.85?seg(Pf,P3,(u-.85)/.15):u>.65?seg(P2,Pf,(u-.65)/.2):u>.4?seg(P1,P2,(u-.4)/.25):seg(P0,P1,u/.4);a.spLast=at.clone();odReach('Right',at,a.put?1:wIn);odHang('waterBucket',0,true);return true;}
+  /* off the board out over its edge first, then down: the pail's bottom never goes through the shelf *//* OUTDOOR: the pail stands on a low stand on the counter top now (Props, bail ~1.33 m): lifted up in front of him to over the stand first, then in over the counter and
+      down onto it (the old wall-shelf arc came round under the shelf's front edge: through the counter front, 10-15 cm, and a knee kick 16) */const Pc=root.position.clone().addScaledVector(f,.3).addScaledVector(r,.3);Pc.y=Math.max(P1.y,P3.y+.05);/* up close in front of his chest, short of the counter's front */const Pt=P3.clone().add(V(0,.05,0));
+   const Pb=root.position.clone().addScaledVector(f,.16).addScaledVector(r,.32);Pb.y=Pc.y-.1;/* and on the way down it comes back to his side over the floor first, then down (taken off the stand it dropped past the counter's front edge: 8.6 cm) */
+   const at=u>.82?seg(Pt,P3,(u-.82)/.18):u>.45?seg(Pc,Pt,(u-.45)/.37):u>.22?seg(Pb,Pc,(u-.22)/.23):seg(P0,Pb,u/.22);a.spLast=at.clone();odReach('Right',at,a.put?1:wIn);odHang('waterBucket',0,true);return true;}
  // ===== OUTDOOR hunt at the forest edge (clips from the Fal thread: hy_bowshoot, hy_scanbow, hy_sneak, hy_pickhare) =====
  let hareObj=null,arrowObj=null;
  function hareMesh(){const g=new THREE.Group();const fur=new THREE.MeshStandardMaterial({color:0x6e5a44,roughness:.95}),pale=new THREE.MeshStandardMaterial({color:0xcfc4b0,roughness:.95}),dark=new THREE.MeshStandardMaterial({color:0x2a2018,roughness:.9});
