@@ -17,7 +17,7 @@ export function createGrab({ THREE, bones }) {
   const CH = { Left: null, Right: null }; // the grip channel (hand-bone space): centre of the closed fingers, axis z
   function buildFists(root) {
     root.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || /eyelid/i.test(o.name)) return; const sk = o.skeleton, g = o.geometry, P = g.attributes.position, SI = g.attributes.skinIndex, SW = g.attributes.skinWeight; if (!P || !SI || !SW) return;
-      const idx = {}; const bindInv = o.bindMatrix.clone().invert();
+      const idx = {}, rlx = {}; let built = false; const bindInv = o.bindMatrix.clone().invert();
       for (const side of ['Left', 'Right']) { const bi = sk.bones.findIndex(b => new RegExp(side + 'Hand$').test(b.name)); if (bi < 0) continue;
         const inv = sk.boneInverses[bi], bind = inv.clone().invert(); const vs = []; const v = V();
         for (let i = 0; i < P.count; i++) { const ws = [SW.getX(i), SW.getY(i), SW.getZ(i), SW.getW(i)], is = [SI.getX(i), SI.getY(i), SI.getZ(i), SI.getW(i)]; let w = 0; for (let k = 0; k < 4; k++) if (is[k] === bi) w += ws[k]; if (w < .05) continue;
@@ -34,6 +34,9 @@ export function createGrab({ THREE, bones }) {
         const TH = 3.5, R = Lf / TH; // total curl (rad) and the radius the fingers roll round
         const tz = thumb.length ? thumb.reduce((a, q) => a + q[3], 0) / thumb.length : 0; // thumb (index) end of the hand along z
         CH[side] = { c: V(xn + ps * R * 1.05, k0 + R * .35, 0), ps, iz: Math.sign(tz) || 1, R };
+        /* [HERO LOOK] the v6 asset bakes its own fist (per-finger curl at three knuckles, pipeline/hero2/handmorph.mjs) and a rest curl:
+           use them instead of building one here; the grip channel above stays as computed (the baked fist's ring is within 5 mm of it) */
+        const D0 = o.morphTargetDictionary; if (D0 && D0['fist' + side] != null) { idx[side] = D0['fist' + side]; if (D0['relax' + side] != null) (rlx[side] = D0['relax' + side]); continue; }
         const d = new Float32Array(P.count * 3); const out = V(); const geo = V();
         for (const [i, x, y, z, w] of vs) { let nx = x, ny = y, nz = z;
           if (y > k0 && (x - mx) * ps < .022) { const s = y - k0, phi = s / R * Math.min(1, s / .012 + .4); const dd = (x - xn) * -ps; const rho = R + dd;
@@ -44,14 +47,15 @@ export function createGrab({ THREE, bones }) {
           d[i * 3] = (out.x - geo.x) * ww; d[i * 3 + 1] = (out.y - geo.y) * ww; d[i * 3 + 2] = (out.z - geo.z) * ww; }
         const rel = g.morphTargetsRelative || !g.morphAttributes.position; let arr = d; if (!rel) { arr = new Float32Array(P.count * 3); for (let i = 0; i < arr.length; i++) arr[i] = P.array[i] + d[i]; }
         g.morphAttributes.position = g.morphAttributes.position || []; if (!g.morphAttributes.position.length) g.morphTargetsRelative = true;
-        const at = new THREE.BufferAttribute(arr, 3); at.name = 'fist' + side; idx[side] = g.morphAttributes.position.length; g.morphAttributes.position.push(at); }
-      if (Object.keys(idx).length) { const keep = o.morphTargetInfluences ? o.morphTargetInfluences.slice() : []; o.updateMorphTargets(); keep.forEach((v, i) => { o.morphTargetInfluences[i] = v; });
-        const mats = Array.isArray(o.material) ? o.material : [o.material]; mats.forEach(m => { m.needsUpdate = true; }); FIST.push({ mesh: o, idx }); } });
+        const at = new THREE.BufferAttribute(arr, 3); at.name = 'fist' + side; idx[side] = g.morphAttributes.position.length; g.morphAttributes.position.push(at); built = true; }
+      if (built) { const keep = o.morphTargetInfluences ? o.morphTargetInfluences.slice() : []; const dk = Object.assign({}, o.morphTargetDictionary || {}); o.updateMorphTargets(); keep.forEach((v, i) => { o.morphTargetInfluences[i] = v; }); for (const k in dk) o.morphTargetDictionary[k] = dk[k];/* keep the asset's own target names (face morphs) */
+        const mats = Array.isArray(o.material) ? o.material : [o.material]; mats.forEach(m => { m.needsUpdate = true; }); }
+      if (Object.keys(idx).length) FIST.push({ mesh: o, idx, rlx }); });
   }
   // per frame: each hand closes while it holds something (a tool on the hand bone, or a grip registered here) and opens after
   function tick(dt, H) { tweens(dt); gtweens(dt); for (const s of ['Left', 'Right']) { const holds = !!grip[s] || !!(H && H.hold && H.hold[s]) || !!handHasTool(s); fistT[s] = holds ? 1 : 0;
       const r = 1 - Math.exp(-dt * (fistT[s] > fistK[s] ? 14 : 9)); fistK[s] += (fistT[s] - fistK[s]) * r; if (Math.abs(fistT[s] - fistK[s]) < .002) fistK[s] = fistT[s];
-      for (const F of FIST) if (F.idx[s] != null) F.mesh.morphTargetInfluences[F.idx[s]] = fistK[s] * (window.__noFist ? 0 : 1); } }
+      for (const F of FIST) { if (F.idx[s] != null) F.mesh.morphTargetInfluences[F.idx[s]] = fistK[s] * (window.__noFist ? 0 : 1); if (F.rlx && F.rlx[s] != null) F.mesh.morphTargetInfluences[F.rlx[s]] = (1 - fistK[s]) * (window.__noFist ? 0 : 1);/* rest curl: the exact complement of the fist, continuous */ } } }
   function handHasTool(s) { const b = bones[s + 'Hand']; if (!b) return false; for (const c of b.children) if (c.visible && (c.isMesh || c.isGroup) && !c.userData.noGrip) return true; return false; }
   // ---- how each tool sits in a closed hand (tool-local): g = the point on the handle the fist closes round, a = the handle's
   // axis pointing to the working end and where that end comes out of the fist (T thumb/index side, K little-finger side,
