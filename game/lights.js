@@ -29,7 +29,7 @@ const _v = new THREE.Vector3();
 const EMBERS = (() => { try { return new URLSearchParams(location.search).get('embers') === '1'; } catch (e) { return false; } })();
 const DECKLAMP = (() => { try { return new URLSearchParams(location.search).get('decklamp') === '1'; } catch (e) { return false; } })();
 const GLOW = (() => { try { return new URLSearchParams(location.search).get('glow') === '1'; } catch (e) { return false; } })();
-const GLOW_K = { kitchen: 1.8, workshop: 1.6, oven: 1.3, bedroom: 1.1 }, GLOW_C = new THREE.Color(0xFFD9A0);
+const GLOW_K = { kitchen: 1.8, workshop: 1.15, oven: 1.3, bedroom: 1.1 }   // workshop was 1.6: since the room gains (photo-matched) it overshot the photo by 20%; kitchen and bedroom still land on it, GLOW_C = new THREE.Color(0xFFD9A0);
 const KINDS = {
   oil:      { on: .7,  off: .5,  flick: 'flame' },   // oil lanterns: catch, flare, settle
   electric: { on: .12, off: .08, flick: 'bulb' },    // dome lamp: quick, a small stutter
@@ -65,7 +65,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       o.castShadow = false;
       if (pm.lampGlass && o.material === pm.lampGlass) {
         if (!panes.length) panes.push(pm.lampGlass.clone());
-        const m = panes[0]; m.emissive = new THREE.Color(0xFFA852); m.emissiveIntensity = 0; o.material = m;
+        const m = panes[0]; if (!m.userData.pane) { m.emissive = new THREE.Color(0xFFA852); m.emissiveIntensity = 0;
+          // clear, not milky: by day the sky in Props' pale glass (35%, env x1.2) made the lantern a white box from the home view.
+          // Out, the panes are thin, faintly grey-green and you see the burner through them; lit, the glass fills with light (update)
+          m.color.set(0x8FA3A6); m.opacity = .16; m.envMapIntensity = .45; m.userData.pane = true; }
+          o.material = m;
       }
     });
     return panes;
@@ -255,8 +259,26 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   if (PL.candle) {
     const cPos = PL.candle.pos.clone();
     let lights = [];
-    if (!MOBILE) { const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .04, 0)); scene.add(l); lights = [{ l, I: 1.6, sway: .012 }]; }
-    add('candle', 'bedroom', 'candle', cPos, { lights, opac: [[PL.candle.mats[0] || pm.candleFlame, .95]], haloSize: .45,
+    // the light sits a little above the flame: a point light 6 cm from the wax burned the candle and its holder to white,
+    // which no candle does (the wax glows softly through instead, below)
+    if (!MOBILE) { const l = new THREE.PointLight(0xFF9C45, 0, 2.6, 2); l.position.copy(cPos).add(V(0, .09, 0)); scene.add(l); lights = [{ l, I: 1.3, sway: .012 }]; }
+    // a real candle: a black wick standing out of a little pool of melted wax, a flame with a hot near-white core (drawn after
+    // the glass and not tone-mapped, like the lanterns'), and wax, not cloth, that the flame lights from inside near the top
+    const fmC = PL.candle.mats[0] || pm.candleFlame, cObj = PL.candle.obj, cEmis = [];
+    if (fmC) { fmC.blending = THREE.NormalBlending; fmC.color.setRGB(2.3, 1.45, .62); fmC.toneMapped = false; fmC.needsUpdate = true; }
+    if (cObj) {
+      let flameMesh = null, waxMesh = null;
+      cObj.traverse(o => { if (!o.isMesh) return; if (o.material === fmC) { flameMesh = o; return; } o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox;
+        if (bb.max.x - bb.min.x < .045 && bb.max.y - bb.min.y > .07) waxMesh = o; });
+      if (flameMesh) { flameMesh.renderOrder = 3; flameMesh.scale.set(.9, 1.05, .9); flameMesh.position.y += .005; }   // lifted off the wax: the wick shows black in the flame's foot
+      if (waxMesh) { const wm = new THREE.MeshStandardMaterial({ color: 0xEDE2CC, roughness: .42, emissive: 0xFFB25E, emissiveIntensity: 0 }); waxMesh.material = wm; cEmis.push([wm, .22]); }
+      const top = waxMesh ? (waxMesh.geometry.boundingBox.max.y + waxMesh.position.y) : .105;
+      const wick = new THREE.Mesh(new THREE.CylinderGeometry(.0013, .0016, .016, 5).translate(0, .008, 0), new THREE.MeshStandardMaterial({ color: 0x161210, roughness: .9 }));
+      wick.position.set(0, top - .001, 0); wick.rotation.z = .12; wick.castShadow = false; cObj.add(wick);
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(.014, 14).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xF6EBD4, roughness: .15, emissive: 0xFFB25E, emissiveIntensity: 0 }));
+      pool.position.set(0, top + .0006, 0); pool.castShadow = false; cObj.add(pool); cEmis.push([pool.material, .55]);
+    }
+    add('candle', 'bedroom', 'candle', cPos, { lights, emis: cEmis, opac: [[fmC, .95]], haloSize: .45,
       // lit when he reads in the dark; only the hero puts it out (lights.set('candle', false) at lights.pos('candle'))
       autoFn: () => false });
   }
@@ -1066,7 +1088,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
             L.l.shadow.needsUpdate = true; L.drawnT = t; if (L.pose) L.pose.set(poseNow); else { L.pose = new Float32Array(poseNow); } shadowDraws++; }
           L.wasLit = lit; }
       }
-      for (const [m, I] of s.emis) m.emissiveIntensity = I * k * f;
+      for (const [m, I] of s.emis) { m.emissiveIntensity = I * k * f; if (m.userData.pane) m.opacity = .16 + .3 * clamp01(k); }
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
       if (s.extra) s.extra(k, f);
       if (!s.lights.length && s.haloObj) s.haloObj.intensity = (s.kind === 'glow' ? .5 : 4.5) * k * f;
