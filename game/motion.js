@@ -157,7 +157,7 @@ export function createMotion({ hero, db, opts = {} }) {
   const S = { on: false, ci: 0, t: 0, char: new THREE.Vector3(), cyaw: 0, searchT: 0, lastSearchMs: 0, cost: 0, pruned: 0, settle: 0, prevSim: null, simV: new THREE.Vector3(), simAv: 0,
     jumps: 0, layer: false, stats: { searches: 0, ms: 0, maxMs: 0 } };
   const Qv = new Float32Array(NF), cur = new Float32Array(NB * 4), curH = new Float32Array(3);
-  const out = new Float32Array(NB * 4), outH = [0, 0, 0], prevOut = new Float32Array(NB * 4), prevOutH = new Float32Array(3); let haveOut = false; let wroteH = false, pureH = [0, .9, 0];
+  const out = new Float32Array(NB * 4), outH = [0, 0, 0], prevOut = new Float32Array(NB * 4), prevOut2 = new Float32Array(NB * 4), curPrev = new Float32Array(NB * 4), curPrevH = [0, 0, 0], prevOutH = new Float32Array(3), prevOutH2 = new Float32Array(3); let haveOut = false, haveOut2 = false; let wroteH = false, pureH = [0, .9, 0];
   const src = new Float32Array(NB * 4), srcH = new Float32Array(3), prevSrc = new Float32Array(NB * 4), prevSrcH = new Float32Array(3); let haveSrc = false;
   // inertialization offsets (rotation vectors + angular velocity per bone, hips position + velocity)
   const offX = new Float32Array(NB * 3), offV = new Float32Array(NB * 3), offP = new Float32Array(3), offPV = new Float32Array(3);
@@ -227,10 +227,19 @@ export function createMotion({ hero, db, opts = {} }) {
     Fb.parent.getWorldQuaternion(_pq); Fb.quaternion.copy(_pq.invert().multiply(endQ)); Fb.updateMatrixWorld(true); }
 
   // ---------- inertialization ----------
-  function inertialize(b, newQ, ni, hl) { yB[b] = damp(hl); // offset so that offset * newQ == last output, keep the output's angular velocity
+  function inertialize(b, newQ, ni, hl, vel) { yB[b] = damp(hl); // offset so that offset * newQ == last output, keep the output's angular velocity
     if (!haveOut) { offX[b*3] = offX[b*3+1] = offX[b*3+2] = 0; offV[b*3] = offV[b*3+1] = offV[b*3+2] = 0; return; }
     offV[b*3] = offV[b*3+1] = offV[b*3+2] = 0;
-    const ox = prevOut[b*4], oy = prevOut[b*4+1], oz = prevOut[b*4+2], ow = prevOut[b*4+3];
+    // WALK: a clip jump keeps the bone where it would be NOW (the last output carried on by its own angular velocity) and keeps
+    // that velocity (offset velocity = output's - new clip's). Against the last frame with no velocity the bone stood still for
+    // one frame at every jump (~2 a second while walking): the swinging foot stopped dead and went on. Stage trace, walking
+    // ankle: mean jerk on the jump frame and the next 1.17 -> 0.32 cm/frame^2, frames over 2.5: 114 -> 5
+    let ox = prevOut[b*4], oy = prevOut[b*4+1], oz = prevOut[b*4+2], ow = prevOut[b*4+3];
+    if (vel && vel.dt > 1e-4 && haveOut2 && !window.__noPredInert) { const d = [0, 0, 0, 0], v = [0, 0, 0], w = [0, 0, 0], pr = [0, 0, 0, 0];
+      qmul(prevOut, b*4, [-prevOut2[b*4], -prevOut2[b*4+1], -prevOut2[b*4+2], prevOut2[b*4+3]], 0, d, 0); if (d[3] < 0) { d[0] = -d[0]; d[1] = -d[1]; d[2] = -d[2]; d[3] = -d[3]; }
+      if (2 * Math.acos(Math.min(1, d[3])) < .35) { qlog(d[0], d[1], d[2], d[3], v, 0); qmul(d, 0, prevOut, b*4, pr, 0); const l = Math.hypot(pr[0], pr[1], pr[2], pr[3]) || 1; ox = pr[0]/l; oy = pr[1]/l; oz = pr[2]/l; ow = pr[3]/l;
+        qmul(newQ, ni, [-vel.q[ni], -vel.q[ni+1], -vel.q[ni+2], vel.q[ni+3]], 0, d, 0); if (d[3] < 0) { d[0] = -d[0]; d[1] = -d[1]; d[2] = -d[2]; d[3] = -d[3]; } qlog(d[0], d[1], d[2], d[3], w, 0);
+        for (let k = 0; k < 3; k++) offV[b*3+k] = clamp(v[k] / vel.dtOut - w[k] / vel.dt, -8, 8); } }
     const nx = -newQ[ni], ny = -newQ[ni+1], nz = -newQ[ni+2], nw = newQ[ni+3];
     const t = [0, 0, 0, 0]; qmul([ox, oy, oz, ow], 0, [nx, ny, nz, nw], 0, t, 0); qlog(t[0], t[1], t[2], t[3], offX, b*3); }
   // angle between q (at qi) and the constant-angular-velocity prediction from a (t-1) and b (t-2)
@@ -336,11 +345,14 @@ export function createMotion({ hero, db, opts = {} }) {
       const ea = wrapA(S.cyaw - yaw); if (Math.abs(ea) > .5) S.cyaw = yaw + Math.sign(ea) * .5;
       S.char.y = p.y;
       sampleClip(c, S.t, cur, curH);
+      if (S.jumped && pathing) { const back = Math.max(adv, .2); sampleClip(c, Math.max(0, S.t - back), curPrev, curPrevH); S.jvel = { q: curPrev, dt: back / FPS, dtOut: S.lastDt || dt }; } else S.jvel = null; // on a route only: at a work spot (approach slides, stops) a jump hands over as before
       // into the hero's root frame (root sits at the simulation)
+      const curH0 = [curH[0], curH[1], curH[2]];
       const rel = S.cyaw - yaw; const rq = yawQ(rel); const t3 = new Float32Array(3); qrot(rq, 0, curH, 0, t3, 0);
       const ox = S.char.x - p.x, oz = S.char.z - p.z, c2 = Math.cos(-yaw), s2 = Math.sin(-yaw);
       curH[0] = t3[0] + ox*c2 + oz*s2; curH[1] = t3[1]; curH[2] = t3[2] - ox*s2 + oz*c2;
       const hq = cur.slice(HIPS*4, HIPS*4 + 4); qmul(rq, 0, hq, 0, cur, HIPS*4);
+      if (S.jvel) { const pq = curPrev.slice(HIPS*4, HIPS*4 + 4); qmul(rq, 0, pq, 0, curPrev, HIPS*4); const dv = new Float32Array(3); qrot(rq, 0, [curH0[0] - curPrevH[0], curH0[1] - curPrevH[1], curH0[2] - curPrevH[2]], 0, dv, 0); S.jvel.hv = [dv[0] / S.jvel.dt, dv[1] / S.jvel.dt, dv[2] / S.jvel.dt]; }
       // layering: an action clip from hero.js keeps the upper body
       const cn = H.cur && H.cur.getClip ? H.cur.getClip().name : null; S.layer = !!(cn && !LOCO_CLIPS.has(cn) && H.cur.getEffectiveWeight() > .5);
     }
@@ -355,16 +367,16 @@ export function createMotion({ hero, db, opts = {} }) {
       else { kind = 0; src[b*4] = B.quaternion.x; src[b*4+1] = B.quaternion.y; src[b*4+2] = B.quaternion.z; src[b*4+3] = B.quaternion.w; sq = src; si = b*4; }
       if (kind === 0 && b === SPI && spineFix) { src.set(spineFix, b*4); }
       if (b === SPI && !!spineFix !== !!S.spFix) { if (srcKind[b] === kind) inertialize(b, sq, si, HL_SWITCH); S.spFix = !!spineFix; }
-      if (kind !== srcKind[b] || (kind === 1 && S.jumped)) { if (srcKind[b] !== -1) inertialize(b, sq, si, kind !== srcKind[b] ? HL_SWITCH : HL_JUMP); srcKind[b] = kind; }
+      if (kind !== srcKind[b] || (kind === 1 && S.jumped)) { if (srcKind[b] !== -1) inertialize(b, sq, si, kind !== srcKind[b] ? HL_SWITCH : HL_JUMP, kind === srcKind[b] ? S.jvel : null); srcKind[b] = kind; }
       const o = [0, 0, 0, 0]; qexp(o, 0, offX[b*3], offX[b*3+1], offX[b*3+2]); qmul(o, 0, sq, si, out, b*4); }
     { const hb = HB[HIPS]; const hk = S.on ? 1 : 0; const hs = S.on ? curH : pureH;
-      if (hk !== S.hipKind || (hk === 1 && S.jumped)) { if (S.hipKind != null && haveOut) { for (let k = 0; k < 3; k++) { offP[k] = prevOutH[k] - hs[k]; offPV[k] = 0; } yP = damp(hk !== S.hipKind ? HL_SWITCH : HL_JUMP); } S.hipKind = hk; }
+      if (hk !== S.hipKind || (hk === 1 && S.jumped)) { if (S.hipKind != null && haveOut) { const jv = hk === S.hipKind && S.jvel && S.jvel.hv && haveOut2 && !window.__noPredInert; for (let k = 0; k < 3; k++) { offP[k] = prevOutH[k] + (jv ? clamp(prevOutH[k] - prevOutH2[k], -.03, .03) : 0) - hs[k]; offPV[k] = jv ? clamp((prevOutH[k] - prevOutH2[k]) / S.jvel.dtOut - S.jvel.hv[k], -3, 3) : 0; } yP = damp(hk !== S.hipKind ? HL_SWITCH : HL_JUMP); } S.hipKind = hk; }
       for (let k = 0; k < 3; k++) outH[k] = hs[k] + offP[k]; }
     S.jumped = false;
     stepOffsets(dt);
     const anyOff = S.on || offActive();
     if (anyOff) { for (let b = 0; b < NB; b++) { const B = HB[b]; if (B) B.quaternion.set(out[b*4], out[b*4+1], out[b*4+2], out[b*4+3]); } HB[HIPS].position.set(outH[0], outH[1], outH[2]); outH[0] = HB[HIPS].position.x; outH[1] = HB[HIPS].position.y; outH[2] = HB[HIPS].position.z; wroteH = true; } else wroteH = false;
-    prevOut.set(out); prevOutH.set(outH); haveOut = true;
+    if (haveOut) { prevOut2.set(prevOut); prevOutH2.set(prevOutH); haveOut2 = true; } prevOut.set(out); prevOutH.set(outH); haveOut = true; S.lastDt = dt;
     root.updateMatrixWorld(true);
     // foot locking while the data says the foot is planted
     if (S.on && !window.__noFootLock) { const c = clips[S.ci], f = clamp(Math.round(S.t), 0, c.n - 1);
@@ -372,7 +384,7 @@ export function createMotion({ hero, db, opts = {} }) {
       for (let s = 0; s < 2; s++) { const L = lock[s]; const inC = !!c.con[f*2+s]; const fb = HB[legs[s][2]]; const ap = fb.getWorldPosition(_a);
         // where the data puts this foot (no blending offsets): character root + the clip's foot, on the hero's floor
         const a0 = f*6 + s*3, lx = c.fl[a0], ly = c.fl[a0+1], lz = c.fl[a0+2]; _b.set(S.char.x + lx*cs + lz*sn, root.position.y + ly, S.char.z - lx*sn + lz*cs);
-        if (inC && !L.on && !L.hold && !(S.lockDelay > 0)) { L.on = true; if (L.w > .05) L.p.copy(L.shown); else L.p.copy(_b); }
+        if (inC && !L.on && !L.hold && !(S.lockDelay > 0)) { L.on = true; if (L.w > .05) L.p.copy(L.shown); else { L.p.copy(_b); L.p.y = ap.y; /* walk thread: the height where the foot is now (hero.js boardDy put it on its own board); the clip's height is over the root's floor, and planting there sank the standing foot 4 cm as the other stepped onto a higher board (kitchen hatch) */ } }
         // the lock holds the foot in place across the floor, not in height: it rides up and down with the root, and hero.js (boardDy)
         // puts each sole on its own board. A height fixed in the world was lifted again by boardDy as the root went down a step (10 cm)
         { const ry = root.position.y; if (L.ry != null && L.w > .001) L.p.y += ry - L.ry; L.ry = ry; }
@@ -380,7 +392,11 @@ export function createMotion({ hero, db, opts = {} }) {
         if (!inC) { L.on = false; L.hold = false; }
         L.w = clamp(L.w + (L.on ? dt / .07 : -dt / .16), 0, 1);
         if (L.w > .001) { if (!L.on) L.p.lerp(ap, 1 - Math.exp(-dt * 14)); const w = L.w * L.w * (3 - 2 * L.w); L.shown.copy(ap).lerp(L.p, w); legIK(s, L.p, w); } else L.shown.copy(ap); } }
-    else for (const L of lock) { L.on = L.hold = false; L.w = 0; }
+    // motion matching handed the legs back (a ladder, a seat, a stop): a planted foot is let go over the lock's own release time,
+    // not dropped in one frame (gate: the standing foot jumped 10 cm at the foot of a ladder, and the pop filter then overshot it)
+    else { root.updateMatrixWorld(true); for (let s = 0; s < 2; s++) { const L = lock[s]; L.on = L.hold = false; if (!(L.w > .001) || window.__noLockFade) { L.w = 0; continue; }
+      const ap = HB[legs[s][2]].getWorldPosition(_a); if (ap.distanceTo(L.p) > .3) { L.w = 0; continue; }
+      L.w = clamp(L.w - dt / .16, 0, 1); L.p.lerp(ap, 1 - Math.exp(-dt * 14)); const w = L.w * L.w * (3 - 2 * L.w); L.shown.copy(ap).lerp(L.p, w); if (w > .001) legIK(s, L.p, w); } }
     if (S.on) { // world position of the feet for tests
       S.charSpeed = Math.hypot(S.char.x - (S.lastChar ? S.lastChar.x : S.char.x), S.char.z - (S.lastChar ? S.lastChar.z : S.char.z)) / dt; S.lastChar = { x: S.char.x, z: S.char.z }; }
   }

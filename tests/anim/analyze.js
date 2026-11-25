@@ -158,16 +158,17 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  if(F[0].q){const QI={Spine2:0,Neck:1,Head:2,LeftFoot:3,RightFoot:4,LeftToeBase:5,RightToeBase:6};const Q=(f,n)=>f.q.slice(QI[n]*4,QI[n]*4+4);const qi=q=>[-q[0],-q[1],-q[2],q[3]];
   const fw=f=>[Math.sin(f.ry),0,Math.cos(f.ry)],rt=f=>[Math.cos(f.ry),0,-Math.sin(f.ry)],up=()=>[0,1,0];
   const cal=F.filter((f,i)=>i%7===0&&f.fl==='P'&&!f.fl.includes('L'));// walking frames: body faces where he goes
+  const calOK=cal.length>=5;// no walking in the window (e.g. gate --only read): no head calibration, so no head angle checks
   const loc=(get,wv)=>{let a=[0,0,0];for(const f of cal){const v=qrot(qi(get(f)),wv(f));a=[a[0]+v[0],a[1]+v[1],a[2]+v[2]];}return n3(a);};
   const aH=loc(f=>Q(f,'Head'),fw),aC=loc(f=>Q(f,'Spine2'),fw),uC=loc(f=>Q(f,'Spine2'),up),aP=loc(f=>f.hq,fw),uP=loc(f=>f.hq,up);
   const yaw=(qa,a,qb,b,ub)=>{const h=qrot(qa,a),c=qrot(qb,b),u=n3(qrot(qb,ub));const pr=v=>{const d=dot(v,u);return [v[0]-u[0]*d,v[1]-u[1]*d,v[2]-u[2]*d];};const hp=pr(h),cp=pr(c);const sg=dot(cross(cp,hp),u)>=0?1:-1;return sg*angd(hp,cp);};
   const neck=F.map(f=>yaw(Q(f,'Head'),aH,Q(f,'Spine2'),aC,uC)),body=F.map(f=>/[WBST]/.test(f.fl)||qrot(f.hq,uP)[1]<.85||qrot(Q(f,'Spine2'),uC)[1]<.7?0:yaw(Q(f,'Head'),aH,f.hq,aP,uP));
   const uH=loc(f=>Q(f,'Head'),up);const tilt=F.map(f=>angd(qrot(Q(f,'Head'),uH),qrot(Q(f,'Spine2'),uC)));
-  runs(i=>tilt[i]>lim.headTilt?tilt[i]:null,2,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head tipped vs chest (nod/side bend)',limit:lim.headTilt,what:'head bent further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]>lim.headTilt?tilt[i]:null,2,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head tipped vs chest (nod/side bend)',limit:lim.headTilt,what:'head bent further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
   const pct=(a,p)=>{const b=a.map(Math.abs).sort((x,y)=>x-y);return +b[Math.floor((b.length-1)*p)].toFixed(1);};
   tempo.anatomy.neckYaw={p50:pct(neck,.5),p99:pct(neck,.99),max:pct(neck,1)};tempo.anatomy.headVsHips={p50:pct(body,.5),p99:pct(body,.99),max:pct(body,1)};
-  runs(i=>tilt[i]<50&&Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
-  runs(i=>tilt[i]<50&&Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]<50&&Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]<50&&Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
   // feet: ankle angle (shin vs foot) against his own neutral, toe bend, roll of a planted foot
   for(const sd of ['Left','Right']){const ank=F.map(f=>angd(sub(bone(f,sd+'Foot'),bone(f,sd+'Leg')),sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot'))));
    const toe=F.map(f=>angd(sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot')),sub(bone(f,sd+'Toe_End'),bone(f,sd+'ToeBase'))));
