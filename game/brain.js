@@ -121,6 +121,7 @@ const MICRO = {
 
 export function createBrain({ HH, lights, hour, isNight }) {
   const windy = () => { try { const w = window.__wind; const g = w && (w.strength ? w.strength() : w.gust ? w.gust() : 0); return Math.max(0, Math.min(1, +g || 0)); } catch (e) { return 0; } };
+  let windS = null;   // windy() smoothed over ~20 s (a single gust is no reason to stay in); updated in tick
   const weather = () => { try { const W = window.__weather; return W && W.state ? W.state() : null; } catch (e) { return null; } };
   const raining = () => { const s = weather(); if (s) return !!s.rain && s.rain !== 'none'; try { const w = window.__wind; return !!(w && w.raining && w.raining()); } catch (e) { return false; } };
   const chilly = h => { const s = weather(); return s ? !!s.cold || s.feels < 6 : (h < 9 || h > 17); };
@@ -303,6 +304,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (n === 'eat') { if (!stock.meal || (need.hunger < .3 && !hotMeal)) s = -9; else s += .3 + (hotMeal ? 1.5 : 0); }   /* hotMeal: one plate while it is hot, not both portions in a row (3-day watch: eat, eat) */   // a pot of stew: two portions   // cooked: sits down to eat while it is hot
     // weather: a drizzle is put up with, a proper rain keeps him in unless he must, a storm always (5-day watch: water run in a storm)
     if (n !== 'eat' && raining()) { const w = weather(), k = w ? w.rain : 'rain'; s -= k === 'storm' ? 30 : k === 'drizzle' ? .6 : (n === 'fetch' && stock.clean < .1 ? .8 : 2.2); }
+    // a windy spell (wind.js strength() smoothed: calm ~.03, breeze ~.22, windy ~.46, gusts to ~.9): a trip waits for it to drop
+    // (about -.5 to -1.5), a water run only grumbles
+    else if (n !== 'eat' && windS > .35) s -= (windS - .35) * (n === 'fetch' || n === 'dump' ? 2 : 7);
     if (locked && n !== 'eat') s -= 20;             // lockdown: no trips, no water runs
     const i = recent.indexOf(n); if (i === 0 && n !== 'eat') s -= .6;
     return { name: n, s: s + rnd(0, .25), top: top || JOBS[n].top };
@@ -325,6 +329,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const E = EXTRA[n];
     if (E.needLogs && ECON && (!stock.logs || (stock.logs < 2 && stock.meat && !stock.meal))) return null;   // the last log is kept for the stew
     if (E.room === 'outside' && raining()) return null;
+    if (ROOF.includes(n) && windS > .4) return null;   // not up on the roof, the rail or the rope ladder in a windy spell
     // the door bolt is a before-bed thing (Pavel; critic B2: bolted at 13:00): only in the evening / night, or in a lockdown
     if (n === 'bolt' && !locked && !bedSoon(h)) return null;
     let { s, top } = value(effOf(n));
@@ -585,7 +590,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   function damagedOf(name) {
     const k = KIND_OF[name]; if (!RW || !k || k === 'rope' || k === 'window') return [];
     let L = RW.list.filter(q => q.kind === k && q.d > 0); if (k === 'shingle') L = reachable(L, true);
-    if (raining()) L = L.filter(q => !outdoorPart(q.pos));
+    if (raining() || windS > .4) L = L.filter(q => !outdoorPart(q.pos));   // not up on the roof in rain or a gale
     return L;
   }
   function repairTarget(name) {
@@ -679,7 +684,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // one-off setup spread out of the decision frames: the slates in reach are worked out a few seconds after the start
     if (!reachCache && (warmT += dt) > 3) { try { const P = planks(); if (P && P.list) reachable(P.list('shingle')); } catch (e) {} }
     const dh = gameHours();
-    measureClock(dt); nowT += dt;
+    measureClock(dt); nowT += dt; windS = windS == null ? windy() : windS + (windy() - windS) * Math.min(1, dt / 20);
     if ((rwT -= dt) <= 0) { rwT = 2; RW = readWear(); if (RW) need.wear = RW.tot; }
     { const hh = hour(); if (lastHr != null) { let d = hh - lastHr; if (d < 0) d += 24; if (d < 3) absH += d; } lastHr = hh; }
     if (lockAsk) { lockAsk = false; brain.lockdown(true); }

@@ -174,7 +174,15 @@ export function buildTree(THREE, o) {
       { const d1 = Math.hypot(xr, zr) || 1e-6, ts = Math.min(1, Math.max(0, (2.8 - yy) / 2.8));
         const sk = (o.flare ?? 1.1) * Math.pow(ts, 2) * Math.min(1, d1 / 1.4) * Math.max(0.35, 1 - Math.max(0, d1 - 3.2) / 5);
         const fk = (d1 + sk) / d1; xr *= fk; zr *= fk; }
-      P.push(AX + xr, yy, AZ + zr);
+      // the photo's main roots reach ~1.5x further, diagonally to the bottom corners of the frame, and stand taller where
+      // they leave the trunk (Ground's side-by-side). The front centre (ladder foot, path, pond) keeps its short roots.
+      let yo = yy;
+      if (o.rootReach !== false) { /* the walk from the ladder foot to the woodpile/chopping block (Anim QA: he stepped over a 70 cm root): no stretching into it, no lift */ const pa = o.rootPath || [-4.9, 0.6, 3.5, 5.5], zin = (qx, qz) => Math.min(1, Math.max(0, Math.min(qx - pa[0], pa[1] - qx, qz - pa[2], pa[3] - qz) / 0.5 + 0.5)); const d2 = Math.hypot(xr, zr) || 1e-6, an = Math.atan2(zr, xr), offDoor = Math.min(1, Math.max(0, (Math.abs(angDiff(an, doorAng)) - 0.55) / 0.3)); /* the hollow landing sits on the roots there: leave them as they were */
+        if (yy < 1.6 && d2 > 3.2) { const low = Math.min(1, (1.6 - yy) / 0.8), front = Math.max(0, Math.sin(an)), centre = Math.max(0, 1 - Math.abs(angDiff(an, Math.PI / 2)) / 0.55);
+          const kk = (o.rootReach ?? 0.6) * low * (0.4 + 0.6 * front) * (1 - 0.85 * centre) * offDoor, nd0 = 3.2 + (d2 - 3.2) * (1 + kk), px = AX + xr * nd0 / d2, pz = AZ + zr * nd0 / d2; const inP = Math.max(zin(px, pz), zin(AX + xr, AZ + zr)), nd = 3.2 + (d2 - 3.2) * (1 + kk * (1 - inP)); xr *= nd / d2; zr *= nd / d2; }
+        if (yy > -0.3 && yy < 1.5) { const d3 = Math.hypot(xr, zr), hump = Math.max(0, 1 - Math.abs(d3 - 3.1) / 2.4);
+          yo = yy + 0.32 * offDoor * (1 - zin(AX + xr, AZ + zr)) * hump * Math.min(1, (yy + 0.3) / 0.7) * Math.min(1, (1.5 - yy) / 0.5); } }
+      P.push(AX + xr, yo, AZ + zr);
       UV.push(su ? su.getX(i) : 0, su ? su.getY(i) : 0); G.push(0);
     }
     // trunk radius along the hollow's direction, measured from the mesh (for the hollow, the cave and the door light)
@@ -230,6 +238,17 @@ export function buildTree(THREE, o) {
       const m = Math.max(arch(P[a * 3], P[a * 3 + 1], P[a * 3 + 2]), arch(P[b * 3], P[b * 3 + 1], P[b * 3 + 2]), arch(P[c * 3], P[c * 3 + 1], P[c * 3 + 2]));
       if (m < 1.0) continue; I.push(a, b, c);
     }
+    // autumn: a few dead twigs on the big limbs, bare grey and snapped off short (the photo's oak has small broken twigs
+    // between the leaf clumps). Part of the bark mesh: no new draw call, ~40 verts each.
+    if (o.deadTwigs !== false) { const AVB = (o.avoidLeaves || []).concat(o.avoid || []), inAvT = (x, y, z) => AVB.some(b => x > b[0] - 0.6 && x < b[1] + 0.6 && y > b[2] - 0.6 && y < b[3] + 0.6 && z > b[4] - 0.6 && z < b[5] + 0.6);
+      const tc = []; for (let i = 0; i < P.length; i += 30) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ, d = Math.hypot(x, z); if (d > 3.8 && d < 9.5 && y > 6.5 && y < 16 && z > -2.5 && z < 4.2 && !inAvT(P[i], y, P[i + 2])) tc.push([P[i], y, P[i + 2], rnd(0, 1)]); }
+      tc.sort((a, b) => a[3] - b[3]); const tw = [];
+      for (const c of tc) { if (tw.length >= (MOB(o) ? 8 : 14)) break; if (tw.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 1.6)) continue; tw.push(c); }
+      for (const c of tw) { const out = V(c[0] - AX, 0, c[2] - AZ).normalize(), dir = V(out.x + rnd(-.5, .5), rnd(.35, .9), out.z + rnd(-.5, .5)).normalize(), L = rnd(.45, .85), r0 = rnd(.035, .055);
+        const b0 = V(c[0], c[1], c[2]).addScaledVector(dir, -0.08), side = V(-dir.z, 0, dir.x).normalize();
+        const kink = b0.clone().addScaledVector(dir, L * 0.55).addScaledVector(side, rnd(-.08, .08)), tip = kink.clone().addScaledVector(dir.clone().addScaledVector(side, rnd(-.35, .35)).normalize(), L * 0.45);
+        for (const tb of [tube([b0, kink, tip], 4, 5, t => r0 * (1 - 0.65 * t))].concat(rnd(0, 1) < .5 ? [tube([kink.clone(), kink.clone().addScaledVector(V(rnd(-.5, .5), .8, rnd(-.5, .5)).normalize(), L * .35)], 2, 4, t => r0 * .5 * (1 - .6 * t))] : [])) {
+          const off = P.length / 3; P.push(...tb.P); UV.push(...tb.UV); for (let k = 0; k < tb.G.length; k++) G.push(0); for (const q of tb.I) I.push(q + off); } } }
     // leaves: clumps at the limb tips and a crown at the top, with gaps between them
     const cand = [];
     for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i] - AX, P[i + 2] - AZ), y = P[i + 1]; if ((d > 3.6 && y > 4.5 && (Math.abs(P[i] - AX) > 3 || y > 15)) || y > 15.5) cand.push([P[i], y, P[i + 2], d + y * 0.35]); }
@@ -237,6 +256,26 @@ export function buildTree(THREE, o) {
     const picked = [];
     for (const c of cand) { if (picked.length >= (o.leafClumps || 40)) break; if (picked.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.3)) continue; /* Pavel: a fuller crown */ picked.push(c); }
     for (const c of picked) leafSpots.push({ p: V(c[0], c[1] + 0.3, c[2]), s: c[1] > 15 ? rnd(2.3, 2.9) : rnd(1.6, 2.2) });
+    // the photo frames the house with leaf clumps at mid height: left beside the bedroom/kitchen, right beside the deck and
+    // the workshop roof. Clumps on the camera-facing limb ends there (Env's side-by-side), clear of the rooms.
+    { const AVL = o.avoidLeaves || [], inAv = (x, y, z, p) => AVL.some(b => x > b[0] - p && x < b[1] + p && y > b[2] - p && y < b[3] + p && z > b[4] - p && z < b[5] + p);
+      const side = []; for (let i = 0; i < P.length; i += 3) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ;
+        if (y < 5.5 || y > 12.5) continue;
+        /* never in front of the house (the photo never puts leaves over a room): left just behind the bedroom/kitchen wall line, inside the
+           phone frame (its left edge is x ~ AX-5.7 at the trunk); right behind the deck/workshop plane */
+        if (x < -4.9 && x > -8.5 && z > -3.8 && z < -1.2) side.push([P[i], y, P[i + 2], 10 - Math.abs(x)]);
+        else if (x > 4.9 && x < 10.5 && z > -3 && z < 0.4) side.push([P[i], y, P[i + 2], 10 - x]); }
+      side.sort((a, b) => b[3] - a[3]); const got = [];
+      for (const c of side) { if (got.length >= (o.sideClumps ?? 14)) break; if (inAv(c[0], c[1], c[2], 1.4)) continue;
+        if ([...got, ...picked].some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.2)) continue; got.push(c); }
+      for (const c of got) leafSpots.push({ p: V(c[0], c[1] + 0.2, c[2] + 0.2), s: rnd(1.6, 2.1) }); }
+    // the photo has no sky between the two big limbs above the bedroom roof: one or two clumps behind the ridge close it
+    { const hole = []; for (let i = 0; i < P.length; i += 3) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ;
+        if (x > -0.5 && x < 3 && y > 12.8 && y < 15.5 && z < -2.5 && z > -5.5) hole.push([P[i], y, P[i + 2], -Math.abs(y - 14) - Math.abs(x - 1.2)]); }
+      hole.sort((a, b) => b[3] - a[3]); const hg = [];
+      for (const c of hole) { if (hg.length >= 2) break; if (hg.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.4)) continue; hg.push(c); }
+      hg.push([AX + 1.7, 13.6, AZ - 3.1]); /* the gap right of the main stem, seen from the home view */
+      for (const c of hg) leafSpots.push({ p: V(c[0], c[1] + 0.2, c[2] - 0.3), s: rnd(2.0, 2.4) }); }
     // the crown: the photo's top is a full canopy of big clumps with only small sky gaps
     const top = [];
     for (let i = 0; i < P.length; i += 3) if (P[i + 1] > 15.2 && Math.abs(P[i] - AX) < 7.5) top.push([P[i], P[i + 1], P[i + 2]]);
@@ -383,6 +422,14 @@ export function buildTree(THREE, o) {
       }
       GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
       P[i * 3] += nx * h; P[i * 3 + 1] += ny * h; P[i * 3 + 2] += nz * h; }
+    // the big twisting folds (model pass above) shade dark in their troughs too, so the fluted trunk reads from the home view
+    // like the photo's, not as a flat brown wall (same phase as the folds; off near the hollow)
+    if (o.folds !== false) for (let i = 0; i < nv; i++) { const x = P[i * 3] - AX, y = P[i * 3 + 1], z = P[i * 3 + 2] - AZ, d0 = Math.hypot(x, z);
+      if (d0 < 0.3 || d0 > 3.6 || y < -0.4 || y > 12.5) continue; const an = Math.atan2(z, x);
+      const nearDoor = Math.max(0, 1 - Math.max(0, Math.abs(angDiff(an, doorAng)) - 0.45) / 0.35) * Math.max(0, Math.min(1, (door.y1 + 1.4 - y) / 0.6));
+      const w = (1 - nearDoor) * Math.min(1, (y + 0.4) / 0.8) * Math.min(1, (12.5 - y) / 1.5) * Math.min(1, (3.6 - d0) / 0.6);
+      const ph = 5 * an + 0.22 * y + 0.9 * Math.sin(2 * an + 0.35 * y), gr = Math.pow(Math.max(0, Math.cos(ph)), 1.6);
+      GR[i] = Math.max(GR[i], (o.foldShade ?? 0.7) * w * gr); }
     if (typeof window !== 'undefined') window.__rootDetail = { verts: P.length / 3 - n0, tris: I.length / 3 - t0 };
   }
   const g = new THREE.BufferGeometry();
@@ -453,13 +500,24 @@ export function buildTree(THREE, o) {
   vec3 u=normalize(cross(ax,vec3(0.,1.,0.))+vec3(1e-4,0.,0.));vec3 w=cross(ax,u);float an=atan(dot(wn,w),dot(wn,u));float al=dot(wp,ax);
   float ph=an*7.+1.4*sin(al*.8+an*2.)+.7*sin(al*2.1-an*3.);float gr=smoothstep(.55,.97,abs(sin(ph)));float aa=1.-smoothstep(.6,1.6,fwidth(an*7.));
   float k=bw*aa;diffuseColor.rgb*=1.-.42*gr*k;diffuseColor.rgb*=1.+.1*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
+    // rain: wet bark darkens and gets a sheen (Env's env.wet, like the forest: roughness x(1-.55w), colour x(1-.35w)),
+    // most on the up-facing, rain-exposed sides, less under the crown and the house
+    const WET = (o.env || window.__env || {}).wet;
+    if (WET) {
+      sh.uniforms.bWet = WET;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float bWet;')
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{vec3 nWw=normalize((vec4(normal,0.)*viewMatrix).xyz);float wk=bWet*(.45+.55*smoothstep(-.3,.6,nWw.y))*(1.-.45*smoothstep(4.,9.,vY));
+ roughnessFactor*=1.-.55*wk;diffuseColor.rgb*=1.-.35*wk;}`);
+    }
     // warm bark round the house at night (Environment drives env.barkWarm): diffuse only, the bark stays matte
     const BW = (o.env || window.__env || {}).barkWarm;
     if (BW) {
       sh.uniforms.bwC = BW.color; sh.uniforms.bwS = BW.strength;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vBW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvBW=(modelMatrix*vec4(transformed,1.)).xyz;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vBW;uniform vec3 bwC;uniform float bwS;')
-        .replace('#include <opaque_fragment>', `outgoingLight+=diffuseColor.rgb*bwC*bwS*smoothstep(1.,3.,vBW.y)*smoothstep(12.,10.,vBW.y)*smoothstep(-1.5,1.,vBW.z-(${AZ.toFixed(3)}));
+        .replace('#include <opaque_fragment>', `{vec2 bwd=vBW.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)});/* down to the ground on the camera side, fading out over the roots (Env, photo: warm lower trunk) */
+outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,smoothstep(1.,3.,vBW.y))*smoothstep(12.,10.,vBW.y)*smoothstep(-1.5,1.,bwd.y)*smoothstep(7.,3.2,length(bwd));}
 #include <opaque_fragment>`);
     }
     if (ARCH) {
@@ -485,7 +543,7 @@ export function buildTree(THREE, o) {
     : new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8 });
   // soft, lit-from-above clumps: cards near the clump centre are darker (painted volume)
   lmat.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\n/* [ENV] per CARD, not per pixel: an oblique or too-near card goes whole (each at its own threshold), so no leaf is ever cut across */{vec4 cC=modelViewMatrix*instanceMatrix*vec4(0.,0.,0.,1.);vec3 cN=normalize(mat3(modelViewMatrix)*mat3(instanceMatrix)*vec3(0.,0.,1.));float cH=fract(sin(dot(instanceMatrix[3].xyz,vec3(12.99,78.23,37.71)))*4375.5);float th=mix(.16,.42,cH),dh=mix(1.6,3.2,fract(cH*7.31));/* shrinks smoothly towards its centre over a short band (no pop when the camera turns or zooms) */float cf=smoothstep(th-.07,th+.07,abs(dot(cN,normalize(-cC.xyz))))*smoothstep(dh-.5,dh+.5,-cC.z);mvPosition=cC+(mvPosition-cC)*cf;gl_Position=projectionMatrix*mvPosition;vFacing=step(.001,cf);vDep=1.;}');
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float shade;varying float vShade;varying float vFacing;varying float vDep;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvShade=shade;').replace('#include <project_vertex>', '#include <project_vertex>\n/* [ENV] per CARD, not per pixel: an oblique or too-near card goes whole (each at its own threshold), so no leaf is ever cut across */{vec4 cC=modelViewMatrix*instanceMatrix*vec4(0.,0.,0.,1.);vec3 cN=normalize(mat3(modelViewMatrix)*mat3(instanceMatrix)*vec3(0.,0.,1.));float cH=fract(sin(dot(instanceMatrix[3].xyz,vec3(12.99,78.23,37.71)))*4375.5);float th=mix(.24,.5,cH),dh=mix(1.6,3.2,fract(cH*7.31));/* shrinks smoothly towards its centre over a short band (no pop when the camera turns or zooms) */float cf=smoothstep(th-.07,th+.07,abs(dot(cN,normalize(-cC.xyz))))*smoothstep(dh-.5,dh+.5,-cC.z);mvPosition=cC+(mvPosition-cC)*cf;gl_Position=projectionMatrix*mvPosition;vFacing=step(.001,cf);vDep=1.;}');
     // [WIND] leaves sway with the global wind (game/wind.js): each card drifts with its clump and flutters on its own
     const W = o.wind || window.__wind;
     if (W) {
@@ -509,7 +567,10 @@ export function buildTree(THREE, o) {
   lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2'; /* [ENV] explicit key (SHADERS rule) */
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
-  const total = MOB(o) ? (o.leafCards || 170) : 700; // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
+  const total = MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
+  // the photo keeps open sky behind the telescope deck (critic T26): no clump in the window above and behind it
+  { const SW = o.skyWindow || [AX + 2.2, AX + 8, 9.6, 15.2, AZ - 13, AZ + 2.5];
+    for (let i = leafSpots.length - 1; i >= 0; i--) { const p = leafSpots[i].p; if (p.x > SW[0] && p.x < SW[1] && p.y > SW[2] && p.y < SW[3] && p.z > SW[4] && p.z < SW[5]) leafSpots.splice(i, 1); } }
   const want = []; let sumS = 0; for (const s of leafSpots) sumS += s.s * s.s;
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
   const qg = new THREE.CircleGeometry(0.5, MOB(o) ? 10 : 12); // round like the painted clump: no empty quad corners to shade // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
@@ -534,7 +595,7 @@ export function buildTree(THREE, o) {
         : rnd(0, 1) < 0.5 ? dir.clone().multiplyScalar(0.55).add(V(0, 0.25, 1)) : dir.clone().add(V(rnd(-.4, .4), rnd(0, .5), rnd(-.4, .4)));
       const look = new THREE.Matrix4().lookAt(V(0, 0, 0), fw.normalize(), V(0, 1, 0));
       q.setFromRotationMatrix(look).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd(-0.5, 0.5), rnd(-0.5, 0.5), rnd(0, 6.28))));
-      sc.setScalar(MOB(o) ? rnd(3.4, 4.4) : rnd(3.2, 4.2));
+      sc.setScalar(MOB(o) ? rnd(4.7, 6.1) : rnd(4.4, 5.8));
       m4.compose(p, q, sc); im.setMatrixAt(n, m4);
       // phones have no inner cards, so some shell cards take the darker inner shade to keep the clumps' depth
       const rs = MOB(o) && rnd(0, 1) < 0.35 ? rnd(0.4, 0.78) : rr;
