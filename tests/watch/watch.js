@@ -15,7 +15,7 @@ const ALL=[['walkabout',10],['tea',9],['chop',9],['pot',8],['stoke',7],['dishes'
  ['hatch',21.5],['bolt',21.6],['fetchwater',9],['setbucket',9.3],['dumpwater',9.5],['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],
  ['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11],['read',11],['cook',12],['eat',13],['craft',10],['look',16],['sleep',22.5],['trip',15,{kind:'wood',jacket:false}],['store',10]];
 (async()=>{fs.mkdirSync(OUT,{recursive:true});
- const want=arg('tasks',null);const list=want?want.split(',').map(t=>ALL.find(a=>a[0]===t)||[t,10]):ALL;
+ const want=arg('tasks',null);const list=want?want.split(',').map(t=>{const m=t.split('~');if(m[1])return [m[0],10,JSON.parse(m[1])];return ALL.find(a=>a[0]===t)||[t,10];}):ALL;
  const hero=arg('hero','old');
  const {b,p,errs}=await open({seed:SEED,vp:{width:SZ,height:SZ},query:arg('query','')});
  if(hero!=='old')console.log('note: --hero new needs ?hero=new support in lib; using default');
