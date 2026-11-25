@@ -510,6 +510,8 @@ function meshesToBeams(g){g.updateMatrixWorld(true);for(const o of [...g.childre
 const B=[];// all boards {rb, size, q, inst, breakable, hp, group, loose}
 const tM=new THREE.Matrix4(),tQ=new THREE.Quaternion(),tP=V(),tS=V();
 // add a board centred at c with size (len,w,t) and rotation; long axis = local x
+/* [LIGHTS] a subfloor sheet: a dark-board instance with no physics body and no random draw (board() takes from the shared random stream; the house layout after it must not shift) */
+function subSheet(c,len,w,t,rot){const q=new THREE.Quaternion().setFromEuler(rot);const i=beams.count++;dRow.setX(i,13);dTile.setX(i,Math.max(.04,len/3.84));beams.setColorAt(i,new THREE.Color().setScalar(.55));beams.setMatrixAt(i,new THREE.Matrix4().compose(c,q,V(len,w,t)));}
 function board(c,len,w,t,rot,opt={}){const q=new THREE.Quaternion().setFromEuler(rot||new THREE.Euler());
  const rb=world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(c.x,c.y,c.z).setRotation({x:q.x,y:q.y,z:q.z,w:q.w}));
  const col=world.createCollider(RAPIER.ColliderDesc.cuboid(len/2,w/2,t/2).setDensity(600).setFriction(.8).setRestitution(.15),rb);
@@ -660,7 +662,9 @@ function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z)
   for(let z=cz+.25;z<cz+R-.2;z+=.8)for(const [a2,b2] of runs(x=>ok(x,z)&&ok(x,z+.1),cx-R,cx+R,.05,.3))board(V((a2+b2)/2,y-.115,z),b2-a2-.1,.14,.12,null,{dark:true});
   return;}
  // long runs are laid as 0.8–1.9 m boards butted end to end, joints staggered row to row (real end grain and joint lines)
- for(let x=x0+.125;x<x1;x+=.25){const xo=rnd(-.004,.004);for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e0=b0>=z1-.05?b0+rnd(-.05,.05):b0;for(const [a,e] of cutRun(a0,e0,.8,1.9,.004)){const L=lay();L.lift=Math.min(L.lift,.0035);L.roll=Math.max(-.02,Math.min(.02,L.roll));/* rugs lie flat on top */board(V(x+xo,y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}}}
+ for(let x=x0+.125;x<x1;x+=.25){const xo=rnd(-.004,.004);for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12)){const e0=b0>=z1-.05?b0+rnd(-.05,.05):b0;for(const [a,e] of cutRun(a0,e0,.8,1.9,.004)){const L=lay();L.lift=Math.min(L.lift,.0035);L.roll=Math.max(-.02,Math.min(.02,L.roll));/* rugs lie flat on top */board(V(x+xo,y+.035-L.t/2+L.lift,(a+e)/2),e-a,rnd(.222,.242),L.t,flat(-Math.PI/2,L));}}
+   /* [LIGHTS] o.sub (rooms): a dark subfloor under the boards. The gaps between the boards are real, and at night the bright fog and sky below showed through them as glowing blue lines in the lit rooms (Props). One dark sheet per run, a hair wider than the row, 6 cm under the boards' tops */
+   if(o.sub)for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12))subSheet(V(x,y+.035-.09,(a0+b0)/2),b0-a0,.262,.016,new THREE.Euler(-Math.PI/2,-Math.PI/2,0,'YXZ'));}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
  if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
@@ -814,14 +818,14 @@ if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
 ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
 const KX0=-4.4,KX1=-.9;
-floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]]});
+floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,3.9]],sub:true});
 wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
 wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]],-1);wallSide(KX1,.8,2.2,KT+.03,BD-.15,[],1);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start above the centre landing (they used to pass through it) */brace(V(-2.3,LC+.4,frontZ(-2.3,LC+.4)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,LC+.45,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
-floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]]});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
+floorBoards(BX0-.1,BX1+.05,BD,.5,3.95,{holes:[[-4.3,-3.55,2.32,3.25]],sub:true});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
 const HATCH=(()=>{/* own plank materials: plain meshes sharing boardMat's instanced program came out flat white (critic T20) */const hB=boardMat.clone();plankShader(hB);const hD=boardMat.clone();plankShader(hD);hD.color.setScalar(.5);const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
@@ -853,7 +857,7 @@ floorBoards(BX1,1.8,BD,2.1,3.65,{noEdge:true});brace(V(.5,BD-1.6,2.3),V(1.6,BD-.
 ropeLadder(1.35,BD,DK+.05,3.15);
 // workshop (right, middle)
 const WX0=.9,WX1=4.6;
-floorBoards(WX0,WX1+.15,WS,.8,5.3);
+floorBoards(WX0,WX1+.15,WS,.8,5.3,{sub:true});
 wallBack(WX0,WX1,WS+.03,WS+2.3,1.2,[[3.2,3.95,WS+1.05,WS+1.75]]);
 wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]],1);wallSide(WX0,1.0,2.3,WS+.03,WS+2.3,[],-1);
 roof(WX0,WX1,WS+2.3,1.0,4.0,.95);post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
