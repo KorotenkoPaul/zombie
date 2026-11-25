@@ -5,7 +5,7 @@ module.exports=function install(cfg){
  const V=(x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);
  const mine=o=>{while(o){if(o===hero.root)return true;o=o.parent;}return false;};
  const label=o=>{const parts=[];let x=o;while(x&&x!==scene){if(x.name&&!/^(Mesh|Object|Group|Scene)?_?\d*$/.test(x.name))parts.push(x.name);x=x.parent;}return parts.reverse().join('/')||o.geometry.type;};
- const solidMat=o=>{const m=Array.isArray(o.material)?o.material[0]:o.material;if(!m)return false;if(m.transparent&&m.opacity<.6)return false;if(m.depthWrite===false||m.blending===THREE.AdditiveBlending)return false;return true;};
+ const solidMat=o=>{const m=Array.isArray(o.material)?o.material[0]:o.material;if(!m)return false;if(m.transparent&&m.opacity<.6)return false;if(m.alphaTest>0)return false;/* cut-out leaves, ferns, bushes: soft (collide.js does the same) */if(m.depthWrite===false||m.blending===THREE.AdditiveBlending)return false;return true;};
  const visible=o=>{while(o){if(!o.visible)return false;o=o.parent;}return true;};
  // ---------- colliders: oriented boxes, cylinders and spheres in world space ----------
  const VOX={n:0,cells:0},VCACHE=new Map();let CUR=null;/* the mesh each static shape was baked from */const C=[];const m4=new THREE.Matrix4(),mi=new THREE.Matrix4();
