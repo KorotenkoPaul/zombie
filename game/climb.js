@@ -124,7 +124,7 @@ export function createClimb() {
     if (A.palmY != null) return A.palmY; const CD = window.__collide; let top = -1e9;
     if (CD && CD.depthAt) { try { for (const sd of [-1, 1]) for (let dz = 0; dz <= .16; dz += .04) { const x = A.lad.x + sd * .16, z = A.edge - A.zDir * (.03 + dz);
       for (let y = A.o.yTop + .15; y > A.o.yTop - .06; y -= .005) { const d = CD.depthAt(x, y, z); if ((typeof d === 'number' ? d : (d && d.depth) || 0) > .002) { top = Math.max(top, y); break; } } } } catch (e) { top = -1e9; }
-      if (top > -1e9) A.palmY = Math.max(A.o.yTop + .04, Math.min(A.o.yTop + .12, top + .055)); }
+      if (top > -1e9) A.palmY = Math.max(A.o.yTop + .04, Math.min(A.o.yTop + .12, top + .068)); /* +13 mm: the forearm roll of the twist guard moves the hand's skin 4-5 mm either way, and the palm edge sat 1.5-3 cm in the bl_t boards (gate) */ }
     return A.palmY != null ? A.palmY : A.o.yTop + .04;
   }
   // top of the boards under a foot stepping off the bottom rung (a threshold board under the hatch ladder stands 3 cm above the
@@ -438,7 +438,7 @@ export function createClimb() {
     // guard: the wrist never twists more than ~100 deg about the forearm from the walk's wrist (a twist near 180 deg collapses the skin into a thin ribbon: watch R33-1)
     for (const s of ['Left', 'Right']) { const Hd = B[s + 'Hand']; if (!Hd) continue; if (!S.hq0 || !S.hq0[s]) continue;
       const r = S.hq0[s].clone().invert().multiply(Hd.quaternion); if (r.w < 0) { r.x = -r.x; r.y = -r.y; r.z = -r.z; r.w = -r.w; } let tw = Math.atan2(r.y, r.w) * 2; const lim = 1.75;
-      { const FA = B[s + 'ForeArm'], k0 = A && S.last && S.last.flat && S.last.flat[s[0] + 'H'] ? 1.3 : .9; /* palm flat on the boards at the top: the roll drew the hand's skin 4-5 mm into the boards (gate, left hand into the bl_t boards) and a ~70 deg twist there reads fine */ if (FA && Math.abs(tw) > k0) { const sh = (Math.abs(tw) - k0) * Math.sign(tw) * .65; /* pronation is the forearm's: most of a big wrist twist goes into the forearm roll (the elbow-to-wrist skin twists, as a real forearm does), the hand keeps its world turn */
+      { const FA = B[s + 'ForeArm'], k0 = .9; if (FA && Math.abs(tw) > k0) { const sh = (Math.abs(tw) - k0) * Math.sign(tw) * .65; /* pronation is the forearm's: most of a big wrist twist goes into the forearm roll (the elbow-to-wrist skin twists, as a real forearm does), the hand keeps its world turn */
           FA.quaternion.multiply(_q1().setFromAxisAngle(V(0, 1, 0), sh)); Hd.quaternion.premultiply(_q1().setFromAxisAngle(V(0, 1, 0), -sh)); FA.updateMatrixWorld(true); tw -= sh; } }
       if (Math.abs(tw) <= lim) continue;
       const fix = _q1().setFromAxisAngle(V(0, 1, 0), (Math.sign(tw) * lim - tw)); Hd.quaternion.multiply(fix); Hd.updateMatrixWorld(true); }
