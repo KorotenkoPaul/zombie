@@ -301,14 +301,20 @@ export function createMotion({ hero, db, opts = {} }) {
   // ---------- called by hero.js at the start of its post(): the pose that was on screen (after all IK) is what blends start from ----------
   // blends continue from our own last output, not the on-screen pose: hero.js adds look / lean / IK on top of motion.js every frame,
   // and starting a jump from the screen pose put that addition in twice (spine and neck snapped 10-12 deg at every clip jump)
-  function pre() { if (haveOut && !window.__mmPreScreen) return; for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; prevOut[b*4] = B.quaternion.x; prevOut[b*4+1] = B.quaternion.y; prevOut[b*4+2] = B.quaternion.z; prevOut[b*4+3] = B.quaternion.w; }
+  // the hips position as it was on screen, before mixer.update: a later stage (the game walk, a crouch) may have written it after us
+  const scrH = [NaN, NaN, NaN];
+  function pre() { { const hp = HB[HIPS] && HB[HIPS].position; if (hp) { scrH[0] = hp.x; scrH[1] = hp.y; scrH[2] = hp.z; } }
+    if (haveOut && !window.__mmPreScreen) return; for (let b = 0; b < NB; b++) { const B = HB[b]; if (!B) continue; prevOut[b*4] = B.quaternion.x; prevOut[b*4+1] = B.quaternion.y; prevOut[b*4+2] = B.quaternion.z; prevOut[b*4+3] = B.quaternion.w; }
     const hp = HB[HIPS].position; prevOutH[0] = hp.x; prevOutH[1] = hp.y; prevOutH[2] = hp.z; haveOut = true; }
   // ---------- per frame, called by hero.js right after mixer.update ----------
   const traj = [null, null, null];
   const T0 = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   function post(dt) { if (!(dt > 0)) return; dt = Math.min(dt, .1); ensureFinal();
     // three.js only writes a bone when the clip value changes, so the hips position may still be what we wrote last frame
-    { const hp = HB[HIPS].position; if (!(wroteH && hp.x === outH[0] && hp.y === outH[1] && hp.z === outH[2])) pureH = [hp.x, hp.y, hp.z]; }
+    { const hp = HB[HIPS].position; if (!(wroteH && hp.x === outH[0] && hp.y === outH[1] && hp.z === outH[2]) && !(hp.x === scrH[0] && hp.y === scrH[1] && hp.z === scrH[2] && !window.__noScrH)) pureH = [hp.x, hp.y, hp.z]; }
+    // (and not what a later stage left there: under ?style=game the walk cycle's hips stayed in the bone while the mixer had no new value,
+    // were taken for the clip's, and the body under the walk drifted 20-28 cm off the root, then snapped back when the clip wrote again:
+    // stage trace, pot / cook / eat / hatch, whole-body jumps of 12-25 cm/frame² a few frames after the walk handed back)
     const p = root.position, yaw = root.rotation.y;
     if (S.prevSim) { const vx = (p.x - S.prevSim.x) / dt, vz = (p.z - S.prevSim.z) / dt; const k = 1 - Math.exp(-dt * 12); S.simV.x += (vx - S.simV.x) * k; S.simV.z += (vz - S.simV.z) * k; S.simAv = wrapA(yaw - S.prevSim.yaw) / dt; }
     S.prevSim = { x: p.x, z: p.z, yaw };

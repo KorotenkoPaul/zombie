@@ -327,7 +327,7 @@ export function createClimb() {
     if (!A && C.bones.LeftFoot && C.bones.RightFoot) S.ft = { LF: C.bones.LeftFoot.getWorldPosition(V()), RF: C.bones.RightFoot.getWorldPosition(V()) }; /* the feet as the earlier stages left them (foot locks): the mount starts from there */
     S.fr = (S.fr || 0) + 1; if (!A && C.bones.LeftLeg && C.bones.RightLeg) { S.kn = { Left: C.bones.LeftLeg.getWorldPosition(V()).sub(C.bones.LeftUpLeg.getWorldPosition(V())), Right: C.bones.RightLeg.getWorldPosition(V()).sub(C.bones.RightUpLeg.getWorldPosition(V())) }; /* from the hip */ S.knF = S.fr; if (C.bones.LeftHand && C.bones.RightHand) S.hq0 = { Left: C.bones.LeftHand.quaternion.clone(), Right: C.bones.RightHand.quaternion.clone() }; } /* and the knees: the climb clip's first frame swung them 8-10 cm (gate: knee jump at the climb start, kl_b / ll_b) */
     if (A) { if (A.age == null) { A.age = 0; A.kn0 = S.kn && S.knF === S.fr - 1 ? S.kn : null; } else A.age += dt; }
-    if (S.W <= .001 && !A) { S.last = null; if (S.gwOff) { S.gwOff = false; window.__noGameWalk = false; } return; }
+    if (S.W <= .001 && !A) { S.last = null; if (S.gwOff) { S.gwOff = false; window.__noGameWalk = false; } if (S.npOff) { S.npOff = false; window.__noPops = false; } return; }
     const B = C.bones, root = C.root, wp = b => b.getWorldPosition(V());
     root.updateMatrixWorld(true);
     let tg, hw;
