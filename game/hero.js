@@ -2456,7 +2456,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // (Grab: the pail 35-60 cm and the axe 50-107 cm in the frame it changed parents)
  const LATE=[];let lateOn=0;function lateFn(f){LATE.push(f);lateReg();}
  let relookOn=0;function relookReg(){if(relookOn)return;relookOn=1;stage('look',()=>{if(act&&act.relook){try{act.relook();}catch(e){console.error('relook',e);}}});}
- function lateReg(){if(lateOn)return;lateOn=1;stage('guard',()=>{for(const f of LATE){try{f();}catch(e){console.error(e);}}try{quiverClear();}catch(e){}toolEase();try{loadClear(0);}catch(e){}/* the swing again on the eased pose: a pail being eased from the hip into the fist went 3.4 cm through the shins (collide) */});}
+ function lateReg(){if(lateOn)return;lateOn=1;stage('guard',()=>{for(const f of LATE){try{f();}catch(e){console.error(e);}}try{quiverClear();quiverBody();}catch(e){}toolEase();try{loadClear(0);}catch(e){}/* the swing again on the eased pose: a pail being eased from the hip into the fist went 3.4 cm through the shins (collide) */});}
  // the quiver on his back: the arrows clear his head whatever the body does (adult hero, walking out: fletching 7.7 cm in the head).
  // Each frame from its strap place on Spine2, pushed back (and a little down) by just what the head needs, eased
  const QV={base:null,par:null,x:0};
@@ -2470,6 +2470,17 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const piv=Q.localToWorld(V(0,-.45,0)),top=Q.localToWorld(V(0,.17,0));const up=top.clone().sub(piv).normalize();const bk=bones.Spine2.getWorldPosition(V()).sub(bones.Spine2.localToWorld(V(0,0,.1))).normalize();/* away from the back mostly, never out sideways off the shoulder */const aw=(QV.d||bk).clone().multiplyScalar(.35).addScaledVector(bk,.65).normalize();const ax=up.clone().cross(aw);if(ax.lengthSq()<1e-6)return;ax.normalize();
   const th=Math.min(.35,QV.x/.6);const qr=new THREE.Quaternion().setFromAxisAngle(ax,th);const wq=Q.getWorldQuaternion(new THREE.Quaternion()).premultiply(qr);const wp=Q.getWorldPosition(V()).sub(piv).applyQuaternion(qr).add(piv);
   Q.parent.updateWorldMatrix(true,false);const pq=Q.parent.getWorldQuaternion(new THREE.Quaternion());Q.position.copy(Q.parent.worldToLocal(wp));Q.quaternion.copy(pq.invert().multiply(wq));Q.updateMatrixWorld(true);}
+ /* OUTDOOR: the quiver on his back is never in his body: the tube (r 5.5 cm, from its bottom end up past the strap ring) is pushed straight back
+    off the skin of the seat, back and head (gate: hips 3-6 cm on the rungs and picking up the hare, the big-headed hero's head 6 cm while walking) */
+ let BSK=null;function bodySkin(){if(!BSK){BSK={m:null,ix:[]};root.traverse(o=>{if(o.isSkinnedMesh&&!BSK.m)BSK.m=o;});const M=BSK.m;if(M){const si=M.geometry.attributes.skinIndex,sw=M.geometry.attributes.skinWeight,n=M.geometry.attributes.position.count;
+   for(let i=0;i<n;i+=8){let bi=0,bw=-1;for(let k=0;k<4;k++){const w=GCMP(sw,i,k);if(w>bw){bw=w;bi=GCMP(si,i,k);}}const nm=M.skeleton.bones[bi].name;if(/(Hips|Spine\d?|Neck|Head|HeadTop_End|UpLeg)$/.test(nm))BSK.ix.push(i);}}}
+  const M=BSK.m;if(!M)return [];if(BSK.f===FRN)return BSK.p;const out=[];for(const i of BSK.ix){const v=M.getVertexPosition(i,new THREE.Vector3());out.push(v.applyMatrix4(M.matrixWorld));}BSK.f=FRN;BSK.p=out;return out;}
+ const QB={b:0};function quiverBody(){const P=PP();const Q=P&&P.tools&&P.tools.quiver;if(!Q||Q.parent!==bones.Spine2||Q.visible===false){QB.b=0;return;}
+  Q.updateMatrixWorld(true);const A=Q.localToWorld(V(0,-.45,0)),Bt=Q.localToWorld(V(0,.2,0));const ab=Bt.clone().sub(A);const L2=ab.lengthSq();if(L2<1e-6)return;
+  const bk=bones.Spine2.getWorldPosition(V()).sub(bones.Spine2.localToWorld(V(0,0,.1))).normalize();
+  const pen=b=>{let m=-1;const sh=bk.clone().multiplyScalar(b);for(const p of bodySkin()){const t=clamp(p.clone().sub(A).sub(sh).dot(ab)/L2,0,1);const d=A.clone().add(sh).addScaledVector(ab,t).distanceTo(p);m=Math.max(m,.075-d);}return m;};
+  const p0=pen(QB.b);let want=QB.b;if(p0>0)want=QB.b+p0*1.1;else if(QB.b>0){const p1=pen(Math.max(0,QB.b-.004));if(p1<=-.005)want=Math.max(0,QB.b-.004);}
+  QB.b+=clamp(want-QB.b,-.004,.03);if(QB.b<1e-4)return;const wp=Q.getWorldPosition(V()).addScaledVector(bk,QB.b);Q.position.copy(Q.parent.worldToLocal(wp));Q.updateMatrixWorld(true);}
  const EASE_T=['waterBucket','drainBucket','axe','logArmful','lantern'],easeSt={};
  function toolEase(){const P=PP();if(!P||!P.tools)return;const dt=1/60;
   for(const n of EASE_T){const o=P.tools[n];if(!o)continue;const S=easeSt[n];
