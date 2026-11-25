@@ -622,7 +622,9 @@ export function createHero(ctx){
    const sp=lp.clone?lp.clone():V(lp.x,lp.y,lp.z);const node=nearNode(sp);
    // a wall plate: the room side of the wall is found from the collide grid; he stands square to the plate, an arm's length off
    const plateN=()=>{const PN=ctx.props&&ctx.props.switchN&&ctx.props.switchN[o.light];if(PN)return PN.clone();/* the plate's own facing (props.js) */const C=window.__collide;if(!C||!C.depthAt)return null;let best=null,bd=1e9;for(const d of [V(1,0,0),V(-1,0,0),V(0,0,1),V(0,0,-1)]){const o1=sp.clone().addScaledVector(d,.3),o2=sp.clone().addScaledVector(d,-.06);if(C.depthAt(o1.x,o1.y,o1.z)>.005||C.depthAt(o2.x,o2.y,o2.z)<=.005)continue;const dd=Math.hypot(o1.x-root.position.x,o1.z-root.position.z);if(dd<bd){bd=dd;best=d;}}return best;};
-   const toggle=()=>{if(a.done)return;a.done=true;try{L.set(o.light,o.on!=null?!!o.on:!(L.get&&L.get(o.light)));}catch(e){}sfx&&sfx.click&&sfx.click();};
+   const isOn=()=>{try{const g=L.get&&L.get(o.light);return !!(g&&(g.on!=null?g.on:g));}catch(e){return false;}};const lighting=!plate&&(o.on!=null?!!o.on:!isOn());/* GRAB: an oil lamp is lit with a match (lights.js strikes it in the hand that is at the lamp) or put out at the wick knob */
+   const MT=(L&&L.matchTimes)||{catch:.62,out:1.35};
+   const toggle=()=>{if(a.done)return;a.done=true;a.tSet=a.t;try{L.set(o.light,o.on!=null?!!o.on:!isOn());}catch(e){}if(plate)sfx&&sfx.click&&sfx.click();};
    const reach=()=>{a.step='reach';a.t=0;if(a.low&&has('hy_take'))once('hy_take',{fade:.4,then:()=>play(IDLE(),{fade:.5})});else play(IDLE(),{fade:.4});};
    const approach=()=>{const p=root.position;const fl=floorAt(p.x,p.y+.3,p.z,.5)??p.y;a.low=sp.y-fl<.75;
     const n=plate?plateN():null;
@@ -630,23 +632,23 @@ export function createHero(ctx){
      a.from=a.viaNode?p.clone():null;a.knob=sp.clone().addScaledVector(n,.035)/* the fingers on the rocker, the palm clear of the wall boards */;const st=sp.clone().addScaledVector(n,.36).add(V(-n.z,0,n.x).multiplyScalar(.17))/* the body left of the plate: it is in front of the right shoulder */;st.y=p.y;a.faceYaw=Math.atan2(-n.x,-n.z);let k=0;
      const go=()=>{if(Math.hypot(st.x-root.position.x,st.z-root.position.z)>.12)play('30',{fade:.3,speed:1})/* steps, not a glide in the idle clip */;approachTo(a,st,0,()=>{if(Math.hypot(root.position.x-st.x,root.position.z-st.z)>.06&&++k<4)go();else{a.faceYaw=null;reach();}});H.turnStep=false;/* the step owns the walk clip now: a turn-on-the-spot left over from before dropped it to idle as the turn lined up, and he glided the last 55 cm (gate, switch after the chair) */};go();return;}
     a.step='approach';a.t=0;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
-    a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):sp.clone().add(V(0,-.15,0));
+    a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):(()=>{/* GRAB: the lamp's own side toward him: at the wick to light it, at the knob under the font to put it out */const k=sp.clone();const h=V(p.x-sp.x,0,p.z-sp.z);if(h.lengthSq()>1e-6)k.addScaledVector(h.normalize(),.07);k.y-=lighting?.04:.09;return k;})();
     const move=Math.max(0,Math.min(.9,d-(a.low?.45:.27)));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
     a.adur=Math.max(.35,move/.8);a.next=reach;H.slide={x:q.x-p.x,z:q.z-p.z,yaw:0,k:0,d:a.adur};if(move>.1)play('30',{fade:.3,speed:1.1});};
    {/* PLATE close by on the same floor (the reading chair is 60 cm from it): straight there, no loop out to the door node and back */const p=root.position;const near=plate&&Math.hypot(sp.x-p.x,sp.z-p.z)<1.8&&Math.abs(sp.y-1.15-p.y)<.15&&!H.path.length;if(near||!node)approach();else{a.viaNode=true;goTo(node,approach);}}
    a.update=dt=>{a.t+=dt;if(a.back)H.look=null;else{H.look=sp.clone();H.lookW=a.step==='reach'?1:.55;/* while he turns to it, the eyes lead and the head follows half way (gate owl-head 74 deg on orig) */}
     if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
-    if(a.step==='reach'){const clip=a.low&&has('hy_take');const tT=clip?durOf('hy_take')*.45:.42,tE=clip?durOf('hy_take'):plate?1.5:1.15;
+    if(a.step==='reach'){const clip=a.low&&has('hy_take');const tT=clip?durOf('hy_take')*.45:plate?.42:.7,tE=clip?durOf('hy_take'):plate?1.5:a.tSet!=null?a.tSet+(lighting?MT.out+.5:.85):1.6;
      /* the light changes when the fingers touch the switch (palm on it), not on a timer */
-     if(clip||!plate){if(a.t>tT)toggle();}else if(!a.done&&a.t>.2&&palmTo('Right',a.knob)<.05)toggle();/* a lamp of its own (no plate) keeps the timed click */
+     if(clip){if(a.t>tT)toggle();}else if(!plate){if(!a.done&&a.t>.3&&(palmTo('Right',a.knob)<.06||a.t>tT))toggle();}/* GRAB: the oil lamp: the match is struck as the fingers get there, held at the wick until it is shaken out */else if(!a.done&&a.t>.2&&palmTo('Right',a.knob)<.05)toggle();/* a lamp of its own (no plate) keeps the timed click */
      if(a.t>tE){toggle()/* never leaves the light as it was: the brain came back for it again and again (full gate: extra walks) */;
       /* PLATE: square to the wall he would set off sideways along it; he turns back to the room on the spot first (full gate: walks off
          the goal line 95 deg and slow after every switch) */
       if(plate&&!a.turned&&node&&N[node]){a.turned=true;const q=N[node].p,p=root.position;const dx=q.x-p.x,dz=q.z-p.z,d=Math.hypot(dx,dz)||1;/* a real step off the wall toward the room: approachTo's turn, step, turn (a turn on the spot shuffled the feet: gate jitter) */const t=p.clone().add(V(dx/d*.45,0,dz/d*.45));a.faceYaw=null;a.back=true;play('30',{fade:.3,speed:1});approachTo(a,t,0,()=>endTask());return;}
       endTask();}}
     if(a.step==='ret'){if(a.t>=a.adur)a.next();}};
-   a.post=()=>{if(a.step!=='reach'||(a.low&&!plate))return;const w=plate?smooth(0,.55,a.t)*(1-smooth(.8,1.45,a.t))/* a slower press and let-go: the arm fell back 33 cm in .27 s (gate jitter 13 mm at 5 Hz) */:smooth(0,.4,a.t)*(1-smooth(.75,1.1,a.t));const sh=bones.RightArm;const from=sh.getWorldPosition(V());
-    const v=a.knob.clone().sub(from);v.setLength(Math.max(0,v.length()-PALM))/* the wrist a palm short of the rocker along the arm (a target read back from the hand's own pose fed back on itself: 5 Hz shake) */;const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);ikList([['Right',from.add(v),w]])/* the arm alone (reachGrip's waist lean shook the hand at 5-8 Hz: gate jitter) */;};
+   a.post=()=>{if(a.step!=='reach'||(a.low&&!plate))return;const tE2=a.tSet!=null?a.tSet+(lighting?MT.out+.5:.85):1.6;const w=plate?smooth(0,.55,a.t)*(1-smooth(.8,1.45,a.t))/* a slower press and let-go: the arm fell back 33 cm in .27 s (gate jitter 13 mm at 5 Hz) */:smooth(0,.5,a.t)*(1-smooth(tE2-.5,tE2,a.t))/* GRAB: held at the lamp until the match is out */;const sh=bones.RightArm;const from=sh.getWorldPosition(V());
+    const v=a.knob.clone().sub(from);v.setLength(Math.max(0,v.length()-PALM))/* the wrist a palm short of the rocker along the arm (a target read back from the hand's own pose fed back on itself: 5 Hz shake) */;const reach=armLen*.97;if(v.length()>reach)v.setLength(reach);ikList([['Right',from.add(v),w]]);if(!plate&&a.tSet!=null&&w>.5){/* GRAB: the strike of the match (or the knob's turn): a short flick of the wrist */const u=(a.t-a.tSet)/(lighting?.22:.35);if(u>0&&u<1){const hb=bones.RightHand;hb.rotateX((lighting?.45:.3)*Math.sin(Math.PI*u)*w);hb.updateMatrixWorld(true);}}void 0/* the arm alone (reachGrip's waist lean shook the hand at 5-8 Hz: gate jitter) */;};
    return a;},
   // open or close the floor hatch over the kitchen ladder: go to its top or bottom, reach for the ring, it moves at the touch
   hatch:(o={})=>{// GRAB: BY HAND. He stands at the side of the opening facing the ring, crouches (code squat, feet planted), takes the
