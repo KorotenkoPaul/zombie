@@ -355,7 +355,7 @@ export function createMotion({ hero, db, opts = {} }) {
       const ea = wrapA(S.cyaw - yaw); if (Math.abs(ea) > .5) S.cyaw = yaw + Math.sign(ea) * .5;
       S.char.y = p.y;
       sampleClip(c, S.t, cur, curH);
-      if (S.jumped && pathing) { const back = Math.max(adv, .2); sampleClip(c, Math.max(0, S.t - back), curPrev, curPrevH); S.jvel = { q: curPrev, dt: back / FPS, dtOut: S.lastDt || dt }; } else S.jvel = null; // on a route only: at a work spot (approach slides, stops) a jump hands over as before
+      if (S.jumped && (pathing || (Math.abs(S.simAv || 0) > .3 && !window.__noRestJv))) { const back = Math.max(adv, .2); sampleClip(c, Math.max(0, S.t - back), curPrev, curPrevH); S.jvel = { q: curPrev, dt: back / FPS, dtOut: S.lastDt || dt }; } else S.jvel = null; // WALK: also on a turn on the spot off the route (at a work spot: every jump froze the legs for a frame, the gate's 5 Hz foot/head jitter in cook/store/sweep/switch, P1 jitter 24 -> 11 there)
       // into the hero's root frame (root sits at the simulation)
       const curH0 = [curH[0], curH[1], curH[2]];
       const rel = S.cyaw - yaw; const rq = yawQ(rel); const t3 = new Float32Array(3); qrot(rq, 0, curH, 0, t3, 0);

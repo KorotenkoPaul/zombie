@@ -483,10 +483,14 @@ uniform float tdCool;` + NOISE)
         // patchy: a low-frequency mask in world space, denser on the back (shady, -z) half and near the trunk
         const patch = Math.sin(pi.x * 2.1 + pi.z * 1.3) + Math.sin(pi.z * 2.7 - pi.y * 1.9) + (pi.z < AZ + 1.6 ? 0.5 : -0.4) + (radial(pi.x, pi.z) < 3 ? 0.4 : 0);
         if (patch < 0.6 || R() < 0.35) continue;
-        const p = pi.clone().addScaledVector(nrm, si.y * 0.5).add(V(rr(-0.08, 0.08), 0, rr(-0.08, 0.08)));
-        const sz = rr(0.07, 0.15);
-        M4.compose(p, orient(nrm, rr(0, 6.28)), S.set(sz * rr(1.2, 1.9), sz * 0.3, sz * rr(1, 1.4))); im.setMatrixAt(n, M4);
-        const v = rr(0.8, 1.2); col.setRGB(0.08 * v, 0.115 * v, 0.03 * v); im.setColorAt(n++, col);
+        // [PROPS roof round] moss roots in the damp step where this slate's butt edge lies on the one below, as a short row of
+        // small domed cushions along that edge (the flat 15-30 cm ovals on the open slate read as green blots painted on)
+        const dn = V(1, 0, 0).applyQuaternion(qi); if (dn.y > 0) dn.negate(); const ed = nrm.clone().cross(dn).normalize();
+        const base = pi.clone().addScaledVector(dn, si.x * 0.5 + 0.012).addScaledVector(nrm, -si.y * 0.1);
+        for (let j = 0, m = 1 + Math.floor(R() * 3); j < m && n < NUP + Math.round(110 * MUL); j++) {
+          const p = base.clone().addScaledVector(ed, rr(-0.45, 0.45) * si.z), sz = rr(0.028, 0.055);
+          M4.compose(p, orient(nrm, rr(0, 6.28)), S.set(sz * rr(1.1, 1.6), sz * 0.55, sz * rr(0.9, 1.2))); im.setMatrixAt(n, M4);
+          const v = rr(0.8, 1.2); col.setRGB(0.07 * v, 0.1 * v, 0.03 * v); im.setColorAt(n++, col); }
       }
     }
     // plank landings and the deck: moss along the back (north) edges and the board ends, where water stays longest
