@@ -324,7 +324,7 @@ export function createClimb() {
     const fadeT = A ? .3 : (S.fade || .3);
     S.W += Math.sign(S.wTarget - S.W) * Math.min(Math.abs(S.wTarget - S.W), dt / fadeT);
     if (!A && C.bones.LeftFoot && C.bones.RightFoot) S.ft = { LF: C.bones.LeftFoot.getWorldPosition(V()), RF: C.bones.RightFoot.getWorldPosition(V()) }; /* the feet as the earlier stages left them (foot locks): the mount starts from there */
-    S.fr = (S.fr || 0) + 1; if (!A && C.bones.LeftLeg && C.bones.RightLeg) { S.kn = { Left: C.bones.LeftLeg.getWorldPosition(V()).sub(C.bones.LeftUpLeg.getWorldPosition(V())), Right: C.bones.RightLeg.getWorldPosition(V()).sub(C.bones.RightUpLeg.getWorldPosition(V())) }; /* from the hip */ S.knF = S.fr; } /* and the knees: the climb clip's first frame swung them 8-10 cm (gate: knee jump at the climb start, kl_b / ll_b) */
+    S.fr = (S.fr || 0) + 1; if (!A && C.bones.LeftLeg && C.bones.RightLeg) { S.kn = { Left: C.bones.LeftLeg.getWorldPosition(V()).sub(C.bones.LeftUpLeg.getWorldPosition(V())), Right: C.bones.RightLeg.getWorldPosition(V()).sub(C.bones.RightUpLeg.getWorldPosition(V())) }; /* from the hip */ S.knF = S.fr; if (C.bones.LeftHand && C.bones.RightHand) S.hq0 = { Left: C.bones.LeftHand.quaternion.clone(), Right: C.bones.RightHand.quaternion.clone() }; } /* and the knees: the climb clip's first frame swung them 8-10 cm (gate: knee jump at the climb start, kl_b / ll_b) */
     if (A) { if (A.age == null) { A.age = 0; A.kn0 = S.kn && S.knF === S.fr - 1 ? S.kn : null; } else A.age += dt; }
     if (S.W <= .001 && !A) { S.last = null; return; }
     const B = C.bones, root = C.root, wp = b => b.getWorldPosition(V());
@@ -420,12 +420,18 @@ export function createClimb() {
       const Hd = B[s + 'Hand']; if (Hd) { const a = wp(Hd); const dir = V(0, 1, 0).applyQuaternion(Hd.getWorldQuaternion(new THREE.Quaternion())); const tip = a.clone().addScaledVector(dir, .09);
         const flat = S.last.flat && S.last.flat[k];
         const he = S.last.hangE || 0; const aim = flat ? V(0, -.015, -zDir * .09).lerp(V(0, -.09, -zDir * .015), he) : V(0, -.02, -zDir * .09);
-        C.turnBone(Hd, tip, a.clone().add(aim), w);
+        if (s === 'Left') S.hr = A ? (A.mode === 'land' ? 1 - sstep(0, .55, A.lt) : 1) : Math.max(0, (S.hr == null ? 0 : S.hr) - dt * 3); /* letting go: the wrist goes back to the clip's as the hand comes down (palm-to-rung kept on a hanging arm twisted the wrist 135 deg: watch R33-1 ribbon) */
+        const wr = w * (S.hr == null ? 1 : S.hr);
+        C.turnBone(Hd, tip, a.clone().add(aim), wr);
         // palm onto the rung (facing the ladder and a little down) or flat on the boards (facing down), not turned out to the side
         if (M.pn && M.pn[k]) { const hq = Hd.getWorldQuaternion(new THREE.Quaternion()); const fa = V(0, 1, 0).applyQuaternion(hq).normalize(); const n = M.pn[k].clone().applyQuaternion(hq);
           const want = flat ? V(0, -1, 0).lerp(V(-sx * zDir, 0, 0), he) : V(0, -1, -zDir * .25); n.addScaledVector(fa, -n.dot(fa)); want.addScaledVector(fa, -want.dot(fa));
-          if (n.lengthSq() > 1e-6 && want.lengthSq() > 1e-6) { n.normalize(); want.normalize(); const ang = Math.atan2(n.clone().cross(want).dot(fa), n.dot(want)); rotWorld(Hd, fa, ang * w); } } }
+          if (n.lengthSq() > 1e-6 && want.lengthSq() > 1e-6) { n.normalize(); want.normalize(); const ang = Math.atan2(n.clone().cross(want).dot(fa), n.dot(want)); rotWorld(Hd, fa, ang * wr); } } }
     }
+    // guard: the wrist never twists more than ~100 deg about the forearm from the walk's wrist (a twist near 180 deg collapses the skin into a thin ribbon: watch R33-1)
+    for (const s of ['Left', 'Right']) { const Hd = B[s + 'Hand']; if (!Hd) continue; if (!S.hq0 || !S.hq0[s]) continue;
+      const r = S.hq0[s].clone().invert().multiply(Hd.quaternion); if (r.w < 0) { r.x = -r.x; r.y = -r.y; r.z = -r.z; r.w = -r.w; } const tw = Math.atan2(r.y, r.w) * 2, lim = 1.75; if (Math.abs(tw) <= lim) continue;
+      const fix = _q1().setFromAxisAngle(V(0, 1, 0), (Math.sign(tw) * lim - tw)); Hd.quaternion.multiply(fix); Hd.updateMatrixWorld(true); }
     if (A && A.lookPt) aimHead(A.lookPt, W * .85);
     // the face off the rungs (after the look, which would turn it back): the climb clip leans the head ~35 deg to the ladder and the brow went 2-3 cm into the top rung at the hatch.
     // A climber keeps the head up: the middle of the skull (9 cm on from the neck; the face and brow ~11 cm round it) stays 20 cm off the rung plane, 4-6 cm off the rung, by tipping the head back (eased)
