@@ -257,18 +257,50 @@ export function buildTree(THREE, o) {
       if (y < rf.yb - 1.2 || !wood(x, y, z)) continue;
       const w = Math.min(1, (y - (rf.yb - 1.2)) / 1.0); P[i + 1] = y + at(x, z) * w; }
   }
+  // the model's limbs are big triangles: a vertex pushed out of a room drags long faces that still cut across it (a limb lay
+  // diagonally through the bedroom behind the bunk, in front of the back wall). Split the faces near a room first, so the
+  // pushed surface folds round the room's sides instead of cutting through it.
+  if ((o.avoid || []).length) {
+    const near = (x, y, z) => o.avoid.some(b => x > b[0] - 0.45 && x < b[1] + 0.45 && y > b[2] - 0.45 && y < b[3] + 0.45 && z > b[4] - 0.45 && z < b[5]);
+    for (let pass = 0; pass < 2; pass++) {
+      const mid = new Map(), out = [];
+      const split = (a, b) => { const k = a < b ? a * 4194304 + b : b * 4194304 + a; let m = mid.get(k); if (m !== undefined) return m;
+        const ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2], bx = P[b * 3], by = P[b * 3 + 1], bz = P[b * 3 + 2], mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
+        if (Math.hypot(ax - bx, ay - by, az - bz) < 0.16 || !(near(mx, my, mz) || near(ax, ay, az) || near(bx, by, bz))) { mid.set(k, -1); return -1; }
+        m = P.length / 3; P.push(mx, my, mz); UV.push((UV[a * 2] + UV[b * 2]) / 2, (UV[a * 2 + 1] + UV[b * 2 + 1]) / 2); G.push((G[a] + G[b]) / 2); mid.set(k, m); return m; };
+      let any = false;
+      for (let t = 0; t < I.length; t += 3) { const v = [I[t], I[t + 1], I[t + 2]], m = [split(v[0], v[1]), split(v[1], v[2]), split(v[2], v[0])], n = (m[0] >= 0) + (m[1] >= 0) + (m[2] >= 0);
+        if (!n) { out.push(v[0], v[1], v[2]); continue; } any = true;
+        if (n === 3) { out.push(v[0], m[0], m[2], m[0], v[1], m[1], m[2], m[1], v[2], m[0], m[1], m[2]); continue; }
+        const r = m[0] >= 0 && (n === 1 || m[2] < 0) ? 0 : m[1] >= 0 && (n === 1 || m[0] < 0) ? 1 : 2;
+        const A = v[r], B = v[(r + 1) % 3], C = v[(r + 2) % 3], mAB = m[r], mBC = m[(r + 1) % 3];
+        if (n === 1) out.push(A, mAB, C, mAB, B, C); else out.push(A, mAB, C, mAB, B, mBC, mAB, mBC, C); }
+      I.length = 0; for (const q of out) I.push(q); if (!any) break;
+    }
+  }
   const M = 0.1;
   for (let i = 0; i < P.length; i += 3) {
     let x = P[i], y = P[i + 1], z = P[i + 2];
     for (const b of o.avoid || []) {
       if (x > b[0] - M && x < b[1] + M && y > b[2] - M && y < b[3] + M && z > b[4] - M && z < b[5]) {
         // push out through the nearest side, never through the open front
-        const d = [[x - (b[0] - M), 0], [(b[1] + M) - x, 1], [z - (b[4] - M), 4], [y - (b[2] - M), 2], [(b[3] + M) - y, 3]].sort((a, c) => a[0] - c[0])[0];
+        // a limb lying along the back wall goes out the back (flat against the wall, hidden from the room), not split between
+        // the back, a side and the floor, which tore it apart across the room's corner
+        const d = [[x - (b[0] - M), 0], [(b[1] + M) - x, 1], [Math.max(0, z - (b[4] - M) - 0.45), 4], [y - (b[2] - M), 2], [(b[3] + M) - y, 3]].sort((a, c) => a[0] - c[0])[0];
         if (d[1] === 0) x = b[0] - M; else if (d[1] === 1) x = b[1] + M; else if (d[1] === 4) z = b[4] - M; else if (d[1] === 2) y = b[2] - M; else y = b[3] + M;
       }
     }
     P[i] = x; P[i + 1] = y; P[i + 2] = z;
   }
+  // a face whose corners went out through different sides of a room still bridges across it (two corners on the floor, one
+  // on the side wall: a sheet of bark cutting the room's corner). Its middle is inside the room: drop it. What is left
+  // ends at the room's walls and floor, which hide the cut.
+  if ((o.avoid || []).length) { const E = 0.03, keep = [];
+    for (let t = 0; t < I.length; t += 3) { const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
+      const x = (P[a] + P[b] + P[c]) / 3, y = (P[a + 1] + P[b + 1] + P[c + 1]) / 3, z = (P[a + 2] + P[b + 2] + P[c + 2]) / 3;
+      if (o.avoid.some(q => x > q[0] - M + E && x < q[1] + M - E && y > q[2] - M + E && y < q[3] + M - E && z > q[4] - M + E && z < q[5] - E)) continue;
+      keep.push(I[t], I[t + 1], I[t + 2]); }
+    I.length = 0; for (const q of keep) I.push(q); }
   // ---------- roots (Pavel / critic T22): the model's roots are a few big flat faces. Refine them where they lie on the
   // ground and carve irregular folds running out along each root, a few sharp cuts across them, and bark lumps, all
   // deep enough to read from the normal camera. Edges are split by a rule that depends only on the edge itself
@@ -624,7 +656,7 @@ float cN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(cH(i)
   vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition);float hx=dFdx(hgt),hy=dFdy(hgt);
   vec3 r1=cross(dpy,normal),r2=cross(normal,dpx);float det=dot(dpx,r1);
   normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.1);}`)
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*.3*smoothstep(-.6,1.2,u2);}');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{float u2=dot((vCW-cC).xz,cDir);totalEmissiveRadiance+=vec3(1.,.55,.22)*diffuseColor.rgb*doorGlow*1.5*smoothstep(-.6,1.2,u2);}');
     };
     cmat.customProgramCacheKey = () => 'hollow';
     // rough, uneven walls (critic N4: a smooth dome reads as plastic): ridges of wood fibre running into the trunk and
