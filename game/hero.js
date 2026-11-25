@@ -3310,7 +3310,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   // getting up he pushes the quilt off as he rises: it follows his body for the first moments, then settles flat
   /* BED: lying down the cover starts as his legs come over the mattress, so they slide in UNDER the quilt (it rose over him only after he lay down, he sank into it) */if(c.dir>0&&!c.qon&&u>.3&&(u>.75||!FIT.bed||['Left','Right'].every(sd=>!bones[sd+'Leg']||wp(bones[sd+'Leg']).z<FIT.bed.z1-.02))){c.qon=true;bedPress(true);}/* R56-1: only once both knees are over the mattress: the quilt can't reach past its hem, so a knee still out over the edge stood up through its top as it rose */
   {const P=window.__props||P3;if(P&&P.quiltLive)P.quiltLive(.1);}
-  if(c.dir<0&&!c.qoff&&u>.5){c.qoff=true;bedPress(false);}/* the legs are out from under it first */
+  if(c.dir<0&&!c.qoff&&(u>.5||FIT.bed&&['Left','Right'].some(sd=>bones[sd+'Leg']&&wp(bones[sd+'Leg']).z>FIT.bed.z1-.12))){c.qoff=true;bedPress(false);}/* as soon as a knee nears the edge: the raised quilt's hanging side stood in their way and the legs went out through it (morning) *//* the legs are out from under it first */
   bedClipGuard();
   if(c.t>=c.dur){H.bedC=null;c.then&&c.then();}}
  // the Fal bed clips were made on a low bed: played on the bunk they kicked both legs up toward the upper bunk and, getting up, rolled
