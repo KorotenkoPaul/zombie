@@ -3132,7 +3132,8 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   const hp=wp(bones.Hips),f=fwd(root.rotation.y),right=V().crossVectors(V(0,1,0),f).normalize();
   for(const sd of ['Left','Right']){const U=bones[sd+'UpLeg'],L=bones[sd+'Leg'];if(!U||!L)continue;const k=wp(L);const off=k.clone().sub(hp).dot(right);const lim=.19;if(Math.abs(off)<=lim)continue;
    const k2=k.clone().addScaledVector(right,-(Math.abs(off)-lim)*Math.sign(off));turnBone(U,k,k2,KN.w);}}
- function bedClipTick(dt){const c=H.bedC;if(!c)return;c.t=Math.min(c.dur,c.t+dt);const u=c.u=c.t/c.dur;
+ // the guard above lets go over 0.6 s after the clip, under the sleep cross-fade (switched off at once it untilted the pelvis and threw both feet 15 cm up)
+ const BCF={t:1};function bedClipTick(dt){const c=H.bedC;if(!c){if(BCF.t<.6&&H.inBed){BCF.t+=dt;bedClipGuard(1-smooth(0,.6,BCF.t));}else BCF.t=1;return;}if(c.dir>0)BCF.t=0;c.t=Math.min(c.dur,c.t+dt);const u=c.u=c.t/c.dur;
   // across the bed: first along the edge toward the pillow, then in under the upper bunk (getting up: out first)
   if(c.hx0!=null){bones.Hips.position.x=c.hx0;bones.Hips.position.z=c.hz0;}
   const kx=c.dir>0?smooth(.05,.6,u):smooth(.1,.6,u),kz=c.dir>0?smooth(.22,.74,u):smooth(0,.42,u);/* lying down: in from the edge as soon as his chest is down, so the hips are on the mattress when the back lands (R23-2: they stayed 14 cm past the edge, the body hovered) */
@@ -3147,10 +3148,10 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
  // the Fal bed clips were made on a low bed: played on the bunk they kicked both legs up toward the upper bunk and, getting up, rolled
  // him backward head-down toward the foot end (phone watch r5). The body stays head-up (neck never below the hips) and the legs
  // stay low: knees at most ~14 cm over the hip joints, so the legs slide and swing, never fly.
- function bedClipGuard(){if(!bones.Neck)return;root.updateMatrixWorld(true);const hp=wp(bones.Hips),nk=wp(bones.Neck);const up=nk.sub(hp).normalize();
-  if(up.y<.06){const ax=V().crossVectors(up,V(0,1,0));if(ax.lengthSq()>1e-6)rotW(bones.Hips,ax.normalize(),Math.asin(.06)-Math.asin(Math.max(-1,up.y)));}
+ function bedClipGuard(w=1){if(!bones.Neck)return;root.updateMatrixWorld(true);const hp=wp(bones.Hips),nk=wp(bones.Neck);const up=nk.sub(hp).normalize();
+  if(up.y<.06){const ax=V().crossVectors(up,V(0,1,0));if(ax.lengthSq()>1e-6)rotW(bones.Hips,ax.normalize(),(Math.asin(.06)-Math.asin(Math.max(-1,up.y)))*w);}
   for(const sd of ['Left','Right']){const U=bones[sd+'UpLeg'],L=bones[sd+'Leg'],F=bones[sd+'Foot'];if(!U||!L||!F)continue;
-   dropTo(U,L,wp(U).y+.14,1);}/* the shin is left to the clip and the knee hinge: turning it freely flipped the foot 50 cm in one frame (gate f12659) */
+   dropTo(U,L,wp(U).y+.14,w);}/* the shin is left to the clip and the knee hinge: turning it freely flipped the foot 50 cm in one frame (gate f12659) */
   const c=H.bedC,B=FIT.bed;if(!c||!B)return;
   // getting up the clip turned the pelvis ~50 degrees toward the pillow and swung the left arm over his head (into the upper bunk):
   // the pelvis turns to face the room as he comes up to sit, and a hand above ~35 cm over the mattress goes down beside the hip
@@ -3344,7 +3345,7 @@ stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(d
    app(L.a);const g0=legLow(sd);app(L.a+.04);const g1=legLow(sd);U.quaternion.copy(q0);root.updateMatrixWorld(true);
    let want=L.a;const tgt=-.005;/* a soft mattress gives ~1 cm under a heel */
    if(g0!=null&&g1!=null){const sl=(g1-g0)/.04;if(Math.abs(sl)>.05){if(g0<tgt)want=L.a+Math.min(.5,Math.max(-.5,(tgt-g0)/sl));else if(g0>tgt+.02)want=L.a-Math.sign(sl)*Math.min(Math.abs(L.a),(g0-tgt-.01)/Math.abs(sl));}}else want=0;
-   want=Math.max(-.7,Math.min(.7,want));const up=g0!=null&&g0<tgt;/* out of the mattress at once (the heel crosses the edge in ~6 frames), back down gently */L.t=L.t==null||up?want:L.t+(want-L.t)*Math.min(1,dt*6);const rt=up?6:1.5;L.a+=Math.max(-rt*dt,Math.min(rt*dt,L.t-L.a));app(L.a*L.w);}});
+   want=Math.max(-.7,Math.min(.7,want));const up=g0!=null&&g0<tgt,far=!c&&g0!=null&&g0>tgt+.03;/* out of the mattress at once (the heel crosses the edge in ~6 frames); lying, down at once when the pose under it came up by itself (after the sleep clip took over, the lift kept on top of it left the heel hanging 8 cm over the mattress); small differences eased */L.t=L.t==null||up||far?want:L.t+(want-L.t)*Math.min(1,dt*6);const rt=far?30:up?6:1.5;L.a+=Math.max(-rt*dt,Math.min(rt*dt,L.t-L.a));app(L.a*L.w);}});
  function runSlot(slot,dt){const L=STAGES[slot];for(let i=0;i<L.length;i++){try{L[i](dt);}catch(e){console.error('hero slot '+slot,e);}}}
  function update(dt){if(dt<=0)return;FRN++;runSlot('pre',dt);const r=updateCore(dt);runSlot('collide',dt);runSlot('grab',dt);runSlot('pops',dt);runSlot('guard',dt);if(INV.on)invCheck(dt);return r;}
  // HERO-RULES 3, live: ?inv in the URL (or HH.inv.on=true) checks the final pose every frame (geometry only, no bone axes)
