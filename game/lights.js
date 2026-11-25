@@ -509,7 +509,8 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // Phones too (it joins the light pool): without it a phone room was a lamp hot spot in dark red-brown walls, ~35%
     // darker than desktop and the photo's warm-tan wall-to-wall glow. A pool light is a downward half-space, so on phones
     // it sits higher (near head height) to reach the walls as well as the floor.
-    const b = new THREE.PointLight(0xFFCB90, 0, 3.6, 0); b.position.copy(R.c); if (MOBILE) b.position.y += .9; scene.add(b);
+    // creamy: the light off warm-tan planks (the lamps' own orange made the rooms read deep orange; photo: cream-tan)
+    const b = new THREE.PointLight(MOBILE ? 0xFFDDBA : 0xFFD6A8, 0, 3.6, 0); b.position.copy(R.c); if (MOBILE) b.position.y += .9; scene.add(b);
     glows.push({ room, l: b, I: R.bounce * .5, bounce: true });
   }
   for (const w of windows) {
@@ -838,7 +839,8 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // lights and bloom), so the same lamp read ~40% too bright on desktop in the workshop and 25-45% too dark on phones.
   // One gain per room and platform brings both to the reference photo's room brightness (home view, one room lit with the
   // hero in it; mean luminance photo/desktop/phone: bedroom 89/80/68 (cosy, kept under the photo), kitchen 108/91/87, workshop 84/94/83).
-  const ROOM_GAIN = MOBILE ? { bedroom: 2.3, kitchen: 1.2, workshop: 1 } : { bedroom: 1, kitchen: 1, workshop: .45 };
+  // (re-measured after the clear lantern glass and the bedroom lantern's move to its hook: kitchen and bedroom had dropped ~12%)
+  const ROOM_GAIN = MOBILE ? { bedroom: 2.8, kitchen: 1.5, workshop: 1.05 } : { bedroom: 1.2, kitchen: 1.35, workshop: .42 };
   const roomGain = r => { const o = window.__lgain; return (o && o[r] != null ? o[r] : ROOM_GAIN[r]) ?? 1; };
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
   // [PERF] a lamp's shadow map only needs redrawing when what it sees has moved, and the one thing that moves under a lamp
