@@ -229,7 +229,10 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // photo: a wall lamp high on the back wall above the bunk, by the ladder end. Its light falls forward and down, so the
   // upper bunk lies in the light and the lower one sits in the upper's shadow, with the floor in front lit.
   // (The hero switches it at Props' wall switch, so it can hang out of his reach.)
-  const bPos = V(-1.0, BD + 2.55, 1.6);   // on the back wall just past the ladder end of the bunk (photo)
+  // Props may hang it on a hook he can reach (P3.lights.bedroomLamp = { pos, hook?, own? }): then it hangs there. own: Props built the
+  // housing itself (as the kitchen's), so no housing/chain here.
+  const BL = PL.bedroomLamp || null;
+  const bPos = BL ? BL.pos.clone() : V(-1.0, BD + 2.55, 1.6);   // on the back wall just past the ladder end of the bunk (photo)
   {
     // Pavel: cosy, not bright. A warm, muted lantern whose main light is a shadowed cone falling down and back onto the
     // bunk, so the upper bunk throws its shadow over the lower one (one 512/1024 spot map, redrawn only while the hero
@@ -243,7 +246,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
     // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
     const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
-    const hg = housing(bPos); lastHang = null; hang(bPos, .23, true); const panes = claimHousing(bPos);
+    const hg = BL && BL.own ? null : housing(bPos); lastHang = null; if (!(BL && BL.own)) hang(bPos, .23, !BL); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const fo = oilFlame(bPos, hg);
     add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra,
