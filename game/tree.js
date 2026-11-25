@@ -174,7 +174,15 @@ export function buildTree(THREE, o) {
       { const d1 = Math.hypot(xr, zr) || 1e-6, ts = Math.min(1, Math.max(0, (2.8 - yy) / 2.8));
         const sk = (o.flare ?? 1.1) * Math.pow(ts, 2) * Math.min(1, d1 / 1.4) * Math.max(0.35, 1 - Math.max(0, d1 - 3.2) / 5);
         const fk = (d1 + sk) / d1; xr *= fk; zr *= fk; }
-      P.push(AX + xr, yy, AZ + zr);
+      // the photo's main roots reach ~1.5x further, diagonally to the bottom corners of the frame, and stand taller where
+      // they leave the trunk (Ground's side-by-side). The front centre (ladder foot, path, pond) keeps its short roots.
+      let yo = yy;
+      if (o.rootReach !== false) { const d2 = Math.hypot(xr, zr) || 1e-6, an = Math.atan2(zr, xr);
+        if (yy < 1.6 && d2 > 3.2) { const low = Math.min(1, (1.6 - yy) / 0.8), front = Math.max(0, Math.sin(an)), centre = Math.max(0, 1 - Math.abs(angDiff(an, Math.PI / 2)) / 0.55);
+          const kk = (o.rootReach ?? 0.6) * low * (0.4 + 0.6 * front) * (1 - 0.85 * centre), nd = 3.2 + (d2 - 3.2) * (1 + kk); xr *= nd / d2; zr *= nd / d2; }
+        if (yy > -0.3 && yy < 1.5) { const d3 = Math.hypot(xr, zr), hump = Math.max(0, 1 - Math.abs(d3 - 3.1) / 2.4);
+          yo = yy + 0.32 * hump * Math.min(1, (yy + 0.3) / 0.7) * Math.min(1, (1.5 - yy) / 0.5); } }
+      P.push(AX + xr, yo, AZ + zr);
       UV.push(su ? su.getX(i) : 0, su ? su.getY(i) : 0); G.push(0);
     }
     // trunk radius along the hollow's direction, measured from the mesh (for the hollow, the cave and the door light)
@@ -241,17 +249,22 @@ export function buildTree(THREE, o) {
     // the workshop roof. Clumps on the camera-facing limb ends there (Env's side-by-side), clear of the rooms.
     { const AVL = o.avoidLeaves || [], inAv = (x, y, z, p) => AVL.some(b => x > b[0] - p && x < b[1] + p && y > b[2] - p && y < b[3] + p && z > b[4] - p && z < b[5] + p);
       const side = []; for (let i = 0; i < P.length; i += 3) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ;
-        if (y < 5.5 || y > 12.5 || z < -0.5) continue; if (!((x < (MOB(o) ? -3.5 : -4.2) && x > -10) || (x > 4.9 && x < 10.5))) continue; side.push([P[i], y, P[i + 2], Math.abs(x) + z * 0.6]); }
+        if (y < 5.5 || y > 12.5) continue;
+        /* never in front of the house (the photo never puts leaves over a room): left just behind the bedroom/kitchen wall line, inside the
+           phone frame (its left edge is x ~ AX-5.7 at the trunk); right behind the deck/workshop plane */
+        if (x < -4.9 && x > -8.5 && z > -3.8 && z < -1.2) side.push([P[i], y, P[i + 2], 10 - Math.abs(x)]);
+        else if (x > 4.9 && x < 10.5 && z > -3 && z < 0.4) side.push([P[i], y, P[i + 2], 10 - x]); }
       side.sort((a, b) => b[3] - a[3]); const got = [];
-      for (const c of side) { if (got.length >= (o.sideClumps ?? 10)) break; if (inAv(c[0], c[1], c[2], 1.4)) continue;
+      for (const c of side) { if (got.length >= (o.sideClumps ?? 14)) break; if (inAv(c[0], c[1], c[2], 1.4)) continue;
         if ([...got, ...picked].some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.2)) continue; got.push(c); }
       for (const c of got) leafSpots.push({ p: V(c[0], c[1] + 0.2, c[2] + 0.2), s: rnd(1.6, 2.1) }); }
     // the photo has no sky between the two big limbs above the bedroom roof: one or two clumps behind the ridge close it
     { const hole = []; for (let i = 0; i < P.length; i += 3) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ;
-        if (x > -0.5 && x < 3.5 && y > 14 && y < 19.5 && z < 1 && z > -4) hole.push([P[i], y, P[i + 2], y - Math.abs(x - 1.5)]); }
+        if (x > -0.5 && x < 3 && y > 12.8 && y < 15.5 && z < -2.5 && z > -5.5) hole.push([P[i], y, P[i + 2], -Math.abs(y - 14) - Math.abs(x - 1.2)]); }
       hole.sort((a, b) => b[3] - a[3]); const hg = [];
       for (const c of hole) { if (hg.length >= 2) break; if (hg.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 2.4)) continue; hg.push(c); }
-      for (const c of hg) leafSpots.push({ p: V(c[0], c[1] + 0.4, c[2] - 0.3), s: rnd(2.0, 2.4) }); }
+      hg.push([AX + 1.7, 13.6, AZ - 3.1]); /* the gap right of the main stem, seen from the home view */
+      for (const c of hg) leafSpots.push({ p: V(c[0], c[1] + 0.2, c[2] - 0.3), s: rnd(2.0, 2.4) }); }
     // the crown: the photo's top is a full canopy of big clumps with only small sky gaps
     const top = [];
     for (let i = 0; i < P.length; i += 3) if (P[i + 1] > 15.2 && Math.abs(P[i] - AX) < 7.5) top.push([P[i], P[i + 1], P[i + 2]]);
@@ -398,6 +411,14 @@ export function buildTree(THREE, o) {
       }
       GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
       P[i * 3] += nx * h; P[i * 3 + 1] += ny * h; P[i * 3 + 2] += nz * h; }
+    // the big twisting folds (model pass above) shade dark in their troughs too, so the fluted trunk reads from the home view
+    // like the photo's, not as a flat brown wall (same phase as the folds; off near the hollow)
+    if (o.folds !== false) for (let i = 0; i < nv; i++) { const x = P[i * 3] - AX, y = P[i * 3 + 1], z = P[i * 3 + 2] - AZ, d0 = Math.hypot(x, z);
+      if (d0 < 0.3 || d0 > 3.6 || y < -0.4 || y > 12.5) continue; const an = Math.atan2(z, x);
+      const nearDoor = Math.max(0, 1 - Math.max(0, Math.abs(angDiff(an, doorAng)) - 0.45) / 0.35) * Math.max(0, Math.min(1, (door.y1 + 1.4 - y) / 0.6));
+      const w = (1 - nearDoor) * Math.min(1, (y + 0.4) / 0.8) * Math.min(1, (12.5 - y) / 1.5) * Math.min(1, (3.6 - d0) / 0.6);
+      const ph = 5 * an + 0.22 * y + 0.9 * Math.sin(2 * an + 0.35 * y), gr = Math.pow(Math.max(0, Math.cos(ph)), 1.6);
+      GR[i] = Math.max(GR[i], (o.foldShade ?? 0.7) * w * gr); }
     if (typeof window !== 'undefined') window.__rootDetail = { verts: P.length / 3 - n0, tris: I.length / 3 - t0 };
   }
   const g = new THREE.BufferGeometry();
