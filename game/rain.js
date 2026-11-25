@@ -275,7 +275,7 @@ if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.|
         const t0 = performance.now(), budget = hi ? 1e9 : (MOBILE ? 3 : 5);
         for (; scan < NX * NZ && performance.now() - t0 < budget; scan++) { const ix = scan % NX, iz = Math.floor(scan / NX); const x = X0 + (ix + .5) * CS, z = Z0 + (iz + .5) * CS;
           const y = hi ? cellTop(ix, iz, x, z) : castDown(x, z); hm[scan] = y; kind[scan] = y > groundH(x, z) + 0.6 ? 1 : 0; }
-        if (scan >= NX * NZ) { R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; wetBoards(topMats); }
+        if (scan >= NX * NZ) { R.ready = true; hTex.needsUpdate = true; buildSplashes(); targets = null; for (const m of (window.__props && window.__props.wetMats) || []) topMats.add(m); /* [PROPS] all merged props: the per-pixel height test keeps the roofed ones dry */ wetBoards(topMats); }
         else return;
       }
       // drips keep going after the rain, thinning out as things dry (wetness dries over a couple of minutes)
