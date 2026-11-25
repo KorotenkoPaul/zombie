@@ -1300,7 +1300,7 @@ addEventListener('resize',resize);
 // ================= main loop =================
 const clock=new THREE.Clock();let acc=0,fr=0,ft=0,perf=false;
 function frame(){requestAnimationFrame(frame);if(PERF.skip())return;try{frameBody();}catch(e){if(!frame.err){frame.err=1;console.error(e);}}}
-function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;HATCH.update(dt);
+function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const T=performance.now()/1000;const TS=window.__TS||1;HATCH.update(dt*TS);
  const wasN=isNight(hour);hour+=dt*hps()*TS;if(hour>=24)hour-=24;const nowN=isNight(hour);
  if(!over&&!wasN&&nowN){spawnLeft=0;toast('Ночь '+dayNo,'В домике зажигается свет');hint('Ночью <b>нажми на зомби</b> — герой выстрелит из лука.');}
  if(!over&&wasN&&!nowN){dayNo++;toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
@@ -1317,7 +1317,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  const lampOn=clamp(smooth(17.6,19.4,hour)+(1-smooth(5.6,7.4,hour))*(hour<12?1:0)+rainK*.6,0,1);
  // no warm room fill: daylight only; at night rooms are lit by their lamps alone (game/lights.js)
  ambL.intensity=dayK*(1-rainK*.3)*.55;
- P3.update(dt,{reading:false/* the hero turns the pages himself (hero.js) */,cooking:false,heat:LIGHTS.level('oven')});
+ P3.update(dt*TS,{reading:false/* the hero turns the pages himself (hero.js) */,cooking:false,heat:LIGHTS.level('oven')});
  LIGHTS.update({dt,T,lampOn,dayK,task:hero.task,state:hero.state,asleep:!!hero.inBed});
  rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.visible=rayMat.uniforms.o.value>.002;/* [ENV] skip the three big additive planes when they add nothing (night, rain) */rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
@@ -1329,7 +1329,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  // --- spawn ---
  if(nowN&&!over&&spawnLeft>0){spawnT-=dt*TS;if(spawnT<=0){if(!zombG)loadZombie();else{spawnLeft--;spawnT=rnd(5,9)/Math.min(2,1+dayNo*.15);spawnZombie();}}}
  // --- hero: body, routine, walking (hero.js) ---
- if(!over)HH.update(dt*TS);
+ if(!over){/* a time warp (window.__TS, critic/QA) runs the hero in game-time sub-steps of at most 1/20 s, and the props he moves (door, bolt, hatch lid, the tools he sets down) on the same clock: a big step cannot skip the bolt or leave the bucket in his hand */const g=dt*TS,n=Math.min(40,Math.max(1,Math.ceil(g/.05)));for(let i=0;i<n;i++)HH.update(g/n);}
  bow.visible=hero.task==='guard';
  reload=Math.max(0,reload-dt*TS);if(aimTarget&&!aimTarget.alive)aimTarget=null;
  if(queued&&(!queued.alive))queued=null;if(queued&&reload<=0&&hero.task==='guard'&&!hero.path.length){const q=queued;queued=null;fireAt(q);}
