@@ -675,7 +675,7 @@ function floorBoards(x0,x1,y,z0,z1,o={}){const ok=(x,z)=>(!o.shape||o.shape(x,z)
    /* [LIGHTS] o.sub (rooms): a dark subfloor under the boards. The gaps between the boards are real, and at night the bright fog and sky below showed through them as glowing blue lines in the lit rooms (Props). One dark sheet per run, a hair wider than the row, 6 cm under the boards' tops */
    if(o.sub)for(const [a0,b0] of runs(z=>ok(x,z),z0,z1,.04,.12))subSheet(V(x,y+.035-.09,(a0+b0)/2),b0-a0,.262,.016,new THREE.Euler(-Math.PI/2,-Math.PI/2,0,'YXZ'));}
  for(let z=z0+.35;z<z1-.3;z+=1.0)for(const [a,b2] of runs(x=>ok(x,z),x0,x1,.05,.3))board(V((a+b2)/2,y-.12,z),b2-a,.18,.13,null,{dark:true});
- if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true});}
+ if(!o.noEdge)for(const [a,b2] of runs(x=>ok(x,z1-.1),x0,x1,.05,.3))board(V((a+b2)/2,y-.105,z1-.06),b2-a+.04,.28,.12,null,{dark:true,tint:o.edgeTint});}
 function holeAt(hs,a,b2){return hs.some(h=>a>h[0]&&a<h[1]&&b2>h[2]&&b2<h[3]);}
 // split a run [a,b] into pieces lo..hi long with a gap g between them (first piece random, so joints stagger)
 function cutRun(a,b,lo,hi,g){const out=[];let s=a;if(b-a>hi){s=a+rnd(lo*.4,hi*.8);out.push([a,s-g/2]);s+=g/2;}while(b-s>hi){const e=s+rnd(lo,hi);if(b-e<lo*.5)break;out.push([s,e-g/2]);s=e+g/2;}out.push([s,b]);return out;}
@@ -834,7 +834,7 @@ post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start abo
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
 // bedroom (left, top) with a door to the outside ledge
 const BX0=-4.2,BX1=.4;
-floorBoards(BX0-.1,BX1+.05,BD,.5,4.4,/* photo: the bedroom floor overhangs the kitchen front as a thick deck (was flush at 3.95) */{holes:[[-4.3,-3.55,2.32,3.25]],sub:true});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
+floorBoards(BX0-.1,BX1+.05,BD,.5,4.4,/* photo: the bedroom floor overhangs the kitchen front as a thick deck (was flush at 3.95) */{holes:[[-4.3,-3.55,2.32,3.25]],sub:true,edgeTint:1.7});/* three whole boards out (x -4.3..-3.55): no board half over the opening *//* hatch in front of the kitchen↔bedroom ladder: the hero climbs it from the open kitchen side (z 2.62) and steps off behind it (z 1.95) */
 // the hatch lid: hinged on the front edge of the opening, open by default (stands up, out of the climb), the hero can
 // shut it at night or when zombies come. window.__house.hatch = {open(), close(), toggle(), isOpen(), grab, box}
 const HATCH=(()=>{/* own plank materials: plain meshes sharing boardMat's instanced program came out flat white (critic T20) */const hB=boardMat.clone();plankShader(hB);const hD=boardMat.clone();plankShader(hD);hD.color.setScalar(.5);const hx0=-4.30/* the opening runs under the side wall: the climb line (x -3.98) needs the room (collide.js) */,x0=-4.17,x1=-3.55,z0=2.32,z1=3.25,y=BD+.035,g=new THREE.Group();g.position.set((x0+x1)/2,y,z1);scene.add(g);
@@ -990,7 +990,7 @@ win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+
   const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;gm.emissiveIntensity=.12;gm.opacity=.1;WINS.push({mat:gm,room:'trunk',g});
   const pane=new THREE.Mesh(new THREE.PlaneGeometry(W,H),gm);pane.position.z=D-.09;pane.renderOrder=2;g.add(pane);
   // the frame: jambs, a lintel and a deep sill that run past them, a cross bar in the glass
-  const fb=(w,h,d,x,y,z,rz=0)=>{g.updateMatrixWorld(true);const v=h>w;const q=g.quaternion.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rz+(v?Math.PI/2:0))));board(V(x,y,z).applyMatrix4(g.matrixWorld),v?h:w,v?w:h,d,new THREE.Euler().setFromQuaternion(q),{wall:true,tint:rnd(.76,.92)});};/* photo: a honey-wood frame: real plank instances (grain, bevels, wear, shading like the walls; critic T27), not one flat-coloured mesh *//* photo: a honey-wood frame (own warm wood, not the dark beam board) */
+  const fb=(w,h,d,x,y,z,rz=0)=>{g.updateMatrixWorld(true);const v=h>w;const q=g.quaternion.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rz+(v?Math.PI/2:0))));board(V(x,y,z).applyMatrix4(g.matrixWorld),v?h:w,v?w:h,d,new THREE.Euler().setFromQuaternion(q),{tint:rnd(.66,.8)});};/* photo: a honey-wood frame (not wall-kind: the interior night warmth lit it like a lamp, critic T27): real plank instances (grain, bevels, wear, shading like the walls; critic T27), not one flat-coloured mesh *//* photo: a honey-wood frame (own warm wood, not the dark beam board) */
   // the casing runs from the face right back into the bark, so the lit lining never shows from the side
   fb(.11,H+.16,L+.02,-W/2-.055,0,zc+.01,.012);fb(.11,H+.16,L+.02,W/2+.055,.005,zc+.005,-.01);fb(W+.2,.09,L,0,H/2+.08,zc-.01);fb(W+.2,.07,L,0,-H/2-.07,zc-.01);
   fb(W+.44,.12,.16,.01,H/2+.1,D-.03,.018);fb(W+.38,.075,.24,-.01,-H/2-.075,D+.01,-.012);

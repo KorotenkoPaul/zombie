@@ -238,6 +238,17 @@ export function buildTree(THREE, o) {
       const m = Math.max(arch(P[a * 3], P[a * 3 + 1], P[a * 3 + 2]), arch(P[b * 3], P[b * 3 + 1], P[b * 3 + 2]), arch(P[c * 3], P[c * 3 + 1], P[c * 3 + 2]));
       if (m < 1.0) continue; I.push(a, b, c);
     }
+    // autumn: a few dead twigs on the big limbs, bare grey and snapped off short (the photo's oak has small broken twigs
+    // between the leaf clumps). Part of the bark mesh: no new draw call, ~40 verts each.
+    if (o.deadTwigs !== false) { const AVB = (o.avoidLeaves || []).concat(o.avoid || []), inAvT = (x, y, z) => AVB.some(b => x > b[0] - 0.6 && x < b[1] + 0.6 && y > b[2] - 0.6 && y < b[3] + 0.6 && z > b[4] - 0.6 && z < b[5] + 0.6);
+      const tc = []; for (let i = 0; i < P.length; i += 30) { const x = P[i] - AX, y = P[i + 1], z = P[i + 2] - AZ, d = Math.hypot(x, z); if (d > 3.8 && d < 9.5 && y > 6.5 && y < 16 && z > -2.5 && z < 4.2 && !inAvT(P[i], y, P[i + 2])) tc.push([P[i], y, P[i + 2], rnd(0, 1)]); }
+      tc.sort((a, b) => a[3] - b[3]); const tw = [];
+      for (const c of tc) { if (tw.length >= (MOB(o) ? 8 : 14)) break; if (tw.some(q => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 1.6)) continue; tw.push(c); }
+      for (const c of tw) { const out = V(c[0] - AX, 0, c[2] - AZ).normalize(), dir = V(out.x + rnd(-.5, .5), rnd(.35, .9), out.z + rnd(-.5, .5)).normalize(), L = rnd(.45, .85), r0 = rnd(.035, .055);
+        const b0 = V(c[0], c[1], c[2]).addScaledVector(dir, -0.08), side = V(-dir.z, 0, dir.x).normalize();
+        const kink = b0.clone().addScaledVector(dir, L * 0.55).addScaledVector(side, rnd(-.08, .08)), tip = kink.clone().addScaledVector(dir.clone().addScaledVector(side, rnd(-.35, .35)).normalize(), L * 0.45);
+        for (const tb of [tube([b0, kink, tip], 4, 5, t => r0 * (1 - 0.65 * t))].concat(rnd(0, 1) < .5 ? [tube([kink.clone(), kink.clone().addScaledVector(V(rnd(-.5, .5), .8, rnd(-.5, .5)).normalize(), L * .35)], 2, 4, t => r0 * .5 * (1 - .6 * t))] : [])) {
+          const off = P.length / 3; P.push(...tb.P); UV.push(...tb.UV); for (let k = 0; k < tb.G.length; k++) G.push(0); for (const q of tb.I) I.push(q + off); } } }
     // leaves: clumps at the limb tips and a crown at the top, with gaps between them
     const cand = [];
     for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i] - AX, P[i + 2] - AZ), y = P[i + 1]; if ((d > 3.6 && y > 4.5 && (Math.abs(P[i] - AX) > 3 || y > 15)) || y > 15.5) cand.push([P[i], y, P[i + 2], d + y * 0.35]); }
