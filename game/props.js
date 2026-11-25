@@ -949,7 +949,7 @@ function sideBench() {
   // under-shelf crate with offcuts
   { const b = new THREE.Group(); b.position.set(-.15, .165, 0); g.add(b); W(b, .4, .16, .3, 0, .08, 0, { mat: M.woodDark }); for (let i = 0; i < 4; i++) W(b, rr(.25, .38), .03, .05, rr(-.03, .03), .17 + i * .01, -.1 + i * .065, { mat: M.woodLight, ry: rr(-.15, .15) }); }
   bake(g); g.userData.info = { top: H }; return g;
-}
+} /* [PROPS] the photo's L-shaped bench: a corner top joins the side bench to the main bench's right end (deterministic, no rr: the random stream of later props stays as it was) */ function cornerBench() { const g = new THREE.Group(); const L2 = .71, D = .42, H = .78; W(g, L2, .05, D, 0, H - .025, 0, { mat: M.woodLight, r: .01 }); W(g, L2 - .03, .045, D - .03, 0, .14, 0, { mat: M.woodDark, r: .008 }); for (const [sx, sz] of [[1, -1], [1, 1], [-1, -1]]) W(g, .06, H - .05, .06, sx * (L2 / 2 - .05), (H - .05) / 2, sz * (D / 2 - .05), { mat: M.wood, grain: 1 }); W(g, L2 - .1, .08, .03, 0, H - .09, D / 2 - .03, { mat: M.wood }); /* small-parts chest: three drawers with brass pulls */ { const b = new THREE.Group(); b.position.set(.17, H, -.07); b.rotation.y = -.08; g.add(b); W(b, .26, .2, .2, 0, .1, 0, { mat: M.wood, r: .006 }); for (let i = 0; i < 3; i++) { W(b, .23, .05, .012, 0, .035 + i * .063, .101, { mat: M.woodLight, r: .003 }); add(b, new THREE.SphereGeometry(.009, 8, 6), M.brass, 0, .035 + i * .063, .112); } } /* brushes standing in a paint tin, a jar of screws, a coil of rope */ { const c = can(.12, .045, M.cans[1]); c.position.set(-.2, H, .08); g.add(c); [[-.012, .01, .2, 0x8A5A2E], [.014, -.008, -.15, 0x6A4424], [.002, .016, .05, 0xA0703A]].forEach(([dx, dz, t, col], i) => { const br = new THREE.Group(); br.position.set(-.2 + dx, H + .1, .08 + dz); br.rotation.set(t * .6, 0, t); g.add(br); add(br, new THREE.CylinderGeometry(.0045, .006, .2, 8), std2(col), 0, .1, 0); add(br, rb(.024, .03, .009, .003), M.iron, 0, .005, 0); add(br, rb(.022, .035, .008, .003), std2(0x2A2018), 0, -.025, 0); }); } { const j = jar(.11, .04, M.jarGlass); j.position.set(-.05, H, .1); g.add(j); } add(g, new THREE.TorusGeometry(.05, .014, 8, 20), std2(0xB89A66), -.08, .155 + .014, -.05, Math.PI / 2, 0, 0); add(g, new THREE.TorusGeometry(.045, .014, 8, 20), std2(0xB89A66), -.08, .155 + .04, -.05, Math.PI / 2, 0, .4); /* the lower shelf: tins and a lidded crock */ { const c = can(.1, .04, M.cans[3]); c.position.set(.14, .165, .02); g.add(c); const c2 = can(.08, .035, M.cans[0]); c2.position.set(.23, .165, -.06); g.add(c2); const j = jar(.12, .05, M.glazeCream); j.position.set(.06, .165, -.09); g.add(j); } bake(g); g.userData.info = { top: H }; return g; }
 
 // ------------- deck -------------
 function telescope() {
@@ -1301,7 +1301,7 @@ function meatBag0() { const X = mx(), g = new THREE.Group(); const prof0 = [[0, 
   { const c = new THREE.CatmullRomCurve3([V(.04, -.045, .02), V(.07, -.07, .045), V(.075, -.12, .05)]); add(g, new THREE.TubeGeometry(c, 8, .004, 5), X.rope); } // the twine's loose end
   g.userData.grip = V(0, 0, 0); return bake(g); }
 function logArmful() { return fine(() => logArmful0()); }
-function logArmful0() { const X = mx(), g = new THREE.Group(); for (const [x, y, v] of [[-.06, 0, 3], [.06, 0, 4], [0, .1, 5]]) { const l = logPiece(.5, .065, v); l.position.set(x, y, 0); l.rotation.z = rr(0, 3); g.add(l); }
+function logArmful0() { const X = mx(), g = new THREE.Group(); for (const [x, y, v, z, len, r] of [[-.06, 0, 3, -.035, .5, .065], [.062, -.002, 4, .04, .46, .06], [0, .1, 5, .012, .53, .068]]) { const l = logPiece(len, r, v); l.position.set(x, y, z); l.rotation.z = rr(0, 3); g.add(l); } /* [PROPS] staggered ends and a little spread in length and girth: three split logs, not one flat slab of bark */
   // [PROPS round] two cords pulled tight round the bundle (they were round hoops standing off the logs like handles): each
   // follows the hull of the three logs, so it lies on the bark and runs straight across the gaps
   const PS = []; g.updateMatrixWorld(true); g.traverse(o => { if (!o.isMesh) return; const P = o.geometry.attributes.position, v = V(); for (let i = 0; i < P.count; i += 3) { v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); PS.push([v.x, v.y]); } });
@@ -1466,12 +1466,12 @@ export function buildProps(ctx) {
     for (const [dx, dz, h, col, tip] of [[-.015, .01, .2, 0xB0832E, 0x2A2420], [.012, -.008, .19, 0x8E3226, 0x2A2420], [.0, .016, .22, 0x6B4A2C, 0xD8C8A0], [.018, .012, .17, 0x34546E, 0x3A3028]]) { const t = .1 * Math.sign(dx || .5); add(g, new THREE.CylinderGeometry(.004, .004, h, 5), std2(col), dx + Math.sin(t) * h * .5, .06 + h * .5, dz, 0, 0, -t); add(g, new THREE.CylinderGeometry(.006, .004, .03, 5), std2(tip), dx + Math.sin(t) * (h + .01), .06 + h + .012, dz, 0, 0, -t); }
     g.position.set(3.44, T, 1.64); scene.add(g); }
   place('wshelves', workshopShelves(.95), 4.4, WS + .95, 1.85, { ry: -Math.PI / 2, solid: false, wall: true });
-  const stl = place('stool', stool(), 1.5, WS, 2.85, { seat: true }); /* moved off the vice: he stands there to saw (workshop thread) */ out.surfaces.stoolSeat = stl.userData.floorY + .48;
+  const stl = place('stool', stool(), 3.2, WS, 3.12, { seat: true }); /* [PROPS] mid-room like the photo, off his walk lines (wmid-bench, wmid-wwin) and the side bench (was 1.5, 2.85 by the barrel; moved off the vice before) */ out.surfaces.stoolSeat = stl.userData.floorY + .48;
   place('wbarrel', barrel(.8), 1.55, WS, 1.55);
   place('wbucket', bucket(.36, true), 4.05, WS, 3.4);
   place('wrug', rug(1.6, .95, 'green', '#D9C99A'), 2.8, WS, 3.05, { solid: false });
   place('wlamp', bake(domeShade(1.2)), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
-  place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 });
+  place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 }); place('cornerbench', cornerBench(), 3.975, WS, 1.73);
 
   // ---------- deck and landings ----------
   place('telescope', telescope(), 3.28, DK, 1.3, { ry: -.6 + Math.PI }).position.y += .018; /* feet on the boards, not in them; 22 cm in from the rail (LEISURE: he stood between the rail posts behind the eyepiece and his foot and hand went into them) */
