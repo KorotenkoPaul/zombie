@@ -405,9 +405,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // the bedroom door (props door, bdoor <-> ledge) shut or bolted and his way goes through it: he unbolts and opens it by hand
     // first (critic W6: bolted all night, in the morning he walked out through the wall post beside it)
     { const D = window.__props && window.__props.door, tgt = A.node || AREA_NODE[area(name)] || AREA_NODE[to];
-      // waits for the body: HH.caps.doorOpen = MAKE.bolt understands {lock:false, open:true} (unbolt, then swing the leaf open by hand);
-      // without it an unbolt leaves the leaf shut and only adds a door visit (gate: bolt jumps)
-      if (D && HH.caps && HH.caps.doorOpen && HH.hasTask && HH.hasTask('bolt') && (D.bolt > .1 || D.open < .4) && throughDoor(tgt)) plan.push({ task: 'bolt', opts: { lock: false, open: true }, why: 'отпирает и открывает дверь' }); }
+      // MAKE.bolt {lock:false, open:true}: unbolt, then the leaf swung open by hand (e45ad15). The body also stops any walk at a
+      // shut leaf (H.doorBlocked, hero.js goTo); tick() then puts this same step in front of the stopped one (wake-ups, exits)
+      if (D && HH.hasTask && HH.hasTask('bolt') && (D.bolt > .1 || D.open < .4) && throughDoor(tgt)) plan.push({ task: 'bolt', opts: { lock: false, open: true }, why: 'отпирает и открывает дверь' }); }
     for (const r of roomsOnWay(A.node || AREA_NODE[area(name)] || AREA_NODE[to])) if (r !== from && r !== to && ROOM_LAMP[r] && lampOn(ROOM_LAMP[r]) && Math.random() < .85)
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'по пути: забытая лампа — гасит' });
     // the floor hatch is closed and the way goes through it: open it first (without a hatch task the ladder climb opens it by hand)
@@ -451,12 +451,15 @@ export function createBrain({ HH, lights, hour, isNight }) {
     else plan.push({ task: name, opts: ECON && name === 'cook' ? { fromFridge: true } : {}, why: reason });
   }
 
+  let lastSt = null;   // the step the body runs now (a walk stopped at the shut door starts it again after the unbolt)
   function startNext() {
     let st = plan.shift();
     // a lamp step planned in the dark, but it is light by now: skip it
     while (st && st.task === 'switch' && st.opts.on && st.opts.light !== 'candle' && !dark(hour())) st = plan.shift();
     if (!st) return false;
+    lastSt = st;
     why = st.why || why;
+    if (st.again) { delete st.again; job = st.job || null; extra = st.extra || null; lastOpts = st.opts; expected = st.task; if (st.cur0) { cur = st.cur0; cur.t = 0; delete st.cur0; } tr('again:' + (st.extra || st.job || st.task)); setGait(); HH.startTask(st.task, st.opts); return true; }
     // he leaves the stove after really cooking: a portion of meat and a log are used, a meal waits
     if (st.task !== 'cook' && !(st.task === 'switch' && plan.some(p => p.task === 'cook'))) bookCook();
     job = st.job || null; extra = st.extra || null; lastOpts = st.opts;
@@ -687,6 +690,16 @@ export function createBrain({ HH, lights, hour, isNight }) {
     startleT -= dt;
     { const r = ROOM_OF(H.node); if (r !== roomNow) { roomNow = r; roomT = 0; } else if (!(v.inBed)) roomT += dt; }
     if (!v.free) return;
+    // his walk stopped at the shut (or bolted) bedroom door (hero.js goTo): unbolt and open it by hand first, then the same step
+    // again, at once (critic W6: in the morning he walked out through the leaf; now not one route crosses it while it is shut)
+    if (H.doorBlocked && v.task !== 'bolt' && HH.hasTask && HH.hasTask('bolt')) {
+      const B = H.doorBlocked; H.doorBlocked = null; const D = window.__props && window.__props.door;
+      // the house is shut for the night: a lamp beyond the bolted door is not worth unbolting for (it burns on; lamps never go out by themselves)
+      if (v.task === 'switch' && D && D.bolt > .5 && (locked || lateHours(v.hour))) { tr('door:skip>switch'); if (!startNext()) { const d = decide(v.hour); planFor(d.name, v.hour, reasonOf(d)); startNext(); } return; }
+      if (lastSt && lastSt.task === v.task) plan.unshift({ ...lastSt, again: true, cur0: cur });
+      plan.unshift({ task: 'bolt', opts: { lock: false, open: true }, why: 'дверь закрыта — отпирает и открывает' });
+      tr('door:blocked>' + (v.task || '-') + '@' + (B.node || '')); startNext(); return;
+    }
     const h = v.hour;
     // the body has not caught up with the last request yet (or the game took over: guard, repair): wait
     if (v.task && expected && v.task !== expected) return;
@@ -717,6 +730,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
         if (h < 12) { day.hadTea = false; day.bolted = false; day.retried = {}; day.teas = 0; day.justWoke = true; day.wokeAt = h; day.justAte = false; }   // a new day (not after a nap)
         tr('wake'); const d = decide(h); planFor(d.name, h, 'проснулся, хочет: ' + reasonOf(d));
         if (locked) { const rest = plan.splice(0); lockSteps(); plan.push(...rest); }
+        // morning: the night is over, he opens the house (critic W6): the bolt drawn and the bedroom door swung open by hand,
+        // whether or not his first job goes out that way (not in a lockdown, not after a nap)
+        else if (h < 12 && HH.hasTask && HH.hasTask('bolt')) { const D = window.__props && window.__props.door;
+          if (D && (D.bolt > .1 || D.open < .4) && !plan.some(st => st.task === 'bolt')) plan.unshift({ task: 'bolt', opts: { lock: false, open: true }, why: 'утро — отпирает дверь' }); }
         startNext();
       }
       return;
