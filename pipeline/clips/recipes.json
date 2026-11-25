@@ -436,5 +436,11 @@
  "scan_bow": {
   "src": "fal scan_bow-23",
   "note": "Fal Hunyuan (bought, seed 23): stands still, bow down in the left hand, listens and slowly scans left/right with small weight shifts. Head lifted (headlevel). 6 s loop, seam smoothed."
+ },
+ "log_pick": {
+  "src": "69_70",
+  "t0": 2.0,
+  "t1": 4.3,
+  "note": "Real mocap (CMU 69_70 squat, pick up object) in place: smoothed, feet pinned (plantfeet), knees opened to >=35 interior (kneeopen), ankle cap 100, trunk lean raised to <=40 in the low part with arms reaching down (reachdown), hands kept 0.30 apart after the grab (handspread), elbows bent to carry at chest 1.12 m (carryup), head up (headlevel+neckcap), pelvis yaw drift removed (unyaw). 2.33 s. hy_logpick."
  }
 }
