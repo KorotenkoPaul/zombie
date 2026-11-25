@@ -183,6 +183,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // bounce: the bench and floor under the cone throw warm light back over the whole room (the photo's workshop is warm
     // wall to wall; ours was a bright corner under the dome and a dark left half). Unshadowed, phones take it from the pool.
     const wb = new THREE.PointLight(0xFFB066, 0, 3.4, 2); wb.position.copy(wPos).add(V(-1.0, -.7, .15)); scene.add(wb);
+    // phones: light bounced off the bench and floor travels UP (walls, pegboard, the hero's body and face), so its pool cone
+    // looks up and stops at the ceiling; a down cone lit only the floor under the bench and left him and the walls dark
+    wb.userData.poolUp = WS + 3.3;
     add('workshop', 'workshop', 'electric', wPos, { lights: [{ l: sp, I: 11.5 }, { l: wb, I: MOBILE ? 2.9 : 2.6 }], emis, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
@@ -203,11 +206,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
     // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
-    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); scene.add(bb);
+    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
     const hg = housing(bPos); lastHang = null; hang(bPos, .23, true); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const b = bulbMesh(bPos, .065);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, { l: bb, I: MOBILE ? 1.35 : 1.25 }], emis: [[b, 5], ...panes.map(m => [m, .6])],
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: [[b, 5], ...panes.map(m => [m, .6])],
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -395,9 +398,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const spill = new THREE.SpotLight(0xFFA04C, 0, 9, .75, 1, 1.4);
     spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
     spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
-    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 1.4, haloTint: 0xFF9E52,
+    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 2.0, haloTint: 0xFF9E52,
       // the photo's brightest warm spot at the foot of the tree (door moved down into view, ab2ddf4): a hotter hollow and spill
-      extra: (k, f) => { if (glow) glow.value = 3.4 * k * f; }, autoFn: c => c.lamps > .3 });
+      extra: (k, f) => { if (glow) glow.value = 4.6 * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
@@ -415,14 +418,16 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   };
   const glows = [];
   // the camera, captured as the scene renders: a window's outside halo must not shine into the room through the glass
-  let cam = null;
-  { const prev = scene.onBeforeRender; scene.onBeforeRender = function (r, sc, c, ...a) { cam = c; if (prev) prev.call(this, r, sc, c, ...a); }; }
+  let cam = null, rdr = null;
+  { const prev = scene.onBeforeRender; scene.onBeforeRender = function (r, sc, c, ...a) { cam = c; rdr = r; if (prev) prev.call(this, r, sc, c, ...a); }; }
   for (const [room, R] of Object.entries(ROOMS)) {
-    if (MOBILE) continue;      // phones: no separate bounce light; the room lantern has a softer, longer falloff instead
     // bounce = light thrown back by the lit walls: no falloff inside the room (decay 0, soft cut at the walls), so it
     // never makes a hot spot on whatever stands next to it (the upper bunk sat 10 cm from the old one and burned white)
-    const b = new THREE.PointLight(0xFFCB90, 0, 3.6, 0); b.position.copy(R.c); scene.add(b);
-    glows.push({ room, l: b, I: R.bounce * .5 });
+    // Phones too (it joins the light pool): without it a phone room was a lamp hot spot in dark red-brown walls, ~35%
+    // darker than desktop and the photo's warm-tan wall-to-wall glow. A pool light is a downward half-space, so on phones
+    // it sits higher (near head height) to reach the walls as well as the floor.
+    const b = new THREE.PointLight(0xFFCB90, 0, 3.6, 0); b.position.copy(R.c); if (MOBILE) b.position.y += .9; scene.add(b);
+    glows.push({ room, l: b, I: R.bounce * .5, bounce: true });
   }
   for (const w of windows) {
     if (!w.g || !ROOMS[w.room]) continue;
@@ -674,6 +679,12 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       w.sp.scale.setScalar(.03 + a * .12); w.sp.material.opacity = w.age < 0 ? 0 : .35 * Math.sin(Math.PI * a); w.sp.visible = w.sp.material.opacity > .004; }
   }
   let cookT = 0, t = 0, frame = 0;
+  // Phone and desktop light a room differently (phones: four pooled half-space cones, no point shadows; desktop: omni
+  // lights and bloom), so the same lamp read ~40% too bright on desktop in the workshop and 25-45% too dark on phones.
+  // One gain per room and platform brings both to the reference photo's room brightness (home view, one room lit with the
+  // hero in it; mean luminance photo/desktop/phone: bedroom 89/80/68 (cosy, kept under the photo), kitchen 108/91/87, workshop 84/94/83).
+  const ROOM_GAIN = MOBILE ? { bedroom: 2.3, kitchen: 1.2, workshop: 1 } : { bedroom: 1, kitchen: 1, workshop: .45 };
+  const roomGain = r => { const o = window.__lgain; return (o && o[r] != null ? o[r] : ROOM_GAIN[r]) ?? 1; };
   let quality = 2, shadowEvery = MOBILE ? 3 : 2;   // shadow maps redrawn every Nth frame
   // [PERF] a lamp's shadow map only needs redrawing when what it sees has moved, and the one thing that moves under a lamp
   // is the hero. So besides the cadence, a redraw needs the hero (root, head, hands, feet: everything he holds moves with
@@ -704,6 +715,125 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       case 'fire': return .8 + noise(T * 1.6 + k) * .1 + noise(T * 6 + k) * .07 + noise(T * 15 + k) * .03;
       default: return 1 + noise(T * 40) * .004;
     }
+  }
+
+
+  // ---------- contact shadows / ambient occlusion on the room floors ----------
+  // Furniture stood "floating" in the warm lamp light: no darkening where the floor meets a wall, a leg, the bunk or the
+  // stove. Cheap and the same on phones: every ~2 s one room is baked from BELOW (an orthographic camera just above the
+  // floor looking up, so it sees the lowest thing over each spot of floor: legs and walls at 0 cm, the bunk's underside at
+  // 30 cm, a table top at 75 cm), 128x128 per room, on the GPU (no read-back). A soft blur of "how close is the nearest
+  // thing above" gives the occlusion; one transparent decal over the three floors darkens by it (1 draw call for all).
+  // The hero is left out of the bake (he moves): his own soft contact blob follows him indoors (1 more draw call).
+  // Floor rectangles and the two ladder openings follow index.html (floorBoards/wall* of each room).
+  const AO = (() => {
+    const F = { kitchen: KT, bedroom: BD, workshop: WS }, TOP = .035;   // board tops sit ~3.5 cm above the level
+    const RM = [
+      { room: 'kitchen', x0: -4.4, x1: -.9, z0: 1.0, z1: 4.6, holes: [[-1.5, -.92, 3.0, 3.9]] },
+      { room: 'bedroom', x0: -4.2, x1: .4, z0: .95, z1: 3.95, holes: [[-4.3, -3.55, 2.32, 3.25]] },
+      { room: 'workshop', x0: .9, x1: 4.6, z0: 1.2, z1: 5.3, holes: [] },
+    ];
+    const N = RM.length, RES = 128, H = 1.0;   // the bake sees up to 1 m above the floor
+    const rtA = new THREE.WebGLRenderTarget(RES * N, RES, { depthBuffer: true }), rtB = new THREE.WebGLRenderTarget(RES * N, RES, { depthBuffer: false });
+    for (const t of [rtA.texture, rtB.texture]) { t.generateMipmaps = false; t.minFilter = t.magFilter = THREE.LinearFilter; }
+    // bake material: the height of the surface over the floor -> occlusion (1 at the floor, 0 from 60 cm up)
+    const uF = { value: 0 };
+    const bakeM = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+    bakeM.onBeforeCompile = sh => { sh.uniforms.uF = uF;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vAoW;').replace('#include <project_vertex>', '#include <project_vertex>\n{ vec4 w = vec4( transformed, 1. );\n#ifdef USE_INSTANCING\n w = instanceMatrix * w;\n#endif\n vAoW = ( modelMatrix * w ).xyz; }');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vAoW; uniform float uF;').replace('#include <dithering_fragment>', '#include <dithering_fragment>\nvec3 fn = normalize( cross( dFdx( vAoW ), dFdy( vAoW ) ) ); if ( vAoW.y < uF - .012 || ( abs( fn.y ) > .8 && !gl_FrontFacing ) ) discard;\ngl_FragColor = vec4( 1. - smoothstep( 0., .9, vAoW.y - uF ), 0., 0., 1. );'); };
+    bakeM.customProgramCacheKey = () => 'lightsAOBake';
+    const bc = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, H);
+    const mats = RM.map(() => new THREE.Matrix4());
+    // blur: 2D gaussian-ish, ~14 cm, inside each room's tile
+    const blur = new THREE.ShaderMaterial({ uniforms: { t: { value: rtA.texture }, px: { value: new THREE.Vector2(1 / (RES * N), 1 / RES) }, n: { value: N } },
+      vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = vec4( position.xy, 0., 1. ); }',
+      fragmentShader: 'uniform sampler2D t; uniform vec2 px; uniform float n; varying vec2 vU;\n' +
+        'void main(){ float tile = floor( vU.x * n ), lo = tile / n + px.x * .5, hi = ( tile + 1. ) / n - px.x * .5; float s = 0., w = 0.;\n' +
+        ' for ( int i = -4; i <= 4; i++ ) for ( int j = -4; j <= 4; j++ ) { float k = exp( -float( i * i + j * j ) / 10. ); vec2 u = vU + vec2( float( i ), float( j ) ) * px * 2.2; u.x = clamp( u.x, lo, hi );\n' +
+        '  s += texture2D( t, u ).r * k; w += k; }\n gl_FragColor = vec4( s / w, 0., 0., 1. ); }', depthTest: false, depthWrite: false });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blur); quad.frustumCulled = false; const qs = new THREE.Scene(); qs.add(quad); const qc = new THREE.Camera();
+    // the decal: one mesh, rectangles over each floor minus its ladder opening
+    const pos = [], tl = [], idx = [];
+    const rect = (x0, x1, z0, z1, y, t) => { if (x1 - x0 < .01 || z1 - z0 < .01) return; const b = pos.length / 3;
+      pos.push(x0, y, z0, x1, y, z0, x1, y, z1, x0, y, z1); tl.push(t, t, t, t); idx.push(b, b + 2, b + 1, b, b + 3, b + 2); };
+    RM.forEach((R, i) => { const y = F[R.room] + TOP + .012;   // just over the rugs too (a contact shadow lies on the rug as well)
+      if (!R.holes.length) rect(R.x0, R.x1, R.z0, R.z1, y, i);
+      else { const [hx0, hx1, hz0, hz1] = R.holes[0], ax0 = Math.max(R.x0, hx0), ax1 = Math.min(R.x1, hx1);
+        rect(R.x0, ax0, R.z0, R.z1, y, i); rect(ax1, R.x1, R.z0, R.z1, y, i); rect(ax0, ax1, R.z0, Math.max(R.z0, hz0), y, i); rect(ax0, ax1, Math.min(R.z1, hz1), R.z1, y, i); } });
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('tile', new THREE.Float32BufferAttribute(tl, 1)); g.setIndex(idx);
+    const uK = { value: 0 };
+    const dm = new THREE.ShaderMaterial({ uniforms: { t: { value: rtB.texture }, m: { value: mats }, n: { value: N }, k: uK },
+      vertexShader: 'attribute float tile; uniform mat4 m[' + N + ']; varying vec3 vC; varying float vT;\n' +
+        'void main(){ vec4 w = modelMatrix * vec4( position, 1. ); int ti = int( tile + .5 ); mat4 M = m[0];\n' + RM.map((_, i) => i ? ` if ( ti == ${i} ) M = m[${i}];` : '').join('') +
+        '\n vec4 c = M * w; vC = c.xyz / c.w; vT = tile; gl_Position = projectionMatrix * viewMatrix * w; }',
+      fragmentShader: 'uniform sampler2D t; uniform float n, k; varying vec3 vC; varying float vT;\n' +
+        'void main(){ vec2 u = vC.xy * .5 + .5; float o = texture2D( t, vec2( ( vT + clamp( u.x, .004, .996 ) ) / n, u.y ) ).r;\n' +
+        ' gl_FragColor = vec4( 0., 0., 0., k * pow( o, .7 ) ); }',
+      transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, fog: false });
+    const mesh = new THREE.Mesh(g, dm); mesh.name = 'roomAO'; mesh.renderOrder = 1; mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh);
+    let next = 0, baked = 0, clock = 0, heroIn = -1, age = 0, late = false; const dirty = new Set();
+    const hidden = [], _bx = new THREE.Box3(), _sz = V();
+    // rugs, mats, papers: flat things lying on the boards cast no occlusion (from below they would cover the whole floor)
+    const thin = o => { if (!o.isMesh || o.isInstancedMesh || !o.geometry) return false; if (o.userData.aoThin === undefined) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); _bx.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld).getSize(_sz); o.userData.aoThin = _sz.y < .05 && _sz.x * _sz.z > .02; } return o.userData.aoThin; };
+    function bake(r, i) {
+      const R = RM[i], fy = F[R.room] + TOP, cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2, hw = (R.x1 - R.x0) / 2 + .05, hd = (R.z1 - R.z0) / 2 + .05;
+      bc.left = -hw; bc.right = hw; bc.top = hd; bc.bottom = -hd; bc.near = 0; bc.far = H + .4; bc.updateProjectionMatrix();
+      bc.position.set(cx, fy - .4, cz); bc.up.set(0, 0, 1); bc.lookAt(cx, fy + 5, cz); bc.updateMatrixWorld(true);
+      mats[i].multiplyMatrices(bc.projectionMatrix, bc.matrixWorldInverse);
+      uF.value = fy;
+      const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root;
+      hidden.length = 0; scene.traverseVisible(o => { if (o === mesh || o === hr || o === heroBlob || o.isSprite || o.isPoints || o.isLine || (o.material && o.material.transparent && !o.isSkinnedMesh) || thin(o)) hidden.push(o); });
+      for (const o of hidden) o.visible = false;
+      const prevRT = r.getRenderTarget(), ov = scene.overrideMaterial, bg = scene.background, fog = scene.fog, su = r.shadowMap.autoUpdate, ac = r.autoClear, cc = r.getClearColor(new THREE.Color()), ca = r.getClearAlpha();
+      const obr = scene.onBeforeRender, oar = scene.onAfterRender; scene.onBeforeRender = scene.onAfterRender = () => {};
+      scene.overrideMaterial = bakeM; scene.background = null; scene.fog = null; r.shadowMap.autoUpdate = false; r.autoClear = false;
+      try {
+      r.setRenderTarget(rtA); rtA.viewport.set(RES * i, 0, RES, RES); rtA.scissor.set(RES * i, 0, RES, RES); rtA.scissorTest = true;
+      r.setRenderTarget(rtA); r.setClearColor(0x000000, 1); r.clear(true, true, false); r.render(scene, bc);
+      rtA.viewport.set(0, 0, RES * N, RES); rtA.scissor.set(0, 0, RES * N, RES); rtA.scissorTest = false;
+      r.setRenderTarget(rtB); r.render(qs, qc);
+      } finally {
+      r.setRenderTarget(prevRT); scene.overrideMaterial = ov; scene.background = bg; scene.fog = fog; r.shadowMap.autoUpdate = su; r.autoClear = ac; r.setClearColor(cc, ca);
+      scene.onBeforeRender = obr; scene.onAfterRender = oar;
+      for (const o of hidden) o.visible = true; }
+    }
+    function update(dt, dayK) {
+      clock += dt; if (!rdr) return;
+      // all three rooms once at the start (behind the loading screen); after that a room is baked again only right after
+      // the hero leaves it (he is the one who moves a chair, a bucket or the dishes): a bake costs ~90 draws, so it must
+      // not be a steady cadence on phones
+      const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; let inR = -1;
+      if (hr) { const p = hr.position; RM.forEach((R, i) => { if (p.x > R.x0 - .3 && p.x < R.x1 + .3 && p.z > R.z0 - .3 && p.z < R.z1 + .3 && Math.abs(p.y - F[R.room] - 1) < 1.3) inR = i; }); }
+      if (baked >= N && inR !== heroIn) { if (heroIn >= 0) dirty.add(heroIn); heroIn = inR; clock = 0; }
+      if (!late && (age += dt) > 10) { late = true; for (let i = 0; i < N; i++) dirty.add(i); }   // once more after the late-loading models are in
+      let job = baked < N ? next : -1;
+      if (job < 0 && clock > 1.5) for (const i of dirty) if (i !== heroIn) { job = i; break; }   // 1.5 s after he left, so the door/hatch has settled
+      if (job >= 0) { try { bake(rdr, job); } catch (e) { console.warn('lights AO', e); mesh.visible = false; return; } if (baked < N) { next = (next + 1) % N; baked++; } else dirty.delete(job); }
+      if (baked >= N) { mesh.visible = true; uK.value = .9 - .25 * dayK; }
+    }
+    return { update, mesh, rtA, rtB, bakeAll: () => { if (rdr) for (let i = 0; i < N; i++) bake(rdr, i); } };
+  })();
+  // the hero's own contact blob indoors (he is not in the bake): a soft dark oval under his feet on a room floor
+  const heroBlob = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d');
+    const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(.45, 'rgba(0,0,0,.7)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = gr; x.fillRect(0, 0, 64, 64);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), color: 0x000000, transparent: true, depthWrite: false, opacity: 0, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3, fog: false }));
+    m.name = 'heroContact'; m.renderOrder = 2; m.visible = false; scene.add(m); return m;
+  })();
+  const FLOORS = [['kitchen', KT, -4.4, -.9, 1.0, 4.6], ['bedroom', BD, -4.2, .4, .95, 3.95], ['workshop', WS, .9, 4.6, 1.2, 5.3]];
+  let blobK = 0;
+  function updateHeroBlob(dt, task, asleep) {
+    const r = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; if (!r) return;
+    const p = r.position; let fy = null;
+    for (const [, y, x0, x1, z0, z1] of FLOORS) if (p.x > x0 && p.x < x1 && p.z > z0 && p.z < z1 && Math.abs(p.y - (y + .035)) < .08) fy = y + .035;
+    // the hips over the feet: the blob sits under his centre of mass, wider when he crouches or sits low
+    const want = fy != null && r.visible && task !== 'sleep' && !asleep ? 1 : 0;   // in the bunk he lies on the mattress, not on the floor blobK += (want - blobK) * Math.min(1, dt * 8);
+    heroBlob.visible = blobK > .01; if (!heroBlob.visible) return;
+    let cx = p.x, cz = p.z; const B = window.__dbg.heroBones; if (B && B.Hips) { const v = _v.setFromMatrixPosition(B.Hips.matrixWorld); cx = v.x; cz = v.z; }
+    heroBlob.position.set(cx, (fy ?? p.y) + .006, cz); heroBlob.rotation.y = r.rotation.y; heroBlob.scale.set(.62, 1, .5);
+    heroBlob.material.opacity = .5 * blobK;
   }
 
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
@@ -742,7 +872,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       }
       const open = s.extra && s.lights[0] && s.lights[0].l.userData.open || 0;
       for (const L of s.lights) {
-        L.l.intensity = L.I * k * f * (s.name === "oven" ? .45 + 1.2 * open : 1 + open * 1.2);   // oven shut: only what the small glass lets out
+        L.l.intensity = L.I * k * f * (s.name === "oven" ? .45 + 1.2 * open : 1 + open * 1.2) * roomGain(s.room);   // oven shut: only what the small glass lets out
         if (L.sway) { if (!L.home) L.home = L.l.position.clone(); const a = T * 1.7 + s.seed * 5; L.l.position.set(L.home.x + noise(a) * L.sway, L.home.y + noise(a + 40) * L.sway * .6, L.home.z + noise(a + 80) * L.sway); }
         if (L.l.castShadow) { const lit = k > .01;
           // the lamp's shadows only change when the hero (the one thing that moves) is in its reach: an empty lit room keeps its map
@@ -762,6 +892,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     wgSrc.forEach((w, i) => { const v = w.k() * (1 - dayK); wgC.value[i].set(1.0 * v, .64 * v, .32 * v); });
     for (const g of glows) {
       let v = g.off ? 0 : (warm[g.room] || 0) * g.I * (1 - dayK * .8) * (g.win ? g.win.leak ?? 1 : 1);
+      if (g.bounce) v *= roomGain(g.room);
       if (g.l) g.l.intensity = v;
       if (g.halo) {
         // seen from inside the room (or right at the pane) the window is just glass: no glow sprite in front of your eyes
@@ -769,7 +900,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
         g.halo.intensity = v;
       }
     }
-    updateCurtains(dt, dayK); updateBeams(dayK, T); updateWisps(dt); updateHand(dt); updateHatch(dayK);
+    AO.update(dt, dayK); updateHeroBlob(dt, task, asleep); updateCurtains(dt, dayK); updateBeams(dayK, T); updateWisps(dt); updateHand(dt); updateHatch(dayK);
     if (pool) updatePool(dt);
     updateHeroRim(dayK);
     // Pavel: the bedroom textiles must read warm, not moon-blue. Environment's interior mask (a LightProbe used as a parameter)
@@ -830,6 +961,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     else console.warn('lights: spot floor clip not installed (three changed)');
     const virt = [];
     for (const s of src.values()) for (const L of s.lights) if ((L.l.isPointLight || (L.l.isSpotLight && !L.l.castShadow)) && L.l !== doorCave) virt.push(L.l);
+    for (const g of glows) if (g.bounce) virt.push(g.l);
     for (const l of virt) { l.visible = false; l.castShadow = false; }
     if (doorCave) doorCave.visible = false;
     const slots = Array.from({ length: POOL_N }, () => { const l = new THREE.SpotLight(0xFFC373, 0, 5, Math.PI / 2 * .97, .3, 1.5); scene.add(l, l.target); return { l, v: null, w: 0, sc: 0 }; });
@@ -842,6 +974,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       if (s.name === 'hand') clip.set(L.l, () => { const r = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; return hand.outdoors || !r ? null : r.position.y; });
       else if (FLOOR[s.room] != null) clip.set(L.l, () => FLOOR[s.room]);
     }
+    for (const g of glows) if (g.bounce && FLOOR[g.room] != null) clip.set(g.l, () => FLOOR[g.room]);
     pool = { virt, slots, clip, wp: V(), hero: V(), tp: V(), stats: { swaps: 0, frames: 0, missFrames: 0, maxMiss: 0 } };
   }
   function updatePool(dt) {
@@ -876,9 +1009,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       v.getWorldPosition(l.position); l.color.copy(v.color); l.distance = v.distance; l.decay = v.decay;
       if (v.isSpotLight) { v.target.getWorldPosition(l.target.position); l.angle = v.angle; l.penumbra = v.penumbra; }
       else {
-        l.target.position.copy(l.position).y -= 1; l.angle = Math.PI / 2 * .97; l.penumbra = .3;
-        const fy = pool.clip.has(v) ? pool.clip.get(v)() : null;
-        if (fy != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, l.position.y - fy + .06));
+        const up = v.userData.poolUp;
+        l.target.position.copy(l.position).y += up != null ? 1 : -1; l.angle = Math.PI / 2 * .97; l.penumbra = .3;
+        const fy = up != null ? null : pool.clip.has(v) ? pool.clip.get(v)() : null;
+        if (up != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, up - l.position.y + .06));   // ceiling clip (the cone looks up)
+        else if (fy != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, l.position.y - fy + .06));
       }
       l.intensity = v.intensity * sl.w;
     }
@@ -943,7 +1078,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
-    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances }),
+    _dbg: () => ({ scene, cam, pool, shadowDraws, shadowChances, rimU, AO, heroBlob }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,
     set: (n, on) => { const s = src.get(n); if (!s) return false; s.manual = !!on; setOn(s, !!on); return true; },
