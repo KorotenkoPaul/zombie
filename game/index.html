@@ -166,7 +166,7 @@ const glbBuf=n=>{const bn=GLBBIN&&/-glb\.txt$/.test(n)?n.replace(/-glb\.txt$/,'.
  return bn?fetch(ASSET+bn).then(r=>{const ct=r.headers.get('content-type')||'';return r.ok&&!/text\/html/.test(ct)?r.arrayBuffer().then(b=>{const h=new Uint32Array(b,0,1)[0];return h===0x46546C67?b:txt();}):txt();}).catch(txt):txt();};
 const glb=n=>glbBuf(n).then(buf=>new Promise((res,rej)=>loader.parse(buf,'',g=>{prog();res(g);},rej)));
 // [PERF] tree-glb.txt (3.3 MB, the old placeTree model) is no longer loaded: nothing places it. zombie-glb.txt (3.3 MB) loads only when a zombie is first needed.
-const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(({new:'hero-new-glb.txt',detail:'hero-detail-glb.txt',v6:'hero-v6-glb.txt',orig:'hero-glb.txt'})[new URLSearchParams(location.search).get('hero')]||'hero-v6-glb.txt')/* ?hero=new = adult redesign (rejected), ?hero=detail = the same hero, more detailed (KTX2 base colour), ?hero=v6 = concept 6 look (Pavel's pick 2026-11-24, now the default), same skeleton; ?hero=orig = the previous default hero */]);
+const [oakG,oakBarkT,woodT,barkT,roofT,groundT,leafT,heroG,leafSprigT,leafRosT]=await Promise.all([glb(MOBILE?'oak-lo-glb.txt':'oak-glb.txt')/* [PERF] phones: the oak simplified to 22k tris */,tex('bark3.jpg'),tex('wood-floor.jpg'),tex('bark2.jpg'),tex('roof2.jpg'),tex('ground2.jpg',55),tex('leaf2.png'),glb(({new:'hero-new-glb.txt',detail:'hero-detail-glb.txt',v6:'hero-v6-glb.txt',orig:'hero-glb.txt'})[new URLSearchParams(location.search).get('hero')]||'hero-v6-glb.txt')/* ?hero=new = adult redesign (rejected), ?hero=detail = the same hero, more detailed (KTX2 base colour), ?hero=v6 = concept 6 look (Pavel's pick 2026-11-24, now the default), same skeleton; ?hero=orig = the previous default hero */,tex('leaf-sprig.png'),MOBILE?tex('leaf-rosette.png'):null/* [TREE] one sprig of the same painted oak leaves: the crown is built from round clumps of these (Pavel 2026-11-25: no flat planes) */]);
 let zombG=null,zClips=null,zLoading=null;function loadZombie(){if(!zLoading)zLoading=glb('zombie-glb.txt').then(g=>{zClips=prepChar(g,false);zombG=g;}).catch(e=>{console.error('zombie',e);zLoading=null;});return zLoading;}
 const PROPS={};// furniture is modelled in code now: see props.js
 
@@ -216,7 +216,7 @@ const HY=1.0,LG_=1.4;/* the hollow landing and the trunk door sit low at the tru
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
 const DOORP={x:1.0,ang:1.05,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95};// the glowing hollow (tree.js); its plank frame is built with the boards
-const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:2.35,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:1.45,top:.42,clear:.45}],door:DOORP,
+const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,leafSprigT:/[?&]oldleaves/.test(location.search)?null:leafSprigT,leafRosT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:2.35,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:1.45,top:.42,clear:.45}],door:DOORP,
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
@@ -429,35 +429,55 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
   if(!PSG&&--psT<=0){psT=60;PSG=scene.getObjectByName('propsStatic')||null;}
   const ps=[];if(PSG&&!window.__psSun&&L.includes(sun))PSG.traverse(m=>{if(m.isMesh&&m.castShadow)ps.push(m);});
   const nu=sm.needsUpdate,rest=L.filter(l=>l!==sun);
-  if(L.includes(sun)){for(const m of ps)m.castShadow=false;try{r0([sun],sc,cam);}finally{for(const m of ps)m.castShadow=true;}}
+  if(L.includes(sun)){for(const m of ps)m.castShadow=false;const sb=sunBark();try{r0([sun],sc,cam);}finally{for(const m of ps)m.castShadow=true;if(sb){sb.visible=false;TREE.bark.castShadow=true;}}}
   for(const l of rest){sm.needsUpdate=nu;if(l.shadow&&l.shadow.needsUpdate&&!l.shadow.autoUpdate&&!window.__lampSkipOff){try{lampDraw(l,sc,cam);}catch(e){/* never break the frame: plain draw */console.warn('lamp shadow skip',e);window.__lampSkipOff=true;l.shadow.needsUpdate=true;r0([l],sc,cam);}}else r0([l],sc,cam);}};
+/* [PERF] sun/moon shadow, bark (2026-11-25): the depth pass draws the bark's back faces only (shadowSide), so the triangles that face the
+   light are culled by the GPU anyway. They are left out before the draw: a hidden mesh sharing the bark's vertices holds the triangles
+   with n.L < 0.05 whose bounding sphere touches the map's box, rebuilt when the light turns by 2.5 deg (every ~10 s at night) or
+   the map's box changes, so not one texel changes; ~50% of the bark's ~50k tris in that pass. Same bark geometry and depth shader (plain caster). ?sunbark=off or __sunBarkOff=true draws the whole bark. */
+ let sunSt=null;const SBOFF=/[?&]sunbark=off/.test(location.search),_sl=new THREE.Vector3(),_st2=new THREE.Vector3();
+ function sunBark(){const b=TREE&&TREE.bark;if(SBOFF||window.__sunBarkOff||!b||!b.castShadow||!plainCaster(b))return null;const sd=b.material.shadowSide;const sg=sd===null||sd===undefined?(b.material.side===THREE.FrontSide?-1:b.material.side===THREE.BackSide?1:0):(sd===THREE.BackSide?-1:sd===THREE.FrontSide?1:0);if(!sg)return null;
+  sun.getWorldPosition(_sl);sun.target.getWorldPosition(_st2);_sl.sub(_st2).normalize();
+  const sc0=sun.shadow.camera,key=[sc0.left,sc0.right,sc0.top,sc0.bottom,sc0.near,sc0.far,_st2.x,_st2.y,_st2.z].map(v=>v.toFixed(3)).join();
+  if(!sunSt||sunSt.g!==b.geometry||sunSt.L.dot(_sl)<.999||sunSt.key!==key){const g=b.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=b.matrixWorld;
+   if(!sunSt||sunSt.g!==g){/* world face normals, once */const FN=new Float32Array(n),SP=new Float32Array(n/3*4|0);const a=new THREE.Vector3(),c=new THREE.Vector3(),d=new THREE.Vector3(),m=new THREE.Vector3();for(let t=0;t+2<n;t+=3){a.fromBufferAttribute(pa,ix?ix[t]:t).applyMatrix4(mw);c.fromBufferAttribute(pa,ix?ix[t+1]:t+1).applyMatrix4(mw);d.fromBufferAttribute(pa,ix?ix[t+2]:t+2).applyMatrix4(mw);m.copy(a).add(c).add(d).multiplyScalar(1/3);const q=t/3*4;SP[q]=m.x;SP[q+1]=m.y;SP[q+2]=m.z;SP[q+3]=Math.sqrt(Math.max(m.distanceToSquared(a),m.distanceToSquared(c),m.distanceToSquared(d)))+.01;c.sub(a);d.sub(a);c.cross(d).normalize();FN[t]=c.x;FN[t+1]=c.y;FN[t+2]=c.z;}
+    if(sunSt&&sunSt.pm){sunSt.pm.parent&&sunSt.pm.parent.remove(sunSt.pm);sunSt.pm.geometry.dispose();sunSt.pm.material.dispose();}
+    if(mw.determinant()<0)return null;
+    const pm=new THREE.Mesh(new THREE.BufferGeometry(),new THREE.MeshBasicMaterial({colorWrite:false,side:b.material.side,shadowSide:b.material.shadowSide}));pm.geometry.setAttribute('position',pa);pm.castShadow=true;pm.visible=false;pm.frustumCulled=false;pm.userData.lampCrop=1;pm.raycast=()=>{};pm.matrixAutoUpdate=false;b.add(pm);
+    sunSt={g,FN,SP,pm,key:'',L:new THREE.Vector3(),ix:new (pa.count>65535?Uint32Array:Uint16Array)(n),src:ix?ix.slice():null,n:0};}/* src: the bark's order when the normals were taken (the chunking re-sorts it later) */
+   /* the GPU draws a triangle into the map when its kept side faces the light: sg=-1 back faces (n.L<0), sg=1 front faces (n.L>0) */
+   sun.updateMatrixWorld();sun.target.updateMatrixWorld();sun.shadow.updateMatrices(sun);const PL=sun.shadow.getFrustum().planes,Pn=PL.map(p=>[p.normal.x,p.normal.y,p.normal.z,p.constant]);/* and only what lies in the map's box */
+   const FN=sunSt.FN,SP=sunSt.SP,I=sunSt.ix,ix0=sunSt.src;let k=0;for(let t=0;t+2<n;t+=3){if(sg*(FN[t]*_sl.x+FN[t+1]*_sl.y+FN[t+2]*_sl.z)>-.05){const q=t/3*4;let inF=true;for(const P of Pn)if(P[0]*SP[q]+P[1]*SP[q+1]+P[2]*SP[q+2]+P[3]<-SP[q+3]-.05){inF=false;break;}if(!inF)continue;I[k++]=ix0?ix0[t]:t;I[k++]=ix0?ix0[t+1]:t+1;I[k++]=ix0?ix0[t+2]:t+2;}}
+   const pg=sunSt.pm.geometry;if(!pg.index||pg.index.array!==I)pg.setIndex(new THREE.BufferAttribute(I,1));pg.index.needsUpdate=true;pg.setDrawRange(0,k);sunSt.n=k;sunSt.L.copy(_sl);sunSt.key=key;}
+  b.castShadow=false;sunSt.pm.visible=true;return sunSt.pm;}
 /* [PERF] lamp shadows: the whole bark (43k tris) and the merged house props (~36k) were drawn into every lamp's shadow map,
    though a lamp's cone only reaches a small part of them. Per (lamp, big static caster) we keep only the triangles whose box
    touches the lamp's shadow frustum (the rest can't put a single texel into the map) as a hidden mesh sharing the caster's
-   vertices, and draw that instead: one caster per 250 ms, CPU only. ?lampcheck also draws each lamp's map with the crop and
+   vertices, and draw that instead: one caster per lamp draw (CPU only, a few ms), with ?lampcheck one per 250 ms. ?lampcheck also draws each lamp's map with the crop and
    with the full caster (the hero left out of both), reads both back and keeps the crop only if not one texel differs
    (checked 2026-11-24: byte-identical for both lamps). A lamp that moves or changes its cone is redone. ?lampskip=off or __lampSkipOff=true draws everything. */
  const lampSt=new Map(),lampStat=window.__lampStat={resets:0,tests:0};let lampTestF=-1e9;const _lp=new THREE.Vector3(),_lt=new THREE.Vector3();if(/[?&]lampskip=off/.test(location.search))window.__lampSkipOff=true;
  const LCHECK=/[?&]lampcheck/.test(location.search);
  // only casters whose depth pass is plain geometry (no alpha cut-outs, morphs, skinning, instancing or custom depth shader) may be cropped
  const plainCaster=m=>m.isMesh&&m.castShadow&&!m.userData.lampCrop&&!m.isInstancedMesh&&!m.isSkinnedMesh&&!m.customDepthMaterial&&!m.customDistanceMaterial&&m.material&&!Array.isArray(m.material)&&!(m.material.alphaTest>0)&&!m.material.alphaMap&&!m.material.displacementMap&&!(m.geometry.morphAttributes&&m.geometry.morphAttributes.position)&&m.geometry.groups.length<=1;
- const lampCands=()=>{const c=[];if(TREE&&TREE.bark&&plainCaster(TREE.bark))c.push(TREE.bark);if(PSG)PSG.traverse(m=>{if(plainCaster(m))c.push(m);});return c;};
+ let CURT=null;const lampCands=()=>{const c=[];if(TREE&&TREE.bark&&plainCaster(TREE.bark))c.push(TREE.bark);if(PSG)PSG.traverse(m=>{if(plainCaster(m))c.push(m);});if(!CURT)CURT=scene.getObjectByName('curtains');if(CURT&&plainCaster(CURT))c.push(CURT);return c;};
+ /* the curtains (lights.js) move on the CPU (open/close, draught): their triangles get a 1.2 m margin, more than a panel ever travels */
  const readMap=l=>{const m=l.shadow.map;if(!m)return null;const b=new Uint8Array(m.width*m.height*4);renderer.readRenderTargetPixels(m,0,0,m.width,m.height,b);return b;};
  const _cv=new THREE.Vector3(),_cb=new THREE.Box3();
  // the caster's triangles that touch the lamp's shadow frustum (sharing its vertex buffer); null = none touch, 'full' = all do
  function cropOf(c,fr){const g=c.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=c.matrixWorld,I=[];
-  for(let t=0;t+2<n;t+=3){_cb.makeEmpty();for(let k=0;k<3;k++){_cv.fromBufferAttribute(pa,ix?ix[t+k]:t+k).applyMatrix4(mw);_cb.expandByPoint(_cv);}if(fr.intersectsBox(_cb))I.push(ix?ix[t]:t,ix?ix[t+1]:t+1,ix?ix[t+2]:t+2);}
+  const mg=c.name==='curtains'?1.2:0;for(let t=0;t+2<n;t+=3){_cb.makeEmpty();for(let k=0;k<3;k++){_cv.fromBufferAttribute(pa,ix?ix[t+k]:t+k).applyMatrix4(mw);_cb.expandByPoint(_cv);}if(mg){if(_cb.min.lengthSq()<1e-12&&_cb.max.lengthSq()<1e-12)_cb.set(_cv.set(-1e4,-1e4,-1e4),new THREE.Vector3(1e4,1e4,1e4));/* not placed yet: keep */else _cb.expandByScalar(mg);}if(fr.intersectsBox(_cb))I.push(ix?ix[t]:t,ix?ix[t+1]:t+1,ix?ix[t+2]:t+2);}
   if(!I.length)return null;if(I.length===n)return 'full';
   const cg=new THREE.BufferGeometry();cg.setAttribute('position',pa);cg.setIndex(I);
   const pm=new THREE.Mesh(cg,new THREE.MeshBasicMaterial({colorWrite:false,side:c.material.side,shadowSide:c.material.shadowSide}));pm.castShadow=true;pm.visible=false;pm.frustumCulled=false;pm.userData.lampCrop=1;pm.raycast=()=>{};pm.matrixAutoUpdate=false;c.add(pm);return pm;}
  function lampDraw(l,sc,cam){let st=lampSt.get(l);l.getWorldPosition(_lp);(l.target||l).getWorldPosition(_lt);
   const key=[l.angle,l.distance,l.shadow.camera.near,l.shadow.camera.far].join();if(!st||st.key!==key||st.p.distanceToSquared(_lp)>1e-6||st.t.distanceToSquared(_lt)>1e-6){if(st)for(const pm of st.sub.values())if(pm&&pm.parent){pm.parent.remove(pm);pm.geometry.dispose();pm.material.dispose();}lampStat.resets++;st={key,p:_lp.clone(),t:_lt.clone(),sub:new Map(),tested:new Set()};lampSt.set(l,st);}
-  const now=performance.now();const test=now-lampTestF>250&&(sm.autoUpdate||sm.needsUpdate)?lampCands().find(c=>!st.tested.has(c)):null;
+  const now=performance.now();const test=now-lampTestF>(LCHECK?250:0)&&(sm.autoUpdate||sm.needsUpdate)?lampCands().find(c=>!st.tested.has(c)):null;
   const on=[],shown=[];const use=(c,pm)=>{if(!c.castShadow)return;c.castShadow=false;on.push(c);if(pm){pm.visible=true;shown.push(pm);}};
   for(const [c,pm] of st.sub)use(c,pm);
   try{if(!test){r0([l],sc,cam);return;}
    lampTestF=now;lampStat.tests++;st.tested.add(test);l.shadow.updateMatrices(l);const pm=cropOf(test,l.shadow.getFrustum());if(pm==='full'){r0([l],sc,cam);return;}
-   if(!LCHECK){st.sub.set(test,pm);use(test,pm);r0([l],sc,cam);return;}/* the crop is exact by construction; ?lampcheck verifies it texel by texel (3 map draws per test) */
+   if(!LCHECK){st.sub.set(test,pm);use(test,pm);for(const c of lampCands()){if(st.tested.has(c))continue;st.tested.add(c);const q=cropOf(c,l.shadow.getFrustum());if(q!=='full'){st.sub.set(c,q);use(c,q);}}/* the rest at once too (exact crops, CPU only; the first lamp draws happen behind the loading screen) */r0([l],sc,cam);return;}/* the crop is exact by construction; ?lampcheck verifies it texel by texel (3 map draws per test) */
    const heroM=[];let hr=null;try{hr=hero&&hero.root;}catch(e){}/* declared further down */if(hr&&hr.traverse)hr.traverse(o=>{if(o.isMesh&&o.castShadow){heroM.push(o);o.castShadow=false;}});const nu=sm.needsUpdate;let A,B;
    try{test.castShadow=false;if(pm)pm.visible=true;l.shadow.needsUpdate=true;r0([l],sc,cam);A=readMap(l);test.castShadow=true;if(pm)pm.visible=false;l.shadow.needsUpdate=true;sm.needsUpdate=nu;r0([l],sc,cam);B=readMap(l);}
    finally{test.castShadow=true;if(pm)pm.visible=false;for(const o of heroM)o.castShadow=true;}
@@ -479,26 +499,50 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
    only the index range from the first to the last cell whose box (+0.5 m for the wind sway) is inside the camera's view.
    Exact frustum culling, so the picture can't change; still one draw call per mesh; shadow passes and raycasts see the
    whole mesh (the range is reset after each draw). ?nochunk or __noChunk=true turns it off. */
-{const _pm=new THREE.Matrix4(),_fr=new THREE.Frustum(),_v=new THREE.Vector3();const CX=1,CY=1.5,MG=.5;const camMoved=(st,cam)=>{const e=cam.matrixWorld.elements,P=cam.projectionMatrix;if(st.cc===cam&&st.cpj&&st.cpj.equals(P)){const dx=e[12]-st.cp[0],dy=e[13]-st.cp[1],dz=e[14]-st.cp[2];if(dx*dx+dy*dy+dz*dz<.01&&-(e[8]*st.cf[0]+e[9]*st.cf[1]+e[10]*st.cf[2])>.99998&&Math.abs(e[0]*st.cr[0]+e[1]*st.cr[1]+e[2]*st.cr[2])>.99998)return false;}st.cc=cam;st.cpj=(st.cpj||new THREE.Matrix4()).copy(P);st.cp=[e[12],e[13],e[14]];st.cf=[-e[8],-e[9],-e[10]];st.cr=[e[0],e[1],e[2]];return true;};/* the camera drifts a hair every frame: re-cull only after it moved 10 cm or turned ~0.4 deg (the boxes carry that much margin) */
- const chunkify=m=>{const g=m.geometry;if(m.userData.chunks||m.isInstancedMesh||m.isSkinnedMesh||g.groups.length>1||(g.morphAttributes&&g.morphAttributes.position))return 0;
+/* [PERF] + back-face cells (2026-11-25): on FrontSide meshes the triangles that face away from the view at load (the home view)
+   are put first, most turned-away first (on two-sided materials only the triangles of closed, outward-wound solids); the main view's range starts at the first of those cells that has a triangle facing the
+   camera (exact plane test with margin), so the ~35% of the bark and the house props that the GPU would cull anyway are not
+   sent at all. The camera seeing the back (zoomed on the hero behind the trunk) brings them back. Shadow passes and other
+   cameras draw as before. ?nobfcull or __noBF=true turns it off. */
+{const _pm=new THREE.Matrix4(),_fr=new THREE.Frustum(),_v=new THREE.Vector3(),_tv=[new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3()],_tn=new THREE.Vector3(),_cp=new THREE.Vector3();const CX=1,CY=1.5,MG=.5,BFC=!/[?&]nobfcull/.test(location.search);const camMoved=(st,cam)=>{const e=cam.matrixWorld.elements,P=cam.projectionMatrix;if(st.cc===cam&&st.cpj&&st.cpj.equals(P)){const dx=e[12]-st.cp[0],dy=e[13]-st.cp[1],dz=e[14]-st.cp[2];if(dx*dx+dy*dy+dz*dz<.01&&-(e[8]*st.cf[0]+e[9]*st.cf[1]+e[10]*st.cf[2])>.99998&&Math.abs(e[0]*st.cr[0]+e[1]*st.cr[1]+e[2]*st.cr[2])>.99998)return false;}st.cc=cam;st.cpj=(st.cpj||new THREE.Matrix4()).copy(P);st.cp=[e[12],e[13],e[14]];st.cf=[-e[8],-e[9],-e[10]];st.cr=[e[0],e[1],e[2]];return true;};/* the camera drifts a hair every frame: re-cull only after it moved 10 cm or turned ~0.4 deg (the boxes carry that much margin) */
+ // per triangle: 1 if it belongs to a closed solid (vertices welded by position: every edge used once each way) whose winding points out
+ const closedTris=(pa,ix,n)=>{const vid=t=>ix?ix[t]:t,wid=new Map(),W=new Int32Array(pa.count);for(let i=0;i<pa.count;i++){const k=Math.round(pa.getX(i)*2e3)+','+Math.round(pa.getY(i)*2e3)+','+Math.round(pa.getZ(i)*2e3);let w=wid.get(k);if(w===undefined){w=wid.size;wid.set(k,w);}W[i]=w;}
+  const par=new Int32Array(wid.size);for(let i=0;i<par.length;i++)par[i]=i;const f=x=>{while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;};const E=new Map(),deg=new Uint8Array(n);
+  for(let t=0;t<n;t++){const a=W[vid(t*3)],b=W[vid(t*3+1)],c=W[vid(t*3+2)];if(a===b||b===c||a===c){deg[t]=1;continue;}par[f(a)]=f(b);par[f(b)]=f(c);for(const [u,v] of [[a,b],[b,c],[c,a]]){const k=u*4194304+v;E.set(k,(E.get(k)||0)+1);}}
+  const bad=new Set(),vol=new Map();for(const [k,c] of E){const u=Math.floor(k/4194304),v=k-u*4194304;if(c!==1||E.get(v*4194304+u)!==1)bad.add(f(u));}
+  for(let t=0;t<n;t++){if(deg[t])continue;const i0=vid(t*3),i1=vid(t*3+1),i2=vid(t*3+2);const r=f(W[i0]);if(bad.has(r))continue;
+   _tv[0].fromBufferAttribute(pa,i0);_tv[1].fromBufferAttribute(pa,i1);_tv[2].fromBufferAttribute(pa,i2);vol.set(r,(vol.get(r)||0)+_tv[0].dot(_tn.crossVectors(_tv[1],_tv[2])));}
+  const out=new Uint8Array(n);for(let t=0;t<n;t++){if(deg[t])continue;const r=f(W[vid(t*3)]);if(!bad.has(r)&&vol.get(r)>1e-9)out[t]=1;}return out;};
+ const chunkify=(m,bfOK)=>{const g=m.geometry;if(m.userData.chunks||m.isInstancedMesh||m.isSkinnedMesh||g.groups.length>1||(g.morphAttributes&&g.morphAttributes.position))return 0;
   const pa=g.attributes.position,ix=g.index?g.index.array:null,n=(ix?ix.length:pa.count)/3|0;if(n<2000)return 0;
-  m.updateMatrixWorld(true);const mw=m.matrixWorld,kx=new Int32Array(n),ky=new Int32Array(n),bb=new Float32Array(n*6);
-  for(let t=0;t<n;t++){let x0=1e9,y0=1e9,z0=1e9,x1=-1e9,y1=-1e9,z1=-1e9;for(let k=0;k<3;k++){_v.fromBufferAttribute(pa,ix?ix[t*3+k]:t*3+k).applyMatrix4(mw);
+  m.updateMatrixWorld(true);let hd=30;try{hd=rig.homeDist||30;}catch(e){}const _c0=new THREE.Vector3(Math.sin(.05)*Math.cos(.13)*hd,7.4+Math.sin(.13)*hd,2.4+Math.cos(.05)*Math.cos(.13)*hd);/* the home view (camera.js home) */const mw=m.matrixWorld,kx=new Int32Array(n),ky=new Int32Array(n),bb=new Float32Array(n*6);
+  const sd=!Array.isArray(m.material)&&m.material.side,bf=BFC&&bfOK&&(sd===THREE.FrontSide||sd===THREE.DoubleSide)&&mw.determinant()>0,fn=new Float32Array(n*4),bk=new Uint8Array(n);
+  const solid=bf&&sd===THREE.DoubleSide?closedTris(pa,ix,n):null;/* two-sided material: only the triangles of closed, outward-wound solids (their back faces are always inside) */
+  for(let t=0;t<n;t++){let x0=1e9,y0=1e9,z0=1e9,x1=-1e9,y1=-1e9,z1=-1e9;for(let k=0;k<3;k++){_v.fromBufferAttribute(pa,ix?ix[t*3+k]:t*3+k).applyMatrix4(mw);_tv[k].copy(_v);
     if(_v.x<x0)x0=_v.x;if(_v.x>x1)x1=_v.x;if(_v.y<y0)y0=_v.y;if(_v.y>y1)y1=_v.y;if(_v.z<z0)z0=_v.z;if(_v.z>z1)z1=_v.z;}
-   kx[t]=Math.floor((x0+x1)/2/CX);ky[t]=Math.floor((y0+y1)/2/CY);bb.set([x0,y0,z0,x1,y1,z1],t*6);}
-  const ord=Array.from({length:n},(_,i)=>i).sort((a,b)=>kx[a]-kx[b]||ky[a]-ky[b]||a-b);
-  const vc=pa.count,NI=vc>65535?Uint32Array:Uint16Array,out=new NI(n*3),ch=[];let cur=null;
-  for(let i=0;i<n;i++){const t=ord[i];for(let k=0;k<3;k++)out[i*3+k]=ix?ix[t*3+k]:t*3+k;
-   if(!cur||cur.kx!==kx[t]||cur.ky!==ky[t]){cur={kx:kx[t],ky:ky[t],s:i*3,c:0,b:new THREE.Box3(new THREE.Vector3(1e9,1e9,1e9),new THREE.Vector3(-1e9,-1e9,-1e9))};ch.push(cur);}
+   if(bf&&(!solid||solid[t])){_tn.subVectors(_tv[2],_tv[1]).cross(_v.subVectors(_tv[0],_tv[1]));const L=_tn.length();if(L>1e-12){_tn.multiplyScalar(1/L);fn.set([_tn.x,_tn.y,_tn.z,_tn.dot(_tv[0])],t*4);_v.set((x0+x1)/2,(y0+y1)/2,(z0+z1)/2);const cs=_tn.dot(_v.subVectors(_c0,_v).normalize());if(cs<-.03){bk[t]=1;kx[t]=Math.floor(cs/.04);ky[t]=Math.floor((x0+x1)/2/2);}}}
+   if(!bk[t]){kx[t]=Math.floor((x0+x1)/2/CX);ky[t]=Math.floor((y0+y1)/2/CY);}bb.set([x0,y0,z0,x1,y1,z1],t*6);}
+  const ord=Array.from({length:n},(_,i)=>i).sort((a,b)=>bk[b]-bk[a]||kx[a]-kx[b]||ky[a]-ky[b]||a-b);
+  const vc=pa.count,NI=vc>65535?Uint32Array:Uint16Array,out=new NI(n*3),ch=[],FN=new Float32Array(n*4);let cur=null,nb=0;
+  for(let i=0;i<n;i++){const t=ord[i];for(let k=0;k<3;k++)out[i*3+k]=ix?ix[t*3+k]:t*3+k;FN.set(fn.subarray(t*4,t*4+4),i*4);
+   if(!cur||cur.kx!==kx[t]||cur.ky!==ky[t]||cur.bk!==bk[t]){cur={kx:kx[t],ky:ky[t],bk:bk[t],s:i*3,c:0,b:new THREE.Box3(new THREE.Vector3(1e9,1e9,1e9),new THREE.Vector3(-1e9,-1e9,-1e9))};ch.push(cur);if(bk[t])nb++;}
    cur.c+=3;const o=t*6;cur.b.expandByPoint(_v.set(bb[o],bb[o+1],bb[o+2]));cur.b.expandByPoint(_v.set(bb[o+3],bb[o+4],bb[o+5]));}
   for(const c of ch)c.b.expandByScalar(MG+.5);
   if(g.index&&g.index.array.length===out.length&&g.index.array.constructor===NI){g.index.array.set(out);g.index.needsUpdate=true;}else g.setIndex(new THREE.BufferAttribute(out,1));
-  const st={ch,last:new THREE.Matrix4(),lc:null,r0:0,r1:n*3};m.userData.chunks=st;
+  const st={ch,nb,last:new THREE.Matrix4(),lc:null,r0:0,r1:n*3};m.userData.chunks=st;
+  /* a back cell (its triangles all face away from the home view) can be skipped when none of its triangles faces the camera: the
+     exact plane test of every triangle, with room for the limbs' wind sway (~10 cm) and the 10 cm the camera may drift before a re-cull */
+  const faces=(c,C)=>{const dx=c.b.max.x-c.b.min.x,dy=c.b.max.y-c.b.min.y,dz=c.b.max.z-c.b.min.z;c.b.getCenter(_v);const e=-(.25+.06*(C.distanceTo(_v)+Math.sqrt(dx*dx+dy*dy+dz*dz)/2));
+   for(let i=c.s/3,j=(c.s+c.c)/3;i<j;i++){const o=i*4;if(FN[o]*C.x+FN[o+1]*C.y+FN[o+2]*C.z-FN[o+3]>e)return true;}return false;};
   const ob=m.onBeforeRender,oa=m.onAfterRender;
   m.onBeforeRender=function(r,sc,cam,geo){ob.apply(this,arguments);if(window.__noChunk||!cam||!cam.isPerspectiveCamera)return;
    _pm.multiplyMatrices(cam.projectionMatrix,cam.matrixWorldInverse);
    if(camMoved(st,cam)){_fr.setFromProjectionMatrix(_pm);let a=-1,b=-1;
-    for(let i=0;i<ch.length;i++)if(_fr.intersectsBox(ch[i].b)){if(a<0)a=i;b=i;}
+    if(nb&&cam===camera&&!window.__noBF){_cp.setFromMatrixPosition(cam.matrixWorld);/* the main view only: shadow passes draw back faces */
+     for(let i=0;i<nb;i++)if(_fr.intersectsBox(ch[i].b)&&faces(ch[i],_cp)){a=i;break;}
+     for(let i=nb;i<ch.length;i++)if(_fr.intersectsBox(ch[i].b)){if(a<0)a=i;b=i;}
+     if(b<0&&a>=0)for(let i=nb-1;i>=a;i--)if(_fr.intersectsBox(ch[i].b)&&faces(ch[i],_cp)){b=i;break;}}
+    else for(let i=0;i<ch.length;i++)if(_fr.intersectsBox(ch[i].b)){if(a<0)a=i;b=i;}
     st.r0=a<0?0:ch[a].s;st.r1=a<0?0:ch[b].s+ch[b].c;}
    geo.setDrawRange(st.r0,st.r1-st.r0);};
   m.onAfterRender=function(r,sc,cam,geo){oa.apply(this,arguments);geo.setDrawRange(0,Infinity);};
@@ -507,7 +551,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  const done=window.__chunked={};
  const go=()=>{const ps=scene.getObjectByName('propsStatic');const C=[];if(TREE&&TREE.bark)C.push(['bark',TREE.bark]);if(ps)ps.children.forEach((m,i)=>C.push(['props'+i,m]));
   for(const nm of ['forestTrunks','litter']){const m=scene.getObjectByName(nm);if(m)C.push([nm,m]);}
-  for(const [k,m] of C)if(!(k in done)&&m.isMesh)done[k]=chunkify(m);
+  for(const [k,m] of C)if(!(k in done)&&m.isMesh)done[k]=chunkify(m,k==='bark'||k.startsWith('props'));/* the forest trunks are already few once off screen */
   if((!ps||!('forestTrunks' in done)||!('litter' in done))&&++tries<900)requestAnimationFrame(go);};
  if(!NOCH)requestAnimationFrame(go);}
 // [PERF] static dark-wood boxes that need no physics (roof slabs, ridges, gable trims, window frames) become instances of
@@ -704,6 +748,7 @@ function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0
 // with knots, slightly uneven, the bottom hanging free. They sway in the wind in the vertex shader, weighted by the
 // distance below the tie point (top stays put), driven by the global wind (game/wind.js windRope).
 /* [props: house exterior round] the rung knots were smooth beige balls: now a lashing, a few tight turns of cord round the rope with a fat clove-hitch bulge, built from small tori (same rope material and merge, a few more triangles) */ const knotGeo=(()=>{const parts=[];for(const [y,r] of [[-.03,.017],[-.015,.0185],[0,.019],[.015,.0185],[.03,.017]]){const t=new THREE.TorusGeometry(r,.0068,4,9);t.rotateX(Math.PI/2);t.rotateZ((y*9)%1*.25);t.translate(0,y,0);parts.push(t);} const b=new THREE.TorusGeometry(.017,.009,4,8);b.rotateY(Math.PI/2);b.translate(0,0,.0);parts.push(b); return mergeGeometries(parts);})();
+const knotGeoFar=(()=>{const parts=[];for(const [y,r] of [[-.03,.017],[-.015,.0185],[0,.019],[.015,.0185],[.03,.017]]){const t=new THREE.TorusGeometry(r,.0068,3,7);t.rotateX(Math.PI/2);t.rotateZ((y*9)%1*.25);t.translate(0,y,0);parts.push(t);}const b=new THREE.TorusGeometry(.017,.009,3,6);b.rotateY(Math.PI/2);parts.push(b);return mergeGeometries(parts);})();/* [PERF] the same lashing on coarser tori (246 tris, was 424) for the far rope LOD */
 function swayMat(m){m.onBeforeCompile=sh=>{WIND.hook(sh);sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float swayW;attribute float swayL;')
  .replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed+=windRope(transformed,swayW,swayL)*smoothstep(.05,.45,transformed.y);');};m.customProgramCacheKey=()=>'ropesway';return m;}
 const ropeMat=swayMat(new THREE.MeshStandardMaterial({color:0xA48C64,roughness:1}));/* weathered hemp, not new cream cord */
@@ -731,7 +776,8 @@ function mergeSway(parts,top,H,ph){let nV=0,nI=0;for(const g of parts){nV+=g.att
  const G=new THREE.BufferGeometry();G.setAttribute('position',new THREE.BufferAttribute(P,3));G.setAttribute('normal',new THREE.BufferAttribute(N,3));G.setAttribute('uv',new THREE.BufferAttribute(U,2));G.setAttribute('swayW',new THREE.BufferAttribute(W,1));G.setAttribute('swayL',new THREE.BufferAttribute(PH,1));G.setIndex(new THREE.BufferAttribute(I,1));return G;}
 const _m4=new THREE.Matrix4(),_q=new THREE.Quaternion();
 function placed(geo,pos,rot,scl){_q.setFromEuler(rot||new THREE.Euler());_m4.compose(pos,_q,scl||V(1,1,1));return geo.clone().applyMatrix4(_m4);}
-function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-bot,ph=x*3.1+z*1.7;const ropes=[],rungs=[];
+function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-bot,ph=x*3.1+z*1.7;const ropes=[],rungs=[],kN=[],kF=[];
+ const knot=(p,r,s)=>{kN.push(placed(knotGeo,p,r,s));kF.push(placed(knotGeoFar,p,r,s));};
  const gnd=y0<.5;
  // a belly away from the edge; on the ground the last half metre of the ladder lies on the earth, curling outwards
  const bow=t=>Math.sin(t*Math.PI)*.055+(gnd?.42*Math.pow(Math.max(0,(t-.86)/.14),2):0);
@@ -746,13 +792,21 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   for(const sp of [0,Math.PI]){const pts=[];for(let i=0;i<=m;i++){const u=i/m,c=base.getPointAt(u),a=u*L/.11*Math.PI*2+sp;pts.push(c.add(V(Math.cos(a)*.011,0,Math.sin(a)*.011)));}
    ropes.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),m,.012,4));}
   // tie: a fat knot round a short peg on the floor
-  ropes.push(placed(knotGeo,V(x+sx*1.05,top+.035,z-.34),new THREE.Euler(.15,0,.2),V(1.45,.75,1.45)));ropes.push(placed(knotGeo,V(x+sx*1.05,top+.075,z-.34),new THREE.Euler(-.2,1,-.1),V(1.3,.6,1.3)));
+  knot(V(x+sx*1.05,top+.035,z-.34),new THREE.Euler(.15,0,.2),V(1.45,.75,1.45));knot(V(x+sx*1.05,top+.075,z-.34),new THREE.Euler(-.2,1,-.1),V(1.3,.6,1.3));
   rungs.push(placed(new THREE.CylinderGeometry(.03,.035,.16,6),V(x+sx*1.05,top+.06,z-.34)));
-  for(const y of rungY){const t=(top-y)/H;ropes.push(placed(knotGeo,V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1)));}}
+  for(const y of rungY){const t=(top-y)/H;knot(V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1));}}
  // round rungs, a little uneven like hand-lashed sticks
  const LR=[];for(const y of rungY){const t=(top-y)/H;const r=rnd(.019,.024);const c=V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t));LR.push({x:c.x,y:c.y,z:c.z,r,half:.32,sw:t});rungs.push(placed(new THREE.CylinderGeometry(r,r*rnd(.85,1),.64,9),c,new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
  (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:true,rungs:LR,len:H});/* climb.js: hands and feet on these rungs */
- for(const [parts,mat] of [[ropes,ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;me.userData.plStatic=true;scene.add(me);}}
+ for(const [parts,mat] of [[ropes.concat(kN),ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;me.userData.plStatic=true;scene.add(me);
+  if(mat===ropeMat&&!/[?&]noropelod/.test(location.search)){/* [PERF] far LOD of the lashings: from beyond 17 m (the home view is 26 m) a lashing is ~6 px on a phone,
+    so the same five turns on coarser tori (246 tris instead of 424) draw the same; ~7k fewer tris for the two ladders. The full mesh still casts the shadows and takes the raycasts. */
+   const far=new THREE.Mesh(mergeSway(ropes.map(g=>g.clone()).concat(kF),top,H,ph),mat);far.frustumCulled=false;far.castShadow=false;far.raycast=()=>{};far.userData.lodOf=me;far.userData.plStatic=true;
+   const c=V(x,(y0+y1)/2,z),pick=cam=>!(cam===camera&&!window.__noRopeLod&&cam.position.distanceTo(c)>17);
+   const b0=me.onBeforeRender,b1=far.onBeforeRender;
+   me.onBeforeRender=function(r,sc,cam,geo){b0.apply(this,arguments);if(!pick(cam))geo.setDrawRange(0,0);};me.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};
+   far.onBeforeRender=function(r,sc,cam,geo){b1.apply(this,arguments);if(pick(cam))geo.setDrawRange(0,0);};far.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};
+   scene.add(far);}}}
 function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});const LR=[];for(let y=y0+.3;y<y1;y+=.32){board(V(x,y,z),.5,.06,.05,null,{dark:true,rung:true});LR.push({x,y,z,r:.03,half:.21,sw:0});}
  (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:false,rungs:LR});/* climb.js: hands and feet on these rungs */}
 // the photo is an open cutaway: no plank fences across the room fronts while there are no zombies (BARRICADES=false)

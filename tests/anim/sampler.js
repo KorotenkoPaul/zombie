@@ -21,7 +21,10 @@ module.exports=function install(cfg){
   else if(t==='SphereGeometry'&&Math.abs(sc[0]-sc[1])<1e-3&&Math.abs(sc[1]-sc[2])<1e-3&&(pr.phiLength??6.3)>6.2&&(pr.thetaLength??3.2)>3.1){shape='sph';r=pr.radius*sc[0];}
   const big=Math.hypot(...h)*2;if(/^(Box|Cylinder|Sphere|Buffer|Lathe|Torus|Extrude|Tube|Icosahedron)/.test(name)||/^#/.test(name))name=name+' '+h.map(v=>Math.round(v*200)).sort((a,b)=>b-a).join('x')+'cm';C.push({c,ax,h,shape,r,name,kind,big,src:CUR});}
  let skipped={};
- scene.traverse(o=>{CUR=o;if(!o.isMesh||mine(o)||!visible(o)||!solidMat(o)||o.isSkinnedMesh)return;const t=o.geometry.type;
+ // cloth hanging on a peg (the jacket): soft like the quilt, never a collider (it swings into his hand when he takes it)
+ const CLOTH=new Set();{const P=window.__props;if(P)for(const k of Object.keys(P)){const v=P[k];if(!v||typeof v!=='object')continue;const add=(n,w)=>{if(w&&w.isObject3D&&/jacket|coat|cloth|towel/i.test(n))CLOTH.add(w);};if(v.isObject3D)add(k,v);else for(const kk of Object.keys(v))add(kk,v[kk]);}}
+ const inCloth=o=>{for(let x=o;x;x=x.parent)if(CLOTH.has(x))return true;return false;};
+ scene.traverse(o=>{CUR=o;if(o.isMesh&&CLOTH.size&&inCloth(o)){skipped.cloth=(skipped.cloth||0)+1;return;}if(!o.isMesh||mine(o)||!visible(o)||!solidMat(o)||o.isSkinnedMesh)return;const t=o.geometry.type;
   if(/Plane|Circle|Shape|Ring/.test(t)){skipped[t]=(skipped[t]||0)+1;return;}
   const name=label(o);
   if(o.isInstancedMesh){if(o.count>1500){skipped['inst>1500 '+name]=o.count;return;}
