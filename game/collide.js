@@ -50,26 +50,29 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (s.kind === 'cyl') s.r = s.r0 * sc[0]; if (s.kind === 'sph') s.r = s.r0 * sc[0];
     s.flat = s.kind === 'box' && ax.some(v => Math.abs(v.y) > .97);
     if (s.kind === 'vox') { s.inv = (s.inv || new THREE.Matrix4()).copy(mw).invert(); s.sMin = Math.min(...sc); }
+    // [PERF] exact world box of the oriented shape (+5 mm), kept current whenever its matrix changes: the per-point reject in probe()
+    // (the hash boxes carry 25-30 cm of slack for moving things, so most body points used to reach depth() for nothing)
+    { const t = s.t || (s.t = new Float32Array(6)), c = s.c, h = s.h; for (let i = 0; i < 3; i++) { const e = Math.abs(ax[0].getComponent(i)) * h[0] + Math.abs(ax[1].getComponent(i)) * h[1] + Math.abs(ax[2].getComponent(i)) * h[2] + .005; const ci = c.getComponent(i); t[i] = ci - e; t[i + 3] = ci + e; } }
     return true;
   }
   // a big merged mesh (props.js bakes all static furniture of a material into one: fridge body, cupboards, stove...) is cut into
   // 0.4 m slabs across its local z (every x-row keeps all its triangles, so the inside test stays right) and each slab is a shape
-  function slabs(o, name) {
+  function* slabs(o, name) {
     const g = o.geometry, A = g.attributes.position, I = g.index ? g.index.array : null, nt = I ? I.length / 3 : A.count / 3; if (nt < 4) return;
     let F = A.array; if (A.isInterleavedBufferAttribute || F.length !== A.count * 3) { F = new Float32Array(A.count * 3); for (let q = 0; q < A.count; q++) { F[3 * q] = A.getX(q); F[3 * q + 1] = A.getY(q); F[3 * q + 2] = A.getZ(q); } }
     const vi = (t, q) => 3 * (I ? I[t * 3 + q] : t * 3 + q);
     const bb = g.boundingBox, Z0 = bb.min.z, n = Math.max(1, Math.ceil((bb.max.z - Z0) / .4)), dz = (bb.max.z - Z0) / n; const lists = Array.from({ length: n }, () => []);
     const xl = new Float32Array(nt), xh = new Float32Array(nt);
     for (let t = 0; t < nt; t++) { const a = vi(t, 0), b = vi(t, 1), c = vi(t, 2); const lo = Math.min(F[a + 2], F[b + 2], F[c + 2]), hi = Math.max(F[a + 2], F[b + 2], F[c + 2]); xl[t] = Math.min(F[a], F[b], F[c]); xh[t] = Math.max(F[a], F[b], F[c]);
-      for (let k = Math.max(0, Math.floor((lo - Z0) / dz)); k <= Math.min(n - 1, Math.floor((hi - Z0) / dz)); k++) lists[k].push(t); }
+      for (let k = Math.max(0, Math.floor((lo - Z0) / dz)); k <= Math.min(n - 1, Math.floor((hi - Z0) / dz)); k++) lists[k].push(t); if (!(t % 1500)) yield; } // [PERF] cut over several frames (one pass was a 10-25 ms spike on the phone)
     // inside a slab, pieces with an empty gap between them along x (separate pieces of furniture) become separate shapes:
     // no surface crosses the gap, so the inside test is unaffected, and the grids stay small (phone memory)
-    const parts = []; lists.forEach((L, k) => { L.sort((a, b) => xl[a] - xl[b]); let cur = null, end = -1e9; for (const t of L) { if (!cur || xl[t] > end + .01) { cur = []; parts.push([k, cur]); end = xh[t]; } else end = Math.max(end, xh[t]); cur.push(t); } });
-    parts.forEach(([k, L], pi) => { if (L.length < 4) return; const arr = new Float32Array(L.length * 9); let w = 0; const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+    const parts = []; for (let k = 0; k < lists.length; k++) { const L = lists[k]; L.sort((a, b) => xl[a] - xl[b]); let cur = null, end = -1e9; for (const t of L) { if (!cur || xl[t] > end + .01) { cur = []; parts.push([k, cur]); end = xh[t]; } else end = Math.max(end, xh[t]); cur.push(t); } if (!(k % 4)) yield; }
+    for (let pi = 0; pi < parts.length; pi++) { const [k, L] = parts[pi]; if (L.length < 4) continue; yield; const arr = new Float32Array(L.length * 9); let w = 0; const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
       for (const t of L) for (let q = 0; q < 3; q++) { const v = vi(t, q); for (let d = 0; d < 3; d++) { const x = F[v + d]; arr[w++] = x; if (x < mn[d]) mn[d] = x; if (x > mx[d]) mx[d] = x; } }
-      mn[2] = Math.max(mn[2], Z0 + k * dz); mx[2] = Math.min(mx[2], Z0 + (k + 1) * dz); if (mx[2] - mn[2] < .003) return; const b = new THREE.Box3(V().fromArray(mn), V().fromArray(mx));
-      wb.copy(b).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) return;
-      const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(arr, 3)); sg.boundingBox = b; add(o, sg, o.matrixWorld, name + '/z' + k + '.' + pi); });
+      mn[2] = Math.max(mn[2], Z0 + k * dz); mx[2] = Math.min(mx[2], Z0 + (k + 1) * dz); if (mx[2] - mn[2] < .003) continue; const b = new THREE.Box3(V().fromArray(mn), V().fromArray(mx));
+      wb.copy(b).applyMatrix4(o.matrixWorld); if (!wb.intersectsBox(REG)) continue;
+      const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(arr, 3)); sg.boundingBox = b; add(o, sg, o.matrixWorld, name + '/z' + k + '.' + pi); }
   }
   const clsOf = name => SOFT.test(name) ? (/pillow/i.test(name) ? 3 : 2) : SEAT.test(name) ? 1 : 0;
   function add(obj, geo, mw, name, inst = -1) {
@@ -172,8 +175,13 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const __tScan = Performance.prototype.now.call(performance) - __t0;
   S.forEach((s, n) => hashIn(s, n));
   // big merged meshes: cut up one per frame after load (in tests all at once, deterministic)
-  function cutBig() { const [o, name] = bigQ.shift(); const k0 = S.length; slabs(o, name); for (let q = k0; q < S.length; q++) hashIn(S[q], q); }
-  if (window.__qa) while (bigQ.length) cutBig();
+  // [PERF] a time budget per frame: the generator is resumed until ~1.5 ms are spent; each finished slab is hashed right away
+  let cutting = null;
+  function cutBig(budgetMs = 1.5) { const now = () => Performance.prototype.now.call(performance), t0 = now();
+    do { if (!cutting) { if (!bigQ.length) return; const [o, name] = bigQ.shift(); cutting = slabs(o, name); }
+      const k0 = S.length; const r = cutting.next(); for (let q = k0; q < S.length; q++) hashIn(S[q], q); if (r.done) cutting = null;
+    } while (now() - t0 < budgetMs); }
+  if (window.__qa) while (bigQ.length || cutting) cutBig(1e9);
   if (window.__qa && !worker) { const sv = pending.splice(0); sv.forEach(voxelise); } // tests: deterministic, all grids ready from the first frame
   // moving things (hatch lid, oven door, book, tools): every half second re-read their matrices; one that moved is hashed
   // into the cells it now covers (its old cells are cleared first)
@@ -182,8 +190,9 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // is hashed once with room for its sway and no longer re-hashed: depth() reads its real pose anyway
   function trackMoving() {
     const per = Math.ceil(MOV.length / 30), k0 = (movK++ % 30) * per;
-    for (let q = k0; q < Math.min(MOV.length, k0 + per); q++) { const n = MOV[q], s = S[n]; if (s.dead || s.sway) continue; const e = s.obj.matrixWorld.elements; let same = true; for (let i = 0; i < 16; i++) if (Math.abs(e[i] - s.m[i]) > 1e-6) { same = false; break; } if (same) { s.still = (s.still || 0) + 1; if (s.still > 4) s.moves = 0; continue; }
-      const c0 = s.c.clone(); s.m.set(e); frameOf(s, s.obj.matrixWorld); s.still = 0; s.moves = (s.moves || 0) + 1;
+    let moved = 0; // [PERF] at most 6 re-hashes a frame (the first frames after load had every prop settle at once: a 7 ms spike); the rest wait their next turn
+    for (let q = k0; q < Math.min(MOV.length, k0 + per) && moved < 6; q++) { const n = MOV[q], s = S[n]; if (s.dead || s.sway) continue; const e = s.obj.matrixWorld.elements; let same = true; for (let i = 0; i < 16; i++) if (Math.abs(e[i] - s.m[i]) > 1e-6) { same = false; break; } if (same) { s.still = (s.still || 0) + 1; if (s.still > 4) s.moves = 0; continue; }
+      moved++; const c0 = s.c.clone(); s.m.set(e); frameOf(s, s.obj.matrixWorld); s.still = 0; s.moves = (s.moves || 0) + 1;
       if (s.moves >= 4 && s.c.distanceTo(c0) < .06) { s.sway = true; unhash(s, n); hashIn(s, n, .3); continue; }
       unhash(s, n); hashIn(s, n); }
   }
@@ -209,7 +218,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (!same) { s.m.set(e); frameOf(s, mw); }
     return true;
   }
-  function depth(s, p) {
+  function depth(s, p) { st.dc = (st.dc || 0) + 1;
     tq.copy(p).sub(s.c); const x = tq.dot(s.ax[0]), y = tq.dot(s.ax[1]), z = tq.dot(s.ax[2]); const n = OUT.n;
     if (s.kind === 'box') {
       const dx = s.h[0] - Math.abs(x), dy = s.h[1] - Math.abs(y), dz = s.h[2] - Math.abs(z); if (dx <= 0 || dy <= 0 || dz <= 0) return -1;
@@ -241,9 +250,19 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   // trunk: bark cross-sections every 10 cm (index.html SL), exact 2D distance to the outline
   const SLB = []; const sliceBox = s => { const b = [1e9, -1e9, 1e9, -1e9]; for (let i = 0; i < s.length; i += 2) { b[0] = Math.min(b[0], s[i]); b[1] = Math.max(b[1], s[i]); b[2] = Math.min(b[2], s[i + 1]); b[3] = Math.max(b[3], s[i + 1]); } return b; };
+  // per slice, in 1 cm z rows: the outline segments that span each row. The inside test (crossings to the +x side) only needs the
+  // segments spanning the point's z, so the full loop (distance to the outline) runs only for points really inside the bark
+  const SLR = []; let slPre = 0; const secs = [0, 0, 0];
+  function sliceRows(s, bb) { const z0 = bb[2], n = Math.max(1, Math.ceil((bb[3] - z0) / .01) + 1), rows = Array.from({ length: n }, () => []);
+    for (let i = 0; i < s.length; i += 4) { const a = Math.max(0, Math.floor((Math.min(s[i + 1], s[i + 3]) - z0) / .01)), b = Math.min(n - 1, Math.floor((Math.max(s[i + 1], s[i + 3]) - z0) / .01)); for (let k = a; k <= b; k++) rows[k].push(i); }
+    return { z0, rows: rows.map(r => Int32Array.from(r)) }; }
   function trunkDepth(p) {
     if (!trunk) return -1; const { SL, TAX } = trunk; if (Math.hypot(p.x - TAX[0], p.z - TAX[1]) > 2.4) return -1;
     const si = clamp(Math.round(p.y * 10), 0, SL.length - 1), s = SL[si]; const bb = SLB[si] || (SLB[si] = sliceBox(s)); if (p.x < bb[0] || p.x > bb[1] || p.z < bb[2] || p.z > bb[3]) return -1; // outside the slice's box: cheap reject
+    // [PERF] outside the outline's farthest reach in this direction: outside (an inside point always has outline beyond it on its own ray)
+    /* not built yet: the full loop below (they are built 3 a frame, never in a burst) */ const R = SLR[si]; if (R && !window.__colNoReach) { const k = Math.floor((p.z - R.z0) / .01); if (k < 0 || k >= R.rows.length) return -1; const row = R.rows[k]; let c = 0;
+      for (let q = 0; q < row.length; q++) { const i = row[q], z1 = s[i + 1], z2 = s[i + 3]; if ((z1 > p.z) !== (z2 > p.z)) { const x1 = s[i]; if (x1 + (p.z - z1) / (z2 - z1) * (s[i + 2] - x1) > p.x) c++; } }
+      if ((c & 1) !== 1) return -1; }
     let cr = 0, best = 1e9, bx = 0, bz = 0;
     for (let i = 0; i < s.length; i += 4) {
       const x1 = s[i], z1 = s[i + 1], x2 = s[i + 2], z2 = s[i + 3];
@@ -255,10 +274,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   // deepest shape at p: returns depth beyond the allowance for this body part, OUT.n = way out
   const nB = V();
-  function probe(p, part, lying, list) { const GR = window.__grab; let a = list;
+  function probe(p, part, lying, list, nt = true) { const GR = window.__grab; let a = list; const noTight = !list && window.__colNoTight;
     if (!a) { const kk = key(Math.floor(p.x / CS), Math.floor(p.y / CS), Math.floor(p.z / CS)); a = G.get(kk); } let best = 0;
     if (a) for (const n of a) {
-      const s = S[n]; if (s.dead) continue; if (list && (p.x < s.wmn.x || p.y < s.wmn.y || p.z < s.wmn.z || p.x > s.wmx.x || p.y > s.wmx.y || p.z > s.wmx.z)) continue; if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;
+      const s = S[n]; if (s.dead) continue; if (!list && !refresh(s)) continue; if (!noTight) { const t = s.t; if (p.x < t[0] || p.y < t[1] || p.z < t[2] || p.x > t[3] || p.y > t[4] || p.z > t[5]) continue; } if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;
       // POSE (poses thread): asleep, hero.js lays the body on the measured mattress itself; the bed's voxels (mattress, quilt mound,
       // pillow, all one 'bunkbed' grid) pushed the root up ~20-50 cm and made the head twitch on the pillow every ~0.3 s
       if (s.cls >= 2 && lying && hero.inBed && !hero.bedB) continue;
@@ -271,7 +290,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       else if (s.cls === 1 && (part === 4 || part === 5)) allow = ALLOW.seat;
       const ex = d - allow; if (ex > best) { best = ex; nB.copy(OUT.n); }
     }
-    const td = trunkDepth(p); if (td - ALLOW.hard > best) { best = td - ALLOW.hard; nB.copy(OUT.n); }
+    const td = nt ? trunkDepth(p) : -1; if (td - ALLOW.hard > best) { best = td - ALLOW.hard; nB.copy(OUT.n); }
     OUT.n.copy(nB); return best;
   }
 
@@ -379,16 +398,16 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (stamp.length < S.length) stamp = new Int32Array(S.length);
     for (let i = Math.floor(mn.x / CS); i <= Math.floor(mx.x / CS); i++) for (let j = Math.floor(mn.y / CS); j <= Math.floor(mx.y / CS); j++) for (let k = Math.floor(mn.z / CS); k <= Math.floor(mx.z / CS); k++) {
       const a = G.get(key(i, j, k)); if (!a) continue;
-      for (const n of a) { if (stamp[n] === frameNo) continue; stamp[n] = frameNo; const s = S[n]; if (s.dead || !s.wmn) continue;
-        for (let c = 0; c < 6; c++) { const b = CB[c]; if (s.wmx.x < b[0].x || s.wmx.y < b[0].y || s.wmx.z < b[0].z || s.wmn.x > b[1].x || s.wmn.y > b[1].y || s.wmn.z > b[1].z) continue; LC[c].push(n); } } }
+      for (const n of a) { if (stamp[n] === frameNo) continue; stamp[n] = frameNo; const s = S[n]; if (s.dead || !s.wmn || !refresh(s)) continue; const t = s.t; // [PERF] its exact current box, not the hash's padded one
+        for (let c = 0; c < 6; c++) { const b = CB[c]; if (t[3] < b[0].x || t[4] < b[0].y || t[5] < b[0].z || t[0] > b[1].x || t[1] > b[1].y || t[2] > b[1].z) continue; LC[c].push(n); } } }
     for (let c = 0; c < 6; c++) { const b = CB[c]; nearTrunk[c] = !!trunk && Math.hypot(Math.max(b[0].x - trunk.TAX[0], trunk.TAX[0] - b[1].x, 0), Math.max(b[0].z - trunk.TAX[1], trunk.TAX[1] - b[1].z, 0)) < 2.4; }
   }
-  const _hp = V(), lastHip = V(1e9, 0, 0), lastEnd = [null, null, V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0)]; let lastTouch = -100;
+  const _hp = V(), lastHip = V(1e9, 0, 0), lastEnd = [null, null, V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0), V(1e9, 0, 0)]; let lastTouch = -100, settled = false;
   const kneel = [false, false, false, false, false, false], _kp = V(), _fp = V(), _kn = V();
   function pre() { if (applied.lengthSq() > 0) { root.position.sub(applied); applied.set(0, 0, 0); } }
   function post(dt) {
     if (!on || dt <= 0) return; const t0 = performance.now(); frameNo++;
-    if (bigQ.length) cutBig(); buildSome(1.5); trackMoving();
+    const _rn = () => Performance.prototype.now.call(performance), _s0 = _rn(); if (bigQ.length || cutting) cutBig(); const _s1 = _rn(); buildSome(1.5); const _s2 = _rn(); trackMoving(); const _s3 = _rn(); secs[0] = _s1 - _s0; secs[1] = _s2 - _s1; secs[2] = _s3 - _s2; if (trunk && slPre < trunk.SL.length) for (let q = 0; q < 3 && slPre < trunk.SL.length; q++, slPre++) if (!SLR[slPre]) { const sl = trunk.SL[slPre]; SLR[slPre] = sliceRows(sl, SLB[slPre] || (SLB[slPre] = sliceBox(sl))); } // trunk rows ahead of need, 3 slices a frame
     floorGuard(dt);
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 6);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGv[c].copy(gv[c]); gv[c].set(0, 0, 0); }
@@ -407,13 +426,17 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     // still (asleep, seated, a slow task); the corrections already in place are applied every frame above
     { const hp = bones.Hips ? bones.Hips.getWorldPosition(_hp) : root.position; let mv = 0; for (const c of [2, 3, 4, 5]) if (LIMB[c].C) mv = Math.max(mv, anim[c].distanceTo(lastEnd[c])); mv = Math.max(mv, hp.distanceTo(lastHip));
       const quiet = frameNo - lastTouch > 10; if (quiet && (mv < .003 || (frameNo & 1))) { st.skipped++; finish(t0, 0, 0); return; }
+      // [PERF] a pose that stands still while touching (seated against the chair, lying on the mattress, a slow task) gives the same
+      // contacts as last frame: those corrections stay applied above, and the body is probed again every 4th frame (holds last .35 s).
+      // Only once the corrections have settled (last probe moved nothing by 0.5 mm): skipping while they still grow made them step (jitter)
+      if (!quiet && settled && mv < .002 && (frameNo & 3) && !window.__colNoStatic) { st.skipped++; finish(t0, 0, 0); return; }
       lastHip.copy(hp); for (const c of [2, 3, 4, 5]) if (LIMB[c].C) lastEnd[c].copy(anim[c]); }
     for (; it < 4; it++) {
       // broadphase: after the first pass only the chains that touched something are skinned and probed again, each against the
       // shapes whose box overlaps that chain's box (gathered once per frame); a chain with nothing near it costs nothing
       const mask = it === 0 ? 0 : liveMask; skin(mask); if (it === 0) gather(); pd.fill(0); let anyP = false; sumN[0].set(0, 0, 0); sumN[1].set(0, 0, 0); sumW[0] = sumW[1] = 0;
       for (const P of PTS) { if (mask && !(mask & (1 << P.chain))) continue; const L = LC[P.chain]; if (!L.length && !nearTrunk[P.chain]) continue;
-        const ex = probe(P.p, P.part, lying, L); if (ex <= 0) continue; if (it === 0 && ex > worst) worst = ex;
+        const ex = probe(P.p, P.part, lying, L, nearTrunk[P.chain]); if (ex <= 0) continue; if (it === 0 && ex > worst) worst = ex;
         anyP = true;
         // body and head: the excess-weighted mean way out (contacts on opposite sides cancel instead of bouncing between them);
         // a shin or foot caught at the side (bed rail, bench) also moves the body away, like a step aside
@@ -458,7 +481,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       }
       for (let c = 2; c < 6; c++) { if (pd[c] <= 0) continue; const L = LIMB[c]; if (!L.C) continue; const want = off.limb[c].clone().add(push[c]); const cap = c < 4 ? .07 : .1; if (want.length() > cap) want.setLength(cap); const d = take(c, want.sub(off.limb[c])); if (d.lengthSq() < 1e-10) continue; off.limb[c].add(d); ik2(L.A, L.B, L.C, anim[c].clone().add(off.limb[c]), c >= 4); }
     }
-    finish(t0, it, worst);
+    settled = gv.every(v => v.lengthSq() < 2.5e-7); finish(t0, it, worst);
   }
   // what a hand carries (bucket, sack, tool) must not swing through his own legs or body: the carrying arm is moved out from the
   // body (2-bone IK, the load follows the hand), smoothly. Hands gripped by grab.js are left to it.
@@ -484,7 +507,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       if (heldAmt[c] > 0) { const t = L.C.getWorldPosition(V()).addScaledVector(out, heldAmt[c]); ik2(L.A, L.B, L.C, t, false); L.C.getWorldPosition(anim[c]).sub(off.limb[c]); /* the contact pass below solves from here: from the bare animation it dropped the carried arm back 15 cm on every touching frame */ } }
   }
 
-  function finish(t0, it, worst) { if (window.__colTrace) { const A = window.__A; window.__colTrace.push([A && A.out ? A.out.frames.length : frameNo, off.limb[2].toArray().map(v => +(v * 100).toFixed(1)), off.limb[3].toArray().map(v => +(v * 100).toFixed(1)), +(heldAmt[2] * 100).toFixed(1), +(heldAmt[3] * 100).toFixed(1), +hold[2].toFixed(2), +hold[3].toFixed(2), ikRef, it]); ikRef = 0; } const ms = performance.now() - t0; st.frames++; st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
+  function finish(t0, it, worst) { if (window.__colTrace) { const A = window.__A; window.__colTrace.push([A && A.out ? A.out.frames.length : frameNo, off.limb[2].toArray().map(v => +(v * 100).toFixed(1)), off.limb[3].toArray().map(v => +(v * 100).toFixed(1)), +(heldAmt[2] * 100).toFixed(1), +(heldAmt[3] * 100).toFixed(1), +hold[2].toFixed(2), +hold[3].toFixed(2), ikRef, it]); ikRef = 0; } const ms = performance.now() - t0; st.frames++; st.sum = (st.sum || 0) + ms; if (ms > 4 && (st.spikes || (st.spikes = [])).length < 40) st.spikes.push([frameNo, +ms.toFixed(1), ...secs.map(v => +v.toFixed(1)), it]); secs.fill(0); st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
   // wrap the hero's update: corrections go on after hero.js has posed the body, and come off before it runs again
   // HERO-RULES.md: the 'collide' slot of the pose pipeline (after contacts, before grab and the guard); the old wrap only without stages
   if (HH.stage) { if ((HH.SLOTS || []).includes('pre')) HH.stage('pre', () => pre()); HH.stage('collide', dt => post(dt)); } else { const upd = HH.update; HH.update = dt => { pre(); upd(dt); post(dt); }; }
@@ -526,7 +549,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // how deep the body is in what the hands carry (cm), for tests
   function heldDepth() { skin(); const r = {}; for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const HBs = heldBoxes(L.C); if (!HBs.length) continue;
       let w = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > w) w = d; } } r[c === 2 ? 'L' : 'R'] = +(w * 100).toFixed(1); } return r; }
-  const api = { heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
+  const api = { trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
     depthAt: (x, y, z) => probe(V(x, y, z), 7, false), navReport, clearance, navMoved, free, room, buildAll: () => buildSome(1e9) };
   return api;
 }
