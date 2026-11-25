@@ -712,7 +712,7 @@ export function createAudio(ctx) {
       frameDt = frameDt * .8 + Math.min(.5, rawDt) * .2;
       dbgF = [+mv.toFixed(2), +vy.toFixed(2), +frameDt.toFixed(3), +p.y.toFixed(2)];
       if (autoFeet) feet(p, mv, vy, env);
-      houseWatch(hero, mv); toolSync(hero);
+      houseWatch(hero, mv); toolSync(hero, mv);
       if (!asleep && mv < .1 && Math.abs(vy) < .1 && now > idleBreath) { idleBreath = now + rnd(3, 4.2); const at = { x: p.x, y: p.y + 1.5, z: p.z }; if (nearCam(at, 3.5)) voice('syn_breath_' + Math.floor(Math.random() * 2), { pos: at, gain: .045, rate: rnd(1.3, 1.45), ref: 1, roll: 1.6, rev: .08, indoor: true, fadeIn: .05, fadeOut: .25 }); }
       if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
     }
@@ -733,7 +733,7 @@ export function createAudio(ctx) {
     if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); vplay(c, o); TS.last = now; return; }
     if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); vplay(c, o); TS.last = now; }
   }
-  function toolSync(hero) {
+  function toolSync(hero, mv = 0) {
     if (!toolAuto || !hero || !hero.hold || !ctx.bones || !ctx.bones.RightHand) { TS.tool = null; return; }
     const h = hero.hold.Right, tool = TOOLK(h && (h.tool || h.name || (typeof h === 'string' ? h : '')));
     if (tool !== TS.tool) { TS.tool = tool; TS.ls = null; TS.vy = 0; TS.sp = TS.lsp = 0; TS.ext = TS.ext0 = null; TS.lt = 0; TS.pk = 0; }
@@ -747,7 +747,7 @@ export function createAudio(ctx) {
     if (tool === 'hammer') {                                        // the head comes down fast, then stops on the nail
       // impact: after a downswing (peak < -1 m/s) the hand brakes hard on the nail; the hit is when its speed falls under
       // 40 % of the peak, interpolated inside the frame
-      if (vy < -1) TS.pk = Math.min(TS.pk || 0, vy);
+      if (mv > .15 || hero.path && hero.path.length) { TS.pk = 0; TS.vy = vy; return; }   // walking with the hammer: the arm swing is no blow if (vy < -1) TS.pk = Math.min(TS.pk || 0, vy);
       if ((TS.pk || 0) < -1 && vy > .4 * TS.pk) { const k = clamp01((.4 * TS.pk - TS.vy) / Math.max(1e-3, vy - TS.vy)), dl = Math.max(0, (1 - k) * fdt) * 0;
         if (gnow - (TS.hitG ?? -9) > .25) { TS.hitG = gnow; contact({ tool: 'hammer', kind: 'hit', pos: at, strength: clamp01(-TS.pk / 3) }, true); } TS.pk = 0; }
       if (vy > .3) TS.pk = 0;                                        // lifted again without a hit
@@ -776,13 +776,13 @@ export function createAudio(ctx) {
   const HW = { hatch: null, bolt: null, rack: null, task: null, taskT: 0, next: 0, loop: null, hatchT: -9 };
   // task foley while he works (standing at the job, not walking): [action or clip, every [a,b] s, gain, rate]
   const TASKF = {
-    fix_rope: [['rope_ladder', [1.8, 3.2], .7, .9], ['fs_rope_a', [2.5, 4.5], .8, .85]],
-    fix_hinge: [['@squeak', [1.6, 3], 1, 1.45]],
-    fix_window: [['window', [3.5, 6], .7, 1], ['plank', [5, 8], .6, 1.1]],
-    clear_roof: [['leaves_a', [1.4, 2.6], .5, 1], ['sweep', [2.5, 4], .7, 1.05]],
-    fix_chimney: [['logs_stack', [2.4, 4], .45, 1.35], ['grunt', [8, 14], 1, 1]],
-    fix_shingle: [['plank', [4, 7], .6, 1.15], ['saw_shingle', [9, 15], .8, 1]],
-    fix_board: [['plank', [4, 7], .7, 1]], fix_wall: [['plank', [5, 8], .6, 1.05]], fix_railing: [['plank', [4, 7], .6, .95]],
+    // repairs (fix_*, clear_roof) have NO timer foley (Pavel 2026-11-25: a constant scraping from the moment he took the hammer,
+    // even walking to the job). hero.js sends each repair sound on its own animation event instead: a hammer hit exactly when
+    // the face meets the nail (__audio.contact), a rag / rope / hinge sound at each stroke of the hands (wipeWindow), the
+    // clear_roof sweep at each peak of the raking hand's speed. Nothing plays while he walks or stands.
+    //
+    //
+    //
     dishes: [['plate', [3.5, 6], .55, 1.05], ['cup', [6, 10], .5, 1]],
   };
   function houseWatch(hero, mv) {
