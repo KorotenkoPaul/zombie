@@ -1636,7 +1636,7 @@ export function buildProps(ctx) {
   };
   // ---------- stovepipe: from the hood duct across the kitchen ceiling, out through the left wall,
   // then up outside the bedroom wall past the eaves, with a rain cap (smoke.js reads out.chimneyTop) ----------
-  { const g = new THREE.Group(); const r = .055, y1 = KT + 1.95, xo = -4.8, z = 1.3, top = BD + 3.05;
+  { const g = new THREE.Group(); const r = .072, y1 = KT + 1.95, xo = -4.8, z = 1.3, top = BD + 3.25; /* photo: a stout pipe standing well clear of the bedroom eave with a coolie-hat cap (5.5 cm read as a 2 px line from the home view) */
     const seg = (a, b) => { const d = b.clone().sub(a); const m = add(g, new THREE.CylinderGeometry(r, r, d.length(), 16), M.iron, (a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2); m.quaternion.setFromUnitVectors(V(0, 1, 0), d.normalize()); };
     const joint = (p) => add(g, new THREE.SphereGeometry(r * 1.08, 16, 10), M.iron, p.x, p.y, p.z);
     const band = (p, horiz) => add(g, new THREE.CylinderGeometry(r * 1.15, r * 1.15, .03, 16), M.iron, p.x, p.y, p.z, 0, 0, horiz ? Math.PI / 2 : 0);
@@ -1645,7 +1645,7 @@ export function buildProps(ctx) {
     for (const x of [-3.9, -4.42]) band(V(x, y1, z), true); for (let y = y1 + .5; y < top - .2; y += .7) band(V(xo, y, z), false);
     // wall collar where it goes through the kitchen wall, a bracket on the bedroom wall, the cap
     add(g, rb(.05, .22, .22, .01), M.woodDark, -4.42, y1, z); add(g, rb(.62, .03, .05, .01), M.iron, -4.5, BD + 1.2, z);
-    add(g, new THREE.CylinderGeometry(.01, .16, .1, 16), M.iron, xo, top + .12, z); for (const s of [-1, 1]) add(g, rb(.012, .08, .012, .003), M.iron, xo + s * .045, top + .04, z);
+    add(g, new THREE.CylinderGeometry(.012, .21, .13, 20), M.iron, xo, top + .15, z); add(g, new THREE.CylinderGeometry(.21, .21, .012, 20), M.iron, xo, top + .085, z); for (const s of [-1, 1]) for (const t of [0, 1]) add(g, rb(.012, .1, .012, .003), M.iron, xo + (t ? 0 : s * .06), top + .05, z + (t ? s * .06 : 0));
     bake(g); g.traverse(o => { if (o.isMesh) o.castShadow = false; }); scene.add(g); out.chimneyTop = V(xo, top, z); }
   shiftRooms();
   setTop(0, placed.counter, 0, .5, .315, .9); setTop(1, placed.workbench, 1, .85, .33, .9); setTop(2, placed.sidebench, 2, .5, .21, .78, -Math.PI / 2); // (Planks thread) worn work tops
