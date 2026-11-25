@@ -2935,7 +2935,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   // on his back: knees only a little up, heels on the mattress (the clip held both feet ~15 cm in the air); the head tips forward a
   // touch so the skull rests in the pillow rather than through it. On his side the upper leg rests on the mattress. Blended by the roll.
   const sS=SP.sS||0,kb=kk*(1-sS),ks=kk*sS;
-  if(kb>.002){for(const sd of ['Left','Right']){dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],B.mat+.13,kb);dropTo(bones[sd+'Leg'],bones[sd+'Foot'],B.mat+heelUnder(sd)-.018,kb);}
+  if(kb>.002){/* R42-3: on his back the knees fall in over the hips' width, not splayed 29 cm apart at the feet, and lie lower (a box under the quilt) */
+   {root.updateMatrixWorld(true);const lr=wp(bones.LeftUpLeg).sub(wp(bones.RightUpLeg));lr.y=0;const hw=lr.length()/2;if(hw>1e-3){lr.normalize();const mid=wp(bones.LeftUpLeg).add(wp(bones.RightUpLeg)).multiplyScalar(.5);
+    for(const sd of ['Left','Right']){const U=bones[sd+'UpLeg'],L=bones[sd+'Leg'];const k=wp(L);const sg=sd==='Left'?1:-1;const off=k.clone().sub(mid).dot(lr)*sg;const lim=hw+.02;if(off<=lim)continue;
+     const k2=k.clone().addScaledVector(lr,-sg*(off-lim));turnBone(U,k,k2,kb);root.updateMatrixWorld(true);}}}
+   for(const sd of ['Left','Right']){dropTo(bones[sd+'UpLeg'],bones[sd+'Leg'],B.mat+.13,kb);dropTo(bones[sd+'Leg'],bones[sd+'Foot'],B.mat+heelUnder(sd)-.018,kb);}
    if(bones.Neck&&bones.Head){const nk=wp(bones.Neck),hd=wp(bones.Head);const d=hd.clone().sub(nk).normalize();const ax=V().crossVectors(d,V(0,1,0));if(ax.lengthSq()>1e-6)rotW(bones.Neck,ax.normalize(),.18*kb);}}
   if(ks>.002){const top=down==='Left'?'Right':'Left';dropTo(bones[top+'UpLeg'],bones[top+'Leg'],B.mat+.17,ks);dropTo(bones[top+'Leg'],bones[top+'Foot'],B.mat+.1,ks);}}
  // BED: the arms rest on something while he sleeps (watcher B3: the right forearm stayed raised with a stiff claw hand all night).
@@ -3304,7 +3308,7 @@ function vestReachTick(dt){if(!VR.on)return;const st=dt||1/60;VR.t+=st;const t=V
   root.position.x=lerp(c.from.x,c.to.x,kx);root.position.z=lerp(c.from.z,c.to.z,kz);H.fit.y=lerp(c.y0,c.y1,c.dir>0?smooth(.1,.7,u):smooth(.3,.9,u));
   c.plant=c.dir>0?1-smooth(.12,.38,u):smooth(.62,.9,u);
   // getting up he pushes the quilt off as he rises: it follows his body for the first moments, then settles flat
-  /* BED: lying down the cover starts as his legs come over the mattress, so they slide in UNDER the quilt (it rose over him only after he lay down, he sank into it) */if(c.dir>0&&!c.qon&&u>.3){c.qon=true;bedPress(true);}
+  /* BED: lying down the cover starts as his legs come over the mattress, so they slide in UNDER the quilt (it rose over him only after he lay down, he sank into it) */if(c.dir>0&&!c.qon&&u>.3&&(u>.75||!FIT.bed||['Left','Right'].every(sd=>!bones[sd+'Leg']||wp(bones[sd+'Leg']).z<FIT.bed.z1-.02))){c.qon=true;bedPress(true);}/* R56-1: only once both knees are over the mattress: the quilt can't reach past its hem, so a knee still out over the edge stood up through its top as it rose */
   {const P=window.__props||P3;if(P&&P.quiltLive)P.quiltLive(.1);}
   if(c.dir<0&&!c.qoff&&u>.5){c.qoff=true;bedPress(false);}/* the legs are out from under it first */
   bedClipGuard();
