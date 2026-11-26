@@ -336,12 +336,30 @@ export function createWind(opt = {}) {
 
     addFallingLeaves(o) {
       const THREE = o.THREE, N = o.MOBILE ? 16 : 30;
-      // a single oak leaf drawn once into a small canvas: lobed blade, midrib
-      const cv = document.createElement('canvas'); cv.width = cv.height = 64; const x = cv.getContext('2d');
-      x.translate(32, 33); x.fillStyle = '#fff'; x.beginPath();
-      for (let i = 0; i <= 40; i++) { const t = i / 40 * Math.PI * 2, r = 1 + 0.16 * Math.cos(t * 5) ** 2 * Math.sign(Math.cos(t * 5));
-        const px = Math.sin(t) * 13 * r * (0.75 + 0.25 * Math.cos(t)), py = -Math.cos(t) * 26; i ? x.lineTo(px, py) : x.moveTo(px, py); }
-      x.fill(); x.strokeStyle = 'rgba(90,70,40,.55)'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(0, 30); x.lineTo(0, -24); x.stroke();
+      // a single oak leaf drawn once into a small canvas
+      const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d');
+      x.translate(64, 64); x.scale(2, 2);
+      // [autumn round] an oak leaf, not a feather: 4-5 rounded lobes per side with deep sinuses, a short stalk, side veins to the
+      // lobe tips, a lighter centre and darker rim, a few dry spots. White-based: the instance colour gives gold / rust / green.
+      const half = (sg, j) => { const pts = []; const NL = 5;
+        for (let i = 0; i <= 60; i++) { const u = i / 60; const y = 22 - u * 50; // base (y 22) to tip (y -28)
+          const env = Math.sin(Math.PI * Math.pow(u, 0.8)) * (0.75 + 0.25 * u) * 16;
+          const lob = Math.pow(Math.abs(Math.sin(u * NL * Math.PI + j)), 0.4);
+          const w = env * (0.32 + 0.68 * lob) * (1 + 0.06 * Math.sin(u * 23 + j * 3));
+          pts.push([sg * w, y]); } return pts; };
+      const lfR = half(1, 0.15), lfL = half(-1, 0.45);
+      x.beginPath(); x.moveTo(0, 22); lfR.forEach(p => x.lineTo(p[0], p[1])); for (let i = lfL.length - 1; i >= 0; i--) x.lineTo(lfL[i][0], lfL[i][1]); x.closePath();
+      x.fillStyle = '#fff'; x.fill();
+      x.save(); x.clip();
+      const g = x.createRadialGradient(0, -4, 3, 0, -2, 26); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(60,45,30,.45)');
+      x.fillStyle = g; x.fillRect(-32, -32, 64, 64);
+      // side veins to the lobes
+      x.strokeStyle = 'rgba(255,248,215,.75)'; x.lineWidth = 0.9;
+      for (let k = 0; k < 5; k++) { const u = (k + 0.55) / 5, y = 22 - u * 50; for (const sg of [1, -1]) { x.beginPath(); x.moveTo(0, y + 2); x.quadraticCurveTo(sg * 4, y - 1, sg * 10 * Math.sin(Math.PI * Math.pow(u, .8)), y - 4); x.stroke(); } }
+      // dry spots
+      x.fillStyle = 'rgba(70,45,25,.22)'; [[6, -5, 1.1], [-8, 6, 0.8]].forEach(s => { x.beginPath(); x.arc(s[0], s[1], s[2], 0, 6.29); x.fill(); });
+      x.restore();
+      x.strokeStyle = 'rgba(80,60,35,.7)'; x.lineWidth = 1.1; x.beginPath(); x.moveTo(0, 30); x.lineTo(0, -24); x.stroke(); // midrib and stalk
       const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
       const geo = new THREE.PlaneGeometry(0.17, 0.21);   // [ENV] was 9x11 cm: from the home view (~35 m) a falling leaf was 1-2 px, never seen; now about the size of the oak's own leaves
       const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
