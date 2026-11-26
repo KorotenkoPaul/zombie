@@ -409,7 +409,7 @@ export function createHero(ctx){
  // poses[k] = {x,z,y}: where the root stands and faces when step k has landed. Follower mode ('turn'): TT drives the yaw itself.
  // Slide mode ('slide': a short approachTo / work-spot step, <= .35 m): the slide moves the root as before; the steps follow its timeline.
  function ttCarryLow(){/* a bucket / sack hanging from the hand at knee height: stepping round swung the shins into it (fetchwater, dumpwater, cook) */const T=PP()&&PP().tools;if(!T)return false;const hy=bones.Hips.getWorldPosition(V()).y;for(const n in T){const o=T[n];if(!o||!o.parent||slung[n]||!onHeroT(n))continue;const b=new THREE.Box3().setFromObject(o);if(!b.isEmpty()&&b.min.y<hy-.35)return true;}return false;}
- function ttInit(mode,poses){const p=root.position,y0=root.rotation.y;if(H.carry||ttCarryLow())return false;
+ function ttInit(mode,poses){const p=root.position,y0=root.rotation.y;if(window.__noTT||H.carry||ttCarryLow())return false;
   {/* not on the ground outside: roots and slopes under the stepped feet bent the ankles past 45-50 deg (firewood, hunt); the clip's turn stays there */const GR=window.__ground;if(p.y<=2&&GR&&GR.standAt&&!window.__ttGround)return false;}const r=V(Math.cos(y0),0,-Math.sin(y0)),f=fwd(y0);const ft={};
   for(const s of ['Left','Right']){const F=bones[s+'Foot'];if(!F)return false;const a=F.getWorldPosition(V());const d=a.clone().sub(p);ft[s]={lat:d.dot(r),fo:d.dot(f),p:a.clone(),y:y0};}
   const w=clamp((Math.abs(ft.Left.lat)+Math.abs(ft.Right.lat))/2,.07,.13),fo=clamp((ft.Left.fo+ft.Right.fo)/2,-.05,.08);
@@ -3674,7 +3674,16 @@ stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(d
   else if(H.state==='walk'){H.state='work';H.v=0;}
   if(H.slide&&!TT.on&&!H.slide.tt&&!window.__oldTurn&&window.__ttSlide&&!window.__gamewalk&&!H.path.length&&!H.swing&&!H.trans&&!H.seated&&!H.inBed&&!H.fit&&H.ground&&!H.lad&&!((H.squat||0)>.02)&&!(window.__gamewalk&&window.__gamewalk.S&&window.__gamewalk.S.w>.01)){H.slide.tt=1;if(ttStartSlide(H.slide))TT.sl=H.slide;}
   if(!H.path.length&&!TT.on&&!window.__oldTurn&&!window.__gamewalk/* the game walk has its own turn steps */&&!H.swing&&!H.trans&&!H.seated&&!H.inBed&&!H.fit&&H.ground&&!H.lad&&!H.slide&&!((H.squat||0)>.02)&&!(window.__gamewalk&&window.__gamewalk.S&&window.__gamewalk.S.w>.01)&&Math.abs(H.v||0)<.05&&(H._rv||0)<.05/* the root still: a task moving him (fridge step-back) is no turn on the spot */){const da=wrapA(H.face-root.rotation.y);if(Math.abs(da)>.35&&ttStart(da)){if(H.cur===actions['30'])play(IDLE(),{fade:.25});H.turnStep=false;}}
-  /* root speed: the stepped turn starts only when the root stands (a task moving it at 0.6 m/s left the feet behind) */{const p=root.position;H._rv=H._rp?Math.hypot(p.x-H._rp.x,p.z-H._rp.z)/Math.max(dt,1e-3):0;H._rp=p.clone();}if(TT.on)ttTick(dt);
+  /* root speed: the stepped turn starts only when the root stands (a task moving it at 0.6 m/s left the feet behind) */{const p=root.position,idt=1/Math.max(dt,1e-3);const vx=H._rp?(p.x-H._rp.x)*idt:0,vz=H._rp?(p.z-H._rp.z)*idt:0;H._rv=Math.hypot(vx,vz);
+   /* WALK (integrator, free-day log f41664): a task that walks on its own (bolt follows the door leaf at 0.75 m/s) and ends mid-step, or hands
+      over to the next one, stopped the root dead in one frame. The root coasts on and slows over about a step (2.5 m/s^2, ~10 cm), never
+      on a path, a ladder, a seat or a stepped turn. Only at a task change: a task that stops its own root keeps its stop. OFF by default (window.__coast): neutral alone in the full gate, worse together with the knee pole fix */
+   if(window.__coast&&!window.__noCoast){const free=!H.path.length&&!H.lad&&H.ground&&!H.fit&&!H.seated&&!H.inBed&&!H.trans&&!TT.on&&!H.swing;
+    if(act!==H._cAct){H._cAct=act;H._cK=4;}else if(H._cK>0)H._cK--;
+    if(H.coast){if(!free)H.coast=null;else{const c=H.coast,sp=Math.hypot(c.x,c.z),ns=Math.max(0,sp-2.5*dt);if(ns<.03)H.coast=null;else{c.x*=ns/sp;c.z*=ns/sp;p.x+=c.x*dt;p.z+=c.z*dt;}}}
+    else if(free&&H._cK>0&&H._pv){const ps=Math.hypot(H._pv.x,H._pv.z);if(ps>.15&&ps<2&&H._rv<ps*.4){H.coast={x:H._pv.x,z:H._pv.z};p.x+=H._pv.x*dt;p.z+=H._pv.z*dt;}}
+    H._pv={x:vx,z:vz};}
+   H._rp=p.clone();}if(TT.on)ttTick(dt);
   if(!H.path.length&&!TT.on){if(!H.swing&&!H.trans&&!H.seated&&!H.inBed){const da=wrapA(H.face-root.rotation.y);const wav=clamp(da*3.5,-2.6,2.6);H.av=H.slide&&(H.slide.yT!=null||Math.abs(H.slide.yaw||0)>1e-3)?0:(H.av||0)+clamp(wav-(H.av||0),-6*dt,6*dt);/* a slide that turns him (approachTo) sets the yaw itself: the follower turned him as well, twice the turn (telescope: 45 deg past the tube and back) */if(Math.abs(da)<.002&&Math.abs(H.av)<.02)H.av=0;root.rotation.y+=H.av*dt;
      if(H.slide&&Math.hypot(H.slide.x||0,H.slide.z||0)>.08&&!window.__oldTurnStep){H.turnStep=false;}/* a step to a work spot (approachTo) owns the walk clip until it ends: the turn-step below dropped it to idle mid-step (a 35 cm glide; game style: the feet then caught up after, leg jitter 6-8 cm) */
      else if(Math.abs(da)>.35&&H.cur&&['0','11','12','336','30','hy_idle'].includes(H.cur.getClip().name)){play('30',{fade:.3,speed:.7});H.turnStep=true;}else if(H.turnStep&&Math.abs(da)<.12){H.turnStep=false;if(H.cur===actions['30'])play(IDLE(),{fade:.4});}}}
