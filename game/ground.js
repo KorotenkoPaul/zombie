@@ -125,7 +125,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   for(let i=0;i<GS*GS;i++)mh[i]*=smooth(1.1,.5,dist[i]);
   moundAt=(x,z)=>{if(Math.abs(x)>=GE-CELL||Math.abs(z)>=GE-CELL)return 0;const fx=(x+GE)/CELL-.5,fz=(z+GE)/CELL-.5;const ix=Math.max(0,Math.floor(fx)),iz=Math.max(0,Math.floor(fz));const tx=fx-ix,tz=fz-iz;
    return (mh[iz*GS+ix]*(1-tx)+mh[iz*GS+ix+1]*tx)*(1-tz)+(mh[(iz+1)*GS+ix]*(1-tx)+mh[(iz+1)*GS+ix+1]*tx)*tz;};}
- G.heightAt=groundH;
+ G.heightAt=window.__oldHeightAt?groundH:(x,z)=>{const m=meshH(x,z);return m==null?groundH(x,z):m;};/* the hero stands on the drawn ground (Ground: up to 7 cm off on roots, 11 cm at the pond) */
  // ---- the hero's trodden path: from the foot of the ground rope ladder (x 0, z 4) out into the clearing ----
  const PATH=[[0,4.3],[.5,5.6],[1.4,7.2],[1.2,9],[.2,10.8],[-.6,12.6],[-.4,14.5]];
  const pathMain=(x,z)=>{let best=99;for(let i=0;i<PATH.length-1;i++){const [ax,az]=PATH[i],[bx,bz]=PATH[i+1];const dx=bx-ax,dz=bz-az;const t=Math.max(0,Math.min(1,((x-ax)*dx+(z-az)*dz)/(dx*dx+dz*dz)));best=Math.min(best,Math.hypot(x-ax-dx*t,z-az-dz*t));}
