@@ -394,7 +394,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     }
     const s0Oven = () => ovenS && !ovenS.on;
     let ovenS = null;
-    ovenS = add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: (k, f) => {
+    ovenS = add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 5.4, sway: .03 }], haloSize: .9, extra: (k, f) => {
       if (ovenS && OV) { const L = ovenS.level, up = ovenS.on;
         if (OV.setSpread) OV.setSpread(up ? smooth(.04, .7, L) : smooth(.22, .72, L));
         if (spl) { const burn = up ? smooth(.02, .5, L) : 1; spl.visible = up && burn < .98;
@@ -1200,7 +1200,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
       if (s.extra) s.extra(k, f);
       if (!s.lights.length && s.haloObj) s.haloObj.intensity = (s.kind === 'glow' ? .5 : 4.5) * k * f;
-      const share = s.kind === 'glow' ? .04 : s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
+      const share = s.kind === 'glow' ? .04 : s.kind === 'candle' ? .3 : s.kind === 'fire' ? .25 : 1;   /* fire: a small closed firebox lights the floor and walls by the stove, not the whole room evenly (was .55: the oven alone lit the kitchen like the lamp) */
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
     wgSrc.forEach((w, i) => { const v = w.k() * (1 - dayK); wgC.value[i].set(1.0 * v, .64 * v, .32 * v); });
