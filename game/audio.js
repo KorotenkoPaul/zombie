@@ -221,11 +221,11 @@ export function createAudio(ctx) {
     W.on('lightning', e => {
       if (!loaded || muted || !e) return; let d = e.dist;
       if (d == null && e.pos) { const q = e.pos, x = q.x ?? q[0], y = q.y ?? q[1], z = q.z ?? q[2]; d = Math.hypot(x, (y || 0) * .3, z); }
-      thunder(d ?? rnd(400, 3000), e.strength ?? .7); thunderNext = now + rnd(25, 60);
+      thunder(d ?? rnd(400, 3000), e.strength ?? .7, e.dir); thunderNext = now + rnd(25, 60);
     });
   }
   // procedural thunder: a crack (only when close) and a long rumble of low-passed noise with a few swells
-  function thunder(dist, strength) {
+  function thunder(dist, strength, dir) {
     if (!A || muted) return;
     if (!noiseBuf) { const n = A.sampleRate * 2; noiseBuf = A.createBuffer(1, n, A.sampleRate); const d = noiseBuf.getChannelData(0); let b = 0; for (let i = 0; i < n; i++) { b = b * .6 + (Math.random() * 2 - 1) * .4; d[i] = b; } }
     const t = A.currentTime + Math.min(12, dist / 343), near = clamp01(1 - dist / 2500), len = 3.5 + 5 * (1 - near) + rnd(0, 2);
@@ -237,7 +237,7 @@ export function createAudio(ctx) {
     let tt = t + (near > .6 ? .4 : 1.2);                                    // a few rolling swells
     for (let i = 0; i < 2 + Math.floor(rnd(0, 3)); i++) { g.gain.linearRampToValueAtTime(peak * rnd(.25, .5), tt); tt += rnd(.5, 1.2); g.gain.linearRampToValueAtTime(peak * rnd(.5, .9), tt); tt += rnd(.4, 1); }
     g.gain.linearRampToValueAtTime(peak * .2, Math.min(t + len - 1, tt + .5)); g.gain.exponentialRampToValueAtTime(.0005, t + len);
-    const sp = A.createStereoPanner ? A.createStereoPanner() : null; if (sp) sp.pan.value = rnd(-.6, .6);
+    const sp = A.createStereoPanner ? A.createStereoPanner() : null; if (sp) { let pn = rnd(-.6, .6); const c = ctx.camera; if (dir && c && c.matrixWorld) { const m = c.matrixWorld.elements, l = Math.hypot(m[0], m[2]) || 1; pn = clamp01(.5 + .4 * (dir[0] * m[0] + dir[1] * m[2]) / l) * 2 - 1 + rnd(-.08, .08); } sp.pan.value = Math.max(-.8, Math.min(.8, pn)); }   // [ENV] the rumble comes from the strike's side (the flash's side of the sky), not a random one
     src.connect(lp).connect(g); (sp ? g.connect(sp) : g).connect(outBus); const s2 = A.createGain(); s2.gain.value = .6; g.connect(s2).connect(revIn);
     src.start(t, rnd(0, 1.5)); src.stop(t + len + .1);
     if (near > .6) {                                                         // the crack of a close strike
