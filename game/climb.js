@@ -268,8 +268,8 @@ export function createClimb() {
   function placeRoot(A, p) { p.y = A.y; p.x = A.lad.x; p.z = A.o.cz + A.zDir * (A.back || 0); } // hips are fixed exactly in post()
 
   // highest wrist the arm reaches with the body standing on a foot at rootY (shoulder over the hips, ~a hip distance from the rungs)
-  // the root height the hips are held at: near the floor below never lower than standing (rounded max: no velocity step)
-  function bodyY(A, y) { return A.hip0 != null && A.hipUp != null ? smax(y + A.hipUp, A.floorY + A.hip0 - .05, .12) - A.hipUp : y; }
+  // the root height the hips are held at going down: near the floor below never lower than standing (up: the noSink hold does it) (rounded max: no velocity step)
+  function bodyY(A, y) { return !A.up && A.hip0 != null && A.hipUp != null ? smax(y + A.hipUp, A.floorY + A.hip0 - .05, .12) - A.hipUp : y; }
   function reachY(A, rootY) { const arm = (M.arm || .5) * .93, dz = A.Dhip - .065; return rootY + (A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9) + Math.sqrt(Math.max(0, arm * arm - dz * dz)); }
   // can the hand reach the palm spot on the floor above (past the top rung and the edge beam) from a body standing at rootY?
   // (it went there with the body still low: the arm ran out 12 cm short and the fingers dragged through the edge beam)
@@ -289,8 +289,8 @@ export function createClimb() {
     const hLo = L.LH.r <= L.RH.r ? 'LH' : 'RH', hHi = hLo === 'LH' ? 'RH' : 'LH';
     let hand = null, hto = null;
     // hands: one rung higher than the other hand; past the top rung the palm goes flat on the floor above
-    const lowOut = up && M.arm && L[hLo].r < nR && top(A, L[hLo].r) + .015 < top(A, minAfter) + (A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9) - M.arm * .9; /* the lower hand would be left below the arm's reach after this step (v6: hands 35 cm off their rungs while the body rose) */
-    if (up) { if ((L[hLo].r < minAfter + A.K || lowOut) && L[hLo].r < nR) { hand = hLo; hto = Math.min(nR, L[hHi].r + 1); if (hto > nR - 1) hto = reachFloor(A, top(A, minAfter)) ? nR : (L[hHi].r === nR - 1 ? nR - 2 : nR - 1); if (hto < nR) { const ry = reachY(A, top(A, minAfter)); while (hto > L[hLo].r && top(A, hto) + .015 > ry) hto--; } if (hto <= L[hLo].r && lowOut && L[hHi].r > L[hLo].r && L[hHi].r < nR && top(A, L[hHi].r) + .015 <= reachY(A, top(A, minAfter)) + .04) hto = L[hHi].r; /* nowhere higher to go (top rung taken, the boards out of reach): both hands on the top rung rather than one left behind (gate rope ladder: a hand 40 cm off its rung) */ if (hto <= L[hLo].r) hand = null; } }
+    const lowOut = up && M.arm && L[hLo].r < nR && top(A, L[hLo].r) + .015 < bodyY(A, top(A, minAfter)) + (A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9) - M.arm * .9; /* the lower hand would be left below the arm's reach after this step (v6: hands 35 cm off their rungs while the body rose) */
+    if (up) { if ((L[hLo].r < minAfter + A.K || lowOut) && L[hLo].r < nR) { hand = hLo; hto = Math.min(nR, L[hHi].r + 1); if (hto > nR - 1) hto = reachFloor(A, top(A, minAfter)) ? nR : (L[hHi].r === nR - 1 ? nR - 2 : nR - 1); if (hto < nR) { const ry = reachY(A, bodyY(A, top(A, minAfter))); while (hto > L[hLo].r && top(A, hto) + .015 > ry) hto--; } if (hto <= L[hLo].r && lowOut && L[hHi].r > L[hLo].r && L[hHi].r < nR && top(A, L[hHi].r) + .015 <= reachY(A, bodyY(A, top(A, minAfter))) + .04) hto = L[hHi].r; /* nowhere higher to go (top rung taken, the boards out of reach): both hands on the top rung rather than one left behind (gate rope ladder: a hand 40 cm off its rung) */ if (hto <= L[hLo].r) hand = null; } }
     else { const ry = reachY(A, bodyY(A, top(A, minAfter))) - .12; const hy = r => r >= nR ? A.o.yTop : top(A, r) + .015; // palm flat on the floor above: its height is the floor's
       if (L[hHi].r > minAfter + A.K || L[hHi].r >= nR || hy(L[hHi].r) > ry) { /* a palm still on the boards above comes onto the top rung with the first step down (gate: hand gripping air) *//* going down the hands stay a rung lower: the body hangs lower under them */ hand = hHi; hto = Math.min(nR - 1, L[hLo].r - 1); if (L[hLo].r >= nR) hto = nR - 1; while (hto > minAfter + 1 && top(A, hto) + .015 > ry) hto--; if (M.arm) { const lo = (A.y + top(A, minAfter)) / 2 + (A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9) - M.arm * .8; while (hto < nR - 1 && hto < L[hLo].r && top(A, hto) + .015 < lo) hto++; } /* not below the arm's reach either (v6: the lower hand hung 10-17 cm short of its rung all the way down) */ } }
     if (hand && hto === L[hand].r) hand = null;
@@ -307,7 +307,7 @@ export function createClimb() {
     const y0 = A.y; let y1 = top(A, minAfter);
     // going up: the body rises no higher than the hands that stay on their rungs can follow (rope ladder top: both hands on the
     // top rung, the body went on up and the arms ran out 10 cm)
-    if (up && M.arm) { const so = A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9; for (const h of ['LH', 'RH']) { const mv = move.find(m => m.k === h); const r = mv ? mv.to : L[h].r; if (r < 0 || r >= nR) continue; const lim = top(A, r) + .015 - so + M.arm * .97; if (lim < y1) y1 = Math.max(y0, lim); } }
+    if (up && M.arm) { const so = A.shOff != null ? A.shOff : A.sh0 != null ? A.sh0 : (M.shH || 1.1) * .9; for (const h of ['LH', 'RH']) { const mv = move.find(m => m.k === h); const r = mv ? mv.to : L[h].r; if (r < 0 || r >= nR) continue; const lim = top(A, r) + .015 - so + M.arm * .97 - (bodyY(A, y1) - y1); if (lim < y1) y1 = Math.max(y0, lim); } }
     const T = (hand ? A.T : A.T * .8) * (!up && move.some(m => m.k[1] === 'H' && L[m.k].r >= nR) ? 1.4 : 1); /* a palm coming off the boards drops ~50 cm: that first step down is slower (gate: hand 4 cm/frame² leaving bl_t) */
     const st = { move, u: A.carry || 0, T, y0, y1, ya: up ? (hand ? .22 : .1) : 0, yb: up ? 1 : .78 };
     A.carry = 0;
