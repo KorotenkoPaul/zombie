@@ -223,3 +223,8 @@ Debug: `__treedress.stats()`.
 - Nails: a pair of forged spike heads (~4.5 cm) beside about two in three beam ends, each with a thin rust run down the bark. Only where the beam's end shows: bites whose end is buried in the bark get none (JS flags them by adding 4 to the bite's w in tdB1/tdB2; the bite loop strips it).
 - No rope wraps: there is no place where a rope meets the bark, and a lashing would be new geometry and a draw call (night home is at 292/300).
 - Shader only. Key |treedress12.
+
+## Round 33 — rain on the new roots and scars
+- The wet darkening (rain sheen mask tdWM, the soak-after-rain tdDM, the drip runs under the landings) was all in the map block, so Tree's map code mixed it halfway back to dry brown: in heavy rain the oak looked dry. It is re-applied at the start of the normal block: darker by up to 30 % and a little richer (even, not squared, so shaded bark doesn't sink to black), most in the fold grooves, the drip runs (tdDrk) staying dark longest.
+- Scars: bare wood drinks the rain, darkening 45 % more. Knot holes hold water (roughness .28 while raining), fold grooves get a sheen (roughness to .5). Rust runs go deep red-brown when wet.
+- Key |treedress13. Shader only.
