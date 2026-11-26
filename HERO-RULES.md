@@ -113,6 +113,8 @@ Deploy steps for the integrator (2026-11-26):
 4. Merge master again, re-check, push `HEAD:master`, tell Pavel in one line with the link.
 5. Keep new code on existing lines where possible: the gate keys random streams by line text, so moved random calls change the world.
 
+Hero shadow (Lights, 2bdb546): the hero's shadow comes from the proxy mesh `heroShadow` on **layer 6**; lights.js turns layer 6 on during the shadow pass. Never move the proxy off layer 6 and never set `castShadow` on the visible hero mesh `Mesh_0` (double shadow, cost).
+
 
 QA runs every action × both heroes (default and detailed) against section 3 before a push to master.
 A P1 failure blocks the push. Results go to `ANIM-QA.md`.
