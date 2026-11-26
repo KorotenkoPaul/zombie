@@ -107,3 +107,10 @@ Debug: `__treedress.stats()`.
 - Black "pepper" on roots and limbs up close: pores/fine octave toned down (cav .74 floor, fine octave .93+.14).
 - Moss cushion stems: the bump is a screen derivative (constant per 2x2 quad), so stems under ~3 px drew a blocky camouflage. They now fade much earlier (aF k=3, aM k=1.2).
 - Hanging strands: pale grey-green beard lichen, not bright green ribbons.
+
+## Round 17: ivy and moss on the house (2026-11-26)
+- Phones: the join-ivy sprigs on beams and posts had no stem (only desktop got one): their leaves floated loose. Stems on phones too.
+- Night: the moonlit rim drew long blue painted streaks on the faceted roots by the door. Rim is now pow 4, weaker low down (y<1.5..4.5) and broken by the bark ridges (tdH).
+- Door: moss in the threshold corners beside the jambs (DOORP passed in from index.html as C.door; own rng(7071), sampler/pointOn take an rng so the main stream and every later placement are unchanged). 10 desktop / 6 phone slots reserved in the moss mesh.
+- Root cushions: taller domes (y*1.35, sunk less). The coarse stem bump drew dark worm stripes, so it is weaker now (aM*.4) and soft mottling (td_f 41) is added on every cushion.
+- Budget (tests/perf/budget.js): origin/master was already OVER on "day home" (alpha 1.51) and "night yaw limit" (454k). This round adds about 1k tris on the phone.
