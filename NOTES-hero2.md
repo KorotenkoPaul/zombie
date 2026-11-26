@@ -120,6 +120,7 @@ Comparisons: project files hero-v6/.
 - Current build: add `KNEEW='{}' VESTA='{}' VESTE='{}'` to the big31 command (= big38).
 - Since critic 24: also `COLLW='{}'`, and `VESTE='{"it":12}'` (back-collar border may move up to 8 cm: its saw teeth were that long) (= big49).
 - Blocky fingers: also `HANDS='{"it":24,"l":0.6,"m":-0.62}'` (handsub.mjs: the all-hand triangles split in four and Taubin-smoothed, fading in over 4 rings from the wrist so the skin stays under the cuff; runs before handmorph, so fist/relax morphs and the weights are built on the finer hand) (= big53, +4.6k tris).
+- Sweater showing through the vest with the arms up: also `VSKIN='{}'` (vestskin.mjs: body and undershirt points under the vest take the vest's own skin weights, blended by vest distance 1.5-3 cm and distance from the vest's open edges 0.6-3 cm, so the flank no longer swings out with the Arm bone) (= big61).
 ## Vest over the body: collar teeth and hem (critic 24)
 
 The vest is the body's own triangles a few mm further out, so wherever a coarse triangle tilts (back of the collar, the hem when

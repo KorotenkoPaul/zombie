@@ -280,7 +280,7 @@ uniform float tdCool;` + NOISE)
 #endif
           tdH=ha.r;float cav=ha.g*mix(1.,.8+.2*hb.g,tdFade);
           float rel=min(1.,tdRelief*(1.+1.2*tdLf)); // roots: furrows darker too (T22)
-          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel); // pores softer: close up they read as black pepper (smooth photo bark)
+          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel);
           diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf)); // fine octave: a hint only (its cork pattern read as black pepper up close)
           { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
             // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
@@ -315,6 +315,10 @@ uniform float tdCool;` + NOISE)
 #ifdef TD_LITE
           float big=texture2D(tdHao,vec2(tdP.x+tdP.y*.55,tdP.z-tdP.y*.45)*.09).g*1.4-.35; // a skewed planar read that varies across every face (the old (x+z, y) one was constant along flat root tops: stripes)
           float fine=ha.b;
+          // [root ripple round] ha.b is the bark map's cork detail: as the moss's colour breakup it printed that cork pattern onto
+          // the moss on the sunlit roots as a speckle up close. Within ~6 m it hands over to a soft world-space noise (arithmetic
+          // only, so the per-pixel branch is safe); further out the cork is sub-pixel and stays as it was
+          { float cd=length(cameraPosition-tdP); if(cd<6.){ fine=mix(td_f(tdP*3.1+vec3(0.,big*2.,0.)),fine,smoothstep(3.5,6.,cd)); } }
 #else
           float big=td_f(tdP*vec3(.55,.35,.55));
           float fine=td_f(tdP*3.1+vec3(0.,big*2.,0.));
@@ -401,7 +405,10 @@ uniform float tdCool;` + NOISE)
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
           dn+=tdBD*tdBR*.9;                   // the callus roll round a beam
           dn*=1.+tdCo*.5;                     // collar: deeper squeezed folds
-          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf)); // roots: deeper relief (Critic T22: they read smooth up close)
+          // [root ripple round] up close in the sun the roots' tripled relief lit every cork pore of the map as a speckle: under ~5 m it
+          // eases back towards the trunk's (the furrows still read, the pores stop sparkling)
+          float spkN=tdLf*(1.-smoothstep(2.,5.5,length(cameraPosition-tdP)));
+          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf*(1.-.7*spkN))); // roots: deeper relief (Critic T22: they read smooth up close)
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
@@ -420,7 +427,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress7';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress8';
     mat.needsUpdate = true;
   }
 
