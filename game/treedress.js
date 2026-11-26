@@ -40,13 +40,25 @@ const FLUTTER = `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanc
  transformed.z+=sin(uT*2.3+ip.x*3.1+ip.y*2.7)*k*uW;
 #endif
 }`;
+// [rain round] ivy and ferns get wet with the bark (D.barkU.wet / damp), see swayMat
+const tdWetU = m => { m.userData.wetU = tdWetU.U; return m; };
 function swayMat(mat, U, amp, chunk) {
   mat.onBeforeCompile = s => {
     if (mat.userData.AX !== undefined) branchHook(s, mat.userData.AX, mat.userData.AZ);
     s.uniforms.uT = U.t; s.uniforms.uW = U.wind;
     s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;' + (s.vertexShader.includes('windSway') ? '\n#define WIND_GLSL_ON' : ''))
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n{const float SW=${amp.toFixed(3)};${chunk}}`);
+    // [rain round] leaves on the oak get wet with the bark (same uniforms): a touch darker while soaked, and a glisten (lower
+    // roughness) while the rain is falling. Arithmetic only, no texture reads.
+    const WU = mat.userData.wetU; if (WU) { s.uniforms.tdWet = WU.wet; s.uniforms.tdDamp = WU.damp;
+      s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform float tdWet,tdDamp;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb*=1.-.2*tdDamp;')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.32,tdWet*.85);'); }
   };
+  // SHADERS rule: an explicit key. The default (the hook's source text) is the same for every swayMat, so the ivy and the
+  // ferns could share one compiled program with the other's sway chunk
+  const key = 'tdSway|' + amp.toFixed(3) + '|' + chunk + (mat.userData.wetU ? '|tdWet1' : '');
+  mat.customProgramCacheKey = () => key;
   return mat;
 }
 
@@ -77,7 +89,7 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
-    D.barkU = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, near: { value: 0 }, rimK: { value: 1 },
+    D.barkU = tdWetU.U = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, near: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 0.45 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
     D.update = (cam) => {
@@ -175,9 +187,13 @@ vec3 tdW(vec3 n,vec3 A,vec3 B,vec3 C){vec3 b=pow(abs(vec3(dot(n,B),dot(n,C),dot(
 // (from the continuous tdUd), so the angle's wrap leaves no mip seam.
 float tdU=0.;vec2 tdUd=vec2(0.);vec3 tdDx=vec3(0.),tdDy=vec3(0.);
 #ifdef TD_LITE
-vec4 tdTex(sampler2D t,vec2 uv,vec2 gx,vec2 gy){return texture2D(t,uv);} // phones: plain reads, tdU is picked seam-free below
+// phones: an explicit LOD from the gradients (taken in uniform flow above), so the reads inside the per-pixel weight branches
+// never rely on implicit derivatives (Apple GPUs: undefined there, sparkling mips). Same cost as a plain read; the maps are 1024^2.
+float tdBias=0.;
+vec4 tdTex(sampler2D t,vec2 uv,vec2 gx,vec2 gy){return textureLod(t,uv,max(0.,.5*log2(max(max(dot(gx,gx),dot(gy,gy)),1e-12)*1048576.))+tdBias);}
 #else
-vec4 tdTex(sampler2D t,vec2 uv,vec2 gx,vec2 gy){return textureGrad(t,uv,gx,gy);}
+float tdBias=0.;
+vec4 tdTex(sampler2D t,vec2 uv,vec2 gx,vec2 gy){float k=exp2(tdBias);return textureGrad(t,uv,gx*k,gy*k);}
 #endif
 vec4 tdS(sampler2D t,vec3 p,float m,float cc,vec2 cd,vec3 n,vec3 A,vec3 B,vec3 C,float s){vec3 w=tdW(n,A,B,C);float a=dot(p,A)*.8,b=dot(p,B);
  vec3 dx=tdDx*m*s,dy=tdDy*m*s;vec2 ax=vec2(dot(dx,A)*.8,dot(dy,A)*.8),bx=vec2(dot(dx,B),dot(dy,B)),cx=cd*m*s;
@@ -228,6 +244,7 @@ uniform float tdCool;` + NOISE)
             // the same angle with its wrap moved to the other side (a whole number of tiles apart, so the same texels): use whichever
             // is smooth across this pixel quad, so the implicit mip choice never sees the jump (Tarini's seam trick)
             { float u2=tdU+(tdU<0.?6.2831853*TDR:0.); if(fwidth(u2)<fwidth(tdU))tdU=u2; }
+            tdDx=dFdx(tdP);tdDy=dFdy(tdP); tdUd=vec2(dFdx(tdU),dFdy(tdU)); // gradients for the explicit-LOD reads
 #else
             tdDx=dFdx(tdP);tdDy=dFdy(tdP); tdUd=vec2(rv.x*tdDx.z-rv.y*tdDx.x,rv.x*tdDy.z-rv.y*tdDy.x)/max(r*r,1e-4)*TDR;
 #endif
@@ -246,10 +263,10 @@ uniform float tdCool;` + NOISE)
           if(brk>.01)ha=mix(ha,tdTri(tdHao,15./11.,vec3(3.1,1.7,5.3),wn,tdScale),brk);
           if(tdFade>.01)hb=tdTri(tdHao,36./11.,vec3(7.3),wn,tdScale);
 #endif
-          tdH=ha.r;float cav=ha.g*mix(1.,.6+.4*hb.g,tdFade);
+          tdH=ha.r;float cav=ha.g*mix(1.,.8+.2*hb.g,tdFade);
           float rel=min(1.,tdRelief*(1.+1.2*tdLf)); // roots: furrows darker too (T22)
-          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.6,1.,cav),rel);
-          diffuseColor.rgb*=mix(1.,.82+.36*hb.b,tdFade*rel*(1.-.6*tdLf));
+          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel); // pores softer: close up they read as black pepper (smooth photo bark)
+          diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf)); // fine octave: a hint only (its cork pattern read as black pepper up close)
           { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
             // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
             diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
@@ -345,6 +362,7 @@ uniform float tdCool;` + NOISE)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec3 wn=normalize(tdN);
+          tdBias=1.2; // the normal reads a little blurred too: single-texel pits lit from the side drew black pepper up close
 #ifdef TD_LITE
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
           if(tdNear>.5){ vec3 dpx=dFdx(tdP),dpy=dFdy(tdP); float hx=dFdx(tdHB),hy=dFdy(tdHB); vec3 r1=cross(dpy,wn),r2=cross(wn,dpx); float det=dot(dpx,r1);
@@ -355,6 +373,7 @@ uniform float tdCool;` + NOISE)
           if(brk>.01)dn=mix(dn,tdTriN(15./11.,vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
           if(tdFade>.01)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.3*tdLf); // on roots the fine octave read as wood grain
 #endif
+          tdBias=0.;
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
           dn+=tdBD*tdBR*.9;                   // the callus roll round a beam
@@ -368,8 +387,9 @@ uniform float tdCool;` + NOISE)
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
           vec3 wn=normalize(tdN), wv=normalize(cameraPosition-tdP);
-          float fr=pow(1.-max(dot(wn,wv),0.),3.);
+          float fr=pow(1.-max(dot(wn,wv),0.),4.);
           float rim=fr*max(dot(wn,normalize(tdRimD)),0.)*tdRimS*tdRimK*(1.-.7*smoothstep(.5,.9,wn.y)); // an edge light, not a sheen on the tops
+          rim*=mix(.3,1.,smoothstep(1.5,4.5,tdP.y))*(.55+.45*smoothstep(.3,.7,tdH)); // [house round] low on the faceted roots it drew long blue painted streaks: weaker there, and broken by the bark ridges
           totalEmissiveRadiance+=tdRimC*rim*(.12+tdL*1.6)*(1.-tdMM*.5)*(1.+tdWM*.8);
           // daylight bounced off the ground, the roots and the house's planks: warm fill so the trunk in the house's shade reads
           // as brown bark, not a black hole (weaker in the furrows and the deep crotches)
@@ -403,10 +423,10 @@ uniform float tdCool;` + NOISE)
       tri.push({ t, ar, n: n.clone(), c: V((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3, (a.z + b.z + c.z) / 3) });
     }
   }
-  const pointOn = q => { const i = q.t * 9; let u = R(), v = R(); if (u + v > 1) { u = 1 - u; v = 1 - v; } return V(T[i] + (T[i + 3] - T[i]) * u + (T[i + 6] - T[i]) * v, T[i + 1] + (T[i + 4] - T[i + 1]) * u + (T[i + 7] - T[i + 1]) * v, T[i + 2] + (T[i + 5] - T[i + 2]) * u + (T[i + 8] - T[i + 2]) * v); };
-  function sampler(filter) {
+  const pointOn = (q, rnd = R) => { const i = q.t * 9; let u = rnd(), v = rnd(); if (u + v > 1) { u = 1 - u; v = 1 - v; } return V(T[i] + (T[i + 3] - T[i]) * u + (T[i + 6] - T[i]) * v, T[i + 1] + (T[i + 4] - T[i + 1]) * u + (T[i + 7] - T[i + 1]) * v, T[i + 2] + (T[i + 5] - T[i + 2]) * u + (T[i + 8] - T[i + 2]) * v); };
+  function sampler(filter, rnd = R) {
     const L = tri.filter(filter); let sum = 0; const cum = L.map(q => (sum += q.ar));
-    return () => { if (!L.length) return null; const x = R() * sum; let lo = 0, hi = cum.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < x) lo = m + 1; else hi = m; } const q = L[lo]; return { p: pointOn(q), n: q.n }; };
+    return () => { if (!L.length) return null; const x = rnd() * sum; let lo = 0, hi = cum.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < x) lo = m + 1; else hi = m; } const q = L[lo]; return { p: pointOn(q, rnd), n: q.n }; };
   }
   const radial = (x, z) => Math.hypot(x - AX, z - AZ);
   const nearDoor = (x, y, z) => Math.abs(angDiff(Math.atan2(z - AZ, x - AX), doorAng)) < 0.5 && y < 4.8;
@@ -432,29 +452,38 @@ uniform float tdCool;` + NOISE)
     const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
     mat.onBeforeCompile = sh => {
       branchHook(sh, AX, AZ);
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
-        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.8+.4*f+.18*(g-.5)*clamp(1.-length(fwidth(tdP))*55.*.45,0.,1.);diffuseColor.rgb*=mix(.6,1.,smoothstep(-.2,3.,tdP.y));}')
+      // tdS: 1 on the mossy earth humps between the roots (they share this mesh), tdHg: height above the ground there
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;attribute float tdSoil;varying float tdS,tdHg; /* tdHg: 0 at the floor, 1 at the hump top */').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\ntdP=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;tdS=tdSoil;tdHg=(tdP.y-(modelMatrix*instanceMatrix*vec4(0.,0.,0.,1.)).y-.06)/max(length(instanceMatrix[1].xyz)-.06,.01);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying float tdS,tdHg;' + NOISE)
+        // [ladder-foot round] the earth humps read as black speckled ovals with a hard rim cut into the floor: a frayed rim
+        // (arithmetic noise, no texture reads) so the floor shows through in ragged bays, as moss creeping over the earth does
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif(tdS>.5&&tdHg<.5*td_n(tdP*17.)+.2*td_n(tdP*43.)-.16)discard;')
+        .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*14.);float g=td_n(tdP*55.);diffuseColor.rgb*=.8+.4*f-.18*(f-.5)*tdS+.18*(g-.5)*clamp(1.-length(fwidth(tdP))*55.*.9,0.,1.)*(1.-tdS);diffuseColor.rgb*=mix(mix(.6,.9,tdS),1.,smoothstep(-.2,3.,tdP.y));\n{float fz=td_f(tdP*41.+1.7);float fz2=td_n(tdP*113.+4.2);diffuseColor.rgb*=mix(1.,.62+.6*smoothstep(.3,.72,fz),clamp(1.-length(fwidth(tdP))*41.*.7,0.,1.))*mix(1.,.82+.36*fz2,clamp(1.-length(fwidth(tdP))*113.*.7,0.,1.));diffuseColor.rgb*=.92+.16*smoothstep(.3,.8,td_n(tdP*9.));}}')
         // a cushion of moss is a pile of tiny stems, not a smooth skin: a fine fuzzy bump on the lit side (critic: the patches
         // on the roots read as flat green felt from the close zoom)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
- { float px=length(fwidth(tdP)); float aF=clamp(1.-px*160.*.45,0.,1.), aM=clamp(1.-px*47.*.45,0.,1.); /* fade the stems once they are smaller than a pixel: aliased, they drew black hatching */
+ { float px=length(fwidth(tdP)); float aF=clamp(1.-px*160.*3.,0.,1.)*(1.-tdS), aM=clamp(1.-px*47.*1.2,0.,1.)*(1.-tdS)*.4; /* [crown round] the bump is a screen derivative (constant per 2x2 pixel quad): stems under ~3 px drew a blocky pixel camouflage, so they fade out well before that */ /* earth humps: no stem bump (pixel stems speckled, the coarse ones drew dark worms on a 0.6 m hump) */ /* fade the stems once they are smaller than a pixel: aliased, they drew black hatching */
    float hgt=(td_n(tdP*160.)-.5)*.6*aF+(td_n(tdP*47.)-.5)*.4*aM+.5; vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition); float hx=dFdx(hgt),hy=dFdy(hgt);
    vec3 r1=cross(dpy,normal),r2=cross(normal,dpx); float det=dot(dpx,r1); normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.35);
-   diffuseColor.rgb*=.86+.26*hgt; }`)
+   diffuseColor.rgb*=.9+.2*hgt; /* [house round] the coarse stems drew dark worm stripes on the root cushions: a softer fuzz */ /* the wide earth humps: soft fuzz, not black speckles */ }`)
         // weather (same uniforms as the bark): soaked moss deeper and greener, hoar frost on the tops of the cushions on cold nights.
         // Only the green instances (moss), not the brown soil lumps that share this mesh.
         .replace('#include <color_fragment>', `#include <color_fragment>
 { vec3 c=diffuseColor.rgb; float green=smoothstep(.05,.3,(c.g-c.r)/max(c.g,1e-3));
   c=mix(c,c*vec3(.72,1.1,.6),tdDamp*green);
+  c*=1.-.25*tdDamp*(1.-green)*tdS; /* [rain round] soaked earth humps */
   vec3 wN=normalize((vec4(vNormal,0.)*viewMatrix).xyz); float top=smoothstep(.3,.85,wN.y);
   float fr=tdFrost*top*green*(.35+.65*smoothstep(.4,.65,td_n(tdP*70.)));
-  c=mix(c,vec3(.24,.26,.3),fr*.45); diffuseColor.rgb=c; }`)
-        .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost;');
-      sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost;
+  c=mix(c,vec3(.24,.26,.3),fr*.45);
+  c=mix(c*vec3(1.05,.85,.75),c,mix(1.,smoothstep(.0,.6,tdHg),tdS)); /* the earth humps: browner low down, the moss on top */ diffuseColor.rgb=c; }`)
+        // [rain round] wet moss glistens while it rains (the cushion tips more than the hollows), the earth humps soak darker
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,mix(.42+.3*td_n(tdP*47.),.7,tdS),tdWet*(1.-tdFrost));')
+        .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost,tdWet;');
+      sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdWet = D.barkU.wet;
     };
-    mat.customProgramCacheKey = () => 'tdMossCushion3'; /* SHADERS rule: own key */
-    const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), im = new THREE.InstancedMesh(g, mat, N + NSOIL);
+    mat.customProgramCacheKey = () => 'tdMossCushion5'; /* SHADERS rule: own key */
+    const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), NDOOR = MOBILE ? 6 : 10, im = new THREE.InstancedMesh(g, mat, N + NDOOR + NSOIL);
+    g.setAttribute('tdSoil', new THREE.InstancedBufferAttribute(new Float32Array(N + NDOOR + NSOIL), 1));
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
@@ -469,7 +498,7 @@ uniform float tdCool;` + NOISE)
       for (let j = 0, m = 2 + Math.floor(R() * 3); j < m && n < NUP; j++) {
         const a = rr(0, 6.28), d = j ? rr(0.05, 0.15) : 0, q = p.clone().addScaledVector(tA, Math.cos(a) * d).addScaledVector(tB, Math.sin(a) * d);
         const sz = rr(0.045, 0.11) * (j ? 0.8 : 1) * (p.y > 3 ? 0.8 : 1); if (j && blocked(q.x, q.y, q.z, 0.12 + sz)) continue; /* [house exterior round] a colony member under a floor's edge poked up through the board ends as a flat green disc */
-        M4.compose(q.addScaledVector(s.n, -sz * 0.2), orient(s.n, rr(0, 6.28)), S.set(sz * rr(1, 1.35), sz * rr(0.45, 0.65), sz * rr(0.85, 1.15)));
+        M4.compose(q.addScaledVector(s.n, -sz * 0.12), orient(s.n, rr(0, 6.28)), S.set(sz * rr(1, 1.35), sz * rr(0.45, 0.65) * 1.35, sz * rr(0.85, 1.15))); /* [house round] taller domes: from the root sweep they read as flat green blobs (same rr() calls, layout unchanged) */
         im.setMatrixAt(n, M4);
         const v = rr(0.85, 1.15); col.setRGB(0.085 * v, 0.125 * v * rr(0.95, 1.08), 0.03 * v); im.setColorAt(n, col); n++; } /* sunlit cushion moss is a lively yellow-green (it read as a dark sponge close up) */
     }
@@ -526,6 +555,16 @@ uniform float tdCool;` + NOISE)
           const sz = rr(0.06, 0.1); M4.compose(tmp, orient(out.clone().lerp(UP, 0.4).normalize(), rr(0, 6.28)), S.set(sz * 2.2, sz * 0.3, sz * 1.1)); im.setMatrixAt(n, M4);
           const v = rr(0.8, 1.15); col.setRGB(0.045 * v, 0.07 * v, 0.022 * v); im.setColorAt(n++, col); D.joinMoss++; }
       } }
+    // [house round] the trunk door: moss in the damp corners where the jambs meet the bark at the threshold (the bark round the
+    // door was bare). Own rng stream so nothing placed after this moves. On the real carved triangles beside the jambs.
+    D.doorMoss = 0;
+    if (C.door) { const dr = C.door, RD = rng(7071), hw = dr.w / 2;
+      const beside = sampler(q => { if (q.n.y < 0.4 || q.c.y < dr.y0 - 0.15 || q.c.y > dr.y0 + 0.18) return false; /* the threshold corners only, on bark that faces up */ const r = radial(q.c.x, q.c.z);
+        const lat = Math.abs(angDiff(Math.atan2(q.c.z - AZ, q.c.x - AX), doorAng)) * r; return lat > hw + 0.07 && lat < hw + 0.4; }, RD);
+      for (let k = 0; k < 60 && D.doorMoss < NDOOR; k++) { const s = beside(); if (!s) break; const { p } = s;
+        if (inBox(avoid, p.x, p.y, p.z, 0.02)) continue;
+        const sz = 0.035 + RD() * 0.05; M4.compose(p.clone().addScaledVector(s.n, -sz * 0.2), orient(s.n, RD() * 6.28), S.set(sz * (1.1 + RD() * 0.4), sz * (0.45 + RD() * 0.2), sz)); im.setMatrixAt(n, M4);
+        const v = 0.85 + RD() * 0.3; col.setRGB(0.075 * v, 0.11 * v, 0.03 * v); im.setColorAt(n++, col); D.doorMoss++; } }
     im.count = n; im.receiveShadow = true; D.group.add(im); D.moss = im;
   }
 
@@ -550,13 +589,15 @@ uniform float tdCool;` + NOISE)
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;' + NOISE)
         .replace('#include <map_fragment>', '#include <map_fragment>\n{float f=td_f(tdP*6.);float g=td_n(tdP*40.);diffuseColor.rgb*=.7+.5*f+.3*(g-.5);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.03,.045,.015),smoothstep(.55,.75,f)*.6);}');
     };
+    smat.customProgramCacheKey = () => 'tdSoilMat1';
     // the soil humps share the moss cushions' instanced mesh (one draw call less)
-    const soil = D.moss, NS = soil.instanceMatrix.count - soil.count, s0 = soil.count; let ns = 0;
+    const soil = D.moss, NS = soil.instanceMatrix.count - soil.count, s0 = soil.count; let ns = 0; const soilA = soil.geometry.attributes.tdSoil;
     for (const [x, y, z, rd, a] of spots) {
       if (ns >= NS) break; if (R() < 0.55) continue;
       const w = rr(0.35, 0.75) * (0.6 + rd);
       M4.compose(V(x, y - 0.06, z), new THREE.Quaternion().setFromAxisAngle(UP, -a + rr(-0.3, 0.3)), S.set(w * 0.6, rr(0.08, 0.16), w)); soil.setMatrixAt(s0 + ns, M4);
-      const v = rr(0.8, 1.1); col.setRGB(0.045 * v, 0.034 * v, 0.022 * v); soil.setColorAt(s0 + ns, col); ns++;
+      // [ladder-foot round] mossy earth, close to the floor's own tone (the near-black brown read as a hole); a few barer ones
+      const v = rr(0.8, 1.1), hb = Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5) % 1, bare = hb < 0.3 ? 0.3 + hb : hb * 0.25; /* a hash, not R(): the rng stream (and every placement after this) stays as it was */ col.setRGB((0.072 + 0.025 * bare) * v, (0.115 - 0.045 * bare) * v, (0.04 - 0.008 * bare) * v); soil.setColorAt(s0 + ns, col); soilA.setX(s0 + ns, 1); ns++;
     }
     soil.count = s0 + ns; D.soil = { count: ns };
 
@@ -591,6 +632,40 @@ uniform float tdCool;` + NOISE)
       D.caughtLeaves = nc;
     }
     lit.count = nl; lit.receiveShadow = true; D.group.add(lit); D.litter = lit; D.pockets = spots.length;
+    // [draw-call round] one draw less on phones (298/300 there): bake these leaves into Ground's litter mesh instead of drawing them
+    // as their own instanced mesh. Ground's atlas has three cells (its floor leaf | white | lily pad) and our leaves are the crown's
+    // own leaf picture, which it does not hold: the atlas grows a fourth cell with that picture and every u already on Ground's
+    // litter (and on its skitter leaves, which read the same map) is scaled by 3/4, so each keeps its exact texel. Our vertices go
+    // at the end, so Ground's own ranges keep their indices. Desktop keeps its own mesh (full-resolution picture, the draws are free).
+    D.litterMerged = false;
+    // The phone's leafT is a KTX2 (GPU-compressed, no pixels to draw), so the cell is painted from leaf2-128.png (31 KB, the same
+    // picture at the cell's own 128 px), loaded after start; until it arrives our leaves draw on their own as before.
+    const bakeLitter = li => { const G = C.groundG, gl = G && G.litter, gm = gl && gl.material && gl.material.map, cv0 = gm && gm.image, sk = G && G.skitter;
+      const og = gl && gl.geometry, A = og && og.attributes;
+      const ok = MOBILE && cv0 && cv0.width === 384 && cv0.height === 128 && li && li.width && A && A.position && A.normal && A.uv && A.color && A.aCap && A.aFl && Object.keys(A).length === 6
+        && (!sk || (sk.material.map === gm && sk.geometry.attributes.uv));
+      if (ok) {
+        const g0 = lg.toNonIndexed(), P = g0.attributes.position, Nn = g0.attributes.normal, Uv = g0.attributes.uv, n = P.count, m4 = new THREE.Matrix4(), nm = new THREE.Matrix3(), ic = new THREE.Color(), v = V();
+        const tot = n * lit.count, pos = new Float32Array(tot * 3), nor = new Float32Array(tot * 3), uv = new Float32Array(tot * 2), cl = new Float32Array(tot * 3), cap = new Float32Array(tot), afl = new Float32Array(tot * 4);
+        for (let i = 0; i < lit.count; i++) { lit.getMatrixAt(i, m4); nm.getNormalMatrix(m4); if (lit.instanceColor) lit.getColorAt(i, ic); else ic.setRGB(1, 1, 1);
+          for (let k = 0; k < n; k++) { const o = i * n + k; v.fromBufferAttribute(P, k).applyMatrix4(m4); pos.set([v.x, v.y, v.z], o * 3); v.fromBufferAttribute(Nn, k).applyMatrix3(nm).normalize(); nor.set([v.x, v.y, v.z], o * 3);
+            uv[o * 2] = (3 + Math.min(0.98, Math.max(0.02, Uv.getX(k)))) / 4; uv[o * 2 + 1] = Uv.getY(k); cl.set([ic.r, ic.g, ic.b], o * 3); afl.set([0, 0, 0, -1], o * 4); } }
+        const add = new THREE.BufferGeometry(); add.setAttribute('position', new THREE.BufferAttribute(pos, 3)); add.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); add.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        add.setAttribute('color', new THREE.BufferAttribute(cl, 3)); add.setAttribute('aCap', new THREE.BufferAttribute(cap, 1)); add.setAttribute('aFl', new THREE.BufferAttribute(afl, 4));
+        if (og.index) { const ix = new Uint32Array(tot); for (let k = 0; k < tot; k++) ix[k] = k; add.setIndex(new THREE.BufferAttribute(ix, 1)); }
+        const merged = mergeGeometries([og, add]);
+        if (merged) {
+          const cv = document.createElement('canvas'); cv.width = 512; cv.height = 128; const x = cv.getContext('2d'); x.drawImage(cv0, 0, 0); x.drawImage(li, 384, 0, 128, 128);
+          const su = (g, cnt) => { const u = g.attributes.uv; for (let k = 0; k < cnt; k++) u.setX(k, u.getX(k) * 0.75); u.needsUpdate = true; };
+          su(merged, A.uv.count); if (sk) su(sk.geometry, sk.geometry.attributes.uv.count);
+          gm.image = cv; gm.needsUpdate = true;
+          gl.geometry = merged; og.dispose(); D.group.remove(lit); lit.visible = false; D.litterMerged = true;
+        }
+        add.dispose(); g0.dispose();
+      }
+      D.bakeIvyStems(); };
+    D.bakeIvyStems = () => {};
+    if (MOBILE && C.groundG && C.groundG.litter) { const im = new Image(); im.onload = () => { try { bakeLitter(im); } catch (e) { console.warn('treedress litter bake', e); } }; im.src = (window.__ASSET || '') + 'leaf2-128.png'; }
   }
 
   // ================= 4. ivy climbing the lower trunk =================
@@ -619,7 +694,7 @@ uniform float tdCool;` + NOISE)
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
     })();
     const leafG = new THREE.PlaneGeometry(1, 1); leafG.translate(0, 0.5, 0);
-    const imat = swayMat(onTree(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex })), U, 0.05, FLUTTER);
+    const imat = swayMat(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex }))), U, 0.05, FLUTTER);
     const NLV = Math.round(900 * MUL), leaves = new THREE.InstancedMesh(leafG, imat, NLV); let nl = 0;
     const stems = [];
     // a few vines: mostly on the sides and the back, one wandering across the front-left under the kitchen landing
@@ -644,8 +719,8 @@ uniform float tdCool;` + NOISE)
         // leaves in pairs along the stem, bigger and denser low down, thinning towards the tip
         const thin = 1 - (y - pts[0].y) / Math.max(0.5, top - pts[0].y);
         const side = V(-Math.sin(a), 0, Math.cos(a));
-        if (R() < 0.55 + 0.35 * thin) addLeaf(p.clone().addScaledVector(side, rr(0.03, 0.09)), out, rr(0.12, 0.19) * (0.7 + 0.5 * thin));
-        if (R() < 0.45 + 0.35 * thin) addLeaf(p.clone().addScaledVector(side, -rr(0.03, 0.09)), out, rr(0.12, 0.19) * (0.7 + 0.5 * thin));
+        if (R() < 0.38 + 0.32 * thin) addLeaf(p.clone().addScaledVector(side, rr(0.03, 0.09)), out, rr(0.12, 0.19) * (0.7 + 0.5 * thin));
+        if (R() < 0.3 + 0.32 * thin) addLeaf( /* [home-view round] ~30% fewer leaves: the vines read as dense dark curtains on the clean photo trunk (same R() calls, so the layout stays) */p.clone().addScaledVector(side, -rr(0.03, 0.09)), out, rr(0.12, 0.19) * (0.7 + 0.5 * thin));
         if (depth < 1 && R() < 0.05) climb(a + (R() < 0.5 ? -1 : 1) * 0.15, y + 0.1, Math.min(top, y + rr(0.6, 1.4)), depth + 1);
       }
       if (pts.length > 2) stems.push({ pts, r: depth ? 0.009 : 0.016 });
@@ -709,12 +784,24 @@ uniform float tdCool;` + NOISE)
         const reach = rr(0.2, Math.min(0.7, b.len * 0.4)), side = R() < 0.5 ? -1 : 1, pts = [];
         for (let t = 0.04; t < reach; t += 0.07) { const sw = Math.sin(t * 9 + b.x) * 0.5; const p = V(b.x, b.y, b.z).addScaledVector(ax, t).addScaledVector(up, h + 0.012).addScaledVector(sideV, sw * side * (vert ? b.w * 0.8 : Math.min(...b.flat) * 0.5));
           pts.push(p.clone()); if (R() < 0.85 - t) put(p.clone().addScaledVector(sideV, vert ? rr(-0.05, 0.05) : 0), up.clone().addScaledVector(sideV, rr(-0.6, 0.6)).normalize(), rr(0.08, 0.13) * (1 - t * 0.6)); }
-        if (!MOBILE && pts.length > 2) stems.push({ pts, r: 0.008 });
+        if (pts.length > 2) stems.push({ pts, r: 0.008 }); // phones too: without the stem the sprig's leaves floated loose along the beam
       }
       D.joinIvyAt = made; }
     leaves.count = nl; leaves.receiveShadow = true; leaves.castShadow = !MOBILE; D.group.add(leaves); D.ivy = leaves;
     const sgs = stems.map(s => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(s.pts), Math.max(3, Math.round(s.pts.length * (MOBILE ? 0.7 : 1.5))), s.r, MOBILE ? 3 : 4, false));
     if (sgs.length && !MOBILE) { const sm = new THREE.Mesh(mergeGeometries(sgs), new THREE.MeshStandardMaterial({ color: 0x3a3424, roughness: 0.9 })); sm.receiveShadow = true; D.group.add(sm); D.ivyStems = sm; }
+    // [draw-call round] phones had no ivy stems at all (a mesh of their own costs a draw at 298/300): the leaves of every vine and
+    // of the sprigs on the beams floated loose. Bake them into Ground's litter mesh instead, on the plain white cell of its atlas
+    // (uv .5,.5) with the stem colour in the vertex colour: no new draw.
+    D.ivyStemsBaked = false;
+    if (sgs.length && MOBILE) D.bakeIvyStems = () => { if (D.ivyStemsBaked || !D.litterMerged) return; const gl = C.groundG.litter, og = gl.geometry, sg = mergeGeometries(sgs).toNonIndexed(); const n = sg.attributes.position.count;
+      if (!sg.attributes.normal) sg.computeVertexNormals();
+      const c = new THREE.Color(0x3a3424), uv = new Float32Array(n * 2), cl = new Float32Array(n * 3), afl = new Float32Array(n * 4);
+      for (let k = 0; k < n; k++) { uv[k * 2] = 0.375; uv[k * 2 + 1] = 0.5; /* centre of the white cell, after the atlas grew to 4 cells */ cl.set([c.r, c.g, c.b], k * 3); afl.set([0, 0, 0, -1], k * 4); }
+      const add = new THREE.BufferGeometry(); add.setAttribute('position', sg.attributes.position); add.setAttribute('normal', sg.attributes.normal); add.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      add.setAttribute('color', new THREE.BufferAttribute(cl, 3)); add.setAttribute('aCap', new THREE.BufferAttribute(new Float32Array(n), 1)); add.setAttribute('aFl', new THREE.BufferAttribute(afl, 4));
+      if (og.index) { const ix = new Uint32Array(n); for (let k = 0; k < n; k++) ix[k] = k; add.setIndex(new THREE.BufferAttribute(ix, 1)); }
+      const merged = mergeGeometries([og, add]); if (merged) { gl.geometry = merged; og.dispose(); D.ivyStemsBaked = true; } add.dispose(); sg.dispose(); }
   }
 
   // ================= 5. ferns and grass tufts in root crevices and forks =================
@@ -744,7 +831,7 @@ uniform float tdCool;` + NOISE)
       }
       return mergeGeometries(parts);
     })();
-    const fmat = swayMat(onTree(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex })), U, 0.06,
+    const fmat = swayMat(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex }))), U, 0.06,
       `{vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float k=clamp(uv.y,0.,1.);k*=k;float gust=.6+.4*sin(uT*.35+ip.x*.05);
        transformed.x+=sin(uT*1.6+ip.x*.7+ip.z*.4)*SW*k*uW*gust;transformed.z+=sin(uT*1.2+ip.z*.9)*SW*.7*k*uW*gust;}`);
     // grass tuft: a fan of narrow curved blades
@@ -760,6 +847,7 @@ uniform float tdCool;` + NOISE)
     const tmat = swayMat(new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, roughness: 0.9 }), U, 0.05,
       `{vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float k=clamp(position.y/.5,0.,1.);k*=k;transformed.x+=sin(uT*2.+ip.x*1.7+ip.z)*SW*k*uW;transformed.z+=sin(uT*1.5+ip.z*1.9)*SW*.6*k*uW;}`);
     tmat.onBeforeCompile = (prev => (s, r) => { prev(s, r); s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=mix(.35,1.15,tdH);'); s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying float tdH;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntdH=clamp(position.y/.45,0.,1.);'); s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying float tdH;'); })(tmat.onBeforeCompile);
+    { const k0 = tmat.customProgramCacheKey; tmat.customProgramCacheKey = () => k0() + '|tdTufts1'; }
 
     const NF = Math.round(26 * MUL), NFK = Math.round(14 * MUL), NF2 = NF + NFK, NTF = Math.round((MOBILE ? 60 : 110) * MUL);
     const ferns = new THREE.InstancedMesh(fernG, fmat, NF2), tufts = new THREE.InstancedMesh(tuftG, tmat, NTF);
@@ -814,7 +902,7 @@ uniform float tdCool;` + NOISE)
     const br = new THREE.SphereGeometry(1, 14, 6, -Math.PI / 2, Math.PI, 0, Math.PI * 0.5).scale(1, 0.32, 0.85);
     const brU = new THREE.CircleGeometry(1, 14, -Math.PI / 2, Math.PI).rotateX(Math.PI / 2).scale(1, 1, 0.85);
     const bracketG = mergeGeometries([paint(br, (x, y, z) => { const r = Math.hypot(x, z / 0.85); const band = 0.5 + 0.5 * Math.sin(r * 22); const k = smooth(0.7, 1, r); return [[0.36 + band * 0.08 + k * 0.4, 0.25 + band * 0.05 + k * 0.32, 0.16 + band * 0.03 + k * 0.22], 0]; }), paint(brU, () => [[0.72, 0.64, 0.5], 0])]);
-    const mk = () => { const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }); m.onBeforeCompile = sh => { sh.uniforms.uGlow = glowU; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCap;varying float vCap;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCap=aCap;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uGlow;varying float vCap;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.2)*vCap*uGlow;'); }; return m; };
+    const mk = () => { const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }); m.customProgramCacheKey = () => 'tdFungi1'; m.onBeforeCompile = sh => { sh.uniforms.uGlow = glowU; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aCap;varying float vCap;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCap=aCap;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uGlow;varying float vCap;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.2)*vCap*uGlow;'); }; return m; };
     const NSM = Math.round(64 * MUL), NBR = Math.round(16 * MUL), NBASE = Math.round(16 * MUL);
     const small = new THREE.InstancedMesh(smallG, mk(), NSM), brk = new THREE.InstancedMesh(bracketG, mk(), NBR);
     // small caps: clusters on the tops and flanks of the roots
@@ -897,7 +985,7 @@ uniform float tdCool;` + NOISE)
       const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const x = cv.getContext('2d'); const r = rng(99);
       for (let i = 0; i < 46; i++) {
         const x0 = 32 + (r() + r() - 1) * 22, len = 80 + r() * 170, w = 0.8 + r() * 1.6; const c = 120 + r() * 60;
-        x.strokeStyle = `rgba(${c * 0.82 | 0},${c | 0},${c * 0.72 | 0},${0.65 + r() * 0.35})`; x.lineWidth = w; x.beginPath(); x.moveTo(x0, 0);
+        x.strokeStyle = `rgba(${c * 0.9 | 0},${c | 0},${c * 0.8 | 0},${0.65 + r() * 0.35})`; /* pale grey-green beard lichen (it read as bright green ribbons) */ x.lineWidth = w; x.beginPath(); x.moveTo(x0, 0);
         let px = x0; for (let y = 8; y < len; y += 8) { px += (r() - 0.5) * 3 - (px - 32) * 0.02 * (y / 256); x.lineTo(px, y); } x.stroke();
         // little tufts along the strand
         for (let y = 20; y < len; y += 14 + r() * 20) { x.fillStyle = x.strokeStyle; x.beginPath(); x.ellipse(x0 + (r() - 0.5) * 6, y, 1.5 + r() * 2, 3 + r() * 3, 0, 0, 6.28); x.fill(); }
@@ -910,7 +998,7 @@ uniform float tdCool;` + NOISE)
     const b = a.clone().rotateY(Math.PI / 2);
     const g = mergeGeometries([a, b]);
     tex.generateMipmaps = false; tex.minFilter = THREE.LinearFilter; // averaged mips turned the strands into solid strips far away
-    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, color: 0xa8b296 });
+    const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, color: 0xbcbcac });
     mat.onBeforeCompile = sh => {
       const W = window.__wind; if (!W) return; W.hook(sh);
       sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -918,6 +1006,7 @@ uniform float tdCool;` + NOISE)
        vec3 off=windRope(ip,t,len)*3.5+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));
        transformed+=windLocal(off);}`);
     };
+    mat.customProgramCacheKey = () => 'tdHanging1'; /* SHADERS rule */
     const N = Math.round(45 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
     const under = sampler(q => q.n.y < -0.35 && q.c.y > 3.6 && q.c.y < 10.5 && radial(q.c.x, q.c.z) > 2.2);
     for (let k = 0; k < 600 && n < N; k++) {

@@ -34,6 +34,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const mine = o => { while (o) { if (o === root) return true; o = o.parent; } return false; };
   const visible = o => { while (o) { if (!o.visible) return false; o = o.parent; } return true; };
   const solidMat = o => { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (!m) return false; if (m.transparent && m.opacity < .6) return false; if (m.alphaTest > 0) return false; /* cut-out leaves and bushes */ if (m.depthWrite === false || m.blending === THREE.AdditiveBlending) return false; return true; };
+  // plants bend: not walls. By name, or (unnamed instanced ground plants: the reeds by the pond and round the roots were 1.4 m solid
+  // boxes, so the walk to the chopping block went 'through' them at 30 cm) by their material's program key or their __ground slot
+  const PLANT = /grass|foliage|leaf|leaves|fern|moss|weed|reed/i;
+  const softKey = o => { try { const m = Array.isArray(o.material) ? o.material[0] : o.material; if (m && m.customProgramCacheKey && PLANT.test(String(m.customProgramCacheKey()).split('-')[0]) /* the key's own name: 'groundStone-moss2' is a stone */) return true;
+    const G = window.__ground; if (G) for (const k in G) if (G[k] === o && PLANT.test(k)) return true; } catch (e) { } return false; };
   const label = o => { const parts = []; let x = o; while (x && x !== scene) { if (x.name && !/^(Mesh|Object|Group|Scene)?_?\d*$/.test(x.name)) parts.push(x.name); x = x.parent; } return parts.reverse().join('/') || o.geometry.type; };
 
   // ---------- where the hero can be: the walk graph's box, padded ----------
@@ -94,7 +99,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (!o.isMesh || o.isSkinnedMesh || mine(o) || !solidMat(o)) return; const t = o.geometry.type;
     if (/Plane|Circle|Shape|Ring/.test(t)) return;
     if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-    const name = label(o); if (/grass|foliage|leaf|leaves|fern|moss|weed|reed/i.test(name)) { skipped['soft ' + name.replace(/#\d+$/, '')] = 1; return; } // plants bend: not walls
+    const name = label(o); if (PLANT.test(name) || softKey(o)) { skipped['soft ' + name.replace(/#\d+$/, '')] = 1; return; } // plants bend: not walls
     if (o.isInstancedMesh) {
       if (o.count > 1500) { skipped['inst ' + name] = o.count; return; }
       for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, mi); m4.multiplyMatrices(o.matrixWorld, mi); wb.copy(o.geometry.boundingBox).applyMatrix4(m4); if (!wb.intersectsBox(REG)) continue; { const sz = wb.getSize(V()); const big = [sz.x, sz.y, sz.z].filter(v => v > 1.8).length; if (big >= 2 && !/plank|board|beam|floor|deck/i.test(name)) { skipped['big inst ' + name] = (skipped['big inst ' + name] || 0) + 1; continue; } } /* bushes / tree crowns as one big box are not walls */ add(o, o.geometry, m4, name + '#' + i, i); }
@@ -275,15 +280,23 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     }
     if ((cr & 1) !== 1) return -1; const d = Math.sqrt(best); if (d < 1e-6) return -1; OUT.n.set(bx / d, 0, bz / d); return d;
   }
+  const BEDS = (P3 && P3.surfaces && P3.surfaces.bed) || [];
+  const onBed = p => { for (const L of BEDS) if (p.x > L.x0 - .02 && p.x < L.x1 + .02 && p.z > L.z0 - .02 && p.z < L.z1 + .02 && p.y < L.top + .2) return true; return false; };
+  const inBedEdge = p => { for (const L of BEDS) if (p.x > L.x0 - .03 && p.x < L.x1 + .03 && p.z > L.z1 - .08 && p.z < L.z1 + .04 && p.y > L.top - .10 && p.y < L.top + .03) return true; return false; };
   // deepest shape at p: returns depth beyond the allowance for this body part, OUT.n = way out
   const nB = V();
-  function probe(p, part, lying, list, nt = true) { const GR = window.__grab; let a = list; const noTight = !list && window.__colNoTight;
+  function probe(p, part, lying, list, nt = true, hv = false) { const GR = window.__grab; let a = list; const noTight = !list && window.__colNoTight;
     if (!a) { const kk = key(Math.floor(p.x / CS), Math.floor(p.y / CS), Math.floor(p.z / CS)); a = G.get(kk); } let best = 0;
     if (a) for (const n of a) {
       const s = S[n]; if (s.dead) continue; if (!list && !refresh(s)) continue; if (navMode && OPENS.test(s.name)) continue; if (!noTight) { const t = s.t; if (p.x < t[0] || p.y < t[1] || p.z < t[2] || p.x > t[3] || p.y > t[4] || p.z > t[5]) continue; } if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;
       // POSE (poses thread): asleep, hero.js lays the body on the measured mattress itself; the bed's voxels (mattress, quilt mound,
       // pillow, all one 'bunkbed' grid) pushed the root up ~20-50 cm and made the head twitch on the pillow every ~0.3 s
       if (s.cls >= 2 && lying && hero.inBed && !hero.bedB) continue;
+      // the head volume and the pillow / quilt / mattress (within 20 cm over a bed's top): how the head lies there is the bed pose's (bending
+      // the neck to lift a lying head out of the pillow took 10 cm of chin-to-chest and still left 4 cm); the bunk frame, the upper bunk and beams are ours
+      if (hv && s.cls >= 2 && onBed(p)) continue;
+      // BED EDGE (with Bed): seated or lying, the fingers wrap the mattress' front edge, 6-8 cm under its top; that band is the hand's
+      if (s.cls >= 2 && (part === 1 || part === 2) && inBedEdge(p)) continue;
      /* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue;
       // the floor is hero.js's (support slot puts the soles on hero.floorY): a sole within 6 cm of the floor level is not 'in' a floor
       // board. Uneven planks are boxes here, thicker than the visible board; lifting the foot out of them made him hover 10 cm.
@@ -313,11 +326,19 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       PTS.push({ m: mIdx, b, w, v, part: partOf(bn), chain: chainOf(bn), p: V() });
     }
   });
+  // V6 HEAD (hero look thread): the 1.5x head and its hair as an ellipsoid on the Head bone (x side, y up, z front), centre
+  // (.004, .10, .034), radii (.165, .19, .16). The skin samples (1 vertex in ~N) missed the back of the head and the hair: in bed
+  // they went 3-5 cm into the pillow and the bunk unseen. Back, top and sides only (the face has its own skin points and is meant to
+  // come close: eyepiece, cup, pot); never below the skull base (the neck lies on the pillow).
+  if (bones.Head && !/[?&]hero=(orig|new)\b/.test(String((window.location || {}).search || ''))) for (let i = 0; i < 16; i++) for (let j = 1; j < 9; j++) {
+    const th = i / 16 * 2 * Math.PI, ph = j / 9 * Math.PI, o = V(Math.sin(ph) * Math.cos(th) * .165 + .004, Math.cos(ph) * .19 + .10, Math.sin(ph) * Math.sin(th) * .16 + .034);
+    if (o.z < .08 && o.y > -.06) PTS.push({ hv: o, part: 0, chain: 1, p: V() }); }
   const KM = sk.map(M => M.skeleton.bones.map(() => new THREE.Matrix4())); const tmpM = new THREE.Matrix4(), base = new THREE.Matrix4();
   function skin(mask = 0) {
     for (let m = 0; m < sk.length; m++) { const M = sk[m]; base.multiplyMatrices(M.matrixWorld, M.bindMatrixInverse); const bs = M.skeleton.bones, inv = M.skeleton.boneInverses;
       for (let i = 0; i < bs.length; i++) KM[m][i].multiplyMatrices(base, tmpM.multiplyMatrices(bs[i].matrixWorld, inv[i])); }
     for (const P of PTS) { if (mask && !(mask & (1 << P.chain))) continue;
+      if (P.hv) { P.p.copy(P.hv).applyMatrix4(bones.Head.matrixWorld); continue; }
       const K = KM[P.m]; const v = P.v; let x = 0, y = 0, z = 0;
       for (let k = 0; k < 4; k++) { const w = P.w[k]; if (w <= 0) continue; const e = K[P.b[k]].elements; x += w * (e[0] * v.x + e[4] * v.y + e[8] * v.z + e[12]); y += w * (e[1] * v.x + e[5] * v.y + e[9] * v.z + e[13]); z += w * (e[2] * v.x + e[6] * v.y + e[10] * v.z + e[14]); }
       P.p.set(x, y, z);
@@ -462,7 +483,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       // shapes whose box overlaps that chain's box (gathered once per frame); a chain with nothing near it costs nothing
       const mask = it === 0 ? 0 : liveMask; skin(mask); if (it === 0) gather(); pd.fill(0); let anyP = false; sumN[0].set(0, 0, 0); sumN[1].set(0, 0, 0); sumW[0] = sumW[1] = 0;
       for (const P of PTS) { if (mask && !(mask & (1 << P.chain))) continue; const L = LC[P.chain]; if (!L.length && !nearTrunk[P.chain]) continue;
-        const ex = probe(P.p, P.part, lying, L, nearTrunk[P.chain]); if (ex <= 0) continue; if (it === 0 && ex > worst) worst = ex;
+        const ex = probe(P.p, P.part, lying, L, nearTrunk[P.chain], !!P.hv); if (ex <= 0) continue; if (it === 0 && ex > worst) worst = ex;
         anyP = true;
         // body and head: the excess-weighted mean way out (contacts on opposite sides cancel instead of bouncing between them);
         // a shin or foot caught at the side (bed rail, bench) also moves the body away, like a step aside
@@ -613,7 +634,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // how deep the body is in what the hands carry (cm), for tests
   function heldDepth() { skin(); const r = {}; for (const c of [2, 3]) { const L = LIMB[c]; if (!L.C) continue; const HBs = heldBoxes(L.C); if (!HBs.length) continue;
       let w = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > w) w = d; } } r[c === 2 ? 'L' : 'R'] = +(w * 100).toFixed(1); } return r; }
-  const api = { trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
+  const api = { /* how deep a chain's skinned surface is in the house right now (m) and the way out: 1 head, 2 left arm, 3 right arm (hero.js repairs) */ chainDepth: (c, out) => { skin(1 << c); let best = 0; for (const P of PTS) { if (P.chain !== c) continue; const ex = probe(P.p, P.part, false, null); if (ex > best) { best = ex; if (out) out.copy(OUT.n); } } return best; }, trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
     depthAt: (x, y, z) => probe(V(x, y, z), 7, false), sweep, footFree, soleDepth: (x, y, z, dx = 0, dz = 1) => sole(x, y, z, dx, dz), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => { while (bigQ.length || cutting) cutBig(1e9); buildSome(1e9); } };
   return api;
 }
