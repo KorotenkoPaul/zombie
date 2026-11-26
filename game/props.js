@@ -239,7 +239,7 @@ function makeMaterials(renderer) {
     brass: metal(0xD8AE55, .85, .28, 1.2),
     copper: metal(0xC0754A, .9, .32, 1),
     hood: metal(0x7E858D, .85, .34, 1.0),
-    fridge: metal(0xDAD4C4, .35, .3, 1.0) /* cream-silver like the photo (Critic P8) */,   // silver-grey retro fridge like the photo
+    fridge: metal(0xCDCAC2, .35, .3, 1.0) /* cream-silver like the photo (Critic P8); a touch greyer: under the warm lamp 0xDAD4C4 read butter-yellow beside the photo's silver-grey */,   // silver-grey retro fridge like the photo
     ceramic: metal(0xF2EDE3, 0, .22, .7),
     glazeBlue: metal(0x6F8FA8, 0, .25, .7),
     glazeCream: metal(0xE8D9B8, 0, .3, .7),
@@ -274,7 +274,7 @@ function makeMaterials(renderer) {
       for (let i = 0; i < 5; i++) { const gr = g.createRadialGradient(0, 0, 0, 0, 0, 30); gr.addColorStop(0, 'rgba(150,120,70,.09)'); gr.addColorStop(1, 'rgba(150,120,70,0)'); g.save(); g.translate(Math.random() * w, Math.random() * h); g.scale(1, .6 + Math.random() * .6); g.fillStyle = gr; g.fillRect(-30, -30, 60, 60); g.restore(); }
     });
     M.linen.map = texOf(c, { rep: 5 }); M.linen.bumpMap = texOf(c, { srgb: false, rep: 5 }); M.linen.bumpScale = .8; M.linen.color.set(0xffffff); M.linen.needsUpdate = true; }
-  wearEnamel(M.fridge, 0xDAD4C4, 7, { grime: .16, chips: 9 });
+  wearEnamel(M.fridge, 0xCDCAC2, 7, { grime: .16, chips: 9 });
   // realism sweep (tools and dishes up close): the glazed mugs and jars, and the dark enamel pot, get used glaze (grime in the
   // rim and foot, chips, crazing) instead of a flat plastic colour; the mattress is striped ticking; vegetables and the whetstone
   // get their own surfaces
@@ -892,7 +892,7 @@ function saw() { const g = new THREE.Group(); const sh = new THREE.Shape(); sh.m
   const hs = roundRect(.13, .13, .03); const hole = new THREE.Path(); hole.absellipse(-.01, .01, .03, .042, 0, Math.PI * 2, true); hs.holes.push(hole); add(g, EX(hs, .025), M.woodRed, -.04, -.06, 0); for (const y of [-.04, -.08]) screw(g, .015, y, .015); g.userData.grip = V(-.04, -.06, 0); return g; }
 function toolWall() {
   const g = new THREE.Group(); const Wd = 1.4, H = .78; const tools = {};
-  for (let i = 0; i < 3; i++) W(g, Wd, H / 3 - .012, .035, 0, (i + .5) * H / 3, 0, { mat: M.wood, r: .008 });
+  for (let i = 0; i < 3; i++) W(g, Wd, H / 3 - .012, .035, 0, (i + .5) * H / 3, 0, { mat: M.woodLight, r: .008 }); /* [PROPS photo] honey boards like the photo's tool board (dark red-brown read as a black panel above the lamp at home zoom) */
   for (const [w, h, x, y] of [[Wd + .08, .06, 0, H + .02], [Wd + .08, .06, 0, -.02], [.06, H + .1, Wd / 2 + .01, H / 2], [.06, H + .1, -Wd / 2 - .01, H / 2]]) W(g, w, h, .05, x, y, .01, { mat: M.woodDark, r: .01 });
   const peg = (x, y) => add(g, new THREE.CylinderGeometry(.007, .007, .05, 8), M.woodDark, x, y, .04, Math.PI / 2);
   const hang = (name, obj, x, y, rz = 0, s = 1.3) => { bake(obj); obj.traverse(o => { if (o.isMesh) o.castShadow = false; }); obj.position.set(x, y, .045); obj.rotation.z = rz; obj.scale.setScalar(s); obj.userData.live = true; g.add(obj); tools[name] = obj; };
@@ -1885,7 +1885,7 @@ export function buildProps(ctx) {
         const sgG = tg.geometry, had = !!sgG.attributes.tid; if (!had) sgG.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(sgG.attributes.position.count).fill(63), 1)); const mg = mergeGeometries([sgG, ...gs], false);
         if (mg) { tg.geometry = mg; sgG.dispose(); tg.material = proxMat(m); if (tg.castShadow) { tg.customDepthMaterial = dMat; tg.customDistanceMaterial = pMat; } gs.forEach(g => g.dispose()); continue; } if (!had) sgG.deleteAttribute('tid'); }
       const mesh = new THREE.Mesh(mergeGeometries(gs, false), proxMat(m)); mesh.castShadow = cast; if (cast) { mesh.customDepthMaterial = dMat; mesh.customDistanceMaterial = pMat; } mesh.receiveShadow = true; mesh.frustumCulled = false; pg.add(mesh); gs.forEach(g => g.dispose()); }
-    scene.add(pg); out.toolProxy = pg; out.toolProxyHidden = uHide.value; /* QA: proxy and joined static meshes carry a 'tid' vertex attribute; a vertex is not drawn while toolProxyHidden[tid] is 1 (that tool is off home and draws itself) */ if (out.staticGroup) out.wetMats = out.staticGroup.children.map(m => m.material).filter(m => m && m.isMeshStandardMaterial && !m.transparent); /* the proxy swapped some static meshes' materials: rain wets what is drawn */
+    scene.add(pg); out.toolProxy = pg; out.toolProxyHidden = uHide.value; /* QA: proxy and joined static meshes carry a 'tid' vertex attribute; a vertex is not drawn while toolProxyHidden[tid] is 1 (that tool is off home and draws itself) */ if (out.staticGroup) { const wm = new Set(out.staticGroup.children.map(m => m.material)); for (const r of [pg, placed.telescope, placed.logpile, placed.chopblock]) if (r) r.traverse(c => { if (c.isMesh) for (const m of [].concat(c.material)) wm.add(m); }); out.wetMats = [...wm].filter(m => m && m.isMeshStandardMaterial && !m.transparent); } /* [PROPS] rain also wets the proxied tools (the axe in the block) and the outdoor props drawn on their own (telescope, log pile); the height test keeps roofed ones dry */ /* the proxy swapped some static meshes' materials: rain wets what is drawn */
     const vis = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     out._toolProxyInfo = () => TP.map(t => t.o === undefined ? '' : (t.at ? 1 : 0)).join(''); out._toolProxyTick = () => { for (const t of TP) { const { o, h } = t; const at = o.parent === h.parent && !homing.has(o) && o.position.distanceToSquared(h.pos) < 1e-8 && Math.abs(o.quaternion.dot(h.quat)) > .999999 && Math.abs(o.scale.x - (h.scale || 1)) < 1e-5 && vis(o) && t.ms.every((c, k) => c.matrixWorld.equals(t.mw[k])); /* any part moved (parent, covers, lids) -> the tool draws itself */
         if (at !== t.at) { t.at = at; uHide.value[t.i] = at ? 0 : 1; for (const c of t.ms) c.visible = !at; } } }; }
