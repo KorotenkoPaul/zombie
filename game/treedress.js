@@ -203,7 +203,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-float tdCM=0.,tdCF=.5;uniform vec4 tdDrip[8];uniform vec4 tdScar[8];uniform vec4 tdWear[4];float tdDrk=0.,tdWr=0.,tdWs=0.,tdNl=0.,tdRu=0.;vec3 tdND=vec3(0.);float tdSe=9.,tdSty=0.,tdSa=0.,tdSb=0.,tdSz=1.;vec3 tdSD=vec3(0.);varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
+float tdCM=0.,tdCF=.5,tdRT=0.;uniform vec4 tdDrip[8];uniform vec4 tdScar[8];uniform vec4 tdWear[4];float tdDrk=0.,tdWr=0.,tdWs=0.,tdNl=0.,tdRu=0.;vec3 tdND=vec3(0.);float tdSe=9.,tdSty=0.,tdSa=0.,tdSb=0.,tdSz=1.;vec3 tdSD=vec3(0.);varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -370,6 +370,7 @@ uniform float tdCool;` + NOISE)
           // damp foot: the bark gets darker, cooler and a little greener towards the ground (photo: the base sinks into the fog)
           float foot=1.-smoothstep(-.3,4.8,y+(big-.5)*1.2);
           float rootTop=smoothstep(.25,.75,wn.y)*smoothstep(1.9,3.2,rd);
+          tdRT=smoothstep(.3,.85,wn.y)*smoothstep(1.7,2.8,rd)*(1.-smoothstep(1.2,2.4,y)); // [night roots round] for the moonlit root tops below
           diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.34,.38,.42),foot*.62*tdFoot*(1.-rootTop*.7));
           // contact AO where the roots meet the ground, and under overhangs
           diffuseColor.rgb*=mix(1.,.55,(1.-smoothstep(-.35,.45,y))*tdFoot);
@@ -541,11 +542,15 @@ uniform float tdCool;` + NOISE)
           // [photo folds round] night: the photo's trunk and roots read in a cool moonlit grey-blue, the flute ridges and the root
           // tops catching it, the grooves and undersides dark (before, below the house they sank into one dark brown mass)
           { float up=.45+.55*smoothstep(-.2,.8,wn.y); float rdg=(.35+.65*smoothstep(.3,.8,tdH))*mix(1.,.25+.95*smoothstep(-.3,.8,tdFl),tdFlK);
-            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*mix(1.,2.4,smoothstep(3.5,5.5,tdP.y))*(1.-smoothstep(10.5,12.,tdP.y)); } // [night folds round] up the trunk between the houses too (it was one flat dark mass at night; the photo's folds read there)
+            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*mix(1.,2.4,smoothstep(3.5,5.5,tdP.y))*(1.-smoothstep(10.5,12.,tdP.y)); }
+          // [night roots round] photo night: every root reads as its own rounded limb, the top ridge catching the moon in a cool
+          // grey-blue line along it, the flanks dark; ours sank into one flat dark mass between the fog. A cool moonlight on the
+          // root tops only (not the flanks, not under the landings' shade), broken by the bark ridges, never on moss-free glow.
+          totalEmissiveRadiance+=vec3(.030,.040,.056)*(1.-tdDay)*tdRT*(.45+.55*smoothstep(.3,.8,tdH))*(1.-tdMM*.4); // [night folds round] up the trunk between the houses too (it was one flat dark mass at night; the photo's folds read there)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress19';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress20';
     mat.needsUpdate = true;
   }
 

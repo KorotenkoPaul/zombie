@@ -266,3 +266,7 @@ Debug: `__treedress.stats()`.
 ## Round 42 (autumn detail)
 - Already in place: per-card autumn colours mixed inside the clumps (tree.js sprigs: ~17%+ gold / orange / rust, more on clump edges and the top-right), and Wind's falling leaves (a leaf every ~5 s in calm, flurries in gusts, event-driven, land on decks / pond).
 - Gap fixed (wind.js, falling-leaf canvas only): the falling leaf was a smooth one-colour feather shape. Now an oak leaf: 5 rounded lobes a side with deep sinuses, stalk, side veins, lighter centre / darker rim, two faint dry spots; 128 px canvas, white-based so the instance colours still tint it. Same mesh, same draw call.
+
+## Round 43 (fresh phone sweep vs photo: night roots)
+- Phone home view day / dusk / night / rain vs the photo. Most visible in my area: at night the roots sank into one flat dark mass; in the photo each root reads as its own rounded limb with a cool moonlit top ridge and dark flanks.
+- New global tdRT (root tops: up-facing, rd 1.7-2.8+, below y ~2) and a cool moonlight emissive on them at night only, broken by the bark ridges (tdH), less on moss. Key |treedress20. No draw calls.
