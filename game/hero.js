@@ -3491,6 +3491,19 @@ const HPW={w:0};function headPillow(dt){const c=H.bedC;const on=(H.inBed&&!c)||(
  let want=HPW.a||0;if(Math.abs(sl)>.02&&Math.abs(g0)>.004)want+=Math.max(-.6,Math.min(.6,-g0/sl));want=Math.max(-1.0,Math.min(1.0,want));
  HPW.t=HPW.t==null?want:HPW.t+(want-HPW.t)*Math.min(1,dt*6);/* the aim itself low-passed: the lowest skin point hops between hair and scalp */HPW.a=(HPW.a||0)+Math.max(-1.2*dt,Math.min(1.2*dt,HPW.t-(HPW.a||0)));/* at most ~70 deg/s */if(w<.999)HPW.a*=1;app(HPW.a*w);}
 // lying, a hand over the mattress rests ON it, whichever pose or blend put it there (after the quilt was let go it sank 6 cm in, gate)
+// seated on the bed edge (or lying down / getting up) a hand pressed down on the mattress lies palm-flat on it: the clips push it with a
+// straight wrist, the fingers pointing down 6-8 cm into the mattress behind its front face (gate 6.6 cm). The wrist bends back so the
+// fingers point forward over the edge and a little down, round it; eased in and out by how close the hand is to the edge
+const EWR={Left:0,Right:0};function edgeWrist(dt){const B=FIT.bed;const st=dt||1/60;const cn=(H.cur&&H.cur.getClip&&H.cur.getClip().name)||'';const rp=root.position;
+ const near=!!(B&&!H.inBed&&(H.seated===N.bededge||H.bedC||/^hy_(sitdown|bootso|vest|standup|sitrub|bedlie|bedgetup)/.test(cn))&&rp.x>B.x0-.3&&rp.x<B.x1+.3&&Math.abs(rp.z-B.z1)<.7);
+ if(near){const PG=window.__poseGuard;if(PG&&PG.fit&&!window.__noFit){for(const n of ['Spine','Spine1','Spine2','LeftShoulder','RightShoulder'])if(bones[n])PG.fit(bones[n]);root.updateMatrixWorld(true);}guardSpine();}/* the back as the pose guard will leave it, every frame he is on the edge (it leans the seated spine after this stage and took the bend back with it) */
+ for(const sd of ['Left','Right']){const Fa=bones[sd+'ForeArm'],Hn=bones[sd+'Hand'];if(!Hn||!Fa)continue;let k=0;const dir=V(0,1,0);
+  if(near){root.updateMatrixWorld(true);const hp=wp(Hn);dir.applyQuaternion(Hn.getWorldQuaternion(new THREE.Quaternion())).normalize();
+   if(hp.x>B.x0+.03&&hp.x<B.x1-.03){const t0=bedTopAt(hp.x,Math.min(hp.z,B.z1-.03));const top=t0==null?B.mat:t0;
+    k=smooth(B.z1-.24,B.z1-.14,hp.z)*(1-smooth(B.z1+.02,B.z1+.06,hp.z))*(1-smooth(top+.08,top+.14,hp.y))*smooth(top-.12,top-.04,hp.y)*smooth(-.1,-.35,dir.y);/* only a hand pressing on the top: one coming up from in front of the face is left to its clip */}}
+  EWR[sd]+=(k-EWR[sd])*Math.min(1,st*(k>EWR[sd]?14:8));/* the clips press for only 0.3-0.4 s */const w=EWR[sd];if(w<.01)continue;
+
+  const hz=V(dir.x,0,dir.z);const hl=hz.length();const tgt=(hl>.35?hz.divideScalar(hl):hz.multiplyScalar(hl/.35).add(V(0,0,1-hl/.35)).normalize()).add(V(0,-.35,0)).normalize();/* flat on the top the way the fingers already point (forward over the edge when they point straight down), a little curled down */const ax=dir.clone().cross(tgt);const s=ax.length();if(s<1e-4)continue;const ang=Math.atan2(s,dir.dot(tgt))*w;rotW(Hn,ax.divideScalar(s),ang);}}
 const HOB={Left:0,Right:0};function handsOnBed(dt){const B=FIT.bed;const on=!!(B&&H.inBed&&!H.bedC&&!(QH.on&&QH.mode==='down'));for(const sd of ['Left','Right']){const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'],Hn=bones[sd+'Hand'];if(!Hn)continue;
   root.updateMatrixWorld(true);const h=wp(Hn);const lo=B?B.mat+.05:0;const need=on&&h.x>B.x0&&h.x<B.x1&&h.z<B.z1+.01&&h.y<lo;HOB[sd]=need?Math.min(1,HOB[sd]+dt*4):Math.max(0,HOB[sd]-dt*4);if(HOB[sd]<.01||!B)continue;
   const tg=h.clone();tg.y=Math.max(h.y,lo);if(tg.z>B.z1-.03)tg.z=B.z1-.03;const el=wp(Fa),mid=wp(A).add(h).multiplyScalar(.5);const pole=el.sub(mid);if(pole.lengthSq()<1e-6)pole.set(0,-1,0);ik2(A,Fa,Hn,tg,pole.normalize(),HOB[sd],false);H.noPop={side:sd,until:performance.now()+150};}}
@@ -3508,7 +3521,7 @@ function headSkin(){const ms=[];root.traverse(o=>{if(o.isSkinnedMesh&&o.visible&
  Object.assign(HLV,{key,L});return HLV;}
 function headLow(){const S=headSkin();let lo=1e9;for(const {m,ix} of S.L)for(const i of ix){m.getVertexPosition(i,_hlv);m.localToWorld(_hlv);const t=bedTopAt(_hlv.x,_hlv.z);if(t==null)continue;const g=_hlv.y-t;if(g<lo)lo=g;}
  if(lo>1e8){const h=wp(bones.Head);const t=bedTopAt(h.x,h.z);return t==null?.05:h.y-.1-t;}return lo;}
-stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(dt);vestRegripTick(dt);vestPutTick(dt);handsOnBed(dt);});
+stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(dt);vestRegripTick(dt);vestPutTick(dt);handsOnBed(dt);edgeWrist(dt);});
  // lying down / getting up, a foot off the floor never flexes up hard toward the shin: the swing in over the edge drew the toes up
  // to 112 deg shin-to-foot (37 past his standing 75; ?style=game P1 48 against its own lower standing neutral). Soft cap ~98 deg.
  function bedAnkleCap(){const c=H.bedC;if(!c)return;const fl=(N.bededge&&N.bededge.floor)??(FIT.bed?FIT.bed.mat-.5:-1e9);root.updateMatrixWorld(true);
