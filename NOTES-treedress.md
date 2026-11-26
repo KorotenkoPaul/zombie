@@ -95,3 +95,8 @@ Debug: `__treedress.stats()`.
 ## Round 14 (on the new trunk forms, d015ff1)
 - Pavel wants the bark smooth like the photo, character from the forms: bark relief default 1 -> 0.45 (plates, cavities, micro
   octave and normals all scale with it). Moss, ivy, creases and bites rebuilt fine on the new geometry (712 creases, 72 bites).
+
+## Round 15: the earth humps at the ladder foot (2026-11-25)
+- The "black speckled ellipse / faceted blob" reported by Env and Ground at the ground-ladder foot was a soil hump (the 0.3-0.6 m humps between the roots share the moss cushion InstancedMesh). Normally buried; where the floor shader sinks the floor it stood out near-black, with the pixel-size stem bump drawing black speckles and the cut into the floor a hard rim.
+- Fix (key now 'tdMossCushion4'): per-instance attribute tdSoil marks the humps. On them: mossy colour (hash-picked, no extra R() so placements stay), browner low down, no stem bump, soft mottling from arithmetic noise faded by fwidth, and a frayed rim (discard by normalised height vs noise; no texture reads).
+- Test: raise one hump 7 cm on purpose (scratchpad soil6.json) to see the worst case.

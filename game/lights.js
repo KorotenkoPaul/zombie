@@ -603,7 +603,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     for (const side of [-1, 1]) { curParts.push({ c, kind: 'panel', side, n: CNV, seed: c.idx * 2.3 + side * .9 });
       for (let k = 0; k <= c.nf; k++) curParts.push({ c, kind: 'ring', side, k, geo: ringGeo }); }
     const rg = new THREE.CylinderGeometry(.008, .008, W + .16, 6); rg.rotateZ(Math.PI / 2); rg.translate(0, H / 2 + .085, sz * .075);
-    curParts.push({ c, kind: 'rod', side: 0, geo: rg });
+    curParts.push({ c, kind: 'rod', side: 0, geo: rg }); /* [PROPS] nothing floats: a forged bracket at each end holds the rod off the wall (plate with a nail, arm, a cup round the rod) and a knob closes each rod end */ for (const s of [-1, 1]) { const bx = s * (W / 2 + .055), ry = H / 2 + .085; const arm = new THREE.BoxGeometry(.01, .012, .07); arm.translate(bx, ry - .004, sz * .035); const pl = new THREE.BoxGeometry(.028, .07, .006); pl.translate(bx, ry - .012, sz * .003); const cup = new THREE.TorusGeometry(.0125, .0032, 5, 12); cup.rotateY(Math.PI / 2); cup.translate(bx, ry, sz * .075); const nl = new THREE.CylinderGeometry(.005, .005, .004, 6); nl.rotateX(Math.PI / 2); nl.translate(bx, ry - .03, sz * .007); const kb = new THREE.SphereGeometry(.014, 8, 6); kb.translate(s * (W / 2 + .092), ry, sz * .075); for (const geo of [arm, pl, cup, nl, kb]) curParts.push({ c, kind: 'rod', side: 0, geo }); }
     w.leak = 1;
   }
   let curMesh = null, curPosA = null, curNorA = null, curGlowA = null, curAOA = null;
@@ -729,7 +729,8 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // outdoor lanterns reach further. Lit with a soft wrap toward the source, so the bark keeps its relief.
   const wgSrc = wgWins.map(w => ({ p: w.glowAt, r: 3.4, k: () => Math.min(1, warm[w.room] || 0) * 4.5 * (w.leak ?? 1) }));
   for (const [room, R] of Object.entries(ROOMS)) wgSrc.push({ p: R.c, r: 5.5, k: () => Math.min(1, warm[room] || 0) * 3.2 * (1 - .7 * lockK) });
-  for (const [n, r, I] of [['landing', 3.6, 6], ['door', 3.2, 5]]) { const s0 = src.get(n); if (s0) wgSrc.push({ p: s0.pos, r, k: () => s0.level * I }); }
+  /* tighter (were 3.6 m and 3.2 m): on phones this glow alone painted the whole lower trunk orange from the ladder to the lantern, the door's warm pool stopped being a pool (Env, coordinator: ~35% of the bark by the door; base fill 57%, the door light 8%) */
+  for (const [n, r, I] of [['landing', 2.1, 6], ['door', 1.9, 6]]) { const s0 = src.get(n); if (s0) wgSrc.push({ p: s0.pos, r, k: () => s0.level * I }); }
   wgSrc.length = Math.min(wgSrc.length, WG_N);
   wgSrc.forEach((w, i) => wgP.value[i].set(w.p.x, w.p.y, w.p.z, w.r));
   let wgOn = true; const wgMats = [];
@@ -924,7 +925,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const AO = (() => {
     const TOP = .035;   // board tops sit ~3.5 cm above the level
     const RM = [
-      { room: 'kitchen', y: KT, x0: -4.4, x1: -.9, z0: 1.0, z1: 4.6, holes: [[-1.5, -.92, 3.0, 3.9]] },
+      { room: 'kitchen', y: KT, x0: -4.4, x1: -.9, z0: 1.0, z1: 4.6, holes: [[-1.5, -.92, 3.0, 4.08]] },
       { room: 'bedroom', y: BD, x0: -4.2, x1: .4, z0: .95, z1: 3.95, holes: [[-4.3, -3.55, 2.32, 3.25]] },
       { room: 'workshop', y: WS, x0: .9, x1: 4.6, z0: 1.2, z1: 5.3, holes: [] },
       // outside: the deck and the three round landings (index.html floorBoards with disc(cx, cz, r, zmin) shapes)
@@ -1074,6 +1075,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     heroBlob.material.opacity = .5 * blobK;
   }
 
+  let lastDK = -1;
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
     t += dt; frame++;
     if (EMBERS) {
@@ -1087,6 +1089,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     cookT = cooking ? 78 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s)
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
+    /* the first frames after load, and any jump of the clock (setHour, a skip): automatic sources take their state at once.
+       Fading in at the kind's 'on' time (door 1.5 s) read on phones as "dark at load, lights up later", because the first
+       seconds there are spent compiling at a few fps (Env / critic). Real switches still fade and flare. */
+    const snap = frame <= 3 || (lastDK >= 0 && Math.abs(dayK - lastDK) > .12); lastDK = dayK;
     for (const s of src.values()) {
       // Pavel: a lamp or candle never goes out by itself. If the hero forgot it, it keeps burning until he puts it out.
       // The candle lights when he sits down to read in the dark and then stays lit (manual) until set('candle', false).
@@ -1094,6 +1100,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       const want = s.manual !== null ? s.manual : !!s.autoFn(ctx);
       setOn(s, want);
       const K = KINDS[s.kind];
+      if (snap && s.manual === null && !(s.ign && s.ign.hand)) { s.level = s.on ? 1 : 0; s.flare = 0; s.ign = null; }
       if (s.ign) updateMatch(s, dt);
       const lighting = s.on && s.ign && s.ign.t < MATCH.catch;   // the match is still on its way to the wick: nothing burns yet
       s.level = lighting ? s.level : s.on ? Math.min(1, s.level + dt / K.on) : Math.max(0, s.level - dt / K.off);
