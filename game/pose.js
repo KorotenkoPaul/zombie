@@ -189,5 +189,7 @@ export function createPoseGuard({ hero }) {
   run.stats = stats; run.reset = reset; run.LIM = LIM; run.fit = fit; run.over = over; run.rest = bone => { const j = J.find(x => x.b === bone); return j ? j.r.clone() : null; };
   // fitSpine(): the back's whole bend and turn put inside the guard's chain limits (same use as fit)
   run.fitSpine = () => chain([byName.Spine, byName.Spine1, byName.Spine2], SPINE.yaw, SPINE.tilt, true);
+  // tests only (HH.qaReset): the guard's previous-frame state back to a fresh start
+  run.qaReset = () => { reset(); gap = 0; rootPrev.set(0, 0, 0); for (const L of LEGS) { if (L.o) L.o.set(0, 0, 0); } };
   return run;
 }
