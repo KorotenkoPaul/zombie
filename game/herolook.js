@@ -25,7 +25,8 @@ export function createHeroLook({ THREE, root, camera, renderer, opts = {} }) {
     // the body under the vest is open (the vest was split off it): seen through the vest's front opening, the hull's inside
     // showed as dark patches. The torso is inside the vest anyway, so its triangles get no hull (head, arms, legs keep theirs).
     if (opt2.dropTorso && g.index) { const SI = g.attributes.skinIndex, SW = g.attributes.skinWeight, bn = src.skeleton.bones.map(b => b.name.replace('mixamorig', '').replace(':', ''));
-      const torso = i => { let m = -1, mb = 0; for (let c = 0; c < 4; c++) { const w = [SW.getX, SW.getY, SW.getZ, SW.getW][c].call(SW, i); if (w > m) { m = w; mb = [SI.getX, SI.getY, SI.getZ, SI.getW][c].call(SI, i); } } return /^(Hips|Spine|Spine1|Spine2|Neck|LeftShoulder|RightShoulder)$/.test(bn[mb]); };
+      const torso = i => { let m = -1, mb = 0; for (let c = 0; c < 4; c++) { const w = [SW.getX, SW.getY, SW.getZ, SW.getW][c].call(SW, i); if (w > m) { m = w; mb = [SI.getX, SI.getY, SI.getZ, SI.getW][c].call(SI, i); } } if (/^(Hips|Spine|Spine1|Spine2|Neck|LeftShoulder|RightShoulder)$/.test(bn[mb])) return true;
+        /* and the collar ring (Head-led but 30%+ neck/shoulder): the coarse proxy stands out of the real collar there, so its back faces showed as black spikes behind the neck and over the right shoulder strap */ let ts = 0; for (let c = 0; c < 4; c++) if (/^(Neck|LeftShoulder|RightShoulder|Spine2)$/.test(bn[[SI.getX, SI.getY, SI.getZ, SI.getW][c].call(SI, i)])) ts += [SW.getX, SW.getY, SW.getZ, SW.getW][c].call(SW, i); return /Head/.test(bn[mb]) && ts >= .3; };
       // plus everything of the legs above the crotch (the seat and belly under the vest's hem)
       const J = n => { const i = bn.indexOf(n); return i < 0 ? null : new THREE.Vector3().setFromMatrixPosition(src.skeleton.boneInverses[i].clone().invert()); };
       const lu = J('LeftUpLeg'), ru = J('RightUpLeg'), lk = J('LeftLeg'); const yC = lu && ru && lk ? (lu.y + ru.y) / 2 - .25 * ((lu.y + ru.y) / 2 - lk.y) : -1e9;
@@ -40,7 +41,7 @@ export function createHeroLook({ THREE, root, camera, renderer, opts = {} }) {
     m.onBeforeCompile = sh => { sh.uniforms.uOW = uOW; sh.vertexShader = 'uniform float uOW;\n' + sh.vertexShader.replace('#include <project_vertex>',
       '#include <project_vertex>\n  mvPosition.xyz += normalize(transformedNormal) * uOW * max(.05, -mvPosition.z);\n  gl_Position = projectionMatrix * mvPosition;'); };
     m.customProgramCacheKey = () => 'heroHull1';
-    const h = new THREE.SkinnedMesh(g, m); h.name = name; h.bind(src.skeleton, src.bindMatrix); h.frustumCulled = false; h.castShadow = false; h.receiveShadow = false;
+    const h = new THREE.SkinnedMesh(g, m); h.name = name; h.bind(src.skeleton, src.bindMatrix); try { window.__clothes && window.__clothes.knee && window.__clothes.knee(h); } catch (e) { } h.frustumCulled = false; h.castShadow = false; h.receiveShadow = false;
     h.layers.set(0); src.parent.add(h); h.position.copy(src.position); h.quaternion.copy(src.quaternion); h.scale.copy(src.scale);
     hulls.push({ h, src, vis: src.name === 'heroShadow' ? root.getObjectByName('Mesh_0') : src });
     return h;

@@ -166,7 +166,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   const hasCandle = !!(lights && lights.get && lights.get('candle'));
   const candleOn = () => hasCandle && lights.get('candle').on;
   const lampOn = n => !!(lights && lights.get(n) && lights.get(n).on);
-  const dark = h => (h >= 19.2 || h < 6.6);
+  const dark = h => (h >= 19.2 || h < 6.6), gloomy = () => { const s = weather(); return !!s && ((s.rain && s.rain !== 'none' && (s.rainAmt || 0) >= .5) || s.storm || (s.overcast && (s.cloud || 0) > .7)); }, lampDark = h => dark(h) || gloomy();   // [ENV] a grey rain / storm / heavy overcast: the rooms are dim by day too, so he lights the lamp of the room he is in and puts it out leaving, as at night (lamps only; one line so the QA random streams keep their lines)
 
   // ---------- clock ----------
   let jumped = false;
@@ -445,13 +445,13 @@ export function createBrain({ HH, lights, hour, isNight }) {
     if (DECKLAMP && lights && lights.get && lights.get('decklamp')) {
       const toDeck = DECK_LIT.includes(name), onDeck = /^deck/.test(H.node || '');
       if (onDeck && !toDeck && lampOn('decklamp') && Math.random() < .8) plan.unshift({ task: 'switch', opts: { light: 'decklamp', on: false }, why: 'уходит с палубы — гасит фонарь' });
-      else if (toDeck && dark(h) && !lampOn('decklamp')) plan.push({ task: 'switch', opts: { light: 'decklamp', on: true }, why: 'темно — зажигает фонарь на палубе' });
+      else if (toDeck && lampDark(h) && !lampOn('decklamp')) plan.push({ task: 'switch', opts: { light: 'decklamp', on: true }, why: 'темно — зажигает фонарь на палубе' });
     }
     // going to bed: the bedroom lamp off first, always
     if (name === 'sleep' && lampOn('bedroom'))
       plan.push({ task: 'switch', opts: { light: 'bedroom', on: false }, why: 'перед сном гасит свет' });
     // a dark room: light it first
-    else if (name !== 'sleep' && ROOM_LAMP[to] && dark(h) && !lampOn(ROOM_LAMP[to]))
+    else if (name !== 'sleep' && ROOM_LAMP[to] && lampDark(h) && !lampOn(ROOM_LAMP[to]))
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[to], on: true }, why: 'темно — включает свет' });
     // the candle on the reading table: he blows it out when he stops reading, and lights it to read in the dark
     if (name !== 'read' && from === 'bedroom' && candleOn()) plan.unshift({ task: 'switch', opts: { light: 'candle', on: false }, why: 'задувает свечу' });
@@ -465,7 +465,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   function startNext() {
     let st = plan.shift();
     // a lamp step planned in the dark, but it is light by now: skip it
-    while (st && st.task === 'switch' && st.opts.on && st.opts.light !== 'candle' && !dark(hour())) st = plan.shift();
+    while (st && st.task === 'switch' && st.opts.on && st.opts.light !== 'candle' && !lampDark(hour())) st = plan.shift();
     if (!st) return false;
     lastSt = st;
     why = st.why || why;
@@ -509,7 +509,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const opts = [];
     if (has('hy_stretch') && (h < 10 || tired > .5)) opts.push('stretch', 'stretch');
     if (has('336')) opts.push('around', 'around');
-    if (has('11')) opts.push('breathe');
+    /* 'breathe' (catching his breath) is off: Pavel 2026-11-25 does not want him to breathe */
     if (has('hy_inspect') && mood > .5) opts.push('inspect');
     if (!opts.length) return false;
     const m = MICRO[pick(opts)];
@@ -751,7 +751,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
 
     // in daylight, a lamp left on in this room gets switched off
     const here = ROOM_OF(H.node);
-    if (!dark(h) && ROOM_LAMP[here] && lampOn(ROOM_LAMP[here]) && v.task !== 'switch' && !plan.length && !cur) {   // only between activities (leaving a room he switches off himself, planFor)
+    if (!lampDark(h) && ROOM_LAMP[here] && lampOn(ROOM_LAMP[here]) && v.task !== 'switch' && !plan.length && !cur) {   // only between activities (leaving a room he switches off himself, planFor)
       const keep = cur && ACTS[cur.name] ? cur.name : null;
       tr('dayLamp');
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[here], on: false }, why: 'светло — гасит лампу' });
@@ -759,7 +759,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       startNext(); return;
     }
     // it got dark while he is busy in an unlit room: get up and light it, then carry on
-    if (dark(h) && ROOM_LAMP[here] && !lampOn(ROOM_LAMP[here]) && cur && ACTS[cur.name] && ACTS[cur.name].room === here && v.task !== 'sleep' && !plan.length && v.step !== 'go') {
+    if (lampDark(h) && ROOM_LAMP[here] && !lampOn(ROOM_LAMP[here]) && cur && ACTS[cur.name] && ACTS[cur.name].room === here && v.task !== 'sleep' && !plan.length && v.step !== 'go') {
       tr('darkLamp');
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[here], on: true }, why: 'стемнело — включает свет' });
       plan.push({ task: cur.name, opts: {}, why: 'продолжает' });

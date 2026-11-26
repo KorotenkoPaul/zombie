@@ -74,7 +74,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   {const U=bone(F[i],s+'UpLeg'),A=bone(F[i],s+'Foot');const ah=len(sub(A,U))*100;if(m.knee<20||ah<10)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg folded flat',limit:160,what:'leg folded flat (knee interior '+m.knee.toFixed(0)+' deg, ankle '+ah.toFixed(0)+' cm from the hip)'});}
   /* a foot pointed in line with the shin (ankle < 35 deg) leaves the toe-side test without a side: that is the ankle's fault, reported in section 10 */
   if(m.knee>=60&&m.knee<150&&m.ank>=35&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
-  if(m.footHead<lim.footHeadM&&!f.fl.includes('B')&&!(f.fl.includes('S')&&/boots?(off|on)/i.test(f.clip)&&m.footHead>.35))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
+  /* seated with that foot planted on the floor and the head bowed toward it (pulling a vest off) is not a leg up by the head: the posture check judges the bow */
+  const footDown=f.fl.includes('S')&&f.gnd&&f.gnd[s==='Left'?0:2]!=null&&bone(f,s+'Foot')[1]-f.gnd[s==='Left'?0:2]<.3&&m.footHead>.35;
+  if(m.footHead<lim.footHeadM&&!f.fl.includes('B')&&!footDown&&!(f.fl.includes('S')&&/boots?(off|on)/i.test(f.clip)&&m.footHead>.35))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
   if(m.footUp>lim.footUpM)add('joint',i,{bone:s+'Foot',value:+(m.footUp*100).toFixed(0),unit:'cm along body above hip',limit:lim.footUpM*100,what:'leg folded up past the hip'});}});
  // ---- 4. foot sliding while planted ----
  for(const [s,fi,ti,gi] of [['Left','LeftFoot','LeftToeBase',0],['Right','RightFoot','RightToeBase',2]]){let c=null;
@@ -253,7 +255,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   if(m&&q.i-m.i1<=30){m.i1=q.i;m.count++;if(q.value>m.value&&q.type!=='detour'){Object.assign(m,{...q,i1:q.i,count:m.count,first:m.first});}}else{const n={...q,i1:q.i,count:1,first:q.f};merged.push(n);last[k]=n;}}
  // priority
  for(const q of merged){const r=q.limit?q.value/q.limit:2;let P=3;
-  if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2))?1:q.value>=2?2:3;
+  if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2)||(q.value>=3&&/^work:(fix_|clear_roof)/.test(q.act||'')))?1:q.value>=2?2:3;/* Pavel 2026-11-25: he must never sink into what he repairs: at a repair 3 cm is already P1 */
   else if(q.type==='joint')P=/broken|next to the head|past the hip|folded flat/.test(q.what)?1:2;
   else if(q.type==='jump'||q.type==='snap-turn')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;

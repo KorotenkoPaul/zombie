@@ -9,6 +9,7 @@ F=0.5 node skintone.mjs G.glb Gt.glb | cut -c1-120
 [ -n "$BOOTS" ] && node bootlift.mjs Gt.glb Gt.glb "$BOOTS"
 [ -n "$BACKW" ] && node backweights.mjs Gt.glb Gt.glb "$BACKW"
 [ -n "$KNEEW" ] && node kneeweights.mjs Gt.glb Gt.glb "$KNEEW"
+[ -n "$COLLW" ] && node collarweights.mjs Gt.glb Gt.glb "$COLLW"
 [ -n "$VESTK" ] && node vesttone.mjs Gt.glb Gt.glb "$VESTK"
 [ -n "$VESTE" ] && node vestedge.mjs Gt.glb Gt.glb "$VESTE"
 [ -n "$VESTA" ] && node vestarm.mjs Gt.glb Gt.glb "$VESTA"
@@ -17,6 +18,7 @@ F=0.5 node skintone.mjs G.glb Gt.glb | cut -c1-120
 [ -n "$UNDERV" ] && node undervest.mjs Gt.glb Gt.glb "$UNDERV" | tail -2
 [ -n "$CLOTHF" ] && node clothfix.mjs Gt.glb Gt.glb "$CLOTHF" | tail -1
 [ -n "$HAIRG" ] && node hairstep.mjs Gt.glb Gt.glb "$HAIRG" | tail -1
+[ -n "$HANDS" ] && node handsub.mjs Gt.glb Gt.glb "$HANDS"
 L=$(python3 -c "
 K=$K;CO=$CO;ZC=$ZC
 f=lambda x,y:[round(x*K,4),round(CO+(y-0.625)*K,4)]
