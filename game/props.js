@@ -1744,12 +1744,12 @@ export function buildProps(ctx) {
     const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     bunk.parent.traverse(o => { if (!o.isSkinnedMesh || !o.skeleton || !shown(o)) return; const hb = o.skeleton.bones.find(b => /Hips$/.test(b.name)) || o.skeleton.bones[0]; const d = hb.getWorldPosition(V()).distanceTo(at); if (d < best) { best = d; sk = o.skeleton; } }); if (!sk || best > 1) return null;
     const byName = {}; for (const bn of sk.bones) byName[bn.name.replace(/^.*[:_]/, '').replace(/^mixamorig/, '')] = bn;
-    const list = []; for (const [a, b, r, low] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r, f: /Leg|Foot|Toe/.test(a + b) ? .75 : 1.05, low: !!low, hips: byName.Hips }); return (coverBones = list.length >= 8 ? list : null); }
+    const list = []; for (const [a, b, r, low] of COVER_SEG) if (byName[a] && byName[b]) list.push({ a: byName[a], b: byName[b], r, f: /Leg|Foot|Toe/.test(a + b) ? .75 : 1.05, low: !!low, hips: byName.Hips, arm: /Shoulder|Arm|Hand/.test(a + b) ? a.slice(0, a.startsWith('Left') ? 4 : 5) : null }); return (coverBones = list.length >= 8 ? list : null); }
   out._quiltDbg = () => ({ qTop, qBot, m: quiltMesh, mesh: quiltMesh && quiltMesh.name, y: quiltMesh && quiltMesh.position.y, press: { on: press.on, k: press.k, cover: press.cover, at: press.at }, cb: cb.length, bones: coverBones && coverBones.length });
   const _cv = V(), _cw = V();
   // cloth height over one capsule at (x,z): the limb's top (+ cloth thickness) right over it, then falling away to the sides
   const LT = [0, .25, .5, .75, 1];
-  function liftAt(x, z, y0) { let acc = 0; for (const q of cb) { const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+  function liftAt(x, z, y0, skip) { let acc = 0; for (const q of cb) { if (skip && q.arm === skip) continue; const ex = q.bx - q.ax, ez = q.bz - q.az, L2 = ex * ex + ez * ez; let t = L2 > 1e-8 ? ((x - q.ax) * ex + (z - q.az) * ez) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
       // a rounded crown over the limb, then the cloth slopes down: no sharp ridges (sideways the quilt stood up in pointed tents)
       // R56-1: the highest point of the limb under the cloth, not only the one nearest in plan: a raised shin stands near upright, its
       // plan is a dot and the nearest point could be the low ankle, so the knee and shin came up through the quilt as he swung his legs in
@@ -1775,8 +1775,8 @@ export function buildProps(ctx) {
   // taken it (0..1); null hands it back to the usual ramp. Never held longer than 8 s
   out.coverK = (v) => { press.kx = v == null ? null : Math.max(0, Math.min(1, v)); press.kxT = 8; };
   // the flap's free edge in the world, at the z of the given world point (kept off the corners): where his fingers hold it
-  out.quiltEdge = (pw, sf = 1, zm = .33) => { if (!quiltMesh) return null; bunk.updateMatrixWorld(true); const pl = bunk.worldToLocal(pw.clone()); const zl = Math.max(-zm, Math.min(zm, pl.z));/* zm: up to its side hem */
-    foldPt(qHinge + FL * sf, .012, fold.a, _fp);/* sf: how far along the flap the hand holds it (1 = its free edge) */ let X = _fp[0], Y = _fp[1]; if (press.cover && press.k > .001 && cb.length) Y += liftAt(X, zl, Y) * press.k; return bunk.localToWorld(V(X, Y, zl)); };
+  out.quiltEdge = (pw, sf = 1, zm = .33, skip = null) => {/* skip: 'Left'/'Right', the arm holding the edge does not lift it (its own capsule lifted the edge, the hand followed it up and snapped back: a 10 cm saw at 8 Hz, morning) */ if (!quiltMesh) return null; bunk.updateMatrixWorld(true); const pl = bunk.worldToLocal(pw.clone()); const zl = Math.max(-zm, Math.min(zm, pl.z));/* zm: up to its side hem */
+    foldPt(qHinge + FL * sf, .012, fold.a, _fp);/* sf: how far along the flap the hand holds it (1 = its free edge) */ let X = _fp[0], Y = _fp[1]; if (press.cover && press.k > .001 && cb.length) Y += liftAt(X, zl, Y, skip) * press.k; return bunk.localToWorld(V(X, Y, zl)); };
   out._quiltFoldDbg = () => ({ qxMax, qHinge, qFlat, a: fold.a });
   function pressQuilt(dt) {
     if (!quiltMesh) return; if (press.kx != null && (press.kxT -= dt) <= 0) press.kx = null; if (press.kx != null && press.on && press.cover) press.k = press.kx; else press.k += ((press.on ? 1 : 0) - press.k) * Math.min(1, dt * (press.cover ? 6 : 1.5));/* the cover drops as fast as it rises: getting up, his legs went out through the slowly sinking box *//* covering: the cloth is over him at once (rising over 2 s it let the sweater through, items thread) */ if (press.fast > 0) press.fast -= dt;
@@ -1786,7 +1786,7 @@ export function buildProps(ctx) {
     else if (!folded && (Math.abs(press.k - press.shown) < .01 || !press.at)) return;
     press.shown = press.k; fold.shown = fold.a;
     if (cover) { coverT = .2; bunk.updateMatrixWorld(true);
-      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } let f = q.f || 1; if (f < 1) { const sl = Math.abs(_cw.y - _cv.y) / Math.max(1e-4, _cv.distanceTo(_cw)); f += (1.05 - f) * Math.min(1, sl * 2.5); }/* R56-1: a leg that rises (knee up as he swings in) is covered at its full thickness: thinned, its trousers came up through the quilt at the hip; lying flat it stays thin (R42-2 box) */ cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f }); } } }
+      if (findCoverBones()) { cb.length = 0; for (const q of coverBones) { q.a.getWorldPosition(_cv); bunk.worldToLocal(_cv); q.b.getWorldPosition(_cw); bunk.worldToLocal(_cw); if (q.low && q.hips) { const hy = bunk.worldToLocal(q.hips.getWorldPosition(V())).y; if (_cw.y > hy + .01) continue; } let f = q.f || 1; if (f < 1) { const sl = Math.abs(_cw.y - _cv.y) / Math.max(1e-4, _cv.distanceTo(_cw)); f += (1.05 - f) * Math.min(1, sl * 2.5); }/* R56-1: a leg that rises (knee up as he swings in) is covered at its full thickness: thinned, its trousers came up through the quilt at the hip; lying flat it stays thin (R42-2 box) */ cb.push({ ax: _cv.x, ay: _cv.y, az: _cv.z, bx: _cw.x, by: _cw.y, bz: _cw.z, r: q.r, f, arm: q.arm }); } } }
     const P = quiltMesh.geometry.attributes.position, a = P.array, k = press.k, c = press.at, A = fold.a;
     for (let i = 0; i < a.length; i += 3) { const x = qBase[i], y = qBase[i + 1], z = qBase[i + 2]; a[i] = x; a[i + 1] = y; a[i + 2] = z; if (y > qLowMax + .1) continue;/* the upper bunk's quilt */
       let X = x, Y = y; if (A > 1e-4 && x > qHinge) { foldPt(x, y - qFlat, A, _fp); X = _fp[0]; Y = _fp[1]; }
