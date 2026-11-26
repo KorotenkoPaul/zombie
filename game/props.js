@@ -749,7 +749,7 @@ function lanternHousing(rod) { const g = new THREE.Group(); const s = .17, h = .
   add(g, new THREE.TorusGeometry(.025, .005, 6, 16), M.iron, 0, h / 2 + .09, 0); add(g, new THREE.CylinderGeometry(.006, .006, rod, 6), M.iron, 0, h / 2 + .1 + rod / 2, 0); return g; }
 function domeShade(rod) { const g = new THREE.Group(); const m = add(g, lathe([[.2, 0], [.19, .03], [.14, .1], [.07, .15], [.035, .17], [0, .18]], 28), M.enamelDark); m.material = M.enamelDark; const inner = add(g, lathe([[.19, .002], [.14, .095], [.07, .145], [0, .17]], 28), new THREE.MeshStandardMaterial({ color: 0xF0E2C0, roughness: .6, side: THREE.BackSide, emissive: 0xFFC27A, emissiveIntensity: 0 }));
   g.userData.inner = inner.material; inner.userData.live = true; // hangs on a chain of small links up to the roof beam, with a ceiling rose at the top
-  { const n = Math.max(2, Math.round(rod / .035)); const lg = new THREE.TorusGeometry(.011, .0028, 5, 10); for (let i = 0; i < n; i++) add(g, lg, M.iron, 0, .185 + i * rod / n + .012, 0, 0, (i % 2) * Math.PI / 2, 0).scale.set(1, 1.5, 1);
+  { const ch = Math.min(rod, .42), n = Math.max(2, Math.round(ch / .035)); const lg = new THREE.TorusGeometry(.011, .0028, 5, 10); for (let i = 0; i < n; i++) add(g, lg, M.iron, 0, .185 + i * ch / n + .012, 0, 0, (i % 2) * Math.PI / 2, 0).scale.set(1, 1.5, 1); if (rod > ch) add(g, new THREE.CylinderGeometry(.004, .004, rod - ch, 5), M.iron, 0, .185 + ch + (rod - ch) / 2, 0); /* a long drop: the last 42 cm are chain, the rest a cord (57 links cost 5.7k tris) */
     add(g, new THREE.CylinderGeometry(.03, .04, .025, 14), M.iron, 0, .18 + rod + .012, 0); }
   add(g, new THREE.TorusGeometry(.2, .008, 6, 32), M.iron, 0, 0, 0, Math.PI / 2); return g; }
 // plank door in its frame. The leaf hangs on a live pivot at its hinge edge (local x = +w/2), so it can swing;
@@ -1443,7 +1443,7 @@ export function buildProps(ctx) {
   // lights.js builds only the wick, flame and light at out.lights.bedroomLamp.pos (own: true); hero.js reaches the lamp
   // itself now that out.switches has no 'bedroom'.
   out.switches = {}; out.switchN = {};
-  place('blamp', bracketLantern(), .18, BD + 1.65, 1.95, { solid: false, wall: true });
+  place('blamp', bracketLantern(), -.95, BD + 1.62, .99 + .192, { ry: Math.PI / 2, solid: false, wall: true }); /* photo: on the back wall over the bunk ladder's end, in view (by the door it hid behind the door leaf and the front post from every camera); he lights it from in front of the crate */
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   place('crock', bake(crock()), -3.52, BD, 1.24, { ry: .5 });
   place('pegrail', bake(pegRail()), -3.8, BD + 1.5, 1.0, { solid: false, wall: true }); /* photo round 2: the bare wall left of the bunk, above the crock (nothing walks there) */
@@ -1470,7 +1470,7 @@ export function buildProps(ctx) {
   place('wbarrel', barrel(.8), 1.55, WS, 1.55);
   place('wbucket', bucket(.36, true), 4.05, WS, 3.4);
   place('wrug', rug(1.6, .95, 'green', '#D9C99A'), 2.8, WS, 3.05, { solid: false });
-  place('wlamp', bake(domeShade(1.2)), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
+  place('wlamp', bake(domeShade(8.105 - WS - 1.30 - .2)), 2.75, WS + 1.30, 1.72, { solid: false, wall: true }); /* photo: the big shade hangs from the ridge over the workbench, low enough to show under the front eave from the home view; over the bench he never walks under it */
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 }); place('cornerbench', cornerBench(), 3.975, WS, 1.73);
 
   // ---------- deck and landings ----------

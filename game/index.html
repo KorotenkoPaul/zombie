@@ -847,6 +847,7 @@ function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0
 // distance below the tie point (top stays put), driven by the global wind (game/wind.js windRope).
 /* [props: house exterior round] the rung knots were smooth beige balls: now a lashing, a few tight turns of cord round the rope with a fat clove-hitch bulge, built from small tori (same rope material and merge, a few more triangles) */ const knotGeo=(()=>{const parts=[];for(const [y,r] of [[-.03,.017],[-.015,.0185],[0,.019],[.015,.0185],[.03,.017]]){const t=new THREE.TorusGeometry(r,.0068,4,9);t.rotateX(Math.PI/2);t.rotateZ((y*9)%1*.25);t.translate(0,y,0);parts.push(t);} const b=new THREE.TorusGeometry(.017,.009,4,8);b.rotateY(Math.PI/2);b.translate(0,0,.0);parts.push(b); return mergeGeometries(parts);})();
 const knotGeoFar=(()=>{const parts=[];for(const [y,r] of [[-.03,.017],[-.015,.0185],[0,.019],[.015,.0185],[.03,.017]]){const t=new THREE.TorusGeometry(r,.0068,3,7);t.rotateX(Math.PI/2);t.rotateZ((y*9)%1*.25);t.translate(0,y,0);parts.push(t);}const b=new THREE.TorusGeometry(.017,.009,3,6);b.rotateY(Math.PI/2);parts.push(b);return mergeGeometries(parts);})();/* [PERF] the same lashing on coarser tori (246 tris, was 424) for the far rope LOD */
+const knotGeoVFar=new THREE.CylinderGeometry(.02,.02,.066,6,1);/* [PERF] beyond 24 m a lashing is ~1 px on a phone: its envelope, 24 tris */
 function swayMat(m){m.onBeforeCompile=sh=>{WIND.hook(sh);sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float swayW;attribute float swayL;')
  .replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed+=windRope(transformed,swayW,swayL)*smoothstep(.05,.45,transformed.y);');};m.customProgramCacheKey=()=>'ropesway';return m;}
 const ropeMat=swayMat(new THREE.MeshStandardMaterial({color:0xA48C64,roughness:1}));/* weathered hemp, not new cream cord */
@@ -874,8 +875,8 @@ function mergeSway(parts,top,H,ph){let nV=0,nI=0;for(const g of parts){nV+=g.att
  const G=new THREE.BufferGeometry();G.setAttribute('position',new THREE.BufferAttribute(P,3));G.setAttribute('normal',new THREE.BufferAttribute(N,3));G.setAttribute('uv',new THREE.BufferAttribute(U,2));G.setAttribute('swayW',new THREE.BufferAttribute(W,1));G.setAttribute('swayL',new THREE.BufferAttribute(PH,1));G.setIndex(new THREE.BufferAttribute(I,1));return G;}
 const _m4=new THREE.Matrix4(),_q=new THREE.Quaternion();
 function placed(geo,pos,rot,scl){_q.setFromEuler(rot||new THREE.Euler());_m4.compose(pos,_q,scl||V(1,1,1));return geo.clone().applyMatrix4(_m4);}
-function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-bot,ph=x*3.1+z*1.7;const ropes=[],rungs=[],kN=[],kF=[];
- const knot=(p,r,s)=>{kN.push(placed(knotGeo,p,r,s));kF.push(placed(knotGeoFar,p,r,s));};
+function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-bot,ph=x*3.1+z*1.7;const ropes=[],rungs=[],kN=[],kF=[],kV=[];
+ const knot=(p,r,s)=>{kN.push(placed(knotGeo,p,r,s));kF.push(placed(knotGeoFar,p,r,s));kV.push(placed(knotGeoVFar,p,r,s));};
  const gnd=y0<.5;
  // a belly away from the edge; on the ground the last half metre of the ladder lies on the earth, curling outwards
  const bow=t=>Math.sin(t*Math.PI)*.055+(gnd?.42*Math.pow(Math.max(0,(t-.86)/.14),2):0);
@@ -900,10 +901,12 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   if(mat===ropeMat&&!/[?&]noropelod/.test(location.search)){/* [PERF] far LOD of the lashings: from beyond 17 m (the home view is 26 m) a lashing is ~6 px on a phone,
     so the same five turns on coarser tori (246 tris instead of 424) draw the same; ~7k fewer tris for the two ladders. The full mesh still casts the shadows and takes the raycasts. */
    const far=new THREE.Mesh(mergeSway(ropes.map(g=>g.clone()).concat(kF),top,H,ph),mat);far.frustumCulled=false;far.castShadow=false;far.raycast=()=>{};far.userData.lodOf=me;far.userData.plStatic=true;
-   const c=V(x,(y0+y1)/2,z),pick=cam=>!(cam===camera&&!window.__noRopeLod&&cam.position.distanceTo(c)>17);
+   const c=V(x,(y0+y1)/2,z),lod=cam=>cam!==camera||window.__noRopeLod?0:(d=>d>24&&!window.__noRopeVFar?2:d>17?1:0)(cam.position.distanceTo(c)),pick=cam=>lod(cam)===0;
+   const vf=new THREE.Mesh(mergeSway(ropes.map(g=>g.clone()).concat(kV),top,H,ph),mat);/* the same twisted strands; only the lashings become their envelope */vf.frustumCulled=false;vf.castShadow=false;vf.raycast=()=>{};vf.userData.lodOf=me;vf.userData.plStatic=true;
+   vf.onBeforeRender=function(r,sc,cam,geo){if(lod(cam)!==2)geo.setDrawRange(0,0);};vf.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};scene.add(vf);
    const b0=me.onBeforeRender,b1=far.onBeforeRender;
    me.onBeforeRender=function(r,sc,cam,geo){b0.apply(this,arguments);if(!pick(cam))geo.setDrawRange(0,0);};me.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};
-   far.onBeforeRender=function(r,sc,cam,geo){b1.apply(this,arguments);if(pick(cam))geo.setDrawRange(0,0);};far.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};
+   far.onBeforeRender=function(r,sc,cam,geo){b1.apply(this,arguments);if(lod(cam)!==1)geo.setDrawRange(0,0);};far.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};
    scene.add(far);}}}
 function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});const LR=[];for(let y=y0+.3;y<y1;y+=.32){board(V(x,y,z),.5,.06,.05,null,{dark:true,rung:true});LR.push({x,y,z,r:.03,half:.21,sw:0});}
  (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:false,rungs:LR});/* climb.js: hands and feet on these rungs */}
