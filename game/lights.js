@@ -193,7 +193,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const l = new THREE.PointLight(0xFFC373, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     // on Props' wall bracket by the fridge the light sat 15 cm off the wall and burned it white beside the fridge while the stove
     // side (the photo's warmest corner) stayed dim: the light's centre a little out into the room, as the glass throws it
-    if (PL.kitchenLamp) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
+    if (PL.kitchenLamp && !PL.kitchenLamp.pendant) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
     const panes = claimHousing(kPos);
     const fo = oilFlame(kPos, null);
     add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
@@ -592,9 +592,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // folds whose depth follows how much fabric is bunched (the cloth keeps its length: pulled aside the folds go deep,
   // drawn shut they open out), folds that wander a little and widen toward the weighted hem, and a hem that flares a
   // touch when the panel is gathered. Each panel is a 42 x 9 indexed grid (~750 tris) laid on the CPU only while it moves.
-  const CNX = 42, CNY = 9, CNV = (CNX + 1) * (CNY + 1);
+  const CNX = 30, CNY = 6, CNV = (CNX + 1) * (CNY + 1);
   const curIdx = (() => { const a = []; for (let j = 0; j < CNY; j++) for (let i = 0; i < CNX; i++) { const q = j * (CNX + 1) + i; a.push(q, q + 1, q + CNX + 1, q + 1, q + CNX + 2, q + CNX + 1); } return a; })();
-  const ringGeo = (() => { const g = new THREE.TorusGeometry(.011, .0024, 3, 6); g.rotateY(Math.PI / 2); return g; })();
+  const ringGeo = (() => { const g = new THREE.TorusGeometry(.011, .0024, 3, 4); g.rotateY(Math.PI / 2); return g; })();
   // All curtains, rods and rings of the house are ONE mesh (was 3 draws per window): vertex colours give each room its
   // cloth and the rods their iron; the panels are moved on the CPU when they draw (only while moving);
   // aGlow (per vertex, per frame) is the lamp shining through the cloth; the hem sway in a draught is in the vertex
@@ -610,7 +610,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const c = { w, W, H, sz, idx: curtains.length, mat: new THREE.MeshStandardMaterial(), closed: 0, dirty: true, col: new THREE.Color(CUR_COL[w.room] || 0xC9A57A) };
     c.pos = w.g.getWorldPosition(V());
     c.Lf = (W / 2 + .05) * 1.75;                       // fabric width of one panel (fullness 1.75)
-    c.nf = Math.min(6, Math.max(4, Math.round(c.Lf / .15)));   // pleats per panel (7 grid columns each)
+    c.nf = Math.min(6, Math.max(4, Math.round(c.Lf / .15)));   // pleats per panel (5 grid columns each at 6; 30x6 grid and 4-sided rings: 13.4k -> ~6k tris, Props 2026-11-26 budget)
     curtains.push(c);
     for (const side of [-1, 1]) { curParts.push({ c, kind: 'panel', side, n: CNV, seed: c.idx * 2.3 + side * .9 });
       for (let k = 0; k <= c.nf; k++) curParts.push({ c, kind: 'ring', side, k, geo: ringGeo }); }
