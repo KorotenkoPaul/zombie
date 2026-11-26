@@ -111,7 +111,12 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const spots=[];{let guard=0;const NT=MOBILE?72:120;while(spots.length<NT&&guard++<12000){const a=rr(0,6.28),r=rr(FR0,FR0+20),x=Math.cos(a)*r,z=Math.sin(a)*r;
    // the ring starts beyond the camera's widest orbit (phone home distance 33 m x1.55): the camera never flies into a trunk and
    // no tree stands between the camera and the house from any side
-   if(z>10)continue;if(spots.some(s=>Math.hypot(s.x-x,s.z-z)<3.4))continue;spots.push({x,z,v:Math.floor(R()*4),ry:rr(0,6.28),s:rr(.48,.8)});}}
+   if(z>10)continue;if(spots.some(s=>Math.hypot(s.x-x,s.z-z)<3.4))continue;spots.push({x,z,v:Math.floor(R()*4),ry:rr(0,6.28),s:rr(.48,.8)});}
+   /* [ENV] an inner grove behind the oak (photo: dark trunks and crowns stand in the blue mist right beside the house): the ring at
+      57/47 m sat behind the house on phones, and the side gaps showed only the empty clearing. A few trees 24-40 m out, behind
+      and beside the oak (z < -20, |x| > 3.5, behind the oak: off the trip routes and the paths), own random stream so nothing else moves */
+   {const r2=rng(5150),q2=(a,b)=>a+r2()*(b-a),NG=MOBILE?9:12;let g2=0,ng=0;while(ng<NG&&g2++<4000){const x=q2(-22,22),z=q2(-38,-18);if(Math.abs(x)<3.5)continue;
+     if(spots.some(s=>Math.hypot(s.x-x,s.z-z)<4.5))continue;spots.push({x,z,v:Math.floor(r2()*4),ry:q2(0,6.28),s:q2(.5,.72)});ng++;}}}
  {const byV=[[],[],[],[]];spots.forEach(s=>byV[s.v].push(s));const m=new THREE.Matrix4(),q=new THREE.Quaternion();
   // all forest trunks baked into ONE mesh (one draw call instead of one per variant; they surround the scene, so culling saved nothing)
   const baked=[];byV.forEach((list,vi)=>{list.forEach(s=>{q.setFromAxisAngle(V(0,1,0),s.ry);m.compose(V(s.x,groundH(s.x,s.z),s.z),q,V(s.s,s.s,s.s));baked.push(variants[vi].g.clone().applyMatrix4(m));
