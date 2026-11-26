@@ -396,7 +396,7 @@ function drapeGeo(len, wid, drop, { r = .05, wrinkle = .01, endDrop = 0, puff = 
     if (x < -len / 2) { } if (endDrop && x > len / 2) { const d = x - len / 2; x = len / 2 + .004; y += -d; }
     const flat = y > -.001; y += flat ? wrinkle * (.5 + .5 * Math.sin(x * 11 + z * 4) * Math.sin(z * 9 + 1)) : 0; if (!flat) z += Math.sign(z) * wrinkle * (1.2 + Math.sin(x * 17));
     // quilted puff: each patch (4 per texture repeat) bulges up between its stitched seams
-    if (puff) { const fu = ((x / .9 * 4) % 1 + 1) % 1, fv = ((s / .9 * 4) % 1 + 1) % 1; const b = Math.pow(Math.sin(Math.PI * fu) * Math.sin(Math.PI * fv), .6); if (flat) y += puff * b; else z += Math.sign(z) * puff * .7 * Math.pow(Math.sin(Math.PI * fu), .6); }
+    if (puff) { const fu = ((x / .9 * 4) % 1 + 1) % 1, fv = ((s / .9 * 4) % 1 + 1) % 1; const b = Math.sin(Math.PI * fu) * Math.sin(Math.PI * fv); if (flat) y += puff * b; else z += Math.sign(z) * puff * .3 * Math.sin(Math.PI * fu); } /* [PROPS photo] soft rounded patches and an almost smooth hanging edge: with flat-topped bulges and a deep scalloped drop the bunks read as a row of cushions at the home zoom (the photo's quilt is a flat drape) */
     p.setXYZ(i, x, y, z); uv.setXY(i, x / .9, s / .9); // v follows the unfolded cloth width, so the hanging sides are not smeared
   }
   geo.computeVertexNormals(); return geo;
@@ -417,11 +417,11 @@ function bunkBed() {
     for (const sz of [-1, 1]) W(g, L - 2 * p + .01, .13, .055, 0, y, sz * (D / 2 - .035));
     for (const sx of [-1, 1]) W(g, .055, .13, D - 2 * p + .01, sx * (L / 2 - .035), y, 0);
     for (let i = 0; i < 9; i++) W(g, .13, .022, D - .12, -L / 2 + .16 + i * (L - .32) / 8, y + .03, 0, { mat: M.woodDark, r: 0, grain: 2 }); // slats under the mattress: plain boxes
-    const top = y + .045 + .15; add(g, rb(L - .17, .15, D - .15, .055, 2), M.mattress, 0, y + .045 + .075, 0); { const sh = add(g, rb(L - .162, .022, D - .142, .008), M.linen, 0, top - .009, 0); sh.castShadow = false; } /* [PROPS photo] a sheet over the mattress top, tucked 1.5 cm down its sides: between the quilt and the pillow the bare ticking read unmade */
+    const top = y + .045 + .15; add(g, rb(L - .17, .15, D - .15, .055, 2), M.mattress, 0, y + .045 + .075, 0); { const sh = add(g, rb(L - .23, .022, D - .21, .008), M.linen, 0, top - .009, 0); sh.castShadow = false; } /* [PROPS photo] a sheet over the mattress top, its edge inside the mattress's rounded rim (wider, its sharp edge stuck out between the quilt's puffs as pale spikes): between the quilt and the pillow the bare ticking read unmade */
     // pillow at the head end (+x)
     add(g, pillowGeo(.36, .16, .6), M.linen, L / 2 - .28, top + .05, 0, 0, 0, -.12).castShadow = false;
     // quilt over the foot two-thirds, folded sheet edge at its head
-    const qL = L - .62; const q = add(g, drapeGeo(qL, D - .15, .12, { wrinkle: .008, puff: .026 }), M.quilt, -L / 2 + .08 + qL / 2, top + .012, 0); q.castShadow = false;
+    const qL = L - .62; const q = add(g, drapeGeo(qL, D - .15, .12, { wrinkle: .008, puff: .02 }), M.quilt, -L / 2 + .08 + qL / 2, top + .012, 0); q.castShadow = false;
     add(g, rb(.09, .05, D - .12, .024, 3), M.linen, -L / 2 + .08 + qL + .02, top + .02, 0);
     info.levels.push({ top: top + .012, x0: -L / 2 + .09, x1: L / 2 - .09, z0: -(D - .15) / 2, z1: (D - .15) / 2, head: 1 });
   }
@@ -1459,7 +1459,7 @@ export function buildProps(ctx) {
   for (const [k, o] of Object.entries(tw.tools)) { o.userData.home = { parent: o.parent, pos: o.position.clone(), quat: o.quaternion.clone(), scale: o.scale.x }; out.tools[k] = o; }
   // a hammer and a wrench lying on the bench, ready to be picked up
   { const h = bake(hammer()); h.position.set(2.2, wb.userData.floorY + .9 + .018, 1.98); h.rotation.set(-Math.PI / 2, 0, -1.2); h.userData.live = true; scene.add(h); out.tools.benchHammer = h; h.userData.home = { parent: scene, pos: h.position.clone(), quat: h.quaternion.clone(), scale: 1 };
-    const w = bake(wrench(.2)); w.position.set(3.25, wb.userData.floorY + .9 + .008, 2.0); w.rotation.set(-Math.PI / 2, 0, .5); scene.add(w); out.tools.benchWrench = w; w.userData.home = { parent: scene, pos: w.position.clone(), quat: w.quaternion.clone(), scale: 1 }; }
+    const w = bake(wrench(.2)); w.position.set(3.11, wb.userData.floorY + .9 + .008, 2.145); w.rotation.set(-Math.PI / 2, 0, 1.35); /* [PROPS] at the front edge, lying across, left of the hammer: at z 2.0 the short hero's hand stopped 26 cm short (Repairs) */ scene.add(w); out.tools.benchWrench = w; w.userData.home = { parent: scene, pos: w.position.clone(), quat: w.quaternion.clone(), scale: 1 }; }
   { const g = new THREE.Group(), T = wb.userData.floorY + .9 + .018; /* photo round 2: back corner of the bench, clear of his work spots: a jar of nails and a coffee can of brushes and pencils */
     const j = jar(.11, .042, M.jarGlass); j.position.set(-.12, 0, 0); g.add(j); add(g, new THREE.CylinderGeometry(.036, .036, .06, 10), std2(0x6C6A66), -.12, .035, 0);
     const c = can(.12, .045, M.cans[2]); g.add(c);
@@ -1870,11 +1870,11 @@ export function buildProps(ctx) {
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
       pm.customProgramCacheKey = () => ck + '|toolProxy'; prox.set(m, pm); return pm; };
     names.forEach((name, i) => { const o = out.tools[name], h = o.userData.home; if (!h || !o.visible || o.userData.noProxy) return; o.updateMatrixWorld(true); const ms = [];
-      o.traverse(c => { if (!c.isMesh || Array.isArray(c.material) || c.isInstancedMesh || c.isSkinnedMesh || !c.visible) return; const m0 = c.material; if (c.castShadow || m0.transparent || m0.userData.keep || !m0.isMeshStandardMaterial || (c.castShadow && m0.alphaTest)) return; const pm = out._liveMats && out._liveMats.has(m0) ? null : plainOf(m0), m = pm || m0; /* [PROPS perf] casting parts stay out (letting them in drew the axe in the block as a bare cylinder), and plain colours join the house's shared plain mesh, as in the static merge: fewer draws */
+      o.traverse(c => { if (!c.isMesh || Array.isArray(c.material) || c.isInstancedMesh || c.isSkinnedMesh || !c.visible) return; const m0 = c.material; if (m0.transparent || m0.userData.keep || !m0.isMeshStandardMaterial || (c.castShadow && m0.alphaTest)) return; const pm = out._liveMats && out._liveMats.has(m0) ? null : plainOf(m0), m = pm || m0; /* [PROPS perf] casting parts join as non-casting copies: their own hidden meshes keep casting through Perf's shadow baker (userData.shadowBake) while the tool is at home; plain colours join the house's shared plain mesh, as in the static merge: fewer draws */
         if (c !== o && c.userData.live) return; for (let q = c.parent; q && q !== o; q = q.parent) if (q.userData.live || !q.visible) return;
         let g0 = lodGeo(c), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== c.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !m.vertexColors) g.deleteAttribute('color'); if (m.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1), m.userData.plainV ? 1 : undefined, m.userData.plainV ? 0 : undefined);
         if (pm) { colorize(g, m0.color, m0.roughness, m0.metalness); if (m0.flatShading) g.computeVertexNormals(); } if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(c.matrixWorld); g.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1));
-        const cast = !!c.castShadow, key = m.uuid + (g.attributes.color ? g.attributes.color.itemSize : 0) + (cast ? 's' : 'n'); if (!by.has(key)) by.set(key, { m, cast, gs: [] }); by.get(key).gs.push(g); ms.push(c); });
+        if (c.castShadow) c.userData.shadowBake = () => !uHide.value[i]; const cast = false, key = m.uuid + (g.attributes.color ? g.attributes.color.itemSize : 0) + (cast ? 's' : 'n'); if (!by.has(key)) by.set(key, { m, cast, gs: [] }); by.get(key).gs.push(g); ms.push(c); });
       if (ms.length) { ms.forEach(c => c.visible = false); o.parent.updateMatrixWorld(true); TP.push({ i, o, h, ms, at: true, mw: ms.map(c => c.matrixWorld.clone()) }); } });
     // where the house's static merge already has a mesh of the same material, the tools join it (static parts get tool id 63, never masked)
     const injD = sh => { sh.uniforms.uHide = uHide; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
