@@ -1311,14 +1311,20 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   }
   /* the hero's shadow-only proxy (hero.js 'heroShadow', layer 6) never cast anything: three 0.160's shadow pass tests an object's
      layers against the MAIN camera, not the shadow camera (WebGLShadowMap.renderObject), so the body, head and arms threw no shadow
-     from the lamps or the sun, only the vest and boots did (his shadow on the kitchen wall: none). The proxy goes to the default
-     layer with its own copy of the material that writes no colour and no depth: invisible in the frame, but drawn into every
-     shadow map (the shadow pass uses its own depth material). */
+     from the lamps or the sun, only the vest and boots did (his shadow on the kitchen wall: none). Fix without a main-pass draw: the
+     proxy stays on layer 6, and the camera handed to the shadow pass sees layer 6 only while that pass runs. Installed from the
+     scene's onBeforeRender (it gets the renderer, and runs before the shadow pass), wrapping whatever shadowMap.render is then. */
+  let smHooked = false;
+  const sceneBR = scene.onBeforeRender;
+  scene.onBeforeRender = function (renderer, ...a) {
+    if (!smHooked && renderer && renderer.shadowMap) { smHooked = true; const sm = renderer.shadowMap, prev = sm.render;
+      sm.render = function (L, sc, cam) { const had = cam && cam.layers.isEnabled(6); if (cam && !had) cam.layers.enable(6);
+        try { return prev.call(this, L, sc, cam); } finally { if (cam && !had) cam.layers.disable(6); } }; }
+    return sceneBR.call(this, renderer, ...a);
+  };
   function fixShadowProxy(r) {
     const h = r.getObjectByName('heroShadow'); if (!h) return;
-    h.traverse(o => { if (!o.isMesh || o.userData.lightsShadowFix) return; o.userData.lightsShadowFix = true; o.userData.noRim = true;
-      const m0 = Array.isArray(o.material) ? o.material[0] : o.material; const m = m0.clone(); m.colorWrite = false; m.depthWrite = false; m.userData.heroRim = true;
-      o.material = m; o.layers.set(0); o.castShadow = true; });
+    h.traverse(o => { if (!o.isMesh || o.userData.lightsShadowFix) return; o.userData.lightsShadowFix = true; o.userData.noRim = true; o.castShadow = true; });
   }
   function updateHeroRim(dayK) {
     const r = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; if (!r) return;
