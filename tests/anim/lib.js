@@ -44,7 +44,7 @@ const INIT=([seed,KEYS])=>{ // runs before any page script
  const runTimers=()=>{for(let guard=0;guard<10000;guard++){let bi=-1;for(let i=0;i<TQ.length;i++){const t=TQ[i];if(t.at<=vt&&(bi<0||t.at<TQ[bi].at||(t.at===TQ[bi].at&&t.id<TQ[bi].id)))bi=i;}
    if(bi<0)return;const t=TQ[bi];if(t.every){t.at+=t.every;}else TQ.splice(bi,1);try{t.f(...t.a);}catch(e){console.error('qa timer',e&&e.message);}}};
  window.__qa={reseed(n){s=n>>>0;base=n>>>0;sites.clear();}/* every call site keeps its own stream at run time too (keyed by its line text, reset per reseed): one more random call somewhere (a new mesh's uuid, a rain splash) no longer shifts the brain's dice */,start(){return new Promise(res=>{realRAF(()=>{manual=true;realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
-  step(n,dt,each){for(let i=0;i<n;i++){vt+=dt*1000;runTimers();const cb=q;q=[];for(const c of cb)c(vt);this.frame++;if(each)each(this.frame);}}};
+  align(G){vt=Math.ceil(vt/G)*G;return vt;},/* gate: every task starts on the same virtual time, so things that run on time (lantern sway, camera, sprites) start each task in the same phase */step(n,dt,each){for(let i=0;i<n;i++){vt+=dt*1000;runTimers();const cb=q;q=[];for(const c of cb)c(vt);this.frame++;if(each)each(this.frame);}}};
 };
 async function open({seed=1,vp={width:640,height:640},log=false,query=''}={}){
  const b=await chromium.launch({args:['--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader','--ignore-gpu-blocklist']});
