@@ -295,12 +295,12 @@ uniform float tdCool;` + NOISE)
           diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf));
           // [photo folds round] the photo's oak: long smooth flutes run down the trunk and on out along every root (its roots radiate
           // from the axis, so one fluting by angle round the axis does both: vertical on the trunk, lengthwise on the roots). They
-          // wander with height and distance, the grooves narrow and dark, the ridges broad. Below the house only (the limbs have
-          // Tree's own grooves); fades out before a flute gets under ~2 px.
+          // wander with height and distance, the grooves narrow and dark, the ridges broad. Above the house they run on up
+          // the trunk to the fork and out onto the limb bases, handing over to Tree's limb grooves (from 3.3 m off the axis); fades out before a flute gets under ~2 px.
           { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float fr=length(fv), fa=atan(fv.y,fv.x);
             float ph=fa*17.+1.3*sin(y*.55+fa*3.)+.9*sin(fr*1.15-fa*2.)+.5*sin(y*1.7-fr*.8+fa*5.);
             float aa=1.-smoothstep(.35,.9,fwidth(ph));
-            tdFlK=aa*(1.-smoothstep(4.2,5.6,y))*smoothstep(.75,1.,fr)*(1.-smoothstep(7.,9.,fr))*(1.-vTdJ.x);
+            tdFlK=aa*mix(1.-smoothstep(7.,9.,fr),(1.-smoothstep(3.3,4.4,fr))*(1.-smoothstep(9.4,10.8,y)),smoothstep(4.2,5.6,y))*smoothstep(.75,1.,fr)*(1.-.6*vTdJ.x);
             tdFl=sin(ph); tdFlD=cos(ph)*17./max(fr,.8);
             float gv=smoothstep(.3,.95,-tdFl), rg=smoothstep(0.,.9,tdFl);
             diffuseColor.rgb*=mix(1.,.42+.1*hb.g,gv*tdFlK*.9)*mix(1.,1.14,rg*tdFlK); } // fine octave: a hint only (its cork pattern read as black pepper up close)
@@ -456,7 +456,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress9';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress10';
     mat.needsUpdate = true;
   }
 
