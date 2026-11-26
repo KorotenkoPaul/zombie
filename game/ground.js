@@ -1405,6 +1405,16 @@ export function createGround(C){const __before=new Set(C.scene.children);
    for(let i=0;i<im.count;i++){im.getMatrixAt(i,M4);const x=M4.elements[12],z=M4.elements[14];if(st.some(q=>Math.hypot(q[0]-x,q[1]-z)<q[2])){im.setMatrixAt(i,Z);ch2=true;hid++;}}
    if(ch2){im.instanceMatrix.needsUpdate=true;}}
   G._grassOnStones=hid;}
+ // far clearing pass: the tufts stood evenly spaced over the whole clearing, the same size, a polka-dot lawn from the home view.
+ // Grass grows in clumps: where a slow noise is low the tufts go (bare moss between), where it is high they stand bigger and
+ // closer to a meadow patch (instances only rescaled in place; counts and the random stream untouched)
+ {const M4=new THREE.Matrix4(),S4=new THREE.Matrix4();let gone=0,all=0;
+  for(const ch of (G.grass||[]))for(const im of [ch.hi,ch.lo]){if(!im||!im.isInstancedMesh)continue;let c2=false;
+   for(let i=0;i<im.count;i++){im.getMatrixAt(i,M4);const x=M4.elements[12],z=M4.elements[14];if(M4.elements[5]===0)continue;all++;
+    const k=fbm2(x*.32+7,z*.32+3)+(fbm2(x*1.3+2,z*1.3)-.5)*.35;const s=k<.5?0:.8+.9*smooth(.52,.8,k);if(s===0)gone++;
+    M4.multiply(S4.makeScale(s,s===0?0:.85+.3*s,s));im.setMatrixAt(i,M4);c2=true;}
+   if(c2)im.instanceMatrix.needsUpdate=true;}
+  G._grassClump=[gone,all];}
  G.objects=C.scene.children.filter(o=>!__before.has(o));
  return G;
 }
