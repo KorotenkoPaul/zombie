@@ -459,7 +459,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     const rel = Math.exp(-dt * 2.5), relFoot = Math.exp(-dt * 6);// feet: a lift lasts only while the sole touches (each step is a new contact)// release of a correction once it is no longer needed (~0.4 s)
     for (let c = 0; c < 6; c++) { hold[c] = Math.max(0, hold[c] - dt); lastGv[c].copy(gv[c]); gv[c].set(0, 0, 0); }
     { const GR = window.__grab; if (GR) for (const c of [2, 3]) if (GR.grip[c === 2 ? 'Left' : 'Right']) { off.limb[c].set(0, 0, 0); hold[c] = 0; } }// a gripping hand stays on its handle (game/grab.js)
-    if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) off.limb[c].multiplyScalar(c >= 4 ? relFoot : rel);
+    if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) relLimb(c, c >= 4 ? relFoot : rel); else relV[c].set(0, 0, 0);
     const fit = !!hero.fit, lying = !!(hero.inBed || hero.swing);
     root.position.add(off.root); applied.copy(off.root); root.updateMatrixWorld(true);
     if (off.head.lengthSq() > 1e-8) bendHead(off.head);
@@ -508,8 +508,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall); a sole is
       // only lifted straight up out of a board (never moved sideways); arms and head give way. Walking into things is the walk graph's job.
       if (hero.path && hero.path.length && !hero.lad) { pd[0] = 0; anyP = pd.some(v => v > 0); }
+      // a foot / shin graze left after its first push this frame (under 4 mm) waits for the next frame: a second IK lift in the
+      // same frame swung the knee 1.4 cm and back the next frame, every 6-9 frames (13 Hz knee jitter at the chopping block)
+      if (it > 0 && !(window.__colX && window.__colX.legRepush)) { let cut = false; for (const c of [4, 5]) if (pd[c] > 0 && pd[c] < .004) { pd[c] = 0; cut = true; } if (cut) anyP = pd.some(v => v > 0); }
       { const X = window.__colOff; if (X) { if (X.root) pd[0] = 0; if (X.head) pd[1] = 0; if (X.arms) pd[2] = pd[3] = 0; if (X.legs) pd[4] = pd[5] = 0; anyP = pd.some(v => v > 0); } }
-      if (!anyP) break; st.pushes++; lastTouch = frameNo; liveMask = 0; for (let c = 0; c < 6; c++) if (pd[c] > 0) liveMask |= 1 << c; if (!liveMask) break; for (let c = 0; c < 6; c++) if (pd[c] > 0) hold[c] = c >= 4 ? 0 : .35;
+      if (!anyP) break; st.pushes++; lastTouch = frameNo; liveMask = 0; for (let c = 0; c < 6; c++) if (pd[c] > 0) liveMask |= 1 << c; if (!liveMask) break; for (let c = 0; c < 6; c++) if (pd[c] > 0) hold[c] = c >= 4 ? (window.__colX && window.__colX.hardRel || hero.state !== "work" || hero.trans ? 0 : .15) : .35; for (let c = 2; c < 6; c++) if (pd[c] > 0) relV[c].set(0, 0, 0);
       // root: sideways (and up while seated / lying); a push straight down or up while standing goes to the head / spine instead
       if (pd[0] > 0) {
         // the body itself moves only for a real contact, sideways, at most 0.3 m/s, and stays where it was pushed (no offset
@@ -554,6 +557,15 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       if (heldAmt[c] > 0) { const t = L.C.getWorldPosition(V()).addScaledVector(out, heldAmt[c]); ik2(L.A, L.B, L.C, t, false); L.C.getWorldPosition(anim[c]).sub(off.limb[c]); /* the contact pass below solves from here: from the bare animation it dropped the carried arm back 15 cm on every touching frame */ } }
   }
 
+  // a foot lift is held .15 s after its last touch (a 2 mm graze came and went every few frames: released at once, the near-straight
+  // leg's knee swung 1.2 cm and back); a limb correction no longer needed is then released with an eased start: the release speed grows by at most ACC a frame (the
+  // bare exponential jumped from holding to 2.3 cm a frame at once: a knee kink the gate read as 11-14 Hz jitter at the chopping
+  // block, once the foot left the block it had been lifted 10 cm out of)
+  const relV = [0, 0, 0, 0, 0, 0].map(() => V()), _rv = V();
+  function relLimb(c, k) { const o = off.limb[c]; if (window.__colX && window.__colX.hardRel) { o.multiplyScalar(k); return; }
+    if (o.lengthSq() < 1e-10) { o.set(0, 0, 0); relV[c].set(0, 0, 0); return; }
+    _rv.copy(o).multiplyScalar(k - 1).sub(relV[c]); const a = ACC[c] * .5; if (_rv.length() > a) _rv.setLength(a); relV[c].add(_rv); o.add(relV[c]);
+    if (o.dot(relV[c]) > 0 || o.lengthSq() < 1e-8) { if (o.lengthSq() < 1e-8) o.set(0, 0, 0); relV[c].set(0, 0, 0); } }
   let curDt = 1 / 60;
   function finish(t0, it, worst) { try { wornItems(curDt); } catch (e) { console.warn('collide worn', e); } if (window.__colTrace) { const A = window.__A; window.__colTrace.push([A && A.out ? A.out.frames.length : frameNo, off.limb[2].toArray().map(v => +(v * 100).toFixed(1)), off.limb[3].toArray().map(v => +(v * 100).toFixed(1)), +(heldAmt[2] * 100).toFixed(1), +(heldAmt[3] * 100).toFixed(1), +hold[2].toFixed(2), +hold[3].toFixed(2), ikRef, it]); ikRef = 0; } const ms = performance.now() - t0; st.frames++; st.sum = (st.sum || 0) + ms; if (ms > 4 && (st.spikes || (st.spikes = [])).length < 40) st.spikes.push([frameNo, +ms.toFixed(1), ...secs.map(v => +v.toFixed(1)), it]); secs.fill(0); st.ms += (ms - st.ms) * .02; st.msMax = Math.max(st.msMax * .995, ms); st.iters = it; st.worst = Math.max(st.worst * .999, worst); st.vox = nVox; st.pending = pending.length; }
   // wrap the hero's update: corrections go on after hero.js has posed the body, and come off before it runs again
@@ -643,7 +655,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const api = { /* how deep a chain's skinned surface is in the house right now (m) and the way out: 1 head, 2 left arm, 3 right arm (hero.js repairs) */ chainDepth: (c, out) => { skin(1 << c); let best = 0; for (const P of PTS) { if (P.chain !== c) continue; const ex = probe(P.p, P.part, false, null); if (ex > best) { best = ex; if (out) out.copy(OUT.n); } } return best; }, trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
     depthAt: (x, y, z) => probe(V(x, y, z), 7, false), sweep, footFree, soleDepth: (x, y, z, dx = 0, dz = 1) => sole(x, y, z, dx, dz), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => { while (bigQ.length || cutting) cutBig(1e9); buildSome(1e9); } };
   // tests only (HH.qaReset): every eased correction, worn-item offset and frame counter back to a fresh start
-  api.qaReset = () => { pre(); WORN.clear(); for (const v of gv) v.set(0, 0, 0); for (const v of lastGv) v.set(0, 0, 0); hold.fill(0); guardV = guardT = prevGap = 0; heldAmt.fill(0); Object.assign(freeC, { x: 1e9, y: 0, z: 0, ox: 0, oz: 0 });
+  api.qaReset = () => { pre(); WORN.clear(); for (const v of gv) v.set(0, 0, 0); for (const v of lastGv) v.set(0, 0, 0); hold.fill(0); for (const v of relV) v.set(0, 0, 0); guardV = guardT = prevGap = 0; heldAmt.fill(0); Object.assign(freeC, { x: 1e9, y: 0, z: 0, ox: 0, oz: 0 });
     frameNo = 0; movK = 0; stamp.fill(0); for (const s of S) if (s) s.chk = 0; };
   return api;
 }
