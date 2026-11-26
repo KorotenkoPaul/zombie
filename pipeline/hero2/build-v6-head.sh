@@ -18,6 +18,7 @@ F=0.5 node skintone.mjs G.glb Gt.glb | cut -c1-120
 [ -n "$UNDERV" ] && node undervest.mjs Gt.glb Gt.glb "$UNDERV" | tail -2
 [ -n "$CLOTHF" ] && node clothfix.mjs Gt.glb Gt.glb "$CLOTHF" | tail -1
 [ -n "$VSKIN" ] && node vestskin.mjs Gt.glb Gt.glb "$VSKIN"
+[ -n "$WSM" ] && node wsmooth.mjs Gt.glb Gt.glb "$WSM"
 [ -n "$HAIRG" ] && node hairstep.mjs Gt.glb Gt.glb "$HAIRG" | tail -1
 [ -n "$HANDS" ] && node handsub.mjs Gt.glb Gt.glb "$HANDS"
 L=$(python3 -c "
