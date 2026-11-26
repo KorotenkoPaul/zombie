@@ -521,9 +521,15 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
        home view; scored on the hero's distance alone it lost its pool slot whenever he was up in the house (doorstep 82 vs
        the photo's 118). It counts x3 in the slot race (only while lit, and a lantern by the hero still wins its slot back) */
     spill.userData.poolPri = 3;
-    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 2.0, haloTint: 0xFF9E52,
+    /* the plank frame round the doorway (coordinator round 06:38Z): it faces out, away from the cave light and the spill,
+       so it read near black against the lit hollow; in the photo the jambs and lintel catch the warm light thrown back
+       off the doorstep boards and the glowing hollow. A short warm bounce just outside the mouth, near lintel height
+       (phones: a downward pool cone, so it sits high enough to reach the jambs and the doorstep) */
+    const frame = new THREE.PointLight(0xFF9A4A, 0, MOBILE ? 2.8 : 2.4, 2);
+    const fo = MOBILE ? 1.15 : .75; frame.position.set(ax[0] + dd.x * (r + fo), LG + 1.55, ax[1] + dd.z * (r + fo)); frame.userData.poolPri = 2; scene.add(frame);
+    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }, { l: frame, I: MOBILE ? 5.5 : 3.6, sway: .02 }], haloSize: 2.0, haloTint: 0xFF9E52,
       // the photo's brightest warm spot at the foot of the tree (door moved down into view, ab2ddf4): a hotter hollow and spill
-      extra: (k, f) => { if (glow) glow.value = 4.6 * k * f; }, autoFn: c => c.lamps > .3 });
+      extra: (k, f) => { if (glow) glow.value = 6 * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
