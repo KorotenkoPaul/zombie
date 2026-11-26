@@ -51,7 +51,7 @@ export function createHero(ctx){
     shadow, on layer 6, which only the shadow cameras see (index.html sun, lights.js lamps); Mesh_0 stops casting (32k tris less per
     shadow pass). vest and boots keep their own shadows, so taking them off still shows. */
  {const HSH=root.getObjectByName('heroShadow');if(HSH){HSH.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=false;o.layers.set(6);}});
-  const M0=root.getObjectByName('Mesh_0');if(M0)M0.traverse(o=>{if(o.isMesh)o.castShadow=false;});}}
+  const M0=root.getObjectByName('Mesh_0');if(M0)M0.traverse(o=>{if(o.isMesh)o.castShadow=false;});const EL=root.getObjectByName('eyelids');if(EL)EL.castShadow=false;/* the lids lie inside the head's silhouette: one shadow draw less per pass */}}
  const bones={};root.traverse(o=>{if(o.isBone)bones[o.name.replace('mixamorig','').replace(':','')]=o;});
  for(const c of movesToClips(ctx.moves))if(!gltf.animations.some(a=>a.name===c.name))gltf.animations.push(c);
  // ---------- eyelids: the eyes are painted into the texture, so closed eyes are two skin-coloured lids on the Head bone ----------
@@ -344,6 +344,7 @@ export function createHero(ctx){
    if(S&&S.set&&o.position.equals(S.set.p)&&o.quaternion.equals(S.set.q)){o.position.copy(S.base.p);o.quaternion.copy(S.base.q);}
    const hand=o.parent;const inHand=hand===bones.LeftHand||hand===bones.RightHand;
    if(!inHand||o.visible===false){if(S)U.lsw=null;continue;}
+   if(k==='waterBucket'&&H.bucketTilt&&act&&act.step==='fill'&&!window.__lcFill){U.lsw=null;continue;}/* OUTDOOR: tipped out over the pond to scoop it is held out ahead of the knees on purpose: this swing took the 75 deg tip back to 20 deg (the pail stood upright on the water) */
    const W=U.lsw||(U.lsw={a:0,b:0});W.base={p:o.position.clone(),q:o.quaternion.clone()};W.set=null;
    let ta=0,tb=0;root.updateMatrixWorld(true);_lb.setFromObject(o);
    if((moving||!window.__loadMoveOnly)&&!H.lad&&!_lb.isEmpty()&&_lb.min.y<hand.getWorldPosition(V()).y-.12){
@@ -1914,7 +1915,8 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function roomyFloor(o){const p=V(...o.pos);const g0=floorAt(p.x,p.y+.3,p.z,.45,.6);const y=g0!=null?g0:p.y;if(floorClear(p.x,y,p.z))return;
   for(const r of [.3,.6,.9,1.2])for(let i=0;i<12;i++){const a=i*Math.PI/6,x=p.x+Math.sin(a)*r,z=p.z+Math.cos(a)*r;const g=floorAt(x,y+.3,z,.45,.6);if(g==null||Math.abs(g-y)>.05)continue;if(floorClear(x,g,z)){o.pos=[x,g,z];return;}}}
  function pickPart(k,o){window.__pk=window.__pk||[];window.__pk.push({k,in:o.pos&&o.pos.slice()});if(PKIND[k]&&!o.pos&&REPAIR[k].def){const d=REPAIR[k].def();if(d)o.pos=d.toArray();}if(PKIND[k]==='floor'&&o.pos){try{roomyFloor(o);}catch(e){}}const kind=PKIND[k];const P=window.__planks;if(!kind||!P||!P.list||!o.pos)return;const Wr=window.__wear;const fpt=id=>{const f=Wr&&Wr.fault&&id!=null?Wr.fault(id):null;return f?f.p:null;};/* WEAR: a damaged part is judged by its fault (a post's centre is knee-high, its leaning top is where the work is) */if(reachOK(kind,fpt(o.target)||o.pos))return;const want=V(...o.pos);
-  let best=null,bs=1e9;for(const c of P.list(kind)){const d=Math.hypot(c.pos[0]-want.x,c.pos[1]-want.y,c.pos[2]-want.z);const sc=d*.3+(c.fresh||0)*2;if(sc>=bs||!reachOK(kind,fpt(c.dmg>0?c.id:null)||c.pos))continue;bs=sc;best=c;}
+  /* [PERF] cheapest score first, so the costly reach test runs until the first part that passes (was: every part that beat the best so far; a 60 ms frame) - same pick */
+  let best=null;const cs=P.list(kind).map((c,i)=>{const d=Math.hypot(c.pos[0]-want.x,c.pos[1]-want.y,c.pos[2]-want.z);return [d*.3+(c.fresh||0)*2,i,c];}).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);for(const [,,c] of cs)if(reachOK(kind,fpt(c.dmg>0?c.id:null)||c.pos)){best=c;break;}
   if(best){o.pos=best.pos.slice();o.target=best.id;}window.__pk.at(-1).out=o.pos&&o.pos.slice();window.__pk.at(-1).ok=reachOK(kind,o.pos);{const q=V(...o.pos),nn=nearNode(q);window.__pk.at(-1).nn=nn;window.__pk.at(-1).np=N[nn]&&N[nn].p.toArray();window.__pk.at(-1).st=safeStand(q,.38,N[nn].p,PART[kind].hs);window.__pk.at(-1).st2=safeStand(q,.36);}}
  // where the hammer face lands: the floor board's top, the wall / rail / slate point itself; and the surface normal the blow comes down along
  function nailOf(R,pos){if(!pos)return null;let q=pos.clone();if(R.nail==='roof'){/* the slate's lower edge, the side toward him */const h=V(root.position.x-q.x,0,root.position.z-q.z);if(h.lengthSq()>1e-4){h.normalize();q.addScaledVector(h,.1).y-=.06;}
@@ -2500,15 +2502,28 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // The bucket hangs from the real fist all the time; he shuffles so the fist comes over the water, not the bank.
  const PF={down:1.0,hold:2.6};/* the clip is lowest (hips .38) at 0.93-1.2 s; frozen at 0.7 it held him 16 cm higher *//* held part-way down: a bent-knee crouch with a straight back reaching forward, not a ball curled over the bucket (watcher) */
  const PICKC=()=>has('hy_logpick')?'hy_logpick':has('hy_floorpick')?'hy_floorpick':'hy_pickground';/* hy_logpick: CMU squat-and-lift adapted to the hero (back <=40 deg, knees >=35 deg interior, 2.33 s) */
+ /* the floor as it is drawn (phone patch) and as it really is: the higher of the two */
+ const gVis=(x,z)=>{const G=window.__ground;let h=G.heightAt(x,z);if(G.meshH&&!window.__pondExactGround)h=Math.max(h,G.meshH(x,z));return h;};
  function pondFill(a,dt){const PD=window.__ground&&window.__ground.pond;let F=(PD&&PD.fill)||root.position;a.ft+=dt;const t=a.ft;const C='hy_pickground';
   // OUTDOOR: he faces the pond itself (its centre), crouches on the bank with the knees 0.1 m outside the drawn water
   // ellipse (POND in ground.js) and reaches the bucket out at arm's length into the water's edge
-  if(!a.fs){a.fs=1;if(has(C))once(C,{fade:.3});const er=(x,z)=>{const dx=x+1.4,dz=z-7.6,c=Math.cos(-.12),sn=Math.sin(-.12);return Math.hypot((dx*c+dz*sn)/1.75,(-dx*sn+dz*c)/1.15);};
+  if(!a.fs){a.fs=1;const er=(x,z)=>{const dx=x+1.4,dz=z-7.6,c=Math.cos(-.12),sn=Math.sin(-.12);return Math.hypot((dx*c+dz*sn)/1.75,(-dx*sn+dz*c)/1.15);};
    const d=V(-1.4-root.position.x,0,7.6-root.position.z).normalize();H.face=Math.atan2(d.x,d.z);
    // the water starts where the bank dips under the surface (the water plane is drawn where the ground is below it)
    const G=window.__ground,lv=PD?PD.level:0;const p0=root.position.clone();let tW=1;for(let t=0;t<3.5;t+=.03){let h=lv+1;try{h=G.heightAt(p0.x+d.x*t,p0.z+d.z*t);}catch(e){}if(h<lv-.005){tW=t;break;}}
-   const st=p0.clone().addScaledVector(d,tW-.08);/* down at the very edge of the water, toes on the waterline: from 0.42 back up the bank the pail never got within 15 cm of the surface (film, both heroes) *//* knees (0.45 ahead in the crouch) 0.1 m short of the water */
-   a.stand=st;a.tgt=p0.clone().addScaledVector(d,tW+.34).addScaledVector(V(-d.z,0,d.x),.1);/* out ahead of the knees and a little to his right: right under the knee it went through the shin */a.tgt.y=PD?PD.level:a.tgt.y;}
+   let st=p0.clone().addScaledVector(d,tW-.08);/* down at the very edge of the water, toes on the waterline: from 0.42 back up the bank the pail never got within 15 cm of the surface (film, both heroes) *//* knees (0.45 ahead in the crouch) 0.1 m short of the water */
+   a.stand=st;a.tgt=p0.clone().addScaledVector(d,tW+.34).addScaledVector(V(-d.z,0,d.x),.1);/* out ahead of the knees and a little to his right: right under the knee it went through the shin */
+   if(!window.__pondExactGround){/* GROUND (phone, seed 13 at night: he stood on the bank and the pail never went in): the water is where it is DRAWN, and deep
+      enough to take a pail on its side. On phones the water stands 6 cm higher and floods the flat bank 0.6 m further out: the exact ground
+      said 'water' right under his boots, so he stood back, and the pail went down into 3-4 cm of water over the drawn mud and never showed.
+      He crouches on the last dry footing (the bank or a stepping stone, ground.js standAt) before water 10 cm deep, and dips the pail 0.42 ahead */
+    let tD=null,sT=0;const dry=t=>{try{return G.standAt(p0.x+d.x*t,p0.z+d.z*t)>=lv-.005;}catch(e){return true;}};
+    for(let t=0;t<3.5;t+=.03){let h=lv;try{h=gVis(p0.x+d.x*t,p0.z+d.z*t);}catch(e){}if(h<lv-(window.__pondDeep??.16)){tD=t;break;}}
+    if(tD!=null){const RM=window.__pondReach??.5;for(let t=0;t<=tD-.42+1e-6;t+=.03)if(dry(t))sT=t;a.stand=p0.clone().addScaledVector(d,sT);a.tgt=p0.clone().addScaledVector(d,Math.min(sT+RM,Math.max(sT+.42,tD+.04))).addScaledVector(V(-d.z,0,d.x),.1);}}
+   a.tgt.y=PD?PD.level:a.tgt.y;
+   /* the last dry footing can be a stone half a metre on: he steps out onto it first (gliding there in the crouch slid both boots 48 cm over the water) */
+   if(!a.walked&&!window.__pondGlide&&Math.hypot(a.stand.x-p0.x,a.stand.z-p0.z)>.12){a.walked=1;a.fs=0;const q=a.stand,dx=q.x-p0.x,dz=q.z-p0.z,mv=Math.hypot(dx,dz);const dur=Math.max(.5,mv/.7);H.slide={x:dx,z:dz,yaw:0,k:0,d:dur};play('30',{fade:.3});a.step='approach';a.t=0;a.adur=dur;a.next=()=>{play(IDLE(),{fade:.3});a.ft=0;a.step='fill';};return;}/* a straight step (approachTo's way round obstacles took him off along the bank) */
+   if(has(C))once(C,{fade:.3});}
   if(a.tgt)F=a.tgt;
   const A=has(C)?actions[C]:null;
   if(A){if(t>=PF.down&&t<PF.down+PF.hold)A.timeScale=0;else if(t>=PF.down+PF.hold)A.timeScale=.62;/* full bucket: up slower than he went down */}
@@ -2520,11 +2535,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const lv=PD?PD.level:F.y;const end=PF.down+PF.hold+(A?(durOf(C)-PF.down)/.62:1.5);
   if(t>PF.down+.25&&!a.s1){a.s1=1;try{PD&&PD.splash&&PD.splash(F.x,F.z,1);}catch(e){}AU('bucket_fill',F);}
   if(t>PF.down+PF.hold-.2&&!a.s2){a.s2=1;try{PD&&PD.splash&&PD.splash(F.x,F.z,.6);}catch(e){}AU('slosh',F);}
-  a.dip=smooth(PF.down-.1,PF.down+.5,t)*(1-smooth(PF.down+PF.hold-.4,PF.down+PF.hold+.1,t));a.lv=lv;
-  if(t>=end){a.step='rise';if(A)A.timeScale=1;H.carry=BUCKET();a.fdone();}}
+  a.dip=smooth(PF.down-.1,PF.down+.5,t)*(1-smooth(PF.down+PF.hold-.4,PF.down+PF.hold+.1,t));a.lv=lv;H.squat=(window.__pondSq??.1)*smooth(PF.down-.3,PF.down+.4,t)*(1-smooth(PF.down+PF.hold-.5,PF.down+PF.hold+.2,t));/* down on his heels for the scoop: from the clip's crouch the fist stopped ~30 cm above his feet and the pail only wet its rim */
+  if(t>=end){a.step='rise';H.squat=0;if(A)A.timeScale=1;H.carry=BUCKET();a.fdone();}}
  function pondFillPost(a){const P=PP();const bk=P&&P.tools&&P.tools.waterBucket;if(!bk||!a.dip)return;
   // the fist goes down to the water: the bucket's rim just under the surface, tipped toward the pond so it fills
-  const R=odPalm('Right');const want=R.clone();const rimBelow=.35;/* fist to bucket bottom when hanging */const yFist=a.lv+.02;/* the fist at the surface: the whole bucket under */
+  const R=odPalm('Right');const want=R.clone();const rimBelow=.35;/* fist to bucket bottom when hanging */const yFist=a.lv-(window.__pondFist??.06);/* tipped on its side the pail lies beside the fist, not under it: with the fist at the surface it only wet its rim (2 cm) *//* the fist at the surface: the whole bucket under */
   // going down the bucket stays out at the side and ahead of the knee (frame by frame it went through his right thigh)
   {const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const d=R.clone().sub(bones.Hips.getWorldPosition(V()));const k=Math.min(1,a.dip*2);want.addScaledVector(r,(.08-d.dot(r))*k).addScaledVector(f,Math.max(0,.5*k-d.dot(f)));}/* ahead of both knees, which splay in the squat */
   // ...and at the bottom out over the water at the fill point (he squats on the bank; the arm and a forward lean reach it),
@@ -2532,10 +2547,13 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const PD=window.__ground&&window.__ground.pond;const F0=a.tgt||(PD&&PD.fill);if(F0){const F=F0;const u=smooth(.25,1,a.dip);want.x=lerp(want.x,F.x,u);want.z=lerp(want.z,F.z,u);}
   if(R.y>yFist)want.y=lerp(R.y,yFist,a.dip);
   // the pond is shallow at the edge: the bucket lies over on its side to scoop, its bottom never in the mud of the bed
-  {let g=want.y-1;try{g=window.__ground.heightAt(want.x,want.z);}catch(e){}want.y=Math.max(want.y,g+.12);}
-  if(want.distanceTo(R)>.005)odReach('Right',want,1);
-  const L=odPalm('Left');if(!lanternLeft())odReach('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);/* the other hand on the rim too (not with the lantern in it: one-handed, the lantern held up beside) */
-  odHang('waterBucket',1.3*a.dip);}
+  {let g=want.y-1;try{g=gVis(want.x,want.z);}catch(e){}want.y=Math.max(want.y,g+(window.__pondFloorK??.16));/* the pail on its side reaches ~16 cm below and ahead of the fist: its rim never in the bed */}
+  if(window.__pfDbgOn)window.__pfDbg={want:want.toArray(),R:R.toArray(),yFist};
+  {/* a steady bend forward over the water (the reach's own lean shrinks as the hand gets closer and settled with the fist ~35 cm over his boots: the pail only wet its rim) */const bend=(window.__pondBend??.55)*smooth(0,1,a.dip);if(bend>.002){const f=fwd(root.rotation.y);const ax=V(0,1,0).cross(f).normalize();rotW(bones.Spine,ax,bend*.45);rotW(bones.Spine1,ax,bend*.35);rotW(bones.Spine2,ax,bend*.2);}}
+  if(want.distanceTo(R)>.005){const RL=REACH_LEAN;REACH_LEAN=window.__pondLean??0;/* he leans out over the water from the crouch: with the usual 0.6 the fist stopped ~30 cm over the ground and the pail hung 2-8 cm above the surface the whole hold (it only touched the water as he rose) */try{odReach('Right',want,1);}finally{REACH_LEAN=RL;}}
+  const L=odPalm('Left');if(!lanternLeft())odReach('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);else if(!window.__pondLanternDown){/* the lantern held up out to his left over the water, lighting the scoop: the crouch clip put that fist (and the lantern) down on the stones by his boot */const f=fwd(root.rotation.y),l=V(f.z,0,-f.x);const hp=bones.Hips.getWorldPosition(V());const lt=hp.clone().addScaledVector(l,.26).addScaledVector(f,.22);lt.y=Math.max(hp.y+.12,root.position.y+.5);odReach('Left',lt,smooth(0,.6,a.dip));}/* the other hand on the rim too (not with the lantern in it: one-handed, the lantern held up beside) */
+  odHang('waterBucket',(window.__pondTilt??1.3)*a.dip);
+}
  // a bucket in the fist hangs plumb from its handle (world upright, turned with him), tipped only when he tips it; never
  // follows the wrist's twist (it was swinging out at the hip or upside down at the feet)
  function odHang(n,tilt=0,free=false){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o)return;
@@ -2560,7 +2578,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const d=V(fa.x,0,fa.z);if(up>.05&&d.lengthSq()>1e-5){d.normalize();const ax=V(0,-1,0).cross(d).normalize();const th=Math.min(.6,(up-.05)*1.3);q.premultiply(new THREE.Quaternion().setFromAxisAngle(ax,th));}}const hs=(o.userData.home&&o.userData.home.scale)||1;
   const g=V(0,.35,0).multiplyScalar(hs).applyQuaternion(q);const pos=odPalm('Right').sub(g);
   /* tipped over, the fist holds the rim from above: the pail hangs below the forearm, never round it (gate: forearm 13 cm inside while pouring) */if(tilt>.4&&n==='drainBucket'){const ax=V(0,1,0).applyQuaternion(q);const dn=V(0,-1,0).addScaledVector(ax,ax.y).normalize();pos.addScaledVector(dn,.2*hs*smooth(.4,1.2,tilt));}
-  const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
+  const M=new THREE.Matrix4().compose(pos,q,V(hs,hs,hs));M.premultiply(hb.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);
+  /* OUTDOOR: scooping at the pond the tipped pail's rim never goes into the bed: going out over the bank's edge its back rim dipped up to
+     7 cm into the mud; it rides up on its bail by what it would sink (the bail turns in the fist), at most 6 cm */
+  if(n==='waterBucket'&&tilt>.3&&act&&act.step==='fill'&&!window.__pondRimFree){let m=9;const v=V();o.traverse(ms=>{if(!ms.isMesh||!ms.geometry.attributes.position)return;const P=ms.geometry.attributes.position;const st=Math.max(1,(P.count/48)|0);for(let i=0;i<P.count;i+=st){v.fromBufferAttribute(P,i).applyMatrix4(ms.matrixWorld);let g=-9;try{g=gVis(v.x,v.z);}catch(e){}m=Math.min(m,v.y-g);}});
+   if(m<.01){const w=o.getWorldPosition(V()).add(V(0,Math.min(.06,.01-m),0));o.parent.worldToLocal(w);o.position.copy(w);o.updateMatrixWorld(true);}}}
  // OUTDOOR: an armful of logs is carried with both arms at the chest (not dangling from one hand at the hip), and over the
  // ladder it rides across his back on its ropes, lying level (it stood up past his head)
  function odArmful(){const P=PP();const o=P&&P.tools&&P.tools.logArmful;if(!o||!o.visible)return;const inHand=o.parent===bones.LeftHand,back=o.parent===bones.Spine2;if(!inHand&&!back)return;
@@ -3556,7 +3578,7 @@ const HPW={w:0};function headPillow(dt){const c=H.bedC;const on=(H.inBed&&!c)||(
  const S1=bones.Spine1||bones.Spine2;const app=a=>{if(bones.Spine&&bones.Spine!==S1)rotW(bones.Spine,lat,a*.2);rotW(S1,lat,a*.25);rotW(bones.Spine2,lat,a*.25);rotW(bones.Neck,lat,a*.3);root.updateMatrixWorld(true);};/* spread down the back: the pillow lifts head and shoulders together */const q0=bones.Spine?bones.Spine.quaternion.clone():null,q1=S1.quaternion.clone(),q2=bones.Spine2.quaternion.clone(),qn=bones.Neck.quaternion.clone();const rst=()=>{if(q0)bones.Spine.quaternion.copy(q0);S1.quaternion.copy(q1);bones.Spine2.quaternion.copy(q2);bones.Neck.quaternion.copy(qn);root.updateMatrixWorld(true);};
  app(HPW.a||0);const g0=headLow()-.004;rst();app((HPW.a||0)+.04);const g1=headLow()-.004;rst();const sl=(g1-g0)/.04;
  let want=HPW.a||0;if(Math.abs(sl)>.02&&Math.abs(g0)>.004)want+=Math.max(-.6,Math.min(.6,-g0/sl));want=Math.max(-1.0,Math.min(1.35,want))/* asleep, with the nape counted, ~1.2 is needed */;
- HPW.t=HPW.t==null?want:HPW.t+(want-HPW.t)*Math.min(1,dt*6);/* the aim itself low-passed: the lowest skin point hops between hair and scalp */HPW.a=(HPW.a||0)+Math.max(-1.2*dt,Math.min(1.2*dt,HPW.t-(HPW.a||0)));/* at most ~70 deg/s */if(w<.999)HPW.a*=1;app(HPW.a*w);}
+ HPW.t=HPW.t==null?want:HPW.t+(want-HPW.t)*Math.min(1,dt*(want>HPW.t?12:6));/* faster when the head is going in: rolling over the head sank 6 cm before the bend caught up (orig) *//* the aim itself low-passed: the lowest skin point hops between hair and scalp */HPW.a=(HPW.a||0)+Math.max(-1.2*dt,Math.min(2.4*dt,HPW.t-(HPW.a||0)));/* at most ~70 deg/s */if(w<.999)HPW.a*=1;app(HPW.a*w);}
 // lying, a hand over the mattress rests ON it, whichever pose or blend put it there (after the quilt was let go it sank 6 cm in, gate)
 // seated on the bed edge (or lying down / getting up) a hand pressed down on the mattress lies palm-flat on it: the clips push it with a
 // straight wrist, the fingers pointing down 6-8 cm into the mattress behind its front face (gate 6.6 cm). The wrist bends back so the
@@ -3576,8 +3598,11 @@ const HOB={Left:0,Right:0};function handsOnBed(dt){const B=FIT.bed;const on=!!(B
   const tg=h.clone();tg.y=Math.max(h.y,lo);if(tg.z>B.z1-.03)tg.z=B.z1-.03;const el=wp(Fa),mid=wp(A).add(h).multiplyScalar(.5);const pole=el.sub(mid);if(pole.lengthSq()<1e-6)pole.set(0,-1,0);ik2(A,Fa,Hn,tg,pole.normalize(),HOB[sd],false);H.noPop={side:sd,until:performance.now()+150};}}
 // the top of the bed (pillow, mattress, quilt) under a point, from the bunk's own meshes; cached on a 2 cm grid
 const BTOP=new Map();const _btr=new THREE.Raycaster();function bedTopAt(x,z){const k=Math.round(x*50)+','+Math.round(z*50);if(BTOP.has(k))return BTOP.get(k);const P=PP();const bk=P&&P.objects&&P.objects.bunkbed;let y=null;
- if(bk&&FIT.bed){_btr.set(V(x,FIT.bed.mat+.45,z),V(0,-1,0));_btr.far=.7;const hs=_btr.intersectObject(bk,true).filter(h=>h.object.isMesh&&h.object.material!==(P.quiltMat||null));/* the lower quilt is pressed by his body: the pillow and mattress under it count */const q=hs.find(h=>h.point.y<FIT.bed.mat+.3);if(q)y=q.point.y;}
- if(BTOP.size>4000)BTOP.clear();BTOP.set(k,y);return y;}
+ if(bk&&FIT.bed)y=bedRay(bk,x,z,P,window.__oldBedCost);
+ if(BTOP.size>(window.__oldBedCost?4000:20000))BTOP.clear();/* [PERF] the bed alone is ~4500 cells: at 4000 it was emptied and refilled (100-300 ms frames lying down) */BTOP.set(k,y);return y;}
+/* [PERF] the same ray, but only against the bunk's meshes whose world box the vertical segment passes through (a mesh it misses can't be hit; the quilt's hits were dropped anyway); __oldBedCost: the whole group as before */
+const BCB=new Map();function bedRay(bk,x,z,P,old){_btr.set(V(x,FIT.bed.mat+.45,z),V(0,-1,0));_btr.far=.7;let T=bk;if(!old){T=[];const y0=FIT.bed.mat-.251,y1=FIT.bed.mat+.451,qm=P.quiltMat||null;bk.traverse(m=>{if(!m.isMesh)return;if(qm&&m.material===qm)return;if(m.isSkinnedMesh||m.morphTargetInfluences){T.push(m);return;}const g=m.geometry,pa=g.attributes.position;let e=BCB.get(m);if(!e){e={b:new THREE.Box3(),mw:new THREE.Matrix4(),g:null,v:-1};e.mw.elements.fill(NaN);BCB.set(m,e);}if(e.g!==g||e.v!==pa.version||!e.mw.equals(m.matrixWorld)){g.computeBoundingBox();e.b.copy(g.boundingBox).applyMatrix4(m.matrixWorld);e.mw.copy(m.matrixWorld);e.g=g;e.v=pa.version;}const b=e.b;if(x>=b.min.x-1e-4&&x<=b.max.x+1e-4&&z>=b.min.z-1e-4&&z<=b.max.z+1e-4&&b.max.y>=y0&&b.min.y<=y1)T.push(m);});}
+ const hs=(old?_btr.intersectObject(bk,true):_btr.intersectObjects(T,false)).filter(h=>h.object.isMesh&&h.object.material!==(P.quiltMat||null));/* the lower quilt is pressed by his body: the pillow and mattress under it count */const q=hs.find(h=>h.point.y<FIT.bed.mat+.3);return q?q.point.y:null;}window.__bedRay=(x,z,old)=>{const P=PP();const bk=P&&P.objects&&P.objects.bunkbed;return bk&&FIT.bed?bedRay(bk,x,z,P,old):undefined;};
 // the lowest point of the head's own skin (each hero's head is shaped differently: one bone height left one 7 cm in the pillow, the other 14 cm over it)
 const HLV={L:[],key:null};const _hlv=new THREE.Vector3();
 // the head's own skin, lowest point measured against the bed right under each point (a hero with a separate head mesh: the first skinned mesh
