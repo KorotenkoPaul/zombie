@@ -306,5 +306,7 @@ export function createGrab({ THREE, bones }) {
     dist(side) { const g = grip[side]; if (!g || !g.handle) return null; const h = g.handle(); const p = palm(side); return h && p ? h.distanceTo(p) : null; },
     get grip() { return grip; },
   };
+  // tests only (HH.qaReset): grips, tweens and fist blends back to a fresh start
+  api.qaReset = () => { tw.clear(); gtw.clear(); lateQ = []; grip.Left = grip.Right = null; fistK.Left = fistK.Right = fistT.Left = fistT.Right = 0; twoW.Left = twoW.Right = 0; for (const k of Object.keys(SW)) delete SW[k]; Object.assign(SW, { w: 0, ph: 0, ox: null }); for (const k of Object.keys(BC)) delete BC[k]; BC.w = 0; tick && tick(0); };
   return api;
 }
