@@ -66,14 +66,14 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
     const cells = []; for (let i = 0; i < NX * NZ; i++) if (hm[i] > -50) { const x = X0 + (i % NX + 0.5) * CS, z = Z0 + (Math.floor(i / NX) + 0.5) * CS;
       // built surfaces everywhere in the box, the ground only near the tree (beyond it you can't see a splash anyway)
       if (kind[i] || Math.hypot(x, z - 2) < 11) cells.push([x, hm[i], z, kind[i]]); }
-    const NS = Math.min(cells.length * 2, MOBILE ? 220 : 420); const sA = new Float32Array(NS * 4), sB = new Float32Array(NS * 4);
+    const NS = Math.min(cells.length * 2, MOBILE ? 320 : 560); const sA = new Float32Array(NS * 4), sB = new Float32Array(NS * 4);
     for (let i = 0; i < NS; i++) { // roofs and decks get more than their share: that's where you look
-      let c = cells[Math.floor(Math.random() * cells.length)]; if (!c[3] && Math.random() < 0.5) c = cells[Math.floor(Math.random() * cells.length)];
+      let c = cells[Math.floor(Math.random() * cells.length)]; if (!c[3] && Math.random() < 0.85) c = cells[Math.floor(Math.random() * cells.length)];
       sA.set([c[0] + rnd(-.24, .24), c[1] + 0.01, c[2] + rnd(-.24, .24), Math.random()], i * 4); sB.set([rnd(.35, .9), Math.random(), c[3], 0], i * 4); }
     splash = new THREE.Mesh(quadGeo(NS, { aS: sA, aP: sB }), mk(`attribute vec4 aS,aP;uniform float uKeep;varying float vA;varying vec2 vUv;
-      void main(){float age=fract(uT/aP.x+aS.w*7.);float k=age/.28;float on=step(aP.y,uK)*step(k,1.)*step(float(gl_InstanceID)+.5,uKeep*${NS}.);
-       vec4 v=viewMatrix*vec4(aS.xyz,1.);float s=(.03+.09*k)*(.8+.4*aP.y);v.xy+=vec2(position.x*s,position.y*s*.7);
-       vUv=vec2(position.x,position.y);vA=on*(1.-k)*.55*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
+      void main(){float cyc=uT/(aP.x*.55)+aS.w*7.;float age=fract(cyc);float k=age/.28;/* [ENV] faster, and each splash lands somewhere new in its half-metre cell every time (a fixed spot read as a little fountain) */float hc=floor(cyc);vec3 sp=aS.xyz+vec3(fract(sin(hc*12.9+aS.w*78.2)*43758.5)-.5,0.,fract(sin(hc*39.3+aS.w*11.7)*24634.6)-.5)*.42;float on=step(aP.y,uK)*step(k,1.)*step(float(gl_InstanceID)+.5,uKeep*${NS}.);
+       vec4 v=viewMatrix*vec4(sp,1.);float s=(.045+.12*k)*(.8+.4*aP.y);/* [ENV] a touch bigger: on an open deck at close zoom they did not read at all */v.xy+=vec2(position.x*s,position.y*s*.7);
+       vUv=vec2(position.x,position.y);vA=on*(1.-k)*.8*smoothstep(1.,4.,-v.z);gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
       `varying float vA;varying vec2 vUv;void main(){float r=length(vUv*vec2(1.,1.3));
        float crown=smoothstep(.55,.8,r)*smoothstep(1.,.85,r)*(.6+.4*sin(atan(vUv.y,vUv.x)*9.));
        float a=(crown+smoothstep(.25,0.,length(vUv-vec2(0.,.35)))*.6)*vA;if(a<.01)discard;gl_FragColor=vec4(uCol*1.15,a);}`));
