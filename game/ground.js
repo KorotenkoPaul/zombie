@@ -293,7 +293,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    // a faint dew at night and in the morning; really wet only in rain (Wind's wet(): soaks in ~8 s, dries over ~2 min, same as bark and ropes)
    const rw=C.wind&&C.wind.wet?C.wind.wet():ST.rainK;const want=Math.max(Math.min(1,glowU.value/1.8)*.1,ST.mornK*.35,rw);wetU.value+=(want-wetU.value)*Math.min(1,dt*1.5);
    ST.puddle=ST.rainK>.05?Math.min(1,ST.puddle+dt*ST.rainK/25):Math.max(0,ST.puddle-dt/90);if(G.updatePuddles)G.updatePuddles(cam);
-   const h=window.__dbg&&window.__dbg.hero&&window.__dbg.hero.root;if(h){const p=h.position;heroU.value.set(p.x,p.y,p.z);}tickSteps(dt,h?h.position:null);
+   const h=window.__dbg&&window.__dbg.hero&&window.__dbg.hero.root;if(h){const p=h.position;heroU.value.set(p.x,p.y,p.z);}tickSteps(dt,h?h.position:null);if(G._pileWatch)G._pileWatch();
    lanTick();if(G.updateGrass)G.updateGrass(cam);if(G.updateFootprints)G.updateFootprints();if(G.updateLife)G.updateLife(dt,cam);if(G._flush)G._flush(dt);};
   new THREE.TextureLoader().load(new URL('ground3.jpg',import.meta.url).href,t=>{t.colorSpace=THREE.SRGBColorSpace;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.anisotropy=8;mat.map=t;mat.needsUpdate=true;});}
 
@@ -488,12 +488,43 @@ export function createGround(C){const __before=new Set(C.scene.children);
   // chopping stump with an old axe cut, and the stacked firewood next to it
   const chop=[12.5,7.4],pile=[13.5,8.1],big=[15.4,6.7],big2=[16.6,2.9],log=[11.0,3.4];
   if(ok(...chop))add(wood(.26,.31,.5,MOBILE?12:16,0,1,.45),chop[0],chop[1],.4,[0,0],.2,.4);
-  if(ok(...pile)){const S=[],E2=[];const r=rng(77);// three courses of split logs, cut ends out toward the clearing
-   [[5,0],[4,1],[3,2]].forEach(([n,row])=>{for(let i=0;i<n;i++){const rad=.075+r()*.02,len=.55+r()*.12,y=rad+row*.135,z=(i-(n-1)/2)*.16+(row%2)*.0,yaw=.06*(r()-.5);
-     const sd=new THREE.CylinderGeometry(rad,rad,len,7,1,true).rotateZ(Math.PI/2).rotateY(yaw).translate(0,y,z);S.push(sd);
-     for(const e of [-1,1]){const c=new THREE.CircleGeometry(rad,8).rotateY(e*Math.PI/2).translate(e*len/2,0,0).rotateY(yaw).translate(0,y,z);E2.push(c);}}});
-   const sg=mergeGeometries(S);sg.setAttribute('color',new THREE.BufferAttribute(new Float32Array(sg.attributes.position.count*3).fill(1),3));const eg=mergeGeometries(E2);eg.setAttribute('color',new THREE.BufferAttribute(new Float32Array(eg.attributes.position.count*3).fill(1),3));
-   for(const [g,mt] of [[sg,barkM],[eg,endM]]){const m=new THREE.Mesh(g,mt);m.position.set(pile[0],groundH(...pile)+.005,pile[1]);m.rotation.y=-.35;m.castShadow=!MOBILE;m.receiveShadow=true;grp.add(m);}}
+  /* the firewood stack: split pieces (halves, thirds, quarters, a few small rounds), ~42 cm long, bark on the outer arc, pale split
+     faces, laid in courses that nest in the gaps below; both ends are cribbed (each course's end pair laid crosswise to the last) so the
+     stack stands. Every piece rests on the course below (a course starts at the lowest top of the one under it, so no piece floats).
+     He takes armfuls from the top and adds a trip's logs back: G.pileSet(k) shows k pieces (top first to go) */
+  if(ok(...pile)){const r=rng(77);const L=.42,W=.92,PC=[];const pq=new THREE.Quaternion(),pe=new THREE.Euler();
+   const piece=(kind,rad)=>{// kind: 0 round, 1 half, 2 third, 3 quarter. Cylinder axis along x
+     const th=[6.283,3.1416,2.094,1.571][kind],t0=r()*6.283,seg=MOBILE?(kind?5:7):(kind?7:10);
+     const g=new THREE.CylinderGeometry(rad,rad*(.97+.05*r()),L*(.92+.16*r()),seg,1,false,t0,th);const parts=[g];
+     if(kind){const len=g.parameters.height;for(const t of [t0,t0+th]){const f=new THREE.PlaneGeometry(rad,len);// a split face from the axis to the arc
+       f.translate(rad/2,0,0);f.rotateY(t-Math.PI/2);const n=f.attributes.normal;if(t!==t0)for(let k=0;k<n.count;k++)n.setXYZ(k,-n.getX(k),-n.getY(k),-n.getZ(k));
+       if(t!==t0){const ix=f.index.array;for(let k=0;k<ix.length;k+=3){const q=ix[k+1];ix[k+1]=ix[k+2];ix[k+2]=q;}}
+       f.clearGroups();parts.push(f);}}
+     g.rotateZ(Math.PI/2);for(let k=1;k<parts.length;k++)parts[k].rotateZ(Math.PI/2);
+     return parts;};
+   const pieces=[];// [geoms, pose matrix, base course]
+   let base=0;const NCO=MOBILE?5:6;
+   for(let c=0;c<NCO;c++){const row=[];const cross=c%2===1;const top=c===NCO-1;
+    // the two crib ends: along x on even courses, crosswise (along z, two pieces) on odd ones
+    for(const e of [-1,1]){if(cross){for(const xo of [-.12,.12])row.push({kind:1+((r()*3)|0),rad:.065+r()*.02,x:xo,z:e*(W/2-.05),yaw:Math.PI/2+(r()-.5)*.08,crib:1});}
+     else row.push({kind:1+((r()*3)|0),rad:.07+r()*.02,x:0,z:e*(W/2-.07),yaw:(r()-.5)*.06,crib:1});}
+    // the fill between the cribs, staggered half a piece on alternate courses
+    const sp=.135,n=Math.floor((W-.36)/sp)+(c%2?0:1);const z0=-(n-1)/2*sp+(c%2?sp*.25:0);
+    for(let k=0;k<n;k++){if(top&&r()<.35)continue;const kd=r()<.12?0:1+((r()*3)|0);row.push({kind:kd,rad:kd?.07+r()*.03:.05+r()*.015,x:(r()-.5)*.04,z:z0+k*sp+(r()-.5)*.02,yaw:(r()-.5)*.08});}
+    let minTop=1e9;
+    for(const q of row){const parts=piece(q.kind,q.rad);// roll it so a flat split face or the bark lies down, then sit its lowest point on this course
+     const roll=q.kind?(r()<.5?0:Math.PI)+(r()-.5)*.5:r()*6.283;const R=new THREE.Matrix4().makeRotationFromEuler(pe.set(roll,0,0));for(const g of parts)g.applyMatrix4(R);
+     const bb=new THREE.Box3();for(const g of parts){g.computeBoundingBox();bb.union(g.boundingBox);}
+     const M2=new THREE.Matrix4().makeRotationY(q.yaw).setPosition(q.x,base-bb.min.y,q.z);for(const g of parts)g.applyMatrix4(M2);
+     minTop=Math.min(minTop,base+(bb.max.y-bb.min.y));pieces.push({parts,c,crib:q.crib||0,z:q.z});}
+    base=minTop-.012;}// the next course settles slightly into the one below
+   // removal order: top course first, the fill before the cribs, from the open side
+   pieces.sort((a,b)=>(a.c-b.c)||(b.crib-a.crib)||(b.z-a.z));
+   const PM=new THREE.Matrix4().compose(V(pile[0],groundH(...pile)+.005,pile[1]),pq.setFromAxisAngle(V(0,1,0),-.35),V(1,1,1));
+   pieces.forEach((pc,idx)=>pc.parts.forEach((g,k)=>{const m=new THREE.Mesh(g,k?endM:[barkM,endM,endM]);
+     m.applyMatrix4(PM);m.userData.pileIdx=idx;m.castShadow=!MOBILE;m.receiveShadow=true;
+     g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(g.attributes.position.count*3).fill(1),3));grp.add(m);}));
+   G._pileN=pieces.length;}
   if(ok(...big))add(wood(.42,.55,.62,MOBILE?14:20,1,2,.6),big[0],big[1],1.1,[.04,-.03],.18,.9);
   if(ok(...big2))add(wood(.3,.4,.38,MOBILE?12:16,1,3,.55),big2[0],big2[1],.2,[0,.05],.14,1);
   if(ok(...log))add(wood(.17,.21,2.6,MOBILE?10:14,1,4),log[0],log[1],.5,[0,Math.PI/2],.08,1);
@@ -503,7 +534,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     const len=rr(2.4,4.6),rad=rr(.16,.3);add(wood(rad*.85,rad,len,MOBILE?9:14,1,10+nl),x,z,rr(0,6.28),[rr(-.08,.08),Math.PI/2+rr(-.1,.1)],rad*.55,1);
     G._stones=(G._stones||[]);for(let k=-1;k<=1;k++)G._stones.push([x,z,len*.3]);nl++;}}
   // phones' draw-call budget: bake every piece into one bark mesh and one end-grain mesh (2 draw calls in all)
-  {const bark=[],ends=[];grp.updateMatrixWorld(true);
+  {const bark=[],ends=[];const vc=[0,0],PR=[];grp.updateMatrixWorld(true);
    for(const m of grp.children){const g=m.geometry.clone().applyMatrix4(m.matrix);const mats=Array.isArray(m.material)?m.material:[m.material];
     const groups=g.groups.length?g.groups:[{start:0,count:g.index?g.index.count:g.attributes.position.count,materialIndex:0}];
     for(const gr of groups){const mt=mats[gr.materialIndex]||mats[0];const sub=new THREE.BufferGeometry();for(const k of ['position','normal','uv'])sub.setAttribute(k,g.attributes[k]);
@@ -511,9 +542,20 @@ export function createGround(C){const __before=new Set(C.scene.children);
      if(mt===endM){const n=g.attributes.position.count,cc=new Float32Array(n*3),old=m.userData.old||0;for(let i=0;i<n;i++){const x=g.attributes.position.getX(i),y=g.attributes.position.getY(i),z=g.attributes.position.getZ(i);const up=g.attributes.normal.getY(i)>.6?1:0;
        const nz=fbm2(x*4.3+y,z*4.3);const mo=old*up*smooth(.38,.62,nz+.12);let r=1-old*(.5+.15*nz),gg=1-old*(.5+.15*nz),b=1-old*(.56+.15*nz);r=r*(1-mo)+.3*mo;gg=gg*(1-mo)+.42*mo;b=b*(1-mo)+.2*mo;cc[i*3]=r;cc[i*3+1]=gg;cc[i*3+2]=b;}sub.setAttribute('color',new THREE.BufferAttribute(cc,3));}
      if(mt===barkM)sub.setAttribute('color',g.attributes.color||new THREE.BufferAttribute(new Float32Array(g.attributes.position.count*3).fill(1),3));
-     sub.setIndex(g.index?Array.from(g.index.array.slice(gr.start,gr.start+gr.count)):Array.from({length:gr.count},(_,i)=>gr.start+i));(mt===barkM?bark:ends).push(sub);}}
+     sub.setIndex(g.index?Array.from(g.index.array.slice(gr.start,gr.start+gr.count)):Array.from({length:gr.count},(_,i)=>gr.start+i));{const w=mt===barkM?0:1;if(m.userData.pileIdx!=null)PR.push([m.userData.pileIdx,w,vc[w],sub.attributes.position.count]);vc[w]+=sub.attributes.position.count;}(mt===barkM?bark:ends).push(sub);}}
    while(grp.children.length)grp.remove(grp.children[0]);
-   for(const [list,mt] of [[bark,barkM],[ends,endM]])if(list.length){const m=new THREE.Mesh(mergeGeometries(list),mt);m.castShadow=!MOBILE;m.receiveShadow=true;grp.add(m);}}
+   for(const [list,mt] of [[bark,barkM],[ends,endM]])if(list.length){const m=new THREE.Mesh(mergeGeometries(list),mt);m.castShadow=!MOBILE;m.receiveShadow=true;grp.add(m);}
+   /* the firewood stack's pieces are ranges in these two meshes: a piece he has taken is collapsed to a point (no extra draw call) */
+   if(PR.length){const orig=new Map();let shown=G._pileN;
+    G.pileSet=k=>{k=Math.max(0,Math.min(G._pileN,Math.round(k)));if(k===shown)return;shown=k;const ms=[grp.children[0],grp.children[1]];
+     for(const [idx,w,o,c] of PR){const P=ms[w]&&ms[w].geometry.attributes.position;if(!P)continue;const key=w+':'+o;if(!orig.has(key))orig.set(key,P.array.slice(o*3,(o+c)*3));const src=orig.get(key);
+      if(idx<k)P.array.set(src,o*3);else for(let i=0;i<c;i++){P.array[(o+i)*3]=src[0];P.array[(o+i)*3+1]=src[1];P.array[(o+i)*3+2]=src[2];}
+      P.needsUpdate=true;}};
+    G.pileGet=()=>shown;
+    /* the stack follows the economy (brain.js stock.logs is the kitchen's): an armful carried up (+2 there) leaves the stack, a wood
+       trip (+3) is stacked here. A random start, never quite empty */
+    let last=null,cnt=Math.round(G._pileN*(.55+.4*Math.random()));G.pileSet(cnt);
+    G._pileWatch=()=>{const B=window.__brain,l=B&&B.stock&&B.stock.logs;if(l==null)return;if(last!=null){const d=l-last;if(d===2||d===3){cnt=Math.max(3,Math.min(G._pileN,cnt+(d===2?-2:3)));G.pileSet(cnt);}}last=l;};G.pileTo=k=>{cnt=k;G.pileSet(k);};/* test hook */}}
   /* seat the stumps and logs in the floor like the oak's roots: a soft contact shadow and a moss collar where the wood meets the ground (not stood on the lawn) */
   {const d=aoTex.image.data,p=grp.children[0]&&grp.children[0].geometry.attributes.position;if(p){for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i);if(y-groundH(x,z)>.22)continue;
      for(let a=-2;a<=2;a++)for(let b=-2;b<=2;b++){const gx=Math.floor((x+GE)/CELL)+a,gz=Math.floor((z+GE)/CELL)+b;if(gx<0||gz<0||gx>=GS||gz>=GS)continue;const wx=(gx+.5)*CELL-GE,wz=(gz+.5)*CELL-GE;const r=Math.hypot(wx-x,wz-z);const j=(gz*GS+gx)*4;
