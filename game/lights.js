@@ -787,12 +787,24 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const beamU = { uT: { value: 0 } };
   // beam prism: position = (u, v, t) on the window (u, v) pushed t along the light; aS = across coordinate for soft edges
   const beamVS = `
-    attribute float aS; uniform vec3 c0, eu, ev, dir; varying float vS, vT;
-    void main(){ vS = aS; vT = position.z; vec3 p = c0 + eu*position.x + ev*position.y + dir*position.z;
-      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.); }`;
+    attribute float aS, aCap; uniform vec3 c0, eu, ev, dir, bmn, bmx; uniform float fy; varying float vS, vT, vCap, vTh; varying vec2 vUV;
+    void main(){ vec3 q = c0 + eu*position.x + ev*position.y;
+      // the beam stops on the room's floor (fy) and leaves a soft patch of sun there (the cap): no beam through the boards
+      float th = dir.y < -.001 ? clamp((fy + .012 - q.y) / dir.y, 0., 1.) : 1.;
+      // and on the far wall (the room's box; a low sun ran the beam out through the wall over the trunk)
+      if (bmx.x > bmn.x) { vec3 w = mix(bmn, bmx, step(0., dir)) - q; vec2 tw = vec2(abs(dir.x) > .001 ? w.x / dir.x : 9., abs(dir.z) > .001 ? w.z / dir.z : 9.);
+        th = min(th, max(0., min(tw.x, tw.y) - .01)); }
+      float t = aCap > .5 ? th : min(position.z, th);
+      vS = aS; vT = min(position.z, th); vTh = th; vCap = aCap * step(th, .999); vUV = position.xy;
+      gl_Position = projectionMatrix * viewMatrix * vec4(q + dir*t, 1.); }`;
   const beamFS = `
-    uniform float k; varying float vS, vT;
-    void main(){ float a = k * pow(sin(3.14159*vS), 1.6) * pow(1.-vT, 1.4) * smoothstep(0., .06, vT);
+    uniform float k, kp; varying float vS, vT, vCap, vTh; varying vec2 vUV;
+    void main(){
+      if (vCap > .5) { vec2 e = smoothstep(vec2(0.), vec2(.22), vUV) * smoothstep(vec2(0.), vec2(.22), 1. - vUV);   // soft-edged window shape on the boards
+        gl_FragColor = vec4(vec3(1., .82, .55) * kp * e.x * e.y, 1.); return; }
+      if (vCap > .25) discard;   // a cap that never reaches the floor
+      float r = vT / max(vTh, .05);   // along the beam, window -> floor: it thins out but still meets the patch on the boards
+      float a = k * pow(sin(3.14159*vS), 1.6) * (1. - .7 * pow(r, 1.2)) * smoothstep(0., .06, vT);
       gl_FragColor = vec4(vec3(1., .86, .62) * a, 1.); }`;
   const dustVS = `
     attribute vec4 aD; uniform vec3 c0, eu, ev, dir; uniform float uT, px; varying float vA;
@@ -809,7 +821,9 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     for (const [a, b] of [[[0, 0], [1, 0]], [[1, 0], [1, 1]], [[1, 1], [0, 1]], [[0, 1], [0, 0]]]) {
       for (const [e, t] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) { const c = e ? b : a; pos.push(c[0], c[1], t); across.push(e); }
     }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('aS', new THREE.Float32BufferAttribute(across, 1)); return g;
+    const cap = []; for (const [x, y] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) { pos.push(x, y, 1); across.push(.5); cap.push(1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('aS', new THREE.Float32BufferAttribute(across, 1));
+    g.setAttribute('aCap', new THREE.Float32BufferAttribute([...new Array(pos.length / 3 - 6).fill(0), ...cap], 1)); return g;
   })();
   const beams = [];
   const nDust = MOBILE ? 22 : 40;
@@ -820,8 +834,9 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     pane.updateMatrixWorld(true);
     const corner = (x, y) => pane.localToWorld(V(x * pw * .46, y * ph * .46, 0));
     const c0 = corner(-1, -1);
-    const U = { c0: { value: c0 }, eu: { value: corner(1, -1).sub(c0) }, ev: { value: corner(-1, 1).sub(c0) }, dir: { value: V() }, uT: beamU.uT };
-    const bm = new THREE.ShaderMaterial({ uniforms: { ...U, k: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, vertexShader: beamVS, fragmentShader: beamFS });
+    const FY = { kitchen: KT, bedroom: BD, workshop: WS }[w.room];
+    const U = { c0: { value: c0 }, eu: { value: corner(1, -1).sub(c0) }, ev: { value: corner(-1, 1).sub(c0) }, dir: { value: V() }, uT: beamU.uT, fy: { value: FY ?? -99 }, bmn: { value: V() }, bmx: { value: V() } };
+    const bm = new THREE.ShaderMaterial({ uniforms: { ...U, k: { value: 0 }, kp: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, vertexShader: beamVS, fragmentShader: beamFS });
     const m = new THREE.Mesh(prism, bm); m.frustumCulled = false; m.renderOrder = 3; m.visible = false; scene.add(m);
     const dg = new THREE.BufferGeometry(); const d = new Float32Array(nDust * 4);
     for (let i = 0; i < nDust * 4; i++) d[i] = Math.random();
@@ -830,7 +845,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const pts = new THREE.Points(dg, dm); pts.frustumCulled = false; pts.renderOrder = 3; pts.visible = false; scene.add(pts);
     beams.push({ w, U, m, pts });
   }
-  const sunV = V();
+  const sunV = V(), KPATCH = +(window.__KPATCH || .8);
   function updateBeams(dayK, T) {
     beamU.uT.value = T;
     let on = 0;
@@ -838,13 +853,15 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const dk = Math.max(0, Math.min(1, (dayK - .6) / .3)), dkS = dk * dk * (3 - 2 * dk);
     if (sunL && dkS > 0) { sunV.copy(sunL.position).sub(sunL.target.position).normalize(); on = dkS * Math.min(1, sunL.intensity / 2.2); }
     const low = 1 - Math.min(1, Math.max(0, sunV.y - .15) / .7);      // low sun: long golden beams
+    const IB = ENV && ENV.interiorBoxes;
     for (const b of beams) {
+      if (IB && !b.boxed) { b.boxed = true; const r = IB[['kitchen', 'bedroom', 'workshop'].indexOf(b.w.room)]; if (r) { b.U.bmn.value.set(r[0], r[2], r[4]); b.U.bmx.value.set(r[1], r[3], r[5]); } }
       const face = on > 0 ? sunV.x * b.w.n.x + sunV.z * b.w.n.z : 0;     // sun on the outer side of this window?
       const k = on * Math.max(0, Math.min(1, (face - .05) * 3)) * (.35 + .65 * low);
       b.m.visible = b.pts.visible = k > .01;
       if (!b.m.visible) continue;
-      b.U.dir.value.copy(sunV).multiplyScalar(-(2.2 + low * 1.3));
-      b.m.material.uniforms.k.value = k * .16; b.pts.material.uniforms.k.value = k;
+      b.U.dir.value.copy(sunV).multiplyScalar(-(b.U.fy.value > -50 ? 7 : 2.2 + low * 1.3));   // room windows: long enough to reach the floor, where the shader stops it
+      b.m.material.uniforms.k.value = k * .16; b.m.material.uniforms.kp.value = k * KPATCH; b.pts.material.uniforms.k.value = k;
     }
   }
 
@@ -1002,6 +1019,18 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const hidden = [], _bx = new THREE.Box3(), _sz = V();
     // rugs, mats, papers: flat things lying on the boards cast no occlusion (from below they would cover the whole floor)
     const thin = o => { if (!o.isMesh || o.isInstancedMesh || !o.geometry) return false; if (o.userData.aoThin === undefined) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); _bx.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld).getSize(_sz); o.userData.aoThin = _sz.y < .05 && _sz.x * _sz.z > .02; } return o.userData.aoThin; };
+    // [PERF] the bake's camera sees one room, but meshes that are not frustum-culled (ground, grass, forest, the merged props...) were
+    // still submitted: ~120 draws per bake, the worst frame of the game. A mesh whose world box misses the room's bake box can't
+    // write a texel, so it sits out. __aoCullOff=true bakes as before.
+    const _bb = new THREE.Box3(), _rb = new THREE.Box3();
+    function bakeCull(o, R, fy) {
+      if (window.__aoCullOff || !(o.isMesh || o.isInstancedMesh) || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return false;
+      try { if (o.isInstancedMesh) { o.computeBoundingBox(); _bb.copy(o.boundingBox).applyMatrix4(o.matrixWorld); }
+        else { const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox(); _bb.copy(g.boundingBox).applyMatrix4(o.matrixWorld); }
+      } catch (e) { return false; }
+      if (_bb.isEmpty() || !isFinite(_bb.min.x) || !isFinite(_bb.max.x)) return false;
+      _rb.min.set(R.x0 - .35, fy - .7, R.z0 - .35); _rb.max.set(R.x1 + .35, fy + H + .3, R.z1 + .35);
+      return !_bb.intersectsBox(_rb); }
     function bake(r, i) {
       const R = RM[i], fy = R.y + TOP, cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2, hw = (R.x1 - R.x0) / 2 + .05, hd = (R.z1 - R.z0) / 2 + .05;
       bc.left = -hw; bc.right = hw; bc.top = hd; bc.bottom = -hd; bc.near = 0; bc.far = H + .4; bc.updateProjectionMatrix();
@@ -1009,7 +1038,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       mats[i].multiplyMatrices(bc.projectionMatrix, bc.matrixWorldInverse);
       uF.value = fy;
       const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root;
-      hidden.length = 0; scene.traverseVisible(o => { if (o === mesh || o === hr || o === heroBlob || o.name === 'groundAO' || o.isSprite || o.isPoints || o.isLine || (o.material && o.material.transparent && !o.isSkinnedMesh) || thin(o)) hidden.push(o); });
+      hidden.length = 0; scene.traverseVisible(o => { if (o === mesh || o === hr || o === heroBlob || o.name === 'groundAO' || o.isSprite || o.isPoints || o.isLine || (o.material && o.material.transparent && !o.isSkinnedMesh) || thin(o)) hidden.push(o); else if (bakeCull(o, R, fy)) hidden.push(o); });
       for (const o of hidden) o.visible = false;
       const prevRT = r.getRenderTarget(), ov = scene.overrideMaterial, bg = scene.background, fog = scene.fog, su = r.shadowMap.autoUpdate, ac = r.autoClear, cc = r.getClearColor(new THREE.Color()), ca = r.getClearAlpha();
       const obr = scene.onBeforeRender, oar = scene.onAfterRender; scene.onBeforeRender = scene.onAfterRender = () => {};

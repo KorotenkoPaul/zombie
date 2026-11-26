@@ -40,7 +40,7 @@
 
 const MODES = {
   calm:   { base: [0.03, 0.1],  dur: [50, 140], gustEvery: 70, gustAmp: [0.15, 0.3] },
-  breeze: { base: [0.3, 0.5],   dur: [60, 180], gustEvery: 22, gustAmp: [0.3, 0.6] },
+  breeze: { base: [0.3, 0.5],   dur: [60, 180], gustEvery: 14, gustAmp: [0.3, 0.65] },   // [ENV] gusts every ~6-22 s (was 9-35): a breeze came in gusts too rarely and read as even rocking
   windy:  { base: [0.65, 0.9],  dur: [35, 90],  gustEvery: 9,  gustAmp: [0.45, 0.9] }
 };
 // which spell follows which: calm and breeze are the usual weather, a windy spell is a short event
@@ -57,7 +57,7 @@ export const WIND_GLSL = `
 uniform float uWT,uWet,uRain;uniform vec2 uFogBank;uniform vec4 uWind;uniform vec4 uGust;uniform vec2 uDrift;
 float windGust(vec3 p){float x=uGust.x-dot(p.xz,uWind.xy);
  return uGust.z*(x<0.?exp(-x*x*uGust.y*uGust.y*6.):exp(-x/uGust.w));}
-float windStrength(vec3 p){float n=sin(dot(p.xz,vec2(.11,.17))+uWT*.37)*.5+.5;return uWind.z*(.8+.4*n)+windGust(p);}
+float windStrength(vec3 p){float n=(.62*sin(dot(p.xz,vec2(.11,.17))+uWT*.37)+.38*sin(dot(p.xz,vec2(-.07,.13))+uWT*.91+1.7))*.5+.5;/* [ENV] two incommensurate swells (17 s + 7 s): one sine read as an even metronome rocking */return uWind.z*(.8+.4*n)+windGust(p);}
 vec2 windSwayH(vec3 p,float freq,float hp){float s=windStrength(p);vec2 d=uWind.xy,q=vec2(-d.y,d.x);
  float ph=uWT*freq-dot(p.xz,d)*.45+hp;
  float o1=sin(ph)*.6+sin(ph*2.17+1.3)*.4,o2=sin(ph*1.31+2.1);
@@ -258,7 +258,7 @@ export function createWind(opt = {}) {
     },
     sample(p) {
       const x = p.x ?? p[0], z = p.z ?? p[2];
-      const n = Math.sin(x * 0.11 + z * 0.17 + T * 0.37) * 0.5 + 0.5;
+      const n = (0.62 * Math.sin(x * 0.11 + z * 0.17 + T * 0.37) + 0.38 * Math.sin(-x * 0.07 + z * 0.13 + T * 0.91 + 1.7)) * 0.5 + 0.5;   // [ENV] = GLSL windStrength
       const g = W.gustAt(x, z), s = base * (0.8 + 0.4 * n) + g;
       return { x: Math.cos(ang) * s, z: Math.sin(ang) * s, s, gust: g };
     },

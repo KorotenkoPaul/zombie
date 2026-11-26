@@ -616,9 +616,12 @@ export function buildTree(THREE, o) {
   the height the one down its sides; moving out along a limb changes neither, so the grooves run along it. Up the trunk (no limb)
   the height term fades out and they run vertically. */
   vec2 rv=wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)});float th=atan(rv.y,rv.x);float lb=smoothstep(2.2,3.6,dT);
-  float ph=th*90.+wp.y*13.*lb+1.5*sin(dT*.9+th*5.+wp.y*.7)+.8*sin(dT*2.3-wp.y*2.6*lb+th*11.);
-  float gr=smoothstep(.5,.97,abs(sin(ph)));float aa=1.-smoothstep(.5,1.4,fwidth(ph));
-  float k=bw*aa;diffuseColor.rgb*=1.-.36*gr*k;diffuseColor.rgb*=1.+.09*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
+  /* [treedress, branch close-up round] 90 per turn with abs(sin) drew ~180 even pinstripes round the fork: a corduroy that read
+  as painted up close. Now 36 per turn, one groove per period, of varying width, broken into lengths that start and stop. */
+  float ph=th*36.+wp.y*5.2*lb+1.5*sin(dT*.9+th*5.+wp.y*.7)+.8*sin(dT*2.3-wp.y*2.6*lb+th*11.);
+  float sp=sin(ph);float wv=.55+.25*sin(th*7.+dT*1.7+wp.y*.9);
+  float gr=smoothstep(wv,wv+.3,sp)*smoothstep(-.3,.4,sin(wp.y*.85+dT*.7+th*9.+2.2*sin(th*4.-wp.y*.5)));float aa=1.-smoothstep(.5,1.4,fwidth(ph));
+  float k=bw*aa;diffuseColor.rgb*=1.-.34*gr*k;diffuseColor.rgb*=1.+.08*k*smoothstep(.2,.8,-sp);}}`);
     // [TREE] trunk bark up close (Pavel: smooth oak with irregular folds; phones at the closest zoom read as a soft brown wall):
     // the painted wavy-fold bark (bark3) laid over the trunk in world space, two side projections blended by the normal (no
     // seams), fading in only near the camera so the home view keeps its painted look. Diffuse only; no relief maps touched.
@@ -660,7 +663,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
     }
   };
   mat.userData.doorGlow = { value: 0 };
-  mat.customProgramCacheKey = () => 'oakBark-grooves2-fold'; /* [ENV] explicit key (SHADERS rule) */
+  mat.customProgramCacheKey = () => 'oakBark-grooves3-fold'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
   { const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(shadowP, 3)); sg.setIndex(shadowI); sg.computeBoundingSphere(); bark.userData.shadowGeo = sg; }
 
