@@ -682,11 +682,11 @@ export function createAudio(ctx) {
     const R = window.__rain, cp = ctx.camera ? ctx.camera.position : null;
     let roof = .35; if (R && typeof R.roofNear === 'function' && cp) { try { roof = clamp01(R.roofNear(cp)); } catch (e) {} }
     const rk = wState === 'drizzle' ? .55 : wState === 'storm' ? 1.35 : 1;   // drizzle: a fine whisper; storm: heavy
-    bed('rain', ['rain_a', 'rain_b'], rain * rk, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
+    bed('rain', ['rain_b'], rain * rk, l => ({ gain: .24 * l,/* [ENV] Pavel's sound rule: rain_a measured as near-white hiss (flat spectrum .39, few transients): dropped; the softer rain_b bed lower, the slate taps and one-shot drops carry the rain */ pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
     // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
     bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
     rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 120);   // the ground stays wet ~2 game hours after rain
-    if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
+    if (rain >= .4 && now > dripNext) { const a = rnd(0, 6.28); voice(Math.random() < .5 ? 'wetdrip_a' : 'drip_a', { pos: { x: Math.cos(a) * rnd(1.5, 6), y: rnd(1, 7), z: Math.sin(a) * rnd(1.5, 6) }, gain: rnd(.12, .3) * rain, rate: rnd(.8, 1.3), dur: rnd(.6, 1.6), offset: rnd(0, 2), ref: 3 }); dripNext = now + rnd(.4, 1.8) / Math.max(.5, rain); }/* [ENV] in the rain: heavy single drops off the leaves and eaves (one-shots, not a bed) */ else if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
     // the oven fire, where the oven is
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
     const op = L2 && L2.pos ? L2.pos('oven') : null;
