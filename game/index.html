@@ -793,7 +793,7 @@ vec3 slate(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] sam
  float near=1.-smoothstep(.005*uLod,.009*uLod,max(length(mx),length(my)));vec2 dH=vec2(0.);
  if(near>0.){vec2 g1=ux*4.,g2=uy*4.;/* [ENV fix] explicit gradients inside the branch (Apple GPUs) */float hb=dot(textureGrad(tSlate,uv,g1,g2).rgb,vec3(.33));
   dH=vec2(dot(textureGrad(tSlate,uv+ux,g1,g2).rgb,vec3(.33))-hb,dot(textureGrad(tSlate,uv+uy,g1,g2).rgb,vec3(.33))-hb)*.004*near;}
- if(top>.5){
+ if(top>.5){/* [TREE, photo] the photo's slates have pale worn rims round the exposed butt and sides, and faint split-grain streaks down the slope */{float de=min(sz.z*.5-abs(m.z),sz.x*.5-abs(m.x));col*=1.+.9*smoothstep(.05,.006,de)*(.6+.4*sN(m.xz*30.+sd));col*=.8+.4*sN(vec2(m.x*2.5,m.z*30.)+sd*7.);}
   // the slate above lies on this one: under its butt edge a soft shadow band (the overlap reads as depth, not as a drawn line),
   // and a little grime washed down along it
   {float dB=sz.x*.5-m.x*vDn;float ao=smoothstep(.12,.25,dB)*(.8+.2*sN(m.xz*vec2(3.,20.)+sd));col*=1.-.55*ao;sRgh=mix(sRgh,.95,ao);}
@@ -809,7 +809,7 @@ vec3 slate(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] sam
   vec3 mc=textureGrad(tMoss,vW.xz*1.7+vec2(vW.y*.7),wx.xz*1.7+vec2(wx.y*.7),wy.xz*1.7+vec2(wy.y*.7)).rgb;col=mix(col,mc*vec3(.36,.44,.3),smoothstep(.0,.6,mo));sRgh=mix(sRgh,.95,mo);}
  col=mix(col,col*vec3(.9,.95,1.08),vFresh);sRgh=mix(sRgh,.55,vFresh);
  sDH=dH;return col;}`;
-shingleMat.customProgramCacheKey=()=>'slate3';
+shingleMat.customProgramCacheKey=()=>'slate4';
 shingleMat.onBeforeCompile=sh=>{Object.assign(sh.uniforms,{tSlate:{value:slateT},tMoss:{value:mossT},uLod:PLOD});
  sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aRow,aFresh;attribute vec3 aBev;varying float vSeed,vFresh,vDn;varying vec3 vLP;varying vec3 vSz;varying vec3 vN0;varying vec3 vW;')
   .replace('#include <beginnormal_vertex>','vec3 objectNormal=vec3(normal);vN0=normal;vSz=vec3(1.);vDn=1.;\n#ifdef USE_INSTANCING\nvSz=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));objectNormal*=vSz;vDn=-sign((modelMatrix*instanceMatrix*vec4(1.,0.,0.,0.)).y+1e-6);\n#endif')
