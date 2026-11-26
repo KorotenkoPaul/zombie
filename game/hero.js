@@ -2039,9 +2039,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const setLF=lf=>{LF=lf;TT=Tf(lf);want=Wf(lf);};
    const key=(lf,starts,base)=>{setLF(lf);Qh=mkQh(S.al,S.yw);PS=S.ps;let best=null;for(const bs of base?[base,null]:[null])for(const st of starts){const e=run(30,false,st,bs);/* the answer on from the last blow wins unless the fresh one is clearly closer (3 cm) */const e2=e-(bs?(window.__seedBias??.03):0);if(!best||e2<best.e2-.002)best={e,e2,t:tEnd.clone(),q:AB.map(b=>b.quaternion.clone())};}return best;};
    const shNow=bones.RightArm.getWorldPosition(V());
-   if(!S.K||S.K.n!==S.n&&!fade||S.K.sh.distanceTo(shNow)>(window.__keyTh??.015)&&!S.Ko&&!fade||window.__keyEvery){/* letting go at the end (the clip walks the body back to idle under the arm): the last keys stay, no fresh solves while the arm fades out (gate orig fix_railing: 20 frames of 8-23 cm/frame) */
+   const drift=!!S.K&&S.K.n===S.n&&!window.__keyEvery&&S.K.sh.distanceTo(shNow)>(window.__keyTh??.015)&&!S.Ko&&!fade&&(window.__keyDriftAll||a.T-(S.kT??-9)>.25||S.K.sh.distanceTo(shNow)>.06);/* [PERF] a shoulder that drifts within a blow (the body settling) re-keys at most 4x a second and without the hand-turn search: re-keyed every frame it cost 50-85% of 100-130 ms phone frames (iPhone profile, fix_wall) */if(!S.K||S.K.n!==S.n&&!fade||drift||window.__keyEvery){S.kT=a.T;if(window.__kc)window.__kc.push([a.T.toFixed(2),!S.K?"new":S.K.n!==S.n?"blow":"drift"]);/* letting go at the end (the clip walks the body back to idle under the arm): the last keys stay, no fresh solves while the arm fades out (gate orig fix_railing: 20 frames of 8-23 cm/frame) */
     setLF(0);
-    if(PG&&PG.over&&!window.__noFit&&!window.__noSearch){
+    if(PG&&PG.over&&!window.__noFit&&!window.__noSearch&&!(drift&&S.ps!=null)){
      const cost=(ca,cy,cp)=>{Qh=mkQh(ca,cy);PS=cp;const e=run(8,true);return PG.over(hb,hb.quaternion)+PG.over(fa,fa.quaternion)+e*300+(S.ps!=null?4*(Math.abs(ca-S.al)+Math.abs(cy-S.yw)+Math.abs(cp-S.ps)):0);};
      let bc=1e9,bb=null;for(const ca of [0,.3,.6,.9,1.2])for(const cy of [-.5,0,.5])for(const cp of [-1,-.5,0,.5,1]){const v=cost(ca,cy,cp);if(v<bc){bc=v;bb=[ca,cy,cp];}}
      if(S.ps!=null){const v=cost(S.al,S.yw,S.ps);if(v<=bc+.5)bb=[S.al,S.yw,S.ps];}
