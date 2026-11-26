@@ -106,6 +106,13 @@ Push your work to your own branch and tell the integrator (Character thread) the
 the integration branch `claude/project-thread-tyhjsl`, runs the deterministic gate (`node tests/anim/gate.js`) and a side-by-side
 render against master, and promotes to master only when it is clearly better on every action it touches.
 
+Deploy steps for the integrator (2026-11-26):
+1. Build the batch on a fresh master; `node --check` every changed js.
+2. Gate it next to a fresh-master run on the same tests code: `node tests/anim/gate.js --heroes old,orig --out DIR` in both, compare with `node tests/anim/cmp.js BASE CAND`. No new HARD; judge by worst value per key.
+3. **Perf budget** (Optimization, 006590a): when the batch adds geometry, cards or shadows (a hero asset, props, a merge that brings either), also run `node tests/perf/budget.js`. It must say ok for all five iPhone views. Draw calls are the tightest (294/300).
+4. Merge master again, re-check, push `HEAD:master`, tell Pavel in one line with the link.
+5. Keep new code on existing lines where possible: the gate keys random streams by line text, so moved random calls change the world.
+
 
 QA runs every action × both heroes (default and detailed) against section 3 before a push to master.
 A P1 failure blocks the push. Results go to `ANIM-QA.md`.
