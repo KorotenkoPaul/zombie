@@ -114,3 +114,14 @@ Debug: `__treedress.stats()`.
 - Door: moss in the threshold corners beside the jambs (DOORP passed in from index.html as C.door; own rng(7071), sampler/pointOn take an rng so the main stream and every later placement are unchanged). 10 desktop / 6 phone slots reserved in the moss mesh.
 - Root cushions: taller domes (y*1.35, sunk less). The coarse stem bump drew dark worm stripes, so it is weaker now (aM*.4) and soft mottling (td_f 41) is added on every cushion.
 - Budget (tests/perf/budget.js): origin/master was already OVER on "day home" (alpha 1.51) and "night yaw limit" (454k). This round adds about 1k tris on the phone.
+
+## Round 19: draw calls and wet moss and ivy
+- **Phones, one draw fewer.** The root-pocket leaves are baked into Ground's litter mesh at runtime instead of being their own instanced mesh.
+  - Ground's atlas grows from 3 cells to 4: its own cells keep their texels, because every u on its litter and skitter leaves is scaled by 3/4.
+  - The new cell is painted from `leaf2-128.png`, because the phone's `leaf2` is a KTX2 that can't be drawn into a canvas. The image loads after start; until then the old mesh draws.
+  - Guarded: the bake runs only if the atlas is 384×128 and the litter has exactly Ground's 6 attributes, otherwise nothing changes. `__treedress.litterMerged` reports the result.
+  - Desktop keeps its own mesh.
+- **Phones now get ivy stems** (`ivyStemsBaked`). They are baked into the same litter mesh on the white atlas cell, so they cost no draw; before this, the vines' leaves on phones floated without stems.
+- **Rain.**
+  - Moss: the cushions get a wet sheen while it rains (the tips more than the hollows) and the earth humps soak darker. Key: `tdMossCushion5`.
+  - Ivy and ferns: they darken a little when soaked and glisten in rain, using the same `barkU.wet`/`damp` uniforms as the bark. Key suffix: `|tdWet1`.
