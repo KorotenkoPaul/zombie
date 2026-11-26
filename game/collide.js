@@ -307,7 +307,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       // UPPER BUNK (gate: the head 3.1 cm into the upper bunk's underside while seated taking the boots off, hands 4 cm in its edge while
       // sweeping): the bunk bed is one soft grid, but only its mattress (and pillow, quilt) gives; the frame, rails and the upper bunk's
       // underside are wood. Soft only from 12 cm under a bed level's top to 30 cm over it, inside its outline. Old: __colX.softBunk
-      if (s.cls >= 2 && BEDS.length && part !== 3 && part !== 4 && /bunk/i.test(s.name) && !mattressAt(p) && !(window.__colX && window.__colX.softBunk)) allow = ALLOW.hard; /* not the feet and shins: hard there, a shin on the frame by the reading chair slid the planted foot 9 cm */
+      if (s.cls >= 2 && BEDS.length && /bunk/i.test(s.name) && !mattressAt(p) && !(window.__colX && window.__colX.softBunk)) allow = part === 3 ? ALLOW.feet : ALLOW.hard;
       else if (s.cls === 1 && (part === 4 || part === 5)) allow = ALLOW.seat;
       const ex = d - allow; if (ex > best) { best = ex; nB.copy(OUT.n); }
     }
