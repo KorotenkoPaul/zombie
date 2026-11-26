@@ -117,7 +117,14 @@ export function createTreeDress(C) {
     D.barkU = tdWetU.U = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, near: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 0.45 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
+    // [low sun round] the sun's world direction and a warm colour that only exists while it is low (dawn / dusk), for the rim below
+    D.sunU = { dir: { value: new THREE.Vector3(0, 1, 0) }, col: { value: new THREE.Color(0, 0, 0) } };
+    const sunTick = () => { if (!D._sunL) { let sc = D.group; while (sc && sc.parent) sc = sc.parent; sc && sc.traverse(o => { if (o.isDirectionalLight && o.castShadow && !D._sunL) D._sunL = o; }); if (!D._sunL) return; }
+      const L = D._sunL, d = D.sunU.dir.value.copy(L.position).sub(L.target.position).normalize();
+      const low = Math.min(1, Math.max(0, (0.5 - d.y) / 0.3)) * Math.min(1, Math.max(0, (d.y + 0.02) / 0.1)) * Math.min(1, L.intensity / 1.2);
+      D.sunU.col.value.setRGB(1.0, 0.62, 0.32).multiplyScalar(low * (1 - 0.7 * (D._rk || 0))); };
     D.update = (cam) => {
+      sunTick();
       if (cam) D.barkU.near.value = Math.hypot(cam.position.x - AX, cam.position.z - AZ) < 9 && cam.position.y < 17 ? 1 : 0;
       const now = performance.now() / 1000, dt = Math.min(0.5, Math.max(0, now - (D._lt || now))); D._lt = now;
       const W = window.__wind, on = W && W.raining ? W.raining() : 0;
@@ -184,6 +191,7 @@ export function createTreeDress(C) {
     }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
+      sh.uniforms.tdSunD = D.sunU.dir; sh.uniforms.tdSunC = D.sunU.col;
       sh.uniforms.tdDrip = D.dripU; sh.uniforms.tdScar = D.scarU; sh.uniforms.tdWear = D.wearU; sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
@@ -195,7 +203,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-uniform vec4 tdDrip[8];uniform vec4 tdScar[8];uniform vec4 tdWear[4];float tdDrk=0.,tdWr=0.,tdWs=0.,tdNl=0.,tdRu=0.;vec3 tdND=vec3(0.);float tdSe=9.,tdSty=0.,tdSa=0.,tdSb=0.,tdSz=1.;vec3 tdSD=vec3(0.);varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
+float tdCM=0.,tdCF=.5;uniform vec4 tdDrip[8];uniform vec4 tdScar[8];uniform vec4 tdWear[4];float tdDrk=0.,tdWr=0.,tdWs=0.,tdNl=0.,tdRu=0.;vec3 tdND=vec3(0.);float tdSe=9.,tdSty=0.,tdSa=0.,tdSb=0.,tdSz=1.;vec3 tdSD=vec3(0.);varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -375,6 +383,9 @@ uniform float tdCool;` + NOISE)
           mm+=(1.-tdH)*.18*smoothstep(.05,.3,mm); // moss settles into the furrows first
           mm=max(mm,tdCr*smoothstep(-.25,.45,wn.y)*smoothstep(.2,.55,big+fine*.4)*smoothstep(3.,4.5,y)); // moss packs the crotches
           mm*=1.-tdBW*.85;
+          { vec3 q=tdP; float bx=smoothstep(-3.1,-2.8,q.x)*(1.-smoothstep(-.5,-.2,q.x))*smoothstep(.7,1.,q.z)*(1.-smoothstep(3.3,3.6,q.z));
+            float hb=q.y-(13.38-.87*abs(q.x+2.2))+(big-.5)*.16+(fine-.5)*.08; // [roof limb round] a damp moss collar where the limb lies on / leaves the bedroom roof (Tree cut the slates round it): height above the slope
+            tdCM=bx*smoothstep(-.2,-.05,hb)*(1.-smoothstep(.12,.34,hb))*smoothstep(.15,.45,big*.7+fine*.5)*tdMoss; tdCF=fine; mm=max(mm,tdCM); }
           mm=clamp(mm*tdMoss,0.,1.)*(1.-clamp(vGlow*2.5,0.,1.));
           // linear colours: deep olive in the shade, a little brighter yellow-green where it catches light
           vec3 moss=mix(vec3(.030,.048,.014),vec3(.085,.125,.028),smoothstep(.3,.8,fine));
@@ -426,6 +437,7 @@ uniform float tdCool;` + NOISE)
           vec3 wn=normalize(tdN);
           // [scars round] the knots' and scars' colour, here and not with the rest of the bark colour: Tree's map code (which runs
           // after treedress's) mixes every colour halfway to one brown, which washed them out. Derivatives in uniform flow.
+          float sFar=1.-.62*smoothstep(9.,24.,length(cameraPosition-tdP)); // [review round] from the home view the scars' pale wood and the knots' rings read as painted ovals and targets: much softer far away
           float gp=tdSb*tdSz*150.+1.6*sin(tdSa*5.)+.6*sin(tdSa*13.+tdSb*3.); float gk=1.-smoothstep(.4,1.,fwidth(gp)); float rg=1.-smoothstep(.3,1.,fwidth(tdSe*40.));
           if(tdSty>1.5){ // bare-bark scar: weathered grey-tan wood with fine grain along the folds, a dark crease inside the rolled lip
             float in_=1.-smoothstep(.88,.98,tdSe); float g=dot(diffuseColor.rgb,vec3(.33));
@@ -433,12 +445,14 @@ uniform float tdCool;` + NOISE)
             float ck=smoothstep(.93,1.,abs(sin(gp*.23+1.7*sin(tdSa*3.1))))*gk; // a few deep checks along the grain
             vec3 wd=vec3(1.24,1.,.74)*(g*.98+.012)*(1.-.2*gk*smoothstep(.2,1.,sin(gp)))*(1.-.55*ck)*mix(1.,.75,smoothstep(0.,-.9,tdSa)) // runs stain its lower end
               *(1.-.42*smoothstep(.6,.95,tdSe)*smoothstep(-.2,.6,tdSa))*(1.-.18*smoothstep(.4,.95,tdSe)); // sunk below the bark: the lip above shades the inside
-            diffuseColor.rgb=mix(diffuseColor.rgb,wd,in_);
-            diffuseColor.rgb*=(1.+.18*exp(-pow((tdSe-1.06)/.09,2.)))*(1.-.6*exp(-pow((tdSe-.95)/.045,2.))); }
+            { float dz=1.-smoothstep(.9,2.4,tdP.y+(td_n(tdP*3.1)-.5)*.5); // [day base round] a scar down at the foot is not silver: ground damp soaks it dark, greenish with algae from below
+              wd=mix(wd,mix(vec3(dot(wd,vec3(.33))),wd,.6)*vec3(.5,.52,.4)*(1.-.25*smoothstep(.3,-.6,tdSa)),dz); }
+            diffuseColor.rgb=mix(diffuseColor.rgb,wd,in_*sFar);
+            diffuseColor.rgb*=(1.+.18*sFar*exp(-pow((tdSe-1.06)/.09,2.)))*(1.-.6*sFar*exp(-pow((tdSe-.95)/.045,2.))); }
           else if(tdSty>.5){ // old broken stub: a dark rotten hole with end-grain rings, a crease, and the swollen lip of bark round it
             float c=1.-smoothstep(.4,.54,tdSe); 
-            diffuseColor.rgb*=mix(1.,mix(.46,.2,smoothstep(-.35,.35,tdSa))*(1.-.15*rg*(.5+.5*sin(tdSe*40.))),c); // the lip overhangs the top of the hole: darkest there
-            diffuseColor.rgb*=(1.-.3*exp(-pow((tdSe-.56)/.06,2.)))*(1.+.12*exp(-pow((tdSe-.74)/.16,2.))); }
+            diffuseColor.rgb*=mix(1.,mix(.46,.2,smoothstep(-.35,.35,tdSa))*(1.-.15*rg*(.5+.5*sin(tdSe*40.))),c*(.55+.45*sFar)); // the lip overhangs the top of the hole: darkest there
+            diffuseColor.rgb*=(1.-.3*sFar*exp(-pow((tdSe-.56)/.06,2.)))*(1.+.12*sFar*exp(-pow((tdSe-.74)/.16,2.))); }
           { float g=dot(diffuseColor.rgb,vec3(.33));
             diffuseColor.rgb*=mix(vec3(1.),vec3(.76,.67,.58),tdWr);                                                   // hand grease
             diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.3,g*1.16,g*1.)+.012,.7*tdWs*smoothstep(.3,.75,tdH)); }  // boot-rubbed ridges
@@ -465,6 +479,9 @@ uniform float tdCool;` + NOISE)
           // trunk's (77,47,27)): Tree's map code desaturates and halves every colour after treedress's map block, and the up-facing
           // flare faces escape the damp-foot darkening. Here, after that: warmer, richer and a little darker low down, and the
           // photo's folds there deepened again. Not on the moss or inside the scars; a ragged upper edge.
+          // [roof limb round] the collar's moss colour again here (Tree's map code after the map block washes greens to brown)
+          if(tdCM>.001){ float l=dot(diffuseColor.rgb,vec3(.3,.59,.11)); vec3 mc=mix(vec3(.034,.05,.016),vec3(.08,.115,.03),smoothstep(.3,.8,tdCF));
+            diffuseColor.rgb=mix(diffuseColor.rgb,mc*(.55+1.1*l),tdCM*smoothstep(.0,.6,tdCM)*.8); }
           { float bz=(1.-smoothstep(1.,3.2,tdP.y+(td_n(tdP*.7)-.5)*.8))*(1.-tdMM)*(tdSty>0.?smoothstep(1.,1.3,tdSe):1.);
             float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));
             diffuseColor.rgb=mix(diffuseColor.rgb,max(mix(vec3(l),diffuseColor.rgb,1.4),0.)*vec3(.8,.7,.58),bz);
@@ -487,7 +504,7 @@ uniform float tdCool;` + NOISE)
           if(tdSty>0.){ float f=(tdSe-(tdSty>1.?1.04:.74))/(tdSty>1.?.11:.17), t=f*exp(-f*f)*(tdSty>1.?1.5:1.1); // the lip: inner slope faces in, outer out
             if(tdSty<1.5)t-=.55*(1.-smoothstep(.3,.5,tdSe))*min(tdSe/.4,1.);                                    // the stub's sunken hole
             else dn*=mix(1.,.3,1.-smoothstep(.85,.97,tdSe));                                                    // bare wood is smooth
-            dn+=tdSD*t/max(tdRelief,.05); }
+            dn+=tdSD*t*sFar/max(tdRelief,.05); }
           tdBias=0.;
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
@@ -503,6 +520,13 @@ uniform float tdCool;` + NOISE)
           normal=normalize(mix(normal,nv,.92));
         }`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.45,tdWM*(1.-tdFM));roughnessFactor=mix(roughnessFactor,.58,tdWr*.55);roughnessFactor=mix(roughnessFactor,.28,tdWet*(tdSty>.5&&tdSty<1.5?1.-smoothstep(.4,.54,tdSe):0.));roughnessFactor=mix(roughnessFactor,.5,tdWet*tdFlK*smoothstep(.2,.9,-tdFl)*.6); /* [rain round] water standing in the knot holes, running in the fold grooves */ // a soft wet sheen, not varnish // dry bark is fully matte')
+        .replace('#include <common>', '#include <common>\nuniform vec3 tdSunD,tdSunC;')
+        // [low sun round] dawn / dusk: the bark edges turned to the low sun catch a warm rim. It scales the sun's own (shadowed)
+        // direct light, so it only shows where the sun really reaches: no glow in the house's shade or under the landings.
+        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        if(tdSunC.r>.005){ vec3 sv=normalize((viewMatrix*vec4(tdSunD,0.)).xyz); float nvv=1.-abs(dot(normal,normalize(vViewPosition)));
+          float rk=pow(nvv,2.2)*smoothstep(-.05,.45,dot(normal,sv))*(.6+.4*tdH);
+          reflectedLight.directDiffuse*=vec3(1.)+tdSunC*rk*3.2; }`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
@@ -517,11 +541,11 @@ uniform float tdCool;` + NOISE)
           // [photo folds round] night: the photo's trunk and roots read in a cool moonlit grey-blue, the flute ridges and the root
           // tops catching it, the grooves and undersides dark (before, below the house they sank into one dark brown mass)
           { float up=.45+.55*smoothstep(-.2,.8,wn.y); float rdg=(.35+.65*smoothstep(.3,.8,tdH))*mix(1.,.25+.95*smoothstep(-.3,.8,tdFl),tdFlK);
-            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*(1.-smoothstep(5.,9.,tdP.y)); }
+            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*mix(1.,2.4,smoothstep(3.5,5.5,tdP.y))*(1.-smoothstep(10.5,12.,tdP.y)); } // [night folds round] up the trunk between the houses too (it was one flat dark mass at night; the photo's folds read there)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress14';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress19';
     mat.needsUpdate = true;
   }
 
@@ -568,7 +592,7 @@ uniform float tdCool;` + NOISE)
   { const rc = new THREE.Raycaster(), hits = [], out = [], cam = V(0, 10.5, 28.4); TREE.bark.updateMatrixWorld(true);
     // sizes: half-width across the folds in metres; from the home view (~28 m) a 0.2 m knot is about 6 px across on a phone
     const spots = [[0.2, 6.0, 0.64, 0.21], [-0.5, 2.46, 0.79, -0.24], [0.9, 8.8, 0.46, 0.18], [2.36, 10.5, -0.6, 0.22],
-      [-1.14, 0.94, 2.62, -0.22], [2.27, 0.6, 1.7, 0.2], [3.84, 0.79, 0.2, -0.2], [-3.2, 0.76, 2.13, 0.2]];
+      [-1.14, 0.94, 2.62, -0.22], [2.27, 0.6, 1.7, 0.16], [-3.2, 0.76, 2.13, 0.15]]; /* [review round] the scar on the right root's flat top (3.84, 0.79, 0.2) read as a grey puddle from the home view: dropped */
     for (const [x, y, z, sz] of spots) { const q = V(x, y, z), dir = cam.clone().sub(q).normalize();
       rc.set(q.clone().addScaledVector(dir, 1.5), dir.clone().negate()); rc.far = 3;
       hits.length = 0; TREE.bark.raycast(rc, hits); hits.sort((a, b) => a.distance - b.distance); const h = hits[0]; if (!h) continue;
@@ -1297,5 +1321,28 @@ uniform float tdCool;` + NOISE)
   // phones: small dressing neither casts nor receives shadows (cheaper shaders, nothing in the shadow pass)
   if (MOBILE) D.group.children.forEach(m => { m.castShadow = false; m.receiveShadow = false; });
   D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, caught: D.caughtLeaves, baseShroom: D.baseShroom, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, junction: D.junction, joinMoss: D.joinMoss, joinIvy: D.joinIvy, frost: +D.barkU.frost.value.toFixed(2), wet: +D.barkU.wet.value.toFixed(2), damp: +D.barkU.damp.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
+  // [leaf rim round] the photo's night crown: the leaf edges catch the moon in thin light outlines. Chained onto tree.js's leaf
+  // material (tree.js untouched): moonlight only (env.moonRim, zero by day, dimmed in the rain), on the thin band just inside
+  // each leaf's cut-out edge (the map's alpha), most on the clump side facing the moon and on clump silhouettes. No glow.
+  if (TREE.leaves && TREE.leaves.material) { const lm = TREE.leaves.material, prevL = lm.onBeforeCompile, MR = (C.env || window.__env || {}).moonRim;
+    if (MR) { lm.onBeforeCompile = (sh, r) => { if (prevL) prevL.call(lm, sh, r);
+        sh.uniforms.tdLRc = MR.color; sh.uniforms.tdLRs = MR.strength; sh.uniforms.tdLRd = MR.dir; sh.uniforms.tdLWt = D.barkU.wet; sh.uniforms.tdLDy = D.barkU.day; sh.uniforms.tdSunD = D.sunU.dir; sh.uniforms.tdSunC = D.sunU.col;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 tdLRc,tdLRd;uniform float tdLRs,tdLWt,tdLDy;uniform vec3 tdSunD,tdSunC;')
+          .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+if(tdSunC.r>.005){ vec3 sv=normalize((viewMatrix*vec4(tdSunD,0.)).xyz); float nvv=1.-abs(dot(normal,normalize(vViewPosition)));
+  reflectedLight.directDiffuse*=vec3(1.)+tdSunC*pow(nvv,2.)*smoothstep(-.05,.5,dot(normal,sv))*2.6; } // [low sun round] clump edges facing the low sun glow warm (sunlit only)`)
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+#ifdef USE_MAP
+{ float ea=texture2D(map,vMapUv,2.5).a; float edge=1.-smoothstep(.5,.92,ea); // a blurred read of the map (bias, uniform flow): a soft band inside each leaf's edge, no aliased sparkle
+  vec3 md=normalize((viewMatrix*vec4(tdLRd,0.)).xyz); float tw=max(dot(normal,md),0.); float fr=1.-abs(dot(normal,normalize(vViewPosition)));
+  totalEmissiveRadiance+=mix(tdLRc,diffuseColor.rgb*4.,.45)*tdLRs*edge*(.2+.8*max(tw,fr*fr))*.2; } // subtle and leaf-tinted: Tree's leaf code already cools the night crown, the two must not add up to a glow
+#endif
+// [crown rain round] the crown is matte Lambert, so in the rain it looked dry. Wet leaves mirror the grey sky: a cool sheen on the
+// up-facing leaves and at grazing angles (clump silhouettes), strongest by day, none in dry weather. Arithmetic only.
+if(tdLWt>.01){ vec3 upV=normalize((viewMatrix*vec4(0.,1.,0.,0.)).xyz); float nv=abs(dot(normal,normalize(vViewPosition)));
+  float lt=dot(diffuseColor.rgb,vec3(.3,.59,.11)); float sk=pow(1.-nv,5.)*smoothstep(-.2,.8,dot(normal,upV))*smoothstep(.04,.2,lt); // glints on the lighter leaf blades, not a film over the shadowed ones
+  diffuseColor.rgb=max(mix(vec3(lt),diffuseColor.rgb,1.2),0.)*(1.-.18*tdLWt); // soaked: darker and richer, as wet bark
+  totalEmissiveRadiance+=vec3(.5,.56,.62)*sk*tdLWt*(.25+.75*tdLDy)*.35; }`); };
+      const pk = lm.customProgramCacheKey ? lm.customProgramCacheKey.bind(lm) : () => ''; lm.customProgramCacheKey = () => pk() + '|tdRim6'; lm.needsUpdate = true; D.leafRim = true; } }
   return D;
 }

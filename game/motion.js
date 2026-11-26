@@ -221,7 +221,7 @@ export function createMotion({ hero, db, opts = {} }) {
   function legIK(s, target, w) { const [ui, li, fi] = legs[s]; const U = HB[ui], L = HB[li], Fb = HB[fi]; const endQ = Fb.getWorldQuaternion(new THREE.Quaternion());
     const a = U.getWorldPosition(new THREE.Vector3()), b = L.getWorldPosition(new THREE.Vector3()), c = Fb.getWorldPosition(new THREE.Vector3()); const l1 = a.distanceTo(b), l2 = b.distanceTo(c);
     const goal = c.clone().lerp(target, w); const tv = goal.clone().sub(a); const dd = clamp(tv.length(), Math.abs(l1 - l2) + .01, l1 + l2 - .002); const dir = tv.normalize();
-    let pole = b.clone().sub(a.clone().add(c).multiplyScalar(.5)); pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pole.lengthSq() < 1e-8) pole.set(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)); pole.normalize();
+    let pole = b.clone().sub(a.clone().add(c).multiplyScalar(.5)); if (!window.__noPoleBias) pole.x += Math.sin(root.rotation.y) * .03, pole.z += Math.cos(root.rotation.y) * .03; /* WALK (integrator: fixlamp/sharpen slide, knee 5 cm sideways in one frame): a near-straight leg's knee offset is a few mm and its direction swung frame to frame; the knee leans forward a little like a person's */ pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pole.lengthSq() < 1e-8) pole.set(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)); pole.normalize();
     const ca = clamp((l1*l1 + dd*dd - l2*l2) / (2*l1*dd), -1, 1), sa = Math.sqrt(1 - ca*ca); const knee = a.clone().addScaledVector(dir, ca*l1).addScaledVector(pole, sa*l1);
     turnBone(U, b, knee, 1); turnBone(L, Fb.getWorldPosition(new THREE.Vector3()), a.clone().addScaledVector(dir, dd), 1);
     Fb.parent.getWorldQuaternion(_pq); Fb.quaternion.copy(_pq.invert().multiply(endQ)); Fb.updateMatrixWorld(true); }
@@ -425,5 +425,12 @@ export function createMotion({ hero, db, opts = {} }) {
   // standing-hips offset carried 38 cm into the seated reading pose and pulled the root off the chair for a few frames)
   function snap() { offX.fill(0); offV.fill(0); offP.fill(0); offPV.fill(0); haveOut = haveOut2 = false; S.hipKind = null; srcKind.fill(-1); for (const L of lock) { L.on = L.hold = false; L.w = 0; } }
   const api = { pre, post, bench, snap, S, clips, frames: total, stats: S.stats, traj: () => traj, pops: () => ({ n: FP.n, bones: FP.bones }), info: () => ({ on: S.on, clip: clips[S.ci].name, t: S.t, cost: S.cost, layer: S.layer, jumps: S.jumps, char: S.char.clone(), cyaw: S.cyaw, pruned: S.pruned, lk: lock.map(L => (L.on ? 'L' : L.hold ? 'h' : '-') + L.w.toFixed(2)).join(' '), f: Math.round(S.t) }) };
+  // tests only (HH.qaReset, gate between tasks): every smoothing / previous-frame state back to how a fresh page starts
+  const S0 = Object.fromEntries(Object.entries(S).filter(([, v]) => v == null || typeof v !== 'object'));
+  api.qaReset = () => { snap(); for (const k of Object.keys(S)) if (!(k in S0) && k !== 'char' && k !== 'simV' && k !== 'stats') delete S[k]; Object.assign(S, S0); S.char.set(0, 0, 0); S.simV.set(0, 0, 0);
+    for (const a of [out, prevOut, prevOut2, curPrev, prevOutH, prevOutH2, src, srcH, prevSrc, prevSrcH, cur, curH, fr1, fr2, fShown, fRaw, fX, fV, fDv, fAcc, fHit]) a.fill(0);
+    outH.fill(0); curPrevH.fill(0); scrH.fill(NaN); haveSrc = false; wroteH = false; pureH = [0, .9, 0]; yB.fill(damp(HL_JUMP)); yP = damp(HL_JUMP);
+    fN = 0; FP.hot = 0; FP.key = ''; FP.n = FP.bones = 0; traj.fill(null);
+    for (const L of lock) { L.p.set(0, 0, 0); L.shown.set(0, 0, 0); L.ry = null; } };
   return api;
 }
