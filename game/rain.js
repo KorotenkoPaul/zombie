@@ -243,7 +243,7 @@ float wbH(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5);}
 float wbN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(wbH(i),wbH(i+vec2(1,0)),f.x),mix(wbH(i+vec2(0,1)),wbH(i+1.),f.x),f.y);}`)
           .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
 if(uWetB>.01){vec2 huv=(vWW.xz-uBoxB.xy)/uBoxB.zw;float top=(huv.x<0.||huv.y<0.||huv.x>1.||huv.y>1.)?-99.:texture2D(uHB,huv).r;
- float ex=smoothstep(.18,.04,top-vWW.y);
+ float ex=smoothstep(.18,.04,top-vWW.y);ex=max(ex,.8*smoothstep(1.3,.7,vWW.y)*smoothstep(2.,2.6,length(vWW.xz)));/* [PROPS] the yard at the oak's foot: rain drips through the crown, so the chopping block, log pile and sawhorse soak like the ground round them (the crown in the height map kept them bone dry) */
 #ifdef FLAT_SHADED
  vec3 nv=normalize(cross(dFdx(vViewPosition),dFdy(vViewPosition)));
 #else
