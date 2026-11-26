@@ -45,6 +45,8 @@ function swayMat(mat,U,amp,kExpr){mat.onBeforeCompile=s=>{windHook(s);
 // three's icosahedron has split vertices (flat facets); weld them so moss and stones shade smoothly
 // double-sided foliage: keep the sky-bent normal on both faces (three flips it on the back face, which turned blades black)
 const NOFLIP=s=>{s.fragmentShader=s.fragmentShader.replace('#include <normal_fragment_begin>',THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;','normal *= mix(1.,faceDirection,.15);'));};
+// drop the triangles of a half-buried shape that always sit under the floor (all three corners below yc in its own space): never seen, still drawn
+const dropBelow=(g,yc)=>{const p=g.attributes.position,ix=g.index.array,out=[];for(let t=0;t<ix.length;t+=3){const a=ix[t],b=ix[t+1],c=ix[t+2];if(p.getY(a)<yc&&p.getY(b)<yc&&p.getY(c)<yc)continue;out.push(a,b,c);}g.setIndex(out);return g;};
 const smoothIco=d=>{const g=new THREE.IcosahedronGeometry(1,d);g.deleteAttribute('normal');g.deleteAttribute('uv');return mergeVertices(g);};
 
 export function createGround(C){const __before=new Set(C.scene.children);
@@ -401,14 +403,14 @@ export function createGround(C){const __before=new Set(C.scene.children);
  {const base=smoothIco(MOBILE?1:3);const p=base.attributes.position;const col=new Float32Array(p.count*3);
   for(let i=0;i<p.count;i++){const v=V(p.getX(i),p.getY(i),p.getZ(i));const k=1+(vnoise(v.x*2.5+3,v.z*2.5+v.y*2)-.5)*.5;const y=v.y<0?v.y*.2:v.y*.55;p.setXYZ(i,v.x*k,y*k,v.z*k);
    const up=Math.max(0,v.y);const c=new THREE.Color(0x1C3026).lerp(new THREE.Color(0x3C6236),smooth(.1,.9,up));col.set([c.r,c.g,c.b],i*3);}
-  base.computeVertexNormals();base.setAttribute('color',new THREE.BufferAttribute(col,3));
+  base.computeVertexNormals();base.setAttribute('color',new THREE.BufferAttribute(col,3));dropBelow(base,-.02);/* the lower half is under the floor (centre sunk a quarter of its size, underside squashed to .2) */
   const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1});
   mat.onBeforeCompile=s=>{s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;').replace('#include <begin_vertex>','#include <begin_vertex>\nvMW=(modelMatrix*instanceMatrix*vec4(position,1.)).xyz;');
    s.uniforms.uNz=NZU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;'+GLSL_NOISE).replace('#include <color_fragment>','#include <color_fragment>\n{float f=fbm(vMW.xz*14.+vMW.y*9.);float f2=fbm(vMW.xz*3.1);diffuseColor.rgb*=.6+.6*f;diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.9,1.15,.8),f2*.6);\n/* [ENV] fuzz: tiny bright moss tips and dark gaps between the fronds, so a cushion is a pile of moss, not a smooth plastic lump */float fz=fbm(vMW.xz*61.+vMW.y*47.);diffuseColor.rgb*=.55+.9*fz;diffuseColor.rgb+=vec3(.05,.08,.02)*smoothstep(.62,.8,fz);}').replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\n{float h0=fbm(vMW.xz*38.+vMW.y*29.);normal=normalize(normal+vec3(dFdx(h0),dFdy(h0),0.)*-9.);}');};
   mat.customProgramCacheKey=()=>'groundMoss-fuzz1';
   const N=MOBILE?42:70;const im=new THREE.InstancedMesh(base,mat,N);let n=0;
   for(let t=0;t<N*30&&n<N;t++){const s=pick(R()<.65?ring(2.2,8):ring(8,13),(x,z)=>{const d=rootD(x,z);return d>.04&&d<.5&&pathD(x,z)>.15;},6);if(!s)continue;const [x,z]=s;
-   let sz=rr(.09,.24)*(n%5===0?1.5:1);E.set(0,rr(0,6.28),0);Q.setFromEuler(E);/* [ENV] the big ones were smooth green pebbles that read as plastic: a real stone sits there now (stones below), with a small moss cushion tucked at its foot */let mx=x,mz=z;if(sz>.2){mossRocks.push([x,z,sz]);const ha=Math.abs(Math.sin(x*91.7+z*47.3))*6.283;mx=x+Math.cos(ha)*sz*.75;mz=z+Math.sin(ha)*sz*.75;sz*=.5;}M.compose(V(mx,groundH(mx,mz)-sz*.25,mz),Q,Sc.set(sz*rr(.8,1.2),sz*rr(.9,1.3),sz*rr(.8,1.1)));im.setMatrixAt(n,M);G._stones=(G._stones||[]);G._stones.push([x,z,sz*.8]);
+   let sz=rr(.09,.24)*(n%5===0?1.5:1);E.set(0,rr(0,6.28),0);Q.setFromEuler(E);/* [ENV] the big ones were smooth green pebbles that read as plastic: a real stone sits there now (stones below), with a small moss cushion tucked at its foot */let mx=x,mz=z;if(sz>.2){mossRocks.push([x,z,sz]);const ha=Math.abs(Math.sin(x*91.7+z*47.3))*6.283;mx=x+Math.cos(ha)*sz*.75;mz=z+Math.sin(ha)*sz*.75;sz*=.5;}M.compose(V(mx,(meshH(mx,mz)??groundH(mx,mz))-sz*.25,mz),Q,Sc.set(sz*rr(.8,1.2),sz*rr(.9,1.3),sz*rr(.8,1.1)));im.setMatrixAt(n,M);G._stones=(G._stones||[]);G._stones.push([x,z,sz*.8]);
    Col.setHSL(rr(.28,.36),rr(.15,.28),rr(.42,.55));im.setColorAt(n,Col);n++;}
   im.count=n;im.receiveShadow=true;scene.add(im);G.moss=im;}
 
@@ -422,7 +424,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   for(let i=0;i<p.count;i++){const v=V(p.getX(i),p.getY(i),p.getZ(i));const k=1+(vnoise(v.x*1.7+v.z,v.y*1.9+2)-.5)*.45+(vnoise(v.x*5,v.z*5+v.y*3)-.5)*.08;p.setXYZ(i,v.x*k*1.15,(v.y<0?v.y*.5:v.y*.92)*k,v.z*k);}
   base.computeVertexNormals();const nr=base.attributes.normal;const col=new Float32Array(p.count*3);
   for(let i=0;i<p.count;i++){const up=nr.getY(i);const c=new THREE.Color(0x585550).lerp(new THREE.Color(0x46503A),smooth(.4,.8,up)*.6).multiplyScalar(.85+vnoise(p.getX(i)*4,p.getZ(i)*4)*.25);col.set([c.r,c.g,c.b],i*3);}
-  base.setAttribute('color',new THREE.BufferAttribute(col,3));return base;};
+  base.setAttribute('color',new THREE.BufferAttribute(col,3));return dropBelow(base,-.1);/* every stone sits a quarter to a third of its height in the earth (tilt <=.2 rad): its underside is never on screen (-40% tris) */};
   const base=mkStone(MOBILE?3:4);/* phone 2 -> 3: the outline read as facets close to the hero */
   const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,envMapIntensity:.2});mat.customProgramCacheKey=()=>'groundStone-moss4-wet2';
   mat.onBeforeCompile=s=>{s.uniforms.uWet=wetU;s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vMW;varying vec3 vON;varying float vSd;').replace('#include <begin_vertex>','#include <begin_vertex>\nvMW=position;vON=normal;vSd=fract(sin(dot(instanceMatrix[3].xz,vec2(12.9898,78.233)))*43758.545);');
