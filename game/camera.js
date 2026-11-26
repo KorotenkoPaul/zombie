@@ -695,7 +695,9 @@ export function createCameraRig(o) {
       for (const mt of (Array.isArray(m.material) ? m.material : [m.material])) {
         if (!mt || seen.has(mt) || !test(mt, m) || mt.userData.nearFade || !(mt.alphaTest > 0)) continue;
         seen.add(mt); mt.userData.nearFade = true;
-        const prev = mt.onBeforeCompile, key = prev ? prev.toString() : '';
+        // chain the material's own program key (explicit keys tell apart materials whose onBeforeCompile text is the same;
+        // dropping them made different materials share one program, the white boards on iPhone). Read it before the hook changes.
+        const prev = mt.onBeforeCompile, key = (typeof mt.customProgramCacheKey === 'function' ? String(mt.customProgramCacheKey.call(mt)) : '') + '|' + (prev ? prev.toString() : '');
         mt.onBeforeCompile = (sh, rd) => {
           if (prev) prev.call(mt, sh, rd);
           sh.uniforms[name] = uni; sh.uniforms.uNFFocus = focusU; sh.uniforms.uNFCut = cutU; sh.uniforms.uNFF = focusPU;
