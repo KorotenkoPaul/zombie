@@ -1443,7 +1443,7 @@ export function buildProps(ctx) {
   // lights.js builds only the wick, flame and light at out.lights.bedroomLamp.pos (own: true); hero.js reaches the lamp
   // itself now that out.switches has no 'bedroom'.
   out.switches = {}; out.switchN = {};
-  place('blamp', bracketLantern(), .18, BD + 1.65, 1.95, { solid: false, wall: true });
+  place('blamp', bracketLantern(), -.95, BD + 1.62, .99 + .192, { ry: Math.PI / 2, solid: false, wall: true }); /* photo: on the back wall over the bunk ladder's end, in view (by the door it hid behind the door leaf and the front post from every camera); he lights it from in front of the crate */
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   place('crock', bake(crock()), -3.52, BD, 1.24, { ry: .5 });
   place('pegrail', bake(pegRail()), -3.8, BD + 1.5, 1.0, { solid: false, wall: true }); /* photo round 2: the bare wall left of the bunk, above the crock (nothing walks there) */
