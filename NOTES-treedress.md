@@ -239,3 +239,34 @@ Debug: `__treedress.stats()`.
 
 ## Round 36 — big limbs and the fork up close
 - Weakest thing up close: the limb grooves in tree.js (the R27 block, with Tree's OK) drew ~180 even crisp pinstripes per turn at the fork and on the limbs (th*90 with abs(sin)): a painted corduroy. Now 36 per turn, one groove per period with a wandering width, broken into long lengths that start and stop (long cracks, not dashes). Key 'oakBark-grooves3-fold'. Limb junctions, folds and moss otherwise read fine against the photo (the photo's limbs carry no visible moss).
+
+## Round 37 — moonlit leaf edges (photo night crown)
+- Chained onto tree.js's leaf material from treedress (prev first, key + '|tdRim3'; Tree agreed, tree.js untouched). Emissive, moonlight only: env.moonRim colour x strength (zero by day, dimmed in rain), on a soft band inside each leaf's cut-out edge from a blurred map read (bias 2.5, uniform flow; the crisp alpha band aliased into sparkles), most on the clump side facing the moon and on silhouettes, tinted toward the leaf colour and kept subtle (Tree's leaf code already cools the night crown). One extra texture read per leaf pixel; no geometry.
+- Up close the crown reads as sprigs, not flat cards, by day and night.
+
+## Round 38 (night trunk folds between the houses)
+- At night the trunk between the houses (y 5.5–10.5) read as one flat dark mass: the moonlit fold-ridge emissive faded out above y 5–9.
+- Now the ridge moonlight runs up to y ~11 and is ×2.4 stronger from y 3.5–5.5 up (where only moonlight reaches), fading out under the crown at 10.5–12. Key '|treedress16'. No new draw calls.
+- Checked phone landing leaf piles after Ground's 3d9fd01 litter fix: baked, 7 piles, lie flat on the boards, look natural; no change.
+- Warm night trunk tone vs photo (71,40,28) is a Lights/Env matter, not bark colour.
+
+## Round 39 (day, closest zoom: the scar at the trunk foot)
+- At the closest real zoom (~10.7 m) by day, the bare-bark scar at (-1.14,0.94,2.62) on the root flare read as a pale grey-blue plate stuck on the bark.
+- Scars now go dark, damp and slightly algae-green near the ground (fades out by y≈2.4, ragged by noise), darker still at their lower end. Higher scars keep the weathered silver wood. Key '|treedress17'. No new draw calls.
+
+## Round 40 (crown in the rain; branch sweep)
+- Branch / crown-base close-zoom sweep: a boxy bark limb stub passes through the bedroom roof at ~(-1.1,13,1.8). Shape = tree.js, reported to Tree (image r40_limb_through_roof.jpg). Wet darkening on the limbs works.
+- The oak crown is matte Lambert, so in the rain it looked bone dry. The leaf chain (key |tdRim5) now, while it rains (barkU.wet): leaves darker and richer (luminance-based, like the bark), plus a cool grey-sky glint at grazing angles on up-facing lighter blades. Strongest by day. Arithmetic only, no texture reads, no new draw calls.
+- Forest trunks at the home view are thin uniform rods (env.js, the forest thread's) - reported, not touched.
+
+## Round 41 (low sun rim; moss collar on the roof limb)
+- Dawn / dusk looked like noon in a darker key. D.sunU (the shadow sun's world dir + a warm colour that exists only while the sun is low, less in rain) drives a warm rim on the bark (|treedress19) and the leaf clumps (|tdRim6). It scales reflectedLight.directDiffuse at lights_fragment_end, so it only shows where the sun really reaches (no glow in shade or at night).
+- Roof limb (Tree rounded it and cut the slates, d0caa2f / 5f4b73b): a damp moss collar on the bark just above the bedroom roof slope (roofY ~ 13.38 - .87|x+2.2|, box x -3..-0.3, z .8..3.5), ragged by noise. Placed after the tdBW beam-bite cut (the ridge beam bite was erasing it) and coloured again in the normal block (Tree's map code washes greens to brown). Subtle olive, matte.
+
+## Round 42 (autumn detail)
+- Already in place: per-card autumn colours mixed inside the clumps (tree.js sprigs: ~17%+ gold / orange / rust, more on clump edges and the top-right), and Wind's falling leaves (a leaf every ~5 s in calm, flurries in gusts, event-driven, land on decks / pond).
+- Gap fixed (wind.js, falling-leaf canvas only): the falling leaf was a smooth one-colour feather shape. Now an oak leaf: 5 rounded lobes a side with deep sinuses, stalk, side veins, lighter centre / darker rim, two faint dry spots; 128 px canvas, white-based so the instance colours still tint it. Same mesh, same draw call.
+
+## Round 43 (fresh phone sweep vs photo: night roots)
+- Phone home view day / dusk / night / rain vs the photo. Most visible in my area: at night the roots sank into one flat dark mass; in the photo each root reads as its own rounded limb with a cool moonlit top ridge and dark flanks.
+- New global tdRT (root tops: up-facing, rd 1.7-2.8+, below y ~2) and a cool moonlight emissive on them at night only, broken by the bark ridges (tdH), less on moss. Key |treedress20. No draw calls.
