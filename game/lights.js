@@ -729,7 +729,8 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // outdoor lanterns reach further. Lit with a soft wrap toward the source, so the bark keeps its relief.
   const wgSrc = wgWins.map(w => ({ p: w.glowAt, r: 3.4, k: () => Math.min(1, warm[w.room] || 0) * 4.5 * (w.leak ?? 1) }));
   for (const [room, R] of Object.entries(ROOMS)) wgSrc.push({ p: R.c, r: 5.5, k: () => Math.min(1, warm[room] || 0) * 3.2 * (1 - .7 * lockK) });
-  for (const [n, r, I] of [['landing', 3.6, 6], ['door', 3.2, 5]]) { const s0 = src.get(n); if (s0) wgSrc.push({ p: s0.pos, r, k: () => s0.level * I }); }
+  /* tighter (were 3.6 m and 3.2 m): on phones this glow alone painted the whole lower trunk orange from the ladder to the lantern, the door's warm pool stopped being a pool (Env, coordinator: ~35% of the bark by the door; base fill 57%, the door light 8%) */
+  for (const [n, r, I] of [['landing', 2.1, 6], ['door', 1.9, 6]]) { const s0 = src.get(n); if (s0) wgSrc.push({ p: s0.pos, r, k: () => s0.level * I }); }
   wgSrc.length = Math.min(wgSrc.length, WG_N);
   wgSrc.forEach((w, i) => wgP.value[i].set(w.p.x, w.p.y, w.p.z, w.r));
   let wgOn = true; const wgMats = [];
