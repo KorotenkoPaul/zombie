@@ -19,6 +19,7 @@ export function createClimb() {
   const sstep = (a, b, x) => ease((x - a) / (b - a));
   const sine = t => t <= 0 ? 0 : t >= 1 ? 1 : .5 - .5 * Math.cos(Math.PI * t);
   const LIMBS = ['LF', 'RF', 'LH', 'RH'];
+  const hinge = (x, k) => x <= -k ? 0 : x >= k ? x : (x + k) * (x + k) / (4 * k); // max(0, x) with a rounded corner
   const smax = (a, b, k) => (a + b + Math.sqrt((a - b) * (a - b) + k * k)) / 2; // a max with a rounded corner (no velocity step where the two meet)
 
   function init(ctx) {
@@ -180,7 +181,7 @@ export function createClimb() {
     const s = c.s;
     p.x = lerp(A.lad.x, c.P.x, sstep(.75, 1, s)); // from where he stood at the edge (gate: x snapped 12 cm onto the ladder's axis)
     /* going down the body first sinks into a crouch at the edge, and only then goes back over the hole (z first leant him back over the hole, Pavel: "as if falling backwards") */
-    p.y = lerp(c.ys, c.P.y, sstep(.12, .74, s) - (c.dir < 0 ? .16 * ease((.95 - s) / .2) * (1 - ease((.75 - s) / .25)) : 0)); /* going down: a crouch at the edge first (~11 cm), then down with the feet (dropping it all first: the second foot came off the floor above the hips and the knee flipped) */
+    p.y = lerp(c.ys, c.P.y, sstep(.12, .74, s) - (c.dir < 0 ? .16 * S.W * ease((.9 - s) / .2) * (1 - ease((.7 - s) / .25)) : 0)) /* with the IK weight: the feet are held only once it is up (they sank into the boards with the root) */; /* going down: a crouch at the edge first (~11 cm), then down with the feet (dropping it all first: the second foot came off the floor above the hips and the knee flipped) */
     p.z = lerp(A.o.cz, c.P.z, c.dir < 0 ? sstep(.12, .8, s) : sstep(.22, .9, s));
     // clip: standing idle up top, the climb pose on the ladder
     const wantIdle = s > .42; if (wantIdle !== c.idle) { c.idle = wantIdle; if (wantIdle) C.play(C.idle(), { fade: .5 }); else C.play('437', { speed: 0, fade: .5 }); }
@@ -191,6 +192,8 @@ export function createClimb() {
     if (c.dir < 0 && s <= 0) { A.mode = 'climb'; A.y = c.ys; A.C = null; A.limb.LH.w = A.limb.RH.w = 1; return null; }
     return null;
   }
+  function overWin(c, k) { return c.dir < 0 ? (k === c.h ? [.24, .56, .13] : [.42, .8, .18]) : (k === c.h ? [.2, .62, .13] : [.55, .97, .18]); }
+  function overFootE(A, k) { const c = A.C; if (!c) return 0; const [a, b] = overWin(c, k); return sine((c.s - a) / (b - a)); } // 1 = the foot on the boards up there
   function overLimb(A, k) {
     const c = A.C, s = c.s, L = A.limb[k];
     if (k[1] === 'H') { // palms on the boards, then (as he stands up) the hands come down beside the thighs under IK: the climb clip's raised
@@ -204,7 +207,7 @@ export function createClimb() {
       const out = sh.clone().sub(hp).setY(0); if (out.lengthSq() > 1e-6) out.normalize();
       const hang = sh.clone().add(V(0, -.5, 0)).addScaledVector(out, .1); /* clear of a tool hung on the hip (gate: forearm 2 cm through the belt hammer at bl_t / kh_t) */ hang.z -= A.zDir * .03;
       const q = f.lerp(hang, e); q.addScaledVector(out, Math.sin(Math.PI * e) * .06); return q; }
-    const [a, b, lift] = c.dir < 0 ? (k === c.h ? [.24, .56, .13] : [.42, .8, .18]) : (k === c.h ? [.2, .62, .13] : [.55, .97, .18]); // going down a foot leaves the floor only once the body is low enough to reach the rung
+    const [a, b, lift] = overWin(c, k); // going down a foot leaves the floor only once the body is low enough to reach the rung
     const e = sine((s - a) / (b - a)); const from = restTarget(A, k, L.r), to = c.FF[k];
     // up first, then over the edge, then down onto the boards (a straight line clipped the floor's edge beam: gate, feet 5 cm into it)
     const eh = sine((e - .25) / .75), ev = sine(e / .75); /* gentle and overlapping (gate: foot and knee jumps stepping onto the boards) */ const q = from.clone().lerp(to, eh); q.y = lerp(from.y, to.y, ev) + Math.sin(Math.PI * e) * lift; return q;
@@ -377,7 +380,7 @@ export function createClimb() {
       // with the palms on the floor above he leans over the edge (neck over the top of the ladder)
       { const flat = (A.limb.LH.r >= A.R.length || A.limb.RH.r >= A.R.length) && (A.mode === 'over' || wp(B.Neck).y > A.o.yTop - .05); const want = flat ? .06 : !B.HeadTop_End && A.mode === 'climb' && A.limb.LF.r < 0 && A.limb.RF.r < 0 ? .22 : !B.HeadTop_End ? .19 : .17; /* the big head: 2 cm more room on the way up too (its brow touched the kh rungs while the body waited for the hands) */ /* standing at the foot of the ladder the original hero's big head (brow ~14 cm in front of the head bone) leant into the rung at head height: neck 5 cm further off until a foot is on a rung */ /* leaning over the edge only with the neck above it (below it the chest hit the rungs and the body was pushed back into a crouch) */ A.ndw = A.ndw == null ? want : A.ndw + (want - A.ndw) * Math.min(1, dt * 4); A.nd = A.nd == null ? want : A.nd + Math.sign(A.ndw - A.nd) * Math.min(Math.abs(A.ndw - A.nd), dt * (A.ndw > A.nd ? .8 : .5)); /* away from the rungs faster (the quicker descent brought the big head onto the top rungs at kh while it was still leaning over the edge) */ /* the target eased first: a step in it gave the linear ramp a hard start and stop (gate: P3 jumps) */ }
       if (A.mode !== 'over' || A.C.s < .85) { const kk = S.W * ease(A.grab) * (A.mode === 'over' ? 1 - sstep(.45, .85, A.C.s) : A.mode === 'land' ? 1 - sstep(0, .6, A.lt) : 1); /* stands up straight while stepping back (gate: 44 deg forward lean walking off) */
-        const hOff = A.mode === 'over' ? (wp(B.Hips).z - planeZ) * A.zDir : 0; const nd = A.mode === 'over' ? Math.min(A.nd, hOff - .08) : A.nd; /* over the edge the neck stays in front of the hips (a neck target fixed to the rung plane leant him back over the hole) */
+        const hOff = A.mode === 'over' && A.C.dir < 0 ? (wp(B.Hips).z - planeZ) * A.zDir : 0; const nd = A.mode === 'over' && A.C.dir < 0 ? A.nd - hinge(A.nd - (hOff - .08), .06) : A.nd; /* a rounded min (a hard one jerked the head where the two met), exactly A.nd away from it (no step back on the rungs) */ /* over the edge the neck stays in front of the hips (a neck target fixed to the rung plane leant him back over the hole) */
         for (const [bn, part] of [['Spine', .5], ['Spine1', 1]]) { const nk = wp(B.Neck); const dz = (nk.z - planeZ) * A.zDir - nd; if (Math.abs(dz) < .005) break;
           const goal = nk.clone(); goal.z -= A.zDir * dz * part; C.turnBone(B[bn], nk, goal, kk); } }
       // keep the chest and head off the rungs: the body leans back from the ladder if they come too close
@@ -423,7 +426,7 @@ export function createClimb() {
         if (hold > 0) { const h = wp(B[s + 'UpLeg']), ax = wp(B[s + 'Foot']).sub(h); if (ax.lengthSq() > 1e-4) { ax.normalize(); const pr = v => v.addScaledVector(ax, -v.dot(ax)); const kc = pr(wp(B[s + 'Leg']).sub(h)), kp = pr(A.kn0[s].clone());
           if (kc.lengthSq() > 1e-6 && kp.lengthSq() > 1e-6) { kc.normalize(); kp.normalize(); const ang = Math.atan2(kc.clone().cross(kp).dot(ax), kc.dot(kp)); rotWorld(B[s + 'UpLeg'], ax, ang * hold); } } } }
       const F = B[s + 'Foot'], Tb = B[s + 'ToeBase'];
-      if (F && Tb) { const a = wp(F), toe = wp(Tb); const onFl = A && A.mode !== 'over' && A.limb[s[0] + 'F'].r < 0 && !(A.step && A.step.move.some(m => m.k === s[0] + 'F')); const dd = M.ankFloor - M.toeFloor; A.flE = A.flE || {}; const fk = s[0] + 'F'; A.flE[fk] = A.flE[fk] == null ? (onFl ? 1 : 0) : A.flE[fk] + ((onFl ? 1 : 0) - A.flE[fk]) * Math.min(1, dt * 6); const d = V(0, -M.footUp, -zDir * M.footH).lerp(V(0, -dd, -zDir * Math.sqrt(Math.max(0, M.footUp * M.footUp + M.footH * M.footH - dd * dd))), A.flE[fk]); /* flat on the boards, the ball on a rung (eased: no ankle snap at the step) */
+      if (F && Tb) { const a = wp(F), toe = wp(Tb); const onFl = A && (A.mode === 'over' ? overFootE(A, s[0] + 'F') >= 1 : A.limb[s[0] + 'F'].r < 0 && !(A.step && A.step.move.some(m => m.k === s[0] + 'F'))); /* over the edge too: a foot still on the boards up there is flat (ball-on-rung aim put the toes 4 cm into the boards while he crouched at the edge) */ const dd = M.ankFloor - M.toeFloor; A.flE = A.flE || {}; const fk = s[0] + 'F'; A.flE[fk] = A.flE[fk] == null ? (onFl ? 1 : 0) : A.flE[fk] + ((onFl ? 1 : 0) - A.flE[fk]) * Math.min(1, dt * 6); const d = V(0, -M.footUp, -zDir * M.footH).lerp(V(0, -dd, -zDir * Math.sqrt(Math.max(0, M.footUp * M.footUp + M.footH * M.footH - dd * dd))), A.flE[fk]); /* flat on the boards, the ball on a rung (eased: no ankle snap at the step) */
         // a real ankle: the toes point away from the calf side of the shin (the hip side), whatever the leg does when it folds deep
         // over the edge (gate: 'knee bent the wrong way' when the toes swung to the hip side of a near-level shin)
         const kn = wp(B[s + 'Leg']), hp = wp(B[s + 'UpLeg']); const sh = a.clone().sub(kn).normalize(); const o = hp.clone().sub(kn); o.addScaledVector(sh, -o.dot(sh));
