@@ -753,11 +753,11 @@ uniform float tdCool;` + NOISE)
     // door was bare). Own rng stream so nothing placed after this moves. On the real carved triangles beside the jambs.
     D.doorMoss = 0;
     if (C.door) { const dr = C.door, RD = rng(7071), hw = dr.w / 2;
-      const beside = sampler(q => { if (q.n.y < 0.4 || q.c.y < dr.y0 - 0.15 || q.c.y > dr.y0 + 0.18) return false; /* the threshold corners only, on bark that faces up */ const r = radial(q.c.x, q.c.z);
+      const beside = sampler(q => { if (q.n.y < 0.75 || q.c.y < dr.y0 - 0.15 || q.c.y > dr.y0 + 0.18) return false; /* the threshold corners only, on bark that faces up */ const r = radial(q.c.x, q.c.z);
         const lat = Math.abs(angDiff(Math.atan2(q.c.z - AZ, q.c.x - AX), doorAng)) * r; return lat > hw + 0.07 && lat < hw + 0.4; }, RD);
       for (let k = 0; k < 60 && D.doorMoss < NDOOR; k++) { RSEED(586000 + k); const s = beside(); if (!s) break; const { p } = s;
         if (inBox(avoid, p.x, p.y, p.z, 0.02)) continue;
-        const sz = 0.035 + RD() * 0.05; M4.compose(p.clone().addScaledVector(s.n, -sz * 0.2), orient(s.n, RD() * 6.28), S.set(sz * (1.1 + RD() * 0.4), sz * (0.45 + RD() * 0.2), sz)); im.setMatrixAt(n, M4);
+        const sz = 0.025 + RD() * 0.03; M4.compose(p.clone().addScaledVector(s.n, -sz * 0.2), orient(s.n.clone().lerp(UP, 0.5).normalize(), RD() * 6.28), S.set(sz * (1.1 + RD() * 0.4), sz * (0.6 + RD() * 0.2), sz)); /* [eye level round] smaller, domed and only on the near-flat threshold corners: on the 45° flare beside the door 6-9 cm discs stood out of the bare bark like stickers */ im.setMatrixAt(n, M4);
         const v = 0.85 + RD() * 0.3; col.setRGB(0.075 * v, 0.11 * v, 0.03 * v); im.setColorAt(n++, col); D.doorMoss++; } }
     im.count = n; im.receiveShadow = true; D.group.add(im); D.moss = im;
   }

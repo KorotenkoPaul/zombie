@@ -3,7 +3,7 @@ const LIMITS={
  dt:1/60,
  // penetration of the skin into solid things, cm (soft = mattress/quilt/pillow, seat = chair/stool top)
  pen:{head:1,handL:1.5,handR:1.5,feet:1,shins:1.5,hips:1.5,arms:1.5,torso:1.5},
- penSoft:3,penSeat:2,penPillow:6, // lying: head/body sinking into pillow and mattress
+ penSoft:3,penSeat:2,penPillow:6,penEdgeHand:7,/* sitting on the bunk edge, a palm pushing on the mattress edge under the hanging quilt */ // lying: head/body sinking into pillow and mattress
  jumpCm:2.5,       // a joint moves this much more in one frame than its neighbours' trend (second difference)
  rootJumpCm:1.2,   // same for the root
  yawStepDeg:6,     // root turns more than this in one frame (>360 deg/s)
@@ -49,7 +49,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   // Allowed for hands/feet against thin bars (two sizes <= 8 cm: rungs, rails, ropes) or near a known rung, up to lim.gripCm; a shin or arm through it still counts
   if(f.fl.includes('L')&&/^(handL|handR|feet)$/.test(G)){const mm=nm.match(/ (\d+)x(\d+)x(\d+)cm/);const thin=mm&&[+mm[1],+mm[2],+mm[3]].filter(v=>v<=8).length>=2;
    const nearRung=pos&&(D.rungs||[]).some(r=>{const v=[pos[0]-r.c[0],pos[1]-r.c[1],pos[2]-r.c[2]];const t=Math.max(-r.h,Math.min(r.h,v[0]*r.d[0]+v[1]*r.d[1]+v[2]*r.d[2]));return Math.hypot(v[0]-r.d[0]*t,v[1]-r.d[1]*t,v[2]-r.d[2]*t)<.06;});
-   if(thin||nearRung)tol=Math.max(tol,lim.gripCm);}if(SOFT.test(nm))tol=Math.max(tol,lim.penSoft);if(SOFT.test(nm)&&(f.fl.includes('B')||f.fl.includes('W'))&&pos&&pos[1]<f.root[1]+.6)tol=Math.max(tol,lim.penPillow);if(SEAT.test(nm)&&(G==='hips'||G==='shins'))tol=Math.max(tol,lim.penSeat);
+   if(thin||nearRung)tol=Math.max(tol,lim.gripCm);}if(SOFT.test(nm))tol=Math.max(tol,lim.penSoft);if(SOFT.test(nm)&&f.fl.includes('S')&&/^hand|^arms/.test(G))tol=Math.max(tol,lim.penEdgeHand);if(SOFT.test(nm)&&(f.fl.includes('B')||f.fl.includes('W'))&&pos&&pos[1]<f.root[1]+.6)tol=Math.max(tol,lim.penPillow);if(SEAT.test(nm)&&(G==='hips'||G==='shins'))tol=Math.max(tol,lim.penSeat);
   if(cm>tol)pen.push({i,G,nm,cm,pos,tol});}));
  // merge into events: same body part + same object, gaps < 0.3 s
  const ev={};for(const q of pen){const k=q.G+'|'+q.nm.replace(/#\d+/,'#');const e=ev[k]&&ev[k][ev[k].length-1];

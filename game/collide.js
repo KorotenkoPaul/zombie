@@ -282,6 +282,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   }
   const BEDS = (P3 && P3.surfaces && P3.surfaces.bed) || [];
   const onBed = p => { for (const L of BEDS) if (p.x > L.x0 - .02 && p.x < L.x1 + .02 && p.z > L.z0 - .02 && p.z < L.z1 + .02 && p.y < L.top + .2) return true; return false; };
+  const mattressAt = p => { for (const L of BEDS) if (p.x > L.x0 - .03 && p.x < L.x1 + .03 && p.z > L.z0 - .03 && p.z < L.z1 + .03 && p.y > L.top - .12 && p.y < L.top + .3) return true; return false; };
   const inBedEdge = p => { for (const L of BEDS) if (p.x > L.x0 - .03 && p.x < L.x1 + .03 && p.z > L.z1 - .08 && p.z < L.z1 + .04 && p.y > L.top - .10 && p.y < L.top + .03) return true; return false; };
   // deepest shape at p: returns depth beyond the allowance for this body part, OUT.n = way out
   const nB = V();
@@ -303,6 +304,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       if (s.flat && (part === 3 || part === 4) && p.y < root.position.y + .06 && s.c.y < root.position.y + .03) continue; const d = depth(s, p); if (d <= 0) continue;
       let allow = part === 3 ? ALLOW.feet : ALLOW.hard;
       if (s.cls >= 2) allow = (lying && p.y < root.position.y + .6) ? ALLOW.pillow : ALLOW.soft;
+      // UPPER BUNK (gate: the head 3.1 cm into the upper bunk's underside while seated taking the boots off, hands 4 cm in its edge while
+      // sweeping): the bunk bed is one soft grid, but only its mattress (and pillow, quilt) gives; the frame, rails and the upper bunk's
+      // underside are wood. Soft only from 12 cm under a bed level's top to 30 cm over it, inside its outline. Old: __colX.softBunk
+      if (s.cls >= 2 && BEDS.length && /bunk/i.test(s.name) && !mattressAt(p) && !(window.__colX && window.__colX.softBunk)) allow = part === 3 ? ALLOW.feet : ALLOW.hard;
       else if (s.cls === 1 && (part === 4 || part === 5)) allow = ALLOW.seat;
       const ex = d - allow; if (ex > best) { best = ex; nB.copy(OUT.n); }
     }
@@ -378,6 +383,11 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     { A: bones.LeftArm, B: bones.LeftForeArm, C: bones.LeftHand }, { A: bones.RightArm, B: bones.RightForeArm, C: bones.RightHand },
     { A: bones.LeftUpLeg, B: bones.LeftLeg, C: bones.LeftFoot }, { A: bones.RightUpLeg, B: bones.RightLeg, C: bones.RightFoot }];
   const SPINE = ['Spine', 'Spine1', 'Spine2', 'Neck'].map(n => bones[n]).filter(Boolean), SPF = [.3, .45, .65, 1];
+  // LADDER HEAD (gate: orig/new 30+ frames, the head 3.4 cm into the bedroom floor's rim beam at the ladder top, the kitchen hatch beam):
+  // on a ladder the head bends away too (the neck only, the hands stay where climb.js holds them on the rungs). Old: __colX.noLadHead
+  const ladHead = () => hero.lad && !(window.__colX && window.__colX.noLadHead);
+  // on a ladder only the neck turns (the spine stays: bending it moved the shoulders, and putting the hands back on the rungs made them jump 8.7 cm)
+  function bendLad(delta) { if (!ladHead()) { bendHead(delta); return; } const Hd = bones.Head, Nk = bones.Neck; if (!Hd || !Nk) return; const h = Hd.getWorldPosition(V()); turnBone(Nk, h, h.clone().add(delta), 1, .3); }
   function bendHead(delta) { // move the head by delta, shared down the spine
     const Hd = bones.Head; if (!Hd || !SPINE.length) return; const goal = Hd.getWorldPosition(V()).add(delta);
     // each bone turns only a little per call (spine 12 deg, neck 20 deg): with its short lever the neck took the whole remainder
@@ -462,7 +472,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     if (!hold[0]) off.root.multiplyScalar(rel); if (!hold[1]) off.head.multiplyScalar(rel); for (let c = 2; c < 6; c++) if (!hold[c]) off.limb[c].multiplyScalar(c >= 4 ? relFoot : rel);
     const fit = !!hero.fit, lying = !!(hero.inBed || hero.swing);
     root.position.add(off.root); applied.copy(off.root); root.updateMatrixWorld(true);
-    if (off.head.lengthSq() > 1e-8) bendHead(off.head);
+    if (off.head.lengthSq() > 1e-8) bendLad(off.head);
     for (let c = 2; c < 6; c++) { const L = LIMB[c]; if (!L.C) continue; L.C.getWorldPosition(anim[c]); if (off.limb[c].lengthSq() > 1e-8) ik2(L.A, L.B, L.C, anim[c].clone().add(off.limb[c]), c >= 4); }
     skin(1 | 16 | 32); if (!(window.__colX && window.__colX.noHeld)) heldVsBody(dt); // the carrying arm first (against the legs and body), so the checks below see it where it is
     let it = 0, worst = 0, liveMask = 0;
@@ -507,9 +517,9 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4 && OUT.n.y >= .5 && !fit && !lying) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
       // on a ladder the climb (climb.js) owns the hands on the rails (collide's hand pushes were jumps on the pull-up); a foot is still lifted out of a rung
-      if (hero.lad) { pd[0] = pd[1] = 0; if (!(window.__colX && window.__colX.oldLad)) pd[2] = pd[3] = 0; anyP = pd.some(v => v > 0); }
+      if (hero.lad) { pd[0] = 0; if (!ladHead()) pd[1] = 0; if (!(window.__colX && window.__colX.oldLad)) pd[2] = pd[3] = 0; anyP = pd.some(v => v > 0); }
       // climb.js IK owns the feet too while it holds the ladder (balls of the feet stand on the rungs): lifting them out left the toes 4 cm off (gate ladder-grip)
-      { const CL = window.__climb; if (hero.lad && CL && CL.active && CL.weight > .5) { pd.fill(0); anyP = false; } }
+      { const CL = window.__climb; if (hero.lad && CL && CL.active && CL.weight > .5) { const h = ladHead() ? pd[1] : 0; pd.fill(0); pd[1] = h; anyP = h > 0; } }
       for (const c of [0, 1]) if (sumW[c] > 0) push[c].copy(sumN[c]).multiplyScalar(1 / sumW[c]).multiplyScalar(pd[c] + .001);
       // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall); a sole is
       // only lifted straight up out of a board (never moved sideways); arms and head give way. Walking into things is the walk graph's job.
@@ -529,7 +539,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       if (pd[1] > 0) {
         // the head bends at most 12 cm in total; at that limit it stays put (bending first and capping after snapped back every frame)
         const want = off.head.clone().add(push[1]); if (want.length() > .12) want.setLength(.12); const d = take(1, want.sub(off.head)); const carry = [2, 3].map(c => LIMB[c].C ? LIMB[c].C.getWorldPosition(V()) : null);
-        bendHead(d); off.head.add(d);
+        bendLad(d); off.head.add(d);
         [2, 3].forEach((c, i) => { if (carry[i]) anim[c].add(LIMB[c].C.getWorldPosition(V()).sub(carry[i])); });
       }
       for (let c = 2; c < 6; c++) { if (pd[c] <= 0) continue; const L = LIMB[c]; if (!L.C) continue; const want = off.limb[c].clone().add(push[c]); const cap = c < 4 ? .07 : .1; if (want.length() > cap) want.setLength(cap); const d = take(c, want.sub(off.limb[c])); if (d.lengthSq() < 1e-10) continue; off.limb[c].add(d); ik2(L.A, L.B, L.C, anim[c].clone().add(off.limb[c]), c >= 4); }
