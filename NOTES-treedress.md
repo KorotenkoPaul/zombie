@@ -155,3 +155,24 @@ Debug: `__treedress.stats()`.
   - A future difference in the blockers now changes only that one candidate.
   - This changes the current layout once; the look is statistically the same.
 - **Verified.** Instance positions are identical across loads: phone 3 loads, desktop 2 loads. That covers moss, ivy, litter, ferns, hanging and the board leaves.
+
+## Round 23: bark close-up (1.4 m zoom)
+- **Moss cushions.** The stem bump now uses the noise's analytic gradient (`td_nd`) instead of screen derivatives, so it is no longer blocky pixel camouflage up close. Key: `tdMossCushion6`.
+- **Phone bark when the camera is near the trunk** (tdNear, a uniform branch). Key: `|treedress7`.
+  - The fine octave's normal map replaces the screen-derivative micro bump, which drew sandpaper grain on sunlit roots.
+  - A second macro read at 15/11 scale breaks the roughly 1.8 m repeat, as on desktop.
+  - Cost: 2 extra triplanar reads, only while zoomed near.
+- **Desktop lichen** sits on the bark ridges (tdH), so the furrows break its rim; it no longer reads as a sticker.
+
+## Round 24: the cork speckle on the sunlit roots
+- **Cause.** Found by layer debugging (an albedo capture at each stage).
+  - It was not the bark map's colour. It came from tree.js's limb-groove shading, which reached the roots (dT > 3.3 m, at any height) and took its phase from the shading normal.
+  - That normal already carries treedress's bark normal map, so its pores turned the grooves into a cork speckle.
+- **Fix (tree.js, one factor).** The limb grooves now start above y 1.8–3 m. Roots keep treedress's own triplanar furrows.
+  - The home view loses the dark painted groove lines on the front roots; they read smoother, like the photo.
+- **treedress.**
+  - Root relief eases back towards the trunk's within about 5 m of the camera (spkN).
+  - The phone moss breakup uses a world noise instead of the map's cork channel within 6 m.
+  - Key: `|treedress8`.
+- **Night and rain walk** (door, door side and ladder root): nothing painted-looking found in treedress.
+  - One thing for Env: a straight horizontal seam crosses the ladder root at about 1 m. It is the low fog sheet, not the bark.
