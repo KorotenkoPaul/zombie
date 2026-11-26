@@ -114,3 +114,22 @@ Debug: `__treedress.stats()`.
 - Door: moss in the threshold corners beside the jambs (DOORP passed in from index.html as C.door; own rng(7071), sampler/pointOn take an rng so the main stream and every later placement are unchanged). 10 desktop / 6 phone slots reserved in the moss mesh.
 - Root cushions: taller domes (y*1.35, sunk less). The coarse stem bump drew dark worm stripes, so it is weaker now (aM*.4) and soft mottling (td_f 41) is added on every cushion.
 - Budget (tests/perf/budget.js): origin/master was already OVER on "day home" (alpha 1.51) and "night yaw limit" (454k). This round adds about 1k tris on the phone.
+
+## Round 19: draw calls and wet moss and ivy
+- **Phones, one draw fewer.** The root-pocket leaves are baked into Ground's litter mesh at runtime instead of being their own instanced mesh.
+  - Ground's atlas grows from 3 cells to 4: its own cells keep their texels, because every u on its litter and skitter leaves is scaled by 3/4.
+  - The new cell is painted from `leaf2-128.png`, because the phone's `leaf2` is a KTX2 that can't be drawn into a canvas. The image loads after start; until then the old mesh draws.
+  - Guarded: the bake runs only if the atlas is 384×128 and the litter has exactly Ground's 6 attributes, otherwise nothing changes. `__treedress.litterMerged` reports the result.
+  - Desktop keeps its own mesh.
+- **Phones now get ivy stems** (`ivyStemsBaked`). They are baked into the same litter mesh on the white atlas cell, so they cost no draw; before this, the vines' leaves on phones floated without stems.
+- **Rain.**
+  - Moss: the cushions get a wet sheen while it rains (the tips more than the hollows) and the earth humps soak darker. Key: `tdMossCushion5`.
+  - Ivy and ferns: they darken a little when soaked and glisten in rain, using the same `barkU.wet`/`damp` uniforms as the bark. Key suffix: `|tdWet1`.
+
+## Round 20: wind
+- **Ferns** now sway with Wind's shared `windSway` (freq 1.5), so the same gust front that moves the crown reaches them too.
+  - Calm: about 1 cm at the frond tip. Breeze: about 3 cm. Gust: about 13 cm.
+  - On top of that, a faint leaflet shiver that grows with the gust.
+- **Grass tufts** now read Wind as well (`windSway` freq 1.7, like Ground's grass), via `mat.userData.wind`, which makes swayMat call `W.hook`.
+- **Ivy** (FLUTTER, windSway 2.6) and the **hanging lichen** (windRope + windBranch) already used Wind; they are unchanged.
+- The old sine sway stays as a `#else` fallback for when Wind is missing. No new draws.
