@@ -452,9 +452,9 @@ function basket() { const g = new THREE.Group();
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), r = Math.hypot(x, z); if (y < .055 || y > .305 || r < .195) continue; const a = Math.atan2(z, x);
       const row = Math.floor((y - .055) / .016), fy = ((y - .055) / .016) % 1, ph = a * 9 / Math.PI + (row % 2) * 1; // 18 stakes
       const k = 1 + .028 * Math.max(0, Math.sin(ph * Math.PI)) * Math.sin(fy * Math.PI) - .012 * (fy < .12 || fy > .88 ? 1 : 0); P.setX(i, x * k); P.setZ(i, z * k); }
-    lg.computeVertexNormals(); add(g, lg, M.weave); } add(g, new THREE.TorusGeometry(.218, .018, 6, 36), M.weave, 0, .34, 0, Math.PI / 2);
+    lg.computeVertexNormals(); add(g, lg, M.weave); } add(g, new THREE.TorusGeometry(.218, .018, 5, 36), M.weave, 0, .34, 0, Math.PI / 2);
   // a checked cloth thrown over the contents: humped over what is inside, sagging over the rim in soft folds (was a smooth white dome)
-  { const cg = new THREE.PlaneGeometry(.52, .52, 26, 26); cg.rotateX(-Math.PI / 2); const P = cg.attributes.position;
+  { const cg = new THREE.PlaneGeometry(.52, .52, 18, 18); /* [PROPS perf] 26 -> 18 */ cg.rotateX(-Math.PI / 2); const P = cg.attributes.position;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), a = Math.atan2(z, x); let y;
       if (r < .2) y = .345 + .07 * (1 - Math.pow(r / .2, 2)) + .01 * Math.sin(x * 40) * Math.sin(z * 33);
       else { const o = r - .2; y = .345 - Math.min(.13, o * 1.4) + .012 * Math.sin(a * 7 + 1) * Math.min(1, o / .05); const k = (.226 + o * .3) / r; /* a short skirt over the rim, never down to the floor */ P.setX(i, x * k); P.setZ(i, z * k); } P.setY(i, y); }
@@ -848,7 +848,7 @@ function workbench() {
   // things on the lower shelf
   { const b = new THREE.Group(); b.position.set(.35, .23, 0); g.add(b); W(b, .36, .14, .22, 0, .07, 0, { mat: M.woodDark }); add(b, new THREE.CylinderGeometry(.01, .01, .3, 8), M.iron, 0, .2, 0, 0, 0, Math.PI / 2); for (const s of [-1, 1]) W(b, .02, .2, .02, s * .15, .15, 0, { mat: M.woodDark, grain: 1 }); }
   { const t = nailTin(); t.position.set(-.4, .228, .02); g.add(t); } /* Critic P10: was a bare steel puck that glowed at night */
-  { const parts = []; let sd = 7; const rn = () => (sd = (sd * 16807) % 2147483647) / 2147483647; for (let i = 0; i < 150; i++) { const a = rn() * 6.28, d = rn() * rn() + .15 * rn(), q = new THREE.BoxGeometry(.004 + rn() * .007, .0015 + rn() * .002, .004 + rn() * .007); q.rotateY(rn() * 3); q.translate(-L / 2 + .32 + Math.cos(a) * d * .2, .001 + Math.max(0, .5 - d) * .012 * rn(), D / 2 - .1 + Math.sin(a) * d * .13); parts.push(q); } add(g, mergeGeometries(parts), std2(0xC9A878), 0, 0, 0); } // front vice at the left end. [PROPS] sawdust on the floor under the cut, mostly under the top's front edge where his feet never go: flat loose crumbs (own seeded stream: the shared random stream stays as it was; merged, no draw call)
+  { const parts = []; let sd = 7; const rn = () => (sd = (sd * 16807) % 2147483647) / 2147483647; for (let i = 0; i < 150; i++) { const a = rn() * 6.28, d = rn() * rn() + .15 * rn(), q = new THREE.PlaneGeometry(.004 + rn() * .007, .004 + rn() * .007); rn(); q.rotateX(-Math.PI / 2); q.rotateY(rn() * 3); /* [PROPS perf] flat flakes (2 tris) instead of boxes (12): 1.8k -> 300 tris */ q.translate(-L / 2 + .32 + Math.cos(a) * d * .2, .001 + Math.max(0, .5 - d) * .012 * rn(), D / 2 - .1 + Math.sin(a) * d * .13); parts.push(q); } add(g, mergeGeometries(parts), std2(0xC9A878), 0, 0, 0); } // front vice at the left end. [PROPS] sawdust on the floor under the cut, mostly under the top's front edge where his feet never go: flat loose crumbs (own seeded stream: the shared random stream stays as it was; merged, no draw call)
   { const v = new THREE.Group(); v.position.set(-L / 2 + .22, H - .06, D / 2); g.add(v); add(v, rb(.24, .11, .05, .01), M.iron, 0, -.02, .025); W(v, .26, .1, .045, 0, -.02, .08, { mat: M.woodDark }); add(v, new THREE.CylinderGeometry(.014, .014, .18, 10), M.steel, 0, -.03, .14, Math.PI / 2); add(v, new THREE.CylinderGeometry(.01, .01, .22, 8), M.steel, 0, -.03, .23, 0, 0, Math.PI / 2); for (const s of [-1, 1]) add(v, new THREE.SphereGeometry(.018, 10, 8), M.steel, s * .11, -.03, .23); }
   // on top: plans, a tin of screwdrivers, a box of nails, a block plane
   add(g, new THREE.PlaneGeometry(.42, .3), M.plan, -.05, H + .002, .05, -Math.PI / 2, 0, .12);
@@ -869,18 +869,18 @@ function stool(S = .48) { const g = new THREE.Group(); add(g, lathe([[0, 0], [.1
   for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; const l = add(g, new THREE.CylinderGeometry(.022, .018, S - .03, 10), M.woodDark, Math.cos(a) * .12, (S - .03) / 2, Math.sin(a) * .12); l.rotation.set(Math.sin(a) * .13, 0, -Math.cos(a) * .13); }
   const ring = add(g, new THREE.TorusGeometry(.14, .011, 6, 28), M.woodDark, 0, .17, 0, Math.PI / 2); void ring; bake(g); g.userData.info = { seat: S }; return g; }
 // ---- tools: built with their handle along +y and the grip point at the origin region ----
-const EX = (sh, depth, bev = .003) => { const e = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelSize: bev, bevelThickness: bev, bevelSegments: 1, curveSegments: 6 }); e.translate(0, 0, -depth / 2); return e; };
+const EX = (sh, depth, bev = .003, cs = 6) => { const e = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelSize: bev, bevelThickness: bev, bevelSegments: 1, curveSegments: cs }); e.translate(0, 0, -depth / 2); return e; };
 function roundRect(w, h, r) { const s = new THREE.Shape(); s.moveTo(-w / 2 + r, -h / 2); s.lineTo(w / 2 - r, -h / 2); s.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r); s.lineTo(w / 2, h / 2 - r); s.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2); s.lineTo(-w / 2 + r, h / 2); s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r); s.lineTo(-w / 2, -h / 2 + r); s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2); return s; }
 function wrench(len = .26) {
   const g = new THREE.Group(); const R0 = len * .12, t = len * .05, hw = len * .095;
   // open jaw head at the top
   const s = R0 * .42, yt = Math.sqrt(R0 * R0 - s * s); const head = new THREE.Shape(); head.moveTo(s, yt); head.absarc(0, 0, R0, Math.atan2(yt, s), Math.atan2(yt, -s), true); head.lineTo(-s, -R0 * .05); head.absarc(0, -R0 * .05, s, Math.PI, 2 * Math.PI, false); head.lineTo(s, yt);
-  add(g, EX(head, t), M.steel, 0, len / 2, 0, 0, 0, .3);
+  add(g, EX(head, t, .003, 6), M.steel, 0, len / 2, 0, 0, 0, .3); /* [PROPS perf] fewer curve steps: 866 -> ~400 tris a spanner, 8 of them, a few px each */
   // box end with a hole at the bottom
   const ring = new THREE.Shape(); ring.absarc(0, 0, R0 * .82, 0, Math.PI * 2, false); const hole = new THREE.Path(); hole.absarc(0, 0, R0 * .48, 0, Math.PI * 2, true); ring.holes.push(hole);
-  add(g, EX(ring, t * .9), M.steel, 0, -len / 2, 0);
-  add(g, EX(roundRect(hw, len - R0 * 1.6, hw * .45), t * .7), M.steel, 0, 0, 0);
-  add(g, EX(roundRect(hw * .45, len * .5, hw * .2), t * .3, .001), M.chrome, 0, 0, t * .45);
+  add(g, EX(ring, t * .9, .003, 5), M.steel, 0, -len / 2, 0);
+  add(g, EX(roundRect(hw, len - R0 * 1.6, hw * .45), t * .7, .003, 2), M.steel, 0, 0, 0);
+  add(g, EX(roundRect(hw * .45, len * .5, hw * .2), t * .3, .001, 1), M.chrome, 0, 0, t * .45);
   g.userData.grip = V(0, -len * .05, 0); return g;
 }
 function hammer() { const g = new THREE.Group(); add(g, lathe([[0, -.15], [.014, -.15], [.017, -.12], [.015, 0], [.012, .1], [.014, .14], [0, .14]], 14), M.woodRed); add(g, rb(.12, .035, .035, .008), M.iron, .02, .155, 0); add(g, new THREE.CylinderGeometry(.022, .02, .035, 16), M.iron, .085, .155, 0, 0, 0, Math.PI / 2); add(g, new THREE.CircleGeometry(.0205, 16), M.steel, .1035, .155, 0, 0, Math.PI / 2, 0); /* [workshop round] a bright struck face on the black head */
