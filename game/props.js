@@ -417,7 +417,7 @@ function bunkBed() {
     for (const sz of [-1, 1]) W(g, L - 2 * p + .01, .13, .055, 0, y, sz * (D / 2 - .035));
     for (const sx of [-1, 1]) W(g, .055, .13, D - 2 * p + .01, sx * (L / 2 - .035), y, 0);
     for (let i = 0; i < 9; i++) W(g, .13, .022, D - .12, -L / 2 + .16 + i * (L - .32) / 8, y + .03, 0, { mat: M.woodDark, r: 0, grain: 2 }); // slats under the mattress: plain boxes
-    const top = y + .045 + .15; add(g, rb(L - .17, .15, D - .15, .055, 2), M.mattress, 0, y + .045 + .075, 0); { const sh = add(g, rb(L - .162, .022, D - .142, .008), M.linen, 0, top - .009, 0); sh.castShadow = false; } /* [PROPS photo] a sheet over the mattress top, tucked 1.5 cm down its sides: between the quilt and the pillow the bare ticking read unmade */
+    const top = y + .045 + .15; add(g, rb(L - .17, .15, D - .15, .055, 2), M.mattress, 0, y + .045 + .075, 0); { const sh = add(g, rb(L - .23, .022, D - .21, .008), M.linen, 0, top - .009, 0); sh.castShadow = false; } /* [PROPS photo] a sheet over the mattress top, its edge inside the mattress's rounded rim (wider, its sharp edge stuck out between the quilt's puffs as pale spikes): between the quilt and the pillow the bare ticking read unmade */
     // pillow at the head end (+x)
     add(g, pillowGeo(.36, .16, .6), M.linen, L / 2 - .28, top + .05, 0, 0, 0, -.12).castShadow = false;
     // quilt over the foot two-thirds, folded sheet edge at its head
