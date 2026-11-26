@@ -1950,7 +1950,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // nail must be within an arm and a hammer, at a height one of the work poses serves, with room for his body. Brain's pick stays when it
  // qualifies, else the most worn one nearby that does (o.pos / o.target updated, so Brain marks the part he really fixed).
  const PART={shingle:{lo:.75,hi:1.3,st:.88,hs:[1.15,1.4]}/* over a railing: only the head and chest need room */,beam:{lo:.6,hi:1.3,st:.45},wall:{lo:.35,hi:1.4,st:.42},floor:{floor:true}};
- function reachOK(kind,pos){const L=PART[kind];const q=V(...pos);const nn=nearNode(q);if(!nn||!N[nn])return false;const f=N[nn].p;const C=window.__collide;
+ function reachOK(kind,pos){const L=PART[kind];const q=V(...pos);if(kind==='floor'&&!window.__noFurnClear){const r=.72;for(const o of OBST){if(Math.abs(o.y-q.y)>.6)continue;if(q.x>o.x0-r&&q.x<o.x1+r&&q.z>o.z0-r&&q.z<o.z1+r)return false;}}/* a floor board right at a piece of furniture is left for later: he kneels a step back from it, and his bowed head stayed jammed against the chair's back post (watch R67-1) */const nn=nearNode(q);if(!nn||!N[nn])return false;const f=N[nn].p;const C=window.__collide;
   if(L.floor){if(Math.abs(q.y-f.y)>.15)return false;const u=V(f.x-q.x,0,f.z-q.z);if(u.lengthSq()<1e-4)u.set(1,0,0);u.normalize();
    for(const t of [.35,.55,.8]){const x=q.x+u.x*t,z=q.z+u.z*t;const g=floorAt(x,f.y+.3,z,.45,.5);if(g==null||Math.abs(g-f.y)>.1)return false;if(C&&C.depthAt)for(const hy of [.15,.5,.9])if(C.depthAt(x,f.y+hy,z)>.01)return false;}
    if(C&&C.depthAt&&C.depthAt(q.x,f.y+.25,q.z)>.01)return false;return true;}
