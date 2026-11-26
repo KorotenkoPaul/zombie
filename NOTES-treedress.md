@@ -232,3 +232,7 @@ Debug: `__treedress.stats()`.
 ## Round 34 — the trunk base read as pale grey stone
 - Split with Tree (agreed): treedress = colour/tone, Tree = the flare's facets and silhouette. Tree keeps its two map_fragment colour lines as they are while this is tuned.
 - Normal block (after Tree's wash): below ~1-3.2 m (ragged edge), not on moss or inside scars: saturation x1.4, tint (.8,.7,.58), and the photo flutes deepened again (grooves -50 %, ridges +15 %). Key |treedress14. Shader only.
+
+## Round 35 — fresh-eyes review of the whole oak (day, night, rain; phone and desktop)
+- Found: from the home view the root scars read as painted pale ovals and the root knot as a target ring (worst in the rain, with the water glint in the hole). Fix: `sFar` (1 → .38 from 9 to 24 m) scales the scar wood, the lip/crease rings, the knot ring and the lip relief; the knot hole keeps most of its darkness. Root knots smaller (.2 → .16 / .15). The scar on the right root's flat top (3.84, .79, .2) read as a grey puddle: dropped (6 spots live).
+- No conflicts seen between the layers (nails, wet, drips, base tone, flutes) at home distance; night and the desktop view were clean. Key |treedress15.
