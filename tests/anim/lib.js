@@ -21,7 +21,7 @@ const INIT=([seed,KEYS])=>{ // runs before any page script
  const sites=new Map();let perSite=true,base=seed>>>0;
  const keyOf=fr=>{const m=/^\s*at (?:(.*?) \()?(.*?):(\d+):(\d+)\)?$/.exec(fr);if(!m)return fr;let u=m[2];try{u=new URL(u).pathname;}catch(e){}
    const k=KEYS[u]&&KEYS[u][m[3]];return k?u+'#'+k:u+'|'+(m[1]||'')+'|'+m[4];};
- const siteRand=()=>{const st=keyOf(new Error().stack.split('\n')[3]||'');let r=sites.get(st);if(!r){let h=2166136261>>>0;for(let i=0;i<st.length;i++){h^=st.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
+ const siteRand=()=>{const S_=new Error().stack.split('\n');const st=keyOf(S_[3]||'')+'<'+keyOf(S_[4]||'');/* the caller's caller too: a shared helper (rnd/pick in index.html, also used by sounds that only play once audio has decoded, in real time) gave all its users one stream */let r=sites.get(st);if(!r){let h=2166136261>>>0;for(let i=0;i<st.length;i++){h^=st.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
    let z=(h^base)>>>0;r=()=>{z=(z+0x6D2B79F5)>>>0;let t=z;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};sites.set(st,r);}return r();};
  Math.random=()=>perSite?siteRand():rand();
  // While the page loads, the game loop runs on real animation frames but the clock stands still (dt = 0), so the
@@ -38,16 +38,24 @@ const INIT=([seed,KEYS])=>{ // runs before any page script
  let TQ=[],tseq=0;const TB=1e7;
  const vAdd=(f,ms,a,every)=>{const id=TB+(++tseq);TQ.push({id,at:vt+Math.max(0,+ms||0),f,a,every});return id;};
  const vClr=id=>{if(id>TB){TQ=TQ.filter(t=>t.id!==id);return true;}return false;};
- window.setTimeout=(f,ms,...a)=>manual&&typeof f==='function'?vAdd(f,ms,a,0):rST(f,ms,...a);
- window.setInterval=(f,ms,...a)=>manual&&typeof f==='function'?vAdd(f,ms,a,Math.max(1,+ms||0)):rSI(f,ms,...a);
- window.clearTimeout=id=>{if(!vClr(id))rCT(id);};window.clearInterval=id=>{if(!vClr(id))rCI(id);};
+ // timers set while loading run on real time until start(), then move to the virtual clock with the delay they were given
+ // (degWarm's 150 ms setInterval in index.html kept compiling on real time during the run: the gate split by CPU load)
+ const RT=new Map(),R2V=new Map();
+ const realT=(f,ms,a,every)=>{if(typeof f!=='function')return every?rSI(f,ms,...a):rST(f,ms,...a);let id;const g=every?(...x)=>f(...x):(...x)=>{RT.delete(id);f(...x);};id=every?rSI(g,ms,...a):rST(g,ms,...a);RT.set(id,{f,ms,a,every});return id;};
+ const migrate=()=>{for(const [id,t] of RT){if(t.every)rCI(id);else rCT(id);R2V.set(id,vAdd(t.f,t.ms,t.a,t.every?Math.max(1,+t.ms||0):0));}RT.clear();};
+ window.setTimeout=(f,ms,...a)=>manual&&typeof f==='function'?vAdd(f,ms,a,0):realT(f,ms,a,0);
+ window.setInterval=(f,ms,...a)=>manual&&typeof f==='function'?vAdd(f,ms,a,Math.max(1,+ms||0)):realT(f,ms,a,1);
+ window.clearTimeout=id=>{if(R2V.has(id)){vClr(R2V.get(id));R2V.delete(id);return;}RT.delete(id);if(!vClr(id))rCT(id);};window.clearInterval=id=>{if(R2V.has(id)){vClr(R2V.get(id));R2V.delete(id);return;}RT.delete(id);if(!vClr(id))rCI(id);};
  const runTimers=()=>{for(let guard=0;guard<10000;guard++){let bi=-1;for(let i=0;i<TQ.length;i++){const t=TQ[i];if(t.at<=vt&&(bi<0||t.at<TQ[bi].at||(t.at===TQ[bi].at&&t.id<TQ[bi].id)))bi=i;}
    if(bi<0)return;const t=TQ[bi];if(t.every){t.at+=t.every;}else TQ.splice(bi,1);try{t.f(...t.a);}catch(e){console.error('qa timer',e&&e.message);}}};
- window.__qa={reseed(n){s=n>>>0;base=n>>>0;sites.clear();}/* every call site keeps its own stream at run time too (keyed by its line text, reset per reseed): one more random call somewhere (a new mesh's uuid, a rain splash) no longer shifts the brain's dice */,start(){return new Promise(res=>{realRAF(()=>{manual=true;realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
+ // GPU fences (rain.js reads its height map back asynchronously and polls a fence each frame): when the GPU finished
+ // depended on CPU load, so the map arrived on a different frame. In the test every fence is done when first asked.
+ try{if(window.WebGL2RenderingContext)WebGL2RenderingContext.prototype.clientWaitSync=function(){this.finish();return this.ALREADY_SIGNALED;};}catch(e){}
+ window.__qa={reseed(n){s=n>>>0;base=n>>>0;sites.clear();}/* every call site keeps its own stream at run time too (keyed by its line text, reset per reseed): one more random call somewhere (a new mesh's uuid, a rain splash) no longer shifts the brain's dice */,start(){return new Promise(res=>{realRAF(()=>{manual=true;migrate();realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
   align(G){vt=Math.ceil(vt/G)*G;return vt;},/* gate: every task starts on the same virtual time, so things that run on time (lantern sway, camera, sprites) start each task in the same phase */step(n,dt,each){for(let i=0;i<n;i++){vt+=dt*1000;runTimers();const cb=q;q=[];for(const c of cb)c(vt);this.frame++;if(each)each(this.frame);}}};
 };
 async function open({seed=1,vp={width:640,height:640},log=false,query=''}={}){
- const b=await chromium.launch({args:['--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader','--ignore-gpu-blocklist']});
+ const b=await chromium.launch({args:['--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader','--ignore-gpu-blocklist'].concat(process.env.QA_JSFLAGS?['--js-flags='+process.env.QA_JSFLAGS]:[])});
  const p=await b.newPage({viewport:vp,deviceScaleFactor:1});p.setDefaultTimeout(600000);
  const errs=[];p.on('pageerror',e=>errs.push('PE '+e.message));p.on('console',m=>{if(m.type()==='error')errs.push(m.text().slice(0,200));if(log)console.log('[page]',m.text().slice(0,200));});
  await p.addInitScript(INIT,[seed,siteKeys()]);

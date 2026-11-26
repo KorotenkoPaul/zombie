@@ -412,12 +412,12 @@ export function createHero(ctx){
  function ttCarryLow(){/* a bucket / sack hanging from the hand at knee height: stepping round swung the shins into it (fetchwater, dumpwater, cook) */const T=PP()&&PP().tools;if(!T)return false;const hy=bones.Hips.getWorldPosition(V()).y;for(const n in T){const o=T[n];if(!o||!o.parent||slung[n]||!onHeroT(n))continue;const b=new THREE.Box3().setFromObject(o);if(!b.isEmpty()&&b.min.y<hy-.35)return true;}return false;}
  function ttInit(mode,poses){const p=root.position,y0=root.rotation.y;if(window.__noTT||H.carry||ttCarryLow())return false;
   {/* not on the ground outside: roots and slopes under the stepped feet bent the ankles past 45-50 deg (firewood, hunt); the clip's turn stays there */const GR=window.__ground;if(p.y<=2&&GR&&GR.standAt&&!window.__ttGround)return false;}const r=V(Math.cos(y0),0,-Math.sin(y0)),f=fwd(y0);const ft={};
-  for(const s of ['Left','Right']){const F=bones[s+'Foot'];if(!F)return false;const a=F.getWorldPosition(V());const d=a.clone().sub(p);ft[s]={lat:d.dot(r),fo:d.dot(f),p:a.clone(),y:y0};}
+  for(const s of ['Left','Right']){const F=bones[s+'Foot'];if(!F)return false;const a=F.getWorldPosition(V());const d=a.clone().sub(p);ft[s]={lat:d.dot(r),fo:d.dot(f),p:a.clone(),y:y0,h0:window.__ttNoAir?0:clamp(a.y-((H.floorY??p.y)+(POSE.ankle??.1)),0,.15)};}
   const w=clamp((Math.abs(ft.Left.lat)+Math.abs(ft.Right.lat))/2,.07,.13),fo=clamp((ft.Left.fo+ft.Right.fo)/2,-.05,.08);
   ft.Left.lat0=ft.Left.lat>=ft.Right.lat?w:-w;ft.Right.lat0=-ft.Left.lat0;ft.Left.fo0=ft.Right.fo0=fo;
   TT.rp=null;Object.assign(TT,{on:true,mode,W:TT.W||0,t:0,k:0,n:poses.length,poses,y0,yEnd:poses[poses.length-1].y,ft,out:false});
   /* the first to move: the foot furthest from where its step puts it (on arrival one is often still behind, mid-stride), else the turn side */
-  const da=wrapA(poses[0].y-y0);const dL=ft.Left.p.distanceTo(ttEndAs('Left',0)),dR=ft.Right.p.distanceTo(ttEndAs('Right',0));TT.lead=Math.abs(dL-dR)>.06?(dL>dR?'Left':'Right'):((ft.Left.lat0>0)===(da>0)?'Left':'Right');
+  const da=wrapA(poses[0].y-y0);const dL=ft.Left.p.distanceTo(ttEndAs('Left',0)),dR=ft.Right.p.distanceTo(ttEndAs('Right',0));TT.lead=Math.abs(dL-dR)>.06?(dL>dR?'Left':'Right'):((ft.Left.lat0>0)===(da>0)?'Left':'Right');/* MOTION (craft f7571): motion matching handed over with a foot still in the air; the idle clip dropped it 5 cm and the first step lifted it again (knee 12.8). That foot steps first, from where it is, and the stepped feet take over at once */TT.air=Math.max(ft.Left.h0,ft.Right.h0)>.02;if(TT.air)TT.lead=ft.Left.h0>ft.Right.h0?'Left':'Right';
   TT.Ts=ttDur(0);H.tTurn=mode==='turn'||!window.__ttSlideMM;/* motion matching sits out a turn on the spot; under a slide blocking it snapped the body (diary: head 10 cm in a frame) */if(H.cur===actions['30'])play(IDLE(),{fade:.25});H.turnStep=false;return true;}
  function ttStart(da){const p=root.position,y0=root.rotation.y;const n=clamp(Math.ceil(Math.abs(da)/.8),2,4)/* at least 2: both feet end square under the body */;
   const poses=[];for(let k=0;k<n;k++)poses.push({x:p.x,z:p.z,y:y0+da*(k+1)/n});return ttInit('turn',poses);}
@@ -447,7 +447,7 @@ export function createHero(ctx){
    const ank=POSE.ankle??.1,GR=window.__ground,onG=p.y<=2&&GR&&GR.standAt,flAt=(x,z)=>onG?GR.standAt(x,z):(TF[s]!=null?TF[s]:g);/* on the ground: the terrain under each spot (roots, stones), Ground's standAt */let tgt=S.p.clone();tgt.y=flAt(tgt.x,tgt.z)+ank;let fy=S.y;
    if(s===sw){const y1=TT.poses[k].y;const end=ttEnd(s,k);
     const e=smooth(.05,.95,u);tgt=S.p.clone().lerp(end,e);tgt.y=flAt(tgt.x,tgt.z)+ank;tgt.y+=.055*Math.sin(Math.PI*clamp(u*1.1,0,1));fy=S.y+wrapA(y1-S.y)*e;}
-   const a=F.getWorldPosition(V());const at=a.clone().lerp(tgt,W);const pole=fwd(ry+wrapA(fy-ry)*.5);
+   {const h0=S.h0||0;if(h0>0){if(s===sw&&k===0)tgt.y=Math.max(tgt.y,flAt(tgt.x,tgt.z)+ank+h0*(1-smooth(0,.6,u)));else if(s!==sw&&k===0)tgt.y+=h0*Math.exp(-(TT.t||0)/.1);}}const a=F.getWorldPosition(V());const at=a.clone().lerp(tgt,TT.air&&k===0&&!TT.out?1:W);const pole=fwd(ry+wrapA(fy-ry)*.5);
    ik2(U,L,F,at,pole,1,true);
    const dy=wrapA(fy-ry)*W;if(Math.abs(dy)>1e-4){F.getWorldQuaternion(_rq);setWorldQ(F,_rq3.setFromAxisAngle(V(0,1,0),dy).multiply(_rq).clone());}}
   H.feetIK=1;}
@@ -2039,9 +2039,9 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const setLF=lf=>{LF=lf;TT=Tf(lf);want=Wf(lf);};
    const key=(lf,starts,base)=>{setLF(lf);Qh=mkQh(S.al,S.yw);PS=S.ps;let best=null;for(const bs of base?[base,null]:[null])for(const st of starts){const e=run(30,false,st,bs);/* the answer on from the last blow wins unless the fresh one is clearly closer (3 cm) */const e2=e-(bs?(window.__seedBias??.03):0);if(!best||e2<best.e2-.002)best={e,e2,t:tEnd.clone(),q:AB.map(b=>b.quaternion.clone())};}return best;};
    const shNow=bones.RightArm.getWorldPosition(V());
-   if(!S.K||S.K.n!==S.n&&!fade||S.K.sh.distanceTo(shNow)>(window.__keyTh??.015)&&!S.Ko&&!fade||window.__keyEvery){/* letting go at the end (the clip walks the body back to idle under the arm): the last keys stay, no fresh solves while the arm fades out (gate orig fix_railing: 20 frames of 8-23 cm/frame) */
+   const drift=!!S.K&&S.K.n===S.n&&!window.__keyEvery&&S.K.sh.distanceTo(shNow)>(window.__keyTh??.015)&&!S.Ko&&!fade&&(window.__keyDriftAll||a.T-(S.kT??-9)>.25||S.K.sh.distanceTo(shNow)>.06);/* [PERF] a shoulder that drifts within a blow (the body settling) re-keys at most 4x a second and without the hand-turn search: re-keyed every frame it cost 50-85% of 100-130 ms phone frames (iPhone profile, fix_wall) */if(!S.K||S.K.n!==S.n&&!fade||drift||window.__keyEvery){S.kT=a.T;if(window.__kc)window.__kc.push([a.T.toFixed(2),!S.K?"new":S.K.n!==S.n?"blow":"drift"]);/* letting go at the end (the clip walks the body back to idle under the arm): the last keys stay, no fresh solves while the arm fades out (gate orig fix_railing: 20 frames of 8-23 cm/frame) */
     setLF(0);
-    if(PG&&PG.over&&!window.__noFit&&!window.__noSearch){
+    if(PG&&PG.over&&!window.__noFit&&!window.__noSearch&&!(drift&&S.ps!=null)){
      const cost=(ca,cy,cp)=>{Qh=mkQh(ca,cy);PS=cp;const e=run(8,true);return PG.over(hb,hb.quaternion)+PG.over(fa,fa.quaternion)+e*300+(S.ps!=null?4*(Math.abs(ca-S.al)+Math.abs(cy-S.yw)+Math.abs(cp-S.ps)):0);};
      let bc=1e9,bb=null;for(const ca of [0,.3,.6,.9,1.2])for(const cy of [-.5,0,.5])for(const cp of [-1,-.5,0,.5,1]){const v=cost(ca,cy,cp);if(v<bc){bc=v;bb=[ca,cy,cp];}}
      if(S.ps!=null){const v=cost(S.al,S.yw,S.ps);if(v<=bc+.5)bb=[S.al,S.yw,S.ps];}
