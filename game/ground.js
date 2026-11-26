@@ -724,15 +724,20 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const WU=water.material.uniforms;
   // lily pads (round, a notch to the middle, fine veins) and two white water lilies
   const padT=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=128;const x=cv.getContext('2d');x.translate(64,64);
-   const g=x.createRadialGradient(0,0,4,0,0,60);g.addColorStop(0,'#5E8A3E');g.addColorStop(.8,'#3F6B2E');g.addColorStop(1,'#2C4A22');x.fillStyle=g;
-   x.beginPath();x.moveTo(0,0);x.arc(0,0,60,-1.35,4.5);x.closePath();x.fill();x.strokeStyle='rgba(150,190,110,.35)';x.lineWidth=1.2;
-   for(let k=0;k<13;k++){const a=-1.2+k*.44;x.beginPath();x.moveTo(0,0);x.lineTo(Math.cos(a)*56,Math.sin(a)*56);x.stroke();}
+   /* autumn pads: olive going bronze at a wavy, slightly torn rim, rust freckles and a darker wet sheen at the centre (they were
+      clean bright-green discs that read as stickers on the water) */
+   const g=x.createRadialGradient(0,0,4,0,0,60);g.addColorStop(0,'#3E5A2A');g.addColorStop(.55,'#4A6630');g.addColorStop(.85,'#5E5A2A');g.addColorStop(1,'#6A4A22');x.fillStyle=g;
+   x.beginPath();x.moveTo(0,0);for(let i=0;i<=64;i++){const a=-1.3+i/64*5.8;const r=57+Math.sin(a*7.)*1.6+Math.sin(a*17.+1.)*1.2-(Math.abs(Math.sin(a*3.1+2.))>.97?5:0);x.lineTo(Math.cos(a)*r,Math.sin(a)*r);}x.closePath();x.fill();
+   x.globalCompositeOperation='source-atop';x.strokeStyle='rgba(120,150,80,.28)';x.lineWidth=1.1;
+   for(let k=0;k<13;k++){const a=-1.2+k*.44;x.beginPath();x.moveTo(0,0);x.quadraticCurveTo(Math.cos(a+.08)*30,Math.sin(a+.08)*30,Math.cos(a)*55,Math.sin(a)*55);x.stroke();}
+   let sd=7;const rn=()=>(sd=(sd*16807)%2147483647)/2147483647;for(let i=0;i<26;i++){const a=rn()*6.28,r=20+rn()*38;x.fillStyle=`rgba(${110+rn()*40|0},${60+rn()*30|0},25,${.25+rn()*.35})`;x.beginPath();x.arc(Math.cos(a)*r,Math.sin(a)*r,1+rn()*3.5,0,6.28);x.fill();}
+   x.globalCompositeOperation='source-over';
    const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;return t;})();
   const NP=MOBILE?7:11;const pads=new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1).rotateX(-Math.PI/2),new THREE.MeshStandardMaterial({map:padT,alphaTest:.5,roughness:.45,side:THREE.DoubleSide}),NP);
   const padPos=[];let np=0;for(let t=0;t<400&&np<NP;t++){const a=rr(0,6.28),r=Math.sqrt(R())*.9;const x=POND.x+(Math.cos(a)*c0*POND.rx-Math.sin(a)*s0*POND.rz)*r,z=POND.z+(Math.cos(a)*s0*POND.rx+Math.sin(a)*c0*POND.rz)*r;
    // they gather on the far, sheltered side, away from where he dips the bucket
    if(pondD(x,z)>-.35||x>POND.x+1||padPos.some(q=>Math.hypot(q[0]-x,q[1]-z)<.38))continue;const sz=rr(.26,.42);padPos.push([x,z,sz]);
-   M.compose(V(x,level+.006+np*.0004,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz,1,sz));pads.setMatrixAt(np,M);Col.setHSL(rr(.24,.3),rr(.3,.45),rr(.75,.95));pads.setColorAt(np,Col);np++;}
+   M.compose(V(x,level+.006+np*.0004,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz,1,sz));pads.setMatrixAt(np,M);Col.setHSL(rr(.12,.26),rr(.2,.4),rr(.62,.85));/* some greener, some bronzed */pads.setColorAt(np,Col);np++;}
   pads.count=np;pads.receiveShadow=true;scene.add(pads);G.pads=pads;
   // [ENV] autumn oak leaves afloat on the pond: a dozen, one draw call; they drift slowly round the open water, turn and bob on the
   // ripple, and slip under the lily pads' edge rather than through them. Slightly curled (a bent strip), so they catch light, not stickers.
