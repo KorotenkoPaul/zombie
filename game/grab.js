@@ -135,7 +135,7 @@ export function createGrab({ THREE, bones }) {
   function palmTarget(side, p, out = V()) { const pa = palm(side), gp = gripPoint(side); return out.copy(p).sub(gp.sub(pa)); }
   // late fixes: hands that must stay exactly on something are put back after collide.js has moved the body (it wraps HH.update
   // before this does; motion.js's pop filter stays outermost). Callers queue a fix each frame with late(fn).
-  let lateQ = [];
+  let lateQ = [], pinQ = [];
   // ---- two-handed long tools (broom): the free hand goes onto the handle by an arm-only two-bone IK, after everything else ----
   const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
   function rotW(b, axis, ang) { if (!b || !(Math.abs(ang) > 1e-5)) return; b.parent.getWorldQuaternion(_q); _q2.setFromAxisAngle(axis, ang); const pi = _q.clone().invert(); b.quaternion.premultiply(pi.multiply(_q2).multiply(_q)); b.updateMatrixWorld(true); }
@@ -282,11 +282,11 @@ export function createGrab({ THREE, bones }) {
       if (twoW[side] > .01 && tool) { tool.updateMatrixWorld(true); const p = tool.localToWorld(V(...GRIP[nm].two)); const pa = palm(side), wr = hs.getWorldPosition(V()); ik2(side, p.clone().sub(pa.sub(wr)), twoW[side]); fistK && (fistK[side] = 1); } } }
   function attach(HH) { if (!HH || HH.__grabLate) return; HHref = HH;
     // HERO-RULES.md: the late holds run in the pipeline's 'grab' slot (after collide, before the guard)
-    if (typeof HH.stage === 'function' && (HH.SLOTS || []).includes('pre')) HH.stage('pre', () => { try { broomLow(); } catch (e) {} }); HH.stage('guard', () => { try { broomFloor(); } catch (e) {} }); /* after the pop filter: easing a new clip in, it held the fist low and the bristles went 20 cm into the boards */
+    if (typeof HH.stage === 'function' && (HH.SLOTS || []).includes('pre')) HH.stage('pre', () => { try { broomLow(); } catch (e) {} }); HH.stage('guard', () => { try { broomFloor(); } catch (e) {} const q = pinQ; pinQ = []; for (const [o, M] of q) { try { if (!o.parent) continue; o.parent.updateWorldMatrix(true, false); const L = M.clone().premultiply(o.parent.matrixWorld.clone().invert()); L.decompose(o.position, o.quaternion, o.scale); o.updateMatrixWorld(true); } catch (e) {} } }); /* GRAB (props grip audit: a bench tool taken into the fist jittered 5-17 cm on the bench before the fist was on it): pins put back last, after the pop filter and the pose guard moved the hand it already hangs from */ /* after the pop filter: easing a new clip in, it held the fist low and the bristles went 20 cm into the boards */
     if (typeof HH.stage === 'function') { HH.stage('grab', dt => { const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } try { twoHands(dt || 1 / 60); } catch (e) { console.error('grab two', e); } }); HH.__grabLate = true; return; }
     const inner = HH.update; HH.update = dt => { lateQ = []; const r = inner(dt); const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } try { twoHands(dt || 1 / 60); } catch (e) { console.error('grab two', e); } return r; }; HH.__grabLate = true; }
   const api = {
-    attach, late(fn) { lateQ.push(fn); }, twoW, dbg: api_dbg,
+    attach, late(fn) { lateQ.push(fn); }, pin(o, M) { if (o && M) pinQ.push([o, M.clone()]); }, twoW, dbg: api_dbg,
     gripPoint, toolGripHome, palmTarget, setProps(P) { PROPS = P; },
     // GRAB: ease a held tool from whatever pose it has in the fist back into its grip pose (after floorPick kept the can upright)
     // GRAB: where a tool's grip point is right now (on his back, in a hand, on its peg)
