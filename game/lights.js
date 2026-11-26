@@ -394,7 +394,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     }
     const s0Oven = () => ovenS && !ovenS.on;
     let ovenS = null;
-    ovenS = add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 4.2, sway: .03 }], haloSize: .9, extra: (k, f) => {
+    ovenS = add('oven', 'kitchen', 'fire', p, { lights: [{ l, I: 5.4, sway: .03 }], haloSize: .9, extra: (k, f) => {
       if (ovenS && OV) { const L = ovenS.level, up = ovenS.on;
         if (OV.setSpread) OV.setSpread(up ? smooth(.04, .7, L) : smooth(.22, .72, L));
         if (spl) { const burn = up ? smooth(.02, .5, L) : 1; spl.visible = up && burn < .98;
@@ -527,7 +527,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // the warm wedge that falls out of the doorway onto the landing, the roots and the path below it
     const spill = new THREE.SpotLight(0xFFA04C, 0, 9, .75, 1, 1.4);
     spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
-    spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
+    spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target); if (ENV) ENV.doorSpill = spill; /* [ENV] env.js thins and warms the ground mist over this pool */
     /* phones: the doorway's warm wedge on the doorstep is the brightest warm spot at the foot of the photo and always in the
        home view; scored on the hero's distance alone it lost its pool slot whenever he was up in the house (doorstep 82 vs
        the photo's 118). It counts x3 in the slot race (only while lit, and a lantern by the hero still wins its slot back) */
@@ -845,6 +845,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const pts = new THREE.Points(dg, dm); pts.frustumCulled = false; pts.renderOrder = 3; pts.visible = false; scene.add(pts);
     beams.push({ w, U, m, pts });
   }
+  const beamWx = { k: 1, t: null };
   const sunV = V(), KPATCH = +(window.__KPATCH || .8);
   function updateBeams(dayK, T) {
     beamU.uT.value = T;
@@ -852,6 +853,11 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // the scene's directional light swaps from moon to sun at dayK .5: beams only appear well after that, so they never jump
     const dk = Math.max(0, Math.min(1, (dayK - .6) / .3)), dkS = dk * dk * (3 - 2 * dk);
     if (sunL && dkS > 0) { sunV.copy(sunL.position).sub(sunL.target.position).normalize(); on = dkS * Math.min(1, sunL.intensity / 2.2); }
+    // rain or a grey sky: no beams and no sun patches (Tree: bright dapples on the kitchen floor in a downpour)
+    if (on > 0) { let wx = null; try { wx = window.__weather && window.__weather.state && window.__weather.state(); } catch (e) {}
+      const tgt = wx ? Math.max(0, 1 - (wx.rain && wx.rain !== 'none' ? (wx.rainAmt || 0) * 1.6 : 0) - (wx.overcast ? (wx.cloud || 0) * .9 : 0) - (wx.storm ? 1 : 0)) : 1;
+      const dtB = Math.min(.5, Math.max(0, T - (beamWx.t ?? T))); beamWx.k += (tgt - beamWx.k) * Math.min(1, dtB * .12); on *= beamWx.k; }   // eased over ~8 s, like the sky
+    beamWx.t = T;
     const low = 1 - Math.min(1, Math.max(0, sunV.y - .15) / .7);      // low sun: long golden beams
     const IB = ENV && ENV.interiorBoxes;
     for (const b of beams) {
@@ -1194,7 +1200,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       for (const [m, O] of s.opac) if (m) m.opacity = O * clamp01(k) * (.85 + f * .15);
       if (s.extra) s.extra(k, f);
       if (!s.lights.length && s.haloObj) s.haloObj.intensity = (s.kind === 'glow' ? .5 : 4.5) * k * f;
-      const share = s.kind === 'glow' ? .04 : s.kind === 'candle' ? .3 : s.kind === 'fire' ? .55 : 1;
+      const share = s.kind === 'glow' ? .04 : s.kind === 'candle' ? .3 : s.kind === 'fire' ? .25 : 1;   /* fire: a small closed firebox lights the floor and walls by the stove, not the whole room evenly (was .55: the oven alone lit the kitchen like the lamp) */
       warm[s.room] = Math.min(1.2, (warm[s.room] || 0) + k * f * share);
     }
     wgSrc.forEach((w, i) => { const v = w.k() * (1 - dayK); wgC.value[i].set(1.0 * v, .64 * v, .32 * v); });
