@@ -111,6 +111,7 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
+    D.scarU = { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, -100, 0, 0.1)) }; /* [scars round] filled once the oak is sampled */
     D.dripU = { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, -100, 0, 0.5)) }; /* [autumn round] filled once the oak is sampled */
     D.barkU = tdWetU.U = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, near: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 0.45 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
@@ -182,7 +183,7 @@ export function createTreeDress(C) {
     }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdDrip = D.dripU; sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdDrip = D.dripU; sh.uniforms.tdScar = D.scarU; sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute float tdGr;varying float vTdGr;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
@@ -193,7 +194,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-uniform vec4 tdDrip[8];varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
+uniform vec4 tdDrip[8];uniform vec4 tdScar[8];float tdSe=9.,tdSty=0.,tdSa=0.,tdSb=0.,tdSz=1.;vec3 tdSD=vec3(0.);varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -297,10 +298,18 @@ uniform float tdCool;` + NOISE)
           // from the axis, so one fluting by angle round the axis does both: vertical on the trunk, lengthwise on the roots). They
           // wander with height and distance, the grooves narrow and dark, the ridges broad. Above the house they run on up
           // the trunk to the fork and out onto the limb bases, handing over to Tree's limb grooves (from 3.3 m off the axis); fades out before a flute gets under ~2 px.
+          // [scars round] the photo's oak is smooth but lived-in: a few old broken-off branch stubs (knots, the folds swelling round
+          // them) and places where the bark was torn off (bare grey-tan wood inside a rolled callus lip). tdScar: centre, size
+          // (negative = bare-bark scar). Each one is an ellipse in the surface frame, long along the folds (L), across them (tg).
+          { vec2 sv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); vec3 sL=mix(vec3(0.,1.,0.),tdA,tdLf); sL-=wn*dot(sL,wn); sL=dot(sL,sL)>1e-6?normalize(sL):normalize(cross(wn,vec3(1.,0.,0.))); vec3 tg=cross(wn,sL); // long along the folds: up the trunk, out along the roots
+            for(int i=0;i<8;i++){ vec4 sc=tdScar[i]; float sz=abs(sc.w); vec3 d=tdP-sc.xyz; if(dot(d,d)>sz*sz*12.||abs(dot(d,wn))>sz*1.1)continue;
+              float ax=sc.w<0.?2.6:1.5; float a=dot(d,sL)/(sz*ax), b=dot(d,tg)/sz; float e=length(vec2(a,b));
+              if(e<tdSe){ tdSe=e; tdSty=sc.w<0.?2.:1.; tdSa=a; tdSb=b; tdSz=sz; tdSD=normalize(sL*(a/ax)+tg*b+wn*1e-4); } } }
           { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float fr=length(fv), fa=atan(fv.y,fv.x);
             float ph=fa*17.+1.3*sin(y*.55+fa*3.)+.9*sin(fr*1.15-fa*2.)+.5*sin(y*1.7-fr*.8+fa*5.);
             float aa=1.-smoothstep(.35,.9,fwidth(ph));
             tdFlK=aa*mix(1.-smoothstep(7.,9.,fr),(1.-smoothstep(3.3,4.4,fr))*(1.-smoothstep(9.4,10.8,y)),smoothstep(4.2,5.6,y))*smoothstep(.75,1.,fr)*(1.-.6*vTdJ.x);
+            if(tdSty>0.){ ph+=(tdSty>1.?1.3:2.4)*tdSb/(abs(tdSb)+.35)*(1.-smoothstep(1.,2.4,tdSe)); tdFlK*=smoothstep(.85,1.2,tdSe); } // the folds part and flow round it
             tdFl=sin(ph); tdFlD=cos(ph)*17./max(fr,.8);
             float gv=smoothstep(.3,.95,-tdFl), rg=smoothstep(0.,.9,tdFl);
             diffuseColor.rgb*=mix(1.,.42+.1*hb.g,gv*tdFlK*.9)*mix(1.,1.14,rg*tdFlK); } // fine octave: a hint only (its cork pattern read as black pepper up close)
@@ -410,6 +419,21 @@ uniform float tdCool;` + NOISE)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec3 wn=normalize(tdN);
+          // [scars round] the knots' and scars' colour, here and not with the rest of the bark colour: Tree's map code (which runs
+          // after treedress's) mixes every colour halfway to one brown, which washed them out. Derivatives in uniform flow.
+          float gp=tdSb*tdSz*150.+1.6*sin(tdSa*5.)+.6*sin(tdSa*13.+tdSb*3.); float gk=1.-smoothstep(.4,1.,fwidth(gp)); float rg=1.-smoothstep(.3,1.,fwidth(tdSe*40.));
+          if(tdSty>1.5){ // bare-bark scar: weathered grey-tan wood with fine grain along the folds, a dark crease inside the rolled lip
+            float in_=1.-smoothstep(.88,.98,tdSe); float g=dot(diffuseColor.rgb,vec3(.33));
+            
+            float ck=smoothstep(.93,1.,abs(sin(gp*.23+1.7*sin(tdSa*3.1))))*gk; // a few deep checks along the grain
+            vec3 wd=vec3(1.24,1.,.74)*(g*.98+.012)*(1.-.2*gk*smoothstep(.2,1.,sin(gp)))*(1.-.55*ck)*mix(1.,.75,smoothstep(0.,-.9,tdSa)) // runs stain its lower end
+              *(1.-.42*smoothstep(.6,.95,tdSe)*smoothstep(-.2,.6,tdSa))*(1.-.18*smoothstep(.4,.95,tdSe)); // sunk below the bark: the lip above shades the inside
+            diffuseColor.rgb=mix(diffuseColor.rgb,wd,in_);
+            diffuseColor.rgb*=(1.+.18*exp(-pow((tdSe-1.06)/.09,2.)))*(1.-.6*exp(-pow((tdSe-.95)/.045,2.))); }
+          else if(tdSty>.5){ // old broken stub: a dark rotten hole with end-grain rings, a crease, and the swollen lip of bark round it
+            float c=1.-smoothstep(.4,.54,tdSe); 
+            diffuseColor.rgb*=mix(1.,mix(.46,.2,smoothstep(-.35,.35,tdSa))*(1.-.15*rg*(.5+.5*sin(tdSe*40.))),c); // the lip overhangs the top of the hole: darkest there
+            diffuseColor.rgb*=(1.-.3*exp(-pow((tdSe-.56)/.06,2.)))*(1.+.12*exp(-pow((tdSe-.74)/.16,2.))); }
           tdBias=1.2; // the normal reads a little blurred too: single-texel pits lit from the side drew black pepper up close
 #ifdef TD_LITE
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
@@ -425,6 +449,10 @@ uniform float tdCool;` + NOISE)
           // the flutes in the light too: tilt across them (the horizontal tangent round the axis), steeper in the narrow grooves
           { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); vec3 tg=normalize(vec3(-fv.y,0.,fv.x)+1e-5); tg-=wn*dot(tg,wn);
             dn-=tg*tdFlD*.03*(1.+1.4*smoothstep(.3,.9,-tdFl))*tdFlK/max(tdRelief,.05); }
+          if(tdSty>0.){ float f=(tdSe-(tdSty>1.?1.04:.74))/(tdSty>1.?.11:.17), t=f*exp(-f*f)*(tdSty>1.?1.5:1.1); // the lip: inner slope faces in, outer out
+            if(tdSty<1.5)t-=.55*(1.-smoothstep(.3,.5,tdSe))*min(tdSe/.4,1.);                                    // the stub's sunken hole
+            else dn*=mix(1.,.3,1.-smoothstep(.85,.97,tdSe));                                                    // bare wood is smooth
+            dn+=tdSD*t/max(tdRelief,.05); }
           tdBias=0.;
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
@@ -456,7 +484,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress10';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress11';
     mat.needsUpdate = true;
   }
 
@@ -497,6 +525,19 @@ uniform float tdCool;` + NOISE)
     for (const c of cl) { const ang = Math.atan2(c[2] - AZ, c[0] - AX); c[3] *= 1 + 2 * Math.max(0, Math.sin(ang)); if (Math.abs(angDiff(ang, doorAng)) < 0.55 && c[1] < 3.6) c[3] = 0; }
     cl.sort((a, b) => b[3] - a[3]); const src = cl.filter(c => c[3] > 0.05).slice(0, 8);
     src.forEach((c, i) => D.dripU.value[i].set(c[0], c[1], c[2], 0.7)); D.drips = src.map(c => c.map(v => +v.toFixed(2))); }
+  // [scars round] old broken-off branch stubs (size > 0) and torn-off bark (size < 0), placed by hand where the home view sees
+  // bare bark (the trunk between the kitchen and the workshop, above the house, one limb, the roots in front), each snapped to
+  // the bark along the line to the home camera; skipped if a board or beam covers it or a beam bites in there. Deterministic.
+  { const rc = new THREE.Raycaster(), hits = [], out = [], cam = V(0, 10.5, 28.4); TREE.bark.updateMatrixWorld(true);
+    // sizes: half-width across the folds in metres; from the home view (~28 m) a 0.2 m knot is about 6 px across on a phone
+    const spots = [[0.2, 6.0, 0.64, 0.21], [-0.5, 2.46, 0.79, -0.24], [0.9, 8.8, 0.46, 0.18], [2.36, 10.5, -0.6, 0.22],
+      [-1.14, 0.94, 2.62, -0.22], [2.27, 0.6, 1.7, 0.2], [3.84, 0.79, 0.2, -0.2], [-3.2, 0.76, 2.13, 0.2]];
+    for (const [x, y, z, sz] of spots) { const q = V(x, y, z), dir = cam.clone().sub(q).normalize();
+      rc.set(q.clone().addScaledVector(dir, 1.5), dir.clone().negate()); rc.far = 3;
+      hits.length = 0; TREE.bark.raycast(rc, hits); hits.sort((a, b) => a.distance - b.distance); const h = hits[0]; if (!h) continue;
+      const p = h.point; if (blocked(p.x, p.y, p.z, 0.02) || D.bites.some(b => b.distanceTo(p) < b.w + Math.abs(sz))) continue;
+      D.scarU.value[out.length].set(p.x, p.y, p.z, sz); out.push([+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), sz]); }
+    D.scars = out; }
 
   const radial = (x, z) => Math.hypot(x - AX, z - AZ);
   // [root round] the ground as drawn (Ground's mesh grid, then its height with the humps), not env's base groundH, which misses
