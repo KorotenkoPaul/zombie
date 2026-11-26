@@ -270,3 +270,8 @@ Debug: `__treedress.stats()`.
 ## Round 43 (fresh phone sweep vs photo: night roots)
 - Phone home view day / dusk / night / rain vs the photo. Most visible in my area: at night the roots sank into one flat dark mass; in the photo each root reads as its own rounded limb with a cool moonlit top ridge and dark flanks.
 - New global tdRT (root tops: up-facing, rd 1.7-2.8+, below y ~2) and a cool moonlight emissive on them at night only, broken by the bark ridges (tdH), less on moss. Key |treedress20. No draw calls.
+
+## Round 44 (oak leaf overdraw, in tree.js with Tree's OK)
+- The phone alpha measure counts card area (override material, no alpha test). The ROS sprig card was a convex 12-gon hull, 28% empty bays between the leaves.
+- Now the rosette's own concave outline (38 points, alpha 0.4 + ~1% margin, morphological close r16, DP eps 7 px on the 512 map), ear-cut with THREE.ShapeUtils, winding matched to the old clockwise fan, dome normals set analytically (no centre vertex). Non-ROS hull / circle untouched.
+- Day home phone: oak cards 1.204 -> 0.988 screens; total alpha 1.48 -> 1.28; +4k tris; calls unchanged. budget.js all 5 views ok. Close-ups and home view look identical.
