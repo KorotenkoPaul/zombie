@@ -311,6 +311,7 @@ export function buildTree(THREE, o) {
   // sinuous, arching out of the ground and spreading wide). Round tubes, flattened a little, tapering to a tip that dives
   // into the ground; part of the bark mesh (no new draw call). Bark UVs come from the nearest model root vertex so the
   // painted bark carries on. Kept off the walk to the woodpile, the ladder foot, the pond and the hollow's door.
+  let nModelV = P.length / 3;
   if (o.model && o.longRoots !== false && P.length) {
     { /* the model's own roots past the flare (long faceted slabs) sink smoothly under the ground: the tubes are the roots
       now. (Cutting their faces left a ragged toothed edge at the flare and thin triangles hanging under the arches.) */
@@ -320,6 +321,7 @@ export function buildTree(THREE, o) {
       /* [PERF] faces now wholly under the ground are dropped (were refined and drawn for nothing: ~phone tris budget) */
       const keep = []; for (let t = 0; t < I.length; t += 3) { if (P[I[t] * 3 + 1] < -0.3 && P[I[t + 1] * 3 + 1] < -0.3 && P[I[t + 2] * 3 + 1] < -0.3) continue; keep.push(I[t], I[t + 1], I[t + 2]); }
       I.length = 0; for (const q of keep) I.push(q); }
+    nModelV = P.length / 3; /* the tubes come after: the flare smoothing below leaves them alone */
     let rS = 4241; const rr = (a, b) => { rS = (rS * 16807) % 2147483647; return a + (b - a) * (rS / 2147483647); };
     const MOBR = MOB(o), SEG = MOBR ? 18 : 28, RING = MOBR ? 8 : 12;
     const pa = o.rootPath || [-4.9, 0.6, 3.5, 5.5], inPath = (x, z) => x > pa[0] - 0.4 && x < pa[1] + 0.4 && z > pa[2] - 0.4 && z < pa[3] + 0.4;
@@ -349,6 +351,7 @@ export function buildTree(THREE, o) {
         for (let j = 0; j < RING; j++) { const a = base + (path.length - 1) * RING + j, b = base + (path.length - 1) * RING + (j + 1) % RING; I.push(a, tip, b); } }
     }
   }
+  const nTubeEnd = P.length / 3;
   // ---------- smooth limbs (critic / trunk thread: up close the big limbs were faceted, flat faces and hard kinks at the
   // forks; the photo's are round and flowing). Long limb edges are split (positions linear, so nothing moves yet), then a
   // Taubin smooth (shrink-free) rounds the faces and forks. Coincident vertices (UV seams) are welded for it, so no cracks.
@@ -377,6 +380,38 @@ export function buildTree(THREE, o) {
     const W = new Float32Array(nv); for (const i of adj.keys()) W[i] = limbW(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
     const Q = new Float32Array(P);
     for (let it = 0; it < (o.limbSmoothIt ?? 8); it++) for (const lam of [0.5, -0.53]) {
+      const D = new Float32Array(nv * 3);
+      for (const [i, s] of adj) { if (W[i] <= 0) continue; let x = 0, y = 0, z = 0; for (const j of s) { x += Q[j * 3]; y += Q[j * 3 + 1]; z += Q[j * 3 + 2]; } const n = s.size;
+        D[i * 3] = (x / n - Q[i * 3]) * lam * W[i]; D[i * 3 + 1] = (y / n - Q[i * 3 + 1]) * lam * W[i]; D[i * 3 + 2] = (z / n - Q[i * 3 + 2]) * lam * W[i]; }
+      for (const i of adj.keys()) { Q[i * 3] += D[i * 3]; Q[i * 3 + 1] += D[i * 3 + 1]; Q[i * 3 + 2] += D[i * 3 + 2]; } }
+    for (let i = 0; i < nv; i++) { const r = rep[i]; P[i * 3] = Q[r * 3]; P[i * 3 + 1] = Q[r * 3 + 1]; P[i * 3 + 2] = Q[r * 3 + 2]; }
+  }
+  // ---------- smooth flare (Env / trunk thread: the flare's big flat facets read as pale cut stone from the home view; the
+  // photo's foot is soft rounded wood). Same split + Taubin pass on the model's flare and root stubs (not the tubes, not the hollow).
+  if (o.model && o.smoothFlare !== false && P.length) {
+    const MOBL = MOB(o), Lm = MOBL ? 0.6 : 0.36, nPass = 1;
+    const limbW = (x, y, z, i) => { if (i !== undefined && i >= nModelV && i < nTubeEnd) return 0; const d = Math.hypot(x - AX, z - AZ), an = Math.atan2(z - AZ, x - AX); if (Math.abs(angDiff(an, doorAng)) < 0.7 && y > -0.2) return 0; /* the hollow's mouth keeps its shape */ return Math.min(1, Math.max(0, (2.4 - y) / 0.8)) * Math.min(1, Math.max(0, (y + 0.3) / 0.4)) * Math.min(1, Math.max(0, (d - 1.3) / 0.6)) * Math.min(1, Math.max(0, (4.2 - d) / 0.6)); };
+    for (let pass = 0; pass < nPass; pass++) {
+      const mid = new Map(), out = [];
+      const split = (a, b) => { const k = a < b ? a * 4194304 + b : b * 4194304 + a; let m = mid.get(k); if (m !== undefined) return m;
+        const ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2], bx = P[b * 3], by = P[b * 3 + 1], bz = P[b * 3 + 2], mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
+        if (Math.hypot(ax - bx, ay - by, az - bz) < Lm || limbW(mx, my, mz) <= 0) { mid.set(k, -1); return -1; }
+        m = P.length / 3; P.push(mx, my, mz); UV.push((UV[a * 2] + UV[b * 2]) / 2, (UV[a * 2 + 1] + UV[b * 2 + 1]) / 2); G.push((G[a] + G[b]) / 2); mid.set(k, m); return m; };
+      for (let t = 0; t < I.length; t += 3) { const v = [I[t], I[t + 1], I[t + 2]], m = [split(v[0], v[1]), split(v[1], v[2]), split(v[2], v[0])], n = (m[0] >= 0) + (m[1] >= 0) + (m[2] >= 0);
+        if (!n) { out.push(v[0], v[1], v[2]); continue; }
+        if (n === 3) { out.push(v[0], m[0], m[2], m[0], v[1], m[1], m[2], m[1], v[2], m[0], m[1], m[2]); continue; }
+        const r = m[0] >= 0 && (n === 1 || m[2] < 0) ? 0 : m[1] >= 0 && (n === 1 || m[0] < 0) ? 1 : 2;
+        const A = v[r], B = v[(r + 1) % 3], C = v[(r + 2) % 3], mAB = m[r], mBC = m[(r + 1) % 3];
+        if (n === 1) out.push(A, mAB, C, mAB, B, C); else out.push(A, mAB, C, mAB, B, mBC, mAB, mBC, C); }
+      I.length = 0; for (const q of out) I.push(q);
+    }
+    const nv = P.length / 3, rep = new Int32Array(nv), wm = new Map();
+    for (let i = 0; i < nv; i++) { const k = Math.round(P[i * 3] * 2e3) + ',' + Math.round(P[i * 3 + 1] * 2e3) + ',' + Math.round(P[i * 3 + 2] * 2e3); const j = wm.get(k); if (j === undefined) { wm.set(k, i); rep[i] = i; } else rep[i] = j; }
+    const adj = new Map(), link = (a, b) => { let s = adj.get(a); if (!s) adj.set(a, s = new Set()); s.add(b); };
+    for (let t = 0; t < I.length; t += 3) { const a = rep[I[t]], b = rep[I[t + 1]], c = rep[I[t + 2]]; link(a, b); link(b, a); link(b, c); link(c, b); link(c, a); link(a, c); }
+    const W = new Float32Array(nv); for (const i of adj.keys()) W[i] = limbW(P[i * 3], P[i * 3 + 1], P[i * 3 + 2], i);
+    const Q = new Float32Array(P);
+    for (let it = 0; it < (o.flareSmoothIt ?? 10); it++) for (const lam of [0.5, -0.53]) {
       const D = new Float32Array(nv * 3);
       for (const [i, s] of adj) { if (W[i] <= 0) continue; let x = 0, y = 0, z = 0; for (const j of s) { x += Q[j * 3]; y += Q[j * 3 + 1]; z += Q[j * 3 + 2]; } const n = s.size;
         D[i * 3] = (x / n - Q[i * 3]) * lam * W[i]; D[i * 3 + 1] = (y / n - Q[i * 3 + 1]) * lam * W[i]; D[i * 3 + 2] = (z / n - Q[i * 3 + 2]) * lam * W[i]; }
