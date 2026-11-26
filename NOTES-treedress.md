@@ -275,3 +275,8 @@ Debug: `__treedress.stats()`.
 - The phone alpha measure counts card area (override material, no alpha test). The ROS sprig card was a convex 12-gon hull, 28% empty bays between the leaves.
 - Now the rosette's own concave outline (38 points, alpha 0.4 + ~1% margin, morphological close r16, DP eps 7 px on the 512 map), ear-cut with THREE.ShapeUtils, winding matched to the old clockwise fan, dome normals set analytically (no centre vertex). Non-ROS hull / circle untouched.
 - Day home phone: oak cards 1.204 -> 0.988 screens; total alpha 1.48 -> 1.28; +4k tris; calls unchanged. budget.js all 5 views ok. Close-ups and home view look identical.
+
+## Round 45 (upper limbs inside the crown)
+- Crown density: the oak cards are at 0.99 screens after R44, so no headroom for more cards under ~1.0; not changed.
+- Close zoom on the upper limbs (y 13-18): the bark read pale grey-pink and flat like plastic. The day ground-bounce fill emissive reached up into the crown, and nothing shaded the limbs under the leaves.
+- Now the fill fades out above y 12-15. Inside the crown (y 12-15.5, ragged) the bark is darker and slightly greener (light through leaves), with the furrows darker. Key |treedress21. No draw calls.
