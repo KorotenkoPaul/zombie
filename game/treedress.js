@@ -27,7 +27,13 @@ float td_h(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p
 float td_n(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
  return mix(mix(mix(td_h(i),td_h(i+vec3(1,0,0)),f.x),mix(td_h(i+vec3(0,1,0)),td_h(i+vec3(1,1,0)),f.x),f.y),
             mix(mix(td_h(i+vec3(0,0,1)),td_h(i+vec3(1,0,1)),f.x),mix(td_h(i+vec3(0,1,1)),td_h(i+vec3(1,1,1)),f.x),f.y),f.z);}
-float td_f(vec3 p){return td_n(p)*.55+td_n(p*2.13+3.1)*.3+td_n(p*4.37+7.7)*.15;}`;
+float td_f(vec3 p){return td_n(p)*.55+td_n(p*2.13+3.1)*.3+td_n(p*4.37+7.7)*.15;}
+// td_n with its analytic gradient (xyz): a bump from this is smooth per pixel (a screen-derivative bump is constant per 2x2 quad)
+vec4 td_nd(vec3 x){vec3 i=floor(x),f=fract(x),u=f*f*(3.-2.*f),du=6.*f*(1.-f);
+ float a=td_h(i),b=td_h(i+vec3(1,0,0)),c=td_h(i+vec3(0,1,0)),d=td_h(i+vec3(1,1,0)),e=td_h(i+vec3(0,0,1)),g=td_h(i+vec3(1,0,1)),h=td_h(i+vec3(0,1,1)),k=td_h(i+vec3(1,1,1));
+ float k1=b-a,k2=c-a,k3=e-a,k4=a-b-c+d,k5=a-c-e+h,k6=a-b-e+g,k7=-a+b+c-d+e-g-h+k;
+ return vec4(a+k1*u.x+k2*u.y+k3*u.z+k4*u.x*u.y+k5*u.y*u.z+k6*u.z*u.x+k7*u.x*u.y*u.z,
+  du*vec3(k1+k4*u.y+k6*u.z+k7*u.y*u.z,k2+k5*u.z+k4*u.x+k7*u.z*u.x,k3+k6*u.x+k5*u.y+k7*u.x*u.y));}`;
 
 // leaf flutter for instanced cards: small rotation-ish wobble growing with distance from the stem (uv.y)
 // ivy leaves: tip flutter driven by Wind (wind.js windSway: ~.1 calm, ~.4 breeze, ~2 in a gust), so gusts visibly ruffle them
@@ -176,7 +182,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-uniform vec4 tdDrip[8];varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;
+uniform vec4 tdDrip[8];varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -263,6 +269,9 @@ uniform float tdCool;` + NOISE)
           // phones, only while the camera is near the trunk (uniform branch): the fine octave for close-ups, its height also drives
           // a screen-space micro bump below (no extra normal-map read)
           if(tdNear>.5){ hb=tdTri(tdHao,36./11.,vec3(7.3),wn,tdScale); tdHB=hb.r*tdFade; }
+          // [bark close-up round] near the trunk the macro pattern's repeat (about 1.8 m) is broken by a second read at another scale
+          // in slow world-space patches, as on desktop (uniform branch, then a per-pixel one with explicit-LOD reads)
+          if(tdNear>.5){ float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.)); if(brk>.01)ha=mix(ha,tdTri(tdHao,15./11.,vec3(3.1,1.7,5.3),wn,tdScale),brk); }
 #else
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
           vec4 ha=tdTri(tdHao,1.,vec3(0.),wn,tdScale);
@@ -271,8 +280,19 @@ uniform float tdCool;` + NOISE)
 #endif
           tdH=ha.r;float cav=ha.g*mix(1.,.8+.2*hb.g,tdFade);
           float rel=min(1.,tdRelief*(1.+1.2*tdLf)); // roots: furrows darker too (T22)
-          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel); // pores softer: close up they read as black pepper (smooth photo bark)
-          diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf)); // fine octave: a hint only (its cork pattern read as black pepper up close)
+          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel);
+          diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf));
+          // [photo folds round] the photo's oak: long smooth flutes run down the trunk and on out along every root (its roots radiate
+          // from the axis, so one fluting by angle round the axis does both: vertical on the trunk, lengthwise on the roots). They
+          // wander with height and distance, the grooves narrow and dark, the ridges broad. Below the house only (the limbs have
+          // Tree's own grooves); fades out before a flute gets under ~2 px.
+          { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float fr=length(fv), fa=atan(fv.y,fv.x);
+            float ph=fa*17.+1.3*sin(y*.55+fa*3.)+.9*sin(fr*1.15-fa*2.)+.5*sin(y*1.7-fr*.8+fa*5.);
+            float aa=1.-smoothstep(.35,.9,fwidth(ph));
+            tdFlK=aa*(1.-smoothstep(4.2,5.6,y))*smoothstep(.75,1.,fr)*(1.-smoothstep(7.,9.,fr))*(1.-vTdJ.x);
+            tdFl=sin(ph); tdFlD=cos(ph)*17./max(fr,.8);
+            float gv=smoothstep(.3,.95,-tdFl), rg=smoothstep(0.,.9,tdFl);
+            diffuseColor.rgb*=mix(1.,.42+.1*hb.g,gv*tdFlK*.9)*mix(1.,1.14,rg*tdFlK); } // fine octave: a hint only (its cork pattern read as black pepper up close)
           { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
             // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
             diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
@@ -306,6 +326,10 @@ uniform float tdCool;` + NOISE)
 #ifdef TD_LITE
           float big=texture2D(tdHao,vec2(tdP.x+tdP.y*.55,tdP.z-tdP.y*.45)*.09).g*1.4-.35; // a skewed planar read that varies across every face (the old (x+z, y) one was constant along flat root tops: stripes)
           float fine=ha.b;
+          // [root ripple round] ha.b is the bark map's cork detail: as the moss's colour breakup it printed that cork pattern onto
+          // the moss on the sunlit roots as a speckle up close. Within ~6 m it hands over to a soft world-space noise (arithmetic
+          // only, so the per-pixel branch is safe); further out the cork is sub-pixel and stays as it was
+          { float cd=length(cameraPosition-tdP); if(cd<6.){ fine=mix(td_f(tdP*3.1+vec3(0.,big*2.,0.)),fine,smoothstep(3.5,6.,cd)); } }
 #else
           float big=td_f(tdP*vec3(.55,.35,.55));
           float fine=td_f(tdP*3.1+vec3(0.,big*2.,0.));
@@ -336,7 +360,7 @@ uniform float tdCool;` + NOISE)
 #ifdef TD_LITE
           float li=smoothstep(.62,.8,ha.b*.6+big*.5)*smoothstep(.6,1.,ha.r)*smoothstep(.8,2.5,y)*(1.-mm); // phones: from the bark map reads
 #else
-          float li=smoothstep(.74,.82,td_n(tdP*vec3(7.,4.,7.)+big*3.))*smoothstep(.55,.7,td_n(tdP*.9+5.))*smoothstep(1.,3.,y)*(1.-mm);
+          float li=smoothstep(.72,.84,td_n(tdP*vec3(7.,4.,7.)+big*3.)+(tdH-.5)*.25)*smoothstep(.55,.7,td_n(tdP*.9+5.))*smoothstep(1.,3.,y)*(1.-mm)*smoothstep(.3,.6,tdH); /* [bark close-up round] on the ridges, its rim broken by the furrows (a clean noise contour read as a sticker up close) */
 #endif
           // lichen in a few kinds: pale grey-green crust, minty foliose patches and the odd orange-yellow (Xanthoria) spot
 #ifdef TD_LITE
@@ -378,20 +402,27 @@ uniform float tdCool;` + NOISE)
           tdBias=1.2; // the normal reads a little blurred too: single-texel pits lit from the side drew black pepper up close
 #ifdef TD_LITE
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
-          if(tdNear>.5){ vec3 dpx=dFdx(tdP),dpy=dFdy(tdP); float hx=dFdx(tdHB),hy=dFdy(tdHB); vec3 r1=cross(dpy,wn),r2=cross(wn,dpx); float det=dot(dpx,r1);
-            dn-=sign(det)*(hx*r1+hy*r2)/max(abs(det),1e-7)*.01*(1.-.6*tdLf); } // micro bump from the fine octave's height
+          // [bark close-up round] near the trunk: the fine octave's own normal map (one read, explicit LOD), as on desktop. The old
+          // screen-derivative micro bump was constant per 2x2 pixel quad and drew a sandpaper grain on the sunlit roots up close
+          if(tdNear>.5)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.3*tdLf);
 #else
           float brk=smoothstep(.3,.7,td_n(tdP*vec3(.45,.3,.45)+11.));
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
           if(brk>.01)dn=mix(dn,tdTriN(15./11.,vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
           if(tdFade>.01)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.3*tdLf); // on roots the fine octave read as wood grain
 #endif
+          // the flutes in the light too: tilt across them (the horizontal tangent round the axis), steeper in the narrow grooves
+          { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); vec3 tg=normalize(vec3(-fv.y,0.,fv.x)+1e-5); tg-=wn*dot(tg,wn);
+            dn-=tg*tdFlD*.03*(1.+1.4*smoothstep(.3,.9,-tdFl))*tdFlK/max(tdRelief,.05); }
           tdBias=0.;
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
           dn+=tdBD*tdBR*.9;                   // the callus roll round a beam
           dn*=1.+tdCo*.5;                     // collar: deeper squeezed folds
-          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf)); // roots: deeper relief (Critic T22: they read smooth up close)
+          // [root ripple round] up close in the sun the roots' tripled relief lit every cork pore of the map as a speckle: under ~5 m it
+          // eases back towards the trunk's (the furrows still read, the pores stop sparkling)
+          float spkN=tdLf*(1.-smoothstep(2.,5.5,length(cameraPosition-tdP)));
+          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf*(1.-.7*spkN))); // roots: deeper relief (Critic T22: they read smooth up close)
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
@@ -407,10 +438,14 @@ uniform float tdCool;` + NOISE)
           // daylight bounced off the ground, the roots and the house's planks: warm fill so the trunk in the house's shade reads
           // as brown bark, not a black hole (weaker in the furrows and the deep crotches)
           totalEmissiveRadiance+=diffuseColor.rgb*vec3(1.1,.95,.8)*tdDay*.5*(.45+.55*tdH)*(1.-tdCr*.7);
+          // [photo folds round] night: the photo's trunk and roots read in a cool moonlit grey-blue, the flute ridges and the root
+          // tops catching it, the grooves and undersides dark (before, below the house they sank into one dark brown mass)
+          { float up=.45+.55*smoothstep(-.2,.8,wn.y); float rdg=(.35+.65*smoothstep(.3,.8,tdH))*mix(1.,.25+.95*smoothstep(-.3,.8,tdFl),tdFlK);
+            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*(1.-smoothstep(5.,9.,tdP.y)); }
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress6';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress9';
     mat.needsUpdate = true;
   }
 
@@ -488,8 +523,10 @@ uniform float tdCool;` + NOISE)
         // on the roots read as flat green felt from the close zoom)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
  { float px=length(fwidth(tdP)); float aF=clamp(1.-px*160.*3.,0.,1.)*(1.-tdS), aM=clamp(1.-px*47.*1.2,0.,1.)*(1.-tdS)*.4; /* [crown round] the bump is a screen derivative (constant per 2x2 pixel quad): stems under ~3 px drew a blocky pixel camouflage, so they fade out well before that */ /* earth humps: no stem bump (pixel stems speckled, the coarse ones drew dark worms on a 0.6 m hump) */ /* fade the stems once they are smaller than a pixel: aliased, they drew black hatching */
-   float hgt=(td_n(tdP*160.)-.5)*.6*aF+(td_n(tdP*47.)-.5)*.4*aM+.5; vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition); float hx=dFdx(hgt),hy=dFdy(hgt);
-   vec3 r1=cross(dpy,normal),r2=cross(normal,dpx); float det=dot(dpx,r1); normal=normalize(abs(det)*normal-sign(det)*(hx*r1+hy*r2)*.35);
+   /* [bark close-up round] the stems' bump from the noise's analytic gradient, not screen derivatives: up close (1.4 m zoom) the
+      2x2-quad bump drew the cushions as blocky pixel camouflage */
+   vec4 nF=td_nd(tdP*160.),nM=td_nd(tdP*47.); float hgt=(nF.x-.5)*.6*aF+(nM.x-.5)*.4*aM+.5;
+   vec3 gw=nF.yzw*(160.*.6*aF)+nM.yzw*(47.*.4*aM), gv=(viewMatrix*vec4(gw,0.)).xyz; normal=normalize(normal-.0035*(gv-normal*dot(gv,normal)));
    diffuseColor.rgb*=.9+.2*hgt; /* [house round] the coarse stems drew dark worm stripes on the root cushions: a softer fuzz */ /* the wide earth humps: soft fuzz, not black speckles */ }`)
         // weather (same uniforms as the bark): soaked moss deeper and greener, hoar frost on the tops of the cushions on cold nights.
         // Only the green instances (moss), not the brown soil lumps that share this mesh.
@@ -506,7 +543,7 @@ uniform float tdCool;` + NOISE)
         .replace('#include <common>', '#include <common>\nuniform float tdDamp,tdFrost,tdWet;');
       sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdWet = D.barkU.wet;
     };
-    mat.customProgramCacheKey = () => 'tdMossCushion5'; /* SHADERS rule: own key */
+    mat.customProgramCacheKey = () => 'tdMossCushion6'; /* SHADERS rule: own key */
     const NBM = Math.round(110 * MUL), NUP = Math.round(150 * MUL), N = NUP + Math.round(150 * MUL) + NBM, NSOIL = Math.round(70 * MUL), NDOOR = MOBILE ? 6 : 10, im = new THREE.InstancedMesh(g, mat, N + NDOOR + NSOIL);
     g.setAttribute('tdSoil', new THREE.InstancedBufferAttribute(new Float32Array(N + NDOOR + NSOIL), 1));
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
