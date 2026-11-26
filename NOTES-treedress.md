@@ -258,3 +258,7 @@ Debug: `__treedress.stats()`.
 - Branch / crown-base close-zoom sweep: a boxy bark limb stub passes through the bedroom roof at ~(-1.1,13,1.8). Shape = tree.js, reported to Tree (image r40_limb_through_roof.jpg). Wet darkening on the limbs works.
 - The oak crown is matte Lambert, so in the rain it looked bone dry. The leaf chain (key |tdRim5) now, while it rains (barkU.wet): leaves darker and richer (luminance-based, like the bark), plus a cool grey-sky glint at grazing angles on up-facing lighter blades. Strongest by day. Arithmetic only, no texture reads, no new draw calls.
 - Forest trunks at the home view are thin uniform rods (env.js, the forest thread's) - reported, not touched.
+
+## Round 41 (low sun rim; moss collar on the roof limb)
+- Dawn / dusk looked like noon in a darker key. D.sunU (the shadow sun's world dir + a warm colour that exists only while the sun is low, less in rain) drives a warm rim on the bark (|treedress19) and the leaf clumps (|tdRim6). It scales reflectedLight.directDiffuse at lights_fragment_end, so it only shows where the sun really reaches (no glow in shade or at night).
+- Roof limb (Tree rounded it and cut the slates, d0caa2f / 5f4b73b): a damp moss collar on the bark just above the bedroom roof slope (roofY ~ 13.38 - .87|x+2.2|, box x -3..-0.3, z .8..3.5), ragged by noise. Placed after the tdBW beam-bite cut (the ridge beam bite was erasing it) and coloured again in the normal block (Tree's map code washes greens to brown). Subtle olive, matte.
