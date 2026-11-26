@@ -95,11 +95,11 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
  const tips=[];
  function treeVariant(seed){const r=rng(seed);const H=14+r()*6,R0=.55+r()*.35;const parts=[];const ends=[];
   // trunk with a slight lean
-  const lean=V((r()-.5)*1.2,H,(r()-.5)*1.2);parts.push(tube(V(0,-.3,0),lean,R0,R0*.35,MOBILE?7:10));
+  const lean=V((r()-.5)*1.2,H,(r()-.5)*1.2);const mid=lean.clone().multiplyScalar(.45).add(V((r()-.5)*1.6,0,(r()-.5)*1.6)),R1=R0*.68;/* [ENV] the trunk bends once on its way up (photo: crooked dark oak trunks in the mist, not straight posts) */parts.push(tube(V(0,-.3,0),mid,R0,R1,MOBILE?7:10),tube(mid.clone().sub(lean.clone().sub(mid).normalize().multiplyScalar(R1*.6)),lean,R1,R0*.35,MOBILE?7:10));
   // root flare: short thick tubes bending into the ground
   for(let i=0;i<(MOBILE?3:5);i++){const a=i/(MOBILE?3:5)*6.28+r()*.6;parts.push(tube(V(0,1.3,0),V(Math.cos(a)*R0*3.2,-.25,Math.sin(a)*R0*3.2),R0*.75,R0*.25,6));}
   // big branches
-  const nb=4+Math.floor(r()*3);for(let i=0;i<nb;i++){const y=H*(.42+r()*.45),a=r()*6.28,L=3+r()*4;const o=lean.clone().multiplyScalar(y/H);
+  const nb=4+Math.floor(r()*3);for(let i=0;i<nb;i++){const y=H*(.42+r()*.45),a=r()*6.28,L=3+r()*4;const o=y<mid.y?mid.clone().multiplyScalar(y/mid.y):mid.clone().lerp(lean,(y-mid.y)/(H-mid.y));/* [ENV] on the bent trunk */
    const e=o.clone().add(V(Math.cos(a)*L,L*(.35+r()*.5),Math.sin(a)*L));parts.push(tube(o,e,R0*.42*(1.1-y/H),R0*.12,MOBILE?5:6));ends.push(e);}
   ends.push(lean.clone().add(V(0,1,0)));
   const g=mergeGeometries(parts.map(p=>p.toNonIndexed()));g.computeVertexNormals();return {g,ends,H};}

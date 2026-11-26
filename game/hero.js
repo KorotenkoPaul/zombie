@@ -231,7 +231,7 @@ export function createHero(ctx){
  const sh=m=>{m.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;}});return m;};
  const BOOK=P3&&P3.book?P3.book:null;const bookObj=BOOK?BOOK.obj:null;
  const bookHome=bookObj?{pos:bookObj.position.clone(),quat:bookObj.quaternion.clone(),parent:bookObj.parent}:null;
- const mug=sh((()=>{const g=new THREE.Group();const b=new THREE.Mesh(new THREE.CylinderGeometry(.04,.036,.09,14),mugM);b.position.y=.045;g.add(b);const h=new THREE.Mesh(new THREE.TorusGeometry(.025,.007,6,12),mugM);h.position.set(.045,.045,0);g.add(h);
+ const mug=sh((()=>{const g=new THREE.Group();/* PROPS: a turned mug, 24 sides with a rolled rim lip and a real inside (the 14-sided cylinder read faceted at close zoom) */const b=new THREE.Mesh(new THREE.LatheGeometry([[0,0],[.033,0],[.036,.003],[.0365,.008],[.0395,.080],[.0405,.086],[.0412,.0895],[.0398,.0915],[.0378,.0898],[.0368,.084],[.0335,.012],[.03,.009],[0,.009]].map(q=>new THREE.Vector2(q[0],q[1])),24),mugM);g.add(b);const h=new THREE.Mesh(new THREE.TorusGeometry(.025,.007,8,20,Math.PI*1.25),mugM);h.rotation.z=-Math.PI*.625;h.position.set(.045,.045,0);g.add(h);
   const tea=new THREE.Mesh(new THREE.CircleGeometry(.035,14),new THREE.MeshStandardMaterial({color:0x6B3A1E,roughness:.2}));tea.rotation.x=-Math.PI/2;tea.position.y=.08;g.add(tea);return g;})());
  const spoon=sh((()=>{const g=new THREE.Group();const h=new THREE.Mesh(new THREE.CylinderGeometry(.007,.009,.32,6),wood);h.position.y=.12;g.add(h);const s=new THREE.Mesh(new THREE.SphereGeometry(.03,10,6,0,Math.PI*2,0,Math.PI/2),wood);s.scale.y=.4;s.rotation.x=Math.PI;s.position.y=-.04;g.add(s);return g;})());
  const plate=sh(new THREE.Mesh(new THREE.CylinderGeometry(.1,.08,.015,18),mugM));
