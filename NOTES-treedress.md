@@ -209,3 +209,6 @@ Debug: `__treedress.stats()`.
 - treedress placements use the ground as drawn (`gH`: Ground's meshH, then heightAt) instead of env's base groundH (missed the humps by up to ~15 cm).
 - Voids under roots: Ground's soil mounds already fill them; the remaining pockets under the trunk's flare are hidden from every normal view.
 - Steps: standAt sampled every 5 cm over the trodden path: one 6-18 cm step where a root crosses the path at x -3.3..-1.7, z 4.3..5.3 (reported, terrain not changed).
+
+## Round 30 — upper trunk and limb bases vs the photo
+- Above the house (y 5.6..9.6, under 3.3 m off the axis) nothing carved the bark: treedress's flutes stopped at 4.2..5.6 and Tree's limb grooves start at 3.3 m out / 9.6 m up, so the visible upper trunk read flat. The flutes now run on up to the fork (fade 9.4..10.8) and out onto the limb bases, handing over to Tree's grooves at 3.3..4.4 m; below the house unchanged. Crotches keep 40 % of the flute (was cut to 0). Shader only, no triangles. Key |treedress10.

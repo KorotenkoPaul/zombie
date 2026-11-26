@@ -196,7 +196,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (PL.kitchenLamp) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
     const panes = claimHousing(kPos);
     const fo = oilFlame(kPos, null);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 5.2 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -230,7 +230,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // phones: light bounced off the bench and floor travels UP (walls, pegboard, the hero's body and face), so its pool cone
     // looks up and stops at the ceiling; a down cone lit only the floor under the bench and left him and the walls dark
     wb.userData.poolUp = WS + 3.3;
-    add('workshop', 'workshop', 'oil', wPos, { lights: [{ l: sp, I: 11.5 }, { l: wb, I: MOBILE ? 2.9 : 2.6 }], emis, opac: [[fm, 1]], extra: k => { wfl.visible = k > .02; const g = Math.min(1.35, k); wfl.scale.set(1.5 * (.3 + .7 * Math.min(1, g)), 1.1 * (.1 + .9 * g), .67 * (.3 + .7 * Math.min(1, g))); }, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
+    add('workshop', 'workshop', 'oil', wPos, { lights: [{ l: sp, I: 11.5 }, { l: wb, I: MOBILE ? 5.2 : 2.6 }], emis, opac: [[fm, 1]], extra: k => { wfl.visible = k > .02; const g = Math.min(1.35, k); wfl.scale.set(1.5 * (.3 + .7 * Math.min(1, g)), 1.1 * (.1 + .9 * g), .67 * (.3 + .7 * Math.min(1, g))); }, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
@@ -541,10 +541,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // A lit room is warm all over (walls, ceiling, corners), not just a hotspot by the lamp: a soft unshadowed
   // bounce light in the middle of the room stands in for the light the warm planks throw back.
   // Light also leaves through the back windows onto the trunk (desktop: a small spill light; phones: halo only).
+  /* phones, night (Env, 2026-11-26): the photo's kitchen and workshop read 1.5-2x brighter and deeper orange than ours
+     (kitchen 189/124/70 vs 132/92/53, workshop 169/96/46 vs 114/72/38 with the hero in them); the bedroom stays dim (Pavel) */
+  const KWB = 2.4;
   const ROOMS = {
-    kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: 2.0 },   // toward the stove: the lamp now hangs by the fridge
+    kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: MOBILE ? 2.0 * KWB : 2.0 },   // toward the stove: the lamp now hangs by the fridge
     bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: MOBILE ? .9 : .36 },   /* desktop: at .9 this shadowless all-room fill washed out the lamp's shadows (the bunk frame's on the back wall, his own); the lamp's cone takes the light back */   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
-    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
+    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: MOBILE ? 2.6 * KWB : 2.6 },
   };
   const glows = [];
   // the camera, captured as the scene renders: a window's outside halo must not shine into the room through the glass
@@ -557,7 +560,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // darker than desktop and the photo's warm-tan wall-to-wall glow. A pool light is a downward half-space, so on phones
     // it sits higher (near head height) to reach the walls as well as the floor.
     // creamy: the light off warm-tan planks (the lamps' own orange made the rooms read deep orange; photo: cream-tan)
-    const b = new THREE.PointLight(MOBILE ? 0xFFDDBA : 0xFFD6A8, 0, 3.6, 0); b.position.copy(R.c); if (MOBILE) b.position.y += .9; scene.add(b);
+    const b = new THREE.PointLight(MOBILE ? (room === 'bedroom' ? 0xFFDDBA : 0xFFB878) : 0xFFD6A8, 0, 3.6, 0); b.position.copy(R.c); if (MOBILE) b.position.y += .9; scene.add(b);
     glows.push({ room, l: b, I: R.bounce * .5, bounce: true });
   }
   for (const w of windows) {
