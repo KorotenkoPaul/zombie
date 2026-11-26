@@ -676,7 +676,7 @@ export function createAudio(ctx) {
     lastH = h;
     { const P = pondGeo(), sig = P.x + P.z * 7 + P.r * 13; if (sig !== pondSig) { if (pondSig !== null) for (const k in L) if (L[k].pondy && ind[k]) for (const I of ind[k]) I.pos = place('pond'); pondSig = sig; } }
     layerAcc += dt; if (layerAcc >= .1) { tickLayers(h, env, layerAcc); layerAcc = 0; }   // creatures decide 10x a second, not every frame
-    gusts(env); windBed(env);
+    gusts(env); if (/[?&]windbed/.test(location.search)) windBed(env);/* [ENV] off by default: no constant noise bed (Pavel removed exactly this hiss before); ?windbed to audition */
     // rain on leaves and roof
     // rain: leaves all around, and drumming on the roof when the camera (or hero) is near one
     const R = window.__rain, cp = ctx.camera ? ctx.camera.position : null;

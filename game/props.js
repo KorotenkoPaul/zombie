@@ -1384,7 +1384,7 @@ export function buildProps(ctx) {
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   // [PROPS] the kitchen lantern hangs on a wall bracket on the right wall just past the fridge, wick ~1.58 m over the floor, so he
   // lights it with a match from his hand (it hung from the ceiling over the walk line in front of the counter, 32 cm out of reach)
-  place('klamp', bake(bracketLantern()), -.93 - .192, KT + 1.64, 1.92, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
+  { const kg = new THREE.Group(), lh = lanternHousing(.035); kg.add(lh); add(kg, new THREE.CylinderGeometry(.035, .045, .02, 12), M.iron, 0, .225, 0); bake(kg); place('klamp', kg, -2.27, KT + 2.12, 1.7, { solid: false, wall: true }); kg.traverse(o => { if (o.isMesh && o.material === M.iron) o.castShadow = true; }); } /* photo: the kitchen lantern hangs from the ceiling on a short rod between the two back windows (Tree 14c50a6), in front of the dish shelf: bottom at KT+2.01, he walks under it; its iron cap casts the point shadow, so the ceiling stays dim above it (Lights) */
 
   // ---------- bedroom ----------
   // layout: bunk, reading table and chair sit 25 cm toward +x so the walk from the bedroom ladder top passes the bunk's end post
@@ -1825,7 +1825,7 @@ export function buildProps(ctx) {
     const st = placed.stove, kl = placed.klamp, wl = placed.wlamp, bl = placed.blamp;
     out.lights = {
       oven: { pos: wp(st, 0, .3, .05), obj: st, mats: [M.fire, M.ovenGlass, out.oven.flameMat], setHeat: out.oven.setHeat },
-      kitchenLamp: { pos: wp(kl, 0, 0, 0), obj: kl, mats: [M.glass] },
+      kitchenLamp: { pos: wp(kl, 0, 0, 0), obj: kl, mats: [M.glass], pendant: true },
       bedroomLamp: { pos: wp(bl, 0, 0, 0), obj: bl, mats: [M.glass], own: true },
       workshopLamp: { pos: wp(wl, 0, .06, 0), obj: wl, mats: [wl.userData.inner] },
       candle: { pos: wp(candleObj, 0, .13, 0), obj: candleObj, mats: [candleObj.userData.flame] },
