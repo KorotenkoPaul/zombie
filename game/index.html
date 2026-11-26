@@ -464,7 +464,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  spDepth.onBeforeCompile=sh=>{sh.uniforms.uSH=spH;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float sid; uniform vec4 uSH['+(SP_MAX/4)+'];').replace('#include <project_vertex>','#include <project_vertex>\n{int i=int(sid+.5);if(uSH[i/4][i-i/4*4]>.5)gl_Position=vec4(2.,2.,2.,1.);}');};
  spDepth.customProgramCacheKey=()=>'sunProxyDepth';
  const spAll=new Map();
- const spOK=m=>plainCaster(m)&&!m.material.alphaHash&&!m.material.wireframe&&m.material.visible!==false&&!(m.material.clippingPlanes&&m.material.clippingPlanes.length)&&m.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&!m.geometry.isInstancedBufferGeometry&&m.geometry.attributes.position&&m.geometry.drawRange.start===0&&Math.min(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count,m.geometry.drawRange.count)/3<=SP_TRIS;
+ const spOK=m=>plainCaster(m)&&m.layers.constructor===THREE.Layers&&!m.material.alphaHash&&!m.material.wireframe&&m.material.visible!==false&&!(m.material.clippingPlanes&&m.material.clippingPlanes.length)&&m.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&!m.geometry.isInstancedBufferGeometry&&m.geometry.attributes.position&&m.geometry.drawRange.start===0&&Math.min(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count,m.geometry.drawRange.count)/3<=SP_TRIS;
  const spBake=o=>{const f=o.userData.shadowBake;try{return typeof f==='function'&&!!f();}catch(e){return false;}};/* a part another system hides from the main pass but whose shadow must stay (props.js tool proxy: userData.shadowBake = () => tool at home) */
  const spSeen=o=>{let q=o;for(;q;q=q.parent){if(!q.visible&&!(q===o&&spBake(o)))return false;if(q===scene)return true;}return false;};
  const _spS=new THREE.Sphere();
@@ -565,6 +565,63 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  sm.render=(L,sc,cam)=>{const held=[];const D=L.filter(due);if(D.length>1){D.sort((a,b)=>(waitN.get(b)||0)-(waitN.get(a)||0)||(a===sun?-1:b===sun?1:0));
    const go=D[0]===sun?[sun]:[D[0]];for(const l of D){if(go.includes(l)){waitN.set(l,0);continue;}l.shadow.needsUpdate=false;held.push(l);waitN.set(l,(waitN.get(l)||0)+1);}}
   for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}const PV=window.__plView||[];for(const v of PV)if(v.hid){v.S.visible=true;v.D.visible=false;}/* the shadow passes see the real plank meshes */try{draw(L,sc,cam);}finally{for(const v of PV)if(v.hid){v.S.visible=false;v.D.visible=true;}for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
+/* [PERF] still batches: loose meshes that share one material object (a wood, an iron, a cloth used by the bunk, chairs, stove, counter
+   items...) were one draw each (248 draws, 164 materials at home). Meshes that have not moved for 2 s are drawn as one world-space mesh
+   per material. The originals stay where they are for everything else: raycasts, .visible, .layers and the game's logic see them as
+   before; only renderer.render skips them while their batch stands (their layers' test() answers false during a render). Any change to
+   a part (moved, shown/hidden, other geometry or material, removed) drops its batch at once; it is rebuilt after 2 s of stillness.
+   Only plain materials (no onBeforeCompile: their shaders could read object-space positions), opaque, layer 0, not the hero.
+   ?stillbatch=off or __stillBatchOff draws the originals. Stats: __stillBatch(). */
+{const SBOFF=/[?&]stillbatch=off/.test(location.search);let REND=0;{const r0=renderer.render;renderer.render=function(){REND++;try{return r0.apply(this,arguments);}finally{REND--;}};}
+ class ParkLayers extends THREE.Layers{test(l){return REND?false:super.test(l);}}
+ const G=new Map();/* material -> {parts:[{o,mw,v}], mesh, t} */let scanT=-1e9,built=0,dropped=0;
+
+ /* a material's own shader hook is fine when what it adds to the VERTEX shader is only world-space (modelMatrix*...) or a plain
+    attribute pass-through: the merged mesh's modelMatrix is the identity and its vertices are the parts' world positions. Checked once per
+    material by running the hook on a copy of three's shader source; fragment-only additions can't see object space at all. */
+ const SAFE_V=new Set(['','varying vec3 vWW;','attribute float vmet; varying float vMet;','vMet = vmet;','{vec4 ww=vec4(transformed,1.);','#ifdef USE_INSTANCING','ww=instanceMatrix*ww;','vWW=(modelMatrix*ww).xyz;}','varying vec3 vWT;','{vec4 wq=vec4(transformed,1.);','wq=instanceMatrix*wq;','vWT=(modelMatrix*wq).xyz;}']);
+ const obcOK=new WeakMap();const LIB={MeshStandardMaterial:'standard',MeshPhysicalMaterial:'physical',MeshLambertMaterial:'lambert',MeshBasicMaterial:'basic',MeshPhongMaterial:'phong'};
+ const hookSafe=m=>{if(m.onBeforeCompile===THREE.Material.prototype.onBeforeCompile)return true;let r=obcOK.get(m);if(r!==undefined)return r;r=false;
+  try{const L=THREE.ShaderLib[LIB[m.type]];if(L){const sh={vertexShader:L.vertexShader,fragmentShader:L.fragmentShader,uniforms:THREE.UniformsUtils.clone(L.uniforms),defines:{}};m.onBeforeCompile(sh,renderer);
+   const base=new Set(L.vertexShader.split('\n'));r=sh.vertexShader.split('\n').every(l=>base.has(l)||SAFE_V.has(l.trim()));}}catch(e){r=false;}obcOK.set(m,r);return r;};
+ const plainMat=m=>m&&!Array.isArray(m)&&!!LIB[m.type]&&!m.transparent&&!(m.alphaTest>0)&&m.visible!==false&&!m.wireframe&&hookSafe(m);
+ const attrSig=g=>Object.keys(g.attributes).sort().map(k=>k+g.attributes[k].itemSize).join()+(g.index?'i':'n');
+ const vis=o=>{for(let q=o;q;q=q.parent){if(!q.visible)return false;if(q===scene)return true;}return false;};
+ const park=(o,on)=>{if(on){if(!(o.layers instanceof ParkLayers)){const L=new ParkLayers();L.mask=o.layers.mask;o.layers=L;}}else if(o.layers instanceof ParkLayers){const L=new THREE.Layers();L.mask=o.layers.mask;o.layers=L;}};
+ const drop=e=>{if(e.mesh){scene.remove(e.mesh);e.mesh.geometry.dispose();e.mesh=null;dropped++;}for(const p of e.parts)park(p.o,false);};
+ const still=p=>p.o.parent&&p.o.material===p.m&&p.o.castShadow===p.c&&vis(p.o)&&p.o.matrixWorld.equals(p.mw)&&p.o.geometry===p.g&&p.g.attributes.position.version===p.v&&p.o.layers.mask===1;
+ function merge(e){const m=e.mat;let nv=0,ni=0;for(const p of e.parts){nv+=p.g.attributes.position.count;ni+=p.g.index?p.g.index.count:p.g.attributes.position.count;}
+  const g0=e.parts[0].g,out=new THREE.BufferGeometry(),I=new (nv>65535?Uint32Array:Uint16Array)(ni);const nm=new THREE.Matrix3();let vo=0,io=0;
+  for(const k of Object.keys(g0.attributes)){const sz=g0.attributes[k].itemSize,A=new Float32Array(nv*sz);let o=0;for(const p of e.parts){const a=p.g.attributes[k];
+    if(k==='position'){const v=new THREE.Vector3();for(let i=0;i<a.count;i++){v.fromBufferAttribute(a,i).applyMatrix4(p.o.matrixWorld);A[o++]=v.x;A[o++]=v.y;A[o++]=v.z;}}
+    else if(k==='normal'){nm.getNormalMatrix(p.o.matrixWorld);const v=new THREE.Vector3();for(let i=0;i<a.count;i++){v.fromBufferAttribute(a,i).applyMatrix3(nm).normalize();A[o++]=v.x;A[o++]=v.y;A[o++]=v.z;}}
+    else for(let i=0;i<a.count;i++)for(let c=0;c<sz;c++)A[o++]=a.getComponent?a.getComponent(i,c):a.array[i*sz+c];}
+   out.setAttribute(k,new THREE.BufferAttribute(A,sz));}
+  for(const p of e.parts){const a=p.g.attributes.position,ix=p.g.index,n=ix?ix.count:a.count,fl=p.o.matrixWorld.determinant()<0;for(let t=0;t<n;t+=3)for(let q=0;q<3;q++){const j=fl?(q===0?0:3-q):q;I[io++]=(ix?ix.getX(t+j):t+j)+vo;}vo+=a.count;}
+  out.setIndex(new THREE.BufferAttribute(I,1));out.computeBoundingSphere();
+  const mesh=new THREE.Mesh(out,m);mesh.castShadow=e.cast;mesh.receiveShadow=e.recv;mesh.matrixAutoUpdate=false;mesh.raycast=()=>{};mesh.name='stillBatch';mesh.userData.stillBatch=1;scene.add(mesh);mesh.updateMatrixWorld(true);e.mesh=mesh;built++;
+  for(const p of e.parts)park(p.o,true);}
+ function scan(){let hr=null;try{hr=hero&&hero.root;}catch(err){}const skip=new Set([hr].filter(Boolean));const C=new Map();
+  const walk=o=>{if(skip.has(o)||!o.visible||o.userData.stillBatch||o.userData.lampCrop||o.name==='propsStatic')return;
+   if(o.isMesh&&!o.isInstancedMesh&&!o.isSkinnedMesh&&o.constructor===THREE.Mesh&&o.layers.mask===1&&plainMat(o.material)&&o.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&o.onAfterRender===THREE.Object3D.prototype.onAfterRender&&!o.customDepthMaterial&&!o.customDistanceMaterial&&o.geometry.attributes.position&&!o.geometry.attributes.tangent&&!Object.values(o.geometry.attributes).some(a=>a.isInterleavedBufferAttribute)&&!(o.geometry.morphAttributes&&o.geometry.morphAttributes.position)&&o.geometry.drawRange.start===0&&o.geometry.drawRange.count===Infinity&&!o.geometry.isInstancedBufferGeometry&&o.frustumCulled&&o.renderOrder===0){
+    const k=o.material.uuid+'|'+o.castShadow+o.receiveShadow+'|'+attrSig(o.geometry);if(!C.has(k))C.set(k,[]);C.get(k).push(o);}
+   for(const c of o.children)walk(c);};walk(scene);return C;}
+ const prevSB=scene.onBeforeRender;scene.onBeforeRender=function(r,sc,cam,...a){if(prevSB)prevSB.call(this,r,sc,cam,...a);
+  if(REND>1||sc!==scene)return;try{const off=SBOFF||window.__stillBatchOff,now=performance.now();
+   if(off){for(const e of G.values())drop(e);G.clear();scanT=-1e9;return;}
+   /* a batch whose parts all stand as they were stays; any change drops it */
+   for(const [k,e] of G){if(e.mesh&&!e.parts.every(still)){drop(e);e.t=now;e.parts=[];}}
+   if(now-scanT<2000)return;scanT=now;const C=scan();
+   for(const [k,os] of C){let e=G.get(k);if(!e){e={mat:os[0].material,cast:os[0].castShadow,recv:os[0].receiveShadow,parts:[],mesh:null,cand:new Map(),t:now};G.set(k,e);}
+    if(e.mesh)continue;/* standing: keep */
+    /* candidates that have kept their matrix for 2 s */
+    const ok=[];for(const o of os){const c=e.cand.get(o);if(c&&c.mw.equals(o.matrixWorld)&&c.g===o.geometry&&c.v===o.geometry.attributes.position.version){if(now-c.t>=1900)ok.push(o);}else e.cand.set(o,{mw:o.matrixWorld.clone(),g:o.geometry,v:o.geometry.attributes.position.version,t:now});}
+    for(const o of [...e.cand.keys()])if(!os.includes(o))e.cand.delete(o);
+    let tris=0;const P=[];for(const o of ok){const g=o.geometry,n=(g.index?g.index.count:g.attributes.position.count)/3;if(tris+n>30000)break;tris+=n;P.push({o,mw:o.matrixWorld.clone(),g,v:g.attributes.position.version,m:o.material,c:o.castShadow});}
+    if(P.length>=2){e.parts=P;merge(e);}}
+   for(const [k,e] of G)if(!C.has(k)&&!e.mesh)G.delete(k);
+  }catch(err){console.error('stillBatch',err);for(const e of G.values())drop(e);G.clear();}};
+ window.__stillBatch=()=>{let b=0,p=0,t=0;for(const e of G.values())if(e.mesh){b++;p+=e.parts.length;t+=e.mesh.geometry.index.count/3;}return {batches:b,parts:p,saved:p-b,tris:t,built,dropped};};}
 /* [PERF] lamp halos in one draw: Environment's halo sprites (env.addHalo: additive, no depth write, so their order among
    themselves does not matter) were one draw call each (7-9 at night). Here they are camera-facing quads of one mesh,
    rebuilt per render from the sprites' own state (position, scale, colour, opacity, visible); the sprites themselves are
