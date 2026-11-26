@@ -6,7 +6,7 @@ const fs=require('fs'),path=require('path');const {open}=require('./lib');const 
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const TASK=arg('task','eat'),HOUR=+arg('hour',13),HERO=arg('hero','old'),SHOTS=+arg('shots',0),MAX=+arg('max',150),OUT=path.resolve(arg('out','/tmp/tasklab/'+TASK+'-'+HERO));
 const OPTS=JSON.parse(arg('opts','null'));
-(async()=>{fs.mkdirSync(OUT,{recursive:true});const {b,p,errs}=await open({seed:+arg('seed',1),query:HERO==='new'?'?hero=new':HERO==='detail'?'?hero=detail':'',vp:{width:480,height:480}});
+(async()=>{fs.mkdirSync(OUT,{recursive:true});const {b,p,errs}=await open({seed:+arg('seed',1),query:(HERO==='old'?'':'?hero='+HERO),vp:{width:480,height:480}});
  await p.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
  await p.evaluate(`(${install})({})`);await p.evaluate(()=>__qa.start());await p.evaluate(h=>{__qa.reseed(12345);__th.setHour(h);},HOUR);
  const step=n=>p.evaluate(([n])=>{let st='';__qa.step(n,1/60,f=>{const a=__dbg.HH.act;st=(a&&a.step)||'';__A.sample(f,1/60,__th.state().hour,'step:'+st);});return {task:__dbg.hero.task,step:st,f:__qa.frame};},[n]);
@@ -27,7 +27,7 @@ const OPTS=JSON.parse(arg('opts','null'));
   const want=[];const t1=steps.length?Math.max(...mine.map(q=>q.f),steps[steps.length-1][0]+120):0;const fr=[];
   const extra=(arg('frames','')||'').split(',').filter(Boolean).map(Number);
   for(let k=0;k<SHOTS;k++)fr.push(Math.round(t0f+(t1-t0f)*k/(SHOTS-1)));fr.push(...extra);fr.sort((a,b)=>a-b);
-  const o=await open({seed:+arg('seed',1),query:HERO==='new'?'?hero=new':HERO==='detail'?'?hero=detail':'',vp:{width:480,height:480}});const P=o.p;
+  const o=await open({seed:+arg('seed',1),query:(HERO==='old'?'':'?hero='+HERO),vp:{width:480,height:480}});const P=o.p;
   await P.addStyleTag({content:'body>*:not(#stage){display:none!important}'});
   await P.evaluate(`(${install})({})`);await P.evaluate(()=>__qa.start());await P.evaluate(h=>{__qa.reseed(12345);__th.setHour(h);},HOUR);
   const st=n=>P.evaluate(([n])=>{__qa.step(n,1/60,f=>__A.sample(f,1/60,__th.state().hour,''));return __qa.frame;},[n]);

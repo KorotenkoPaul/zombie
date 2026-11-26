@@ -95,3 +95,53 @@ Debug: `__treedress.stats()`.
 ## Round 14 (on the new trunk forms, d015ff1)
 - Pavel wants the bark smooth like the photo, character from the forms: bark relief default 1 -> 0.45 (plates, cavities, micro
   octave and normals all scale with it). Moss, ivy, creases and bites rebuilt fine on the new geometry (712 creases, 72 bites).
+
+## Round 15: the earth humps at the ladder foot (2026-11-25)
+- The "black speckled ellipse / faceted blob" reported by Env and Ground at the ground-ladder foot was a soil hump (the 0.3-0.6 m humps between the roots share the moss cushion InstancedMesh). Normally buried; where the floor shader sinks the floor it stood out near-black, with the pixel-size stem bump drawing black speckles and the cut into the floor a hard rim.
+- Fix (key now 'tdMossCushion4'): per-instance attribute tdSoil marks the humps. On them: mossy colour (hash-picked, no extra R() so placements stay), browner low down, no stem bump, soft mottling from arithmetic noise faded by fwidth, and a frayed rim (discard by normalised height vs noise; no texture reads).
+- Test: raise one hump 7 cm on purpose (scratchpad soil6.json) to see the worst case.
+
+## Round 16: bark dressing under the clump crown, phone close-up (2026-11-26)
+- SHADERS rule: swayMat (ivy, ferns, tufts) had no key: its default key is the hook's source text, the same for all three, so the ivy and the ferns could share one program. Keys now: 'tdSway|amp|chunk', tufts +'|tdTufts1', fungi 'tdFungi1', hanging 'tdHanging1', the unused soil material 'tdSoilMat1'.
+- Apple rule: on phones the bark reads (tdTex) were plain texture2D inside the per-pixel weight branches (w>0, tdLf). Now textureLod with an explicit LOD from gradients taken in uniform flow (tdDx/tdDy/tdUd also on TD_LITE). tdBias (normal reads +1.2) softens the single-texel pits.
+- Black "pepper" on roots and limbs up close: pores/fine octave toned down (cav .74 floor, fine octave .93+.14).
+- Moss cushion stems: the bump is a screen derivative (constant per 2x2 quad), so stems under ~3 px drew a blocky camouflage. They now fade much earlier (aF k=3, aM k=1.2).
+- Hanging strands: pale grey-green beard lichen, not bright green ribbons.
+
+## Round 17: ivy and moss on the house (2026-11-26)
+- Phones: the join-ivy sprigs on beams and posts had no stem (only desktop got one): their leaves floated loose. Stems on phones too.
+- Night: the moonlit rim drew long blue painted streaks on the faceted roots by the door. Rim is now pow 4, weaker low down (y<1.5..4.5) and broken by the bark ridges (tdH).
+- Door: moss in the threshold corners beside the jambs (DOORP passed in from index.html as C.door; own rng(7071), sampler/pointOn take an rng so the main stream and every later placement are unchanged). 10 desktop / 6 phone slots reserved in the moss mesh.
+- Root cushions: taller domes (y*1.35, sunk less). The coarse stem bump drew dark worm stripes, so it is weaker now (aM*.4) and soft mottling (td_f 41) is added on every cushion.
+- Budget (tests/perf/budget.js): origin/master was already OVER on "day home" (alpha 1.51) and "night yaw limit" (454k). This round adds about 1k tris on the phone.
+
+## Round 19: draw calls and wet moss and ivy
+- **Phones, one draw fewer.** The root-pocket leaves are baked into Ground's litter mesh at runtime instead of being their own instanced mesh.
+  - Ground's atlas grows from 3 cells to 4: its own cells keep their texels, because every u on its litter and skitter leaves is scaled by 3/4.
+  - The new cell is painted from `leaf2-128.png`, because the phone's `leaf2` is a KTX2 that can't be drawn into a canvas. The image loads after start; until then the old mesh draws.
+  - Guarded: the bake runs only if the atlas is 384×128 and the litter has exactly Ground's 6 attributes, otherwise nothing changes. `__treedress.litterMerged` reports the result.
+  - Desktop keeps its own mesh.
+- **Phones now get ivy stems** (`ivyStemsBaked`). They are baked into the same litter mesh on the white atlas cell, so they cost no draw; before this, the vines' leaves on phones floated without stems.
+- **Rain.**
+  - Moss: the cushions get a wet sheen while it rains (the tips more than the hollows) and the earth humps soak darker. Key: `tdMossCushion5`.
+  - Ivy and ferns: they darken a little when soaked and glisten in rain, using the same `barkU.wet`/`damp` uniforms as the bark. Key suffix: `|tdWet1`.
+
+## Round 20: wind
+- **Ferns** now sway with Wind's shared `windSway` (freq 1.5), so the same gust front that moves the crown reaches them too.
+  - Calm: about 1 cm at the frond tip. Breeze: about 3 cm. Gust: about 13 cm.
+  - On top of that, a faint leaflet shiver that grows with the gust.
+- **Grass tufts** now read Wind as well (`windSway` freq 1.7, like Ground's grass), via `mat.userData.wind`, which makes swayMat call `W.hook`.
+- **Ivy** (FLUTTER, windSway 2.6) and the **hanging lichen** (windRope + windBranch) already used Wind; they are unchanged.
+- The old sine sway stays as a `#else` fallback for when Wind is missing. No new draws.
+
+## Round 21: autumn touches on the trunk
+- **Drip lines under the landings** (bark shader, `tdDrip[8]`, key `|treedress6`).
+  - Sources: bark faces right under a board or beam, clustered and ranked by bark area. The side facing the home view counts 3x.
+  - Excluded: the door lintel and anything above y=11. See `__treedress.drips`.
+  - Look: dark, water-stained vertical runs. Faint when dry, stronger and glossy when wet or in rain.
+  - Cost: arithmetic noise only, an 8-iteration loop, no texture reads.
+- **Fold leaves**: about 16 more leaves (9 on phones) in the trunk's bark folds between the landings (y 4.5–8.5, near the axis).
+  - They use their own rng (7073), so nothing else moves. They sit in the litter mesh's extra capacity.
+- **Board leaves** (the piles on the landings): now baked into Ground's litter mesh (atlas cell 0, Ground's own leaf) on phone and desktop.
+  - Saves one draw. Falls back to their own mesh if the atlas or attributes don't match.
+- Budget: 286/282/285 calls, tris up to 447k (yaw limit).

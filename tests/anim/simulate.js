@@ -30,8 +30,8 @@ async function simulate(p,{drain=null,only=null,start=6.5,hours=25,dt=1/60,tour=
   }
  if(tour||gate){
   // every other body task hero.js knows (HH.hasTask), at an hour that suits it
-  const EXTRA=(gate?[['read',11],['cook',8],['wash',9],['tea',13],['craft',10],['look',16],['sleep',22.5]]:[]).concat([['trip',9,{kind:'hunt',jacket:true,lantern:true},240],['store',10],['cook',12,{fromFridge:true}],['eat',13],['fetchwater',9],['dumpwater',9.5],
-   ['trip',15,{kind:'wood',jacket:false},240],['trip',9,{kind:'hunt',hit:true},240,'hunt'],['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
+  const EXTRA=(gate?[['read',11],['cook',8],['wash',9],['tea',13],['craft',10],['look',16],['sleep',22.5]]:[]).concat([['trip',9,{kind:'hunt',jacket:true,lantern:true},240],['store',10],['cook',12,{fromFridge:true},undefined,'cookfridge'],['eat',13],['fetchwater',9],['dumpwater',9.5],
+   ['trip',15,{kind:'wood',jacket:false},240,'tripwood'],['trip',9,{kind:'hunt',hit:true},240,'hunt'],['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
    ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],['splitwood',10],
    ['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11]]);
   for(const [t,h,opts,maxS,label] of EXTRA){const L=label||t;if(only&&!only.test(L))continue;const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
