@@ -674,8 +674,8 @@ uniform float tdCool;` + NOISE)
         // leaves in pairs along the stem, bigger and denser low down, thinning towards the tip
         const thin = 1 - (y - pts[0].y) / Math.max(0.5, top - pts[0].y);
         const side = V(-Math.sin(a), 0, Math.cos(a));
-        if (R() < 0.55 + 0.35 * thin) addLeaf(p.clone().addScaledVector(side, rr(0.03, 0.09)), out, rr(0.12, 0.19) * (0.7 + 0.5 * thin));
-        if (R() < 0.45 + 0.35 * thin) addLeaf(p.clone().addScaledVector(side, -rr(0.03, 0.09)), out, rr(0.12, 0.19) * (0.7 + 0.5 * thin));
+        if (R() < 0.38 + 0.32 * thin) addLeaf(p.clone().addScaledVector(side, rr(0.03, 0.09)), out, rr(0.12, 0.19) * (0.7 + 0.5 * thin));
+        if (R() < 0.3 + 0.32 * thin) addLeaf( /* [home-view round] ~30% fewer leaves: the vines read as dense dark curtains on the clean photo trunk (same R() calls, so the layout stays) */p.clone().addScaledVector(side, -rr(0.03, 0.09)), out, rr(0.12, 0.19) * (0.7 + 0.5 * thin));
         if (depth < 1 && R() < 0.05) climb(a + (R() < 0.5 ? -1 : 1) * 0.15, y + 0.1, Math.min(top, y + rr(0.6, 1.4)), depth + 1);
       }
       if (pts.length > 2) stems.push({ pts, r: depth ? 0.009 : 0.016 });
