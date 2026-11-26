@@ -295,12 +295,12 @@ uniform float tdCool;` + NOISE)
           diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf));
           // [photo folds round] the photo's oak: long smooth flutes run down the trunk and on out along every root (its roots radiate
           // from the axis, so one fluting by angle round the axis does both: vertical on the trunk, lengthwise on the roots). They
-          // wander with height and distance, the grooves narrow and dark, the ridges broad. Below the house only (the limbs have
-          // Tree's own grooves); fades out before a flute gets under ~2 px.
+          // wander with height and distance, the grooves narrow and dark, the ridges broad. Above the house they run on up
+          // the trunk to the fork and out onto the limb bases, handing over to Tree's limb grooves (from 3.3 m off the axis); fades out before a flute gets under ~2 px.
           { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float fr=length(fv), fa=atan(fv.y,fv.x);
             float ph=fa*17.+1.3*sin(y*.55+fa*3.)+.9*sin(fr*1.15-fa*2.)+.5*sin(y*1.7-fr*.8+fa*5.);
             float aa=1.-smoothstep(.35,.9,fwidth(ph));
-            tdFlK=aa*(1.-smoothstep(4.2,5.6,y))*smoothstep(.75,1.,fr)*(1.-smoothstep(7.,9.,fr))*(1.-vTdJ.x);
+            tdFlK=aa*mix(1.-smoothstep(7.,9.,fr),(1.-smoothstep(3.3,4.4,fr))*(1.-smoothstep(9.4,10.8,y)),smoothstep(4.2,5.6,y))*smoothstep(.75,1.,fr)*(1.-.6*vTdJ.x);
             tdFl=sin(ph); tdFlD=cos(ph)*17./max(fr,.8);
             float gv=smoothstep(.3,.95,-tdFl), rg=smoothstep(0.,.9,tdFl);
             diffuseColor.rgb*=mix(1.,.42+.1*hb.g,gv*tdFlK*.9)*mix(1.,1.14,rg*tdFlK); } // fine octave: a hint only (its cork pattern read as black pepper up close)
@@ -456,7 +456,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress9';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress10';
     mat.needsUpdate = true;
   }
 
@@ -499,6 +499,9 @@ uniform float tdCool;` + NOISE)
     src.forEach((c, i) => D.dripU.value[i].set(c[0], c[1], c[2], 0.7)); D.drips = src.map(c => c.map(v => +v.toFixed(2))); }
 
   const radial = (x, z) => Math.hypot(x - AX, z - AZ);
+  // [root round] the ground as drawn (Ground's mesh grid, then its height with the humps), not env's base groundH, which misses
+  // the humps and root skirts by up to ~15 cm
+  const gH = (x, z) => { const G = C.groundG || window.__ground; let h = null; try { if (G && G.meshH) h = G.meshH(x, z); if (h == null && G && G.heightAt) h = G.heightAt(x, z); } catch (e) { h = null; } return h == null ? groundH(x, z) : h; };
   const nearDoor = (x, y, z) => Math.abs(angDiff(Math.atan2(z - AZ, x - AX), doorAng)) < 0.5 && y < 4.8;
   const Q = new THREE.Quaternion(), M4 = new THREE.Matrix4(), S = V(), UP = V(0, 1, 0), col = new THREE.Color();
   const orient = (n, spin) => { Q.setFromUnitVectors(UP, n); return Q.multiply(new THREE.Quaternion().setFromAxisAngle(UP, spin)); };
@@ -652,7 +655,7 @@ uniform float tdCool;` + NOISE)
       // hemmed in: wood both clockwise and anticlockwise within ~0.9 m
       let hem = 0; for (const s of [-1, 1]) for (let j = 1; j <= 4; j++) { const b = a + s * j * 0.22 / d * 1.0; if (rootD(AX + Math.cos(b) * d, AZ + Math.sin(b) * d) < 0.03) { hem++; break; } }
       if (hem < 1 || (hem < 2 && R() < 0.6)) continue;
-      const y = groundH(x, z); if (nearDoor(x, y + 0.3, z) && R() < 0.5) continue;
+      const y = gH(x, z); if (nearDoor(x, y + 0.3, z) && R() < 0.5) continue;
       spots.push([x, y, z, rd, a, d]);
     }
     // soil mounds: low dark humps half buried, so the roots look like they grow out of earth, not out of a flat floor
@@ -684,7 +687,7 @@ uniform float tdCool;` + NOISE)
       const s = spots[Math.floor(R() * spots.length)]; if (!s) break;
       const [x0, , z0, rd] = s; const x = x0 + rr(-0.35, 0.35), z = z0 + rr(-0.35, 0.35);
       const r2 = rootD(x, z); if (r2 < 0.0) continue;
-      const lean = r2 < 0.12 ? rr(0.3, 0.8) : rr(0, 0.25), y = groundH(x, z) + 0.02 + (r2 < 0.12 ? rr(0.02, 0.12) : rr(0, 0.05));
+      const lean = r2 < 0.12 ? rr(0.3, 0.8) : rr(0, 0.25), y = gH(x, z) + 0.02 + (r2 < 0.12 ? rr(0.02, 0.12) : rr(0, 0.05));
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-lean, lean), rr(0, 6.28), rr(-lean, lean)));
       M4.compose(V(x, y, z), q, S.setScalar(rr(0.17, 0.27))); lit.setMatrixAt(nl, M4);
       const c = tints[Math.floor(R() * tints.length)], v = rr(0.75, 1.1); col.setRGB(c[0] * v * 1.2, c[1] * v * 1.2, c[2] * v * 1.2); lit.setColorAt(nl, col); nl++;
@@ -963,7 +966,7 @@ uniform float tdCool;` + NOISE)
     const crev = [];
     for (let k = 0; k < 3000 && crev.length < 120; k++) { RSEED(904000 + k);
       const a = rr(0, Math.PI * 2), d = rr(2.0, 4.6), x = AX + Math.cos(a) * d, z = AZ + Math.sin(a) * d, rd = rootD(x, z);
-      if (rd < 0.05 || rd > 0.4) continue; const y = groundH(x, z); if (blocked(x, y + 0.4, z, 0.1) || nearDoor(x, y + 0.3, z)) continue; crev.push(V(x, y, z));
+      if (rd < 0.05 || rd > 0.4) continue; const y = gH(x, z); if (blocked(x, y + 0.4, z, 0.1) || nearDoor(x, y + 0.3, z)) continue; crev.push(V(x, y, z));
     }
     // forks and limb tops above the ground, where a little soil collects
     const forks = sampler(q => q.n.y > 0.8 && q.c.y > 4 && q.c.y < 12 && radial(q.c.x, q.c.z) > 1.3 && radial(q.c.x, q.c.z) < 5);
@@ -993,6 +996,18 @@ uniform float tdCool;` + NOISE)
       M4.compose(p.clone().addScaledVector(s0.n, -0.03), orient(s0.n.clone().lerp(UP, 0.7).normalize(), rr(0, 6.28)), S.setScalar(rr(0.3, 0.5))); ferns.setMatrixAt(nf, M4); ferns.setColorAt(nf++, col.setRGB(0.95, 0.95, 0.95));
       D.forkFerns = (D.forkFerns || 0) + 1;
     }
+    // [root round] a tuft or fern at a root's foot reached into the root: blades and fronds came out of the bark. Dropped when the
+    // bark (Ground's barkTop, the wood's own top surface) rises within their reach higher than they stand there. No R() draws.
+    { const BT = C.groundG && (C.groundG._wallAt || C.groundG.barkTop); const into = (im, i, r1, h1, r2, h2) => { im.getMatrixAt(i, M4); const e = M4.elements, x = e[12], y = e[13], z = e[14], sc = Math.hypot(e[0], e[1], e[2]);
+        for (let k = 0; k < 8; k++) { const a = k * 0.785, c = Math.cos(a), s = Math.sin(a); const t1 = BT(x + c * r1 * sc, z + s * r1 * sc), t2 = BT(x + c * r2 * sc, z + s * r2 * sc);
+          if ((t1 != null && t1 > y + h1 * sc && t1 < y + 1.9) || (t2 != null && t2 > y + h2 * sc && t2 < y + 1.9)) return true; } return false; };
+      const compact = (im, n, test) => { let w = 0; const m = new THREE.Matrix4(), c2 = new THREE.Color(); for (let i = 0; i < n; i++) { if (test(i)) continue; if (w !== i) { im.getMatrixAt(i, m); im.setMatrixAt(w, m); im.getColorAt(i, c2); im.setColorAt(w, c2); } w++; } return w; };
+      if (BT) { const n0 = nf + nt; const frondInto = i => { const e = ferns.instanceMatrix.array, o = i * 16, sc = Math.hypot(e[o], e[o + 1], e[o + 2]), x = e[o + 12], y = e[o + 13], z = e[o + 14];
+          for (let f = 0; f < 7; f++) { const a = f / 7 * Math.PI * 2 + (f % 2) * 0.3, L = 0.75 + (f % 3) * 0.12, tl = 0.55 + (f % 2) * 0.25, c = Math.cos(a), sn = Math.sin(a);
+            const wx = (e[o] * c + e[o + 8] * sn) / sc, wz = (e[o + 2] * c + e[o + 10] * sn) / sc; /* the frond's own direction (fernG) */
+            for (const t of [0.5, 1]) { const out = Math.sin(tl) * t * L * sc, up = (Math.cos(tl) * t * L * 1.2 - t * t * 0.45 * L) * sc, w = BT(x + wx * out, z + wz * out); if (w != null && w > y + up + 0.03 && w < y + 1.9) return true; } } return false; };
+        nf = compact(ferns, nf, i => ferns.instanceMatrix.array[i * 16 + 13] < 1.5 && frondInto(i));
+        nt = compact(tufts, nt, i => tufts.instanceMatrix.array[i * 16 + 13] < 1.5 && into(tufts, i, 0.1, 0.06, 0.2, 0.14)); D.rootGrassDropped = n0 - nf - nt; } }
     // [greenery round] autumn bracken: about half the ferns turn copper or straw by a hash of their spot (no R() draw), the rest
     // keep a tired late-season green; their colour multiplies the green frond map, hence the big red factor
     for (let i = 0; i < nf; i++) { ferns.getMatrixAt(i, M4); const e = M4.elements, h = tdHash({ x: e[12], y: e[13], z: e[14] }, 2); ferns.getColorAt(i, col); let v = col.r; if (h < 0.5) v = Math.max(v, 0.95); /* a turned frond needs red > 1.5 (the flag) */
@@ -1061,10 +1076,10 @@ uniform float tdCool;` + NOISE)
       const a = rr(0, 6.28), d = rr(2.4, 7.5), x = AX + Math.cos(a) * d, z = AZ + Math.sin(a) * d, r2 = rootD(x, z);
       if (r2 < 0.02 || r2 > 0.14 || blocked(x, 0.5, z, 0.1) || nearDoor(x, 0.4, z)) continue;
       if (D.baseShroom === undefined) D.baseShroom = 0; if (D.baseShroom >= NBASE) break;
-      const cnt = 2 + Math.floor(R() * 3), y0 = groundH(x, z);
+      const cnt = 2 + Math.floor(R() * 3), y0 = gH(x, z);
       for (let j = 0; j < cnt && ns < NSM; j++) {
         const px = x + rr(-0.1, 0.1), pz = z + rr(-0.1, 0.1); const sz = rr(0.03, 0.065) * (j === 0 ? 1.3 : 1);
-        const gp = snap(V(px, groundH(px, pz), pz)); if (!gp) continue;
+        const gp = snap(V(px, gH(px, pz), pz)); if (!gp) continue;
         M4.compose(gp, new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-0.2, 0.2), rr(0, 6.28), rr(-0.2, 0.2))), S.set(sz, sz * rr(1, 1.6), sz));
         small.setMatrixAt(ns, M4); col.setHSL(rr(0.02, 0.09), rr(0.4, 0.7), rr(0.5, 0.72)); small.setColorAt(ns++, col);
       }

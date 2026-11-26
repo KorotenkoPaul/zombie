@@ -189,8 +189,8 @@ scene.add(new THREE.Mesh(new THREE.SphereGeometry(220,32,16),new THREE.ShaderMat
   float stars=0.;if(star>.001){/* [ENV] perf: no star field by day (uniform branch) */vec3 g=vD*280.;float spx=max(length(fwidth(g)),1e-4);/* derivative outside the per-pixel branch */vec3 q=floor(g);float sr=h(q);if(sr>.9965){vec3 sf=fract(g)-(.2+.6*vec3(h(q+1.7),h(q+2.3),h(q+3.1)));sf-=dot(sf,vD)*vD;
   stars=smoothstep(1.5,.25,length(sf)/spx)*(.35+.9*h(q+5.3))*star*smoothstep(0.,.3,vD.y)*(.8+.2*sin(t*1.3+sr*60.))*(1.-.7*moonK*pow(mo,4.));}}
   if(cloudK>.001){vec2 p=vD.xz/(vD.y+.18)-cdr;vec2 n1=texture2D(tN,p*.09+vec2(t*.0012,t*.0004)).rg;float n2=texture2D(tN,p*.23+n1*.35-vec2(t*.002,0.)).r;float n3=texture2D(tN,p*.6+n2*.2+vec2(0.,t*.003)).g;
-   float d=n1.r*.55+n2*.32+n3*.13;float cov=smoothstep(.4,.66,d)*cloudK*smoothstep(.0,.16,vD.y);
-   float lit=pow(s,3.)*lowSun;vec3 cc=mix(mix(hor,top,.35)*.62,hor*1.05,smoothstep(.55,.85,d))+sunCol*lit*(.9-.5*smoothstep(.55,.9,d))*glowK;/* [ENV] at night the clouds are darker than the sky with silver moonlit edges (they were invisible: same blue as the sky) */cc=mix(cc,cc*.7+vec3(.55,.65,.8)*(pow(mo,3.)*.35+.05)*(1.-smoothstep(.5,.85,d))*1.4,moonK);
+   float d=n1.r*.55+n2*.32+n3*.13;float ov=clamp((cloudK-.7)/.3,0.,1.);float cov=smoothstep(.4-.34*ov,.66-.22*ov,d)*cloudK*smoothstep(.0,.16,vD.y);/* [ENV] ov 0 fair .. 1 overcast/rain (cloudK .7..1): a grey day closes the sky (it was the clear sky's same scattered clouds, barely denser) */
+   float lit=pow(s,3.)*lowSun;float dk=smoothstep(.1,.25,dot(top,vec3(.333)))*(1.-ov);vec3 cc=mix(mix(hor,top,.35)*.62,mix(hor*1.05,vec3(1.,.98,.95),.65*dk),smoothstep(.55,.85,d))/* [ENV] fair autumn day: the dense cloud tops white in the sun (they were the same pale grey-lilac as the haze) */+sunCol*lit*(.9-.5*smoothstep(.55,.9,d))*glowK;/* [ENV] at night the clouds are darker than the sky with silver moonlit edges (they were invisible: same blue as the sky) */cc=mix(cc,cc*.7+vec3(.55,.65,.8)*(pow(mo,3.)*.35+.05)*(1.-smoothstep(.5,.85,d))*1.4,moonK);
    /* [ENV] lightning lights the storm clouds from inside: brightest toward the strike, thin cloud glows, dense cores stay darker */
    if(flash>.002){float fd=max(dot(normalize(vec3(vD.x,max(vD.y,.05),vD.z)),flDir),0.);cc+=vec3(.6,.72,1.)*flash*(.1+.9*pow(fd,6.)+.3*pow(fd,2.))*(1.15-.6*smoothstep(.5,.85,d));}
    c=mix(c,cc,cov*.85);stars*=1.-cov;}
@@ -439,7 +439,8 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  function sunBark(){const b=TREE&&TREE.bark;if(SBOFF||window.__sunBarkOff||!b||!b.castShadow||!plainCaster(b))return null;const sd=b.material.shadowSide;const sg=sd===null||sd===undefined?(b.material.side===THREE.FrontSide?-1:b.material.side===THREE.BackSide?1:0):(sd===THREE.BackSide?-1:sd===THREE.FrontSide?1:0);if(!sg)return null;
   sun.getWorldPosition(_sl);sun.target.getWorldPosition(_st2);_sl.sub(_st2).normalize();
   const sc0=sun.shadow.camera,key=[sc0.left,sc0.right,sc0.top,sc0.bottom,sc0.near,sc0.far,_st2.x,_st2.y,_st2.z].map(v=>v.toFixed(3)).join();
-  if(!sunSt||sunSt.g!==b.geometry||sunSt.L.dot(_sl)<.999||sunSt.key!==key){const g=b.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=b.matrixWorld;
+  const bg=(!window.__noShadowGeo&&b.userData.shadowGeo)||b.geometry;/* Tree's coarse bark for the shadow only (userData.shadowGeo, bark-local, indexed) */
+  if(!sunSt||sunSt.g!==bg||sunSt.L.dot(_sl)<.999||sunSt.key!==key){const g=bg,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=b.matrixWorld;
    if(!sunSt||sunSt.g!==g){/* world face normals, once */const FN=new Float32Array(n),SP=new Float32Array(n/3*4|0);const a=new THREE.Vector3(),c=new THREE.Vector3(),d=new THREE.Vector3(),m=new THREE.Vector3();for(let t=0;t+2<n;t+=3){a.fromBufferAttribute(pa,ix?ix[t]:t).applyMatrix4(mw);c.fromBufferAttribute(pa,ix?ix[t+1]:t+1).applyMatrix4(mw);d.fromBufferAttribute(pa,ix?ix[t+2]:t+2).applyMatrix4(mw);m.copy(a).add(c).add(d).multiplyScalar(1/3);const q=t/3*4;SP[q]=m.x;SP[q+1]=m.y;SP[q+2]=m.z;SP[q+3]=Math.sqrt(Math.max(m.distanceToSquared(a),m.distanceToSquared(c),m.distanceToSquared(d)))+.01;c.sub(a);d.sub(a);c.cross(d).normalize();FN[t]=c.x;FN[t+1]=c.y;FN[t+2]=c.z;}
     if(sunSt&&sunSt.pm){sunSt.pm.parent&&sunSt.pm.parent.remove(sunSt.pm);sunSt.pm.geometry.dispose();sunSt.pm.material.dispose();}
     if(mw.determinant()<0)return null;
@@ -537,7 +538,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  const readMap=l=>{const m=l.shadow.map;if(!m)return null;const b=new Uint8Array(m.width*m.height*4);renderer.readRenderTargetPixels(m,0,0,m.width,m.height,b);return b;};
  const _cv=new THREE.Vector3(),_cb=new THREE.Box3();
  // the caster's triangles that touch the lamp's shadow frustum (sharing its vertex buffer); null = none touch, 'full' = all do
- function cropOf(c,fr){const g=c.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=c.matrixWorld,I=[];
+ function cropOf(c,fr){const g=(!window.__noShadowGeo&&c.userData.shadowGeo)||c.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=c.matrixWorld,I=[];
   const mg=c.name==='curtains'?1.2:0;for(let t=0;t+2<n;t+=3){_cb.makeEmpty();for(let k=0;k<3;k++){_cv.fromBufferAttribute(pa,ix?ix[t+k]:t+k).applyMatrix4(mw);_cb.expandByPoint(_cv);}if(mg){if(_cb.min.lengthSq()<1e-12&&_cb.max.lengthSq()<1e-12)_cb.set(_cv.set(-1e4,-1e4,-1e4),new THREE.Vector3(1e4,1e4,1e4));/* not placed yet: keep */else _cb.expandByScalar(mg);}if(fr.intersectsBox(_cb))I.push(ix?ix[t]:t,ix?ix[t+1]:t+1,ix?ix[t+2]:t+2);}
   if(!I.length)return null;if(I.length===n)return 'full';
   const cg=new THREE.BufferGeometry();cg.setAttribute('position',pa);cg.setIndex(I);
@@ -749,7 +750,7 @@ function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matr
   if(!by.has(m.material))by.set(m.material,[]);by.get(m.material).push({geo,m});rm.push(m);});
  for(const [mat,L] of by){if(L.length<2)continue;const mg=mergeGeometries(L.map(x=>x.geo));if(!mg)continue;for(const x of L)x.m.parent.remove(x.m);
   const me=new THREE.Mesh(mg,mat);me.castShadow=L.some(x=>x.m.castShadow);me.receiveShadow=L.some(x=>x.m.receiveShadow);g.add(me);}}
-function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2);g.userData.plStatic=true;scene.add(g);g.updateMatrixWorld();
+function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45,FO=.42;/* [TREE, photo] a deep front overhang: the gable sits back in the roof's shade */const w=x1-x0+2*ov,d=z1-z0+.7+FO;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2+FO/2);g.userData.plStatic=true;scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
  for(const s of [-1,1]){
   // slab (dark wood underside and thick visible edge)
@@ -764,16 +765,16 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45;const w=x1-x0+2*ov,d=z1-z0+.7
    boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
   // shingles: rows from the ridge down, each row overlapping the one below, staggered
   // thick dark slate, hand-laid: rows of uneven depth, shingles of random width, the odd one slipped or tilted (critic T4)
-  const rows=Math.ceil(sl/.28);
+  const rows=Math.ceil(sl/.38);/* [TREE, photo] big chunky slates in clear rows (were .28 rows of small slates: a thin dark band from the home view) */
   for(let r=0;r<rows;r++){const t=(r+.5)/rows;const along=-sl/2+t*sl+rnd(-.03,.03);
    let zz=-d/2-.05-rnd(0,.25);
-   while(zz<d/2+.05){const ww=rnd(.27,.47),ll=rnd(.38,.5);const zc=zz+ww/2;zz+=ww+rnd(.005,.03);if(zc-ww/2<-d/2-.08||zc+ww/2>d/2+.08)continue;
+   while(zz<d/2+.05){const ww=rnd(.4,.64),ll=rnd(.54,.68);const zc=zz+ww/2;zz+=ww+rnd(.005,.03);if(zc-ww/2<-d/2-.08||zc+ww/2>d/2+.08)continue;
     const slip=rnd(0,1)<.08?rnd(.04,.09):0;
-    const lp=V(along+slip,.15+.06+rnd(-.008,.012),zc);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
-    q.setFromEuler(new THREE.Euler(rnd(-.07,.07),rnd(-.12,.12),-s*ang+s*(.1+rnd(-.04,.04)),'ZYX'));
+    const lp=V(along+slip,.15+.08+rnd(-.008,.012),zc);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
+    q.setFromEuler(new THREE.Euler(rnd(-.07,.07),rnd(-.12,.12),-s*ang+s*(.13+rnd(-.04,.04)),'ZYX'));
     // a few slates have slipped out over the years: the dark wood underlay shows (never in the bottom row, it would leak)
     if(r<rows-1&&rnd(0,1)<.035)continue;
-    const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.1,.13),ww));SHING.setMatrixAt(SHING.count,m4);
+    const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.13,.17),ww));SHING.setMatrixAt(SHING.count,m4);
     const k=rnd(.8,1.15)*(rnd(0,1)<.12?.75:1);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}}}
  // ridge cap (critic T4: black "teeth" between the top rows): a row of slates over the ridge on each side, laid
  // flatter than the field so they straddle the joint and hide the dark underlay
@@ -979,7 +980,7 @@ ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
 const KX0=-4.4,KX1=-.9;
 floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,4.08]],sub:true});/* Ladders: 60 cm from the rungs to the back edge, so loads on his back clear it */
-wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.7,-1.95,KT+1.15,KT+1.85]]);
+wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.8,-2.33,KT+1.15,KT+1.85],[-2.2,-1.78,KT+1.15,KT+1.85]]);/* [TREE, photo] two small kitchen windows side by side over the counter */
 wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]],-1);wallSide(KX1,.8,2.2,KT+.03,BD-.15,[],1);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start above the centre landing (they used to pass through it) */brace(V(-2.3,LC+.4,frontZ(-2.3,LC+.4)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,LC+.45,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
@@ -1113,7 +1114,7 @@ function rug(x,y,z,w,d,c1,c2){const cv=document.createElement('canvas');cv.width
 
 const WINS=[];function win(x0,x1,y0,y1,z,side,room){const g=new THREE.Group();const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;WINS.push({mat:gm,room,g});const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),gm);p.renderOrder=2;g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}/* [props: house exterior round] the outside of the opening is trimmed like a real window: a sill that sticks out and sheds rain (tilted down and away), a head casing with a drip edge over the top, and side casings over the plank ends, so the cladding no longer just stops at a bare hole. Outside is local -z for every wall here. Dark boards: instanced, no draws. */ {const W=x1-x0,H=y1-y0;const sill=new THREE.Mesh(new THREE.BoxGeometry(W+.18,.035,.1),darkBoard);sill.position.set(0,-H/2-.008,-.075);sill.rotation.x=-.12;g.add(sill); const head=new THREE.Mesh(new THREE.BoxGeometry(W+.2,.075,.032),darkBoard);head.position.set(0,H/2+.075,-.058);g.add(head); const drip=new THREE.Mesh(new THREE.BoxGeometry(W+.24,.022,.06),darkBoard);drip.position.set(0,H/2+.122,-.07);g.add(drip); for(const sx of [-1,1]){const j=new THREE.Mesh(new THREE.BoxGeometry(.075,H+.08,.028),darkBoard);j.position.set(sx*(W/2+.07),.0,-.056);g.add(j);}}
  if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);meshesToBeams(g);bakeStatic(g);}
-win(-2.7,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
+win(-2.8,-2.33,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.2,-1.78,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
 // ---- the framed window in the trunk above the deck (photo, top right): a little plank-lined box set into the bark, a chunky
 // frame proud of it (lintel and sill longer than the jambs), real glass with a cross bar, and a shallow lined recess behind it.
 // It looks up into the hollow: at night the lining is warm with the same lantern light as the trunk door (doorGlow), stronger
@@ -1165,11 +1166,11 @@ const LIGHTS=createLights({scene,ENV,P3,TREE,MOBILE,LV:{KT,BD,WS,DK,LC,LG,TAX},w
 // [WIND] thin smoke from the stove pipe (game/smoke.js): follows the oven heat, drifts with the wind; shows once Props adds __props.chimneyTop
 const SMOKE=(await import(new URL(ASSET+'smoke.js',document.baseURI).href)).createSmoke({THREE,scene,wind:WIND,P3,heat:()=>LIGHTS.level('oven'),MOBILE});window.__smoke=SMOKE;
 // [WIND] autumn particles (game/particles.js): dust in the lamplit rooms, the hero's breath on cold mornings
-const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).createParticles({THREE,scene,wind:WIND,lights:LIGHTS,rooms:LEAF_AVOID,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,hero:{bones:()=>heroBones,head:()=>heroBones&&heroBones.Head,mouth:()=>window.__hero&&window.__hero.mouth?window.__hero.mouth():null},MOBILE});window.__particles=PARTS;
+const PARTS=(await import(new URL(ASSET+'particles.js',document.baseURI).href)).createParticles({THREE,scene,wind:WIND,lights:LIGHTS,rooms:LEAF_AVOID,groundH:(gH0=>(x,z)=>{const G=window.__ground;const h=G&&G.heightAt?G.heightAt(x,z):null;return h!=null&&isFinite(h)?h:gH0(x,z);})((await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH)/* [ENV] Ground's real height (mounds, roots), env's base ground as the fallback: splashes and particles sat up to 15 cm off the visible soil */,hero:{bones:()=>heroBones,head:()=>heroBones&&heroBones.Head,mouth:()=>window.__hero&&window.__hero.mouth?window.__hero.mouth():null},MOBILE});window.__particles=PARTS;
 // [WIND] the house answers the wind (game/housewind.js): the landing lantern swings on its chain, the telescope shivers in gusts
 const HOUSEWIND=(await import(new URL(ASSET+'housewind.js',document.baseURI).href)).createHouseWind({wind:WIND,scene,ladders:[{id:'ladder-ground',x:0,z:4.0,y0:0,y1:LC+.05},{id:'ladder-deck',x:1.35,z:3.15,y0:BD,y1:DK+.05}]});window.__housewind=HOUSEWIND;
 // [WIND] rain streaks leaning in the wind, splashes on roofs/landings/ground, drips from roof edges (game/rain.js)
-const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH,skip:[TREE.group],crown:TREE.leaves,MOBILE,renderer});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
+const RAIN=(await import(new URL(ASSET+'rain.js',document.baseURI).href)).createRain({THREE,scene,wind:WIND,groundH:(gH0=>(x,z)=>{const G=window.__ground;const h=G&&G.heightAt?G.heightAt(x,z):null;return h!=null&&isFinite(h)?h:gH0(x,z);})((await import(new URL(ASSET+'env.js',document.baseURI).href)).groundH)/* [ENV] Ground's real height (mounds, roots), env's base ground as the fallback: splashes and particles sat up to 15 cm off the visible soil */,skip:[TREE.group],crown:TREE.leaves,MOBILE,renderer});window.__rain=RAIN;RAIN.wetGlass(WINS.map(w=>w.mat));
 // [WIND] morning fog bank rolling in from the forest on the breeze (game/fogbank.js)
 const FOGBANK=(await import(new URL(ASSET+'fogbank.js',document.baseURI).href)).createFogBank({THREE,scene,wind:WIND,MOBILE});window.__fogbank=FOGBANK;
 
@@ -1537,7 +1538,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  if(!over&&wasN&&!nowN){dayNo++;toast('Утро','День '+(dayNo));zombies.forEach(z=>{if(z.alive){z.stage='flee';play(z,'9001');}});}
  // --- light & sky ---
  {const ph=((MOON0+dayNo/8)%1)*Math.PI*2;moonU.ph.value=ph;moonIll=.5-.5*Math.cos(ph);}
- const P=pal(hour);rainK=lerp(rainK,weather==='rain'?WIND.rainAmt():0,dt*.3);/* [WIND] drizzle .35, rain .75, storm 1 *//* [ENV] eases in over ~5 game minutes (was ~2: a storm switched on) */const CL=WIND.cloud?Math.max(0,WIND.cloud()-rainK):0;/* [ENV] dry overcast: grey sky, softer sun */const dim=1-rainK*.45-CL*.12;
+ const P=pal(hour);{const rT=weather==='rain'?WIND.rainAmt():0;rainK=lerp(rainK,rT,dt*(rT>rainK?.13:.09));}/* [ENV] ~8-11 s (was 3.3 s: measured on the phone, a storm's end dropped the frame 18/255 in 5 s, a jump; rain comes on and clears over ~20-30 s now) *//* [WIND] drizzle .35, rain .75, storm 1 *//* [ENV] eases in over ~5 game minutes (was ~2: a storm switched on) */const CL=WIND.cloud?Math.max(0,WIND.cloud()-rainK):0;/* [ENV] dry overcast: grey sky, softer sun */const dim=1-rainK*.45-CL*.12;
  const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));
  skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6+CL*.3);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+Math.min(1,rainK+CL)*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;if(WIND.sample){const w=WIND.sample(CDR_P);if(w)skyU.cdr.value.add(CDR_V.set(w.x||0,w.z||0).multiplyScalar(Math.min(.05,dt)*.035));}/* [ENV] clouds drift downwind, faster in a windy spell (~2x the base drift in a breeze); the sample is taken above the crown */
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour<14?hour+4:0)/10)*Math.PI;/* [ENV] the moon waits at its rise point through the evening: the arc wrapped at 20:00 and the visible moon (shown from ~19:25) and its light jumped across the sky in one frame */const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
