@@ -1002,6 +1002,13 @@ export function createGround(C){const __before=new Set(C.scene.children);
      for(let j=0;j<2&&k>=NS;j++,k--){const h=Math.abs(Math.sin(cp.x*(41.3+j*17.)+cp.z*(29.1+j*5.))*43758.5)%1;const a=h*6.283,d=cs.x*(.55+.25*h);const x=cp.x+Math.cos(a)*d,z=cp.z+Math.sin(a)*d;
       const sc=.55+.25*((h*7.)%1);M.compose(V(x,groundH(x,z)-.2,z),Q.setFromAxisAngle(V(0,1,0),h*40.),Sc.set(cs.x*sc*1.2,cs.y*sc*.85,cs.z*sc*1.1));im.setMatrixAt(k,M);
       const au=(h*13.)%1;Col.setHSL(au<.3?.12:au<.45?.06:.33+.05*h,au<.45?.55:.28,au<.45?.44:.5);im.setColorAt(k,Col);}}}
+   /* photo check (mid-ground): out in the open clearing they read as round green balls set on a lawn, evenly spaced like a park.
+      The photo's clearing is open floor; the undergrowth there is low and spreading. So the ones in the clearing (not the back
+      wall) grow low and wide, sunk into the floor and the leaf litter like old shrubs; transforms only, the random stream is untouched */
+   {const cM=new THREE.Matrix4(),cp=V(),cq=new THREE.Quaternion(),cs=V();
+    for(let i=0;i<n;i++){im.getMatrixAt(i,cM);cM.decompose(cp,cq,cs);const r=Math.hypot(cp.x,cp.z-1.5);if(r>24)continue;const k=1-smooth(18,24,r);
+     const h=Math.abs(Math.sin(cp.x*12.9+cp.z*7.7)*43758.5)%1;const fy=1-.38*k*(.8+.4*h),fw=1+.22*k;cs.set(cs.x*fw,cs.y*fy,cs.z*fw*(.9+.2*h));cp.y=groundH(cp.x,cp.z)-.15-.18*k*cs.y;
+     cM.compose(cp,cq,cs);im.setMatrixAt(i,cM);}}
    im.count=n;im.receiveShadow=true;scene.add(im);});
   // ---- the far edge of the clearing: a dense wall of undergrowth and young trees in front of the painted forest ----
   // It gives depth: near plants, then this thicket, then the far trees and the fog. Kept out of the camera's view line.
@@ -1014,6 +1021,11 @@ export function createGround(C){const __before=new Set(C.scene.children);
    for(let t=0;t<NE*40&&n<NE;t++){const a=rr(0,6.28),r=(R()<.4?rr(10,15):rr(15,25))+(vnoise(a*3,1)-.5)*3;const x=Math.cos(a)*r,z=Math.sin(a)*r*.95;if(!edgeOK(x,z)||camArc(x,z,17))continue;
     const sz=rr(1.2,2.4);M.compose(V(x,groundH(x,z)-.25,z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(1,1.6),sz*rr(.8,1.25),sz*rr(1,1.5)));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.4),rr(.18,.32),rr(.38,.52));const au=R();if(au<.2)Col.setHSL(rr(.1,.15),rr(.45,.6),rr(.42,.52));else if(au<.33)Col.setHSL(rr(.04,.07),rr(.5,.65),rr(.36,.46));/* autumn: a third yellow / rust */im.setColorAt(n,Col);n++;}
+   /* photo check (mid-ground): the inner ring (10-15 m) stood in the open clearing as separate round balls. Low and spreading
+      there, sunk into the floor, full height only from ~18 m out where the forest wall starts. Transforms only: no R() draws */
+   {const cM=new THREE.Matrix4(),cp=V(),cq=new THREE.Quaternion(),cs=V();
+    for(let i=0;i<n;i++){im.getMatrixAt(i,cM);cM.decompose(cp,cq,cs);const r=Math.hypot(cp.x,cp.z);const k=1-smooth(14,19,r);if(k<=0)continue;
+     const h=Math.abs(Math.sin(cp.x*12.9+cp.z*7.7)*43758.5)%1;cs.set(cs.x*(1+.25*k),cs.y*(1-.42*k*(.8+.4*h)),cs.z*(1+.2*k));cp.y=groundH(cp.x,cp.z)-.25-.15*k*cs.y;cM.compose(cp,cq,cs);im.setMatrixAt(i,cM);}}
    im.count=n;im.computeBoundingSphere();im.receiveShadow=true;scene.add(im);G.thicket=im;}
   {// young trees: a slim, slightly crooked trunk with a few side twigs, and two or three leaf clumps up top
    const r=rng(9);const parts=[];let px=0,pz=0;const pts=[];for(let i=0;i<=6;i++){const y=i/6*4.2;px+=(r()-.5)*.18;pz+=(r()-.5)*.18;pts.push(V(px,y,pz));}
