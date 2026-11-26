@@ -729,6 +729,18 @@ export function createGround(C){const __before=new Set(C.scene.children);
     // a bright sky in it even at the low home-view angle, so the pond reads as water from afar (day and night)
     vec3 sky=mix(uSky*1.,uSky*1.35,smoothstep(.2,.9,R.y))*mix(.6,1.,max(uNight,1.-smoothstep(.12,.35,V.y)));/* by day the near water stays tea-dark; the far, grazing water still mirrors the bright sky */sky=mix(uSky*.2,sky,smoothstep(tl-.03,tl+.05,R.y));
     ${refl?'vec4 ru=vRU;ru.xy+=waterSlope(vW)*.03*ru.w;sky=texture2DProj(tDiffuse,ru).rgb*color;':''}
+    ${refl?'':`/* phones have no real mirror: the oak stands right behind the pool, so what it mirrors is mostly the oak. A ray cast
+       from the water against a rough stand-in (the trunk as a cylinder, the crown as a ragged ellipsoid) puts the dark
+       trunk and the crown with its sky gaps into the reflection, wobbled by the ripples; at night they are dark
+       shapes against the bright night sky (the lit windows still glint below) */
+    {vec3 rd=normalize(vec3(R.x,max(R.y,.02),R.z));vec3 ro=vW;float hit=0.;vec3 oc=vec3(0.);float L=clamp(dot(uSky,vec3(.3,.55,.15))*2.4,.06,1.)*(1.-.85*uNight);
+     vec2 o2=ro.xz-vec2(0.,-.6);float A=dot(rd.xz,rd.xz),B=dot(o2,rd.xz),Cc=dot(o2,o2)-4.6;float D=B*B-A*Cc;
+     if(D>0.){float t=(-B-sqrt(D))/A;float y=ro.y+rd.y*t;if(t>0.&&y<11.){hit=smoothstep(0.,.5,D/A)*smoothstep(11.,9.,y);/* soft edges: the ripples smear a reflection */oc=vec3(.12,.085,.06)*(.7+.5*vn(vec2(atan(ro.z+rd.z*t+.6,ro.x+rd.x*t)*7.,y*.6)));}}
+     if(hit<.5){vec3 q=(ro-vec3(0.,12.,-.6))/vec3(10.,6.,10.);vec3 qd=rd/vec3(10.,6.,10.);float a2=dot(qd,qd),b2=dot(q,qd),c2=dot(q,q)-1.;float D2=b2*b2-a2*c2;
+      if(D2>0.){float t=(-b2-sqrt(D2))/a2;vec3 h=ro+rd*t;float gap=smoothstep(.55,.75,vn(h.xz*.45+h.y*.3)+.25*vn(h.xz*1.7));/* sky shows between the clumps */
+       if(t>0.){hit=(1.-gap*.85)*smoothstep(0.,.15,D2/a2);oc=mix(vec3(.13,.17,.08),vec3(.32,.22,.07),smoothstep(.5,.8,vn(h.xz*.3+7.)))*(.75+.3*vn(h.xz*2.1));}}}
+     sky=mix(sky,oc*L,hit*.8);}`}
+
     /* [ENV] a forest pool, not a blue plate: tea-dark water under the mirror, the mirror with more contrast (dark reeds and crowns in it, the sky gaps bright), and a touch deeper in the middle */${refl?'sky=sky*sky*1.35;':''}vec3 c=mix(uDeep*vec3(.8,.85,.6)*mix(1.,.6,smoothstep(-.2,-.8,vD)),sky,clamp(fr*1.25+.015,0.,1.));
     /* the water is unlit: under a grey overcast or in the low golden-hour light the floor round it darkens, so its tea-dark body and mirror dim with the sky (night has its own sheen below) */
     float dayK=max(uNight,clamp(dot(uSky,vec3(.3,.55,.15))/.4,.55,1.));c*=dayK;/* floor .55: under a rain sky the pond went pitch black */
@@ -762,7 +774,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
    water.material.uniforms.color.value.setRGB(.82,.86,.9);}
   else water=new THREE.Mesh(geo,new THREE.ShaderMaterial({uniforms:{...THREE.UniformsUtils.clone(fogU),...U},vertexShader:VS,fragmentShader:FS(false)}));
   water.material.fog=true;water.material.transparent=true;water.material.depthWrite=false;
-  if(C.wind&&C.wind.hookWater)water.material.onBeforeCompile=sh=>{C.wind.hookWater(sh,THREE);};water.material.customProgramCacheKey=()=>'pond-env2'+(MOBILE?'m':'d');/* [ENV] */
+  if(C.wind&&C.wind.hookWater)water.material.onBeforeCompile=sh=>{C.wind.hookWater(sh,THREE);};water.material.customProgramCacheKey=()=>'pond-env2-oakm2'+(MOBILE?'m':'d');/* [ENV] */
   // falling leaves land on the pond and float (Wind)
   if(C.wind&&C.wind.addWater)C.wind.addWater((x,z)=>pondD(x,z)<-.12?level:null);
   water.rotation.x=-Math.PI/2;water.position.y=level;water.renderOrder=1;water.name='pond';scene.add(water);
