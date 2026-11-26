@@ -289,7 +289,7 @@ export function buildTree(THREE, o) {
   for (const rf of o.roofs || []) {
     const CS = 0.4, PAD = 2.4, gx0 = rf.x0 - PAD, gz0 = rf.z0 - PAD, nx = Math.ceil((rf.x1 - rf.x0 + 2 * PAD) / CS) + 1, nz = Math.ceil((rf.z1 - rf.z0 + 2 * PAD) / CS) + 1;
     let L = new Float32Array(nx * nz); const xc = (rf.x0 + rf.x1) / 2, hw = (rf.x1 - rf.x0) / 2;
-    const surf = x => rf.yb + rf.h * Math.max(0, 1 - Math.abs(x - xc) / hw) + rf.top;
+    const surf = x => rf.yb + rf.h * (rf.shed ? Math.min(1, Math.max(0, 1 - (x - rf.x0 - 0.45) / (rf.x1 - rf.x0 - 0.9))) : Math.max(0, 1 - Math.abs(x - xc) / hw)) + rf.top; /* shed: high at x0 (?gables=open) */
     const wood = (x, y, z) => Math.hypot(x - AX, z - AZ) > R(Math.min(Math.max(y, 0), 14)) + 0.35;
     for (let i = 0; i < P.length; i += 3) { const x = P[i], y = P[i + 1], z = P[i + 2];
       if (x < rf.x0 || x > rf.x1 || z < rf.z0 || z > rf.z1 || y < rf.yb - 0.25 || !wood(x, y, z)) continue;

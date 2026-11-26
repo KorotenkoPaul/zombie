@@ -212,11 +212,11 @@ const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).create
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
-const HY=1.0,LG_=1.4;/* the hollow landing and the trunk door sit low at the trunk foot, as in the photo (at 2.3 the workshop deck hid them from the home view) */// house raised 1 m to match the photo (all levels below read HY)
+const GOPEN=/[?&]gables=open/.test(location.search);/* [TREE] photo variant for Pavel: open bedroom gable, shed-roofed workshop */const HY=1.0,LG_=1.4;/* the hollow landing and the trunk door sit low at the trunk foot, as in the photo (at 2.3 the workshop deck hid them from the home view) */// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1,1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
 const DOORP={x:1.0,ang:1.05,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95};// the glowing hollow (tree.js); its plank frame is built with the boards
-const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,leafSprigT:/[?&]oldleaves/.test(location.search)?null:leafSprigT,leafRosT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:2.35,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:1.45,top:.42,clear:.45}],door:DOORP,
+const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,leafSprigT:/[?&]oldleaves/.test(location.search)?null:leafSprigT,leafRosT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:2.35,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:GOPEN?.85:1.45,shed:GOPEN,top:.42,clear:.45}],door:DOORP,
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
@@ -750,9 +750,9 @@ function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matr
   if(!by.has(m.material))by.set(m.material,[]);by.get(m.material).push({geo,m});rm.push(m);});
  for(const [mat,L] of by){if(L.length<2)continue;const mg=mergeGeometries(L.map(x=>x.geo));if(!mg)continue;for(const x of L)x.m.parent.remove(x.m);
   const me=new THREE.Mesh(mg,mat);me.castShadow=L.some(x=>x.m.castShadow);me.receiveShadow=L.some(x=>x.m.receiveShadow);g.add(me);}}
-function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45,FO=.42;/* [TREE, photo] a deep front overhang: the gable sits back in the roof's shade */const w=x1-x0+2*ov,d=z1-z0+.7+FO;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2+FO/2);g.userData.plStatic=true;scene.add(g);g.updateMatrixWorld();
+function roof(x0,x1,y,z0,z1,h,gx1=x1,ro={}){/* [TREE] ?gables=open variant: ro.shed = a single slope high at x0 (the photo's workshop, from the trunk down to the right; built as the right half of a gable twice as wide), ro.open = no front gable wall (the photo's bedroom shows its rafters) */const SH=!!ro.shed,x0r=x0;if(SH){x0=x0-(x1-x0);}const ov=.45,FO=.42;/* [TREE, photo] a deep front overhang: the gable sits back in the roof's shade */const w=x1-x0+2*ov,d=z1-z0+.7+FO;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2+FO/2);g.userData.plStatic=true;scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
- for(const s of [-1,1]){
+ for(const s of SH?[1]:[-1,1]){
   // slab (dark wood underside and thick visible edge)
   const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.38,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.userData.tint=1.75;/* photo: weathered lighter roof edge, not a black band (own instance tint; other beams unchanged) */slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
   // inside the room the roof is not a dark slab: honey sheathing boards run down the slope over chunky rafters (instances, no new calls)
@@ -778,19 +778,19 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45,FO=.42;/* [TREE, photo] a dee
     const k=rnd(.8,1.15)*(rnd(0,1)<.12?.75:1);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}}}
  // ridge cap (critic T4: black "teeth" between the top rows): a row of slates over the ridge on each side, laid
  // flatter than the field so they straddle the joint and hide the dark underlay
- for(const s of [-1,1])for(let zz=-d/2-.03;zz<d/2+.03;){const ww=rnd(.3,.42);const zc=Math.min(zz+ww/2,d/2+.03-ww/2);zz+=ww+rnd(.005,.02);
+ for(const s of SH?[]:[-1,1])for(let zz=-d/2-.03;zz<d/2+.03;){const ww=rnd(.3,.42);const zc=Math.min(zz+ww/2,d/2+.03-ww/2);zz+=ww+rnd(.005,.02);
   const lp=V(-sl/2+.17,.15+.11,zc);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
   q.setFromEuler(new THREE.Euler(rnd(-.04,.04),rnd(-.06,.06),-s*ang+s*.04,'ZYX'));const wp=lp.clone().applyMatrix4(g.matrixWorld);
   m4.compose(wp,q,V(.46,.12,ww));SHING.setMatrixAt(SHING.count,m4);const k=rnd(.75,.95);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));
   PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}
- const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);/* [props round] the bare wooden ridge beam showed as a brown strip with gaps along every ridge: it is now capped with saddle slates, a pair per step leaning on each other over the beam */for(let zc=-d/2-.02;zc<d/2+.06;zc+=.31)for(const s of [-1,1]){const lp=V(s*.1,h+.1+.135,zc+(s>0?.04:0));q.setFromEuler(new THREE.Euler(rnd(-.03,.03),rnd(-.04,.04),-s*ang*.85,'ZYX'));const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(.3,.1,.34));SHING.setMatrixAt(SHING.count,m4);const k=rnd(.7,.9);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}
+ const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);/* [props round] the bare wooden ridge beam showed as a brown strip with gaps along every ridge: it is now capped with saddle slates, a pair per step leaning on each other over the beam */if(!SH)for(let zc=-d/2-.02;zc<d/2+.06;zc+=.31)for(const s of [-1,1]){const lp=V(s*.1,h+.1+.135,zc+(s>0?.04:0));q.setFromEuler(new THREE.Euler(rnd(-.03,.03),rnd(-.04,.04),-s*ang*.85,'ZYX'));const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(.3,.1,.34));SHING.setMatrixAt(SHING.count,m4);const k=rnd(.7,.9);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}
  // gable walls (Pavel / critic T4): the triangles under the roof are closed with vertical boards, back and front
- for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<gx1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
+ for(const gz of ro.open?[z0+.15]:[z0+.15,z1-.02])for(let xx=x0r+(SH?.05:.16);xx<gx1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
   if(inTrunk(xx,y+hg/2,gz,.05))continue;board(V(xx,y+hg/2+.02,gz),hg+.04,.305,.05,new THREE.Euler(0,rnd(-.03,.03),Math.PI/2),{tint:rnd(.93,1.07),wall:true});}
  // gable trim boards on the front like the photo's dark fascia
- for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.userData.tint=1.9;t.castShadow=true;g.add(t);}
+ for(const s of SH?[1]:[-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.userData.tint=1.9;t.castShadow=true;g.add(t);}
  meshesToBeams(g);bakeStatic(g); SHING.instanceMatrix.needsUpdate=true;sRow.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
- world.createCollider(RAPIER.ColliderDesc.cuboid((x1-x0)/2,h*.45,(z1-z0)/2).setTranslation((x0+x1)/2,y+h*.45,(z0+z1)/2));}
+ world.createCollider(RAPIER.ColliderDesc.cuboid((x1-x0r)/2,h*.45,(z1-z0)/2).setTranslation((x0r+x1)/2,y+h*.45,(z0+z1)/2));}
 function post(x,y0,y1,z){board(V(x,(y0+y1)/2,z),y1-y0,.2,.2,new THREE.Euler(0,0,Math.PI/2),{dark:true});}
 // ---- boards that respect the trunk: every run is cut where wood would go through bark ----
 // floors like the photo: planks run front-to-back with ragged front ends over a thick dark edge beam;
@@ -1015,7 +1015,7 @@ const HATCH=(()=>{/* own plank materials: plain meshes sharing boardMat's instan
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});
 wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]],-1);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]],1);
-roof(BX0,BX1-.32,BD+2.3,.8,3.8,2.35,BX1);/* photo: a steep ~45 deg pitch, the roof nearly as tall as the room *//* steep gable with its pediment to the viewer, like the photo (critic T4) *//* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
+roof(BX0,BX1-.32,BD+2.3,.8,3.8,2.35,BX1,{open:GOPEN});/* photo: a steep ~45 deg pitch, the roof nearly as tall as the room *//* steep gable with its pediment to the viewer, like the photo (critic T4) *//* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
 // outside ledge between the bedroom door and the rope ladder to the deck
 floorBoards(BX1,1.8,BD,2.1,3.65,{noEdge:true});/* carried by two joists let into the bark (the old knee brace ran down through the steeper workshop roof) */brace(V(.75,BD-.15,1.25),V(.75,BD-.15,3.72),.14);brace(V(1.6,BD-.15,1.45),V(1.6,BD-.15,3.72),.14);
 ropeLadder(1.35,BD,DK+.05,3.15);
@@ -1024,7 +1024,7 @@ const WX0=.9,WX1=4.6;
 floorBoards(WX0,WX1+.15,WS,.8,5.3,{sub:true});
 wallBack(WX0,WX1,WS+.03,WS+2.3,1.2,[[3.2,3.95,WS+1.05,WS+1.75]]);
 wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]],1);wallSide(WX0,1.0,2.3,WS+.03,WS+2.3,[],-1);
-roof(WX0,WX1,WS+2.3,1.0,4.0,1.45);/* photo: the workshop's roof is steep too (was a flat .95) */post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
+roof(WX0,WX1,WS+2.3,1.0,4.0,GOPEN?.85:1.45,undefined,{shed:GOPEN,open:GOPEN});/* photo: the workshop's roof is steep too (was a flat .95) */post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
 brace(V(2.0,WS-2.2,frontZ(2.0,WS-2.2)-.1),V(4.2,WS-.15,4.6),.16);brace(V(1.6,WS-2,1.4),V(4.0,WS-.15,1.5),.17);
 if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
 // ---- lockdown shutters (for the zombie nights): each open room front has folding plank shutters. Open, they are folded up
