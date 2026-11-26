@@ -145,7 +145,7 @@ export function createWorkshop(K) {
     const place = () => { holdToolAt(side, name, gpU, tipU, wI, B); if (w < 1) { // keep the tool lying where it was until the fist closes on it
         const hb = bones[side + 'Hand']; hb.updateMatrixWorld(true); const hw = new THREE.Matrix4().copy(hb.matrixWorld).invert();
         const m = new THREE.Matrix4().compose(k.home.pos, k.home.quat, V(1, 1, 1).multiplyScalar(k.home.scale || 1)); m.premultiply(hw);
-        const p = V(), q = Q(), s = V(); m.decompose(p, q, s); o.position.copy(p); o.quaternion.copy(q); o.scale.setScalar(s.x); } else { o.position.copy(k.fp); o.quaternion.copy(k.fq); o.scale.setScalar(sc0); } };
+        const p = V(), q = Q(), s = V(); m.decompose(p, q, s); o.position.copy(p); o.quaternion.copy(q); o.scale.setScalar(s.x); const gg = G(); if (gg && gg.pin) gg.pin(o, new THREE.Matrix4().compose(k.home.pos, k.home.quat, V(1, 1, 1).multiplyScalar(k.home.scale || 1))); /* GRAB: and pinned there after the pose guard too (it jittered 5-17 cm on the bench as the guard moved the hand it hangs from) */ } else { o.position.copy(k.fp); o.quaternion.copy(k.fq); o.scale.setScalar(sc0); } };
     place(); const g = G(); if (g && g.late) g.late(() => { o.position.copy(k.fp); o.quaternion.copy(k.fq); o.scale.setScalar(sc0); place(); });
     if (w >= 1) { a.tk = null; return true; } return false; }
   // put the tool down exactly on its rest pose, let go, then the hand leaves

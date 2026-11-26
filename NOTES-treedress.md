@@ -243,3 +243,9 @@ Debug: `__treedress.stats()`.
 ## Round 37 — moonlit leaf edges (photo night crown)
 - Chained onto tree.js's leaf material from treedress (prev first, key + '|tdRim3'; Tree agreed, tree.js untouched). Emissive, moonlight only: env.moonRim colour x strength (zero by day, dimmed in rain), on a soft band inside each leaf's cut-out edge from a blurred map read (bias 2.5, uniform flow; the crisp alpha band aliased into sparkles), most on the clump side facing the moon and on silhouettes, tinted toward the leaf colour and kept subtle (Tree's leaf code already cools the night crown). One extra texture read per leaf pixel; no geometry.
 - Up close the crown reads as sprigs, not flat cards, by day and night.
+
+## Round 38 (night trunk folds between the houses)
+- At night the trunk between the houses (y 5.5–10.5) read as one flat dark mass: the moonlit fold-ridge emissive faded out above y 5–9.
+- Now the ridge moonlight runs up to y ~11 and is ×2.4 stronger from y 3.5–5.5 up (where only moonlight reaches), fading out under the crown at 10.5–12. Key '|treedress16'. No new draw calls.
+- Checked phone landing leaf piles after Ground's 3d9fd01 litter fix: baked, 7 piles, lie flat on the boards, look natural; no change.
+- Warm night trunk tone vs photo (71,40,28) is a Lights/Env matter, not bark colour.
