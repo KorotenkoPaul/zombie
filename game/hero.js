@@ -403,7 +403,7 @@ export function createHero(ctx){
  const ROLL={w:0,Left:{h:0,d:0,pa:null},Right:{h:0,d:0,pa:null}};const _rq=new THREE.Quaternion(),_rq2=new THREE.Quaternion(),_rq3=new THREE.Quaternion();
  function setWorldQ(b,q){b.parent.getWorldQuaternion(_rq3);b.quaternion.copy(_rq3.invert().multiply(q));b.updateMatrixWorld(true);}
  function rollNearLadder(){let d=0,c=root.position;for(let i=0;i<Math.min(3,H.path.length);i++){const x=H.path[i];if(x.t==='ladder')return d<.8;const q=N[x.node]&&N[x.node].p;if(!q)return false;d+=Math.hypot(q.x-c.x,q.z-c.z);c=q;if(d>.8)return false;}return false;}
- function footRoll(g,dt){const on=!window.__noRoll&&H.path.length&&!H.lad&&H.ground&&!H.fit&&!H.seated&&!(H.squat>.02)&&H.v>.15&&!rollNearLadder();/* faded out before a ladder: the climb takes the legs in one frame */
+ function footRoll(g,dt){const on=!window.__noRoll&&H.path.length&&!H.lad&&H.ground&&!H.fit&&!H.seated&&!(H.squat>.02)&&H.v>.15&&H.state==='walk'&&!rollNearLadder();/* not on the work-spot shuffles (splitwood: the log carried at knee height went into the shins) *//* faded out before a ladder: the climb takes the legs in one frame */
   ROLL.w=clamp(ROLL.w+(on?dt*4:-dt*6),0,1);if(ROLL.w<=.001){ROLL.Left.h=ROLL.Left.d=ROLL.Right.h=ROLL.Right.d=ROLL.Left.s=ROLL.Right.s=0;for(const s of ['Left','Right'])ROLL[s].hv=ROLL[s].dv=ROLL[s].sv=0;ROLL.Left.pa=ROLL.Right.pa=null;return;}
   const fw=fwd(root.rotation.y),hp=bones.Hips.getWorldPosition(V()),k=1-Math.exp(-dt*14),ank=POSE.ankle??.1;
   for(const s of ['Left','Right']){const U=bones[s+'UpLeg'],L=bones[s+'Leg'],F=bones[s+'Foot'],T=bones[s+'ToeBase'];if(!F||!T)continue;const R=ROLL[s];
