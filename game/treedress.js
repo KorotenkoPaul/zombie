@@ -480,6 +480,9 @@ uniform float tdCool;` + NOISE)
           // trunk's (77,47,27)): Tree's map code desaturates and halves every colour after treedress's map block, and the up-facing
           // flare faces escape the damp-foot darkening. Here, after that: warmer, richer and a little darker low down, and the
           // photo's folds there deepened again. Not on the moss or inside the scars; a ragged upper edge.
+          // [upper limbs round] high in the crown the limbs sit in the leaves' shade: darker and a touch greener (light through leaves),
+          // the furrows darkest. They read pale grey-pink and flat like plastic up close.
+          { float cr=smoothstep(12.,15.5,tdP.y+(td_n(tdP*.9)-.5)*1.2); diffuseColor.rgb*=mix(vec3(1.),vec3(.7,.74,.66)*(.8+.3*tdH),cr); }
           // [roof limb round] the collar's moss colour again here (Tree's map code after the map block washes greens to brown)
           if(tdCM>.001){ float l=dot(diffuseColor.rgb,vec3(.3,.59,.11)); vec3 mc=mix(vec3(.034,.05,.016),vec3(.08,.115,.03),smoothstep(.3,.8,tdCF));
             diffuseColor.rgb=mix(diffuseColor.rgb,mc*(.55+1.1*l),tdCM*smoothstep(.0,.6,tdCM)*.8); }
@@ -538,7 +541,7 @@ uniform float tdCool;` + NOISE)
           totalEmissiveRadiance+=tdRimC*rim*(.12+tdL*1.6)*(1.-tdMM*.5)*(1.+tdWM*.8);
           // daylight bounced off the ground, the roots and the house's planks: warm fill so the trunk in the house's shade reads
           // as brown bark, not a black hole (weaker in the furrows and the deep crotches)
-          totalEmissiveRadiance+=diffuseColor.rgb*vec3(1.1,.95,.8)*tdDay*.5*(.45+.55*tdH)*(1.-tdCr*.7);
+          totalEmissiveRadiance+=diffuseColor.rgb*vec3(1.1,.95,.8)*tdDay*.5*(.45+.55*tdH)*(1.-tdCr*.7)*(1.-.75*smoothstep(12.,15.,tdP.y)); // [upper limbs round] no ground bounce up inside the crown: the high limbs read pale and flat
           // [photo folds round] night: the photo's trunk and roots read in a cool moonlit grey-blue, the flute ridges and the root
           // tops catching it, the grooves and undersides dark (before, below the house they sank into one dark brown mass)
           { float up=.45+.55*smoothstep(-.2,.8,wn.y); float rdg=(.35+.65*smoothstep(.3,.8,tdH))*mix(1.,.25+.95*smoothstep(-.3,.8,tdFl),tdFlK);
@@ -550,7 +553,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress20';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress21';
     mat.needsUpdate = true;
   }
 
@@ -750,11 +753,11 @@ uniform float tdCool;` + NOISE)
     // door was bare). Own rng stream so nothing placed after this moves. On the real carved triangles beside the jambs.
     D.doorMoss = 0;
     if (C.door) { const dr = C.door, RD = rng(7071), hw = dr.w / 2;
-      const beside = sampler(q => { if (q.n.y < 0.4 || q.c.y < dr.y0 - 0.15 || q.c.y > dr.y0 + 0.18) return false; /* the threshold corners only, on bark that faces up */ const r = radial(q.c.x, q.c.z);
+      const beside = sampler(q => { if (q.n.y < 0.75 || q.c.y < dr.y0 - 0.15 || q.c.y > dr.y0 + 0.18) return false; /* the threshold corners only, on bark that faces up */ const r = radial(q.c.x, q.c.z);
         const lat = Math.abs(angDiff(Math.atan2(q.c.z - AZ, q.c.x - AX), doorAng)) * r; return lat > hw + 0.07 && lat < hw + 0.4; }, RD);
       for (let k = 0; k < 60 && D.doorMoss < NDOOR; k++) { RSEED(586000 + k); const s = beside(); if (!s) break; const { p } = s;
         if (inBox(avoid, p.x, p.y, p.z, 0.02)) continue;
-        const sz = 0.035 + RD() * 0.05; M4.compose(p.clone().addScaledVector(s.n, -sz * 0.2), orient(s.n, RD() * 6.28), S.set(sz * (1.1 + RD() * 0.4), sz * (0.45 + RD() * 0.2), sz)); im.setMatrixAt(n, M4);
+        const sz = 0.025 + RD() * 0.03; M4.compose(p.clone().addScaledVector(s.n, -sz * 0.2), orient(s.n.clone().lerp(UP, 0.5).normalize(), RD() * 6.28), S.set(sz * (1.1 + RD() * 0.4), sz * (0.6 + RD() * 0.2), sz)); /* [eye level round] smaller, domed and only on the near-flat threshold corners: on the 45° flare beside the door 6-9 cm discs stood out of the bare bark like stickers */ im.setMatrixAt(n, M4);
         const v = 0.85 + RD() * 0.3; col.setRGB(0.075 * v, 0.11 * v, 0.03 * v); im.setColorAt(n++, col); D.doorMoss++; } }
     im.count = n; im.receiveShadow = true; D.group.add(im); D.moss = im;
   }

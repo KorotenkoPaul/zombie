@@ -461,7 +461,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // outdoors (below the house floors or out on the open ground) the lantern is the only light around: full strength,
     // enough for a warm pool on the dark grass and roots through the blue ground fog (at 4.2 the fog swallowed it)
     const outdoors = hs.pos.y < (LV.LC || 4.4) - .3 || hs.pos.z > 4.7; hand.outdoors = outdoors;
-    hand.L.I += ((outdoors ? 7.5 : 1.6) - hand.L.I) * Math.min(1, dt * 2);
+    // heavy rain: the wet path mirrors the lantern as a broad bright yellow patch at full strength (Ground): a little lower
+    let wetK = 0; try { const w = window.__weather && window.__weather.state && window.__weather.state(); if (w && w.rain && w.rain !== 'none') wetK = Math.min(1, w.rainAmt || 0); } catch (e) {}
+    hand.L.I += ((outdoors ? 7.5 * (1 - .4 * wetK) : 1.6) - hand.L.I) * Math.min(1, dt * 2);
     { const sh = hand.shadow, r = window.__dbg && window.__dbg.hero && window.__dbg.hero.root, k = outdoors ? hs.level : 0;
       sh.visible = !!r && k > .02;
       // only on something: the ground (or a root) right under his soles, or boards (collide grid). On a ladder it hides.
@@ -1337,9 +1339,9 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       const l = sl.l;
       if (sl.leaving) {
         // a source that is already dark hands over at once; a lit one fades out over ~0.6 s first
-        sl.w = sl.sc === 0 ? 0 : Math.max(0, sl.w - dt * 1.6);
+        sl.w = sl.sc === 0 ? 0 : Math.max(0, sl.w - dt * .9);   // ~1.1 s: a lamp still burning that loses its slot dims gently, no pop
         if (sl.w === 0) { sl.v = sl.next || null; sl.next = null; sl.leaving = false; if (sl.v) stats.swaps++; }
-      } else if (sl.v) sl.w = Math.min(1, sl.w + dt * 2.5);
+      } else if (sl.v) sl.w = Math.min(1, sl.w + dt * 1.25);   // ~0.8 s in
       const v = sl.v;
       if (!v) { l.intensity = 0; continue; }
       v.getWorldPosition(l.position); l.color.copy(v.color); l.distance = v.distance; l.decay = v.decay;
@@ -1351,7 +1353,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
         if (up != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, up - l.position.y + .06));   // ceiling clip (the cone looks up)
         else if (fy != null) l.decay = 10 + 4 * Math.round(v.decay * 4) + Math.min(3.9, Math.max(0, l.position.y - fy + .06));
       }
-      l.intensity = v.intensity * sl.w;
+      l.intensity = v.intensity * sl.w * sl.w * (3 - 2 * sl.w);   // eased both ways
     }
   }
 
