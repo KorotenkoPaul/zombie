@@ -1,6 +1,7 @@
 // Phone budget gate (thread "Оптимизировать игру для iPhone"). Run before deploying anything that adds geometry, cards or shadows:
 //   node tests/perf/budget.js            (serves game/ itself on a free port; iPhone 13 profile, ~5-8 min in SwiftShader)
 //   node tests/perf/budget.js --quick    (night home only)
+//   node tests/perf/budget.js --only day (only the views whose name contains 'day')
 // Checks, per key view: the worst frame's triangles (main pass + one shadow map, all due maps forced), real draw calls, and at
 // the day home view the alpha-tested card area drawn after the opaque pass (depth-tested, leaf-leaf overlap counted: the worst case).
 // Budget (memory "PERF"): 450k tris and 300 draw calls per frame, alpha-tested area <= 1.5 screens. Exit code 1 if over.
@@ -9,7 +10,7 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const { chromium, devices } = require('playwright');
 const ROOT = path.join(__dirname, '..', '..', 'game');
 const BUD = { tris: 450000, calls: 300, alpha: 1.5 };
-const QUICK = process.argv.includes('--quick');
+const QUICK = process.argv.includes('--quick'), ONLY = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.glb': 'model/gltf-binary', '.wasm': 'application/wasm', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.ktx2': 'image/ktx2', '.txt': 'text/plain', '.css': 'text/css', '.bin': 'application/octet-stream' };
 const srv = http.createServer((q, r) => { const u = decodeURIComponent(q.url.split('?')[0]); const f = path.join(ROOT, u === '/' ? 'index.html' : u);
   if (!f.startsWith(ROOT)) { r.writeHead(403); return r.end(); }
@@ -25,7 +26,7 @@ const VIEWS = [
   await new Promise(res => srv.listen(0, res)); const PORT = srv.address().port;
   const b = await chromium.launch({ args: ['--enable-unsafe-swiftshader', '--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist'] });
   let fail = 0; const rows = [];
-  for (const v of QUICK ? VIEWS.slice(0, 1) : VIEWS) {
+  for (const v of QUICK ? VIEWS.slice(0, 1) : ONLY ? VIEWS.filter(v => v.name.includes(ONLY)) : VIEWS) {
     const p = await b.newPage({ ...devices['iPhone 13'], viewport: { width: 390, height: 664 }, deviceScaleFactor: 1 });
     const errs = []; p.on('pageerror', e => errs.push(e.message));
     await p.goto(`http://localhost:${PORT}/index.html?t=${v.hour}`);
