@@ -74,7 +74,11 @@ function branchHook(sh, AX, AZ) {
 }
 export function createTreeDress(C) {
   const { scene, TREE, MOBILE, leafT, U, rootD = () => 99, avoid = [], blockers = [] } = C;
-  const R = rng(424242); const rr = (a, b) => a + R() * (b - a);
+  // [determinism] the house boards are laid with Math.random (index.html), so the blockers differ by millimetres between loads and a
+  // sample that lands on an edge flips. With one shared stream that flip shifted every later draw (the ivy count ran 356-422 on
+  // one build). Each candidate loop now reseeds per iteration (RSEED(key)), so a flip changes only that one candidate.
+  let _rs = rng(424242); const R = () => _rs(); const rr = (a, b) => a + R() * (b - a);
+  const RSEED = key => { _rs = rng((424242 ^ Math.imul(key + 1, 0x9E3779B1)) >>> 0); };
   const [AX, AZ] = TREE.axis; const doorAng = TREE.doorAngle ?? 1.15;
   const D = { group: new THREE.Group() }; D.group.name = 'treedress'; scene.add(D.group);
   const MUL = MOBILE ? 0.55 : 1;
@@ -465,6 +469,7 @@ uniform float tdCool;` + NOISE)
     return along ? V(cx + e * dx, _bb.max.y, cz + w * dz) : V(cx + w * dx, _bb.max.y, cz + e * dz);
   };
   // ================= 2. moss cushions on root tops and in limb forks =================
+  RSEED(9000001); /* [determinism] each section starts from its own seed */
   {
     const g = (() => { const s = new THREE.IcosahedronGeometry(1, MOBILE ? 1 : 2); /* rounder: a faceted blob read as a plastic lump */ s.deleteAttribute('normal'); s.deleteAttribute('uv'); const m = mergeVertices(s); const p = m.attributes.position;
       for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 1 + 0.18 * Math.sin(x * 5.1 + z * 3.7) * Math.cos(z * 4.3 - y * 2); p.setXYZ(i, x * k, Math.max(y, -0.2) * k, z * k); }
@@ -507,7 +512,7 @@ uniform float tdCool;` + NOISE)
     const roots = sampler(q => q.n.y > 0.55 && q.c.y < 1.5 && q.c.y > -0.1 && radial(q.c.x, q.c.z) > 2.0);
     const limbs = sampler(q => q.n.y > 0.7 && q.c.y > 3.5 && q.c.y < 13 && radial(q.c.x, q.c.z) > 1.4);
     let n = 0;
-    for (let k = 0; k < NUP * 4 && n < NUP; k++) {
+    for (let k = 0; k < NUP * 4 && n < NUP; k++) { RSEED(512000 + k);
       const s = (k % 3 === 2 ? limbs : roots)(); if (!s) continue;
       const { p } = s; if (blocked(p.x, p.y, p.z, 0.28) || nearDoor(p.x, p.y, p.z)) continue;
       // grow in small colonies: keep a sample only if the big moss noise is high here (matches the shader patches loosely)
@@ -526,7 +531,7 @@ uniform float tdCool;` + NOISE)
     const roofs = C.roofs; const qi = new THREE.Quaternion(), pi = V(), si = V(), nrm = V();
     if (roofs && roofs.isInstancedMesh) {
       const idx = [...Array(roofs.count).keys()];
-      for (let k = 0; k < idx.length && n < NUP + Math.round(110 * MUL); k++) {
+      for (let k = 0; k < idx.length && n < NUP + Math.round(110 * MUL); k++) { RSEED(531000 + k);
         const i = idx[Math.floor(R() * idx.length)]; roofs.getMatrixAt(i, M4); M4.decompose(pi, qi, si);
         nrm.set(0, 1, 0).applyQuaternion(qi); if (nrm.y < 0.3) continue;
         // patchy: a low-frequency mask in world space, denser on the back (shady, -z) half and near the trunk
@@ -545,7 +550,7 @@ uniform float tdCool;` + NOISE)
     // plank landings and the deck: moss along the back (north) edges and the board ends, where water stays longest
     const boardsIM = (C.blockers || [])[0];
     if (boardsIM && boardsIM.isInstancedMesh) {
-      for (let k = 0; k < 4000 && n < N; k++) {
+      for (let k = 0; k < 4000 && n < N; k++) { RSEED(550000 + k);
         const p = boardPoint(boardsIM, 0.3, 0.48, 0.45); if (!p) continue;
         if (inBox(avoid, p.x, p.y, p.z, 0.25) || inBox(avoid, p.x, p.y + 1.5, p.z, 0.25)) continue; // not inside the rooms
         if (p.z > AZ + 2.2 && R() < 0.8) continue; // mostly the back / trunk side
@@ -581,7 +586,7 @@ uniform float tdCool;` + NOISE)
     if (C.door) { const dr = C.door, RD = rng(7071), hw = dr.w / 2;
       const beside = sampler(q => { if (q.n.y < 0.4 || q.c.y < dr.y0 - 0.15 || q.c.y > dr.y0 + 0.18) return false; /* the threshold corners only, on bark that faces up */ const r = radial(q.c.x, q.c.z);
         const lat = Math.abs(angDiff(Math.atan2(q.c.z - AZ, q.c.x - AX), doorAng)) * r; return lat > hw + 0.07 && lat < hw + 0.4; }, RD);
-      for (let k = 0; k < 60 && D.doorMoss < NDOOR; k++) { const s = beside(); if (!s) break; const { p } = s;
+      for (let k = 0; k < 60 && D.doorMoss < NDOOR; k++) { RSEED(586000 + k); const s = beside(); if (!s) break; const { p } = s;
         if (inBox(avoid, p.x, p.y, p.z, 0.02)) continue;
         const sz = 0.035 + RD() * 0.05; M4.compose(p.clone().addScaledVector(s.n, -sz * 0.2), orient(s.n, RD() * 6.28), S.set(sz * (1.1 + RD() * 0.4), sz * (0.45 + RD() * 0.2), sz)); im.setMatrixAt(n, M4);
         const v = 0.85 + RD() * 0.3; col.setRGB(0.075 * v, 0.11 * v, 0.03 * v); im.setColorAt(n++, col); D.doorMoss++; } }
@@ -589,10 +594,11 @@ uniform float tdCool;` + NOISE)
   }
 
   // ================= 3. soil and leaf litter in the pockets between the roots =================
+  RSEED(9000002); /* [determinism] each section starts from its own seed */
   {
     // pockets: ground spots right next to the wood (rootD small) close to the trunk, preferably hemmed in by roots on two sides
     const spots = [];
-    for (let k = 0; k < 4000 && spots.length < 260 * MUL; k++) {
+    for (let k = 0; k < 4000 && spots.length < 260 * MUL; k++) { RSEED(597000 + k);
       const a = rr(0, Math.PI * 2), d = rr(1.8, 5.2), x = AX + Math.cos(a) * d, z = AZ + Math.sin(a) * d;
       const rd = rootD(x, z); if (rd < 0.04 || rd > 0.55) continue;
       // hemmed in: wood both clockwise and anticlockwise within ~0.9 m
@@ -626,7 +632,7 @@ uniform float tdCool;` + NOISE)
     const lmat = new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.95 });
     const NCAUGHT = Math.round(90 * MUL), NL = Math.round(420 * MUL), lit = new THREE.InstancedMesh(lg, lmat, NL + NCAUGHT + Math.round(16 * MUL)) /* + the fold leaves (autumn round) */; let nl = 0;
     const tints = [[0.62, 0.38, 0.2], [0.5, 0.3, 0.16], [0.75, 0.52, 0.22], [0.42, 0.3, 0.2], [0.55, 0.6, 0.3]];
-    for (let k = 0; nl < NL && k < NL * 3; k++) {
+    for (let k = 0; nl < NL && k < NL * 3; k++) { RSEED(631000 + k);
       const s = spots[Math.floor(R() * spots.length)]; if (!s) break;
       const [x0, , z0, rd] = s; const x = x0 + rr(-0.35, 0.35), z = z0 + rr(-0.35, 0.35);
       const r2 = rootD(x, z); if (r2 < 0.0) continue;
@@ -639,7 +645,7 @@ uniform float tdCool;` + NOISE)
     {
       const ledges = sampler(q => q.n.y > 0.35 && q.c.y > 0.1 && q.c.y < 4.5 && !(radial(q.c.x, q.c.z) < 2.4 && q.n.y > 0.9));
       let nc = 0;
-      for (let k = 0; k < NCAUGHT * 6 && nc < NCAUGHT; k++) {
+      for (let k = 0; k < NCAUGHT * 6 && nc < NCAUGHT; k++) { RSEED(644000 + k);
         const s0 = ledges(); if (!s0) break; const p = s0.p;
         if (blocked(p.x, p.y + 0.05, p.z, 0.08) || nearDoor(p.x, p.y, p.z)) continue;
         // in little drifts: keep a spot only where a slow noise says leaves gather
@@ -698,6 +704,7 @@ uniform float tdCool;` + NOISE)
   }
 
   // ================= 4. ivy climbing the lower trunk =================
+  RSEED(9000003); /* [determinism] each section starts from its own seed */
   {
     // trunk surface radius by (angle, height), read from the oak mesh
     const NA = 144, NY = 140, HY = 0.1, RS = new Float32Array(NA * NY);
@@ -755,11 +762,11 @@ uniform float tdCool;` + NOISE)
       if (pts.length > 2) stems.push({ pts, r: depth ? 0.009 : 0.016 });
       D.vineLen = (D.vineLen || []).concat([[+a.toFixed(2), pts.length ? +pts[0].y.toFixed(1) : -1, +y.toFixed(1)]]);
     };
-    for (const [a0, top] of vines) { const a = a0 + rr(-0.1, 0.1); let y = 0.1; while (y < 1.6 && surf(a, y) > 3.0) y += 0.1; climb(a, y, top * (MOBILE ? 0.9 : 1), 0); }
+    for (const [vi, [a0, top]] of vines.entries()) { RSEED(760000 + vi); const a = a0 + rr(-0.1, 0.1); let y = 0.1; while (y < 1.6 && surf(a, y) > 3.0) y += 0.1; climb(a, y, top * (MOBILE ? 0.9 : 1), 0); }
     // higher up: short vines on the trunk between the rooms (they start in a free gap and stop at the next floor or wall)
     {
       let made = 0;
-      for (let k = 0; k < 400 && made < (MOBILE ? 5 : 9); k++) {
+      for (let k = 0; k < 400 && made < (MOBILE ? 5 : 9); k++) { RSEED(764000 + k);
         const a = k % 3 ? rr(0.5, 2.5) : rr(-Math.PI, Math.PI), y = rr(3.8, 11.5), r = surf(a, y); // mostly the front half, where it shows between the rooms
         if (r > 2.6) continue; const p = V(AX + Math.cos(a) * r, y, AZ + Math.sin(a) * r);
         if (blocked(p.x, p.y, p.z, 0.2) || blocked(p.x, p.y + 0.6, p.z, 0.1)) continue;
@@ -780,7 +787,7 @@ uniform float tdCool;` + NOISE)
         cand.push(bb.clone());
       }
       let strands = 0;
-      for (let k = 0; k < 120 && strands < (MOBILE ? 10 : 18) && cand.length; k++) {
+      for (let k = 0; k < 120 && strands < (MOBILE ? 10 : 18) && cand.length; k++) { RSEED(785000 + k);
         const b = cand[Math.floor(R() * cand.length)];
         const x = rr(b.min.x, b.max.x), z = rr(b.min.z, b.max.z), y0 = b.min.y - 0.01;
         if (z < AZ && R() < 0.6) continue;
@@ -803,7 +810,7 @@ uniform float tdCool;` + NOISE)
       const put = (p, out, size) => { if (nl >= NLV || inBox(avoid, p.x, p.y, p.z, 0.03)) return; const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), out.clone().add(V(rr(-0.3, 0.3), rr(0, 0.3), rr(-0.3, 0.3))).normalize());
         q.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), rr(-0.9, 0.9))); M4.compose(p, q, S.setScalar(size)); leaves.setMatrixAt(nl, M4);
         const v = rr(0.75, 1.15); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); leaves.setColorAt(nl++, col); D.joinIvy++; };
-      for (const b of D.bites) { if (made >= (MOBILE ? 10 : 22)) break; if (R() < 0.5) continue; if (inBox(avoid, b.x, b.y + 0.1, b.z, 0.05) || nearDoor(b.x, b.y + 0.3, b.z)) continue; made++; (D.joinAt = D.joinAt || []).push([+b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2)]);
+      for (const b of D.bites) { if (made >= (MOBILE ? 10 : 22)) break; RSEED(808000 + ((Math.round(b.x * 20) * 7349 + Math.round(b.y * 20) * 3389 + Math.round(b.z * 20) * 1531) & 0xfffff)); if (R() < 0.5) continue; if (inBox(avoid, b.x, b.y + 0.1, b.z, 0.05) || nearDoor(b.x, b.y + 0.3, b.z)) continue; made++; (D.joinAt = D.joinAt || []).push([+b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2)]);
         const out = V(b.x - AX, 0, b.z - AZ).normalize(); const ax = b.ax, vert = Math.abs(ax.y) > 0.7;
         // horizontal wood (landing boards, joists, braces): creep along a side face, never on the top people walk on; posts: the outer face
         const fv = vert ? out.clone() : V(0, 1, 0).cross(ax).normalize().multiplyScalar(R() < 0.5 ? -1 : 1); const up = fv; sideV.crossVectors(ax, fv).normalize(); const h = vert ? b.w : Math.max(...b.flat) * 0.5;
@@ -834,6 +841,7 @@ uniform float tdCool;` + NOISE)
   }
 
   // ================= 5. ferns and grass tufts in root crevices and forks =================
+  RSEED(9000004); /* [determinism] each section starts from its own seed */
   {
     const fernTex = (() => {
       const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const x = cv.getContext('2d');
@@ -899,7 +907,7 @@ uniform float tdCool;` + NOISE)
     let nf = 0, nt = 0;
     // crevices: where two roots meet the trunk foot (ground just next to wood, close to the axis)
     const crev = [];
-    for (let k = 0; k < 3000 && crev.length < 120; k++) {
+    for (let k = 0; k < 3000 && crev.length < 120; k++) { RSEED(904000 + k);
       const a = rr(0, Math.PI * 2), d = rr(2.0, 4.6), x = AX + Math.cos(a) * d, z = AZ + Math.sin(a) * d, rd = rootD(x, z);
       if (rd < 0.05 || rd > 0.4) continue; const y = groundH(x, z); if (blocked(x, y + 0.4, z, 0.1) || nearDoor(x, y + 0.3, z)) continue; crev.push(V(x, y, z));
     }
@@ -910,7 +918,7 @@ uniform float tdCool;` + NOISE)
       if (nf < NF * 0.75 && R() < 0.3) { M4.compose(p, new THREE.Quaternion().setFromAxisAngle(UP, rr(0, 6.28)), S.setScalar(rr(0.45, 0.8))); ferns.setMatrixAt(nf, M4); const v = rr(0.75, 1.1); ferns.setColorAt(nf++, col.setRGB(v, v, v)); }
       else if (nt < NTF * 0.6) { M4.compose(p, new THREE.Quaternion().setFromAxisAngle(UP, rr(0, 6.28)), S.setScalar(rr(0.7, 1.3))); tufts.setMatrixAt(nt, M4); const v = rr(0.8, 1.1); tufts.setColorAt(nt++, col.setRGB(0.1 * v, 0.17 * v, 0.06 * v)); }
     }
-    for (let k = 0; k < 400 && (nf < NF || nt < NTF); k++) {
+    for (let k = 0; k < 400 && (nf < NF || nt < NTF); k++) { RSEED(915000 + k);
       const top = k % 2 ? forks() : rootTops(); if (!top) continue; const p = top.p;
       if (blocked(p.x, p.y + 0.3, p.z, 0.25) || nearDoor(p.x, p.y, p.z)) continue;
       const q = orient(top.n.clone().lerp(UP, 0.6).normalize(), rr(0, 6.28));
@@ -922,7 +930,7 @@ uniform float tdCool;` + NOISE)
     const CG = new Map(); for (const q of tri) { if (q.c.y < 4.5) continue; const key = Math.round(q.c.x * 4) + ',' + Math.round(q.c.z * 4); let l = CG.get(key); if (!l) CG.set(key, l = []); l.push(q.c.y); }
     const colTop = (x, z, y) => { const l = CG.get(Math.round(x * 4) + ',' + Math.round(z * 4)); if (!l) return -99; let best = -99; for (const h of l) if (h > y + 0.15 && h < y + 0.8) best = Math.max(best, h); return best; };
     const highForks = sampler(q => q.n.y > 0.75 && q.c.y > 5 && q.c.y < 16 && radial(q.c.x, q.c.z) > 1.2 && radial(q.c.x, q.c.z) < 6.5);
-    for (let k = 0; k < 600 && nf < NF2; k++) {
+    for (let k = 0; k < 600 && nf < NF2; k++) { RSEED(927000 + k);
       const s0 = highForks(); if (!s0) break; const p = s0.p;
       if (blocked(p.x, p.y + 0.3, p.z, 0.3)) continue;
       // a fork: wood rises again close by on at least one side (the surface curves up around this spot)
@@ -935,6 +943,7 @@ uniform float tdCool;` + NOISE)
   }
 
   // ================= 6. mushrooms on the wood: bracket fungi on the trunk foot, little caps on the roots =================
+  RSEED(9000005); /* [determinism] each section starts from its own seed */
   {
     const env = C.env || window.__env || {}; const glowU = env.shroomGlow || { value: 0 };
     const paint = (g, f) => { const p = g.attributes.position; const c = new Float32Array(p.count * 3), a = new Float32Array(p.count); for (let i = 0; i < p.count; i++) { const r = f(p.getX(i), p.getY(i), p.getZ(i)); c.set(r[0], i * 3); a[i] = r[1]; } g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.setAttribute('aCap', new THREE.BufferAttribute(a, 1)); return g.toNonIndexed(); };
@@ -979,7 +988,7 @@ uniform float tdCool;` + NOISE)
       const bt = barkTop(p.x, p.z, p.y + maxUp, true), gh = gridH ? gridH(p.x, p.z) : null;
       const y = Math.max(bt ?? -1e9, gh ?? -1e9); if (y < -1e8 || y < p.y - 0.35) return null; p.y = y - 0.008; return p; };
     let ns = 0;
-    for (let k = 0; k < 500 && ns < NSM - NBASE * 3; k++) {
+    for (let k = 0; k < 500 && ns < NSM - NBASE * 3; k++) { RSEED(984000 + k);
       const s0 = onRoots(); if (!s0) break; const p0 = s0.p; if (p0.z < AZ - 0.5 && R() < 0.75) continue; if (blocked(p0.x, p0.y + 0.2, p0.z, 0.1) || nearDoor(p0.x, p0.y, p0.z)) continue;
       const cnt = 2 + Math.floor(R() * 4);
       for (let j = 0; j < cnt && ns < NSM; j++) {
@@ -990,7 +999,7 @@ uniform float tdCool;` + NOISE)
       }
     }
     // a few at the very foot of the roots, where they meet the soil
-    for (let k = 0; k < 2000 && ns < NSM; k++) {
+    for (let k = 0; k < 2000 && ns < NSM; k++) { RSEED(995000 + k);
       const a = rr(0, 6.28), d = rr(2.4, 7.5), x = AX + Math.cos(a) * d, z = AZ + Math.sin(a) * d, r2 = rootD(x, z);
       if (r2 < 0.02 || r2 > 0.14 || blocked(x, 0.5, z, 0.1) || nearDoor(x, 0.4, z)) continue;
       if (D.baseShroom === undefined) D.baseShroom = 0; if (D.baseShroom >= NBASE) break;
@@ -1006,7 +1015,7 @@ uniform float tdCool;` + NOISE)
     // bracket fungi: stacked shelves on steep bark low on the trunk, mostly on the shady sides
     const onTrunk = sampler(q => Math.abs(q.n.y) < 0.3 && q.c.y > 0.5 && q.c.y < 3.4 && radial(q.c.x, q.c.z) < 3.6);
     let nb = 0;
-    for (let k = 0; k < 300 && nb < NBR; k++) {
+    for (let k = 0; k < 300 && nb < NBR; k++) { RSEED(1011000 + k);
       const s0 = onTrunk(); if (!s0) break; const p0 = s0.p; if (s0.n.z < -0.3 && R() < 0.7) continue; // mostly on the sides and front-sides, where they are seen
       if (blocked(p0.x, p0.y, p0.z, 0.25) || nearDoor(p0.x, p0.y, p0.z)) continue;
       const out = V(s0.n.x, 0, s0.n.z).normalize(); const yaw = Math.atan2(out.x, out.z); const cnt = 1 + Math.floor(R() * 3);
@@ -1025,6 +1034,7 @@ uniform float tdCool;` + NOISE)
   }
 
   // ================= 7. hanging moss and lichen strands under the lower limbs (sway like ropes: wind.js windRope) =================
+  RSEED(9000006); /* [determinism] each section starts from its own seed */
   {
     const tex = (() => {
       const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256; const x = cv.getContext('2d'); const r = rng(99);
@@ -1054,7 +1064,7 @@ uniform float tdCool;` + NOISE)
     mat.customProgramCacheKey = () => 'tdHanging1'; /* SHADERS rule */
     const N = Math.round(45 * MUL), im = new THREE.InstancedMesh(g, mat, N); let n = 0;
     const under = sampler(q => q.n.y < -0.35 && q.c.y > 3.6 && q.c.y < 10.5 && radial(q.c.x, q.c.z) > 2.2);
-    for (let k = 0; k < 600 && n < N; k++) {
+    for (let k = 0; k < 600 && n < N; k++) { RSEED(1059000 + k);
       const s0 = under(); if (!s0) break; const p0 = s0.p;
       if (blocked(p0.x, p0.y - 0.3, p0.z, 0.2)) continue;
       const cnt = 2 + Math.floor(R() * 4);
@@ -1069,6 +1079,7 @@ uniform float tdCool;` + NOISE)
   }
 
   // ================= 8. little piles of fallen oak leaves on the landings and the deck =================
+  RSEED(9000007); /* [determinism] each section starts from its own seed */
   // Same leaf and palette as Ground's fallen leaves (ground.js), so the boards and the forest floor match.
   // Only in corners and along the trunk / board ends, never on the hero's walking lines (read from the hero's walk graph
   // once it exists, so this is placed lazily on the first frames).
@@ -1096,7 +1107,7 @@ uniform float tdCool;` + NOISE)
       const NL = Math.round(150 * MUL), im = new THREE.InstancedMesh(GL.geometry, GL.material, NL); let n = 0, piles = 0;
       const pal = [[.07, .7, .36], [.04, .65, .3], [.1, .65, .4], [.16, .45, .32], [.02, .55, .26], [.12, .4, .26]];
       const qi = new THREE.Quaternion(), pi = V(), si = V(), nrm = V(), centres = [];
-      for (let k = 0; k < 3000 && n < NL && piles < (MOBILE ? 7 : 12); k++) {
+      for (let k = 0; k < 3000 && n < NL && piles < (MOBILE ? 7 : 12); k++) { RSEED(1101000 + k);
         const rej = D.rej = D.rej || { up: 0, room: 0, path: 0, near: 0 };
         const p = boardPoint(boardsIM, 0.32, 0.45, 0.3); if (!p) { rej.up++; continue; }
         if (inBox(avoid, p.x, p.y, p.z, 0.2) || inBox(avoid, p.x, p.y + 1.5, p.z, 0.25)) { rej.room++; continue; } // the room volumes start above their floors
