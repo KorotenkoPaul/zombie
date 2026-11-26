@@ -193,10 +193,21 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const l = new THREE.PointLight(0xFFC373, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
     // on Props' wall bracket by the fridge the light sat 15 cm off the wall and burned it white beside the fridge while the stove
     // side (the photo's warmest corner) stayed dim: the light's centre a little out into the room, as the glass throws it
-    if (PL.kitchenLamp) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
+    if (PL.kitchenLamp && !PL.kitchenLamp.pendant) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
     const panes = claimHousing(kPos);
     const fo = oilFlame(kPos, null);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
+    /* phones: no point-light shadows there (6 passes), so the room the hero is in most had none at all (Props). A shadowed
+       downward cone from the pendant, like the bedroom's and the workshop's: one 512 map, the static room cached (lampCache),
+       redrawn only for his own casters while he is in reach. The pooled point keeps the walls and ceiling lit. */
+    let ks = null;
+    if (MOBILE && !window.__noKitchenShadow) {
+      ks = new THREE.SpotLight(0xFFC373, 0, 5.5, 1.15, .8, 1.4); ks.position.copy(kPos).add(V(0, -.05, 0));
+      ks.target.position.set(kPos.x - .35, KT, kPos.z + 1.0); scene.add(ks, ks.target);
+      ks.castShadow = true; ks.shadow.camera.layers.enable(6); ks.shadow.mapSize.set(512, 512); ks.shadow.camera.near = .08; ks.shadow.camera.far = 5;
+      ks.shadow.bias = -.008; ks.shadow.normalBias = .1; ks.shadow.radius = 4; ks.shadow.autoUpdate = false;
+      floorClip(ks, KT); ks.userData.lampCache = true;
+    }
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: ks ? [{ l: ks, I: 8.5 }, { l, I: 4.8 }] : [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -249,17 +260,17 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (BL) { const c = V(-1.9, bPos.y, 2.3).sub(bPos); c.y = 0; l.position.addScaledVector(c.normalize(), .35); }   // on the door-side hook: the fill a step into the room (the wall by the door burned white, the bunk sat dim; photo: the bunk is the lit heart of the room)
     // a narrower cone keeps the 512 map sharp enough (no self-shadowing)
     const bs = new THREE.SpotLight(0xFFB866, 0, 6, .95, .8, 1.4); bs.position.copy(bPos).add(BL ? V(0, -.03, 0) : V(0, -.15, .06));   /* on Props' hook (BL): from the flame itself */   // just under the lantern's base plate (it would shade the whole cone)
-    if (BL) bs.target.position.set(-2.0, BD + .75, 2.05); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
+    /* Props a33799f: the lantern hangs over the reading table, in front of the bunk: the cone falls back-left onto the bunk so its posts, ladder and the hero throw shadows on the back wall (Pavel) */ if (BL) bs.target.position.set(-2.5, BD + .7, 1.45); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
     floorClip(bs, BD); bs.userData.lampCache = true;   // nothing below the bedroom floor: the kitchen wall under it caught a stepped leak through the boards
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
     // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
-    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
+    const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .3, 3.15); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
     const hg = BL && BL.own ? null : housing(bPos); lastHang = null; if (!(BL && BL.own)) hang(bPos, .23, !BL); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const fo = oilFlame(bPos, hg);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 10.4 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra,
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 10.4 }, { l, I: MOBILE ? .9 : 1.2 }, ...(MOBILE ? [] : [{ l: bb, I: .8 }])], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra,
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -546,7 +557,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   const KWB = 2.4;
   const ROOMS = {
     kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: MOBILE ? 2.0 * KWB : 2.0 },   // toward the stove: the lamp now hangs by the fridge
-    bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: MOBILE ? .9 : .36 },   /* desktop: at .9 this shadowless all-room fill washed out the lamp's shadows (the bunk frame's on the back wall, his own); the lamp's cone takes the light back */   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
+    bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: MOBILE ? .65 : .36 },   /* desktop: at .9 this shadowless all-room fill washed out the lamp's shadows (the bunk frame's on the back wall, his own); the lamp's cone takes the light back */   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
     workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: MOBILE ? 2.6 * KWB : 2.6 },
   };
   const glows = [];
@@ -592,9 +603,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // folds whose depth follows how much fabric is bunched (the cloth keeps its length: pulled aside the folds go deep,
   // drawn shut they open out), folds that wander a little and widen toward the weighted hem, and a hem that flares a
   // touch when the panel is gathered. Each panel is a 42 x 9 indexed grid (~750 tris) laid on the CPU only while it moves.
-  const CNX = 42, CNY = 9, CNV = (CNX + 1) * (CNY + 1);
+  const CNX = 30, CNY = 6, CNV = (CNX + 1) * (CNY + 1);
   const curIdx = (() => { const a = []; for (let j = 0; j < CNY; j++) for (let i = 0; i < CNX; i++) { const q = j * (CNX + 1) + i; a.push(q, q + 1, q + CNX + 1, q + 1, q + CNX + 2, q + CNX + 1); } return a; })();
-  const ringGeo = (() => { const g = new THREE.TorusGeometry(.011, .0024, 3, 6); g.rotateY(Math.PI / 2); return g; })();
+  const ringGeo = (() => { const g = new THREE.TorusGeometry(.011, .0024, 3, 4); g.rotateY(Math.PI / 2); return g; })();
   // All curtains, rods and rings of the house are ONE mesh (was 3 draws per window): vertex colours give each room its
   // cloth and the rods their iron; the panels are moved on the CPU when they draw (only while moving);
   // aGlow (per vertex, per frame) is the lamp shining through the cloth; the hem sway in a draught is in the vertex
@@ -610,7 +621,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const c = { w, W, H, sz, idx: curtains.length, mat: new THREE.MeshStandardMaterial(), closed: 0, dirty: true, col: new THREE.Color(CUR_COL[w.room] || 0xC9A57A) };
     c.pos = w.g.getWorldPosition(V());
     c.Lf = (W / 2 + .05) * 1.75;                       // fabric width of one panel (fullness 1.75)
-    c.nf = Math.min(6, Math.max(4, Math.round(c.Lf / .15)));   // pleats per panel (7 grid columns each)
+    c.nf = Math.min(6, Math.max(4, Math.round(c.Lf / .15)));   // pleats per panel (5 grid columns each at 6; 30x6 grid and 4-sided rings: 13.4k -> ~6k tris, Props 2026-11-26 budget)
     curtains.push(c);
     for (const side of [-1, 1]) { curParts.push({ c, kind: 'panel', side, n: CNV, seed: c.idx * 2.3 + side * .9 });
       for (let k = 0; k <= c.nf; k++) curParts.push({ c, kind: 'ring', side, k, geo: ringGeo }); }
@@ -776,12 +787,24 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const beamU = { uT: { value: 0 } };
   // beam prism: position = (u, v, t) on the window (u, v) pushed t along the light; aS = across coordinate for soft edges
   const beamVS = `
-    attribute float aS; uniform vec3 c0, eu, ev, dir; varying float vS, vT;
-    void main(){ vS = aS; vT = position.z; vec3 p = c0 + eu*position.x + ev*position.y + dir*position.z;
-      gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.); }`;
+    attribute float aS, aCap; uniform vec3 c0, eu, ev, dir, bmn, bmx; uniform float fy; varying float vS, vT, vCap, vTh; varying vec2 vUV;
+    void main(){ vec3 q = c0 + eu*position.x + ev*position.y;
+      // the beam stops on the room's floor (fy) and leaves a soft patch of sun there (the cap): no beam through the boards
+      float th = dir.y < -.001 ? clamp((fy + .012 - q.y) / dir.y, 0., 1.) : 1.;
+      // and on the far wall (the room's box; a low sun ran the beam out through the wall over the trunk)
+      if (bmx.x > bmn.x) { vec3 w = mix(bmn, bmx, step(0., dir)) - q; vec2 tw = vec2(abs(dir.x) > .001 ? w.x / dir.x : 9., abs(dir.z) > .001 ? w.z / dir.z : 9.);
+        th = min(th, max(0., min(tw.x, tw.y) - .01)); }
+      float t = aCap > .5 ? th : min(position.z, th);
+      vS = aS; vT = min(position.z, th); vTh = th; vCap = aCap * step(th, .999); vUV = position.xy;
+      gl_Position = projectionMatrix * viewMatrix * vec4(q + dir*t, 1.); }`;
   const beamFS = `
-    uniform float k; varying float vS, vT;
-    void main(){ float a = k * pow(sin(3.14159*vS), 1.6) * pow(1.-vT, 1.4) * smoothstep(0., .06, vT);
+    uniform float k, kp; varying float vS, vT, vCap, vTh; varying vec2 vUV;
+    void main(){
+      if (vCap > .5) { vec2 e = smoothstep(vec2(0.), vec2(.22), vUV) * smoothstep(vec2(0.), vec2(.22), 1. - vUV);   // soft-edged window shape on the boards
+        gl_FragColor = vec4(vec3(1., .82, .55) * kp * e.x * e.y, 1.); return; }
+      if (vCap > .25) discard;   // a cap that never reaches the floor
+      float r = vT / max(vTh, .05);   // along the beam, window -> floor: it thins out but still meets the patch on the boards
+      float a = k * pow(sin(3.14159*vS), 1.6) * (1. - .7 * pow(r, 1.2)) * smoothstep(0., .06, vT);
       gl_FragColor = vec4(vec3(1., .86, .62) * a, 1.); }`;
   const dustVS = `
     attribute vec4 aD; uniform vec3 c0, eu, ev, dir; uniform float uT, px; varying float vA;
@@ -798,7 +821,9 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     for (const [a, b] of [[[0, 0], [1, 0]], [[1, 0], [1, 1]], [[1, 1], [0, 1]], [[0, 1], [0, 0]]]) {
       for (const [e, t] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) { const c = e ? b : a; pos.push(c[0], c[1], t); across.push(e); }
     }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('aS', new THREE.Float32BufferAttribute(across, 1)); return g;
+    const cap = []; for (const [x, y] of [[0, 0], [1, 0], [1, 1], [0, 0], [1, 1], [0, 1]]) { pos.push(x, y, 1); across.push(.5); cap.push(1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('aS', new THREE.Float32BufferAttribute(across, 1));
+    g.setAttribute('aCap', new THREE.Float32BufferAttribute([...new Array(pos.length / 3 - 6).fill(0), ...cap], 1)); return g;
   })();
   const beams = [];
   const nDust = MOBILE ? 22 : 40;
@@ -809,8 +834,9 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     pane.updateMatrixWorld(true);
     const corner = (x, y) => pane.localToWorld(V(x * pw * .46, y * ph * .46, 0));
     const c0 = corner(-1, -1);
-    const U = { c0: { value: c0 }, eu: { value: corner(1, -1).sub(c0) }, ev: { value: corner(-1, 1).sub(c0) }, dir: { value: V() }, uT: beamU.uT };
-    const bm = new THREE.ShaderMaterial({ uniforms: { ...U, k: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, vertexShader: beamVS, fragmentShader: beamFS });
+    const FY = { kitchen: KT, bedroom: BD, workshop: WS }[w.room];
+    const U = { c0: { value: c0 }, eu: { value: corner(1, -1).sub(c0) }, ev: { value: corner(-1, 1).sub(c0) }, dir: { value: V() }, uT: beamU.uT, fy: { value: FY ?? -99 }, bmn: { value: V() }, bmx: { value: V() } };
+    const bm = new THREE.ShaderMaterial({ uniforms: { ...U, k: { value: 0 }, kp: { value: 0 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, vertexShader: beamVS, fragmentShader: beamFS });
     const m = new THREE.Mesh(prism, bm); m.frustumCulled = false; m.renderOrder = 3; m.visible = false; scene.add(m);
     const dg = new THREE.BufferGeometry(); const d = new Float32Array(nDust * 4);
     for (let i = 0; i < nDust * 4; i++) d[i] = Math.random();
@@ -819,7 +845,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const pts = new THREE.Points(dg, dm); pts.frustumCulled = false; pts.renderOrder = 3; pts.visible = false; scene.add(pts);
     beams.push({ w, U, m, pts });
   }
-  const sunV = V();
+  const sunV = V(), KPATCH = +(window.__KPATCH || .8);
   function updateBeams(dayK, T) {
     beamU.uT.value = T;
     let on = 0;
@@ -827,13 +853,15 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const dk = Math.max(0, Math.min(1, (dayK - .6) / .3)), dkS = dk * dk * (3 - 2 * dk);
     if (sunL && dkS > 0) { sunV.copy(sunL.position).sub(sunL.target.position).normalize(); on = dkS * Math.min(1, sunL.intensity / 2.2); }
     const low = 1 - Math.min(1, Math.max(0, sunV.y - .15) / .7);      // low sun: long golden beams
+    const IB = ENV && ENV.interiorBoxes;
     for (const b of beams) {
+      if (IB && !b.boxed) { b.boxed = true; const r = IB[['kitchen', 'bedroom', 'workshop'].indexOf(b.w.room)]; if (r) { b.U.bmn.value.set(r[0], r[2], r[4]); b.U.bmx.value.set(r[1], r[3], r[5]); } }
       const face = on > 0 ? sunV.x * b.w.n.x + sunV.z * b.w.n.z : 0;     // sun on the outer side of this window?
       const k = on * Math.max(0, Math.min(1, (face - .05) * 3)) * (.35 + .65 * low);
       b.m.visible = b.pts.visible = k > .01;
       if (!b.m.visible) continue;
-      b.U.dir.value.copy(sunV).multiplyScalar(-(2.2 + low * 1.3));
-      b.m.material.uniforms.k.value = k * .16; b.pts.material.uniforms.k.value = k;
+      b.U.dir.value.copy(sunV).multiplyScalar(-(b.U.fy.value > -50 ? 7 : 2.2 + low * 1.3));   // room windows: long enough to reach the floor, where the shader stops it
+      b.m.material.uniforms.k.value = k * .16; b.m.material.uniforms.kp.value = k * KPATCH; b.pts.material.uniforms.k.value = k;
     }
   }
 
@@ -991,6 +1019,18 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const hidden = [], _bx = new THREE.Box3(), _sz = V();
     // rugs, mats, papers: flat things lying on the boards cast no occlusion (from below they would cover the whole floor)
     const thin = o => { if (!o.isMesh || o.isInstancedMesh || !o.geometry) return false; if (o.userData.aoThin === undefined) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); _bx.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld).getSize(_sz); o.userData.aoThin = _sz.y < .05 && _sz.x * _sz.z > .02; } return o.userData.aoThin; };
+    // [PERF] the bake's camera sees one room, but meshes that are not frustum-culled (ground, grass, forest, the merged props...) were
+    // still submitted: ~120 draws per bake, the worst frame of the game. A mesh whose world box misses the room's bake box can't
+    // write a texel, so it sits out. __aoCullOff=true bakes as before.
+    const _bb = new THREE.Box3(), _rb = new THREE.Box3();
+    function bakeCull(o, R, fy) {
+      if (window.__aoCullOff || !(o.isMesh || o.isInstancedMesh) || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return false;
+      try { if (o.isInstancedMesh) { o.computeBoundingBox(); _bb.copy(o.boundingBox).applyMatrix4(o.matrixWorld); }
+        else { const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox(); _bb.copy(g.boundingBox).applyMatrix4(o.matrixWorld); }
+      } catch (e) { return false; }
+      if (_bb.isEmpty() || !isFinite(_bb.min.x) || !isFinite(_bb.max.x)) return false;
+      _rb.min.set(R.x0 - .35, fy - .7, R.z0 - .35); _rb.max.set(R.x1 + .35, fy + H + .3, R.z1 + .35);
+      return !_bb.intersectsBox(_rb); }
     function bake(r, i) {
       const R = RM[i], fy = R.y + TOP, cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2, hw = (R.x1 - R.x0) / 2 + .05, hd = (R.z1 - R.z0) / 2 + .05;
       bc.left = -hw; bc.right = hw; bc.top = hd; bc.bottom = -hd; bc.near = 0; bc.far = H + .4; bc.updateProjectionMatrix();
@@ -998,7 +1038,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       mats[i].multiplyMatrices(bc.projectionMatrix, bc.matrixWorldInverse);
       uF.value = fy;
       const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root;
-      hidden.length = 0; scene.traverseVisible(o => { if (o === mesh || o === hr || o === heroBlob || o.name === 'groundAO' || o.isSprite || o.isPoints || o.isLine || (o.material && o.material.transparent && !o.isSkinnedMesh) || thin(o)) hidden.push(o); });
+      hidden.length = 0; scene.traverseVisible(o => { if (o === mesh || o === hr || o === heroBlob || o.name === 'groundAO' || o.isSprite || o.isPoints || o.isLine || (o.material && o.material.transparent && !o.isSkinnedMesh) || thin(o)) hidden.push(o); else if (bakeCull(o, R, fy)) hidden.push(o); });
       for (const o of hidden) o.visible = false;
       const prevRT = r.getRenderTarget(), ov = scene.overrideMaterial, bg = scene.background, fog = scene.fog, su = r.shadowMap.autoUpdate, ac = r.autoClear, cc = r.getClearColor(new THREE.Color()), ca = r.getClearAlpha();
       const obr = scene.onBeforeRender, oar = scene.onAfterRender; scene.onBeforeRender = scene.onAfterRender = () => {};

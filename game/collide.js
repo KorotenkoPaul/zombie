@@ -498,6 +498,12 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         // not nudged on and off every frame (that was hand jitter while reading); a real dip into the bunk still is pushed out
         if (hero.seated && !(window.__colX && window.__colX.oldLad) && (P.chain === 2 || P.chain === 3) && ex < .02) continue;
         if (P.chain >= 4 && OUT.n.y < .5 && !fit && !lying) continue;
+        // STANDS ON AIR (Leisure / QA): only a leg point within 30 cm of the floor may lift its foot. A thigh-near-knee point at hip height
+        // caught under the reading table's front edge (n .71 up) or on the lower bunk's edge and the crate top held the ankle 10-14 cm up
+        // (water, radio squat, diary), and a raised foot never frees a thigh under an edge anyway. Such a contact is left alone: moving the
+        // body back out sideways instead shuffled him 7-10 cm at the stove while stirring (gate HARD, hand 9 cm in the pot shelf); the hips
+        // and thighs (chain 0) keep their own push. Old behaviour: __colX.legLiftAll
+        if (P.chain >= 4 && !fit && !lying && hero.floorY != null && P.p.y > hero.floorY + .30 && !(window.__colX && window.__colX.legLiftAll)) continue;
         if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4 && OUT.n.y >= .5 && !fit && !lying) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
       // on a ladder the climb (climb.js) owns the hands on the rails (collide's hand pushes were jumps on the pull-up); a foot is still lifted out of a rung
@@ -642,5 +648,8 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       let w = 0; for (const P of PTS) { if ((P.chain !== 0 && P.chain < 4) || P.part === 6) continue; for (const hb of HBs) { const d = inHeld(P.p, hb); if (d > w) w = d; } } r[c === 2 ? 'L' : 'R'] = +(w * 100).toFixed(1); } return r; }
   const api = { /* how deep a chain's skinned surface is in the house right now (m) and the way out: 1 head, 2 left arm, 3 right arm (hero.js repairs) */ chainDepth: (c, out) => { skin(1 << c); let best = 0; for (const P of PTS) { if (P.chain !== c) continue; const ex = probe(P.p, P.part, false, null); if (ex > best) { best = ex; if (out) out.copy(OUT.n); } } return best; }, trunkDepth: (x, y, z) => trunkDepth(V(x, y, z)), heldAmt: () => heldAmt.slice(2, 4), heldDepth, touching, bench, cells: () => G.size, dbg: () => ({ pd: Array.from(pd), head: off.head.toArray(), limb: off.limb.map(v => v && v.toArray()), hold: Array.from(hold) }), stats: () => ({ ...st, ms: +st.ms.toFixed(3), msMax: +st.msMax.toFixed(3), worst: +(st.worst * 100).toFixed(2) }), enable: v => { on = !!v; if (!on) { pre(); off.root.set(0, 0, 0); off.head.set(0, 0, 0); for (let c = 2; c < 6; c++) off.limb[c].set(0, 0, 0); } }, shapes: S, skipped,
     depthAt: (x, y, z) => probe(V(x, y, z), 7, false), sweep, footFree, soleDepth: (x, y, z, dx = 0, dz = 1) => sole(x, y, z, dx, dz), whatAt: (x, y, z) => { const p = V(x, y, z), r = []; for (let n = 0; n < S.length; n++) { const s = S[n]; if (s.dead || !refresh(s)) continue; const d = depth(s, p); if (d > 0) r.push([s.name, +(d * 100).toFixed(1)]); } const td = trunkDepth(p); if (td > 0) r.push(['trunk', +(td * 100).toFixed(1)]); return r; }, navReport, clearance, navMoved, free, room, buildAll: () => { while (bigQ.length || cutting) cutBig(1e9); buildSome(1e9); } };
+  // tests only (HH.qaReset): every eased correction, worn-item offset and frame counter back to a fresh start
+  api.qaReset = () => { pre(); WORN.clear(); for (const v of gv) v.set(0, 0, 0); for (const v of lastGv) v.set(0, 0, 0); hold.fill(0); guardV = guardT = prevGap = 0; heldAmt.fill(0); Object.assign(freeC, { x: 1e9, y: 0, z: 0, ox: 0, oz: 0 });
+    frameNo = 0; movK = 0; stamp.fill(0); for (const s of S) if (s) s.chk = 0; };
   return api;
 }

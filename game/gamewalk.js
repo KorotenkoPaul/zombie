@@ -118,7 +118,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     const pos = root.position, yaw = root.rotation.y;
     // a teleport (spawn at the reading chair, a task reset): the planted feet are somewhere else entirely; drop the walk at once
     // (gate: after spawn('read') the feet reached for the previous floor 1.1 m down and pulled the root with them)
-    if (ST.prevPos && (Math.hypot(pos.x - ST.prevPos.x, pos.z - ST.prevPos.z) > .5 || Math.abs(pos.y - ST.prevPos.y) > .4)) { ST.w = 0; ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; ST.L = null; ST.va = null; ST.prevPos = null; ST.settled = true; }
+    if (ST.prevPos && (Math.hypot(pos.x - ST.prevPos.x, pos.z - ST.prevPos.z) > .5 || Math.abs(pos.y - ST.prevPos.y) > .4)) { ST.w = 0; ST.rlS = null; ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; ST.L = null; ST.va = null; ST.prevPos = null; ST.settled = true; }
     if (ST.prevPos) { const sp = Math.hypot(pos.x - ST.prevPos.x, pos.z - ST.prevPos.z) / dt; ST.v += (Math.min(sp, 2.5) - ST.v) * (1 - Math.exp(-dt * 14)); { const k = 1 - Math.exp(-dt * 14), cl = sp > 2.5 ? 2.5 / sp : 1; ST.vx += ((pos.x - ST.prevPos.x) / dt * cl - ST.vx) * k; ST.vz += ((pos.z - ST.prevPos.z) / dt * cl - ST.vz) * k; } ST.av += (wrapA(yaw - ST.prevYaw) / dt - ST.av) * (1 - Math.exp(-dt * 10)); }
     ST.prevPos = pos.clone(); ST.prevYaw = yaw;
     const want = active();
@@ -146,7 +146,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     // (the planted foot kept its roll into the sit: foot-bend 45 deg) and hands over in 0.15 s
     const seatIn = !tw && !!(H.fit || H.seated || H.inBed || H.bedB || H.bedC || H.swing || H.trans);
     ST.w = clamp(ST.w + (tw ? dt / .3 : -dt / (seatIn ? .15 : .3)), 0, 1);
-    if (ST.w <= 0) { ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; ST.L = null; ST.va = null; return; }
+    if (ST.w <= 0) { ST.rlS = null; ST.feet.Left = ST.feet.Right = null; ST.swing.Left = ST.swing.Right = null; ST.rate = null; ST.L = null; ST.va = null; return; }
     // fading out (a ladder ahead, a task takes the legs): the gait goes on as it was while the blend hands him over; a stop
     // in the middle of it (step length and cadence to 0) moved the landing spots and the hips in the same 0.3 s (knee 8 cm/frame²)
     let v, L, rate;
@@ -175,7 +175,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
     const T = rate > 0 ? 1 / rate : 1;
     const f = fwdOf(yaw), r = rightOf(yaw);
     // ---------- gait: per foot local phase (left = ph, right = ph + .5), stance [0, duty), swing [duty, 1) ----------
-    const Dt = P.duty; const roll = { Left: 0, Right: 0 }; const lift = { Left: 0, Right: 0 };
+    const Dt = P.duty; const rollAt = ph => { if (window.__gwNoStanceRoll) return 0; const RO = window.__gwRoll || [.65, -.6]; const K = [[0, RO[1]], [.3 * Dt, 0], [Dt, RO[0]], [Dt + .45 * (1 - Dt), 0], [1, RO[1]]]; let i = 0; while (i < K.length - 2 && ph > K[i + 1][0]) i++; const x = clamp((ph - K[i][0]) / (K[i + 1][0] - K[i][0]), 0, 1); return (K[i][1] + (K[i + 1][1] - K[i][1]) * (1 - Math.cos(Math.PI * x)) / 2) * ST.rk; }; const rollK = a => { const x = clamp((a - (window.__gwRollA || [.35, .8])[0]) / ((window.__gwRollA || [.35, .8])[1] - (window.__gwRollA || [.35, .8])[0]), 0, 1); return x * x * (3 - 2 * x); }; /* only a real walk rolls: the work-spot shuffles stay flat (gate jitter on the legs) */ const amp0 = clamp((ST.va || 0) / 1.0, 0, 1.3); { /* the roll's strength eases with the real walking speed; settle steps and the stop stay flat (gate: leg jitter at the work spots) */ const rk = want && !settling ? rollK(v) : 0; ST.rk = (ST.rk || 0) + (rk - (ST.rk || 0)) * (1 - Math.exp(-dt * 5)); } const roll = { Left: 0, Right: 0 }; const lift = { Left: 0, Right: 0 };
     for (const s of ['Left', 'Right']) {
       const p = (ST.ph + (s === 'Right' ? .5 : 0)) % 1, p0 = (ph0 + (s === 'Right' ? .5 : 0)) % 1;
       const crossedSwing = (p0 < Dt && p >= Dt) || (p < p0 && p >= Dt);
@@ -208,9 +208,12 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
             if (C && C.soleDepth && u > .05 && u < .95) { const sd = C.soleDepth(fp.x, fp.y - ankY + ST.xl[s], fp.z, f.x, f.z); if (sd > .004) need = Math.min(.12, ST.xl[s] + sd + .015); }
             ST.xl[s] += (need - ST.xl[s]) * (1 - Math.exp(-dt * (need > ST.xl[s] ? 30 : 6))); fp.y += ST.xl[s] * Math.sin(Math.PI * u); }
           ST.feet[s + 'Shown'] = fp; lift[s] = u;
-          roll[s] = sw.quick != null ? 0 : u < .3 ? .35 * (1 - sm(u / .3)) : u > .75 ? -.22 * sm((u - .75) / .25) : 0; // toe-off peel ends early in the swing, the toes come up for the heel strike; continuous with the stance roll at both ends (it jumped .3 -> .45 rad at lift-off, and from any stance roll to .45 on a quick step)
+          roll[s] = sw.quick != null ? 0 : rollAt(p); // one roll curve over the whole step (see the stance line below): toe-off peel early in the swing, toes up for the heel strike
         }
       }
+      if (!ST.swing[s]) roll[s] = rollAt(p); /* WALK (critic H10, pass 30: 'a cast'): the sole rolls through the whole step, not only in the air:
+         it lands on the heel with the toes up, lowers them, and the heel peels up about the ball before the toe-off. One smooth curve over the
+         step's phase (cosine between keys, no corners): short smoothstep windows moved the knee fast enough for the gate's jitter check */
       if (!ST.swing[s]) { /* a planted foot stays where it stands: the root's own bumps (a board edge, 6 cm up and down in 3 frames) lifted the planted foot with it (gate stoke/telescope foot jumps 12-14 cm/frame²); it follows a lasting change of floor height in ~0.3 s */ ST.feet[s].y += (pos.y + ankY - ST.feet[s].y) * (1 - Math.exp(-dt * 4)); if (Math.abs(ST.feet[s].y - pos.y - ankY) > .12) ST.feet[s].y = pos.y + ankY + Math.sign(ST.feet[s].y - pos.y - ankY) * .12; ST.feet[s + 'Shown'] = ST.feet[s].clone(); const pst = Math.min(1, p / Dt); /* a foot that landed from a quick step stands through its swing window: p/Dt went to 1.66 and the toes pitched 75 deg down and back (gate: 'knee bends forward' x71) */ roll[s] = pst < .15 ? -.22 * (1 - sm(pst / .15)) : pst > .7 ? .35 * sm((pst - .7) / .3) : 0; }
     }
     // ---------- save the pose underneath (for blending), then build ours from the bind pose ----------
@@ -263,6 +266,7 @@ export function createGameWalk({ THREE, hero, opts = {} }) {
         // sole: heading + roll about the lateral axis
         setWorldQ(B[s + 'Foot'], Q().setFromAxisAngle(rH, rl + PITCH).multiply(fq));
       };
+      { /* the roll eases (25/s): a gait phase reset at a stop or a start stepped it, and the knee jumped with it (gate: dumpwater, bolt) */ ST.rlS = ST.rlS || { Left: 0, Right: 0 }; ST.rlS[s] += (roll[s] - ST.rlS[s]) * (1 - Math.exp(-dt * (window.__gwRollS || 12))); roll[s] = ST.rlS[s]; }
       leg(roll[s]);
       // a person's ankle bends up only so far: past it (a step up the stairs, a root, a long stride) the heel comes up and the foot
       // turns about its ball (gate: planted foot flat on the next stair, ankle 30-40 deg past his neutral)

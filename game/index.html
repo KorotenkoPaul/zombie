@@ -212,11 +212,11 @@ const WIND=(await import(new URL(ASSET+'wind.js',document.baseURI).href)).create
 // the trunk is solid: bark triangles become a physics mesh; leaves are told apart by their texture colour
 const TREE_H=16;
 // the main oak is built in code (game/tree.js) around the rooms, so no bark can poke through a wall
-const HY=1.0,LG_=1.4;/* the hollow landing and the trunk door sit low at the trunk foot, as in the photo (at 2.3 the workshop deck hid them from the home view) */// house raised 1 m to match the photo (all levels below read HY)
+const GOPEN=/[?&]gables=open/.test(location.search);/* [TREE] photo variant for Pavel: open bedroom gable, shed-roofed workshop */const HY=1.0,LG_=1.4;/* the hollow landing and the trunk door sit low at the trunk foot, as in the photo (at 2.3 the workshop deck hid them from the home view) */// house raised 1 m to match the photo (all levels below read HY)
 const TREE_AVOID=[[0.4,1.9,8.4,10.6,2.0,3.9],[0.25,1.35,10.45,11.7,1.1,4.0],[-4.5,-0.8,5.85,8.45,1,4.7],[-4.3,0.5,8.25,10.75,0.93,4.2],[0.8,4.7,4.45,6.95,1.18,5.4],[0.7,4.35,9.75,11.3,0.2,3.1,1]];
 const LEAF_AVOID=[[-4.8,-0.7,5.7,8.7,0.3,4.9],[-4.6,0.8,8.1,12.2,0.3,4.3],[0.5,5,4.3,8.1,0.5,5.2],[0.6,4.6,9.7,11.6,0,3.4],[-3.6,3.4,2.2,5,0,4.4]];// the rooms with a margin: no leaf cards there, no falling leaf either
 const DOORP={x:1.0,ang:1.05,y0:LG_+.02,y1:LG_+1.4,w:1.0,depth:.95};// the glowing hollow (tree.js); its plank frame is built with the boards
-const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,leafSprigT:/[?&]oldleaves/.test(location.search)?null:leafSprigT,leafRosT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:2.35,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:1.45,top:.42,clear:.45}],door:DOORP,
+const TREE=buildTree(THREE,{wind:WIND,renderer,leafImpostors:/[?&]leafimp/.test(location.search),model:oakG.scene,barkT:oakBarkT,leafT,leafSprigT:/[?&]oldleaves/.test(location.search)?null:leafSprigT,leafRosT,MOBILE,avoid:TREE_AVOID,roofs:[{x0:-4.65,x1:.85,z0:.45,z1:4.15,yb:10.7,h:2.35,top:.42,clear:.45},{x0:.45,x1:5.05,z0:.65,z1:4.35,yb:6.9,h:GOPEN?.85:1.45,shed:GOPEN,top:.42,clear:.45}],door:DOORP,
  avoidLeaves:LEAF_AVOID});
 scene.add(TREE.group);TREE.group.updateMatrixWorld(true);
 // ================= ground & vegetation: see ground.js (needs the oak to keep plants out of the roots) =================
@@ -231,10 +231,10 @@ const SL=[];for(let s=0;s<=130;s++){const y=s*.1;const segs=[];for(let i=0;i<bar
   for(const [p,q] of [[0,3],[3,6],[6,0]]){const y1=barkTris[i+p+1],y2=barkTris[i+q+1];if((y1-y)*(y2-y)<0||(y1===y&&y2!==y)){const t=(y-y1)/(y2-y1);P.push(barkTris[i+p]+(barkTris[i+q]-barkTris[i+p])*t,barkTris[i+p+2]+(barkTris[i+q+2]-barkTris[i+p+2])*t);}}
   if(P.length>=4)segs.push(P[0],P[1],P[2],P[3]);}SL.push(segs);}
 const TAX=TREE.axis;
-function inTrunk(x,y,z,m=.06){const s=SL[clamp(Math.round(y*10),0,SL.length-1)];let cr=0;const nearAxis=Math.hypot(x-TAX[0],z-TAX[1])<2.4;for(let i=0;i<s.length;i+=4){const x1=s[i],z1=s[i+1],x2=s[i+2],z2=s[i+3];
+function inTrunk(x,y,z,m=.06,far){const s=SL[clamp(Math.round(y*10),0,SL.length-1)];let cr=0;const nearAxis=Math.hypot(x-TAX[0],z-TAX[1])<2.4;for(let i=0;i<s.length;i+=4){const x1=s[i],z1=s[i+1],x2=s[i+2],z2=s[i+3];
   if((z1>z)!==(z2>z)){const xi=x1+(z-z1)/(z2-z1)*(x2-x1);if(xi>x)cr++;}
   const dx=x2-x1,dz=z2-z1,L=dx*dx+dz*dz;let t=L?((x-x1)*dx+(z-z1)*dz)/L:0;t=clamp(t,0,1);const ex=x1+dx*t-x,ez=z1+dz*t-z;if(ex*ex+ez*ez<m*m)return true;}
- return nearAxis&&(cr&1)===1;}
+ return (nearAxis||far)&&(cr&1)===1;}
 // camera collision: the trunk only (branches must not push the camera in; leaves fade instead). Per 10 cm slice, the trunk
 // outline as a radius per angle around the axis, with branch roots trimmed (1.15x the slice's median radius, smallest within ±1 m); up to 11.5 m (above: the fork of the limbs, leaves fade there).
 const TRK=(()=>{const NB=32,out=[];for(const seg of SL){const r=new Float32Array(NB);for(let i=0;i<seg.length;i+=2){const x=seg[i]-TAX[0],z=seg[i+1]-TAX[1],d=Math.hypot(x,z);if(d>3.4)continue;const b=((Math.round(Math.atan2(z,x)/(2*Math.PI)*NB)%NB)+NB)%NB;if(d>r[b])r[b]=d;}
@@ -286,10 +286,10 @@ float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i
 uniform float uLod;uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];uniform float uHoney[3];
 // [LIGHTS] the room-side faces of the wall boards in the kitchen and workshop: the photo's lighter honey wood (the outside
 // faces stay weathered). vn = the view-space normal; the face counts as inside when it faces the room's centre
-vec3 pHoney(vec3 c,vec3 vn,float sd){if(sd<99.5||sd>399.5)return c;vec3 wn=(vec4(vn,0.)*viewMatrix).xyz;float h=0.;
+vec3 pHoney(vec3 c,vec3 vn,float sd){if(sd>399.5)return c;vec3 wn=(vec4(vn,0.)*viewMatrix).xyz;float h=0.,hf=0.;bool wl=sd>99.5;
  for(int i=0;i<3;i++){vec4 A=uRoomA[i],R=uRoomB[i];if(uHoney[i]>0.&&vW.y>R.x-.15&&vW.y<R.y+.3&&vW.x>A.x-.35&&vW.x<A.y+.35&&vW.z>A.z-.35&&vW.z<A.w+.2){
-  vec3 cc=vec3((A.x+A.y)*.5,vW.y,(A.z+A.w)*.5);if(dot(wn,normalize(cc-vW))>.3)h=max(h,uHoney[i]);}}
- float l=dot(c,vec3(.3,.59,.11));vec3 hn=mix(c,vec3(l)*vec3(1.3,1.,.66),.15)*vec3(1.5,1.72,1.7);return mix(c,hn,h);}
+  vec3 cc=vec3((A.x+A.y)*.5,vW.y,(A.z+A.w)*.5);if(wl&&dot(wn,normalize(cc-vW))>.3)h=max(h,uHoney[i]);if(!wl&&wn.y>.7&&vW.y<R.x+.12&&vW.x>A.x&&vW.x<A.y&&vW.z>A.z&&vW.z<A.w)hf=max(hf,uHoney[i]);}}/* [ENV] photo night (kitchen wall 223/161/89, floor 245/146/54 against ours 68/42/23 and 107/60/29): the honey walls a step lighter and the room floors (up faces inside the room box) a warm orange honey too */
+ float l=dot(c,vec3(.3,.59,.11));vec3 hn=mix(c,vec3(l)*vec3(1.3,1.,.66),.15)*vec3(1.5,1.72,1.7)*1.28;return mix(mix(c,hn,h),c*vec3(1.65,1.4,1.0),hf);}
 vec2 pDH=vec2(0.);float pRgh=.8;
 vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);vec3 pn=abs(det)*sn-g;return dot(pn,pn)>1e-20?normalize(pn):sn;}/* [SAFETY] no NaN on degenerate pixels */
 // nail heads over every joist / batten: two per crossing. returns (dome height 0..1, rust halo 0..1, distance)
@@ -464,7 +464,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  spDepth.onBeforeCompile=sh=>{sh.uniforms.uSH=spH;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float sid; uniform vec4 uSH['+(SP_MAX/4)+'];').replace('#include <project_vertex>','#include <project_vertex>\n{int i=int(sid+.5);if(uSH[i/4][i-i/4*4]>.5)gl_Position=vec4(2.,2.,2.,1.);}');};
  spDepth.customProgramCacheKey=()=>'sunProxyDepth';
  const spAll=new Map();
- const spOK=m=>plainCaster(m)&&!m.material.alphaHash&&!m.material.wireframe&&m.material.visible!==false&&!(m.material.clippingPlanes&&m.material.clippingPlanes.length)&&m.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&!m.geometry.isInstancedBufferGeometry&&m.geometry.attributes.position&&m.geometry.drawRange.start===0&&Math.min(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count,m.geometry.drawRange.count)/3<=SP_TRIS;
+ const spOK=m=>plainCaster(m)&&m.layers.constructor===THREE.Layers&&!m.material.alphaHash&&!m.material.wireframe&&m.material.visible!==false&&!(m.material.clippingPlanes&&m.material.clippingPlanes.length)&&m.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&!m.geometry.isInstancedBufferGeometry&&m.geometry.attributes.position&&m.geometry.drawRange.start===0&&Math.min(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count,m.geometry.drawRange.count)/3<=SP_TRIS;
  const spBake=o=>{const f=o.userData.shadowBake;try{return typeof f==='function'&&!!f();}catch(e){return false;}};/* a part another system hides from the main pass but whose shadow must stay (props.js tool proxy: userData.shadowBake = () => tool at home) */
  const spSeen=o=>{let q=o;for(;q;q=q.parent){if(!q.visible&&!(q===o&&spBake(o)))return false;if(q===scene)return true;}return false;};
  const _spS=new THREE.Sphere();
@@ -565,6 +565,84 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  sm.render=(L,sc,cam)=>{const held=[];const D=L.filter(due);if(D.length>1){D.sort((a,b)=>(waitN.get(b)||0)-(waitN.get(a)||0)||(a===sun?-1:b===sun?1:0));
    const go=D[0]===sun?[sun]:[D[0]];for(const l of D){if(go.includes(l)){waitN.set(l,0);continue;}l.shadow.needsUpdate=false;held.push(l);waitN.set(l,(waitN.get(l)||0)+1);}}
   for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}const PV=window.__plView||[];for(const v of PV)if(v.hid){v.S.visible=true;v.D.visible=false;}/* the shadow passes see the real plank meshes */try{draw(L,sc,cam);}finally{for(const v of PV)if(v.hid){v.S.visible=false;v.D.visible=true;}for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
+/* [PERF] still batches: loose meshes that share one material object (a wood, an iron, a cloth used by the bunk, chairs, stove, counter
+   items...) were one draw each (248 draws, 164 materials at home). Meshes that have not moved for 2 s are drawn as one world-space mesh
+   per material. The originals stay where they are for everything else: raycasts, .visible, .layers and the game's logic see them as
+   before; only renderer.render skips them while their batch stands (their layers' test() answers false during a render). Any change to
+   a part (moved, shown/hidden, other geometry or material, removed) drops its batch at once; it is rebuilt after 2 s of stillness.
+   Only plain materials (no onBeforeCompile: their shaders could read object-space positions), opaque, layer 0, not the hero.
+   ?stillbatch=off or __stillBatchOff draws the originals. Stats: __stillBatch(). */
+{const SBOFF=/[?&]stillbatch=off/.test(location.search);let REND=0;{const r0=renderer.render;renderer.render=function(){REND++;try{return r0.apply(this,arguments);}finally{REND--;}};}
+ class ParkLayers extends THREE.Layers{test(l){return REND?false:super.test(l);}}
+ const G=new Map();/* material -> {parts:[{o,mw,v}], mesh, t} */let scanT=-1e9,built=0,dropped=0;
+
+ /* a material's own shader hook is fine when what it adds to the VERTEX shader is only world-space (modelMatrix*...) or a plain
+    attribute pass-through: the merged mesh's modelMatrix is the identity and its vertices are the parts' world positions. Checked once per
+    material by running the hook on a copy of three's shader source; fragment-only additions can't see object space at all. */
+ const SAFE_V=new Set(['','varying vec3 vWW;','attribute float vmet; varying float vMet;','vMet = vmet;','{vec4 ww=vec4(transformed,1.);','#ifdef USE_INSTANCING','ww=instanceMatrix*ww;','vWW=(modelMatrix*ww).xyz;}','varying vec3 vWT;','{vec4 wq=vec4(transformed,1.);','wq=instanceMatrix*wq;','vWT=(modelMatrix*wq).xyz;}']);
+ const obcOK=new WeakMap();const LIB={MeshStandardMaterial:'standard',MeshPhysicalMaterial:'physical',MeshLambertMaterial:'lambert',MeshBasicMaterial:'basic',MeshPhongMaterial:'phong'};
+ const hookSafe=m=>{if(m.onBeforeCompile===THREE.Material.prototype.onBeforeCompile)return true;let r=obcOK.get(m);if(r!==undefined)return r;r=false;
+  try{const L=THREE.ShaderLib[LIB[m.type]];if(L){const sh={vertexShader:L.vertexShader,fragmentShader:L.fragmentShader,uniforms:THREE.UniformsUtils.clone(L.uniforms),defines:{}};m.onBeforeCompile(sh,renderer);
+   const base=new Set(L.vertexShader.split('\n'));r=sh.vertexShader.split('\n').every(l=>base.has(l)||SAFE_V.has(l.trim()));}}catch(e){r=false;}obcOK.set(m,r);return r;};
+ const plainMat=m=>m&&!Array.isArray(m)&&!!LIB[m.type]&&!m.transparent&&!(m.alphaTest>0)&&m.visible!==false&&!m.wireframe&&hookSafe(m);
+ const attrSig=g=>Object.keys(g.attributes).sort().map(k=>k+g.attributes[k].itemSize).join()+(g.index?'i':'n');
+ const vis=o=>{for(let q=o;q;q=q.parent){if(!q.visible)return false;if(q===scene)return true;}return false;};
+ const park=(o,on)=>{if(on){if(!(o.layers instanceof ParkLayers)){const L=new ParkLayers();L.mask=o.layers.mask;o.layers=L;}}else if(o.layers instanceof ParkLayers){const L=new THREE.Layers();L.mask=o.layers.mask;o.layers=L;}};
+ const drop=e=>{if(e.mesh){scene.remove(e.mesh);e.mesh.geometry.dispose();e.mesh=null;dropped++;}for(const p of e.parts)park(p.o,false);};
+ const still=p=>p.o.parent&&p.o.material===p.m&&p.o.castShadow===p.c&&vis(p.o)&&p.o.matrixWorld.equals(p.mw)&&p.o.geometry===p.g&&p.g.attributes.position.version===p.v&&p.o.layers.mask===1;
+ function merge(e){const m=e.mat;let nv=0,ni=0;for(const p of e.parts){nv+=p.g.attributes.position.count;ni+=p.g.index?p.g.index.count:p.g.attributes.position.count;}
+  const g0=e.parts[0].g,out=new THREE.BufferGeometry(),I=new (nv>65535?Uint32Array:Uint16Array)(ni);const nm=new THREE.Matrix3();let vo=0,io=0;
+  for(const k of Object.keys(g0.attributes)){const sz=g0.attributes[k].itemSize,A=new Float32Array(nv*sz);let o=0;for(const p of e.parts){const a=p.g.attributes[k];
+    if(k==='position'){const v=new THREE.Vector3();for(let i=0;i<a.count;i++){v.fromBufferAttribute(a,i).applyMatrix4(p.o.matrixWorld);A[o++]=v.x;A[o++]=v.y;A[o++]=v.z;}}
+    else if(k==='normal'){nm.getNormalMatrix(p.o.matrixWorld);const v=new THREE.Vector3();for(let i=0;i<a.count;i++){v.fromBufferAttribute(a,i).applyMatrix3(nm).normalize();A[o++]=v.x;A[o++]=v.y;A[o++]=v.z;}}
+    else for(let i=0;i<a.count;i++)for(let c=0;c<sz;c++)A[o++]=a.getComponent?a.getComponent(i,c):a.array[i*sz+c];}
+   out.setAttribute(k,new THREE.BufferAttribute(A,sz));}
+  for(const p of e.parts){const a=p.g.attributes.position,ix=p.g.index,n=ix?ix.count:a.count,fl=p.o.matrixWorld.determinant()<0;for(let t=0;t<n;t+=3)for(let q=0;q<3;q++){const j=fl?(q===0?0:3-q):q;I[io++]=(ix?ix.getX(t+j):t+j)+vo;}vo+=a.count;}
+  out.setIndex(new THREE.BufferAttribute(I,1));out.computeBoundingSphere();
+  const mesh=new THREE.Mesh(out,m);mesh.castShadow=e.cast;mesh.receiveShadow=e.recv;mesh.matrixAutoUpdate=false;mesh.raycast=()=>{};mesh.name='stillBatch';mesh.userData.stillBatch=1;scene.add(mesh);mesh.updateMatrixWorld(true);e.mesh=mesh;built++;
+  for(const p of e.parts)park(p.o,true);}
+ function scan(){let hr=null;try{hr=hero&&hero.root;}catch(err){}const skip=new Set([hr].filter(Boolean));const C=new Map();
+  const walk=o=>{if(skip.has(o)||!o.visible||o.userData.stillBatch||o.userData.lampCrop||o.name==='propsStatic')return;
+   if(o.isMesh&&!o.isInstancedMesh&&!o.isSkinnedMesh&&o.constructor===THREE.Mesh&&o.layers.mask===1&&plainMat(o.material)&&o.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&o.onAfterRender===THREE.Object3D.prototype.onAfterRender&&!o.customDepthMaterial&&!o.customDistanceMaterial&&o.geometry.attributes.position&&!o.geometry.attributes.tangent&&!Object.values(o.geometry.attributes).some(a=>a.isInterleavedBufferAttribute)&&!(o.geometry.morphAttributes&&o.geometry.morphAttributes.position)&&o.geometry.drawRange.start===0&&o.geometry.drawRange.count===Infinity&&!o.geometry.isInstancedBufferGeometry&&o.frustumCulled&&o.renderOrder===0){
+    const k=o.material.uuid+'|'+o.castShadow+o.receiveShadow+'|'+attrSig(o.geometry);if(!C.has(k))C.set(k,[]);C.get(k).push(o);}
+   for(const c of o.children)walk(c);};walk(scene);return C;}
+ const SBT={scan:0,merge:0};const prevSB=scene.onBeforeRender;scene.onBeforeRender=function(r,sc,cam,...a){if(prevSB)prevSB.call(this,r,sc,cam,...a);
+  if(REND>1||sc!==scene)return;try{const off=SBOFF||window.__stillBatchOff,now=performance.now();
+   if(off){for(const e of G.values())drop(e);G.clear();scanT=-1e9;return;}
+   /* a batch whose parts all stand as they were stays; any change drops it */
+   for(const [k,e] of G){if(e.mesh&&!e.parts.every(still)){drop(e);e.t=now;e.parts=[];}}
+   if(now-scanT<2000)return;scanT=now;const C=scan();let nm=0;SBT.scan=Math.max(SBT.scan,performance.now()-now);
+   for(const [k,os] of C){let e=G.get(k);if(!e){e={mat:os[0].material,cast:os[0].castShadow,recv:os[0].receiveShadow,parts:[],mesh:null,cand:new Map(),t:now};G.set(k,e);}
+    if(e.mesh)continue;/* standing: keep */
+    /* candidates that have kept their matrix for 2 s */
+    const ok=[];for(const o of os){const c=e.cand.get(o);if(c&&c.mw.equals(o.matrixWorld)&&c.g===o.geometry&&c.v===o.geometry.attributes.position.version){if(now-c.t>=1900)ok.push(o);}else e.cand.set(o,{mw:o.matrixWorld.clone(),g:o.geometry,v:o.geometry.attributes.position.version,t:now});}
+    for(const o of [...e.cand.keys()])if(!os.includes(o))e.cand.delete(o);
+    let tris=0;const P=[];for(const o of ok){const g=o.geometry,n=(g.index?g.index.count:g.attributes.position.count)/3;if(tris+n>30000)break;tris+=n;P.push({o,mw:o.matrixWorld.clone(),g,v:g.attributes.position.version,m:o.material,c:o.castShadow});}
+    if(P.length>=2&&!nm++){/* one merge a scan: several at once were one ~8-15 ms frame on a phone; the rest wait 2 s */e.parts=P;const tm=performance.now();merge(e);SBT.merge=Math.max(SBT.merge,performance.now()-tm);}}
+   for(const [k,e] of G)if(!C.has(k)&&!e.mesh)G.delete(k);
+  }catch(err){console.error('stillBatch',err);for(const e of G.values())drop(e);G.clear();}};
+ window.__stillBatch=()=>{let b=0,p=0,t=0;for(const e of G.values())if(e.mesh){b++;p+=e.parts.length;t+=e.mesh.geometry.index.count/3;}return {batches:b,parts:p,saved:p-b,tris:t,built,dropped,maxScanMs:+SBT.scan.toFixed(1),maxMergeMs:+SBT.merge.toFixed(1)};};}
+/* [PERF] lamp halos in one draw: Environment's halo sprites (env.addHalo: additive, no depth write, so their order among
+   themselves does not matter) were one draw call each (7-9 at night). Here they are camera-facing quads of one mesh,
+   rebuilt per render from the sprites' own state (position, scale, colour, opacity, visible); the sprites themselves are
+   parked on layer 30 so the game keeps driving them. ?halobatch=off or __haloBatchOff draws the sprites as before. */
+{const HBOFF=/[?&]halobatch=off/.test(location.search);let HS=[],hT=-1e9,hm=null,cap=0;const _hp=new THREE.Vector3(),_hr=new THREE.Vector3(),_hu=new THREE.Vector3();
+ const hvis=o=>{for(let q=o;q;q=q.parent){if(!q.visible)return false;if(q===scene)return true;}return false;};
+ const scan=()=>{const by=new Map();scene.traverse(o=>{if(o.isSprite&&o.material.blending===THREE.AdditiveBlending&&!o.material.depthWrite&&o.material.fog===false&&o.material.map&&o.material.rotation===0&&o.center.x===.5&&o.center.y===.5&&o.onBeforeRender===THREE.Object3D.prototype.onBeforeRender){const k=o.material.map;if(!by.has(k))by.set(k,[]);by.get(k).push(o);}});
+  let b=null;for(const a of by.values())if(!b||a.length>b.length)b=a;return b&&b.length>=3?b:[];};
+ const prevSB=scene.onBeforeRender;scene.onBeforeRender=function(r,sc,cam,...a){if(prevSB)prevSB.call(this,r,sc,cam,...a);
+  try{const off=HBOFF||window.__haloBatchOff;const now=performance.now();
+   if(off){if(hm)hm.visible=false;for(const s of HS)s.layers.set(0);HS=[];hT=-1e9;return;}
+   if(now-hT>2000){hT=now;const N=scan();for(const s of HS)if(!N.includes(s))s.layers.set(0);HS=N;for(const s of HS)s.layers.set(30);}
+   if(!HS.length){if(hm)hm.visible=false;return;}
+   if(!hm||cap<HS.length){cap=HS.length+4;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(cap*12),3).setUsage(THREE.DynamicDrawUsage));g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(cap*16),4).setUsage(THREE.DynamicDrawUsage));
+    const uv=new Float32Array(cap*8),ix=new Uint16Array(cap*6);for(let i=0;i<cap;i++){uv.set([0,0,1,0,1,1,0,1],i*8);ix.set([0,1,2,0,2,3].map(v=>v+i*4),i*6);}g.setAttribute('uv',new THREE.BufferAttribute(uv,2));g.setIndex(new THREE.BufferAttribute(ix,1));
+    if(hm){hm.geometry.dispose();hm.geometry=g;}else{const m0=HS[0].material;hm=new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:m0.map,vertexColors:true,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));hm.frustumCulled=false;hm.matrixAutoUpdate=false;hm.raycast=()=>{};hm.name='haloBatch';scene.add(hm);}}
+   hm.material.map=HS[0].material.map;const P=hm.geometry.attributes.position,C=hm.geometry.attributes.color,pa=P.array,ca=C.array,e=cam.matrixWorld.elements;_hr.set(e[0],e[1],e[2]).normalize();_hu.set(e[4],e[5],e[6]).normalize();let n=0;
+   for(const s of HS){const m=s.material;if(!hvis(s)||!(m.opacity>0)||m.visible===false)continue;s.updateWorldMatrix(true,false);const w=s.matrixWorld.elements;_hp.set(w[12],w[13],w[14]);
+    const sx=Math.hypot(w[0],w[1],w[2])*.5,sy=Math.hypot(w[4],w[5],w[6])*.5;const o=n*12;
+    for(let k=0;k<4;k++){const ax=(k===0||k===3)?-sx:sx,ay=k<2?-sy:sy;pa[o+k*3]=_hp.x+_hr.x*ax+_hu.x*ay;pa[o+k*3+1]=_hp.y+_hr.y*ax+_hu.y*ay;pa[o+k*3+2]=_hp.z+_hr.z*ax+_hu.z*ay;ca.set([m.color.r,m.color.g,m.color.b,m.opacity],n*16+k*4);}n++;}
+   hm.geometry.setDrawRange(0,n*6);hm.visible=n>0;P.needsUpdate=true;C.needsUpdate=true;}catch(err){console.error('haloBatch',err);}};}
 /* [PERF] chunked draw ranges: the bark (43k tris), the merged house props (propsStatic, ~66k), the forest trunks (18k) and the
    ground litter (8.5k) are single meshes, so even
    zoomed in on one room the whole of them was drawn (~340k tris at the closest zoom vs ~355k at home). Their triangles are
@@ -750,9 +828,9 @@ function bakeStatic(g,keep=()=>false){g.updateMatrixWorld(true);const inv=g.matr
   if(!by.has(m.material))by.set(m.material,[]);by.get(m.material).push({geo,m});rm.push(m);});
  for(const [mat,L] of by){if(L.length<2)continue;const mg=mergeGeometries(L.map(x=>x.geo));if(!mg)continue;for(const x of L)x.m.parent.remove(x.m);
   const me=new THREE.Mesh(mg,mat);me.castShadow=L.some(x=>x.m.castShadow);me.receiveShadow=L.some(x=>x.m.receiveShadow);g.add(me);}}
-function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45,FO=.42;/* [TREE, photo] a deep front overhang: the gable sits back in the roof's shade */const w=x1-x0+2*ov,d=z1-z0+.7+FO;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2+FO/2);g.userData.plStatic=true;scene.add(g);g.updateMatrixWorld();
+function roof(x0,x1,y,z0,z1,h,gx1=x1,ro={}){/* [TREE] ?gables=open variant: ro.shed = a single slope high at x0 (the photo's workshop, from the trunk down to the right; built as the right half of a gable twice as wide), ro.open = no front gable wall (the photo's bedroom shows its rafters) */const SH=!!ro.shed,x0r=x0;if(SH){x0=x0-(x1-x0);}const ov=.6,FO=.42;/* [TREE, photo] deeper side eaves (were .45) *//* [TREE, photo] a deep front overhang: the gable sits back in the roof's shade */const w=x1-x0+2*ov,d=z1-z0+.7+FO;const g=new THREE.Group();g.position.set((x0+x1)/2,y,(z0+z1)/2+FO/2);g.userData.plStatic=true;scene.add(g);g.updateMatrixWorld();
  const sl=Math.hypot(w/2,h),ang=Math.atan2(h,w/2);const m4=new THREE.Matrix4(),q=new THREE.Quaternion(),c=new THREE.Color();
- for(const s of [-1,1]){
+ for(const s of SH?[1]:[-1,1]){
   // slab (dark wood underside and thick visible edge)
   const slab=new THREE.Mesh(new THREE.BoxGeometry(sl+.1,.38,d),darkBoard);slab.position.set(s*w/4,h/2-.02,0);slab.rotation.z=-s*ang;slab.userData.tint=1.75;/* photo: weathered lighter roof edge, not a black band (own instance tint; other beams unchanged) */slab.castShadow=true;slab.receiveShadow=true;g.add(slab);
   // inside the room the roof is not a dark slab: honey sheathing boards run down the slope over chunky rafters (instances, no new calls)
@@ -774,23 +852,23 @@ function roof(x0,x1,y,z0,z1,h,gx1=x1){const ov=.45,FO=.42;/* [TREE, photo] a dee
     q.setFromEuler(new THREE.Euler(rnd(-.07,.07),rnd(-.12,.12),-s*ang+s*(.13+rnd(-.04,.04)),'ZYX'));
     // a few slates have slipped out over the years: the dark wood underlay shows (never in the bottom row, it would leak)
     if(r<rows-1&&rnd(0,1)<.035)continue;
-    const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(ll,rnd(.13,.17),ww));SHING.setMatrixAt(SHING.count,m4);
+    const wp=lp.clone().applyMatrix4(g.matrixWorld);if(inTrunk(wp.x,wp.y,wp.z,.1,true)){rnd(0,1);rnd(0,1);rnd(0,1);rnd(0,1);continue;}/* [TREE] no slate inside a limb that crosses the roof (same rnd draws) */m4.compose(wp,q,V(ll,rnd(.13,.17),ww));SHING.setMatrixAt(SHING.count,m4);
     const k=rnd(.8,1.15)*(rnd(0,1)<.12?.75:1);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}}}
  // ridge cap (critic T4: black "teeth" between the top rows): a row of slates over the ridge on each side, laid
  // flatter than the field so they straddle the joint and hide the dark underlay
- for(const s of [-1,1])for(let zz=-d/2-.03;zz<d/2+.03;){const ww=rnd(.3,.42);const zc=Math.min(zz+ww/2,d/2+.03-ww/2);zz+=ww+rnd(.005,.02);
+ for(const s of SH?[]:[-1,1])for(let zz=-d/2-.03;zz<d/2+.03;){const ww=rnd(.3,.42);const zc=Math.min(zz+ww/2,d/2+.03-ww/2);zz+=ww+rnd(.005,.02);
   const lp=V(-sl/2+.17,.15+.11,zc);lp.applyAxisAngle(V(0,0,1),-s*ang);lp.x+=s*w/4;lp.y+=h/2-.02;
-  q.setFromEuler(new THREE.Euler(rnd(-.04,.04),rnd(-.06,.06),-s*ang+s*.04,'ZYX'));const wp=lp.clone().applyMatrix4(g.matrixWorld);
+  q.setFromEuler(new THREE.Euler(rnd(-.04,.04),rnd(-.06,.06),-s*ang+s*.04,'ZYX'));const wp=lp.clone().applyMatrix4(g.matrixWorld);if(inTrunk(wp.x,wp.y,wp.z,.1,true)){rnd(0,1);rnd(0,1);continue;}
   m4.compose(wp,q,V(.46,.12,ww));SHING.setMatrixAt(SHING.count,m4);const k=rnd(.75,.95);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));
   PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}
- const ridge=new THREE.Mesh(new THREE.BoxGeometry(.26,.26,d+.1),darkBoard);ridge.position.y=h+.1;ridge.castShadow=true;g.add(ridge);/* [props round] the bare wooden ridge beam showed as a brown strip with gaps along every ridge: it is now capped with saddle slates, a pair per step leaning on each other over the beam */for(let zc=-d/2-.02;zc<d/2+.06;zc+=.31)for(const s of [-1,1]){const lp=V(s*.1,h+.1+.135,zc+(s>0?.04:0));q.setFromEuler(new THREE.Euler(rnd(-.03,.03),rnd(-.04,.04),-s*ang*.85,'ZYX'));const wp=lp.clone().applyMatrix4(g.matrixWorld);m4.compose(wp,q,V(.3,.1,.34));SHING.setMatrixAt(SHING.count,m4);const k=rnd(.7,.9);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}
+ const ridge=new THREE.Mesh(new THREE.BoxGeometry(.3,.3,d+.5),darkBoard);ridge.position.set(0,h+.1,.2);/* [TREE, photo] a stout ridge beam whose end sticks out past the front gable */ridge.castShadow=true;g.add(ridge);/* [props round] the bare wooden ridge beam showed as a brown strip with gaps along every ridge: it is now capped with saddle slates, a pair per step leaning on each other over the beam */if(!SH)for(let zc=-d/2-.02;zc<d/2+.06;zc+=.31)for(const s of [-1,1]){const lp=V(s*.1,h+.1+.135,zc+(s>0?.04:0));q.setFromEuler(new THREE.Euler(rnd(-.03,.03),rnd(-.04,.04),-s*ang*.85,'ZYX'));const wp=lp.clone().applyMatrix4(g.matrixWorld);if(inTrunk(wp.x,wp.y,wp.z,.1,true)){rnd(0,1);rnd(0,1);continue;}m4.compose(wp,q,V(.3,.1,.34));SHING.setMatrixAt(SHING.count,m4);const k=rnd(.7,.9);c.setRGB(k,k,k);SHING.setColorAt(SHING.count,c);sRow.setX(SHING.count,rnd(0,97));PL.push({mesh:SHING,i:SHING.count,kind:'shingle',c:wp.clone(),q:q.clone()});SHING.count++;}
  // gable walls (Pavel / critic T4): the triangles under the roof are closed with vertical boards, back and front
- for(const gz of [z0+.15,z1-.02])for(let xx=x0+.16;xx<gx1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
+ for(const gz of ro.open?[z0+.15]:[z0+.15,z1-.02])for(let xx=x0r+(SH?.05:.16);xx<gx1;xx+=.31){const hg=h*(1-Math.abs(xx-(x0+x1)/2)/(w/2))-.12;if(hg<.08)continue;
   if(inTrunk(xx,y+hg/2,gz,.05))continue;board(V(xx,y+hg/2+.02,gz),hg+.04,.305,.05,new THREE.Euler(0,rnd(-.03,.03),Math.PI/2),{tint:rnd(.93,1.07),wall:true});}
  // gable trim boards on the front like the photo's dark fascia
- for(const s of [-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15,.16,.1),darkBoard);t.position.set(s*w/4,h/2+.02,d/2+.02);t.rotation.z=-s*ang;t.userData.tint=1.9;t.castShadow=true;g.add(t);}
+ for(const s of SH?[1]:[-1,1]){const t=new THREE.Mesh(new THREE.BoxGeometry(sl+.15+(SH?0:.5),.26,.13),darkBoard);t.position.set(s*w/4-(SH?0:s*.25*Math.cos(ang)),h/2+.03+(SH?0:.25*Math.sin(ang)),d/2+.03);/* [TREE, photo] thick barge boards that run on past the peak and cross there, like the photo */t.rotation.z=-s*ang;t.userData.tint=1.9;t.castShadow=true;g.add(t);}
  meshesToBeams(g);bakeStatic(g); SHING.instanceMatrix.needsUpdate=true;sRow.needsUpdate=true;if(SHING.instanceColor)SHING.instanceColor.needsUpdate=true;
- world.createCollider(RAPIER.ColliderDesc.cuboid((x1-x0)/2,h*.45,(z1-z0)/2).setTranslation((x0+x1)/2,y+h*.45,(z0+z1)/2));}
+ world.createCollider(RAPIER.ColliderDesc.cuboid((x1-x0r)/2,h*.45,(z1-z0)/2).setTranslation((x0r+x1)/2,y+h*.45,(z0+z1)/2));}
 function post(x,y0,y1,z){board(V(x,(y0+y1)/2,z),y1-y0,.2,.2,new THREE.Euler(0,0,Math.PI/2),{dark:true});}
 // ---- boards that respect the trunk: every run is cut where wood would go through bark ----
 // floors like the photo: planks run front-to-back with ragged front ends over a thick dark edge beam;
@@ -827,12 +905,12 @@ function cutRun(a,b,lo,hi,g){const out=[];let s=a;if(b-a>hi){s=a+rnd(lo*.4,hi*.8
 // out: which side is the outside (-1 = toward -z/-x).
 function wallPlank(c,len,t,rot,o){board(c,len,rnd(.282,.3),t,rot,o);}
 function wallBack(x0,x1,y0,y1,z,holes=[],out=-1){const ok=x=>y=>!holeAt(holes,x,y)&&!inTrunk(x,y,z,.05);
- for(let x=x0+.16;x<x1;x+=.31){const dz=-out*rnd(0,.01),t=rnd(.045,.055),tn=rnd(.93,1.07);
+ for(let x=x0+.16;x<x1;x+=.31){const dz=-out*rnd(0,.01),t=rnd(.045,.055),tn=rnd(.85,1.09);
   for(const [a0,b0] of runs(ok(x),y0,y1,.05,.12))for(const [a,b2] of (b0-a0>1.4&&Math.random()<.45?cutRun(a0,b0,.6,1.5,.006):[[a0,b0]]))
    wallPlank(V(x,(a+b2)/2,z+dz+out*(.05-t)/2),b2-a,t,new THREE.Euler(rnd(-.004,.004),rnd(-.03,.03),Math.PI/2+rnd(-.003,.003)),{tint:tn*rnd(.97,1.03),wall:true});
   const xb=x+.155;if(xb<x1-.05)for(const [a,b2] of runs(ok(xb),y0+.02,y1-.02,.05,.12))board(V(xb,(a+b2)/2,z+out*.035),b2-a,rnd(.065,.08),.022,new THREE.Euler(0,0,Math.PI/2+rnd(-.004,.004)),{tint:rnd(.82,.95),wall:true,bat:out});}}
 function wallSide(x,z0,z1,y0,y1,holes=[],out=-1){const ok=z=>y=>!holeAt(holes,z,y)&&!inTrunk(x,y,z,.05);
- for(let z=z0+.16;z<z1;z+=.31){const dx=-out*rnd(0,.01),t=rnd(.045,.055),tn=rnd(.88,1.0);
+ for(let z=z0+.16;z<z1;z+=.31){const dx=-out*rnd(0,.01),t=rnd(.045,.055),tn=rnd(.8,1.02);
   for(const [a0,b0] of runs(ok(z),y0,y1,.05,.12))for(const [a,b2] of (b0-a0>1.4&&Math.random()<.45?cutRun(a0,b0,.6,1.5,.006):[[a0,b0]]))
    wallPlank(V(x+dx+out*(.05-t)/2,(a+b2)/2,z),b2-a,t,new THREE.Euler(0,Math.PI/2+rnd(-.02,.02),Math.PI/2+rnd(-.004,.004)),{tint:tn*rnd(.97,1.03),wall:true});
   const zb=z+.155;if(zb<z1-.05)for(const [a,b2] of runs(ok(zb),y0+.02,y1-.02,.05,.12))board(V(x+out*.035,(a+b2)/2,zb),b2-a,rnd(.065,.08),.022,new THREE.Euler(0,Math.PI/2,Math.PI/2+rnd(-.004,.004)),{tint:rnd(.8,.92),wall:true,bat:out});}}
@@ -840,13 +918,14 @@ const disc=(cx,cz,r,zmin)=>(x,z)=>(x-cx)**2+(z-cz)**2<=r*r&&z>=zmin;
 function brace(a,b2,w=.16,tn){a=a.clone().addScaledVector(b2.clone().sub(a).normalize(),-.14);const d=b2.clone().sub(a);const q=new THREE.Quaternion().setFromUnitVectors(V(1,0,0),d.clone().normalize());board(a.clone().addScaledVector(d,.5),d.length(),w,w*.85,new THREE.Euler().setFromQuaternion(q),tn?{dark:true,tint:tn}:{dark:true});}
 // like the photo: light square posts about every 0.85 m, a top rail and a middle rail (it was a palisade of 20 cm posts
 // every 0.42 m with only a top rail, which read as a heavy fence)
-function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.85));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;board(V(x,y+.47,z),.94,.12,.12,new THREE.Euler(0,0,Math.PI/2),{dark:true,tint:rnd(1.6,1.8)});}/* photo: the deck rail is warm weathered brown, not near-black (same beams, lighter instance tint) */
- for(const [h,w] of [[.95,.09],[.5,.065]]){if(skip){if(skip[0]>x0)brace(V(x0,y+h,z0),V(skip[0],y+h,lerp(z0,z1,(skip[0]-x0)/(x1-x0))),w,1.7);if(x1>skip[1])brace(V(skip[1],y+h,lerp(z0,z1,(skip[1]-x0)/(x1-x0))),V(x1,y+h,z1),w,1.7);}else brace(V(x0,y+h,z0),V(x1,y+h,z1),w,1.7);}}
+function rail(x0,z0,x1,z1,y,skip){const n=Math.max(2,Math.round(Math.hypot(x1-x0,z1-z0)/.85));for(let i=0;i<=n;i++){const t=i/n;const x=lerp(x0,x1,t),z=lerp(z0,z1,t);if(skip&&x>skip[0]&&x<skip[1])continue;board(V(x,y+.47,z),.94,.13,.13,new THREE.Euler(0,0,Math.PI/2),{wall:true,tint:rnd(.6,.7)});}/* [TREE, photo] the photo's deck rail is honey wood like the walls (square posts, a wide flat top rail, one mid rail), not dark beams: the same plank instances as the walls, no new draw calls */
+ const run=(xa,za,xb,zb,h,w,t)=>{const L=Math.hypot(xb-xa,zb-za);if(L<.05)return;board(V((xa+xb)/2,y+h,(za+zb)/2),L+.06,w,t,new THREE.Euler(Math.PI/2,Math.atan2(-(zb-za),xb-xa),0,'YXZ'),{wall:true,tint:.64});};for(const [h,w,t] of [[.97,.2,.05],[.52,.1,.045]]){if(skip){const zf=x=>lerp(z0,z1,(x-x0)/(x1-x0));if(skip[0]>x0)run(x0,z0,skip[0]-.06,zf(skip[0]-.06),h,w,t);if(x1>skip[1])run(skip[1]+.06,zf(skip[1]+.06),x1,z1,h,w,t);}else run(x0,z0,x1,z1,h,w,t);}}
 // rope ladders: tied over the floor edge with a knot round a peg, two twisted strands per side, round rungs lashed
 // with knots, slightly uneven, the bottom hanging free. They sway in the wind in the vertex shader, weighted by the
 // distance below the tie point (top stays put), driven by the global wind (game/wind.js windRope).
 /* [props: house exterior round] the rung knots were smooth beige balls: now a lashing, a few tight turns of cord round the rope with a fat clove-hitch bulge, built from small tori (same rope material and merge, a few more triangles) */ const knotGeo=(()=>{const parts=[];for(const [y,r] of [[-.03,.017],[-.015,.0185],[0,.019],[.015,.0185],[.03,.017]]){const t=new THREE.TorusGeometry(r,.0068,4,9);t.rotateX(Math.PI/2);t.rotateZ((y*9)%1*.25);t.translate(0,y,0);parts.push(t);} const b=new THREE.TorusGeometry(.017,.009,4,8);b.rotateY(Math.PI/2);b.translate(0,0,.0);parts.push(b); return mergeGeometries(parts);})();
 const knotGeoFar=(()=>{const parts=[];for(const [y,r] of [[-.03,.017],[-.015,.0185],[0,.019],[.015,.0185],[.03,.017]]){const t=new THREE.TorusGeometry(r,.0068,3,7);t.rotateX(Math.PI/2);t.rotateZ((y*9)%1*.25);t.translate(0,y,0);parts.push(t);}const b=new THREE.TorusGeometry(.017,.009,3,6);b.rotateY(Math.PI/2);parts.push(b);return mergeGeometries(parts);})();/* [PERF] the same lashing on coarser tori (246 tris, was 424) for the far rope LOD */
+const knotGeoVFar=new THREE.CylinderGeometry(.02,.02,.066,6,1);/* [PERF] beyond 24 m a lashing is ~1 px on a phone: its envelope, 24 tris */
 function swayMat(m){m.onBeforeCompile=sh=>{WIND.hook(sh);sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float swayW;attribute float swayL;')
  .replace('#include <begin_vertex>','#include <begin_vertex>\ntransformed+=windRope(transformed,swayW,swayL)*smoothstep(.05,.45,transformed.y);');};m.customProgramCacheKey=()=>'ropesway';return m;}
 const ropeMat=swayMat(new THREE.MeshStandardMaterial({color:0xA48C64,roughness:1}));/* weathered hemp, not new cream cord */
@@ -874,8 +953,8 @@ function mergeSway(parts,top,H,ph){let nV=0,nI=0;for(const g of parts){nV+=g.att
  const G=new THREE.BufferGeometry();G.setAttribute('position',new THREE.BufferAttribute(P,3));G.setAttribute('normal',new THREE.BufferAttribute(N,3));G.setAttribute('uv',new THREE.BufferAttribute(U,2));G.setAttribute('swayW',new THREE.BufferAttribute(W,1));G.setAttribute('swayL',new THREE.BufferAttribute(PH,1));G.setIndex(new THREE.BufferAttribute(I,1));return G;}
 const _m4=new THREE.Matrix4(),_q=new THREE.Quaternion();
 function placed(geo,pos,rot,scl){_q.setFromEuler(rot||new THREE.Euler());_m4.compose(pos,_q,scl||V(1,1,1));return geo.clone().applyMatrix4(_m4);}
-function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-bot,ph=x*3.1+z*1.7;const ropes=[],rungs=[],kN=[],kF=[];
- const knot=(p,r,s)=>{kN.push(placed(knotGeo,p,r,s));kF.push(placed(knotGeoFar,p,r,s));};
+function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-bot,ph=x*3.1+z*1.7;const ropes=[],rungs=[],kN=[],kF=[],kV=[];
+ const knot=(p,r,s)=>{kN.push(placed(knotGeo,p,r,s));kF.push(placed(knotGeoFar,p,r,s));kV.push(placed(knotGeoVFar,p,r,s));};
  const gnd=y0<.5;
  // a belly away from the edge; on the ground the last half metre of the ladder lies on the earth, curling outwards
  const bow=t=>Math.sin(t*Math.PI)*.055+(gnd?.42*Math.pow(Math.max(0,(t-.86)/.14),2):0);
@@ -887,23 +966,25 @@ function ropeLadder(x,y0,y1,z){const top=y1+.05,bot=y0>.5?y0+.03:y0+.035,H=top-b
   const n=Math.ceil((top-bot)/.05);for(let i=1;i<=n;i++){const t=i/n,yy=top-.04-t*(top-.04-bot);C.push(V(x+xw(t)+sx*(1-.04*t)+Math.sin(yy*7.3+sx*9)*.006,yy,z+bow(t)));}
   if(y0>.5)C.push(V(x+sx*.95,y0+.025,z+.16),V(x+sx*.85+rnd(-.05,.05),y0+.025,z+.34));else C.push(V(x+sx*.97,bot-.09,z+.04),V(x+sx*.9,bot-.13,z+.1));
   const base=new THREE.CatmullRomCurve3(C),L=base.getLength(),m=Math.ceil(L/.03);/* [PERF] 3 cm steps (~3.7 per 11 cm twist) and 4 sides: the strands are 2-3 px wide even at the closest zoom, so this looks the same at about half the triangles (was 2 cm, 5 sides: ~29k for the two ladders) */
-  for(const sp of [0,Math.PI]){const pts=[];for(let i=0;i<=m;i++){const u=i/m,c=base.getPointAt(u),a=u*L/.11*Math.PI*2+sp;pts.push(c.add(V(Math.cos(a)*.011,0,Math.sin(a)*.011)));}
-   ropes.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),m,.012,4));}
+  for(const sp of [0,Math.PI]){const pts=[];for(let i=0;i<=m;i++){const u=i/m,c=base.getPointAt(u),a=u*L/.11*Math.PI*2+sp;pts.push(c.add(V(Math.cos(a)*.014,0,Math.sin(a)*.014)));}
+   ropes.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts),m,.016,4));}/* [TREE, photo] the photo's ladder ropes are fat twisted hemp (~6 cm): ours read as two thin pale threads from the home view */
   // tie: a fat knot round a short peg on the floor
   knot(V(x+sx*1.05,top+.035,z-.34),new THREE.Euler(.15,0,.2),V(1.45,.75,1.45));knot(V(x+sx*1.05,top+.075,z-.34),new THREE.Euler(-.2,1,-.1),V(1.3,.6,1.3));
   rungs.push(placed(new THREE.CylinderGeometry(.03,.035,.16,6),V(x+sx*1.05,top+.06,z-.34)));
   for(const y of rungY){const t=(top-y)/H;knot(V(x+xw(t)+sx*(1-.04*t),y,z+bow(t)),null,V(1,1.3,1));}}
  // round rungs, a little uneven like hand-lashed sticks
- const LR=[];for(const y of rungY){const t=(top-y)/H;const r=rnd(.019,.024);const c=V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t));LR.push({x:c.x,y:c.y,z:c.z,r,half:.32,sw:t});rungs.push(placed(new THREE.CylinderGeometry(r,r*rnd(.85,1),.64,9),c,new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
+ const LR=[];for(const y of rungY){const t=(top-y)/H;const r=rnd(.025,.03);/* [TREE, photo] chunkier rungs like the photo's */const c=V(x+xw(t),Math.max(y0+.03,y+rnd(-.015,.015)),z+bow(t));LR.push({x:c.x,y:c.y,z:c.z,r,half:.32,sw:t});rungs.push(placed(new THREE.CylinderGeometry(r,r*rnd(.85,1),.64,9),c,new THREE.Euler(rnd(-.12,.12),0,Math.PI/2+rnd(-.09,.09))));}
  (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:true,rungs:LR,len:H});/* climb.js: hands and feet on these rungs */
  for(const [parts,mat] of [[ropes.concat(kN),ropeMat],[rungs,rungMat]]){const me=new THREE.Mesh(mergeSway(parts,top,H,ph),mat);me.castShadow=!MOBILE;me.frustumCulled=false;me.userData.plStatic=true;scene.add(me);
   if(mat===ropeMat&&!/[?&]noropelod/.test(location.search)){/* [PERF] far LOD of the lashings: from beyond 17 m (the home view is 26 m) a lashing is ~6 px on a phone,
     so the same five turns on coarser tori (246 tris instead of 424) draw the same; ~7k fewer tris for the two ladders. The full mesh still casts the shadows and takes the raycasts. */
    const far=new THREE.Mesh(mergeSway(ropes.map(g=>g.clone()).concat(kF),top,H,ph),mat);far.frustumCulled=false;far.castShadow=false;far.raycast=()=>{};far.userData.lodOf=me;far.userData.plStatic=true;
-   const c=V(x,(y0+y1)/2,z),pick=cam=>!(cam===camera&&!window.__noRopeLod&&cam.position.distanceTo(c)>17);
+   const c=V(x,(y0+y1)/2,z),lod=cam=>cam!==camera||window.__noRopeLod?0:(d=>d>24&&!window.__noRopeVFar?2:d>17?1:0)(cam.position.distanceTo(c)),pick=cam=>lod(cam)===0;
+   const vf=new THREE.Mesh(mergeSway(ropes.map(g=>g.clone()).concat(kV),top,H,ph),mat);/* the same twisted strands; only the lashings become their envelope */vf.frustumCulled=false;vf.castShadow=false;vf.raycast=()=>{};vf.userData.lodOf=me;vf.userData.plStatic=true;
+   vf.onBeforeRender=function(r,sc,cam,geo){if(lod(cam)!==2)geo.setDrawRange(0,0);};vf.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};scene.add(vf);
    const b0=me.onBeforeRender,b1=far.onBeforeRender;
    me.onBeforeRender=function(r,sc,cam,geo){b0.apply(this,arguments);if(!pick(cam))geo.setDrawRange(0,0);};me.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};
-   far.onBeforeRender=function(r,sc,cam,geo){b1.apply(this,arguments);if(pick(cam))geo.setDrawRange(0,0);};far.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};
+   far.onBeforeRender=function(r,sc,cam,geo){b1.apply(this,arguments);if(lod(cam)!==1)geo.setDrawRange(0,0);};far.onAfterRender=function(r,sc,cam,geo){geo.setDrawRange(0,Infinity);};
    scene.add(far);}}}
 function ladder(x,y0,y1,z){for(const sx of [-.24,.24])board(V(x+sx,(y0+y1)/2,z),y1-y0,.07,.07,new THREE.Euler(0,0,Math.PI/2),{dark:true});const LR=[];for(let y=y0+.3;y<y1;y+=.32){board(V(x,y,z),.5,.06,.05,null,{dark:true,rung:true});LR.push({x,y,z,r:.03,half:.21,sw:0});}
  (window.__ladders||(window.__ladders=[])).push({x,z,y0,y1,rope:false,rungs:LR});/* climb.js: hands and feet on these rungs */}
@@ -917,7 +998,7 @@ function barricade(name,center,len){const g={name,boards:[],center};groups[name]
 const LG=LG_,LL=2.45,LC=3.4+HY,WS=3.6+HY,KT=5.0+HY,BD=7.4+HY,DK=9.0+HY;
 // hollow landing (right, low) with the glowing doorway in the trunk
 floorBoards(.4,2.9,LG,.9,3.2,{shape:disc(1.62,1.95,1.05,.9),radial:[1.62,1.95,1.05,.9]});
-for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,pz-.03),.13);/* short posts down into the soil */
+for(const [px,pz,py] of [[2.3,2.55,.55],[1.15,2.8,.5]])brace(V(px-.05,py,frontZ(px-.05,py)-.05),V(px+.05,LG-.12,pz),.13);/* [TREE, photo] knee brackets into the trunk flare (the landing hangs off the oak; the old posts down to the soil were not in the photo) */
 /* a short open-tread stair from the soil up to the door landing: a door and a landing in the air with no way up made no sense */
 {const c0=V(1.62,LG,1.95),dir=V(.68,0,.8).normalize(),side=V(-dir.z,0,dir.x),T=c0.clone().addScaledVector(dir,.96);T.y=LG-.03;
  /* the real surface under the stair (the big root in front of the landing is bark, not soil; standAt only guessed it and the
@@ -947,11 +1028,11 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();let ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex)));/* [treedress, door round] a piece running along out (the cave floor boards) left ez zero: a degenerate basis drew each board as a thin orange stake standing up from the sill. Those lie flat: thickness up */if(ez.lengthSq()<1e-4)ez.set(0,1,0);ez.normalize();const ey=ez.clone().cross(ex);
   const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(tn||rnd(.85,1)));
    const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
- const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
+ const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.74*H,ah=.26*H+fw*.45;
  // jambs, a little proud of the bark and sunk into it
  for(const sd of [-1,1]){const tp=at(sd*hw,yS+.02,.1),bt=at(sd*hw,D.y0-.04,.1);/* [TREE] plumb jambs like the photo's frame: the bottom keeps the top's line (the flaring trunk foot pushed it out, so both jambs leaned outwards) and is sunk a little into the bark */piece(V(tp.x*.7+bt.x*.3,bt.y,tp.z*.7+bt.z*.3),tp,fw,.34,'beam');}
  // arch: short chunky pieces round the top
- const N=7;let prev=at(-hw,yS,.08);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*hw,yS+Math.sin(t)*ah,.08);piece(prev.clone().addScaledVector(prev.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(prev).normalize(),.03),fw,.3,'beam');prev=p;}
+ const N=7;let prev=at(-hw,yS,.08);for(let k=1;k<=N;k++){const xx=-hw+2*hw*k/N;/* [TREE, photo] two straight rafters to a low peak (the photo's five-sided door), was a round arch */const p=at(xx,yS+ah*(1-Math.abs(xx)/hw),.08);piece(prev.clone().addScaledVector(prev.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(prev).normalize(),.03),fw,.3,'beam');prev=p;}
  // a keystone block on top
  {const p=at(0,yS+ah+.02,.05);piece(p.clone().addScaledVector(V(0,1,0),-.12),p.clone().addScaledVector(V(0,1,0),.12),.2,.34,'beam');}
  // threshold: a thick worn board across the foot of the opening, flush with the landing
@@ -972,15 +1053,15 @@ floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45
  for(const sd of [-1,1])board(B.clone().add(T).multiplyScalar(.5).addScaledVector(ez,sd*.23),L,.075,.05,eu,{tint:rnd(.7,.8)});
  const ru=new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ez,ey.clone().negate(),ex));
  for(let y=LL+.3;y<LC-.05;y+=.3){const t=(y-B.y)/(T.y-B.y);board(B.clone().lerp(T,t).addScaledVector(ey,.058),.56,.045,.07,ru,{tint:rnd(.8,.95)});}}
-brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
+brace(V(-1.45,LL-1.0,frontZ(-1.45,LL-1.0)-.05),V(-1.7,LL-.12,2.15),.13,.95);brace(V(-1.85,LL-.95,frontZ(-1.85,LL-.95)-.05),V(-2.9,LL-.12,1.45),.13,.88);/* [TREE, photo] two short knee brackets into the trunk, not one long strut from the roots (same rnd draws: tinted) */
 // center landing (half disc around the trunk front) + gate over the ground ladder
-floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-1.0,3.0,frontZ(-1.0,3.0)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(-.15,1.3,frontZ(-.15,1.3)-.08),V(-.05,LC-.13,3.45),.15);/* critic T19: kept left of the hollow's mouth */
+floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-1.0,3.0,frontZ(-1.0,3.0)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(.35,LC-1.1,frontZ(.35,LC-1.1)-.08),V(.45,LC-.13,2.7),.15);/* critic T19: clear of the hollow's mouth. [TREE, photo] a short knee bracket under the right end, not a 3 m pole from the roots behind the ladder */
 if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
 ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
 const KX0=-4.4,KX1=-.9;
 floorBoards(KX0-.1,KX1,KT,.6,4.6,{holes:[[-1.5,-.92,3.0,4.08]],sub:true});/* Ladders: 60 cm from the rungs to the back edge, so loads on his back clear it */
-wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.8,-2.33,KT+1.15,KT+1.85],[-2.2,-1.78,KT+1.15,KT+1.85]]);/* [TREE, photo] two small kitchen windows side by side over the counter */
+wallBack(KX0,KX1,KT+.03,BD-.15,1.0,[[-2.8,-2.4,KT+1.15,KT+1.85],[-2.32,-1.95,KT+1.15,KT+1.85]]);/* [TREE, photo] two small kitchen windows side by side over the counter */
 wallSide(KX0,.8,3.85,KT+.03,BD-.15,[[2.3,3.1,KT+1.0,KT+1.75]],-1);wallSide(KX1,.8,2.2,KT+.03,BD-.15,[],1);
 post(KX0,KT,BD-.1,3.85);post(KX1,KT,BD-.1,3.85);/* kitchen knee braces start above the centre landing (they used to pass through it) */brace(V(-2.3,LC+.4,frontZ(-2.3,LC+.4)-.1),V(-4.0,KT-.15,3.6),.16);brace(V(-1.4,LC+.45,1.6),V(-3.6,KT-.15,1.6),.17);
 if(BARRICADES){post(-4.38,KT,KT+1.05,3.85);post(-1.62,KT,KT+1.05,3.85);}
@@ -1010,18 +1091,18 @@ const HATCH=(()=>{/* own plank materials: plain meshes sharing boardMat's instan
   open(){target=OPEN;},close(){target=0;},toggle(){target=target===0?OPEN:0;},isOpen(){return target!==0;},
   get angle(){return ang;},grab,lid,box:[hx0,x1,y-.03,y+.05,z0,z1],ladder:{bottom:'kl_b',top:'bl_t'}};})();
 window.__house=Object.assign(window.__house||{},{hatch:HATCH});
-wallBack(BX0,BX1,BD+.03,BD+2.3,.95);
+wallBack(BX0,BX1,BD+.03,BD+2.3,.95);/* [TREE, photo] honey wall plates along the top of the walls and a tie beam across the open front at the eaves, as in the photo's bedroom; plain instances (no physics, no rnd draws), cut round the bark */window.__plate=(x0,x1,y,k,alongZ)=>{for(const [s0,e0] of runs(t=>!inTrunk(alongZ?k:t,y,alongZ?t:k,.1),x0,x1,.05,.3)){const L=e0-s0,c=alongZ?V(k,y,(s0+e0)/2):V((s0+e0)/2,y,k);if(boards.count>=MAXB)return;const i=boards.count++;tM.compose(c,alongZ?new THREE.Quaternion().setFromAxisAngle(V(0,1,0),Math.PI/2):new THREE.Quaternion(),V(L,.15,.13));boards.setMatrixAt(i,tM);aRow.setX(i,100+(i*37)%97);aTile.setX(i,Math.max(.04,L/3.84));aWx.setXY(i,0,.3);boards.setColorAt(i,new THREE.Color().setScalar(.8+((i*53)%10)*.012));}boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aTile.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;};__plate(BX0+.16,BX1-.16,BD+2.3-.075,1.04,false);__plate(.85,3.8,BD+2.3-.075,BX0+.09,true);__plate(.85,3.8,BD+2.3-.075,BX1-.09,true);__plate(BX0,BX1,BD+2.3-.075,3.74,false);
 wallSide(BX0,.8,3.8,BD+.03,BD+2.3,[[1.9,2.9,BD+.8,BD+1.6]],-1);wallSide(BX1,.8,3.8,BD+.03,BD+2.3,[[2.3,3.25,BD+.03,BD+2.0]],1);
-roof(BX0,BX1-.32,BD+2.3,.8,3.8,2.35,BX1);/* photo: a steep ~45 deg pitch, the roof nearly as tall as the room *//* steep gable with its pediment to the viewer, like the photo (critic T4) *//* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
+roof(BX0,BX1-.32,BD+2.3,.8,3.8,2.35,BX1,{open:GOPEN});/* photo: a steep ~45 deg pitch, the roof nearly as tall as the room *//* steep gable with its pediment to the viewer, like the photo (critic T4) *//* the right eave stops short of the deck: the hero stands there at the rope-ladder top (collide.js) */post(BX0,BD,BD+2.3,3.8);post(BX1,BD,BD+2.3,3.8);
 // outside ledge between the bedroom door and the rope ladder to the deck
 floorBoards(BX1,1.8,BD,2.1,3.65,{noEdge:true});/* carried by two joists let into the bark (the old knee brace ran down through the steeper workshop roof) */brace(V(.75,BD-.15,1.25),V(.75,BD-.15,3.72),.14);brace(V(1.6,BD-.15,1.45),V(1.6,BD-.15,3.72),.14);
 ropeLadder(1.35,BD,DK+.05,3.15);
 // workshop (right, middle)
 const WX0=.9,WX1=4.6;
 floorBoards(WX0,WX1+.15,WS,.8,5.3,{sub:true});
-wallBack(WX0,WX1,WS+.03,WS+2.3,1.2,[[3.2,3.95,WS+1.05,WS+1.75]]);
+wallBack(WX0,WX1,WS+.03,WS+2.3,1.2,[[3.2,3.95,WS+1.05,WS+1.75]]);__plate(WX0+.16,WX1-.16,WS+2.3-.075,1.29,false);__plate(1.05,4.0,WS+2.3-.075,WX1-.09,true);__plate(1.05,2.3,WS+2.3-.075,WX0+.09,true);__plate(WX0,WX1,WS+2.3-.075,3.94,false);/* [TREE, photo] wall plates + front tie beam */
 wallSide(WX1,1.0,4.0,WS+.03,WS+2.3,[[2.4,3.3,WS+.85,WS+1.65]],1);wallSide(WX0,1.0,2.3,WS+.03,WS+2.3,[],-1);
-roof(WX0,WX1,WS+2.3,1.0,4.0,1.45);/* photo: the workshop's roof is steep too (was a flat .95) */post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
+roof(WX0,WX1,WS+2.3,1.0,4.0,GOPEN?.85:1.45,undefined,{shed:GOPEN,open:GOPEN});/* photo: the workshop's roof is steep too (was a flat .95) */post(WX0,WS,WS+2.3,4.0);post(WX1,WS,WS+2.3,4.0);
 brace(V(2.0,WS-2.2,frontZ(2.0,WS-2.2)-.1),V(4.2,WS-.15,4.6),.16);brace(V(1.6,WS-2,1.4),V(4.0,WS-.15,1.5),.17);
 if(BARRICADES){post(1.45,WS,WS+1.05,4.4);post(4.55,WS,WS+1.05,4.4);}
 // ---- lockdown shutters (for the zombie nights): each open room front has folding plank shutters. Open, they are folded up
@@ -1098,7 +1179,7 @@ ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[
 {const inRoom=(c,m=0)=>ROOMS.find(r=>c.x>r[0]-m&&c.x<r[1]+m&&c.z>r[4]-m&&c.z<r[5]+m&&c.y>r[2]-.35&&c.y<r[3]+.2);
  for(const p of PL){if(p.kind==='shingle'||p.kind==='roof'||p.kind==='door')continue;const A=p.kind==='beam'?dWx:aWx;let a=.8,b=.8;
   if(p.kind==='floor'){a=inRoom(p.c,-.05)?0:1;b=.25;}
-  else if(p.kind==='wall'){const r=inRoom(p.c,.35);if(r){const n=V(0,0,1).applyQuaternion(p.q);const out=n.x*(p.c.x-(r[0]+r[1])/2)+n.z*(p.c.z-(r[4]+r[5])/2)>0;a=out?1:0;b=out?0:1;}else{a=.7;b=.7;}}
+  else if(p.kind==='wall'){const r=inRoom(p.c,.35);if(r){const n=V(0,0,1).applyQuaternion(p.q);const out=n.x*(p.c.x-(r[0]+r[1])/2)+n.z*(p.c.z-(r[4]+r[5])/2)>0;a=out?1:0;b=out?0:1;}else{const rl=p.c.y>DK+.1&&p.c.y<DK+1.1&&p.c.x>.7&&p.c.x<4.4;/* [TREE, photo] the deck rail is warm honey wood in the photo, not silvered */a=rl?.25:.7;b=a;}}
   A.setXY(p.i,a,b);}
  aWx.needsUpdate=dWx.needsUpdate=true;}
 cullLeaves([[KX0-.4,KX1+.2,KT-.3,BD+.3,.3,4.9],[BX0-.4,BX1+.4,BD-.3,BD+4.9,.3,4.3],[WX0-.4,WX1+.4,WS-.3,WS+4.0,.5,5.2],[.6,4.6,DK-.3,DK+1.6,0,3.4],[-3.6,3.4,LG-.4,LC+.6,0,4.4]]);
@@ -1112,9 +1193,9 @@ function prop(n,x,y,z,{h,w,ry=0,bright=1,solid=true,seat=false}={}){const o=PROP
  o.traverse(m=>{if(m.isMesh){m.castShadow=true;m.receiveShadow=true;if(m.material){m.material=m.material.clone();m.material.metalness=Math.min(m.material.metalness??0,.15);m.material.roughness=Math.max(.55,m.material.roughness??.8);if(bright!==1&&m.material.color)m.material.color.multiplyScalar(bright);}}});scene.add(o);b=new THREE.Box3().setFromObject(o);if(solid&&b.min.y<y+.5)OBST.push({x0:b.min.x,x1:b.max.x,z0:b.min.z,z1:b.max.z,y:y,seat,n});o.userData.box=b;return o;}
 function rug(x,y,z,w,d,c1,c2){const cv=document.createElement('canvas');cv.width=128;cv.height=128;const g=cv.getContext('2d');g.fillStyle=c1;g.fillRect(0,0,128,128);g.strokeStyle=c2;g.lineWidth=6;g.strokeRect(8,8,112,112);g.lineWidth=3;g.strokeRect(20,20,88,88);for(let i=0;i<6;i++){g.fillStyle=c2;g.fillRect(28+i*13,58,7,12);}const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;const m=new THREE.Mesh(new THREE.PlaneGeometry(w,d),new THREE.MeshStandardMaterial({map:t,roughness:1}));m.rotation.x=-Math.PI/2;m.position.set(x,y+.035,z);m.receiveShadow=true;scene.add(m);}
 
-const WINS=[];function win(x0,x1,y0,y1,z,side,room){const g=new THREE.Group();const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;WINS.push({mat:gm,room,g});const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),gm);p.renderOrder=2;g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);g.add(f);}/* [props: house exterior round] the outside of the opening is trimmed like a real window: a sill that sticks out and sheds rain (tilted down and away), a head casing with a drip edge over the top, and side casings over the plank ends, so the cladding no longer just stops at a bare hole. Outside is local -z for every wall here. Dark boards: instanced, no draws. */ {const W=x1-x0,H=y1-y0;const sill=new THREE.Mesh(new THREE.BoxGeometry(W+.18,.035,.1),darkBoard);sill.position.set(0,-H/2-.008,-.075);sill.rotation.x=-.12;g.add(sill); const head=new THREE.Mesh(new THREE.BoxGeometry(W+.2,.075,.032),darkBoard);head.position.set(0,H/2+.075,-.058);g.add(head); const drip=new THREE.Mesh(new THREE.BoxGeometry(W+.24,.022,.06),darkBoard);drip.position.set(0,H/2+.122,-.07);g.add(drip); for(const sx of [-1,1]){const j=new THREE.Mesh(new THREE.BoxGeometry(.075,H+.08,.028),darkBoard);j.position.set(sx*(W/2+.07),.0,-.056);g.add(j);}}
+const WINS=[];function win(x0,x1,y0,y1,z,side,room){const g=new THREE.Group();const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;WINS.push({mat:gm,room,g});const p=new THREE.Mesh(new THREE.PlaneGeometry(x1-x0,y1-y0),gm);p.renderOrder=2;g.add(p);const fw=.05;for(const [w,h,px,py] of [[x1-x0,fw,0,0],[fw,y1-y0,0,0],[x1-x0+.1,fw*1.6,0,(y1-y0)/2],[x1-x0+.1,fw*1.6,0,-(y1-y0)/2],[fw*1.6,y1-y0,(x1-x0)/2,0],[fw*1.6,y1-y0,-(x1-x0)/2,0]]){const f=new THREE.Mesh(new THREE.BoxGeometry(w,h,.06),darkBoard);f.position.set(px,py,.02);f.userData.tint=3.2;/* [TREE, photo] the frame and cross bars seen from the room are pale honey wood like the photo's windows, not near-black */g.add(f);}{const sl=new THREE.Mesh(new THREE.BoxGeometry(x1-x0+.16,.035,.1),darkBoard);sl.position.set(0,-(y1-y0)/2-.035,.07);sl.userData.tint=3.2;/* [TREE, photo] an inner sill ledge */g.add(sl);}/* [props: house exterior round] the outside of the opening is trimmed like a real window: a sill that sticks out and sheds rain (tilted down and away), a head casing with a drip edge over the top, and side casings over the plank ends, so the cladding no longer just stops at a bare hole. Outside is local -z for every wall here. Dark boards: instanced, no draws. */ {const W=x1-x0,H=y1-y0;const sill=new THREE.Mesh(new THREE.BoxGeometry(W+.18,.035,.1),darkBoard);sill.position.set(0,-H/2-.008,-.075);sill.rotation.x=-.12;sill.userData.tint=2.3;g.add(sill); const head=new THREE.Mesh(new THREE.BoxGeometry(W+.2,.075,.032),darkBoard);head.position.set(0,H/2+.075,-.058);head.userData.tint=2.3;g.add(head); const drip=new THREE.Mesh(new THREE.BoxGeometry(W+.24,.022,.06),darkBoard);drip.position.set(0,H/2+.122,-.07);drip.userData.tint=2.0;g.add(drip); for(const sx of [-1,1]){const j=new THREE.Mesh(new THREE.BoxGeometry(.075,H+.08,.028),darkBoard);j.position.set(sx*(W/2+.07),.0,-.056);j.userData.tint=2.3;/* [TREE, photo] weathered honey casing, not near-black: the photo's window frames are warm wood */g.add(j);}}
  if(side){g.rotation.y=side;g.position.set(z,(y0+y1)/2,(x0+x1)/2);}else g.position.set((x0+x1)/2,(y0+y1)/2,z);scene.add(g);meshesToBeams(g);bakeStatic(g);}
-win(-2.8,-2.33,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.2,-1.78,KT+1.15,KT+1.85,1.04,0,'kitchen');win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
+win(-2.8,-2.4,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.32,-1.95,KT+1.15,KT+1.85,1.04,0,'kitchen');/* [TREE] the right one ends where the old single window did: further right the glass looked straight into the trunk (a dark strip at night) */win(2.3,3.1,KT+1.0,KT+1.75,KX0+.03,Math.PI/2,'kitchen');win(1.9,2.9,BD+.8,BD+1.6,BX0+.03,Math.PI/2,'bedroom');win(3.2,3.95,WS+1.05,WS+1.75,1.24,0,'workshop');win(2.4,3.3,WS+.85,WS+1.65,WX1-.03,-Math.PI/2,'workshop');
 // ---- the framed window in the trunk above the deck (photo, top right): a little plank-lined box set into the bark, a chunky
 // frame proud of it (lintel and sill longer than the jambs), real glass with a cross bar, and a shallow lined recess behind it.
 // It looks up into the hollow: at night the lining is warm with the same lantern light as the trunk door (doorGlow), stronger
@@ -1128,7 +1209,7 @@ win(-2.8,-2.33,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.2,-1.78,KT+1.15,KT+1.85,
  if(dMax>-9){const base=V(X0,YC,TAX[1]).addScaledVector(n,dMax+.02);/* the back plate sits just proud of the bark in the opening */
   const g=new THREE.Group();g.position.copy(base);g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,n));scene.add(g);
   const sink=dMax-dMin+.06,D=.3;/* the lining runs back into the bark past its deepest point, so no gap shows round the box */
-  const warm=new THREE.MeshStandardMaterial({map:woodWallT,emissiveMap:woodWallT,color:0x8A6A4C,emissive:0xFFB066,emissiveIntensity:0,roughness:.85,vertexColors:true});
+  const warm=new THREE.MeshStandardMaterial({map:woodWallT,emissiveMap:woodWallT,color:0x4A3A2C,emissive:0xFFB066,emissiveIntensity:0,roughness:.85,vertexColors:true});
   warm.onBeforeCompile=sh=>{sh.fragmentShader=sh.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance*=vColor.g;');};warm.customProgramCacheKey=()=>'trunkWinWarm';
   const parts=[];const bx=(w,h,d,x,y,z)=>{const b=new THREE.BoxGeometry(w,h,d).toNonIndexed();b.translate(x,y,z);const P=b.attributes.position,C=new Float32Array(P.count*3);
    for(let i=0;i<P.count;i++){const t=(P.getY(i)+H/2)/H;const k=Math.max(.35,Math.min(1,1.1-.75*t))*(.55+.45*Math.max(0,Math.min(1,(P.getZ(i)+.05)/.3)));C[i*3]=k;C[i*3+1]=k;C[i*3+2]=k;}b.setAttribute('color',new THREE.BufferAttribute(C,3));parts.push(b);};
@@ -1137,7 +1218,7 @@ win(-2.8,-2.33,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.2,-1.78,KT+1.15,KT+1.85,
   // lining: sill, head and the two cheeks, from the frame back into the bark
   const L=D+sink,zc=D-L/2;bx(W+.07,.035,L,0,-H/2-.017,zc);bx(W+.07,.035,L,0,H/2+.017,zc);bx(.035,H,L,-W/2-.017,0,zc);bx(.035,H,L,W/2+.017,0,zc);
   const inner=new THREE.Mesh(mergeGeometries(parts),warm);inner.receiveShadow=true;g.add(inner);
-  const glow=TREE.bark.material.userData.doorGlow;inner.onBeforeRender=()=>{const v=glow?glow.value:0;warm.emissiveIntensity=.16*v;fl.visible=v>.05;wax.material.emissiveIntensity=.14*v;/* doorGlow runs ~3.4 since the brighter trunk door (lights 695189b): same window level as before */fl.scale.setScalar(.85+.15*Math.sin(performance.now()*.017)*Math.sin(performance.now()*.0031));};
+  const glow=TREE.bark.material.userData.doorGlow;inner.onBeforeRender=()=>{const v=glow?glow.value:0;warm.emissiveIntensity=.04*v;fl.visible=false;wax.material.emissiveIntensity=.14*v;/* doorGlow runs ~3.4 since the brighter trunk door (lights 695189b): same window level as before */fl.scale.setScalar(.85+.15*Math.sin(performance.now()*.017)*Math.sin(performance.now()*.0031));};
   // glass, set back in the frame
   const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;gm.emissiveIntensity=.12;gm.opacity=.1;WINS.push({mat:gm,room:'trunk',g});
   const pane=new THREE.Mesh(new THREE.PlaneGeometry(W,H),gm);pane.position.z=D-.09;pane.renderOrder=2;g.add(pane);
@@ -1146,9 +1227,9 @@ win(-2.8,-2.33,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.2,-1.78,KT+1.15,KT+1.85,
   // the casing runs from the face right back into the bark, so the lit lining never shows from the side
   fb(.11,H+.16,L+.02,-W/2-.055,0,zc+.01,.012);fb(.11,H+.16,L+.02,W/2+.055,.005,zc+.005,-.01);fb(W+.2,.09,L,0,H/2+.08,zc-.01);fb(W+.2,.07,L,0,-H/2-.07,zc-.01);
   fb(W+.44,.12,.16,.01,H/2+.1,D-.03,.018);fb(W+.38,.075,.24,-.01,-H/2-.075,D+.01,-.012);
-  fb(.035,H,.035,0,0,D-.085);fb(W,.035,.035,0,.02,D-.085);
+  rnd();rnd();rnd();rnd();/* [TREE, photo] no cross bar: the photo's trunk window is a plain plank frame onto a dark opening (the four draws keep the house's random stream) */
   // the source: a stub of candle on the inner sill (it is lit with the hollow's lantern, and goes out with it)
-  const wax=new THREE.Mesh(new THREE.CylinderGeometry(.028,.032,.09,10),new THREE.MeshStandardMaterial({color:0xE8D8B8,emissive:0xFF9A40,emissiveIntensity:.25,roughness:.7}));wax.position.set(-.15,-H/2+.045,.05);g.add(wax);
+  const wax=new THREE.Mesh(new THREE.CylinderGeometry(.028,.032,.09,10),new THREE.MeshStandardMaterial({color:0xE8D8B8,emissive:0xFF9A40,emissiveIntensity:.25,roughness:.7}));wax.position.set(-.15,-H/2+.045,.05);wax.visible=false;/* [TREE, photo] no candle: a dark opening like the photo */g.add(wax);
   const flame=new THREE.Mesh(new THREE.SphereGeometry(.016,8,6),new THREE.MeshBasicMaterial({color:0xFFC870}));flame.position.set(-.15,-H/2+.115,.05);const fl=new THREE.Group();fl.position.copy(flame.position);flame.position.set(0,.01,0);flame.geometry.scale(1,1.8,1);fl.add(flame);g.add(fl);
   g.updateMatrixWorld(true);meshesToBeams(g);
   window.__trunkWin={c:base.clone(),n:n.clone(),depth:[dMin,dMax]};}}
@@ -1402,7 +1483,7 @@ function isNight(h){return !(h>=6&&h<20);}
 function hps(){return 1/60;}// a day of 24 minutes, 1 game hour = 1 real minute (Pavel 2026-11-23)
 try{const {createAudio}=await import(new URL(ASSET+'audio.js',document.baseURI).href);AUDIO=createAudio({ac,camera,hour:()=>hour,rain:()=>rainK,hero,lights:LIGHTS,asset:ASSET,bones:heroBones,mobile:MOBILE});sfx.hammer=()=>AUDIO.play('hammer');/* real hammer on a nail instead of the synth burst */}catch(e){console.error('audio',e);}
 const K=[[0,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98],[4.5,0x1C4460,0x3C7898,0x34708C,0xA4C4E8,.6,.62,.98],[5.4,0x2A4470,0x8C7D9A,0x5E6E86,0xFF9C7A,.85,.6,1.0],[6.2,0x4A6496,0xF7AE84,0x8F9BB4,0xFFA066,1.6,.5,1.02],[7.2,0x6A90C6,0xF4CFAE,0xAAB5C4,0xFFC88E,2.2,.62,1.0],[8.6,0x4F86C6,0xBFD8EE,0xB2BCC2,0xFFE0B0,2.6,.75,1.05],
- [13,0x3F7BC4,0xC8DEF2,0xBEC4C3,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xADB4BC,0xFFC07A,2.4,.68,1.06],[18.05,0x456FA8,0xF4B47E,0xB8ACA2,0xFFAA58,2.3,.66,1.06]/* [ENV] golden hour: low warm sun and a warm sunlit haze (it went straight from the grey afternoon to blue dusk) */,[18.6,0x3A6A98,0xD89878,0x8A8AA2,0xFF9A5C,1.5,.74,1.02],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xBFD8F0,.8,.58,.9],[20.5,0x204C68,0x427E9C,0x387490,0xA8CCEC,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
+ [13,0x3F7BC4,0xC8DEF2,0xBEC4C3,0xFFF2DA,3.0,.85,1.08],[17.5,0x4B76B4,0xF0C79A,0xADB4BC,0xFFC07A,2.4,.68,1.06],[18.05,0x456FA8,0xF4B47E,0xB8ACA2,0xFFAA58,2.3,.66,1.06]/* [ENV] golden hour: low warm sun and a warm sunlit haze (it went straight from the grey afternoon to blue dusk) */,[18.6,0x3A6A98,0xD89878,0x8A8AA2,0xFF9A5C,1.5,.74,1.02],[19.0,0x325F86,0x9C8C9A,0x667E92,0xD9C4B8,1.1,.65,.95],[19.3,0x2A5A78,0x5088A6,0x3F7690,0xD1D1D5,.8,.58,.9],[19.9,0x255370,0x4A84A2,0x3B7590,0xBCC9CB,.74,.59,.92]/* [ENV] the sun's warm -> moon-blue turn spread over 19:00-20:30: the crown's night teal (tree.js, keyed to the direct light's blue share) flipped in ~9 s at 19:12-19:20 */,[20.5,0x204C68,0x427E9C,0x387490,0xA8C6CF,.68,.6,.94],[24,0x1C4460,0x3C7898,0x34708C,0x9FC4E8,.6,.62,.98]];
 function pal0(h){h=((h%24)+24)%24;let i=0;while(i<K.length-2&&K[i+1][0]<=h)i++;const a=K[i],b=K[i+1],k=clamp((h-a[0])/(b[0]-a[0]),0,1);const c=j=>new THREE.Color(a[j]).lerp(new THREE.Color(b[j]),k);return {top:c(1),hor:c(2),fog:c(3),sun:c(4),sunI:lerp(a[5],b[5],k),hemiI:lerp(a[6],b[6],k),exp:lerp(a[7],b[7],k)};}
 // [ENV] the palette is linear between keys and then averaged over +-0.4 h: no ease-in/ease-out stall at every key and no
 // sudden speed-up between them (dawn and dusk change at an even pace, no pops when time runs fast)
@@ -1455,7 +1536,7 @@ $('bF').onclick=()=>{ac();rig.setFollow(!rig.following);};
 $('bH').onclick=()=>{ac();rig.goHome();};
 
 // ================= post & camera =================
-const STORM_FOG=new THREE.Color(),STORM_DAY=new THREE.Color(0x7D8896),STORM_NIGHT=new THREE.Color(0x1E2C42);
+const STORM_FOG=new THREE.Color(),STORM_DAY=new THREE.Color(0x7D8896),STORM_NIGHT=new THREE.Color(0x1E2C42),DAY_BLUE=new THREE.Color(0x8FB8D8);
 const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(256,256),.45,.5,1.1);composer.addPass(bloom);{/* [CAMERA] K4: one NaN/Inf pixel from any shader was blurred by bloom over the whole screen (black frames on desktop at night). The bright-pass now drops non-finite texels. */const hm=bloom.materialHighPassFilter;hm.fragmentShader=hm.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );','vec4 texel = texture2D( tDiffuse, vUv );\n\t\t\tif(any(isnan(texel))||any(isinf(texel))||!(abs(texel.r)+abs(texel.g)+abs(texel.b)<6e4))texel=vec4(0.0);\n\t\t\ttexel.rgb=min(texel.rgb,vec3(16.0));/* [ENV] a finite but blown-out pixel (a blade or leaf edge-on to a light) bloomed into a screen-wide green blob too */');hm.needsUpdate=true;}if(MOBILE)bloom.enabled=false;/* [PERF] MSAA: the scene used to render into the composer's non-MSAA targets, so thin lines (ropes, rods, railings) had no
    anti-aliasing at all, phones included. 4x MSAA on both composer targets (the RenderPass alternates between them; colour and depth are
    resolved, so DOF and the fog pass still read depth). On Apple's tile GPUs the samples stay on chip: far cheaper than a post AA pass and
@@ -1526,7 +1607,7 @@ let noPost=false;
  let prW=1;PERF.addTest('пикселей ×¼',()=>{prW=PR;renderer.setPixelRatio(PR/2);resize();},()=>{renderer.setPixelRatio(prW);resize();});}
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
-function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
+window.__resize=()=>resize();function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);{const cp=Math.max(renderer.getPixelRatio(),window.__compMin||0);if(composer._pixelRatio!==cp)composer._pixelRatio=cp;}/* [PERF] the composer kept the pixel ratio it was made with (2.2 on phones): when the governor stepped the canvas down, the scene still rendered (MSAA) at 2.2 and was scaled down, so the px steps saved nothing */composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
 addEventListener('resize',resize);
 
 // ================= main loop =================
@@ -1539,7 +1620,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  // --- light & sky ---
  {const ph=((MOON0+dayNo/8)%1)*Math.PI*2;moonU.ph.value=ph;moonIll=.5-.5*Math.cos(ph);}
  const P=pal(hour);{const rT=weather==='rain'?WIND.rainAmt():0;rainK=lerp(rainK,rT,dt*(rT>rainK?.13:.09));}/* [ENV] ~8-11 s (was 3.3 s: measured on the phone, a storm's end dropped the frame 18/255 in 5 s, a jump; rain comes on and clears over ~20-30 s now) *//* [WIND] drizzle .35, rain .75, storm 1 *//* [ENV] eases in over ~5 game minutes (was ~2: a storm switched on) */const CL=WIND.cloud?Math.max(0,WIND.cloud()-rainK):0;/* [ENV] dry overcast: grey sky, softer sun */const dim=1-rainK*.45-CL*.12;
- const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));
+ const nightK=clamp(hour>=12?smooth(19.3,20.8,hour):1-smooth(4.6,6.2,hour),0,1),dayK=1-nightK,mornK=smooth(5.6,7,hour)*(1-smooth(8.5,10,hour));P.fog.lerp(DAY_BLUE,dayK*(1-mornK*.7)*(1-CL)*(1-rainK)*.45);/* [ENV] photo: the far forest stands in a blue mist. A clear day's distance hazed to a flat neutral grey (~166/170/171), the same as an overcast one: a clear sky now gives it a soft blue, grey days stay grey, the golden morning keeps most of its warmth */
  skyU.top.value.copy(P.top).multiplyScalar(dim);skyU.hor.value.copy(P.hor).lerp(new THREE.Color(0x8994A3),rainK*.6+CL*.3);skyU.star.value=nightK*(1-rainK);skyU.cloudK.value=(window.__skyNoCloud&&__skyNoCloud())?0:.7+Math.min(1,rainK+CL)*.3;skyU.glowK.value=1-rainK*.7;/* [ENV] sky clouds + low-sun glow */skyU.t.value=T;if(WIND.sample){const w=WIND.sample(CDR_P);if(w)skyU.cdr.value.add(CDR_V.set(w.x||0,w.z||0).multiplyScalar(Math.min(.05,dt)*.035));}/* [ENV] clouds drift downwind, faster in a windy spell (~2x the base drift in a breeze); the sample is taken above the crown */
  const sa=(hour-6)/14*Math.PI;const sunDir=V(-Math.cos(sa)*.9,Math.max(.12,Math.sin(sa)),.55).normalize();const ma=((hour>=20?hour-20:hour<14?hour+4:0)/10)*Math.PI;/* [ENV] the moon waits at its rise point through the evening: the arc wrapped at 20:00 and the visible moon (shown from ~19:25) and its light jumped across the sky in one frame */const moonDir=V(-Math.cos(ma)*.8,Math.max(.25,Math.sin(ma)),.6).normalize();
  const ld=moonDir.clone().lerp(sunDir,smooth(.3,.7,dayK)).normalize();/* [ENV] the key light hands over from the sun to the moon in a ~40 s sweep: switching at dayK .5 flipped every shadow across the scene in one frame (20:03 and 5:24, key light still at ~.5-.9) */sun.position.copy(ld).multiplyScalar(60).add(V(0,5,1));skyU.sunDir.value.copy(sunDir);skyU.sunCol.value.copy(P.sun).multiplyScalar(dayK*(1-rainK*.8));
@@ -1551,7 +1632,7 @@ function frameBody(){PERF.begin();const dt=Math.min(.05,clock.getDelta());const 
  ambL.intensity=dayK*(1-rainK*.3)*.55;
  P3.update(dt*TS,{reading:false/* the hero turns the pages himself (hero.js) */,cooking:false,heat:LIGHTS.level('oven')});
  LIGHTS.update({dt,T,lampOn,dayK,task:hero.task,state:hero.state,asleep:!!hero.inBed});
- rayMat.uniforms.t.value=T;rayMat.uniforms.o.value=(dayK*.012+mornK*.03)*(1-rainK);rays.visible=rayMat.uniforms.o.value>.002;/* [ENV] skip the three big additive planes when they add nothing (night, rain) */rays.children.forEach((r,i)=>{r.rotation.set(0,0,Math.atan2(-sunDir.x,sunDir.y)*.8+(i-1)*.05);});
+ rayMat.uniforms.t.value=T;{const dK=smooth(16.8,17.8,hour)*(1-smooth(18.7,19.5,hour));/* [ENV] dusk: low warm shafts through the forest and the crown as the sun sinks, like the morning ones; fewer under cloud */rayMat.uniforms.o.value=(dayK*.012+mornK*.03+dK*.16*(1-CL*.8))*(1-rainK);rayMat.uniforms.col.value.setRGB(1,.86-.2*dK,.6-.24*dK);rays.userData.dK=dK;}rays.visible=rayMat.uniforms.o.value>.002;/* [ENV] skip the three big additive planes when they add nothing (night, rain) */rays.children.forEach((r,i)=>{{const dK=rays.userData.dK||0;r.position.set(lerp(-4+i*3.5,[-9.5,-5.5,8.5][i],dK),8,lerp(4+i*.6,[-3,-5,-3.5][i],dK));/* [ENV] at dusk the three beams stand back in the forest, so they show in the gaps between the trees and behind the crown instead of veiling the house */r.rotation.set(0,0,clamp(Math.atan2(-sunDir.x,sunDir.y)*.8,-.62,.62)+(i-1)*.05);}/* [ENV] tilt capped ~35 deg: a low sun laid the beams almost flat */});
  motesMat.uniforms.t.value=T;motesMat.uniforms.night.value=nightK*(1-rainK);motesMat.uniforms.day.value=dayK*(1-rainK)*.7;
  ENV.update({T,P,nightK,mornK,rainK,lampOn,camera,hour,moonIll});
  WIND.update({dt,T,rainK,hour});/* [ENV] update first: the flash lit the frame after its own (one frame late, the first, brightest flicker was lost) */WIND.applyFlash({hemi,fog:scene.fog,sky:skyU,fogMats:FOGPASS&&FOGPASS.meshes});/* [WIND] lightning */{/* [ENV] the flash is a hard cold light with shadows (it was a flat grey wash): the shadowed key light (the moon's direction, so the shadow map stays valid) jumps; the sky shader lights the clouds toward the strike */const f=WIND.flash?WIND.flash():0;skyU.flash.value=f*(1-dayK*.6);if(f>.002){{/* [ENV] the flash comes from the strike: while it is bright the shadowed key light swings toward the strike (low over the horizon), so the house and the hero throw their shadows away from it for those frames (phones redraw the shadow map when the light turns) */const w=Math.min(1,f*4);FL_D.copy(skyU.flDir.value);FL_D.y=Math.max(FL_D.y,.35);FL_D.normalize();FL_L.copy(ld).lerp(FL_D,w).normalize();sun.position.copy(FL_L).multiplyScalar(60).add(V(0,5,1));}sun.intensity+=f*1.8*(1-dayK*.5);sun.color.lerp(FL_C,f*.85);/* a flash is a cold crisp white light: the warm night grade lets go, contrast up, colour down */const g=ENV.gradePass&&ENV.gradePass.uniforms;if(g){g.night.value*=1-.65*f;g.con.value+=.14*f;g.sat.value*=1-.4*f;}}}FOGBANK.update(scene.fog.color);SMOKE.update(dt,T,scene.fog.color);PARTS.update(dt,T,scene.fog.color);HOUSEWIND.update(dt);
@@ -1662,6 +1743,22 @@ const PERFX=/[?&]perfx/.test(location.search);
 // shadow uniforms on the CPU.
 if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
  renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
+// [PERF] the frame-rate governor's light steps (LIGHTS.degrade) turn lamp shadows off: that changes the shadow count in every
+// lit shader, so ~70 programs recompiled in one frame, a long stall at the very moment the phone was already struggling.
+// degWarm compiles those variants too (lantern shadows off, then all lamp shadows off) and puts the lights straight back:
+// nothing is drawn in between, so nothing changes on screen. Not behind the loading screen (it made the load ~20% longer):
+// in the background once the game shows, a few meshes at a time (under ~6 ms a tick), and again whenever new programs have
+// appeared (things built later). Off: ?degwarm=off / __noDegWarm. Stats: __perf.degWarm
+if(!window.__noDegWarm&&!/degwarm=off/.test(location.search)){let lastN=-1,lastScan=0,Q=null,qi=0,chunk=24;const D=PERF.degWarm={runs:0,maxMs:0,progs:0,ticks:0};
+ const part={traverseVisible(){},traverse(cb){for(const o of part.list)cb(o);},list:[]};/* compile() walks this list for materials; the lights come from the real scene */
+ setInterval(()=>{if(document.hidden||!$('load').classList.contains('hide')||(LIGHTS.quality&&LIGHTS.quality()<2))return;const n0=renderer.info.programs.length,now=performance.now();
+  if(!Q){if(n0===lastN||now-lastScan<5000)return;Q=[];scene.traverse(o=>{if(o.material)Q.push(o);});qi=0;lastScan=now;D.runs++;}
+  const L=[];scene.traverse(o=>{if(o.isLight&&o.castShadow&&(o.isSpotLight||o.isPointLight))L.push(o);});
+  part.list=Q.slice(qi,qi+chunk);qi+=chunk;const rt0=renderer.getRenderTarget(),t=performance.now();renderer.setRenderTarget(composer.readBuffer);/* the frame's own target: same program keys */
+  try{const pt=L.filter(l=>l.isPointLight);if(pt.length){for(const l of pt)l.castShadow=false;renderer.compile(part,camera,scene);}if(L.length){for(const l of L)l.castShadow=false;renderer.compile(part,camera,scene);}}catch(e){console.warn('degwarm',e);}
+  finally{for(const l of L)l.castShadow=true;renderer.setRenderTarget(rt0);part.list=[];}
+  const ms=performance.now()-t;chunk=ms>8?Math.max(4,chunk>>1):ms<3?Math.min(400,chunk*2):chunk;D.ticks++;D.maxMs=Math.max(D.maxMs,Math.round(ms));D.progs+=renderer.info.programs.length-n0;
+  if(qi>=Q.length){Q=null;lastN=renderer.info.programs.length;}},150);}
 {const T0=performance.now();$('loadTx').textContent='Готовим картинку…';$('loadBar').style.width='95%';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,15000))]);}catch(e){}

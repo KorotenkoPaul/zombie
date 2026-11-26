@@ -104,3 +104,11 @@ Pavel asked for a hero that chooses for himself (not a script, no trained neural
 - Tea: third and later cups a day -.6 each.
 - Firewood up the ladder: habit-eligible when logs <= 3 (was only <= 1).
 - JS errors seen in these runs are the body's: "grab late TypeError: Cannot read properties of null (reading '_x')" (grab.js), reported.
+
+## Repairs follow the real house wear; small reactions (2026-11-25)
+- need.wear is read from housewear.js (__wear.state(): damaged parts, rope fray, cracked panes) every 2 s; the abstract drift only without it.
+- fix_board/wall/railing/shingle/rope/window: only when that kind of part is really damaged (rope >= .35), +1.3 x its damage; the target is the worst damaged part of that kind near him (slates: reachable ones). In rain only parts under the roof (a part's nearest walk node decides; deck boards are outside). fix_hinge/chimney keep the wear threshold.
+- 5 days × 3 seeds with ?wear and rain/storm spells: before, damage (sum of d) climbed 2.75 -> 5.9/7.7/7.4 with ~1 repair a day; after, 3-6 repairs a day, damage held at 2.4-4.5 (rising on the last stormy day), repairs pick up after rain days.
+- Reactions (interject: a short micro, then back to the same activity; never while walking or in a staged job): thunder clap (loud >= .3, 60 s apart) -> flinch and look toward it; rain starting while indoors -> looks up at the roof; night noise: the first -> look + sometimes listening at the window (not twice in a row, 3 game h apart), a second within 90 s -> only a turn of the head. Cold -> stoke +.4, tea +.2.
+- Test hooks: __brain.noise({pos}) and __brain.thunder({loud, dir}).
+- Critic W6 (door bolted until 10:00, walked out through the wall post): when his route crosses bdoor<->ledge and the props door is bolted or shut (< .4 open), planFor puts 'bolt' {lock:false, open:true} first. Verified: unbolts in the morning (bolt 1 -> 0). Opening the leaf by hand (opts.open) and the doorway path are the body's (Character/collide).

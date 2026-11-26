@@ -135,7 +135,7 @@ export function createGrab({ THREE, bones }) {
   function palmTarget(side, p, out = V()) { const pa = palm(side), gp = gripPoint(side); return out.copy(p).sub(gp.sub(pa)); }
   // late fixes: hands that must stay exactly on something are put back after collide.js has moved the body (it wraps HH.update
   // before this does; motion.js's pop filter stays outermost). Callers queue a fix each frame with late(fn).
-  let lateQ = [];
+  let lateQ = [], pinQ = [];
   // ---- two-handed long tools (broom): the free hand goes onto the handle by an arm-only two-bone IK, after everything else ----
   const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
   function rotW(b, axis, ang) { if (!b || !(Math.abs(ang) > 1e-5)) return; b.parent.getWorldQuaternion(_q); _q2.setFromAxisAngle(axis, ang); const pi = _q.clone().invert(); b.quaternion.premultiply(pi.multiply(_q2).multiply(_q)); b.updateMatrixWorld(true); }
@@ -215,7 +215,7 @@ export function createGrab({ THREE, bones }) {
   // ---- a bucket in a fist hangs plumb with its bail right under the fist. hero.js (odHang) hangs it before collide.js, which
   // can then swing the arm out and drag the rigid bucket sideways into the leg: put it back under the fist after collide.
   // A tip about his right axis (pouring) is kept. ----
-  const _bq = new THREE.Quaternion();
+  const _bq = new THREE.Quaternion(); const SWG = {}; let FRAME = 0;
   function hangBuckets() { const P = PROPS || window.__props; if (!P || !P.tools || window.__noBucketHang) return;
     const H = HHref && (HHref.hero || HHref.H) || (window.__dbg && window.__dbg.hero); if (!H || !H.root) return; const act = HHref && HHref.act;
     for (const nm of ['waterBucket', 'drainBucket', 'wateringCan']) { const o = P.tools[nm]; if (!o || !o.visible) continue; const side = o.parent === bones.RightHand ? 'Right' : o.parent === bones.LeftHand ? 'Left' : null; if (!side) continue;
@@ -228,11 +228,11 @@ export function createGrab({ THREE, bones }) {
       if (!tipping) { const f = V(Math.sin(H.root.rotation.y), 0, Math.cos(H.root.rotation.y)), r = V(-f.z, 0, f.x).multiplyScalar(side === 'Right' ? 1 : -1);
         const c = palm(side).add(V(0, can ? -.12 : -.2, 0)); let need = 0; for (const [a, b] of [['UpLeg', 'Leg'], ['Leg', 'Foot']]) for (const L of ['Left', 'Right']) { const A = bones[L + a].getWorldPosition(V()), B = bones[L + b].getWorldPosition(V());
           const ab = B.clone().sub(A); const t = Math.max(0, Math.min(1, c.clone().sub(A).dot(ab) / ab.lengthSq())); const q = A.addScaledVector(ab, t); const lat = c.clone().sub(q).setY(0).dot(r);
-          if (Math.abs(c.y - q.y) < .25) need = Math.max(need, (can ? .19 : .26) - lat); }
-        { const hy = c.y + (can ? .12 : .2) - H.root.position.y, up = Math.max(0, Math.min(1, (hy - .8) / .2)); const k = reachK * up * up * (3 - 2 * up); need *= 1 - k * k * (3 - 2 * k); } /* and only once the fist is up at the table (above ~0.9 m): a put that starts from his side at knee height swept the can in across his shins (gate 7-8 cm) */ if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, .15)), 1); } }
+          if (Math.abs(c.y - q.y) < .25) need = Math.max(need, (can ? .19 : .26) - lat); } if (!can) { const hc = bones.Hips.getWorldPosition(V()); const dy = c.y - hc.y; if (dy > -.4 && dy < .25) need = Math.max(need, .3 - c.clone().sub(hc).setY(0).dot(r)); } /* GRAB (integrator gate: dumpwater, the drain bucket into his hips as he turned at the landing gate with the fist raised): his hips too, not only the legs */
+        { const hy = c.y + (can ? .12 : .2) - H.root.position.y, up = Math.max(0, Math.min(1, (hy - .8) / .2)); const k = reachK * up * up * (3 - 2 * up); need *= 1 - k * k * (3 - 2 * k); } /* and only once the fist is up at the table (above ~0.9 m): a put that starts from his side at knee height swept the can in across his shins (gate 7-8 cm) */ if (need > .005) { const wr = hb.getWorldPosition(V()); ik2(side, wr.addScaledVector(r, Math.min(need, can ? .15 : .24)), 1); } } /* GRAB: a bucket's arm goes out up to 20 cm (its own swing is kept small now: hanging plumb, not tipped out flat) */
       if (can) continue;
       // then hang it: plumb (his pouring tip about his right axis kept), the bail's middle at the fist
-      o.updateMatrixWorld(true); o.getWorldQuaternion(_bq); { const e = new THREE.Euler().setFromQuaternion(_bq, 'YXZ'); _bq.setFromEuler(new THREE.Euler(tipping ? e.x : 0, H.root.rotation.y, 0, 'YXZ')); }
+      o.updateMatrixWorld(true); o.getWorldQuaternion(_bq); { const e = new THREE.Euler().setFromQuaternion(_bq, 'YXZ'); _bq.setFromEuler(new THREE.Euler(tipping ? e.x : 0, H.root.rotation.y, 0, 'YXZ')); } if (!tipping && !window.__noBucketSwing) { const S = SWG[nm] || (SWG[nm] = { p: null, v: V(), a: V(), w: V(), t: FRAME }); const hw = palm(side); const dt = 1 / 60; if (!S.p || S.p.distanceTo(hw) > .3 || FRAME - S.t > 3) { S.p = hw.clone(); S.v.set(0, 0, 0); S.a.set(0, 0, 0); S.w.set(0, 0, 0); } else if (S.t !== FRAME) { const v = hw.clone().sub(S.p).divideScalar(dt); v.y = 0; const acc = v.clone().sub(S.v).divideScalar(dt); acc.clampLength(0, 6); const L = .3, w2 = 9.8 / L; S.w.addScaledVector(S.a, -w2 * dt).addScaledVector(S.w, -2 * .3 * Math.sqrt(w2) * dt).addScaledVector(acc, -dt / L); S.a.addScaledVector(S.w, dt); S.a.clampLength(0, .22); S.v.copy(v); S.p.copy(hw); } S.t = FRAME; const th = S.a.length(); if (th > 1e-4) { const u = S.a.clone().divideScalar(th); _bq.premultiply(new THREE.Quaternion().setFromAxisAngle(V(-u.z, 0, u.x), th)); } } /* GRAB (Pavel via coordinator: it swings with its weight): a damped pendulum about the bail, driven by the fist's own acceleration (lags as he sets off, swings on as he stops), at most ~12 deg */
       hb.updateMatrixWorld(true); const h = hb.getWorldPosition(V()), fp = fa.getWorldPosition(V()); const pm = h.add(h.clone().sub(fp).normalize().multiplyScalar(.07)); // = hero.js odPalm
       const g = o.userData.grip ? o.userData.grip.clone() : V(0, .35, 0); const ws = o.getWorldScale(V()).x; const pos = pm.sub(g.multiplyScalar(ws).applyQuaternion(_bq));
       const M = new THREE.Matrix4().compose(pos, _bq, V(ws, ws, ws)); M.premultiply(hb.matrixWorld.clone().invert()); M.decompose(o.position, o.quaternion, o.scale); o.updateMatrixWorld(true); } }
@@ -242,7 +242,7 @@ export function createGrab({ THREE, bones }) {
   // the stroke into the carry, no upright moment) and out within a metre of the broom's corner, where it is stood back upright ----
   const BC = { w: 0 }; api_dbg.BC = BC;
   /* the sweep task carries the broom there and back too (steps take / work / put / carry): only its work step is sweeping */
-  const sweepStep = () => { const A = HHref && HHref.act || (window.__dbg && window.__dbg.HH && window.__dbg.HH.act); const st = A && A.step; return !st || st === 'work' && !!A.spotDone; }; // strokes only once he stands on his sweeping spot: the take and the walk out to it are carries (watch R25-1 r41: upright with the top on his cheek)
+  const sweepStep = () => { const A = HHref && HHref.act || (window.__dbg && window.__dbg.HH && window.__dbg.HH.act); const st = A && A.step; return !st || st === 'work' && !!A.spotDone && !(A.pause > 0); }; /* GRAB (watch R66-1): his look-round pause is not a stroke: the broom goes back to one hand and the left hangs free (the stroke grip held its fist on the stick top by his ear) */ // strokes only once he stands on his sweeping spot: the take and the walk out to it are carries (watch R25-1 r41: upright with the top on his cheek)
   /* GRAB (integrator: the bristles 9 cm, and on the carry up to 24 cm, under the boards): the pose guard turns the wrist after this
      module set it, so the broom ends up more upright than planned. The broom's lowest point as he was really shown (last frame, after
      the guard) is measured against the boards under it, and the fist goes up by the shortfall: quick to rise, slow to come back down */
@@ -260,19 +260,19 @@ export function createGrab({ THREE, bones }) {
     const held = !!(b && b.parent === bones.RightHand && b.visible !== false && H); let k = 0; BC.free = held && !(H.task === 'sweep' && sweepStep()); /* carried one-handed (take, walk out, carry, put): the left hand stays off the stick */
     if (held && !(H.task === 'sweep' && sweepStep()) && !window.__noBroomCarry) { const hm = b.userData.home; const hp0 = bones.Hips.getWorldPosition(V());
       const A = HHref && HHref.act || (window.__dbg && window.__dbg.HH && window.__dbg.HH.act); const st = A && A.step; k = st === 'take' ? 0 : 1; /* the take has its own hand (two IKs on one arm jittered); from the walk out to the put it is a carry (upright again near the corner it swept through his shins) */ if (k && hm && hm.pos && window.__broomNearFade) { const hw = hm.parent && hm.parent.localToWorld ? hm.parent.localToWorld(hm.pos.clone()) : hm.pos; const d = Math.hypot(hw.x - hp0.x, hw.z - hp0.z); k = Math.max(0, Math.min(1, (d - .6) / .5)); } }
-    BC.w = Math.max(0, Math.min(1, BC.w + Math.max(-dt / .45, Math.min(dt / .45, k - BC.w)))); if (BC.w < .01) { BC.last = null; return false; }
+    BC.k = k; BC.w = Math.max(0, Math.min(1, BC.w + Math.max(-dt / .45, Math.min(dt / .45, k - BC.w)))); if (BC.w < .01) { BC.last = null; return false; }
     if (!held) { if (BC.last) { const w = BC.w * BC.w * (3 - 2 * BC.w); ik2('Right', BC.last.wrist, w); setHandQ('Right', BC.last.Qh, w); } return false; } /* the broom set down: the hand leaves from where it let go, eased (it snapped back to the clip in a frame) */
     const hips = bones.Hips; const hp = hips.getWorldPosition(V()); const fw = V(0, 0, 1).applyQuaternion(hips.getWorldQuaternion(new THREE.Quaternion())); fw.y = 0; fw.normalize(); const rt = V(0, 1, 0).cross(fw).normalize().negate();
     const fy = H.floorY != null && isFinite(H.floorY) ? H.floorY : H.root ? H.root.position.y : hp.y - .95; /* GRAB: bristles on the boards, not under them (the floor, not the crouched root) */ const sp = GRIP.broom; const bs = b.getWorldScale(V()).x;
-    const dir = V(0, .6, 0).addScaledVector(fw, -.8).addScaledVector(rt, -.12).normalize(); // bristles -> top: the top end low behind his right hip, the bristles ahead of him and off the boards (trailing behind, they swept through his shins on the way)
+    const dir0 = V(0, .6, 0).addScaledVector(fw, -.8).addScaledVector(rt, -.12).normalize(); const ui = BC.w < .999 && BC.k === 1 ? BC.w : 1; const upW = 1 - ui * ui * (3 - 2 * ui); const dir = dir0.clone().lerp(V(0, 1, 0), upW * .85).normalize(); /* GRAB (Props: the bristles went through his feet as the take turned into the carry, swinging from behind him to ahead under his boots): coming in, the broom is first stood upright out at his side and lifted, then tipped forward */ // bristles -> top: the top end low behind his right hip, the bristles ahead of him and off the boards (trailing behind, they swept through his shins on the way)
     const Gp = hp.clone().addScaledVector(rt, .23).addScaledVector(fw, .08); Gp.y = hp.y - .12; // the bristles out to his right of the walking feet
     const low = Gp.y - dir.y * sp.g[1] * bs; if (low < fy + .06) Gp.y += fy + .06 - low; // the bristles never on (or through) the boards
-    Gp.y += broomLift(dt); // and as really shown (after the guard turned the wrist)
+    Gp.addScaledVector(rt, .1 * upW); Gp.y += .14 * Math.pow(Math.sin(Math.PI * ui), 2); Gp.y += broomLift(dt); // and as really shown (after the guard turned the wrist)
     const z = fw.clone().addScaledVector(dir, -fw.dot(dir)).normalize(); const x = dir.clone().cross(z).normalize(); const Qt = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, dir, z));
     const Qh = Qt.clone().multiply(b.quaternion.clone().invert()); const hs = bones.RightHand.getWorldScale(V()).x;
     const gl = V(...sp.g).multiplyScalar(b.scale.x).applyQuaternion(b.quaternion).add(b.position).multiplyScalar(hs); const wrist = Gp.clone().sub(gl.applyQuaternion(Qh));
-    const w = BC.w * BC.w * (3 - 2 * BC.w); ik2('Right', wrist, w); setHandQ('Right', Qh, w); BC.last = { wrist: wrist.clone(), Qh: bones.RightHand.getWorldQuaternion(new THREE.Quaternion()) }; return true; }
-  function twoHands(dt) { try { hangBuckets(); } catch (e) { console.error('grab bucket', e); } try { doorDrive(dt); } catch (e) { console.error('grab door', e); } const P = PROPS || window.__props; if (!P || !P.tools) return; const swOn = sweepDrive(dt); const bcOn = broomCarry(dt); if (swOn) return;
+    const w = BC.w * BC.w * (3 - 2 * BC.w); ik2('Right', wrist, w); setHandQ('Right', Qh, w); BC.last = { wrist: wrist.clone(), Qh: bones.RightHand.getWorldQuaternion(new THREE.Quaternion()) }; if (H.task === 'sweep') { const lw = hp.clone().addScaledVector(rt, -.2).addScaledVector(fw, .04).add(V(0, -.16, 0)); const lh = bones.LeftHand.getWorldPosition(V()); if (lh.y > lw.y + .05) ik2('Left', lw, w * Math.min(1, (lh.y - lw.y - .05) / .1)); } /* GRAB (watch R66-1): between two sweeps, the free left hand hangs at his side (the sweep clip held it up by his ear, a stuck reach) */ return true; }
+  function twoHands(dt) { FRAME++; try { hangBuckets(); } catch (e) { console.error('grab bucket', e); } try { doorDrive(dt); } catch (e) { console.error('grab door', e); } const P = PROPS || window.__props; if (!P || !P.tools) return; const swOn = sweepDrive(dt); const bcOn = broomCarry(dt); if (swOn) return;
     for (const side of ['Left', 'Right']) { const other = side === 'Left' ? 'Right' : 'Left'; const ho = bones[other + 'Hand'], hs = bones[side + 'Hand']; let tool = null, nm = null;
       for (const k in P.tools) { const o = P.tools[k]; if (o && o.parent === ho && o.visible !== false && GRIP[k] && GRIP[k].two && !(k === 'broom' && (bcOn || BC.free))) { tool = o; nm = k; break; } } /* carried one-handed at the hip: the left hand stays free */
       let busy = false; for (const ch of hs.children) if (ch.isObject3D && !ch.isBone && ch.visible && !/mixamorig/.test(ch.name)) busy = true; if (grip[side]) busy = true;
@@ -282,11 +282,11 @@ export function createGrab({ THREE, bones }) {
       if (twoW[side] > .01 && tool) { tool.updateMatrixWorld(true); const p = tool.localToWorld(V(...GRIP[nm].two)); const pa = palm(side), wr = hs.getWorldPosition(V()); ik2(side, p.clone().sub(pa.sub(wr)), twoW[side]); fistK && (fistK[side] = 1); } } }
   function attach(HH) { if (!HH || HH.__grabLate) return; HHref = HH;
     // HERO-RULES.md: the late holds run in the pipeline's 'grab' slot (after collide, before the guard)
-    if (typeof HH.stage === 'function' && (HH.SLOTS || []).includes('pre')) HH.stage('pre', () => { try { broomLow(); } catch (e) {} }); HH.stage('guard', () => { try { broomFloor(); } catch (e) {} }); /* after the pop filter: easing a new clip in, it held the fist low and the bristles went 20 cm into the boards */
+    if (typeof HH.stage === 'function' && (HH.SLOTS || []).includes('pre')) HH.stage('pre', () => { try { broomLow(); } catch (e) {} }); HH.stage('guard', () => { try { broomFloor(); } catch (e) {} const q = pinQ; pinQ = []; for (const [o, M] of q) { try { if (!o.parent) continue; o.parent.updateWorldMatrix(true, false); const L = M.clone().premultiply(o.parent.matrixWorld.clone().invert()); L.decompose(o.position, o.quaternion, o.scale); o.updateMatrixWorld(true); } catch (e) {} } }); /* GRAB (props grip audit: a bench tool taken into the fist jittered 5-17 cm on the bench before the fist was on it): pins put back last, after the pop filter and the pose guard moved the hand it already hangs from */ /* after the pop filter: easing a new clip in, it held the fist low and the bristles went 20 cm into the boards */
     if (typeof HH.stage === 'function') { HH.stage('grab', dt => { const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } try { twoHands(dt || 1 / 60); } catch (e) { console.error('grab two', e); } }); HH.__grabLate = true; return; }
     const inner = HH.update; HH.update = dt => { lateQ = []; const r = inner(dt); const q = lateQ; lateQ = []; for (const f of q) { try { f(); } catch (e) { console.error('grab late', e); } } try { twoHands(dt || 1 / 60); } catch (e) { console.error('grab two', e); } return r; }; HH.__grabLate = true; }
   const api = {
-    attach, late(fn) { lateQ.push(fn); }, twoW, dbg: api_dbg,
+    attach, late(fn) { lateQ.push(fn); }, pin(o, M) { if (o && M) pinQ.push([o, M.clone()]); }, twoW, dbg: api_dbg,
     gripPoint, toolGripHome, palmTarget, setProps(P) { PROPS = P; },
     // GRAB: ease a held tool from whatever pose it has in the fist back into its grip pose (after floorPick kept the can upright)
     // GRAB: where a tool's grip point is right now (on his back, in a hand, on its peg)
@@ -306,5 +306,7 @@ export function createGrab({ THREE, bones }) {
     dist(side) { const g = grip[side]; if (!g || !g.handle) return null; const h = g.handle(); const p = palm(side); return h && p ? h.distanceTo(p) : null; },
     get grip() { return grip; },
   };
+  // tests only (HH.qaReset): grips, tweens and fist blends back to a fresh start
+  api.qaReset = () => { tw.clear(); gtw.clear(); lateQ = []; grip.Left = grip.Right = null; fistK.Left = fistK.Right = fistT.Left = fistT.Right = 0; twoW.Left = twoW.Right = 0; for (const k of Object.keys(SW)) delete SW[k]; Object.assign(SW, { w: 0, ph: 0, ox: null }); for (const k of Object.keys(BC)) delete BC[k]; BC.w = 0; tick && tick(0); };
   return api;
 }

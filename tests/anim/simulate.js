@@ -39,9 +39,10 @@ async function simulate(p,{drain=null,only=null,start=6.5,hours=25,dt=1/60,tour=
    const ask=()=>p.evaluate(([t,o,g])=>{const B=window.__brain;const MR=Math.random;
     // gate: bed straight away. The bedtime chores (bolt, hatch) are planned by dice and are their own gate tasks; without this sleep came and went as a block
     if(g&&t==='sleep')Math.random=()=>.995;try{if(B&&B.command)B.command(t,o||undefined);else __th.task(t);}finally{Math.random=MR;}},[t,opts||null,!!gate]);
+   if(gate&&process.env.QA_SHIFT&&process.env.QA_SHIFT.split(':')[0]===L)await p.evaluate(n=>__qa.step(n,1/60),+process.env.QA_SHIFT.split(':')[1]);/* test of the per-task reset: shift one task's start by n frames */
    if(gate){// isolated: every task starts from the same seeded state (reading at the table, hatch open, needs primed for that hour)
-    await p.evaluate(([t,h])=>{let x=2166136261;for(const c of t)x=Math.imul(x^c.charCodeAt(0),16777619)>>>0;__qa.reseed(x);__th.setHour(h);const B=window.__brain;if(B&&B.prime)B.prime(h);
-     __dbg.HH.spawn('read');const ht=window.__house&&window.__house.hatch;if(ht&&ht.open)ht.open();},[L,h]);await runFrames(30,'tour:'+L);}
+    await p.evaluate(([t,h])=>{__qa.align(2**21);let x=2166136261;for(const c of t)x=Math.imul(x^c.charCodeAt(0),16777619)>>>0;__qa.reseed(x);__th.setHour(h);const B=window.__brain;if(B&&B.prime)B.prime(h);
+     if(__dbg.HH.qaReset)__dbg.HH.qaReset();/* hero modules drop every filter/smoothing state carried from the last task (check with tests/anim/carry.js) */__dbg.HH.spawn('read');const ht=window.__house&&window.__house.hatch;if(ht&&ht.open)ht.open();},[L,h]);await runFrames(30,'tour:'+L);}
    else await p.evaluate(h=>__th.setHour(h),h);
    await ask();let n=0,seen=false,idle=0;
    const cap=gate?60*(t==='sleep'?gate+35:L==='hunt'?gate+75:gate):60*(maxS||90);
