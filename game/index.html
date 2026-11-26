@@ -1607,7 +1607,7 @@ let noPost=false;
  let prW=1;PERF.addTest('пикселей ×¼',()=>{prW=PR;renderer.setPixelRatio(PR/2);resize();},()=>{renderer.setPixelRatio(prW);resize();});}
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
-function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
+window.__resize=()=>resize();function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);{const cp=Math.max(renderer.getPixelRatio(),window.__compMin||0);if(composer._pixelRatio!==cp)composer._pixelRatio=cp;}/* [PERF] the composer kept the pixel ratio it was made with (2.2 on phones): when the governor stepped the canvas down, the scene still rendered (MSAA) at 2.2 and was scaled down, so the px steps saved nothing */composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
 addEventListener('resize',resize);
 
 // ================= main loop =================

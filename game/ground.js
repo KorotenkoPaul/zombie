@@ -234,7 +234,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const mat=new THREE.MeshStandardMaterial({map:gt,vertexColors:true,roughness:1,metalness:0});
   mat.onBeforeCompile=s=>{s.uniforms.uAO={value:aoTex};s.uniforms.uGE={value:GE};s.uniforms.uGlow=glowU;
    s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 vGW;').replace('#include <begin_vertex>','#include <begin_vertex>\nvGW=(modelMatrix*vec4(position,1.)).xz;');
-   s.uniforms.uNz=NZU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vGW;uniform sampler2D uAO;uniform float uGE,uGlow;'+GLSL_NOISE)
+   s.uniforms.uNz=NZU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vGW;uniform sampler2D uAO;uniform float uGE,uGlow;float fCrev=0.;'+GLSL_NOISE)
     .replace('#include <color_fragment>','#include <color_fragment>\n diffuseColor.rgb=mix(diffuseColor.rgb,pathC,pathK);'+
      /* round the chopping block: years of splitting leave the earth strewn with small chips, slivers and curls of bark.
         Fresh pale chips nearest the block, older grey ones further out, dark bark scraps among them (no meshes: a few cells of the floor) */
@@ -265,7 +265,8 @@ export function createGround(C){const __before=new Set(C.scene.children);
          with leaf mould, broken by cushions of moss that creep up onto the bark foot; litter heaps against the root as wind would leave it */
       {float tk=smoothstep(.56,.9,ao.r+(fbm(vGW*3.1+5.)-.5)*.18);float hm=fbm(vGW*11.+2.);vec3 soil=vec3(.2,.152,.105)*(.6+.8*hm)*(.75+.5*lum);
        float ms=smoothstep(.48,.62,fbm(vGW*1.7+9.)+(hm-.5)*.3);vec3 mossC=diffuseColor.rgb*vec3(.85,1.12,.8)*(.8+.4*fbm(vGW*31.));
-       diffuseColor.rgb=mix(diffuseColor.rgb,mix(soil,mossC,ms),tk*.85);litA+=tk*(1.-ms)*.7;}
+       diffuseColor.rgb=mix(diffuseColor.rgb,mix(soil,mossC,ms),tk*.85);litA+=tk*(1.-ms)*.7;
+       /* deep in the crevice between two roots the humus stays damp: darker, with a faint sheen (photo: near-black soil in the root forks) */fCrev=smoothstep(.72,.96,ao.r+(hm-.5)*.12)*(1.-ms*.7);diffuseColor.rgb*=1.-.3*fCrev;}
       // trodden path: packed brown earth with a few pressed blades left at its frayed edges
       /* the walked edge: moss scuffed thin and dried a straw-grey beside the trodden earth (feet stray off the line), fewer leaves left lying */
       {float ed=smoothstep(.04,.3,ao.b)*(1.-smoothstep(.5,.9,ao.b))*smoothstep(.3,.7,fbm(vGW*4.7+2.));diffuseColor.rgb=mix(diffuseColor.rgb,vec3(dot(diffuseColor.rgb,vec3(.33)))*vec3(1.15,1.,.72),ed*.55);litA*=1.-ed*.4;}
@@ -302,8 +303,8 @@ export function createGround(C){const __before=new Set(C.scene.children);
       diffuseColor.rgb*=1.-.3*lsh*(1.-lm)*(1.-far)*ff;
       /* far off the single leaves melt into their average: keep the drifts and their colour mix (rust, ochre, brown) there too, so the home view shows leaf beds and bare moss, not an even orange wash */float dr0=smoothstep(.36,.62,fbm(vGW*.55+13.)+(fbm(vGW*2.9+8.)-.5)*.3);float hu=fbm(vGW*1.3+31.);avg=mix(vec3(.56,.26,.08),vec3(.62,.42,.13),smoothstep(.35,.65,hu))*mix(.65,1.1,fbm(vGW*4.1+2.));
       float k=mix(lm,clamp(litA*mix(.2,1.6,dr0),0.,.9)*mix(.6,.85,forK),far)*ff;diffuseColor.rgb=mix(diffuseColor.rgb,mix(lcol*vec3(2.3,1.45,1.15),avg*vec3(1.6,1.3,1.2),far)*(.75+.6*lum),k);}`);};
-  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');s.uniforms.uDrip={value:dripTex};s.uniforms.uDripB=dripB;s.uniforms.uSteps=stepsU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nuniform sampler2D uDrip;uniform vec4 uDripB;'+STEP_GLSL);s.fragmentShader=s.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n{float sp=stepPress(vGW,.15);diffuseColor.rgb*=1.-.16*sp;roughnessFactor=mix(roughnessFactor,.6,sp*.35);}/* where a boot just came down the moss is pressed flat (a darker, smoother patch) and fluffs up again over ~7 s, with the grass */\nroughnessFactor=mix(roughnessFactor,.3,pondMud*.8);roughnessFactor=mix(roughnessFactor,.1,pondWet);{vec2 dq=texture2D(uDrip,(vGW-uDripB.xy)*uDripB.zw).rg;float dr=min(dq.r*1.5,1.)*uWet;diffuseColor.rgb*=1.-.5*dr;roughnessFactor=mix(roughnessFactor,.3,dr*.85);/* drip lines: the soil right outside every landing and deck edge, where the eaves drop their water, is soaked dark; under the cover it stays drier */float wm=uWet*(1.-.75*dq.g)*clamp(pathK*1.2+smoothstep(.56,.9,texture2D(uAO,(vGW+uGE)/(2.*uGE)).r)*.6,0.,1.);diffuseColor.rgb*=1.-.4*wm;roughnessFactor=mix(roughnessFactor,.38,wm*.8);}/* rain: the trodden paths and the soil at the roots turn to dark, slick mud */');};}
-  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addLan(s,'1.3');};}mat.customProgramCacheKey=()=>'groundFloor-tuck2-chips2-crown1-ao42-pfray-edge1-scuff1-drip1-mp2-far2-soft1-step1';/* [ENV] explicit key (SHADERS rule) */
+  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');s.uniforms.uDrip={value:dripTex};s.uniforms.uDripB=dripB;s.uniforms.uSteps=stepsU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nuniform sampler2D uDrip;uniform vec4 uDripB;'+STEP_GLSL);s.fragmentShader=s.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n{float sp=stepPress(vGW,.15);diffuseColor.rgb*=1.-.16*sp;roughnessFactor=mix(roughnessFactor,.6,sp*.35);}roughnessFactor=mix(roughnessFactor,.5,fCrev*.55);/* where a boot just came down the moss is pressed flat (a darker, smoother patch) and fluffs up again over ~7 s, with the grass */\nroughnessFactor=mix(roughnessFactor,.3,pondMud*.8);roughnessFactor=mix(roughnessFactor,.1,pondWet);{vec2 dq=texture2D(uDrip,(vGW-uDripB.xy)*uDripB.zw).rg;float dr=min(dq.r*1.5,1.)*uWet;diffuseColor.rgb*=1.-.5*dr;roughnessFactor=mix(roughnessFactor,.3,dr*.85);/* drip lines: the soil right outside every landing and deck edge, where the eaves drop their water, is soaked dark; under the cover it stays drier */float wm=uWet*(1.-.75*dq.g)*clamp(pathK*1.2+smoothstep(.56,.9,texture2D(uAO,(vGW+uGE)/(2.*uGE)).r)*.6,0.,1.);diffuseColor.rgb*=1.-.4*wm;roughnessFactor=mix(roughnessFactor,.38,wm*.8);}/* rain: the trodden paths and the soil at the roots turn to dark, slick mud */');};}
+  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addLan(s,'1.3');};}mat.customProgramCacheKey=()=>'groundFloor-crev1-tuck2-chips2-crown1-ao42-pfray-edge1-scuff1-drip1-mp2-far2-soft1-step1';/* [ENV] explicit key (SHADERS rule) */
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;G.ground=ground;
   const patch=new THREE.Mesh(pg,mat);patch.receiveShadow=true;G.groundPatch=patch;
   /* one draw for the floor: the big coarse mesh and the fine 32 m patch share the material, so they are drawn as one merged mesh.
@@ -392,6 +393,15 @@ export function createGround(C){const __before=new Set(C.scene.children);
  scatterGrass(tuftA,tuftAlo,MOBILE?236:900,ring(2.4,18),[.7,1.25],'grassTall');
  scatterGrass(tuftB,tuftBlo,MOBILE?180:800,ring(2.2,14),[.8,1.3],'grassShort',false,MOBILE);// phones: one chunk each for the short and the far grass (draw calls)
  scatterGrass(tuftF,null,MOBILE?80:450,ring(16,48,.85),[1.3,2.1],'grassFar',true,MOBILE);
+ // tufts along the root flanks (photo: small clumps of blades standing in the angle where a root meets the floor). Own random
+ // stream (the shared R() layout stays), short blades that clear the bark (nearRootWall), one mesh with the near/far LOD of the rest
+ {const r3=rng(31411),q3=(a,b)=>a+r3()*(b-a);const pts=[];const NF=MOBILE?70:160;
+  for(let t=0;t<NF*60&&pts.length<NF;t++){const a=q3(0,6.283),rad=q3(2.3,9.5);const x=Math.cos(a)*rad,z=1.5+Math.sin(a)*rad;const d=rootD(x,z);
+   if(d<.05||d>.24||pathD(x,z)<.12||pondD(x,z)<.4)continue;const sz=q3(.4,.7);if(nearRootWall(x,z,sz))continue;
+   const q=slopeQ(x,z,q3(0,6.28));const m=new THREE.Matrix4().compose(V(x,meshH(x,z)-.02,z),q,V(sz*q3(.85,1.2),sz*q3(.8,1.3),sz*q3(.85,1.2)));
+   const c=new THREE.Color().setHSL(q3(.25,.34),q3(.24,.38),q3(.3,.42));pts.push({x,z,m,c});}
+  if(pts.length){const mk=g=>{const im=new THREE.InstancedMesh(g,grassMat,pts.length);pts.forEach((p,i)=>{im.setMatrixAt(i,p.m);im.setColorAt(i,p.c);});im.computeBoundingSphere();im.receiveShadow=true;im.castShadow=false;im.name='grassFlank';im.visible=false;scene.add(im);return im;};
+   let cx=0,cz=0;for(const p of pts){cx+=p.x;cz+=p.z;}grassChunks.push({c:V(cx/pts.length,0,cz/pts.length),hi:mk(tuftB),lo:mk(tuftBlo),far:false,n:pts.length});G._flankTufts=pts.length;}}
  G.grass=grassChunks;
  const LOD_HI=MOBILE?10:16,LOD_OFF=MOBILE?55:75;
  G.updateGrass=cam=>{for(const ch of grassChunks){const d=Math.hypot(cam.position.x-ch.c.x,cam.position.z-ch.c.z);
@@ -1228,7 +1238,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   mat.onBeforeCompile=sh=>{addWet(sh,'.45');sh.uniforms.uGlow=glowU;sh.uniforms.uFlush=flushU;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float aCap;varying float vCap;attribute vec4 aFl;uniform float uFlush;').replace('#include <begin_vertex>','#include <begin_vertex>\nvCap=aCap;if(aFl.w>=0.){float fk=clamp((uFlush-aFl.w)/(1.-aFl.w),0.,1.);fk=fk*fk*(3.-2.*fk);transformed=aFl.xyz+(transformed-aFl.xyz)*vec3(fk,fk*(.6+.4*fk),fk);}/* rain-flush mushrooms grow up from their foot */');
    sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform float uGlow;varying float vCap;').replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=vec3(1.,.5,.2)*vCap*uGlow;');};
   mat.customProgramCacheKey=()=>'groundLitter-flush1-ao1';
-  const litter=new THREE.Mesh(mergeGeometries(parts),mat);litter.name='litter';litter.receiveShadow=true;scene.add(litter);G.litter=litter;}
+  const litter=new THREE.Mesh(mergeGeometries(parts),mat);litter.name='litterHold';/* named 'litter' once every bake into it is in (see the house leaves below): the perf cell sort (index.html chunkify) runs once on what the mesh holds then, and triangles added after it were never drawn */litter.receiveShadow=true;scene.add(litter);G.litter=litter;}
  // ---- the litter stirs: a gust rolling over the clearing (Wind) picks single leaves off the floor and sends them skittering and
  // tumbling downwind a metre or three; they fetch up against a root, the bank or a stone and lie there. His boots kick one up now
  // and then when he walks through the leaves. One small instanced mesh (MOBILE 10 / desktop 18 leaves), the litter's own atlas cell.
@@ -1260,6 +1270,70 @@ export function createGround(C){const __before=new Set(C.scene.children);
     m.compose(p3.set(l.x,y,l.z),q,sc.set(l.sz*l.k,l.sz*l.k,l.sz*1.15*l.k));im.setMatrixAt(i,m);}
    if(any)im.instanceMatrix.needsUpdate=true;};}
  // everything this module added to the scene (for the perf budget checks)
+ // ---- autumn leaves up in the house: on the roofs, the landing rims and the stair ends (round "leaves on the house") ----
+ // Found from above once the house stands: the house is drawn top-down into a small target (normal, height; once for everything,
+ // once for the boards/slates only, once for the static props only). A leaf goes only where the topmost surface is a board, slate or
+ // static prop that faces up and is flat across the leaf (no edge, no step), off the hero's walk lines, and (boards and slates) out
+ // of his reach, so no repair ever lifts a slate or board out from under one. Baked into the litter mesh: no draw call of its own.
+ {let fr=0,done=false;
+  const capture=(R3,sc)=>{const W=window,pl=W.__planks,dbg=W.__dbg;
+   if(!pl||!pl.meshes||!dbg||!dbg.N||!dbg.E||!G.litter||!G.leaves)return false;
+   const X0=-8,X1=8,Z0=-6,Z1=6,PX=40,RW=(X1-X0)*PX,RH=(Z1-Z0)*PX;
+   const cam=new THREE.OrthographicCamera(X0,X1,-Z0,-Z1,.1,60);cam.position.set(0,40,0);cam.up.set(0,0,-1);cam.lookAt(0,0,0);cam.layers.enableAll();cam.updateMatrixWorld();
+   const mat=new THREE.ShaderMaterial({uniforms:{uMode:{value:0}},side:THREE.DoubleSide,toneMapped:false,
+    vertexShader:'varying vec3 vN;varying float vY;void main(){vec4 p=vec4(position,1.);vec3 n=normal;\n#ifdef USE_INSTANCING\np=instanceMatrix*p;n=mat3(instanceMatrix)*n;\n#endif\nvec4 w=modelMatrix*p;vY=w.y;vN=mat3(modelMatrix)*n;gl_Position=projectionMatrix*viewMatrix*w;}',
+    fragmentShader:'uniform float uMode;varying vec3 vN;varying float vY;void main(){vec3 n=normalize(vN)*(gl_FrontFacing?1.:-1.);if(uMode<.5){gl_FragColor=vec4(n*.5+.5,1.);}else{float t=clamp((vY+5.)/40.,0.,1.)*255.;float a=floor(t);float f=fract(t)*255.;float b=floor(f);gl_FragColor=vec4(a/255.,b/255.,fract(f),1.);}}'});
+   mat.customProgramCacheKey=()=>'groundHouseLeafCapture1';
+   const plS=new Set();for(const v of Object.values(pl.meshes))(Array.isArray(v)?v:[v]).forEach(m=>m&&plS.add(m));for(const v of W.__plView||[]){if(plS.has(v.S)){if(v.D)plS.add(v.D);for(const d of v.Ds||[])d&&plS.add(d);}}/* the board copies the plank cull actually draws */
+   const gs=new Set();for(const o of G.objects||[])o.traverse(q=>gs.add(q));let hero=dbg.hero&&dbg.hero.root;const hs=new Set();if(hero)hero.traverse(q=>hs.add(q));
+   const all=[];sc.traverse(o=>{if(o.isMesh||o.isPoints||o.isLine||o.isSprite)all.push([o,o.visible]);});
+   const base=o=>{if(!o.isMesh||o.isSkinnedMesh||gs.has(o)||hs.has(o))return false;const m=Array.isArray(o.material)?o.material[0]:o.material;if(!m||m.transparent||m.alphaTest>0||m.visible===false)return false;
+    const g=o.geometry;if(!g||!g.attributes.position)return false;if(!g.boundingSphere)g.computeBoundingSphere();return g.boundingSphere.radius<40;};
+   const rt=new THREE.WebGLRenderTarget(RW,RH,{depthBuffer:true});const prevRT=R3.getRenderTarget(),bg=sc.background,ov=sc.overrideMaterial,sa=R3.shadowMap.autoUpdate,sn=R3.shadowMap.needsUpdate,pc=W.__noPlCull,cc=new THREE.Color();R3.getClearColor(cc);const ca=R3.getClearAlpha();
+   const pass=(mode,keep,low)=>{for(const [o,v] of all)o.visible=v&&base(o)&&keep(o);mat.uniforms.uMode.value=mode;mat.depthFunc=low?THREE.GreaterDepth:THREE.LessEqualDepth;R3.setRenderTarget(rt);R3.setClearColor(0,0);
+    if(low)R3.state.buffers.depth.setClear(0);R3.clear();R3.render(sc,cam);if(low){R3.state.buffers.depth.setClear(1);}const b=new Uint8Array(RW*RH*4);R3.readRenderTargetPixels(rt,0,0,RW,RH,b);return b;};
+   const isP=o=>plS.has(o),isS=o=>/^propsStatic/.test(o.name||'')||!!(o.parent&&/^propsStatic/.test(o.parent.name||'')),isH=o=>isP(o)||isS(o);
+   let NB,YA,YP,YS,OB,OA;/* the house's top surface (all boards, slates and static props), each kind alone, and everything else (bark, limbs, loose things) from above and from below */
+   try{sc.background=null;/* the plank cull runs for this camera too: what is drawn is what gets measured */sc.overrideMaterial=mat;R3.shadowMap.autoUpdate=false;R3.shadowMap.needsUpdate=false;
+    NB=pass(0,isH);YA=pass(1,isH);YP=pass(1,isP);YS=pass(1,isS);OA=pass(1,o=>!isH(o));OB=pass(1,o=>!isH(o),true);}
+   finally{R3.state.buffers.depth.setClear(1);for(const [o,v] of all)o.visible=v;sc.overrideMaterial=ov;sc.background=bg;R3.shadowMap.autoUpdate=sa;R3.shadowMap.needsUpdate=sn;W.__noPlCull=pc;R3.setRenderTarget(prevRT);R3.setClearColor(cc,ca);rt.dispose();mat.dispose();}
+
+   const yOf=(B,i)=>B[i*4+3]===0?null:((B[i*4]+(B[i*4+1]+B[i*4+2]/255)/255)/255)*40-5;
+   const ix=(x,z)=>{const c=Math.floor((x-X0)*PX),r=Math.floor((Z1-z)*PX);return c<0||r<0||c>=RW||r>=RH?-1:r*RW+c;};
+   const top=(x,z)=>{const i=ix(x,z);if(i<0)return null;const y=yOf(YA,i);if(y==null)return null;const yp=yOf(YP,i),ys=yOf(YS,i);const k=yp!=null&&Math.abs(yp-y)<.01?1:ys!=null&&Math.abs(ys-y)<.01?2:0;
+    const oa=yOf(OA,i),ob=yOf(OB,i);if(oa!=null&&ob!=null&&ob<y+.25&&oa>y-.03)return null;/* bark, a limb or a loose thing in the way: only a limb well above lets it be */return {y,k,n:V(NB[i*4]/127.5-1,NB[i*4+1]/127.5-1,NB[i*4+2]/127.5-1).normalize()};};
+   // the hero's walk lines and reach (the nav graph)
+   const N=dbg.N,E=dbg.E,nodes=[];for(const k in N)if(N[k]&&N[k].p)nodes.push(N[k].p);const segs=E.map(e=>[N[e[0]]&&N[e[0]].p,N[e[1]]&&N[e[1]].p]).filter(q=>q[0]&&q[1]);
+   const walkD=(x,y,z)=>{let best=99;for(const [a,b] of segs){if(Math.min(Math.abs(y-a.y),Math.abs(y-b.y))>.8)continue;const dx=b.x-a.x,dz=b.z-a.z,L=dx*dx+dz*dz;let t=L?((x-a.x)*dx+(z-a.z)*dz)/L:0;t=Math.max(0,Math.min(1,t));best=Math.min(best,Math.hypot(a.x+dx*t-x,a.z+dz*t-z));}return best;};
+   const reach=(x,y,z)=>nodes.some(p=>Math.hypot(p.x-x,p.z-z)<1.7&&y-p.y>-1.2&&y-p.y<2.2);
+   const ok=(x,z,s)=>{const c=top(x,z);if(!c||!c.k||c.n.y<.55)return null;if(c.y<(meshH(x,z)??groundH(x,z))+.25)return null;
+    const r=s*.6;for(const [dx,dz] of [[r,0],[-r,0],[0,r],[0,-r],[r*.7,r*.7],[-r*.7,-r*.7],[r*.7,-r*.7],[-r*.7,r*.7]]){const q=top(x+dx,z+dz);if(!q||q.k!==c.k)return null;
+     const want=c.y-(c.n.x*dx+c.n.z*dz)/c.n.y;if(Math.abs(q.y-want)>.006)return null;}/* flat under the whole leaf: no board edge, slate step or gap */
+    if(c.n.y>.97){for(let a=0;a<6.28;a+=.785)for(const d of [.6,1.2]){const i2=ix(x+Math.cos(a)*d,z+Math.sin(a)*d);const h=i2<0?null:yOf(YA,i2);if(h!=null&&h>c.y+1.5&&h<c.y+3.8)return null;}}/* a floor with a roof or a floor over it close by is a room or a porch: leaves do not blow in there */
+    if(walkD(x,c.y,z)<(c.k===2?.3:.5))return null;if(c.k===1&&reach(x,c.y,z))return null;return c;};
+   const r2=rng(77001),q2=(a,b)=>a+r2()*(b-a);const NL=MOBILE?110:200;
+   const gl=G.leaves,lg=gl.geometry.index?gl.geometry.toNonIndexed():gl.geometry,P=lg.attributes.position,Nn=lg.attributes.normal,Uv=lg.attributes.uv,k0=P.count;
+   const cells=(G.litter.material.map&&G.litter.material.map.image?G.litter.material.map.image.width:384)/128;
+   const pos=[],nor=[],uv=[],col=[];const m4=new THREE.Matrix4(),nm=new THREE.Matrix3(),q=new THREE.Quaternion(),qy=new THREE.Quaternion(),v=V(),UP=V(0,1,0);
+   const pal=[[.07,.7,.32],[.04,.62,.27],[.1,.62,.36],[.16,.42,.3],[.02,.52,.24],[.12,.38,.24]];let n=0,cl=0;const PTS=[];
+   for(let t=0;t<9000&&n<NL;t++){const cx=q2(X0+.5,X1-.5),cz=q2(Z0+.5,Z1-.5);const c0=ok(cx,cz,.14);if(!c0)continue;cl++;PTS.push([+cx.toFixed(2),+c0.y.toFixed(2),+cz.toFixed(2),c0.k,+c0.n.y.toFixed(2)]);
+    const cnt=c0.k===1&&c0.n.y<.97?2+Math.floor(r2()*5):1+Math.floor(r2()*3);/* slates catch little drifts; boards and props a stray leaf or two */
+    for(let j=0;j<cnt&&n<NL;j++){const x=cx+q2(-.14,.14),z=cz+q2(-.14,.14),sz=q2(.08,.13);const c=j?ok(x,z,sz):c0;if(!c)continue;
+     q.setFromUnitVectors(UP,c.n).multiply(qy.setFromAxisAngle(UP,q2(0,6.283)));m4.compose(V(x,c.y+.004+j*.002,z),q,v.set(sz,sz,sz*1.15));nm.getNormalMatrix(m4);
+     const pc=pal[Math.floor(r2()*pal.length)];const ic=new THREE.Color().setHSL(pc[0]+q2(-.02,.02),pc[1],pc[2]+q2(-.05,.04));
+     for(let k=0;k<k0;k++){v.fromBufferAttribute(P,k).applyMatrix4(m4);pos.push(v.x,v.y,v.z);v.fromBufferAttribute(Nn,k).applyMatrix3(nm).normalize();nor.push(v.x,v.y,v.z);
+      uv.push(Math.min(.98,Math.max(.02,Uv.getX(k)))/cells,Uv.getY(k));col.push(ic.r,ic.g,ic.b);}n++;}}
+   G._houseLeaves={n,clusters:cl,pts:PTS};if(!n)return true;
+   const T=pos.length/3,add=new THREE.BufferGeometry();add.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));add.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));add.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));
+   add.setAttribute('color',new THREE.Float32BufferAttribute(col,3));add.setAttribute('aCap',new THREE.BufferAttribute(new Float32Array(T),1));const afl=new Float32Array(T*4);for(let k=0;k<T;k++)afl[k*4+3]=-1;add.setAttribute('aFl',new THREE.BufferAttribute(afl,4));
+   const og=G.litter.geometry;if(og.index){const a=new Uint32Array(T);for(let k=0;k<T;k++)a[k]=k;add.setIndex(new THREE.BufferAttribute(a,1));}
+   const mg=mergeGeometries([og,add]);add.dispose();if(!mg)return true;G.litter.geometry=mg;og.dispose();return true;};
+  G.placeHouseLeaves=capture;
+  const t0=performance.now();
+  const ob=G.floor.onBeforeRender;G.floor.onBeforeRender=function(r,sc,...a){ob.call(this,r,sc,...a);
+   if(G.litter&&G.litter.name==='litterHold'){const td=window.__treedress;const tdDone=!td||(td.boardLeaves&&(!MOBILE||td.litterMerged));if((G._houseLeaves&&tdDone)||performance.now()-t0>15000)G.litter.name='litter';}
+   if(done||++fr<3)return;done=true;/* early, mostly behind the loading screen: six small top-down draws once */
+   setTimeout(()=>{try{if(!capture(r,sc))done=false,fr=-3;}catch(e){console.warn('house leaves',e);}},0);};}
  G.objects=C.scene.children.filter(o=>!__before.has(o));
  return G;
 }
