@@ -606,22 +606,22 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
    if(o.isMesh&&!o.isInstancedMesh&&!o.isSkinnedMesh&&o.constructor===THREE.Mesh&&o.layers.mask===1&&plainMat(o.material)&&o.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&o.onAfterRender===THREE.Object3D.prototype.onAfterRender&&!o.customDepthMaterial&&!o.customDistanceMaterial&&o.geometry.attributes.position&&!o.geometry.attributes.tangent&&!Object.values(o.geometry.attributes).some(a=>a.isInterleavedBufferAttribute)&&!(o.geometry.morphAttributes&&o.geometry.morphAttributes.position)&&o.geometry.drawRange.start===0&&o.geometry.drawRange.count===Infinity&&!o.geometry.isInstancedBufferGeometry&&o.frustumCulled&&o.renderOrder===0){
     const k=o.material.uuid+'|'+o.castShadow+o.receiveShadow+'|'+attrSig(o.geometry);if(!C.has(k))C.set(k,[]);C.get(k).push(o);}
    for(const c of o.children)walk(c);};walk(scene);return C;}
- const prevSB=scene.onBeforeRender;scene.onBeforeRender=function(r,sc,cam,...a){if(prevSB)prevSB.call(this,r,sc,cam,...a);
+ const SBT={scan:0,merge:0};const prevSB=scene.onBeforeRender;scene.onBeforeRender=function(r,sc,cam,...a){if(prevSB)prevSB.call(this,r,sc,cam,...a);
   if(REND>1||sc!==scene)return;try{const off=SBOFF||window.__stillBatchOff,now=performance.now();
    if(off){for(const e of G.values())drop(e);G.clear();scanT=-1e9;return;}
    /* a batch whose parts all stand as they were stays; any change drops it */
    for(const [k,e] of G){if(e.mesh&&!e.parts.every(still)){drop(e);e.t=now;e.parts=[];}}
-   if(now-scanT<2000)return;scanT=now;const C=scan();
+   if(now-scanT<2000)return;scanT=now;const C=scan();let nm=0;SBT.scan=Math.max(SBT.scan,performance.now()-now);
    for(const [k,os] of C){let e=G.get(k);if(!e){e={mat:os[0].material,cast:os[0].castShadow,recv:os[0].receiveShadow,parts:[],mesh:null,cand:new Map(),t:now};G.set(k,e);}
     if(e.mesh)continue;/* standing: keep */
     /* candidates that have kept their matrix for 2 s */
     const ok=[];for(const o of os){const c=e.cand.get(o);if(c&&c.mw.equals(o.matrixWorld)&&c.g===o.geometry&&c.v===o.geometry.attributes.position.version){if(now-c.t>=1900)ok.push(o);}else e.cand.set(o,{mw:o.matrixWorld.clone(),g:o.geometry,v:o.geometry.attributes.position.version,t:now});}
     for(const o of [...e.cand.keys()])if(!os.includes(o))e.cand.delete(o);
     let tris=0;const P=[];for(const o of ok){const g=o.geometry,n=(g.index?g.index.count:g.attributes.position.count)/3;if(tris+n>30000)break;tris+=n;P.push({o,mw:o.matrixWorld.clone(),g,v:g.attributes.position.version,m:o.material,c:o.castShadow});}
-    if(P.length>=2){e.parts=P;merge(e);}}
+    if(P.length>=2&&!nm++){/* one merge a scan: several at once were one ~8-15 ms frame on a phone; the rest wait 2 s */e.parts=P;const tm=performance.now();merge(e);SBT.merge=Math.max(SBT.merge,performance.now()-tm);}}
    for(const [k,e] of G)if(!C.has(k)&&!e.mesh)G.delete(k);
   }catch(err){console.error('stillBatch',err);for(const e of G.values())drop(e);G.clear();}};
- window.__stillBatch=()=>{let b=0,p=0,t=0;for(const e of G.values())if(e.mesh){b++;p+=e.parts.length;t+=e.mesh.geometry.index.count/3;}return {batches:b,parts:p,saved:p-b,tris:t,built,dropped};};}
+ window.__stillBatch=()=>{let b=0,p=0,t=0;for(const e of G.values())if(e.mesh){b++;p+=e.parts.length;t+=e.mesh.geometry.index.count/3;}return {batches:b,parts:p,saved:p-b,tris:t,built,dropped,maxScanMs:+SBT.scan.toFixed(1),maxMergeMs:+SBT.merge.toFixed(1)};};}
 /* [PERF] lamp halos in one draw: Environment's halo sprites (env.addHalo: additive, no depth write, so their order among
    themselves does not matter) were one draw call each (7-9 at night). Here they are camera-facing quads of one mesh,
    rebuilt per render from the sprites' own state (position, scale, colour, opacity, visible); the sprites themselves are

@@ -262,3 +262,7 @@ Debug: `__treedress.stats()`.
 ## Round 41 (low sun rim; moss collar on the roof limb)
 - Dawn / dusk looked like noon in a darker key. D.sunU (the shadow sun's world dir + a warm colour that exists only while the sun is low, less in rain) drives a warm rim on the bark (|treedress19) and the leaf clumps (|tdRim6). It scales reflectedLight.directDiffuse at lights_fragment_end, so it only shows where the sun really reaches (no glow in shade or at night).
 - Roof limb (Tree rounded it and cut the slates, d0caa2f / 5f4b73b): a damp moss collar on the bark just above the bedroom roof slope (roofY ~ 13.38 - .87|x+2.2|, box x -3..-0.3, z .8..3.5), ragged by noise. Placed after the tdBW beam-bite cut (the ridge beam bite was erasing it) and coloured again in the normal block (Tree's map code washes greens to brown). Subtle olive, matte.
+
+## Round 42 (autumn detail)
+- Already in place: per-card autumn colours mixed inside the clumps (tree.js sprigs: ~17%+ gold / orange / rust, more on clump edges and the top-right), and Wind's falling leaves (a leaf every ~5 s in calm, flurries in gusts, event-driven, land on decks / pond).
+- Gap fixed (wind.js, falling-leaf canvas only): the falling leaf was a smooth one-colour feather shape. Now an oak leaf: 5 rounded lobes a side with deep sinuses, stalk, side veins, lighter centre / darker rim, two faint dry spots; 128 px canvas, white-based so the instance colours still tint it. Same mesh, same draw call.
