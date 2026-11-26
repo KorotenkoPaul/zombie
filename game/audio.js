@@ -221,11 +221,11 @@ export function createAudio(ctx) {
     W.on('lightning', e => {
       if (!loaded || muted || !e) return; let d = e.dist;
       if (d == null && e.pos) { const q = e.pos, x = q.x ?? q[0], y = q.y ?? q[1], z = q.z ?? q[2]; d = Math.hypot(x, (y || 0) * .3, z); }
-      thunder(d ?? rnd(400, 3000), e.strength ?? .7); thunderNext = now + rnd(25, 60);
+      thunder(d ?? rnd(400, 3000), e.strength ?? .7, e.dir); thunderNext = now + rnd(25, 60);
     });
   }
   // procedural thunder: a crack (only when close) and a long rumble of low-passed noise with a few swells
-  function thunder(dist, strength) {
+  function thunder(dist, strength, dir) {
     if (!A || muted) return;
     if (!noiseBuf) { const n = A.sampleRate * 2; noiseBuf = A.createBuffer(1, n, A.sampleRate); const d = noiseBuf.getChannelData(0); let b = 0; for (let i = 0; i < n; i++) { b = b * .6 + (Math.random() * 2 - 1) * .4; d[i] = b; } }
     const t = A.currentTime + Math.min(12, dist / 343), near = clamp01(1 - dist / 2500), len = 3.5 + 5 * (1 - near) + rnd(0, 2);
@@ -237,7 +237,7 @@ export function createAudio(ctx) {
     let tt = t + (near > .6 ? .4 : 1.2);                                    // a few rolling swells
     for (let i = 0; i < 2 + Math.floor(rnd(0, 3)); i++) { g.gain.linearRampToValueAtTime(peak * rnd(.25, .5), tt); tt += rnd(.5, 1.2); g.gain.linearRampToValueAtTime(peak * rnd(.5, .9), tt); tt += rnd(.4, 1); }
     g.gain.linearRampToValueAtTime(peak * .2, Math.min(t + len - 1, tt + .5)); g.gain.exponentialRampToValueAtTime(.0005, t + len);
-    const sp = A.createStereoPanner ? A.createStereoPanner() : null; if (sp) sp.pan.value = rnd(-.6, .6);
+    const sp = A.createStereoPanner ? A.createStereoPanner() : null; if (sp) { let pn = rnd(-.6, .6); const c = ctx.camera; if (dir && c && c.matrixWorld) { const m = c.matrixWorld.elements, l = Math.hypot(m[0], m[2]) || 1; pn = clamp01(.5 + .4 * (dir[0] * m[0] + dir[1] * m[2]) / l) * 2 - 1 + rnd(-.08, .08); } sp.pan.value = Math.max(-.8, Math.min(.8, pn)); }   // [ENV] the rumble comes from the strike's side (the flash's side of the sky), not a random one
     src.connect(lp).connect(g); (sp ? g.connect(sp) : g).connect(outBus); const s2 = A.createGain(); s2.gain.value = .6; g.connect(s2).connect(revIn);
     src.start(t, rnd(0, 1.5)); src.stop(t + len + .1);
     if (near > .6) {                                                         // the crack of a close strike
@@ -462,7 +462,9 @@ export function createAudio(ctx) {
     const a = rnd(0, Math.PI * 2), r = rnd(5, 16);
     voice(pick(gustClips(env)), { pos: { x: Math.cos(a) * r, y: rnd(6, 14), z: Math.sin(a) * r }, gain: Math.min(.55, .1 + .32 * amp) * rnd(.8, 1.1), rate: rnd(.9, 1.08), fadeIn: rnd(.5, 1.2), fadeOut: 1.2, rev: .15, ref: 12 });
   }
-  let envNow = { season: 'summer', rain: 0, wind: .3, awake: true };
+  let envNow = { season: 'summer', rain: 0, wind: .3, awake: true }; let wb = null;   // [ENV] the crown's continuous wind bed: soft leaf-hiss noise that follows the wind (base + the gust passing the oak), between the gust one-shots (in a steady wind and in a storm the crown went silent between them). One looped noise source, gain/filter eased: no clicks
+  function windBed(env) { if (!wb) { const n = A.sampleRate * 3, buf = A.createBuffer(1, n, A.sampleRate), d = buf.getChannelData(0); let b0 = 0, b1 = 0; for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; b0 = .97 * b0 + w * .03; b1 = .6 * b1 + w * .4; d[i] = (b1 - b0) * .9; } for (let i = 0; i < 2000; i++) { const k = i / 2000; d[i] = d[i] * k + d[n - 2000 + i] * (1 - k); } const src = A.createBufferSource(); src.buffer = buf; src.loop = true; src.loopEnd = (n - 2000) / A.sampleRate; const bp = A.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = .55; bp.frequency.value = 900; const g = A.createGain(); g.gain.value = 0; src.connect(bp).connect(g).connect(outBus); src.start(); wb = { bp, g }; }
+    const t = A.currentTime, s = clamp01(wind), lv = Math.max(0, s - .12) / .88, leaf = SEASON_K(env.season, { winter: .35 }), k = (wState === 'calm' ? .45 : 1) * leaf * Math.pow(lv, 1.3); wb.g.gain.setTargetAtTime(.13 * k * (1 - .35 * (env.rain || 0)), t, .7); wb.bp.frequency.setTargetAtTime(650 + 1100 * lv, t, .9); }
   function hookWind() {
     const W = window.__wind; if (windHooked || !W || typeof W.on !== 'function') return;
     windHooked = true;
@@ -674,17 +676,17 @@ export function createAudio(ctx) {
     lastH = h;
     { const P = pondGeo(), sig = P.x + P.z * 7 + P.r * 13; if (sig !== pondSig) { if (pondSig !== null) for (const k in L) if (L[k].pondy && ind[k]) for (const I of ind[k]) I.pos = place('pond'); pondSig = sig; } }
     layerAcc += dt; if (layerAcc >= .1) { tickLayers(h, env, layerAcc); layerAcc = 0; }   // creatures decide 10x a second, not every frame
-    gusts(env);
+    gusts(env); if (/[?&]windbed/.test(location.search)) windBed(env);/* [ENV] off by default: no constant noise bed (Pavel removed exactly this hiss before); ?windbed to audition */
     // rain on leaves and roof
     // rain: leaves all around, and drumming on the roof when the camera (or hero) is near one
     const R = window.__rain, cp = ctx.camera ? ctx.camera.position : null;
     let roof = .35; if (R && typeof R.roofNear === 'function' && cp) { try { roof = clamp01(R.roofNear(cp)); } catch (e) {} }
     const rk = wState === 'drizzle' ? .55 : wState === 'storm' ? 1.35 : 1;   // drizzle: a fine whisper; storm: heavy
-    bed('rain', ['rain_a'], rain * rk, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
+    bed('rain', ['rain_b'], rain * rk, l => ({ gain: .24 * l,/* [ENV] Pavel's sound rule: rain_a measured as near-white hiss (flat spectrum .39, few transients): dropped; the softer rain_b bed lower, the slate taps and one-shot drops carry the rain */ pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
     // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
     bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
     rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 120);   // the ground stays wet ~2 game hours after rain
-    if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
+    if (rain >= .4 && now > dripNext) { const a = rnd(0, 6.28); voice(Math.random() < .5 ? 'wetdrip_a' : 'drip_a', { pos: { x: Math.cos(a) * rnd(1.5, 6), y: rnd(1, 7), z: Math.sin(a) * rnd(1.5, 6) }, gain: rnd(.12, .3) * rain, rate: rnd(.8, 1.3), dur: rnd(.6, 1.6), offset: rnd(0, 2), ref: 3 }); dripNext = now + rnd(.4, 1.8) / Math.max(.5, rain); }/* [ENV] in the rain: heavy single drops off the leaves and eaves (one-shots, not a bed) */ else if (rainMem > .05 && rain < .4 && now > dripNext) { const a = rnd(0, 6.28); voice('drip_a', { pos: { x: Math.cos(a) * rnd(2, 8), y: rnd(1, 6), z: Math.sin(a) * rnd(2, 8) }, gain: .25 * rainMem, rate: rnd(.85, 1.2), dur: rnd(1, 3), offset: rnd(0, 2), ref: 4 }); dripNext = now + rnd(2, 7); }
     // the oven fire, where the oven is
     const L2 = ctx.lights; const fireLvl = L2 && L2.level ? L2.level('oven') : 0;
     const op = L2 && L2.pos ? L2.pos('oven') : null;
@@ -1006,7 +1008,7 @@ export function createAudio(ctx) {
     on: (k, f) => { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     setSeason: s => { season0 = s || null; populate(Object.keys(L), { season: season(), rain: 0, wind }); },
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
-      const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
+      const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), windBed: wb ? +wb.g.gain.value.toFixed(3) : null, rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
     play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter, contact: e => contact(e), _task: t => { HW.force = t || null; },
   };

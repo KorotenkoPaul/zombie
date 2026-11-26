@@ -31,8 +31,20 @@ const INIT=([seed,KEYS])=>{ // runs before any page script
  // browser happened to show while loading cannot change the state
  window.requestAnimationFrame=cb=>{if(manual||window.__th&&window.__dbg&&window.__renderer){q.push(cb);return q.length;}return realRAF(cb);};
  performance.now=()=>vt;const D0=1.7e12;Date.now=()=>D0+vt;window.__fixedStart=true; // no wall clock, no random 'mid-activity' start
+ // timers: from start() on, setTimeout/setInterval run on the virtual clock inside __qa.step (due ones before that frame's rAF
+ // callbacks, in due order). Real timers fired whenever the page got a breather between steps, so a 100 ms poll (hero.js a.leave)
+ // released the next action after a different number of frames under CPU load: the gate was bistable when two ran at once.
+ const rST=window.setTimeout.bind(window),rCT=window.clearTimeout.bind(window),rSI=window.setInterval.bind(window),rCI=window.clearInterval.bind(window);
+ let TQ=[],tseq=0;const TB=1e7;
+ const vAdd=(f,ms,a,every)=>{const id=TB+(++tseq);TQ.push({id,at:vt+Math.max(0,+ms||0),f,a,every});return id;};
+ const vClr=id=>{if(id>TB){TQ=TQ.filter(t=>t.id!==id);return true;}return false;};
+ window.setTimeout=(f,ms,...a)=>manual&&typeof f==='function'?vAdd(f,ms,a,0):rST(f,ms,...a);
+ window.setInterval=(f,ms,...a)=>manual&&typeof f==='function'?vAdd(f,ms,a,Math.max(1,+ms||0)):rSI(f,ms,...a);
+ window.clearTimeout=id=>{if(!vClr(id))rCT(id);};window.clearInterval=id=>{if(!vClr(id))rCI(id);};
+ const runTimers=()=>{for(let guard=0;guard<10000;guard++){let bi=-1;for(let i=0;i<TQ.length;i++){const t=TQ[i];if(t.at<=vt&&(bi<0||t.at<TQ[bi].at||(t.at===TQ[bi].at&&t.id<TQ[bi].id)))bi=i;}
+   if(bi<0)return;const t=TQ[bi];if(t.every){t.at+=t.every;}else TQ.splice(bi,1);try{t.f(...t.a);}catch(e){console.error('qa timer',e&&e.message);}}};
  window.__qa={reseed(n){s=n>>>0;base=n>>>0;sites.clear();}/* every call site keeps its own stream at run time too (keyed by its line text, reset per reseed): one more random call somewhere (a new mesh's uuid, a rain splash) no longer shifts the brain's dice */,start(){return new Promise(res=>{realRAF(()=>{manual=true;realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
-  step(n,dt,each){for(let i=0;i<n;i++){vt+=dt*1000;const cb=q;q=[];for(const c of cb)c(vt);this.frame++;if(each)each(this.frame);}}};
+  align(G){vt=Math.ceil(vt/G)*G;return vt;},/* gate: every task starts on the same virtual time, so things that run on time (lantern sway, camera, sprites) start each task in the same phase */step(n,dt,each){for(let i=0;i<n;i++){vt+=dt*1000;runTimers();const cb=q;q=[];for(const c of cb)c(vt);this.frame++;if(each)each(this.frame);}}};
 };
 async function open({seed=1,vp={width:640,height:640},log=false,query=''}={}){
  const b=await chromium.launch({args:['--enable-unsafe-swiftshader','--use-gl=angle','--use-angle=swiftshader','--ignore-gpu-blocklist']});

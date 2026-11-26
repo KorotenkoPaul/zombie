@@ -47,6 +47,10 @@ const FLUTTER = `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanc
 #endif
 }`;
 // [rain round] ivy and ferns get wet with the bark (D.barkU.wet / damp), see swayMat
+// [greenery round] a position hash in [0,1) for per-leaf tints (integer mixing of the millimetre grid; neighbours decorrelate)
+const tdHash = (p, k) => { let h = Math.imul(Math.round(p.x * 1000) | 0, 0x27d4eb2d) ^ Math.imul(Math.round(p.y * 1000) | 0, 0x165667b1) ^ Math.imul(Math.round(p.z * 1000) | 0, 0x9E3779B1) ^ Math.imul(k + 7, 0x85ebca6b);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; h = Math.imul(h, 0x297a2d39); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
+const tdAut = m => { m.userData.autumn = true; return m; };
 const tdWetU = m => { m.userData.wetU = tdWetU.U; return m; };
 function swayMat(mat, U, amp, chunk) {
   mat.onBeforeCompile = s => {
@@ -61,10 +65,17 @@ function swayMat(mat, U, amp, chunk) {
       s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform float tdWet,tdDamp;')
         .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb*=1.-.2*tdDamp;')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.32,tdWet*.85);'); }
+    // [greenery round] autumn leaves: an instance colour with red > 1.5 means "turned" and holds 4x the target colour; the green
+    // leaf map then only gives the shading (its luminance), so a turned leaf is a clean red or yellow with lighter veins, not a
+    // muddy brown from tinting green. Arithmetic only.
+    if (mat.userData.autumn) s.fragmentShader = s.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
+  if(vColor.r>1.5){vec3 tb=diffuseColor.rgb/max(vColor.rgb,vec3(1e-3));diffuseColor.rgb=vColor.rgb*.25*min(dot(tb,vec3(.2126,.7152,.0722))*${(1 / 0.15).toFixed(3)},1.8);}
+#endif`);
   };
   // SHADERS rule: an explicit key. The default (the hook's source text) is the same for every swayMat, so the ivy and the
   // ferns could share one compiled program with the other's sway chunk
-  const key = 'tdSway|' + amp.toFixed(3) + '|' + chunk + (mat.userData.wetU ? '|tdWet1' : '');
+  const key = 'tdSway|' + amp.toFixed(3) + '|' + chunk + (mat.userData.wetU ? '|tdWet1' : '') + (mat.userData.autumn ? '|tdAut1' : '');
   mat.customProgramCacheKey = () => key;
   return mat;
 }
@@ -100,11 +111,20 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
+    D.wearU = { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, -100, 0, 0.1)) }; /* [life round] filled once the oak is sampled */
+    D.scarU = { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, -100, 0, 0.1)) }; /* [scars round] filled once the oak is sampled */
     D.dripU = { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, -100, 0, 0.5)) }; /* [autumn round] filled once the oak is sampled */
     D.barkU = tdWetU.U = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, near: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 0.45 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
+    // [low sun round] the sun's world direction and a warm colour that only exists while it is low (dawn / dusk), for the rim below
+    D.sunU = { dir: { value: new THREE.Vector3(0, 1, 0) }, col: { value: new THREE.Color(0, 0, 0) } };
+    const sunTick = () => { if (!D._sunL) { let sc = D.group; while (sc && sc.parent) sc = sc.parent; sc && sc.traverse(o => { if (o.isDirectionalLight && o.castShadow && !D._sunL) D._sunL = o; }); if (!D._sunL) return; }
+      const L = D._sunL, d = D.sunU.dir.value.copy(L.position).sub(L.target.position).normalize();
+      const low = Math.min(1, Math.max(0, (0.5 - d.y) / 0.3)) * Math.min(1, Math.max(0, (d.y + 0.02) / 0.1)) * Math.min(1, L.intensity / 1.2);
+      D.sunU.col.value.setRGB(1.0, 0.62, 0.32).multiplyScalar(low * (1 - 0.7 * (D._rk || 0))); };
     D.update = (cam) => {
+      sunTick();
       if (cam) D.barkU.near.value = Math.hypot(cam.position.x - AX, cam.position.z - AZ) < 9 && cam.position.y < 17 ? 1 : 0;
       const now = performance.now() / 1000, dt = Math.min(0.5, Math.max(0, now - (D._lt || now))); D._lt = now;
       const W = window.__wind, on = W && W.raining ? W.raining() : 0;
@@ -159,11 +179,11 @@ export function createTreeDress(C) {
           const c = ctr.clone().applyMatrix4(M); ax.set(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0).applyQuaternion(q);
           if (Math.hypot(c.x - AX, c.z - AZ) > 9) continue;
           for (const sgn of [-1, 1]) { const ep = c.clone().addScaledVector(ax, sgn * L * 0.5); const w = nearest(ep.x, ep.y, ep.z, 0.35); if (w < 0) continue;
-            const pt = V(wpos[w * 3], wpos[w * 3 + 1], wpos[w * 3 + 2]); if (D.bites.some(b => b.distanceTo(pt) < 0.12)) continue; pt.w = wid * 0.5 + 0.05; pt.ax = ax.clone().multiplyScalar(-sgn); pt.len = L; pt.flat = e.filter((_, j) => j !== k); D.bites.push(pt); } } }
+            const pt = V(wpos[w * 3], wpos[w * 3 + 1], wpos[w * 3 + 2]); if (D.bites.some(b => b.distanceTo(pt) < 0.12)) continue; pt.w = wid * 0.5 + 0.05; pt.ax = ax.clone().multiplyScalar(-sgn); pt.len = L; pt.flat = e.filter((_, j) => j !== k); pt.shows = (ep.x - pt.x) * wnor[w * 3] + (ep.y - pt.y) * wnor[w * 3 + 1] + (ep.z - pt.z) * wnor[w * 3 + 2] > -0.03 * Math.hypot(wnor[w * 3], wnor[w * 3 + 1], wnor[w * 3 + 2]); D.bites.push(pt); } } }
       D.biteAll = D.bites.length; const NB = 72; D.bites.sort((a, b) => a.y - b.y); D.bites = D.bites.slice(0, NB);
       const J = new Float32Array(n * 3), BI = new Float32Array(n * 8);
       for (let i = 0; i < n; i++) { const w = wk[i]; const x = wpos[w * 3], y = wpos[w * 3 + 1], z = wpos[w * 3 + 2];
-        let bite = 0, i1 = -1, i2 = -1, d1 = 9, d2 = 9; D.bites.forEach((b, bi) => { const d = Math.hypot(b.x - x, b.y - y, b.z - z); bite = Math.max(bite, 1 - sm(b.w + 0.2, b.w + 0.75, d)); const e = d - b.w; if (e > 0.85) return; if (e < d1) { i2 = i1; d2 = d1; i1 = bi; d1 = e; } else if (e < d2) { i2 = bi; d2 = e; } }); for (const [o, bi] of [[0, i1], [4, i2]]) { const b = D.bites[bi]; if (b) BI.set([b.x, b.y, b.z, b.w], i * 8 + o); else BI.set([0, -99, 0, -1], i * 8 + o); }
+        let bite = 0, i1 = -1, i2 = -1, d1 = 9, d2 = 9; D.bites.forEach((b, bi) => { const d = Math.hypot(b.x - x, b.y - y, b.z - z); bite = Math.max(bite, 1 - sm(b.w + 0.2, b.w + 0.75, d)); const e = d - b.w; if (e > 0.85) return; if (e < d1) { i2 = i1; d2 = d1; i1 = bi; d1 = e; } else if (e < d2) { i2 = bi; d2 = e; } }); for (const [o, bi] of [[0, i1], [4, i2]]) { const b = D.bites[bi]; if (b) BI.set([b.x, b.y, b.z, b.w + (b.shows ? 4 : 0)], i * 8 + o); /* [life round] +4: the beam's end is out of the bark (gets nails) */ else BI.set([0, -99, 0, -1], i * 8 + o); }
         J[i * 3] = cr[w]; J[i * 3 + 1] = sp2[w] * (1 - cr[w]) * (1 - sm(0, c0, cv[w])); J[i * 3 + 2] = bite; }
       g.setAttribute('tdJ', new THREE.BufferAttribute(J, 3)); { const ib = new THREE.InterleavedBuffer(BI, 8); g.setAttribute('tdB1', new THREE.InterleavedBufferAttribute(ib, 4, 0)); g.setAttribute('tdB2', new THREE.InterleavedBufferAttribute(ib, 4, 4)); } // the two nearest beam bites, passed flat per triangle (no uniform-array indexing)
       D.junction = { creases: cr.filter(x => x > 0.5).length, bites: D.bites.length, verts: nw };
@@ -171,7 +191,8 @@ export function createTreeDress(C) {
     }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdDrip = D.dripU; sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdSunD = D.sunU.dir; sh.uniforms.tdSunC = D.sunU.col;
+      sh.uniforms.tdDrip = D.dripU; sh.uniforms.tdScar = D.scarU; sh.uniforms.tdWear = D.wearU; sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute float tdGr;varying float vTdGr;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
@@ -182,7 +203,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-uniform vec4 tdDrip[8];varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;
+float tdCM=0.,tdCF=.5,tdRT=0.;uniform vec4 tdDrip[8];uniform vec4 tdScar[8];uniform vec4 tdWear[4];float tdDrk=0.,tdWr=0.,tdWs=0.,tdNl=0.,tdRu=0.;vec3 tdND=vec3(0.);float tdSe=9.,tdSty=0.,tdSa=0.,tdSb=0.,tdSz=1.;vec3 tdSD=vec3(0.);varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -280,8 +301,31 @@ uniform float tdCool;` + NOISE)
 #endif
           tdH=ha.r;float cav=ha.g*mix(1.,.8+.2*hb.g,tdFade);
           float rel=min(1.,tdRelief*(1.+1.2*tdLf)); // roots: furrows darker too (T22)
-          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel); // pores softer: close up they read as black pepper (smooth photo bark)
-          diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf)); // fine octave: a hint only (its cork pattern read as black pepper up close)
+          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel);
+          diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf));
+          // [photo folds round] the photo's oak: long smooth flutes run down the trunk and on out along every root (its roots radiate
+          // from the axis, so one fluting by angle round the axis does both: vertical on the trunk, lengthwise on the roots). They
+          // wander with height and distance, the grooves narrow and dark, the ridges broad. Above the house they run on up
+          // the trunk to the fork and out onto the limb bases, handing over to Tree's limb grooves (from 3.3 m off the axis); fades out before a flute gets under ~2 px.
+          // [life round] where the hero touches the bark: polished by his hands beside the door's jambs (w > 0: darker, greasy,
+          // smoothed, a faint sheen) and scuffed by his boots just above the landing (w < 0: the ridges rubbed pale). Ragged edges.
+          for(int i=0;i<4;i++){ vec4 w=tdWear[i]; float d=length((tdP-w.xyz)*vec3(1.,1.35,1.)); float k=1.-smoothstep(abs(w.w)*.35,abs(w.w),d+.07*td_n(tdP*11.)-.035);
+            if(w.w>0.)tdWr=max(tdWr,k); else tdWs=max(tdWs,k); }
+          // [scars round] the photo's oak is smooth but lived-in: a few old broken-off branch stubs (knots, the folds swelling round
+          // them) and places where the bark was torn off (bare grey-tan wood inside a rolled callus lip). tdScar: centre, size
+          // (negative = bare-bark scar). Each one is an ellipse in the surface frame, long along the folds (L), across them (tg).
+          { vec2 sv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); vec3 sL=mix(vec3(0.,1.,0.),tdA,tdLf); sL-=wn*dot(sL,wn); sL=dot(sL,sL)>1e-6?normalize(sL):normalize(cross(wn,vec3(1.,0.,0.))); vec3 tg=cross(wn,sL); // long along the folds: up the trunk, out along the roots
+            for(int i=0;i<8;i++){ vec4 sc=tdScar[i]; float sz=abs(sc.w); vec3 d=tdP-sc.xyz; if(dot(d,d)>sz*sz*12.||abs(dot(d,wn))>sz*1.1)continue;
+              float ax=sc.w<0.?2.6:1.5; float a=dot(d,sL)/(sz*ax), b=dot(d,tg)/sz; float e=length(vec2(a,b));
+              if(e<tdSe){ tdSe=e; tdSty=sc.w<0.?2.:1.; tdSa=a; tdSb=b; tdSz=sz; tdSD=normalize(sL*(a/ax)+tg*b+wn*1e-4); } } }
+          { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float fr=length(fv), fa=atan(fv.y,fv.x);
+            float ph=fa*17.+1.3*sin(y*.55+fa*3.)+.9*sin(fr*1.15-fa*2.)+.5*sin(y*1.7-fr*.8+fa*5.);
+            float aa=1.-smoothstep(.35,.9,fwidth(ph));
+            tdFlK=aa*mix(1.-smoothstep(7.,9.,fr),(1.-smoothstep(3.3,4.4,fr))*(1.-smoothstep(9.4,10.8,y)),smoothstep(4.2,5.6,y))*smoothstep(.75,1.,fr)*(1.-.6*vTdJ.x);
+            if(tdSty>0.){ ph+=(tdSty>1.?1.3:2.4)*tdSb/(abs(tdSb)+.35)*(1.-smoothstep(1.,2.4,tdSe)); tdFlK*=smoothstep(.85,1.2,tdSe); } // the folds part and flow round it
+            tdFl=sin(ph); tdFlD=cos(ph)*17./max(fr,.8);
+            float gv=smoothstep(.3,.95,-tdFl), rg=smoothstep(0.,.9,tdFl);
+            diffuseColor.rgb*=mix(1.,.42+.1*hb.g,gv*tdFlK*.9)*mix(1.,1.14,rg*tdFlK); } // fine octave: a hint only (its cork pattern read as black pepper up close)
           { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
             // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
             diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
@@ -295,7 +339,7 @@ uniform float tdCool;` + NOISE)
           diffuseColor.rgb*=mix(1.,mix(.78,1.18,smoothstep(.3,.8,tdH)),tdCo*.75);
           if(vB1.w>0.){ float pk=0.;
             // only the two bites nearest this triangle (from the mesh, flat), not a loop over all of them
-            for(int k=0;k<TDBK;k++){ vec4 b=k==0?vB1:vB2; if(b.w<0.)continue; vec3 dv=tdP-b.xyz; float d=length(dv); if(d>b.w+.8)continue;
+            for(int k=0;k<TDBK;k++){ vec4 b=k==0?vB1:vB2; if(b.w<0.)continue; if(b.w>4.)b.w-=4.; vec3 dv=tdP-b.xyz; float d=length(dv); if(d>b.w+.8)continue;
               float ci=1.-smoothstep(b.w*.8,b.w*1.02,d);                                    // crushed under the beam's end
               float rl=smoothstep(b.w*.85,b.w+.05,d)*(1.-smoothstep(b.w+.05,b.w+.2,d));      // callus roll the bark grew round it
               float wr=1.-smoothstep(b.w,b.w+.5,d);                                          // rubbed by the wood moving in the wind
@@ -315,6 +359,10 @@ uniform float tdCool;` + NOISE)
 #ifdef TD_LITE
           float big=texture2D(tdHao,vec2(tdP.x+tdP.y*.55,tdP.z-tdP.y*.45)*.09).g*1.4-.35; // a skewed planar read that varies across every face (the old (x+z, y) one was constant along flat root tops: stripes)
           float fine=ha.b;
+          // [root ripple round] ha.b is the bark map's cork detail: as the moss's colour breakup it printed that cork pattern onto
+          // the moss on the sunlit roots as a speckle up close. Within ~6 m it hands over to a soft world-space noise (arithmetic
+          // only, so the per-pixel branch is safe); further out the cork is sub-pixel and stays as it was
+          { float cd=length(cameraPosition-tdP); if(cd<6.){ fine=mix(td_f(tdP*3.1+vec3(0.,big*2.,0.)),fine,smoothstep(3.5,6.,cd)); } }
 #else
           float big=td_f(tdP*vec3(.55,.35,.55));
           float fine=td_f(tdP*3.1+vec3(0.,big*2.,0.));
@@ -322,6 +370,7 @@ uniform float tdCool;` + NOISE)
           // damp foot: the bark gets darker, cooler and a little greener towards the ground (photo: the base sinks into the fog)
           float foot=1.-smoothstep(-.3,4.8,y+(big-.5)*1.2);
           float rootTop=smoothstep(.25,.75,wn.y)*smoothstep(1.9,3.2,rd);
+          tdRT=smoothstep(.3,.85,wn.y)*smoothstep(1.7,2.8,rd)*(1.-smoothstep(1.2,2.4,y)); // [night roots round] for the moonlit root tops below
           diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.34,.38,.42),foot*.62*tdFoot*(1.-rootTop*.7));
           // contact AO where the roots meet the ground, and under overhangs
           diffuseColor.rgb*=mix(1.,.55,(1.-smoothstep(-.35,.45,y))*tdFoot);
@@ -335,6 +384,9 @@ uniform float tdCool;` + NOISE)
           mm+=(1.-tdH)*.18*smoothstep(.05,.3,mm); // moss settles into the furrows first
           mm=max(mm,tdCr*smoothstep(-.25,.45,wn.y)*smoothstep(.2,.55,big+fine*.4)*smoothstep(3.,4.5,y)); // moss packs the crotches
           mm*=1.-tdBW*.85;
+          { vec3 q=tdP; float bx=smoothstep(-3.1,-2.8,q.x)*(1.-smoothstep(-.5,-.2,q.x))*smoothstep(.7,1.,q.z)*(1.-smoothstep(3.3,3.6,q.z));
+            float hb=q.y-(13.38-.87*abs(q.x+2.2))+(big-.5)*.16+(fine-.5)*.08; // [roof limb round] a damp moss collar where the limb lies on / leaves the bedroom roof (Tree cut the slates round it): height above the slope
+            tdCM=bx*smoothstep(-.2,-.05,hb)*(1.-smoothstep(.12,.34,hb))*smoothstep(.15,.45,big*.7+fine*.5)*tdMoss; tdCF=fine; mm=max(mm,tdCM); }
           mm=clamp(mm*tdMoss,0.,1.)*(1.-clamp(vGlow*2.5,0.,1.));
           // linear colours: deep olive in the shade, a little brighter yellow-green where it catches light
           vec3 moss=mix(vec3(.030,.048,.014),vec3(.085,.125,.028),smoothstep(.3,.8,fine));
@@ -375,7 +427,7 @@ uniform float tdCool;` + NOISE)
           { float dr=0.; for(int i=0;i<8;i++){ vec4 s=tdDrip[i]; float h=s.y-tdP.y; float hl=.9+1.7*td_n(vec3(tdP.x*2.3,s.y,tdP.z*2.3));
               dr=max(dr,(1.-smoothstep(s.w*.45,s.w,length(tdP.xz-s.xz)))*smoothstep(-.02,.06,h)*(1.-smoothstep(hl*.5,hl,h))); }
             if(dr>.001){ float run=smoothstep(.38,.68,td_n(vec3(tdP.x*11.,tdP.y*.7,tdP.z*11.)))*(.6+.4*td_n(vec3(tdP.x*4.,tdP.y*2.,tdP.z*4.)));
-              float k=dr*run*(1.-mm*.6)*(.6+.4*tdDamp); diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.5,.52,.47),k*.8); tdWM=max(tdWM,k*tdWet); } }
+              float k=dr*run*(1.-mm*.6)*(.6+.4*tdDamp); diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.5,.52,.47),k*.8); tdWM=max(tdWM,k*tdWet); tdDrk=k; } }
           // hoar frost: white rime on the upward faces of the roots near the ground, on the ridges first (furrows stay dark)
           if(tdFrost>.003){ float fm=tdFrost*smoothstep(.55,.9,wn.y)*(1.-smoothstep(.6,2.2,y))*smoothstep(.45,.8,tdH+ha.b*.3+(big-.5)*.6)*(1.-mm*.5);
             diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.34,.37,.42)*(.7+.6*ha.b),fm*.5); tdFM=fm; } // a light dusting, not snow
@@ -384,6 +436,60 @@ uniform float tdCool;` + NOISE)
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
           vec3 wn=normalize(tdN);
+          // [scars round] the knots' and scars' colour, here and not with the rest of the bark colour: Tree's map code (which runs
+          // after treedress's) mixes every colour halfway to one brown, which washed them out. Derivatives in uniform flow.
+          float sFar=1.-.62*smoothstep(9.,24.,length(cameraPosition-tdP)); // [review round] from the home view the scars' pale wood and the knots' rings read as painted ovals and targets: much softer far away
+          float gp=tdSb*tdSz*150.+1.6*sin(tdSa*5.)+.6*sin(tdSa*13.+tdSb*3.); float gk=1.-smoothstep(.4,1.,fwidth(gp)); float rg=1.-smoothstep(.3,1.,fwidth(tdSe*40.));
+          if(tdSty>1.5){ // bare-bark scar: weathered grey-tan wood with fine grain along the folds, a dark crease inside the rolled lip
+            float in_=1.-smoothstep(.88,.98,tdSe); float g=dot(diffuseColor.rgb,vec3(.33));
+            
+            float ck=smoothstep(.93,1.,abs(sin(gp*.23+1.7*sin(tdSa*3.1))))*gk; // a few deep checks along the grain
+            vec3 wd=vec3(1.24,1.,.74)*(g*.98+.012)*(1.-.2*gk*smoothstep(.2,1.,sin(gp)))*(1.-.55*ck)*mix(1.,.75,smoothstep(0.,-.9,tdSa)) // runs stain its lower end
+              *(1.-.42*smoothstep(.6,.95,tdSe)*smoothstep(-.2,.6,tdSa))*(1.-.18*smoothstep(.4,.95,tdSe)); // sunk below the bark: the lip above shades the inside
+            { float dz=1.-smoothstep(.9,2.4,tdP.y+(td_n(tdP*3.1)-.5)*.5); // [day base round] a scar down at the foot is not silver: ground damp soaks it dark, greenish with algae from below
+              wd=mix(wd,mix(vec3(dot(wd,vec3(.33))),wd,.6)*vec3(.5,.52,.4)*(1.-.25*smoothstep(.3,-.6,tdSa)),dz); }
+            diffuseColor.rgb=mix(diffuseColor.rgb,wd,in_*sFar);
+            diffuseColor.rgb*=(1.+.18*sFar*exp(-pow((tdSe-1.06)/.09,2.)))*(1.-.6*sFar*exp(-pow((tdSe-.95)/.045,2.))); }
+          else if(tdSty>.5){ // old broken stub: a dark rotten hole with end-grain rings, a crease, and the swollen lip of bark round it
+            float c=1.-smoothstep(.4,.54,tdSe); 
+            diffuseColor.rgb*=mix(1.,mix(.46,.2,smoothstep(-.35,.35,tdSa))*(1.-.15*rg*(.5+.5*sin(tdSe*40.))),c*(.55+.45*sFar)); // the lip overhangs the top of the hole: darkest there
+            diffuseColor.rgb*=(1.-.3*sFar*exp(-pow((tdSe-.56)/.06,2.)))*(1.+.12*sFar*exp(-pow((tdSe-.74)/.16,2.))); }
+          { float g=dot(diffuseColor.rgb,vec3(.33));
+            diffuseColor.rgb*=mix(vec3(1.),vec3(.76,.67,.58),tdWr);                                                   // hand grease
+            diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.3,g*1.16,g*1.)+.012,.7*tdWs*smoothstep(.3,.75,tdH)); }  // boot-rubbed ridges
+          // [life round] the house's beams are nailed to the oak: a pair of forged nail heads beside about two in three beam ends
+          // (the two nearest, flat per triangle), each bleeding a thin rust run down the bark
+          { vec3 tgh=cross(vec3(0.,1.,0.),wn); tgh=dot(tgh,tgh)>1e-4?normalize(tgh):vec3(1.,0.,0.);
+            for(int k=0;k<TDBK;k++){ vec4 b=k==0?vB1:vB2; if(b.w<4.)continue; b.w-=4.; float hs=fract(sin(dot(b.xyz,vec3(12.9898,78.233,37.719)))*43758.5453); if(hs>.66)continue;
+              for(int sI=0;sI<2;sI++){ float sg=sI==0?-1.:1.; vec3 q=tdP-(b.xyz+tgh*sg*(b.w+.012)+vec3(0.,(hs-.33)*.14,0.)); if(dot(q,q)>.16)continue;
+                float lx=dot(q,tgh), ly=q.y, r=length(vec2(lx,ly));
+                float hd=1.-smoothstep(.019,.024,r); // a forged spike's head, ~4.5 cm
+                float run=(1.-smoothstep(.004,.02,abs(lx+.006*sin(ly*31.+hs*20.))))*smoothstep(.012,.04,-ly)*(1.-smoothstep(.05,.22+.25*hs,-ly));
+                if(hd>tdNl){ tdNl=hd; tdND=(tgh*lx+vec3(0.,ly,0.))/max(r,1e-3)*smoothstep(.004,.019,r); } tdRu=max(tdRu,run); } } }
+          diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.95,.62,.4)+vec3(.025,.008,0.),.6*tdRu*(1.-tdNl));
+          diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.06,.05,.045)*(1.+1.2*max(tdND.y,0.)),tdNl);
+          // [rain round] the wet look again here: the map block's wet darkening ran before Tree's map code mixes every bark colour
+          // halfway to one brown, which left the soaked oak looking dry. The fold grooves carry the most water, the runs under the
+          // landings stay dark longest, bare wood in the scars drinks the rain darkest of all, rust runs go deep red-brown.
+          { float wt=max(tdWet,tdDamp); float gr=tdFlK*smoothstep(.2,.9,-tdFl);
+            float w=clamp(max(tdWM,tdDM*.8)*(1.+.6*gr)+tdDrk*(.35+.65*wt),0.,1.);
+            { float l=dot(diffuseColor.rgb,vec3(.3,.59,.11)); diffuseColor.rgb=max(mix(vec3(l),diffuseColor.rgb,1.+.3*w),0.)*(1.-.3*w); } // darker and richer, evenly (squaring sank the shaded bark to black)
+            if(tdSty>1.5)diffuseColor.rgb*=1.-.45*wt*(1.-smoothstep(.88,.98,tdSe));
+            diffuseColor.rgb*=mix(vec3(1.),vec3(.72,.62,.58),tdRu*wt); }
+          // [base round] the trunk's flare base read as pale grey stone from the home view (by day ~(90,65,44) against the mid
+          // trunk's (77,47,27)): Tree's map code desaturates and halves every colour after treedress's map block, and the up-facing
+          // flare faces escape the damp-foot darkening. Here, after that: warmer, richer and a little darker low down, and the
+          // photo's folds there deepened again. Not on the moss or inside the scars; a ragged upper edge.
+          // [upper limbs round] high in the crown the limbs sit in the leaves' shade: darker and a touch greener (light through leaves),
+          // the furrows darkest. They read pale grey-pink and flat like plastic up close.
+          { float cr=smoothstep(12.,15.5,tdP.y+(td_n(tdP*.9)-.5)*1.2); diffuseColor.rgb*=mix(vec3(1.),vec3(.7,.74,.66)*(.8+.3*tdH),cr); }
+          // [roof limb round] the collar's moss colour again here (Tree's map code after the map block washes greens to brown)
+          if(tdCM>.001){ float l=dot(diffuseColor.rgb,vec3(.3,.59,.11)); vec3 mc=mix(vec3(.034,.05,.016),vec3(.08,.115,.03),smoothstep(.3,.8,tdCF));
+            diffuseColor.rgb=mix(diffuseColor.rgb,mc*(.55+1.1*l),tdCM*smoothstep(.0,.6,tdCM)*.8); }
+          { float bz=(1.-smoothstep(1.,3.2,tdP.y+(td_n(tdP*.7)-.5)*.8))*(1.-tdMM)*(tdSty>0.?smoothstep(1.,1.3,tdSe):1.);
+            float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));
+            diffuseColor.rgb=mix(diffuseColor.rgb,max(mix(vec3(l),diffuseColor.rgb,1.4),0.)*vec3(.8,.7,.58),bz);
+            diffuseColor.rgb*=(1.-.5*bz*tdFlK*smoothstep(.1,.9,-tdFl))*(1.+.15*bz*tdFlK*smoothstep(.2,.9,tdFl)); }
           tdBias=1.2; // the normal reads a little blurred too: single-texel pits lit from the side drew black pepper up close
 #ifdef TD_LITE
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
@@ -396,16 +502,35 @@ uniform float tdCool;` + NOISE)
           if(brk>.01)dn=mix(dn,tdTriN(15./11.,vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
           if(tdFade>.01)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.3*tdLf); // on roots the fine octave read as wood grain
 #endif
+          // the flutes in the light too: tilt across them (the horizontal tangent round the axis), steeper in the narrow grooves
+          { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); vec3 tg=normalize(vec3(-fv.y,0.,fv.x)+1e-5); tg-=wn*dot(tg,wn);
+            dn-=tg*tdFlD*.03*(1.+1.4*smoothstep(.3,.9,-tdFl))*tdFlK/max(tdRelief,.05); }
+          if(tdSty>0.){ float f=(tdSe-(tdSty>1.?1.04:.74))/(tdSty>1.?.11:.17), t=f*exp(-f*f)*(tdSty>1.?1.5:1.1); // the lip: inner slope faces in, outer out
+            if(tdSty<1.5)t-=.55*(1.-smoothstep(.3,.5,tdSe))*min(tdSe/.4,1.);                                    // the stub's sunken hole
+            else dn*=mix(1.,.3,1.-smoothstep(.85,.97,tdSe));                                                    // bare wood is smooth
+            dn+=tdSD*t*sFar/max(tdRelief,.05); }
           tdBias=0.;
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
           dn+=tdBD*tdBR*.9;                   // the callus roll round a beam
           dn*=1.+tdCo*.5;                     // collar: deeper squeezed folds
-          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf)); // roots: deeper relief (Critic T22: they read smooth up close)
+          dn*=(1.-.55*tdWr)*(1.-.3*tdWs)*(1.-.85*tdNl); // polished, rubbed, under a nail head
+          dn+=tdND*tdNl*.7/max(tdRelief,.05);  // the nail head's dome
+          // [root ripple round] up close in the sun the roots' tripled relief lit every cork pore of the map as a speckle: under ~5 m it
+          // eases back towards the trunk's (the furrows still read, the pores stop sparkling)
+          float spkN=tdLf*(1.-smoothstep(2.,5.5,length(cameraPosition-tdP)));
+          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf*(1.-.7*spkN))); // roots: deeper relief (Critic T22: they read smooth up close)
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.45,tdWM*(1.-tdFM)); // a soft wet sheen, not varnish // dry bark is fully matte')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.45,tdWM*(1.-tdFM));roughnessFactor=mix(roughnessFactor,.58,tdWr*.55);roughnessFactor=mix(roughnessFactor,.28,tdWet*(tdSty>.5&&tdSty<1.5?1.-smoothstep(.4,.54,tdSe):0.));roughnessFactor=mix(roughnessFactor,.5,tdWet*tdFlK*smoothstep(.2,.9,-tdFl)*.6); /* [rain round] water standing in the knot holes, running in the fold grooves */ // a soft wet sheen, not varnish // dry bark is fully matte')
+        .replace('#include <common>', '#include <common>\nuniform vec3 tdSunD,tdSunC;')
+        // [low sun round] dawn / dusk: the bark edges turned to the low sun catch a warm rim. It scales the sun's own (shadowed)
+        // direct light, so it only shows where the sun really reaches: no glow in the house's shade or under the landings.
+        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        if(tdSunC.r>.005){ vec3 sv=normalize((viewMatrix*vec4(tdSunD,0.)).xyz); float nvv=1.-abs(dot(normal,normalize(vViewPosition)));
+          float rk=pow(nvv,2.2)*smoothstep(-.05,.45,dot(normal,sv))*(.6+.4*tdH);
+          reflectedLight.directDiffuse*=vec3(1.)+tdSunC*rk*3.2; }`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
@@ -416,11 +541,19 @@ uniform float tdCool;` + NOISE)
           totalEmissiveRadiance+=tdRimC*rim*(.12+tdL*1.6)*(1.-tdMM*.5)*(1.+tdWM*.8);
           // daylight bounced off the ground, the roots and the house's planks: warm fill so the trunk in the house's shade reads
           // as brown bark, not a black hole (weaker in the furrows and the deep crotches)
-          totalEmissiveRadiance+=diffuseColor.rgb*vec3(1.1,.95,.8)*tdDay*.5*(.45+.55*tdH)*(1.-tdCr*.7);
+          totalEmissiveRadiance+=diffuseColor.rgb*vec3(1.1,.95,.8)*tdDay*.5*(.45+.55*tdH)*(1.-tdCr*.7)*(1.-.75*smoothstep(12.,15.,tdP.y)); // [upper limbs round] no ground bounce up inside the crown: the high limbs read pale and flat
+          // [photo folds round] night: the photo's trunk and roots read in a cool moonlit grey-blue, the flute ridges and the root
+          // tops catching it, the grooves and undersides dark (before, below the house they sank into one dark brown mass)
+          { float up=.45+.55*smoothstep(-.2,.8,wn.y); float rdg=(.35+.65*smoothstep(.3,.8,tdH))*mix(1.,.25+.95*smoothstep(-.3,.8,tdFl),tdFlK);
+            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*mix(1.,2.4,smoothstep(3.5,5.5,tdP.y))*(1.-smoothstep(10.5,12.,tdP.y)); }
+          // [night roots round] photo night: every root reads as its own rounded limb, the top ridge catching the moon in a cool
+          // grey-blue line along it, the flanks dark; ours sank into one flat dark mass between the fog. A cool moonlight on the
+          // root tops only (not the flanks, not under the landings' shade), broken by the bark ridges, never on moss-free glow.
+          totalEmissiveRadiance+=vec3(.030,.040,.056)*(1.-tdDay)*tdRT*(.45+.55*smoothstep(.3,.8,tdH))*(1.-tdMM*.4); // [night folds round] up the trunk between the houses too (it was one flat dark mass at night; the photo's folds read there)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress7';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress21';
     mat.needsUpdate = true;
   }
 
@@ -461,8 +594,32 @@ uniform float tdCool;` + NOISE)
     for (const c of cl) { const ang = Math.atan2(c[2] - AZ, c[0] - AX); c[3] *= 1 + 2 * Math.max(0, Math.sin(ang)); if (Math.abs(angDiff(ang, doorAng)) < 0.55 && c[1] < 3.6) c[3] = 0; }
     cl.sort((a, b) => b[3] - a[3]); const src = cl.filter(c => c[3] > 0.05).slice(0, 8);
     src.forEach((c, i) => D.dripU.value[i].set(c[0], c[1], c[2], 0.7)); D.drips = src.map(c => c.map(v => +v.toFixed(2))); }
+  // [scars round] old broken-off branch stubs (size > 0) and torn-off bark (size < 0), placed by hand where the home view sees
+  // bare bark (the trunk between the kitchen and the workshop, above the house, one limb, the roots in front), each snapped to
+  // the bark along the line to the home camera; skipped if a board or beam covers it or a beam bites in there. Deterministic.
+  { const rc = new THREE.Raycaster(), hits = [], out = [], cam = V(0, 10.5, 28.4); TREE.bark.updateMatrixWorld(true);
+    // sizes: half-width across the folds in metres; from the home view (~28 m) a 0.2 m knot is about 6 px across on a phone
+    const spots = [[0.2, 6.0, 0.64, 0.21], [-0.5, 2.46, 0.79, -0.24], [0.9, 8.8, 0.46, 0.18], [2.36, 10.5, -0.6, 0.22],
+      [-1.14, 0.94, 2.62, -0.22], [2.27, 0.6, 1.7, 0.16], [-3.2, 0.76, 2.13, 0.15]]; /* [review round] the scar on the right root's flat top (3.84, 0.79, 0.2) read as a grey puddle from the home view: dropped */
+    for (const [x, y, z, sz] of spots) { const q = V(x, y, z), dir = cam.clone().sub(q).normalize();
+      rc.set(q.clone().addScaledVector(dir, 1.5), dir.clone().negate()); rc.far = 3;
+      hits.length = 0; TREE.bark.raycast(rc, hits); hits.sort((a, b) => a.distance - b.distance); const h = hits[0]; if (!h) continue;
+      const p = h.point; if (blocked(p.x, p.y, p.z, 0.02) || D.bites.some(b => b.distanceTo(p) < b.w + Math.abs(sz))) continue;
+      D.scarU.value[out.length].set(p.x, p.y, p.z, sz); out.push([+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), sz]); }
+    D.scars = out; }
+  // [life round] the hero's wear round the trunk door: hand polish on the bark beside each jamb at hand height, boot scuffs just
+  // above the landing beside the threshold; snapped onto the bark by a ray towards the axis
+  D.wear = [];
+  if (C.door) { const dr = C.door, rc = new THREE.Raycaster(), hits = [];
+    const snap = (ang, y) => { const dx = Math.cos(ang), dz = Math.sin(ang); rc.set(V(AX + dx * 14, y, AZ + dz * 14), V(-dx, 0, -dz)); rc.far = 14; hits.length = 0; TREE.bark.raycast(rc, hits); hits.sort((a, b) => a.distance - b.distance); return hits[0] ? hits[0].point : null; };
+    const c = snap(doorAng, dr.y0 + 0.9); const R = c ? radial(c.x, c.z) : 1.5;
+    for (const sg of [-1, 1]) { const da = sg * (dr.w / 2 + 0.13) / R;
+      for (const [dy, w] of [[1.0, 0.26], [0.16, -0.24]]) { const p = snap(doorAng + da, dr.y0 + dy); if (!p || D.wear.length >= 4) continue; D.wearU.value[D.wear.length].set(p.x, p.y, p.z, w); D.wear.push([+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2), w]); } } }
 
   const radial = (x, z) => Math.hypot(x - AX, z - AZ);
+  // [root round] the ground as drawn (Ground's mesh grid, then its height with the humps), not env's base groundH, which misses
+  // the humps and root skirts by up to ~15 cm
+  const gH = (x, z) => { const G = C.groundG || window.__ground; let h = null; try { if (G && G.meshH) h = G.meshH(x, z); if (h == null && G && G.heightAt) h = G.heightAt(x, z); } catch (e) { h = null; } return h == null ? groundH(x, z) : h; };
   const nearDoor = (x, y, z) => Math.abs(angDiff(Math.atan2(z - AZ, x - AX), doorAng)) < 0.5 && y < 4.8;
   const Q = new THREE.Quaternion(), M4 = new THREE.Matrix4(), S = V(), UP = V(0, 1, 0), col = new THREE.Color();
   const orient = (n, spin) => { Q.setFromUnitVectors(UP, n); return Q.multiply(new THREE.Quaternion().setFromAxisAngle(UP, spin)); };
@@ -616,7 +773,7 @@ uniform float tdCool;` + NOISE)
       // hemmed in: wood both clockwise and anticlockwise within ~0.9 m
       let hem = 0; for (const s of [-1, 1]) for (let j = 1; j <= 4; j++) { const b = a + s * j * 0.22 / d * 1.0; if (rootD(AX + Math.cos(b) * d, AZ + Math.sin(b) * d) < 0.03) { hem++; break; } }
       if (hem < 1 || (hem < 2 && R() < 0.6)) continue;
-      const y = groundH(x, z); if (nearDoor(x, y + 0.3, z) && R() < 0.5) continue;
+      const y = gH(x, z); if (nearDoor(x, y + 0.3, z) && R() < 0.5) continue;
       spots.push([x, y, z, rd, a, d]);
     }
     // soil mounds: low dark humps half buried, so the roots look like they grow out of earth, not out of a flat floor
@@ -648,7 +805,7 @@ uniform float tdCool;` + NOISE)
       const s = spots[Math.floor(R() * spots.length)]; if (!s) break;
       const [x0, , z0, rd] = s; const x = x0 + rr(-0.35, 0.35), z = z0 + rr(-0.35, 0.35);
       const r2 = rootD(x, z); if (r2 < 0.0) continue;
-      const lean = r2 < 0.12 ? rr(0.3, 0.8) : rr(0, 0.25), y = groundH(x, z) + 0.02 + (r2 < 0.12 ? rr(0.02, 0.12) : rr(0, 0.05));
+      const lean = r2 < 0.12 ? rr(0.3, 0.8) : rr(0, 0.25), y = gH(x, z) + 0.02 + (r2 < 0.12 ? rr(0.02, 0.12) : rr(0, 0.05));
       const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-lean, lean), rr(0, 6.28), rr(-lean, lean)));
       M4.compose(V(x, y, z), q, S.setScalar(rr(0.17, 0.27))); lit.setMatrixAt(nl, M4);
       const c = tints[Math.floor(R() * tints.length)], v = rr(0.75, 1.1); col.setRGB(c[0] * v * 1.2, c[1] * v * 1.2, c[2] * v * 1.2); lit.setColorAt(nl, col); nl++;
@@ -742,18 +899,24 @@ uniform float tdCool;` + NOISE)
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
     })();
     const leafG = new THREE.PlaneGeometry(1, 1); leafG.translate(0, 0.5, 0);
-    const imat = swayMat(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex }))), U, 0.05, FLUTTER);
+    const imat = swayMat(tdAut(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex })))), U, 0.05, FLUTTER);
     const NLV = Math.round(900 * MUL), leaves = new THREE.InstancedMesh(leafG, imat, NLV); let nl = 0;
     const stems = [];
     // a few vines: mostly on the sides and the back, one wandering across the front-left under the kitchen landing
     const vines = [[2.05, 4.6], [2.6, 3.4], [3.3, 5.6], [-2.4, 4.2], [-1.2, 3.0], [-0.35, 2.4], [0.25, 4.8]];
+    // [greenery round] autumn: about a third of the ivy turns, by a hash of the leaf's spot (no R() draw, so the layout stays):
+    // rust and wine red on the leaves that get the most light (higher up, the outer side), a few butter-yellow, the rest stays
+    // a deep evergreen. The tint multiplies the green leaf map, so the factors are large in red and small in green and blue.
+    const autumnIvy = p => { const h = tdHash(p, 0), g = tdHash(p, 1);
+      const turn = 0.32 + 0.2 * Math.min(1, Math.max(0, (p.y - 1.0) / 6)); if (h > turn) return;
+      const v = 0.9 + 0.22 * g; if (h < turn * 0.5) col.setRGB(1.75 * v, 0.3 * v, 0.15 * v); else if (h < turn * 0.82) col.setRGB(2.0 * v, 0.75 * v, 0.17 * v); else col.setRGB(2.1 * v, 1.35 * v, 0.26 * v); }; // x4: wine red, rust orange, butter yellow (linear)
     const addLeaf = (p, out, size) => {
       if (nl >= NLV || blocked(p.x, p.y, p.z, 0.06)) return;
       const n = out.clone().add(V(rr(-0.35, 0.35), rr(0.05, 0.5), rr(-0.35, 0.35))).normalize();
       const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), n);
       q.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), rr(-0.9, 0.9)));
       M4.compose(p.clone().addScaledVector(out, 0.02), q, S.setScalar(size)); leaves.setMatrixAt(nl, M4);
-      const v = rr(0.75, 1.2); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); leaves.setColorAt(nl, col); nl++;
+      const v = rr(0.75, 1.2); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); autumnIvy(p); leaves.setColorAt(nl, col); nl++;
     };
     const climb = (a, y, top, depth) => {
       const pts = []; let wob = rr(0, 6);
@@ -821,7 +984,7 @@ uniform float tdCool;` + NOISE)
     { D.joinIvy = 0; const sideV = V(0, 0, 0); let made = 0;
       const put = (p, out, size) => { if (nl >= NLV || inBox(avoid, p.x, p.y, p.z, 0.03)) return; const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), out.clone().add(V(rr(-0.3, 0.3), rr(0, 0.3), rr(-0.3, 0.3))).normalize());
         q.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), rr(-0.9, 0.9))); M4.compose(p, q, S.setScalar(size)); leaves.setMatrixAt(nl, M4);
-        const v = rr(0.75, 1.15); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); leaves.setColorAt(nl++, col); D.joinIvy++; };
+        const v = rr(0.75, 1.15); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); autumnIvy(p); leaves.setColorAt(nl++, col); D.joinIvy++; };
       for (const b of D.bites) { if (made >= (MOBILE ? 10 : 22)) break; RSEED(808000 + ((Math.round(b.x * 20) * 7349 + Math.round(b.y * 20) * 3389 + Math.round(b.z * 20) * 1531) & 0xfffff)); if (R() < 0.5) continue; if (inBox(avoid, b.x, b.y + 0.1, b.z, 0.05) || nearDoor(b.x, b.y + 0.3, b.z)) continue; made++; (D.joinAt = D.joinAt || []).push([+b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2)]);
         const out = V(b.x - AX, 0, b.z - AZ).normalize(); const ax = b.ax, vert = Math.abs(ax.y) > 0.7;
         // horizontal wood (landing boards, joists, braces): creep along a side face, never on the top people walk on; posts: the outer face
@@ -880,7 +1043,7 @@ uniform float tdCool;` + NOISE)
       }
       return mergeGeometries(parts);
     })();
-    const fmat = swayMat(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex }))), U, 0.06,
+    const fmat = swayMat(tdAut(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex })))), U, 0.06,
       // [wind round] the fronds bend with Wind's shared gusts (the same front that runs through the crown, so a gust reaches them
       // on its way to the tree), a slow nod in calm; plus a faint leaflet shiver that grows with the gust. Old sine sway as fallback.
       `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);float k=clamp(uv.y,0.,1.);k*=k;
@@ -921,7 +1084,7 @@ uniform float tdCool;` + NOISE)
     const crev = [];
     for (let k = 0; k < 3000 && crev.length < 120; k++) { RSEED(904000 + k);
       const a = rr(0, Math.PI * 2), d = rr(2.0, 4.6), x = AX + Math.cos(a) * d, z = AZ + Math.sin(a) * d, rd = rootD(x, z);
-      if (rd < 0.05 || rd > 0.4) continue; const y = groundH(x, z); if (blocked(x, y + 0.4, z, 0.1) || nearDoor(x, y + 0.3, z)) continue; crev.push(V(x, y, z));
+      if (rd < 0.05 || rd > 0.4) continue; const y = gH(x, z); if (blocked(x, y + 0.4, z, 0.1) || nearDoor(x, y + 0.3, z)) continue; crev.push(V(x, y, z));
     }
     // forks and limb tops above the ground, where a little soil collects
     const forks = sampler(q => q.n.y > 0.8 && q.c.y > 4 && q.c.y < 12 && radial(q.c.x, q.c.z) > 1.3 && radial(q.c.x, q.c.z) < 5);
@@ -951,6 +1114,22 @@ uniform float tdCool;` + NOISE)
       M4.compose(p.clone().addScaledVector(s0.n, -0.03), orient(s0.n.clone().lerp(UP, 0.7).normalize(), rr(0, 6.28)), S.setScalar(rr(0.3, 0.5))); ferns.setMatrixAt(nf, M4); ferns.setColorAt(nf++, col.setRGB(0.95, 0.95, 0.95));
       D.forkFerns = (D.forkFerns || 0) + 1;
     }
+    // [root round] a tuft or fern at a root's foot reached into the root: blades and fronds came out of the bark. Dropped when the
+    // bark (Ground's barkTop, the wood's own top surface) rises within their reach higher than they stand there. No R() draws.
+    { const BT = C.groundG && (C.groundG._wallAt || C.groundG.barkTop); const into = (im, i, r1, h1, r2, h2) => { im.getMatrixAt(i, M4); const e = M4.elements, x = e[12], y = e[13], z = e[14], sc = Math.hypot(e[0], e[1], e[2]);
+        for (let k = 0; k < 8; k++) { const a = k * 0.785, c = Math.cos(a), s = Math.sin(a); const t1 = BT(x + c * r1 * sc, z + s * r1 * sc), t2 = BT(x + c * r2 * sc, z + s * r2 * sc);
+          if ((t1 != null && t1 > y + h1 * sc && t1 < y + 1.9) || (t2 != null && t2 > y + h2 * sc && t2 < y + 1.9)) return true; } return false; };
+      const compact = (im, n, test) => { let w = 0; const m = new THREE.Matrix4(), c2 = new THREE.Color(); for (let i = 0; i < n; i++) { if (test(i)) continue; if (w !== i) { im.getMatrixAt(i, m); im.setMatrixAt(w, m); im.getColorAt(i, c2); im.setColorAt(w, c2); } w++; } return w; };
+      if (BT) { const n0 = nf + nt; const frondInto = i => { const e = ferns.instanceMatrix.array, o = i * 16, sc = Math.hypot(e[o], e[o + 1], e[o + 2]), x = e[o + 12], y = e[o + 13], z = e[o + 14];
+          for (let f = 0; f < 7; f++) { const a = f / 7 * Math.PI * 2 + (f % 2) * 0.3, L = 0.75 + (f % 3) * 0.12, tl = 0.55 + (f % 2) * 0.25, c = Math.cos(a), sn = Math.sin(a);
+            const wx = (e[o] * c + e[o + 8] * sn) / sc, wz = (e[o + 2] * c + e[o + 10] * sn) / sc; /* the frond's own direction (fernG) */
+            for (const t of [0.5, 1]) { const out = Math.sin(tl) * t * L * sc, up = (Math.cos(tl) * t * L * 1.2 - t * t * 0.45 * L) * sc, w = BT(x + wx * out, z + wz * out); if (w != null && w > y + up + 0.03 && w < y + 1.9) return true; } } return false; };
+        nf = compact(ferns, nf, i => ferns.instanceMatrix.array[i * 16 + 13] < 1.5 && frondInto(i));
+        nt = compact(tufts, nt, i => tufts.instanceMatrix.array[i * 16 + 13] < 1.5 && into(tufts, i, 0.1, 0.06, 0.2, 0.14)); D.rootGrassDropped = n0 - nf - nt; } }
+    // [greenery round] autumn bracken: about half the ferns turn copper or straw by a hash of their spot (no R() draw), the rest
+    // keep a tired late-season green; their colour multiplies the green frond map, hence the big red factor
+    for (let i = 0; i < nf; i++) { ferns.getMatrixAt(i, M4); const e = M4.elements, h = tdHash({ x: e[12], y: e[13], z: e[14] }, 2); ferns.getColorAt(i, col); let v = col.r; if (h < 0.5) v = Math.max(v, 0.95); /* a turned frond needs red > 1.5 (the flag) */
+      if (h < 0.3) col.setRGB(1.7 * v, 0.55 * v, 0.14 * v); else if (h < 0.5) col.setRGB(2.0 * v, 1.25 * v, 0.35 * v); else col.setRGB(1.12 * v, 0.95 * v, 0.7 * v); ferns.setColorAt(i, col); }
     ferns.count = nf; tufts.count = nt; ferns.receiveShadow = tufts.receiveShadow = true; D.group.add(ferns); if (!MOBILE) D.group.add(tufts); /* phones: the root-crevice grass tufts covered ~0.1% of the screen (Ground's grass is right there) - not worth a draw call */ D.ferns = ferns; D.tufts = tufts;
   }
 
@@ -1015,10 +1194,10 @@ uniform float tdCool;` + NOISE)
       const a = rr(0, 6.28), d = rr(2.4, 7.5), x = AX + Math.cos(a) * d, z = AZ + Math.sin(a) * d, r2 = rootD(x, z);
       if (r2 < 0.02 || r2 > 0.14 || blocked(x, 0.5, z, 0.1) || nearDoor(x, 0.4, z)) continue;
       if (D.baseShroom === undefined) D.baseShroom = 0; if (D.baseShroom >= NBASE) break;
-      const cnt = 2 + Math.floor(R() * 3), y0 = groundH(x, z);
+      const cnt = 2 + Math.floor(R() * 3), y0 = gH(x, z);
       for (let j = 0; j < cnt && ns < NSM; j++) {
         const px = x + rr(-0.1, 0.1), pz = z + rr(-0.1, 0.1); const sz = rr(0.03, 0.065) * (j === 0 ? 1.3 : 1);
-        const gp = snap(V(px, groundH(px, pz), pz)); if (!gp) continue;
+        const gp = snap(V(px, gH(px, pz), pz)); if (!gp) continue;
         M4.compose(gp, new THREE.Quaternion().setFromEuler(new THREE.Euler(rr(-0.2, 0.2), rr(0, 6.28), rr(-0.2, 0.2))), S.set(sz, sz * rr(1, 1.6), sz));
         small.setMatrixAt(ns, M4); col.setHSL(rr(0.02, 0.09), rr(0.4, 0.7), rr(0.5, 0.72)); small.setColorAt(ns++, col);
       }
@@ -1150,5 +1329,28 @@ uniform float tdCool;` + NOISE)
   // phones: small dressing neither casts nor receives shadows (cheaper shaders, nothing in the shadow pass)
   if (MOBILE) D.group.children.forEach(m => { m.castShadow = false; m.receiveShadow = false; });
   D.stats = () => ({ moss: D.moss.count, soil: D.soil.count, litter: D.litter.count, ivy: D.ivy.count, hanging: D.hanging.count, caught: D.caughtLeaves, baseShroom: D.baseShroom, boardPiles: D.boardPiles, upperVines: D.upperVines, strands: D.strands, forkFerns: D.forkFerns, ferns: D.ferns.count, shrooms: D.shrooms.count, brackets: D.brackets.count, junction: D.junction, joinMoss: D.joinMoss, joinIvy: D.joinIvy, frost: +D.barkU.frost.value.toFixed(2), wet: +D.barkU.wet.value.toFixed(2), damp: +D.barkU.damp.value.toFixed(2), tufts: D.tufts.count, pockets: D.pockets });
+  // [leaf rim round] the photo's night crown: the leaf edges catch the moon in thin light outlines. Chained onto tree.js's leaf
+  // material (tree.js untouched): moonlight only (env.moonRim, zero by day, dimmed in the rain), on the thin band just inside
+  // each leaf's cut-out edge (the map's alpha), most on the clump side facing the moon and on clump silhouettes. No glow.
+  if (TREE.leaves && TREE.leaves.material) { const lm = TREE.leaves.material, prevL = lm.onBeforeCompile, MR = (C.env || window.__env || {}).moonRim;
+    if (MR) { lm.onBeforeCompile = (sh, r) => { if (prevL) prevL.call(lm, sh, r);
+        sh.uniforms.tdLRc = MR.color; sh.uniforms.tdLRs = MR.strength; sh.uniforms.tdLRd = MR.dir; sh.uniforms.tdLWt = D.barkU.wet; sh.uniforms.tdLDy = D.barkU.day; sh.uniforms.tdSunD = D.sunU.dir; sh.uniforms.tdSunC = D.sunU.col;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 tdLRc,tdLRd;uniform float tdLRs,tdLWt,tdLDy;uniform vec3 tdSunD,tdSunC;')
+          .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+if(tdSunC.r>.005){ vec3 sv=normalize((viewMatrix*vec4(tdSunD,0.)).xyz); float nvv=1.-abs(dot(normal,normalize(vViewPosition)));
+  reflectedLight.directDiffuse*=vec3(1.)+tdSunC*pow(nvv,2.)*smoothstep(-.05,.5,dot(normal,sv))*2.6; } // [low sun round] clump edges facing the low sun glow warm (sunlit only)`)
+          .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+#ifdef USE_MAP
+{ float ea=texture2D(map,vMapUv,2.5).a; float edge=1.-smoothstep(.5,.92,ea); // a blurred read of the map (bias, uniform flow): a soft band inside each leaf's edge, no aliased sparkle
+  vec3 md=normalize((viewMatrix*vec4(tdLRd,0.)).xyz); float tw=max(dot(normal,md),0.); float fr=1.-abs(dot(normal,normalize(vViewPosition)));
+  totalEmissiveRadiance+=mix(tdLRc,diffuseColor.rgb*4.,.45)*tdLRs*edge*(.2+.8*max(tw,fr*fr))*.2; } // subtle and leaf-tinted: Tree's leaf code already cools the night crown, the two must not add up to a glow
+#endif
+// [crown rain round] the crown is matte Lambert, so in the rain it looked dry. Wet leaves mirror the grey sky: a cool sheen on the
+// up-facing leaves and at grazing angles (clump silhouettes), strongest by day, none in dry weather. Arithmetic only.
+if(tdLWt>.01){ vec3 upV=normalize((viewMatrix*vec4(0.,1.,0.,0.)).xyz); float nv=abs(dot(normal,normalize(vViewPosition)));
+  float lt=dot(diffuseColor.rgb,vec3(.3,.59,.11)); float sk=pow(1.-nv,5.)*smoothstep(-.2,.8,dot(normal,upV))*smoothstep(.04,.2,lt); // glints on the lighter leaf blades, not a film over the shadowed ones
+  diffuseColor.rgb=max(mix(vec3(lt),diffuseColor.rgb,1.2),0.)*(1.-.18*tdLWt); // soaked: darker and richer, as wet bark
+  totalEmissiveRadiance+=vec3(.5,.56,.62)*sk*tdLWt*(.25+.75*tdLDy)*.35; }`); };
+      const pk = lm.customProgramCacheKey ? lm.customProgramCacheKey.bind(lm) : () => ''; lm.customProgramCacheKey = () => pk() + '|tdRim6'; lm.needsUpdate = true; D.leafRim = true; } }
   return D;
 }

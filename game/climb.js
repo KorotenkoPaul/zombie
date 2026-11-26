@@ -261,7 +261,7 @@ export function createClimb() {
     for (const l of window.__ladders || []) if (!l.dk && Math.hypot(hd.x - l.x, hd.z - l.z) < 1.2 && Math.abs(hd.y - l.y0 - 1.4) < .5) ducksFor(l);
     let sk = null; /* the skull's own vertices (skinned to the head): its back stuck out 13-28 cm behind the head bone, by hero and by how the head was turned */
     for (const D of S.ducks || []) { const off = (hd.z - D.ez) * D.zd;
-      const under = (!S.act || S.act.mode === 'land') && Math.abs(hd.x - D.ex) < .6 && off > -.45 && off < .15 && hd.y + .25 > D.yb && hd.y < D.yb + .2 ? 1 : 0; /* not on the rungs: climbing again it eases out (it fought the climb: head jumps at the mount, gate) */
+      const under = (!S.act || S.act.mode === 'land') && !(C.H.seated || C.H.inBed || C.H.bedC || C.H.bedB) /* sitting on the bunk: nothing to duck under (bed thread: a jerk getting up in the morning) */ && Math.abs(hd.x - D.ex) < .6 && off > -.45 && off < .15 && hd.y + .25 > D.yb && hd.y < D.yb + .2 ? 1 : 0; /* not on the rungs: climbing again it eases out (it fought the climb: head jumps at the mount, gate) */
       const LA = S.act && S.act.mode === 'land' ? S.act : null; if (under && !sk) sk = skull(); let pen = -1; if (sk) for (const v of sk) if (v.y > D.yb - .03) pen = Math.max(pen, (v.z - D.ez) * D.zd); const need = under * Math.max(0, pen + .05 + (LA ? Math.max(0, (LA.BK || 0) - (LA.back || 0)) : 0)); /* 5 cm to spare (the probe finds the edge to the nearest cm and the head sways); ahead of the step back still to come */
       D.w1 += (Math.min(.09, need) - D.w1) * Math.min(1, dt * 9); D.w += (D.w1 - D.w) * Math.min(1, dt * 9); /* two eased stages, at most 9 cm (a 14 cm bow leant him 32 deg walking off, and a one-stage ease jerked the head: gate) */
       if (D.w > .001) { const nk = B.Neck.getWorldPosition(V()), ry = C.root.rotation.y, f = V(Math.sin(ry), 0, Math.cos(ry)), d = V(0, 0, -D.zd * D.w), fc = f.clone().multiplyScalar(d.dot(f)), lat = d.clone().sub(fc); if (lat.length() > .02) lat.setLength(.02); /* bowing forward is free; to the side at most 2 cm (walking away turned, the bow leant him 13-14 deg sideways: gate) */ C.turnBone(B.Spine1, nk, nk.clone().add(fc).add(lat), 1); } } }
@@ -513,7 +513,9 @@ export function createClimb() {
     const roll = Math.asin(Math.max(-1, Math.min(1, u.dot(sd)))); const RM = .09; const ex = roll > RM ? roll - RM : roll < -RM ? roll + RM : 0; if (Math.abs(ex) > 1e-3) rotWorld(Hd, f2.normalize(), -ex * w);
   }
 
-  return { init, begin, tick, post, topStand, get active() { return !!S.act; }, get weight() { return S.W; }, state: S, M,
+  // tests only (HH.qaReset): no climb, no IK weight, the flags it set handed back
+  const qaReset = () => { if (S.gwOff) window.__noGameWalk = false; if (S.npOff) window.__noPops = false; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, { W: 0, wTarget: 0, act: null }); };
+  return { qaReset, init, begin, tick, post, topStand, get active() { return !!S.act; }, get weight() { return S.W; }, state: S, M,
     // for tests: where each limb should be now
     targets: () => S.last && S.last.tg };
 }

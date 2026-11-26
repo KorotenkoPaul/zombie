@@ -35,6 +35,17 @@ module.exports=function install(cfg){
     if(boxy||/Box|Cylinder|Sphere/.test(t)){addShape(o.geometry,m4,name+'#'+i,'inst');continue;}
     const sw=V().setFromMatrixScale(m4);if(Math.hypot(gs.x*sw.x,gs.y*sw.y,gs.z*sw.z)>(cfg.maxVoxDiag||3.2)){skipped['big inst '+name]=(skipped['big inst '+name]||0)+1;continue;}
     voxShape(o,name+'#'+i,m4.clone());}return;}
+  // tool proxy (props: tools at home drawn from one merged mesh, a 'tid' per vertex; a tool he takes is masked out in the shader):
+  // one collider per tool, so the gate can drop it while __props.toolProxyHidden[tid] is set. tid 63 = static, never masked
+  if(o.geometry.attributes.tid&&!o.userData.__qaTid){const g=o.geometry,P=g.attributes.position,T=g.attributes.tid,I=g.index?g.index.array:null;const nt=I?I.length/3:P.count/3;const by=new Map();
+   for(let t=0;t<nt;t++){const a=I?I[3*t]:3*t;const id=Math.round(T.getX(a));let L=by.get(id);if(!L)by.set(id,L=[]);for(let k=0;k<3;k++){const v=I?I[3*t+k]:3*t+k;L.push(P.getX(v),P.getY(v),P.getZ(v));}}
+   const TN=window.__props&&window.__props.tools?Object.keys(window.__props.tools):[];
+   for(const [id,L] of by){if(id<63&&/jacket|coat|cloth|towel/i.test(TN[id]||'')){skipped.cloth=(skipped.cloth||0)+1;continue;} /* cloth on its peg is soft, like the quilt */const sg=new THREE.BufferGeometry();sg.setAttribute('position',new THREE.Float32BufferAttribute(L,3));sg.computeBoundingBox();
+    const fake={isMesh:true,geometry:sg,matrixWorld:o.matrixWorld,updateMatrixWorld(){},userData:{__qaTid:1}};const n0=C.length;
+    const sz=sg.boundingBox.getSize(V()),swf=V().setFromMatrixScale(o.matrixWorld),dg=Math.hypot(sz.x*swf.x,sz.y*swf.y,sz.z*swf.z);
+    if(dg>(cfg.maxVoxDiag||3.2)){if(!(dg<20&&splitBig(fake,name+(id<63?'~'+id:''))))skipped['big '+name+' tid'+id]=Math.round(dg*100)/100;}else voxShape(fake,name+(id<63?'~'+id:''));
+    if(id<63)for(let q=n0;q<C.length;q++)C[q].tid=id;}
+   return;}
   if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();const s=o.geometry.boundingBox.getSize(V());const sw=V().setFromMatrixScale(o.matrixWorld);const diag=Math.hypot(s.x*sw.x,s.y*sw.y,s.z*sw.z);
   // only primitive-like meshes: boxes/cylinders/spheres, or other meshes small enough that their box is a fair hull
   if(/Box|Cylinder|Sphere/.test(t)){addShape(o.geometry,o.matrixWorld,name,'mesh');return;}
@@ -102,7 +113,8 @@ module.exports=function install(cfg){
  // a shape whose mesh has left its baked place (tool taken off its hook, can lifted, door swung) is not solid there any more:
  // its empty home must not count. The moved mesh itself is checked live as a moving object (DYN)
  const AWAY=new Uint8Array(C.length),BYSRC=new Map();C.forEach((s,i)=>{if(!s.src)return;let a=BYSRC.get(s.src);if(!a)BYSRC.set(s.src,a=[s.src.matrixWorld.clone(),[]]);a[1].push(i);});
- function markAway(){for(const [o,[m0,ix]] of BYSRC){const e=o.matrixWorld.elements,e0=m0.elements;let d=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-e0[k]);if(x>d)d=x;}let v=true;for(let x=o;x;x=x.parent)if(x.visible===false){v=false;break;}const aw=(d>.01||!v)?1:0;for(const i of ix)AWAY[i]=aw;}}
+ function markAway(){for(const [o,[m0,ix]] of BYSRC){const e=o.matrixWorld.elements,e0=m0.elements;let d=0;for(let k=0;k<16;k++){const x=Math.abs(e[k]-e0[k]);if(x>d)d=x;}let v=true;for(let x=o;x;x=x.parent)if(x.visible===false){v=false;break;}const aw=(d>.01||!v)?1:0;for(const i of ix)AWAY[i]=aw;}
+  /* a tool he took is masked out of the tool proxy (props toolProxyHidden[tid]): its home is empty */const TH=window.__props&&window.__props.toolProxyHidden;if(TH)for(let i=0;i<C.length;i++){const t=C[i].tid;if(t!=null&&TH[t]===1)AWAY[i]=1;}}
  const tmp=V();
  // depth of point p inside shape s (>0 inside, <=0 outside)
  function depth(s,p){tmp.copy(p).sub(s.c);const x=tmp.dot(s.ax[0]),y=tmp.dot(s.ax[1]),z=tmp.dot(s.ax[2]);
@@ -149,7 +161,7 @@ module.exports=function install(cfg){
  const propName=o=>{for(let x=o,d=0;x&&d<6;x=x.parent,d++)if(PN.has(x))return PN.get(x)+(d?'/'+d:'');return null;};
  const MOV=[];const heroRoot=hero.root;const isHero=o=>{for(let x=o;x;x=x.parent)if(x===heroRoot)return true;return false;};
  scene.traverse(o=>{if(o===scene||o.isLight||o.isCamera||isHero(o)||o.isInstancedMesh||o.isPoints||o.isSprite)return;if(o.isMesh&&o.geometry){if(!o.geometry.boundingSphere)o.geometry.computeBoundingSphere();if(o.geometry.boundingSphere.radius>2.5)return;}
-  if(!o.isMesh&&!o.isGroup&&o.type!=='Object3D')return;if(o.userData.fluid||o.userData.fx)return;/* running water (tap, pour, drip) follows the bucket or tap, nobody's hand moves it */const nm=propName(o)||[o.name,o.parent&&o.parent.name,o.parent&&o.parent.parent&&o.parent.parent.name].filter(Boolean).join('<')||(o.geometry?o.geometry.type:o.type);
+  if(!o.isMesh&&!o.isGroup&&o.type!=='Object3D')return;if(o.userData.fluid||o.userData.fx)return;{let sw=false;for(const it of window.__swing||[])for(let x=o;x&&!sw;x=x.parent)if(x===it.piv)sw=true;if(sw)return;}{const bb=new THREE.Box3().setFromObject(o);if(!bb.isEmpty()&&bb.getSize(new THREE.Vector3()).length()<.12)return;}/* a match and its flame (10 cm with the head): flame flicker and fx, too small to judge hand contact */ /* hanging lanterns swing in the wind (housewind.js, window.__swing): not a no-touch */ /* running water (tap, pour, drip) follows the bucket or tap, nobody's hand moves it */const nm=propName(o)||[o.name,o.parent&&o.parent.name,o.parent&&o.parent.parent&&o.parent.parent.name].filter(Boolean).join('<')||(o.geometry?o.geometry.type:o.type);
   const wp=new THREE.Vector3();o.getWorldPosition(wp);let kids=0;o.traverse(()=>kids++);MOV.push({o,last:o.matrixWorld.elements.slice(),nm,id:MOV.length,n:0,at:[+wp.x.toFixed(2),+wp.y.toFixed(2),+wp.z.toFixed(2)],kids});});
  const BX=new THREE.Box3(),HP=[V(),V()],FA=V();const MI=new Map(MOV.map(m=>[m.o,m]));
  // the hatch lid swings or falls on its own after letGo (real gravity): mark those frames so the no-touch check skips them
