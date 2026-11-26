@@ -518,11 +518,11 @@ uniform float tdCool;` + NOISE)
           // [photo folds round] night: the photo's trunk and roots read in a cool moonlit grey-blue, the flute ridges and the root
           // tops catching it, the grooves and undersides dark (before, below the house they sank into one dark brown mass)
           { float up=.45+.55*smoothstep(-.2,.8,wn.y); float rdg=(.35+.65*smoothstep(.3,.8,tdH))*mix(1.,.25+.95*smoothstep(-.3,.8,tdFl),tdFlK);
-            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*(1.-smoothstep(5.,9.,tdP.y)); }
+            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*mix(1.,2.4,smoothstep(3.5,5.5,tdP.y))*(1.-smoothstep(10.5,12.,tdP.y)); } // [night folds round] up the trunk between the houses too (it was one flat dark mass at night; the photo's folds read there)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress15';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress16';
     mat.needsUpdate = true;
   }
 
