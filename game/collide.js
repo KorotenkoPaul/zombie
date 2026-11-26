@@ -498,6 +498,12 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
         // not nudged on and off every frame (that was hand jitter while reading); a real dip into the bunk still is pushed out
         if (hero.seated && !(window.__colX && window.__colX.oldLad) && (P.chain === 2 || P.chain === 3) && ex < .02) continue;
         if (P.chain >= 4 && OUT.n.y < .5 && !fit && !lying) continue;
+        // STANDS ON AIR (Leisure / QA): only a leg point within 30 cm of the floor may lift its foot. A thigh-near-knee point at hip height
+        // caught under the reading table's front edge (n .71 up) or on the lower bunk's edge and the crate top held the ankle 10-14 cm up
+        // (water, radio squat, diary), and a raised foot never frees a thigh under an edge anyway. Such a contact is left alone: moving the
+        // body back out sideways instead shuffled him 7-10 cm at the stove while stirring (gate HARD, hand 9 cm in the pot shelf); the hips
+        // and thighs (chain 0) keep their own push. Old behaviour: __colX.legLiftAll
+        if (P.chain >= 4 && !fit && !lying && hero.floorY != null && P.p.y > hero.floorY + .30 && !(window.__colX && window.__colX.legLiftAll)) continue;
         if (P.chain >= 2 && ex > pd[P.chain]) { pd[P.chain] = ex; push[P.chain].copy(OUT.n).multiplyScalar(ex + .001); if (P.chain >= 4 && OUT.n.y >= .5 && !fit && !lying) { push[P.chain].x = push[P.chain].z = 0; push[P.chain].y = (ex + .001) / Math.max(.5, OUT.n.y); } }
       }
       // on a ladder the climb (climb.js) owns the hands on the rails (collide's hand pushes were jumps on the pull-up); a foot is still lifted out of a rung
