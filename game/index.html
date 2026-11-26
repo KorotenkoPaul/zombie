@@ -464,7 +464,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  spDepth.onBeforeCompile=sh=>{sh.uniforms.uSH=spH;sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float sid; uniform vec4 uSH['+(SP_MAX/4)+'];').replace('#include <project_vertex>','#include <project_vertex>\n{int i=int(sid+.5);if(uSH[i/4][i-i/4*4]>.5)gl_Position=vec4(2.,2.,2.,1.);}');};
  spDepth.customProgramCacheKey=()=>'sunProxyDepth';
  const spAll=new Map();
- const spOK=m=>plainCaster(m)&&!m.material.alphaHash&&!m.material.wireframe&&m.material.visible!==false&&!(m.material.clippingPlanes&&m.material.clippingPlanes.length)&&m.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&!m.geometry.isInstancedBufferGeometry&&m.geometry.attributes.position&&m.geometry.drawRange.start===0&&Math.min(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count,m.geometry.drawRange.count)/3<=SP_TRIS;
+ const spOK=m=>plainCaster(m)&&m.layers.constructor===THREE.Layers&&!m.material.alphaHash&&!m.material.wireframe&&m.material.visible!==false&&!(m.material.clippingPlanes&&m.material.clippingPlanes.length)&&m.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&!m.geometry.isInstancedBufferGeometry&&m.geometry.attributes.position&&m.geometry.drawRange.start===0&&Math.min(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count,m.geometry.drawRange.count)/3<=SP_TRIS;
  const spBake=o=>{const f=o.userData.shadowBake;try{return typeof f==='function'&&!!f();}catch(e){return false;}};/* a part another system hides from the main pass but whose shadow must stay (props.js tool proxy: userData.shadowBake = () => tool at home) */
  const spSeen=o=>{let q=o;for(;q;q=q.parent){if(!q.visible&&!(q===o&&spBake(o)))return false;if(q===scene)return true;}return false;};
  const _spS=new THREE.Sphere();
@@ -565,6 +565,63 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  sm.render=(L,sc,cam)=>{const held=[];const D=L.filter(due);if(D.length>1){D.sort((a,b)=>(waitN.get(b)||0)-(waitN.get(a)||0)||(a===sun?-1:b===sun?1:0));
    const go=D[0]===sun?[sun]:[D[0]];for(const l of D){if(go.includes(l)){waitN.set(l,0);continue;}l.shadow.needsUpdate=false;held.push(l);waitN.set(l,(waitN.get(l)||0)+1);}}
   for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}const PV=window.__plView||[];for(const v of PV)if(v.hid){v.S.visible=true;v.D.visible=false;}/* the shadow passes see the real plank meshes */try{draw(L,sc,cam);}finally{for(const v of PV)if(v.hid){v.S.visible=false;v.D.visible=true;}for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
+/* [PERF] still batches: loose meshes that share one material object (a wood, an iron, a cloth used by the bunk, chairs, stove, counter
+   items...) were one draw each (248 draws, 164 materials at home). Meshes that have not moved for 2 s are drawn as one world-space mesh
+   per material. The originals stay where they are for everything else: raycasts, .visible, .layers and the game's logic see them as
+   before; only renderer.render skips them while their batch stands (their layers' test() answers false during a render). Any change to
+   a part (moved, shown/hidden, other geometry or material, removed) drops its batch at once; it is rebuilt after 2 s of stillness.
+   Only plain materials (no onBeforeCompile: their shaders could read object-space positions), opaque, layer 0, not the hero.
+   ?stillbatch=off or __stillBatchOff draws the originals. Stats: __stillBatch(). */
+{const SBOFF=/[?&]stillbatch=off/.test(location.search);let REND=0;{const r0=renderer.render;renderer.render=function(){REND++;try{return r0.apply(this,arguments);}finally{REND--;}};}
+ class ParkLayers extends THREE.Layers{test(l){return REND?false:super.test(l);}}
+ const G=new Map();/* material -> {parts:[{o,mw,v}], mesh, t} */let scanT=-1e9,built=0,dropped=0;
+
+ /* a material's own shader hook is fine when what it adds to the VERTEX shader is only world-space (modelMatrix*...) or a plain
+    attribute pass-through: the merged mesh's modelMatrix is the identity and its vertices are the parts' world positions. Checked once per
+    material by running the hook on a copy of three's shader source; fragment-only additions can't see object space at all. */
+ const SAFE_V=new Set(['','varying vec3 vWW;','attribute float vmet; varying float vMet;','vMet = vmet;','{vec4 ww=vec4(transformed,1.);','#ifdef USE_INSTANCING','ww=instanceMatrix*ww;','vWW=(modelMatrix*ww).xyz;}','varying vec3 vWT;','{vec4 wq=vec4(transformed,1.);','wq=instanceMatrix*wq;','vWT=(modelMatrix*wq).xyz;}']);
+ const obcOK=new WeakMap();const LIB={MeshStandardMaterial:'standard',MeshPhysicalMaterial:'physical',MeshLambertMaterial:'lambert',MeshBasicMaterial:'basic',MeshPhongMaterial:'phong'};
+ const hookSafe=m=>{if(m.onBeforeCompile===THREE.Material.prototype.onBeforeCompile)return true;let r=obcOK.get(m);if(r!==undefined)return r;r=false;
+  try{const L=THREE.ShaderLib[LIB[m.type]];if(L){const sh={vertexShader:L.vertexShader,fragmentShader:L.fragmentShader,uniforms:THREE.UniformsUtils.clone(L.uniforms),defines:{}};m.onBeforeCompile(sh,renderer);
+   const base=new Set(L.vertexShader.split('\n'));r=sh.vertexShader.split('\n').every(l=>base.has(l)||SAFE_V.has(l.trim()));}}catch(e){r=false;}obcOK.set(m,r);return r;};
+ const plainMat=m=>m&&!Array.isArray(m)&&!!LIB[m.type]&&!m.transparent&&!(m.alphaTest>0)&&m.visible!==false&&!m.wireframe&&hookSafe(m);
+ const attrSig=g=>Object.keys(g.attributes).sort().map(k=>k+g.attributes[k].itemSize).join()+(g.index?'i':'n');
+ const vis=o=>{for(let q=o;q;q=q.parent){if(!q.visible)return false;if(q===scene)return true;}return false;};
+ const park=(o,on)=>{if(on){if(!(o.layers instanceof ParkLayers)){const L=new ParkLayers();L.mask=o.layers.mask;o.layers=L;}}else if(o.layers instanceof ParkLayers){const L=new THREE.Layers();L.mask=o.layers.mask;o.layers=L;}};
+ const drop=e=>{if(e.mesh){scene.remove(e.mesh);e.mesh.geometry.dispose();e.mesh=null;dropped++;}for(const p of e.parts)park(p.o,false);};
+ const still=p=>p.o.parent&&p.o.material===p.m&&p.o.castShadow===p.c&&vis(p.o)&&p.o.matrixWorld.equals(p.mw)&&p.o.geometry===p.g&&p.g.attributes.position.version===p.v&&p.o.layers.mask===1;
+ function merge(e){const m=e.mat;let nv=0,ni=0;for(const p of e.parts){nv+=p.g.attributes.position.count;ni+=p.g.index?p.g.index.count:p.g.attributes.position.count;}
+  const g0=e.parts[0].g,out=new THREE.BufferGeometry(),I=new (nv>65535?Uint32Array:Uint16Array)(ni);const nm=new THREE.Matrix3();let vo=0,io=0;
+  for(const k of Object.keys(g0.attributes)){const sz=g0.attributes[k].itemSize,A=new Float32Array(nv*sz);let o=0;for(const p of e.parts){const a=p.g.attributes[k];
+    if(k==='position'){const v=new THREE.Vector3();for(let i=0;i<a.count;i++){v.fromBufferAttribute(a,i).applyMatrix4(p.o.matrixWorld);A[o++]=v.x;A[o++]=v.y;A[o++]=v.z;}}
+    else if(k==='normal'){nm.getNormalMatrix(p.o.matrixWorld);const v=new THREE.Vector3();for(let i=0;i<a.count;i++){v.fromBufferAttribute(a,i).applyMatrix3(nm).normalize();A[o++]=v.x;A[o++]=v.y;A[o++]=v.z;}}
+    else for(let i=0;i<a.count;i++)for(let c=0;c<sz;c++)A[o++]=a.getComponent?a.getComponent(i,c):a.array[i*sz+c];}
+   out.setAttribute(k,new THREE.BufferAttribute(A,sz));}
+  for(const p of e.parts){const a=p.g.attributes.position,ix=p.g.index,n=ix?ix.count:a.count,fl=p.o.matrixWorld.determinant()<0;for(let t=0;t<n;t+=3)for(let q=0;q<3;q++){const j=fl?(q===0?0:3-q):q;I[io++]=(ix?ix.getX(t+j):t+j)+vo;}vo+=a.count;}
+  out.setIndex(new THREE.BufferAttribute(I,1));out.computeBoundingSphere();
+  const mesh=new THREE.Mesh(out,m);mesh.castShadow=e.cast;mesh.receiveShadow=e.recv;mesh.matrixAutoUpdate=false;mesh.raycast=()=>{};mesh.name='stillBatch';mesh.userData.stillBatch=1;scene.add(mesh);mesh.updateMatrixWorld(true);e.mesh=mesh;built++;
+  for(const p of e.parts)park(p.o,true);}
+ function scan(){let hr=null;try{hr=hero&&hero.root;}catch(err){}const skip=new Set([hr].filter(Boolean));const C=new Map();
+  const walk=o=>{if(skip.has(o)||!o.visible||o.userData.stillBatch||o.userData.lampCrop||o.name==='propsStatic')return;
+   if(o.isMesh&&!o.isInstancedMesh&&!o.isSkinnedMesh&&o.constructor===THREE.Mesh&&o.layers.mask===1&&plainMat(o.material)&&o.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&o.onAfterRender===THREE.Object3D.prototype.onAfterRender&&!o.customDepthMaterial&&!o.customDistanceMaterial&&o.geometry.attributes.position&&!o.geometry.attributes.tangent&&!Object.values(o.geometry.attributes).some(a=>a.isInterleavedBufferAttribute)&&!(o.geometry.morphAttributes&&o.geometry.morphAttributes.position)&&o.geometry.drawRange.start===0&&o.geometry.drawRange.count===Infinity&&!o.geometry.isInstancedBufferGeometry&&o.frustumCulled&&o.renderOrder===0){
+    const k=o.material.uuid+'|'+o.castShadow+o.receiveShadow+'|'+attrSig(o.geometry);if(!C.has(k))C.set(k,[]);C.get(k).push(o);}
+   for(const c of o.children)walk(c);};walk(scene);return C;}
+ const prevSB=scene.onBeforeRender;scene.onBeforeRender=function(r,sc,cam,...a){if(prevSB)prevSB.call(this,r,sc,cam,...a);
+  if(REND>1||sc!==scene)return;try{const off=SBOFF||window.__stillBatchOff,now=performance.now();
+   if(off){for(const e of G.values())drop(e);G.clear();scanT=-1e9;return;}
+   /* a batch whose parts all stand as they were stays; any change drops it */
+   for(const [k,e] of G){if(e.mesh&&!e.parts.every(still)){drop(e);e.t=now;e.parts=[];}}
+   if(now-scanT<2000)return;scanT=now;const C=scan();
+   for(const [k,os] of C){let e=G.get(k);if(!e){e={mat:os[0].material,cast:os[0].castShadow,recv:os[0].receiveShadow,parts:[],mesh:null,cand:new Map(),t:now};G.set(k,e);}
+    if(e.mesh)continue;/* standing: keep */
+    /* candidates that have kept their matrix for 2 s */
+    const ok=[];for(const o of os){const c=e.cand.get(o);if(c&&c.mw.equals(o.matrixWorld)&&c.g===o.geometry&&c.v===o.geometry.attributes.position.version){if(now-c.t>=1900)ok.push(o);}else e.cand.set(o,{mw:o.matrixWorld.clone(),g:o.geometry,v:o.geometry.attributes.position.version,t:now});}
+    for(const o of [...e.cand.keys()])if(!os.includes(o))e.cand.delete(o);
+    let tris=0;const P=[];for(const o of ok){const g=o.geometry,n=(g.index?g.index.count:g.attributes.position.count)/3;if(tris+n>30000)break;tris+=n;P.push({o,mw:o.matrixWorld.clone(),g,v:g.attributes.position.version,m:o.material,c:o.castShadow});}
+    if(P.length>=2){e.parts=P;merge(e);}}
+   for(const [k,e] of G)if(!C.has(k)&&!e.mesh)G.delete(k);
+  }catch(err){console.error('stillBatch',err);for(const e of G.values())drop(e);G.clear();}};
+ window.__stillBatch=()=>{let b=0,p=0,t=0;for(const e of G.values())if(e.mesh){b++;p+=e.parts.length;t+=e.mesh.geometry.index.count/3;}return {batches:b,parts:p,saved:p-b,tris:t,built,dropped};};}
 /* [PERF] lamp halos in one draw: Environment's halo sprites (env.addHalo: additive, no depth write, so their order among
    themselves does not matter) were one draw call each (7-9 at night). Here they are camera-facing quads of one mesh,
    rebuilt per render from the sprites' own state (position, scale, colour, opacity, visible); the sprites themselves are
@@ -971,11 +1028,11 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();let ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex)));/* [treedress, door round] a piece running along out (the cave floor boards) left ez zero: a degenerate basis drew each board as a thin orange stake standing up from the sill. Those lie flat: thickness up */if(ez.lengthSq()<1e-4)ez.set(0,1,0);ez.normalize();const ey=ez.clone().cross(ex);
   const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(tn||rnd(.85,1)));
    const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
- const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
+ const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.74*H,ah=.26*H+fw*.45;
  // jambs, a little proud of the bark and sunk into it
  for(const sd of [-1,1]){const tp=at(sd*hw,yS+.02,.1),bt=at(sd*hw,D.y0-.04,.1);/* [TREE] plumb jambs like the photo's frame: the bottom keeps the top's line (the flaring trunk foot pushed it out, so both jambs leaned outwards) and is sunk a little into the bark */piece(V(tp.x*.7+bt.x*.3,bt.y,tp.z*.7+bt.z*.3),tp,fw,.34,'beam');}
  // arch: short chunky pieces round the top
- const N=7;let prev=at(-hw,yS,.08);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*hw,yS+Math.sin(t)*ah,.08);piece(prev.clone().addScaledVector(prev.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(prev).normalize(),.03),fw,.3,'beam');prev=p;}
+ const N=7;let prev=at(-hw,yS,.08);for(let k=1;k<=N;k++){const xx=-hw+2*hw*k/N;/* [TREE, photo] two straight rafters to a low peak (the photo's five-sided door), was a round arch */const p=at(xx,yS+ah*(1-Math.abs(xx)/hw),.08);piece(prev.clone().addScaledVector(prev.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(prev).normalize(),.03),fw,.3,'beam');prev=p;}
  // a keystone block on top
  {const p=at(0,yS+ah+.02,.05);piece(p.clone().addScaledVector(V(0,1,0),-.12),p.clone().addScaledVector(V(0,1,0),.12),.2,.34,'beam');}
  // threshold: a thick worn board across the foot of the opening, flush with the landing
@@ -1152,7 +1209,7 @@ win(-2.8,-2.4,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.32,-1.95,KT+1.15,KT+1.85,
  if(dMax>-9){const base=V(X0,YC,TAX[1]).addScaledVector(n,dMax+.02);/* the back plate sits just proud of the bark in the opening */
   const g=new THREE.Group();g.position.copy(base);g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(ex,ey,n));scene.add(g);
   const sink=dMax-dMin+.06,D=.3;/* the lining runs back into the bark past its deepest point, so no gap shows round the box */
-  const warm=new THREE.MeshStandardMaterial({map:woodWallT,emissiveMap:woodWallT,color:0x8A6A4C,emissive:0xFFB066,emissiveIntensity:0,roughness:.85,vertexColors:true});
+  const warm=new THREE.MeshStandardMaterial({map:woodWallT,emissiveMap:woodWallT,color:0x4A3A2C,emissive:0xFFB066,emissiveIntensity:0,roughness:.85,vertexColors:true});
   warm.onBeforeCompile=sh=>{sh.fragmentShader=sh.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance*=vColor.g;');};warm.customProgramCacheKey=()=>'trunkWinWarm';
   const parts=[];const bx=(w,h,d,x,y,z)=>{const b=new THREE.BoxGeometry(w,h,d).toNonIndexed();b.translate(x,y,z);const P=b.attributes.position,C=new Float32Array(P.count*3);
    for(let i=0;i<P.count;i++){const t=(P.getY(i)+H/2)/H;const k=Math.max(.35,Math.min(1,1.1-.75*t))*(.55+.45*Math.max(0,Math.min(1,(P.getZ(i)+.05)/.3)));C[i*3]=k;C[i*3+1]=k;C[i*3+2]=k;}b.setAttribute('color',new THREE.BufferAttribute(C,3));parts.push(b);};
@@ -1161,7 +1218,7 @@ win(-2.8,-2.4,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.32,-1.95,KT+1.15,KT+1.85,
   // lining: sill, head and the two cheeks, from the frame back into the bark
   const L=D+sink,zc=D-L/2;bx(W+.07,.035,L,0,-H/2-.017,zc);bx(W+.07,.035,L,0,H/2+.017,zc);bx(.035,H,L,-W/2-.017,0,zc);bx(.035,H,L,W/2+.017,0,zc);
   const inner=new THREE.Mesh(mergeGeometries(parts),warm);inner.receiveShadow=true;g.add(inner);
-  const glow=TREE.bark.material.userData.doorGlow;inner.onBeforeRender=()=>{const v=glow?glow.value:0;warm.emissiveIntensity=.16*v;fl.visible=v>.05;wax.material.emissiveIntensity=.14*v;/* doorGlow runs ~3.4 since the brighter trunk door (lights 695189b): same window level as before */fl.scale.setScalar(.85+.15*Math.sin(performance.now()*.017)*Math.sin(performance.now()*.0031));};
+  const glow=TREE.bark.material.userData.doorGlow;inner.onBeforeRender=()=>{const v=glow?glow.value:0;warm.emissiveIntensity=.04*v;fl.visible=false;wax.material.emissiveIntensity=.14*v;/* doorGlow runs ~3.4 since the brighter trunk door (lights 695189b): same window level as before */fl.scale.setScalar(.85+.15*Math.sin(performance.now()*.017)*Math.sin(performance.now()*.0031));};
   // glass, set back in the frame
   const gm=glass.clone();gm.onBeforeCompile=glassFresnel;gm.userData.ownGlass=true;gm.emissiveIntensity=.12;gm.opacity=.1;WINS.push({mat:gm,room:'trunk',g});
   const pane=new THREE.Mesh(new THREE.PlaneGeometry(W,H),gm);pane.position.z=D-.09;pane.renderOrder=2;g.add(pane);
@@ -1170,9 +1227,9 @@ win(-2.8,-2.4,KT+1.15,KT+1.85,1.04,0,'kitchen');win(-2.32,-1.95,KT+1.15,KT+1.85,
   // the casing runs from the face right back into the bark, so the lit lining never shows from the side
   fb(.11,H+.16,L+.02,-W/2-.055,0,zc+.01,.012);fb(.11,H+.16,L+.02,W/2+.055,.005,zc+.005,-.01);fb(W+.2,.09,L,0,H/2+.08,zc-.01);fb(W+.2,.07,L,0,-H/2-.07,zc-.01);
   fb(W+.44,.12,.16,.01,H/2+.1,D-.03,.018);fb(W+.38,.075,.24,-.01,-H/2-.075,D+.01,-.012);
-  fb(.035,H,.035,0,0,D-.085);fb(W,.035,.035,0,.02,D-.085);
+  rnd();rnd();rnd();rnd();/* [TREE, photo] no cross bar: the photo's trunk window is a plain plank frame onto a dark opening (the four draws keep the house's random stream) */
   // the source: a stub of candle on the inner sill (it is lit with the hollow's lantern, and goes out with it)
-  const wax=new THREE.Mesh(new THREE.CylinderGeometry(.028,.032,.09,10),new THREE.MeshStandardMaterial({color:0xE8D8B8,emissive:0xFF9A40,emissiveIntensity:.25,roughness:.7}));wax.position.set(-.15,-H/2+.045,.05);g.add(wax);
+  const wax=new THREE.Mesh(new THREE.CylinderGeometry(.028,.032,.09,10),new THREE.MeshStandardMaterial({color:0xE8D8B8,emissive:0xFF9A40,emissiveIntensity:.25,roughness:.7}));wax.position.set(-.15,-H/2+.045,.05);wax.visible=false;/* [TREE, photo] no candle: a dark opening like the photo */g.add(wax);
   const flame=new THREE.Mesh(new THREE.SphereGeometry(.016,8,6),new THREE.MeshBasicMaterial({color:0xFFC870}));flame.position.set(-.15,-H/2+.115,.05);const fl=new THREE.Group();fl.position.copy(flame.position);flame.position.set(0,.01,0);flame.geometry.scale(1,1.8,1);fl.add(flame);g.add(fl);
   g.updateMatrixWorld(true);meshesToBeams(g);
   window.__trunkWin={c:base.clone(),n:n.clone(),depth:[dMin,dMax]};}}

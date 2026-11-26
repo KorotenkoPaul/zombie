@@ -426,6 +426,7 @@ uniform float tdCool;` + NOISE)
           vec3 wn=normalize(tdN);
           // [scars round] the knots' and scars' colour, here and not with the rest of the bark colour: Tree's map code (which runs
           // after treedress's) mixes every colour halfway to one brown, which washed them out. Derivatives in uniform flow.
+          float sFar=1.-.62*smoothstep(9.,24.,length(cameraPosition-tdP)); // [review round] from the home view the scars' pale wood and the knots' rings read as painted ovals and targets: much softer far away
           float gp=tdSb*tdSz*150.+1.6*sin(tdSa*5.)+.6*sin(tdSa*13.+tdSb*3.); float gk=1.-smoothstep(.4,1.,fwidth(gp)); float rg=1.-smoothstep(.3,1.,fwidth(tdSe*40.));
           if(tdSty>1.5){ // bare-bark scar: weathered grey-tan wood with fine grain along the folds, a dark crease inside the rolled lip
             float in_=1.-smoothstep(.88,.98,tdSe); float g=dot(diffuseColor.rgb,vec3(.33));
@@ -433,12 +434,12 @@ uniform float tdCool;` + NOISE)
             float ck=smoothstep(.93,1.,abs(sin(gp*.23+1.7*sin(tdSa*3.1))))*gk; // a few deep checks along the grain
             vec3 wd=vec3(1.24,1.,.74)*(g*.98+.012)*(1.-.2*gk*smoothstep(.2,1.,sin(gp)))*(1.-.55*ck)*mix(1.,.75,smoothstep(0.,-.9,tdSa)) // runs stain its lower end
               *(1.-.42*smoothstep(.6,.95,tdSe)*smoothstep(-.2,.6,tdSa))*(1.-.18*smoothstep(.4,.95,tdSe)); // sunk below the bark: the lip above shades the inside
-            diffuseColor.rgb=mix(diffuseColor.rgb,wd,in_);
-            diffuseColor.rgb*=(1.+.18*exp(-pow((tdSe-1.06)/.09,2.)))*(1.-.6*exp(-pow((tdSe-.95)/.045,2.))); }
+            diffuseColor.rgb=mix(diffuseColor.rgb,wd,in_*sFar);
+            diffuseColor.rgb*=(1.+.18*sFar*exp(-pow((tdSe-1.06)/.09,2.)))*(1.-.6*sFar*exp(-pow((tdSe-.95)/.045,2.))); }
           else if(tdSty>.5){ // old broken stub: a dark rotten hole with end-grain rings, a crease, and the swollen lip of bark round it
             float c=1.-smoothstep(.4,.54,tdSe); 
-            diffuseColor.rgb*=mix(1.,mix(.46,.2,smoothstep(-.35,.35,tdSa))*(1.-.15*rg*(.5+.5*sin(tdSe*40.))),c); // the lip overhangs the top of the hole: darkest there
-            diffuseColor.rgb*=(1.-.3*exp(-pow((tdSe-.56)/.06,2.)))*(1.+.12*exp(-pow((tdSe-.74)/.16,2.))); }
+            diffuseColor.rgb*=mix(1.,mix(.46,.2,smoothstep(-.35,.35,tdSa))*(1.-.15*rg*(.5+.5*sin(tdSe*40.))),c*(.55+.45*sFar)); // the lip overhangs the top of the hole: darkest there
+            diffuseColor.rgb*=(1.-.3*sFar*exp(-pow((tdSe-.56)/.06,2.)))*(1.+.12*sFar*exp(-pow((tdSe-.74)/.16,2.))); }
           { float g=dot(diffuseColor.rgb,vec3(.33));
             diffuseColor.rgb*=mix(vec3(1.),vec3(.76,.67,.58),tdWr);                                                   // hand grease
             diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.3,g*1.16,g*1.)+.012,.7*tdWs*smoothstep(.3,.75,tdH)); }  // boot-rubbed ridges
@@ -487,7 +488,7 @@ uniform float tdCool;` + NOISE)
           if(tdSty>0.){ float f=(tdSe-(tdSty>1.?1.04:.74))/(tdSty>1.?.11:.17), t=f*exp(-f*f)*(tdSty>1.?1.5:1.1); // the lip: inner slope faces in, outer out
             if(tdSty<1.5)t-=.55*(1.-smoothstep(.3,.5,tdSe))*min(tdSe/.4,1.);                                    // the stub's sunken hole
             else dn*=mix(1.,.3,1.-smoothstep(.85,.97,tdSe));                                                    // bare wood is smooth
-            dn+=tdSD*t/max(tdRelief,.05); }
+            dn+=tdSD*t*sFar/max(tdRelief,.05); }
           tdBias=0.;
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
@@ -521,7 +522,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress14';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress15';
     mat.needsUpdate = true;
   }
 
@@ -568,7 +569,7 @@ uniform float tdCool;` + NOISE)
   { const rc = new THREE.Raycaster(), hits = [], out = [], cam = V(0, 10.5, 28.4); TREE.bark.updateMatrixWorld(true);
     // sizes: half-width across the folds in metres; from the home view (~28 m) a 0.2 m knot is about 6 px across on a phone
     const spots = [[0.2, 6.0, 0.64, 0.21], [-0.5, 2.46, 0.79, -0.24], [0.9, 8.8, 0.46, 0.18], [2.36, 10.5, -0.6, 0.22],
-      [-1.14, 0.94, 2.62, -0.22], [2.27, 0.6, 1.7, 0.2], [3.84, 0.79, 0.2, -0.2], [-3.2, 0.76, 2.13, 0.2]];
+      [-1.14, 0.94, 2.62, -0.22], [2.27, 0.6, 1.7, 0.16], [-3.2, 0.76, 2.13, 0.15]]; /* [review round] the scar on the right root's flat top (3.84, 0.79, 0.2) read as a grey puddle from the home view: dropped */
     for (const [x, y, z, sz] of spots) { const q = V(x, y, z), dir = cam.clone().sub(q).normalize();
       rc.set(q.clone().addScaledVector(dir, 1.5), dir.clone().negate()); rc.far = 3;
       hits.length = 0; TREE.bark.raycast(rc, hits); hits.sort((a, b) => a.distance - b.distance); const h = hits[0]; if (!h) continue;

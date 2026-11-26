@@ -65,7 +65,7 @@ export function buildTree(THREE, o) {
     let vy = (y - door.y0) / (door.y1 - door.y0);
     // arch: full width below 65% height, round top above
     let inside;
-    if (vy < 0 || vy > 1) inside = 99; else if (vy < 0.62) inside = da; else { const k = (vy - 0.62) / 0.38; inside = Math.hypot(da, k * 1.05); }
+    if (vy < 0 || vy > 1) inside = 99; else if (vy < 0.74) inside = da; else { const k = (vy - 0.74) / 0.26; inside = da + k; } /* [TREE, photo] the photo's door is a five-sided opening: plumb sides and a low gable top, not a round arch */
     return inside;
   }
   const trunkR = (t, ang, c) => {
@@ -218,7 +218,7 @@ export function buildTree(THREE, o) {
       const rx = x - ccx, rz = z - ccz, u = rx * ddx + rz * ddz, v = -rx * ddz + rz * ddx;
       if (u < 0.2 || u > 3) return 99;
       const da = Math.abs(v) / (door.w / 2), vy = (y - door.y0) / (door.y1 - door.y0);
-      if (vy < 0 || vy > 1) return 99; if (vy < 0.62) return da; return Math.hypot(da, (vy - 0.62) / 0.38 * 1.05);
+      if (vy < 0 || vy > 1) return 99; if (vy < 0.74) return da; return da + (vy - 0.74) / 0.26;
     };
     const RA = new Array(17).fill(9);
     for (let i = 0; i < P.length; i += 3) { const y = P[i + 1]; if (y < door.y0 - 0.1 || y > door.y1 + 0.5) continue;
@@ -656,7 +656,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vAW;uniform vec2 aC;uniform vec2 aD;uniform vec3 aY;')
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
 {vec2 r=vAW.xz-aC;float u=dot(r,aD),v=-r.x*aD.y+r.y*aD.x,da=abs(v)/(aY.z*.45),vy=(vAW.y-aY.x)/(aY.y-aY.x);
- if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.62?da:length(vec2(da,(vy-.62)/.38*1.16)))<1.)discard;}`);
+ if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.74?da:da+(vy-.74)/.26*1.1)<1.)discard;}`);
     }
   };
   mat.userData.doorGlow = { value: 0 };
