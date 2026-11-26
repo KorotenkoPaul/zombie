@@ -348,7 +348,7 @@ export function buildTree(THREE, o) {
   if ((o.avoid || []).length) { const E = 0.03, keep = [];
     for (let t = 0; t < I.length; t += 3) { const a = I[t] * 3, b = I[t + 1] * 3, c = I[t + 2] * 3;
       const x = (P[a] + P[b] + P[c]) / 3, y = (P[a + 1] + P[b + 1] + P[c + 1]) / 3, z = (P[a + 2] + P[b + 2] + P[c + 2]) / 3;
-      if (o.avoid.some(q => x > q[0] - M + E && x < q[1] + M - E && y > q[2] - M + E && y < q[3] + M - E && z > q[4] - M + E && z < q[5] - E)) continue;
+      if (o.avoid.some(q => x > q[0] - M + E && x < q[1] + M - E && y > q[2] - M + E && y < q[3] + M - E && z > q[4] - M + E + (q[6] ? 0.6 : 0) && z < q[5] - E)) continue; /* q[6]: an open deck, no back wall: the bark at its back stays (a face dropped there left a see-through hole on phones) */
       keep.push(I[t], I[t + 1], I[t + 2]); }
     I.length = 0; for (const q of keep) I.push(q); }
   // ---------- roots (Pavel / critic T22): the model's roots are a few big flat faces. Refine them where they lie on the
