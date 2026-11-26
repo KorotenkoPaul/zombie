@@ -249,7 +249,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (BL) { const c = V(-1.9, bPos.y, 2.3).sub(bPos); c.y = 0; l.position.addScaledVector(c.normalize(), .35); }   // on the door-side hook: the fill a step into the room (the wall by the door burned white, the bunk sat dim; photo: the bunk is the lit heart of the room)
     // a narrower cone keeps the 512 map sharp enough (no self-shadowing)
     const bs = new THREE.SpotLight(0xFFB866, 0, 6, .95, .8, 1.4); bs.position.copy(bPos).add(BL ? V(0, -.03, 0) : V(0, -.15, .06));   /* on Props' hook (BL): from the flame itself */   // just under the lantern's base plate (it would shade the whole cone)
-    if (BL) bs.target.position.set(-2.0, BD + .75, 2.05); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
+    /* Props a33799f: the lantern hangs over the reading table, in front of the bunk: the cone falls back-left onto the bunk so its posts, ladder and the hero throw shadows on the back wall (Pavel) */ if (BL) bs.target.position.set(-2.5, BD + .7, 1.45); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
     floorClip(bs, BD); bs.userData.lampCache = true;   // nothing below the bedroom floor: the kitchen wall under it caught a stepped leak through the boards

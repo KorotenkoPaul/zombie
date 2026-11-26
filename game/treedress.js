@@ -195,7 +195,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-uniform vec4 tdDrip[8];uniform vec4 tdScar[8];uniform vec4 tdWear[4];float tdWr=0.,tdWs=0.,tdNl=0.,tdRu=0.;vec3 tdND=vec3(0.);float tdSe=9.,tdSty=0.,tdSa=0.,tdSb=0.,tdSz=1.;vec3 tdSD=vec3(0.);varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
+uniform vec4 tdDrip[8];uniform vec4 tdScar[8];uniform vec4 tdWear[4];float tdDrk=0.,tdWr=0.,tdWs=0.,tdNl=0.,tdRu=0.;vec3 tdND=vec3(0.);float tdSe=9.,tdSty=0.,tdSa=0.,tdSb=0.,tdSz=1.;vec3 tdSD=vec3(0.);varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -415,7 +415,7 @@ uniform float tdCool;` + NOISE)
           { float dr=0.; for(int i=0;i<8;i++){ vec4 s=tdDrip[i]; float h=s.y-tdP.y; float hl=.9+1.7*td_n(vec3(tdP.x*2.3,s.y,tdP.z*2.3));
               dr=max(dr,(1.-smoothstep(s.w*.45,s.w,length(tdP.xz-s.xz)))*smoothstep(-.02,.06,h)*(1.-smoothstep(hl*.5,hl,h))); }
             if(dr>.001){ float run=smoothstep(.38,.68,td_n(vec3(tdP.x*11.,tdP.y*.7,tdP.z*11.)))*(.6+.4*td_n(vec3(tdP.x*4.,tdP.y*2.,tdP.z*4.)));
-              float k=dr*run*(1.-mm*.6)*(.6+.4*tdDamp); diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.5,.52,.47),k*.8); tdWM=max(tdWM,k*tdWet); } }
+              float k=dr*run*(1.-mm*.6)*(.6+.4*tdDamp); diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.5,.52,.47),k*.8); tdWM=max(tdWM,k*tdWet); tdDrk=k; } }
           // hoar frost: white rime on the upward faces of the roots near the ground, on the ridges first (furrows stay dark)
           if(tdFrost>.003){ float fm=tdFrost*smoothstep(.55,.9,wn.y)*(1.-smoothstep(.6,2.2,y))*smoothstep(.45,.8,tdH+ha.b*.3+(big-.5)*.6)*(1.-mm*.5);
             diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.34,.37,.42)*(.7+.6*ha.b),fm*.5); tdFM=fm; } // a light dusting, not snow
@@ -453,6 +453,22 @@ uniform float tdCool;` + NOISE)
                 if(hd>tdNl){ tdNl=hd; tdND=(tgh*lx+vec3(0.,ly,0.))/max(r,1e-3)*smoothstep(.004,.019,r); } tdRu=max(tdRu,run); } } }
           diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.95,.62,.4)+vec3(.025,.008,0.),.6*tdRu*(1.-tdNl));
           diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.06,.05,.045)*(1.+1.2*max(tdND.y,0.)),tdNl);
+          // [rain round] the wet look again here: the map block's wet darkening ran before Tree's map code mixes every bark colour
+          // halfway to one brown, which left the soaked oak looking dry. The fold grooves carry the most water, the runs under the
+          // landings stay dark longest, bare wood in the scars drinks the rain darkest of all, rust runs go deep red-brown.
+          { float wt=max(tdWet,tdDamp); float gr=tdFlK*smoothstep(.2,.9,-tdFl);
+            float w=clamp(max(tdWM,tdDM*.8)*(1.+.6*gr)+tdDrk*(.35+.65*wt),0.,1.);
+            { float l=dot(diffuseColor.rgb,vec3(.3,.59,.11)); diffuseColor.rgb=max(mix(vec3(l),diffuseColor.rgb,1.+.3*w),0.)*(1.-.3*w); } // darker and richer, evenly (squaring sank the shaded bark to black)
+            if(tdSty>1.5)diffuseColor.rgb*=1.-.45*wt*(1.-smoothstep(.88,.98,tdSe));
+            diffuseColor.rgb*=mix(vec3(1.),vec3(.72,.62,.58),tdRu*wt); }
+          // [base round] the trunk's flare base read as pale grey stone from the home view (by day ~(90,65,44) against the mid
+          // trunk's (77,47,27)): Tree's map code desaturates and halves every colour after treedress's map block, and the up-facing
+          // flare faces escape the damp-foot darkening. Here, after that: warmer, richer and a little darker low down, and the
+          // photo's folds there deepened again. Not on the moss or inside the scars; a ragged upper edge.
+          { float bz=(1.-smoothstep(1.,3.2,tdP.y+(td_n(tdP*.7)-.5)*.8))*(1.-tdMM)*(tdSty>0.?smoothstep(1.,1.3,tdSe):1.);
+            float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));
+            diffuseColor.rgb=mix(diffuseColor.rgb,max(mix(vec3(l),diffuseColor.rgb,1.4),0.)*vec3(.8,.7,.58),bz);
+            diffuseColor.rgb*=(1.-.5*bz*tdFlK*smoothstep(.1,.9,-tdFl))*(1.+.15*bz*tdFlK*smoothstep(.2,.9,tdFl)); }
           tdBias=1.2; // the normal reads a little blurred too: single-texel pits lit from the side drew black pepper up close
 #ifdef TD_LITE
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
@@ -486,7 +502,7 @@ uniform float tdCool;` + NOISE)
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.45,tdWM*(1.-tdFM));roughnessFactor=mix(roughnessFactor,.58,tdWr*.55); // a soft wet sheen, not varnish // dry bark is fully matte')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(max(roughnessFactor,.92),.45,tdWM*(1.-tdFM));roughnessFactor=mix(roughnessFactor,.58,tdWr*.55);roughnessFactor=mix(roughnessFactor,.28,tdWet*(tdSty>.5&&tdSty<1.5?1.-smoothstep(.4,.54,tdSe):0.));roughnessFactor=mix(roughnessFactor,.5,tdWet*tdFlK*smoothstep(.2,.9,-tdFl)*.6); /* [rain round] water standing in the knot holes, running in the fold grooves */ // a soft wet sheen, not varnish // dry bark is fully matte')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
           // moonlit rim from Environment (env.moonRim): a cold fresnel edge on the side facing the moon
@@ -505,7 +521,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress12';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress14';
     mat.needsUpdate = true;
   }
 
