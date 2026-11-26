@@ -239,3 +239,7 @@ Debug: `__treedress.stats()`.
 
 ## Round 36 — big limbs and the fork up close
 - Weakest thing up close: the limb grooves in tree.js (the R27 block, with Tree's OK) drew ~180 even crisp pinstripes per turn at the fork and on the limbs (th*90 with abs(sin)): a painted corduroy. Now 36 per turn, one groove per period with a wandering width, broken into long lengths that start and stop (long cracks, not dashes). Key 'oakBark-grooves3-fold'. Limb junctions, folds and moss otherwise read fine against the photo (the photo's limbs carry no visible moss).
+
+## Round 37 — moonlit leaf edges (photo night crown)
+- Chained onto tree.js's leaf material from treedress (prev first, key + '|tdRim3'; Tree agreed, tree.js untouched). Emissive, moonlight only: env.moonRim colour x strength (zero by day, dimmed in rain), on a soft band inside each leaf's cut-out edge from a blurred map read (bias 2.5, uniform flow; the crisp alpha band aliased into sparkles), most on the clump side facing the moon and on silhouettes, tinted toward the leaf colour and kept subtle (Tree's leaf code already cools the night crown). One extra texture read per leaf pixel; no geometry.
+- Up close the crown reads as sprigs, not flat cards, by day and night.
