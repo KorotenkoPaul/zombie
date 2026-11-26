@@ -17,12 +17,12 @@ function siteKeys(){const out={};const walk=d=>{for(const n of fs.readdirSync(d,
 const INIT=([seed,KEYS])=>{ // runs before any page script
  let s=seed>>>0;const rand=()=>{s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};
  // While loading, assets arrive in a different order each time, so one shared random stream would hand out different numbers
- // to the same code. Until start(), each call site (file:line:col) gets its own stream; from start() on, one seeded stream.
- const sites=new Map();let perSite=true;
+ // to the same code. Each call site gets its own stream (keyed below), during load and at run time; reseed() restarts them all.
+ const sites=new Map();let perSite=true,base=seed>>>0;
  const keyOf=fr=>{const m=/^\s*at (?:(.*?) \()?(.*?):(\d+):(\d+)\)?$/.exec(fr);if(!m)return fr;let u=m[2];try{u=new URL(u).pathname;}catch(e){}
    const k=KEYS[u]&&KEYS[u][m[3]];return k?u+'#'+k:u+'|'+(m[1]||'')+'|'+m[4];};
  const siteRand=()=>{const st=keyOf(new Error().stack.split('\n')[3]||'');let r=sites.get(st);if(!r){let h=2166136261>>>0;for(let i=0;i<st.length;i++){h^=st.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}
-   let z=(h^seed)>>>0;r=()=>{z=(z+0x6D2B79F5)>>>0;let t=z;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};sites.set(st,r);}return r();};
+   let z=(h^base)>>>0;r=()=>{z=(z+0x6D2B79F5)>>>0;let t=z;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};sites.set(st,r);}return r();};
  Math.random=()=>perSite?siteRand():rand();
  // While the page loads, the game loop runs on real animation frames but the clock stands still (dt = 0), so the
  // load time cannot move the hero or the hour. From start() on, frames happen only inside __qa.step.
@@ -31,7 +31,7 @@ const INIT=([seed,KEYS])=>{ // runs before any page script
  // browser happened to show while loading cannot change the state
  window.requestAnimationFrame=cb=>{if(manual||window.__th&&window.__dbg&&window.__renderer){q.push(cb);return q.length;}return realRAF(cb);};
  performance.now=()=>vt;const D0=1.7e12;Date.now=()=>D0+vt;window.__fixedStart=true; // no wall clock, no random 'mid-activity' start
- window.__qa={reseed(n){s=n>>>0;perSite=false;},start(){return new Promise(res=>{realRAF(()=>{manual=true;realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
+ window.__qa={reseed(n){s=n>>>0;base=n>>>0;sites.clear();}/* every call site keeps its own stream at run time too (keyed by its line text, reset per reseed): one more random call somewhere (a new mesh's uuid, a rain splash) no longer shifts the brain's dice */,start(){return new Promise(res=>{realRAF(()=>{manual=true;realRAF(()=>realRAF(()=>res(q.length)));});});},now:()=>vt,frame:0,
   step(n,dt,each){for(let i=0;i<n;i++){vt+=dt*1000;const cb=q;q=[];for(const c of cb)c(vt);this.frame++;if(each)each(this.frame);}}};
 };
 async function open({seed=1,vp={width:640,height:640},log=false,query=''}={}){

@@ -155,3 +155,11 @@ Debug: `__treedress.stats()`.
   - A future difference in the blockers now changes only that one candidate.
   - This changes the current layout once; the look is statistically the same.
 - **Verified.** Instance positions are identical across loads: phone 3 loads, desktop 2 loads. That covers moss, ivy, litter, ferns, hanging and the board leaves.
+
+## Round 23: bark close-up (1.4 m zoom)
+- **Moss cushions.** The stem bump now uses the noise's analytic gradient (`td_nd`) instead of screen derivatives, so it is no longer blocky pixel camouflage up close. Key: `tdMossCushion6`.
+- **Phone bark when the camera is near the trunk** (tdNear, a uniform branch). Key: `|treedress7`.
+  - The fine octave's normal map replaces the screen-derivative micro bump, which drew sandpaper grain on sunlit roots.
+  - A second macro read at 15/11 scale breaks the roughly 1.8 m repeat, as on desktop.
+  - Cost: 2 extra triplanar reads, only while zoomed near.
+- **Desktop lichen** sits on the bark ridges (tdH), so the furrows break its rim; it no longer reads as a sticker.
