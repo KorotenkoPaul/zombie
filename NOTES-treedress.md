@@ -223,3 +223,19 @@ Debug: `__treedress.stats()`.
 - Nails: a pair of forged spike heads (~4.5 cm) beside about two in three beam ends, each with a thin rust run down the bark. Only where the beam's end shows: bites whose end is buried in the bark get none (JS flags them by adding 4 to the bite's w in tdB1/tdB2; the bite loop strips it).
 - No rope wraps: there is no place where a rope meets the bark, and a lashing would be new geometry and a draw call (night home is at 292/300).
 - Shader only. Key |treedress12.
+
+## Round 33 — rain on the new roots and scars
+- The wet darkening (rain sheen mask tdWM, the soak-after-rain tdDM, the drip runs under the landings) was all in the map block, so Tree's map code mixed it halfway back to dry brown: in heavy rain the oak looked dry. It is re-applied at the start of the normal block: darker by up to 30 % and a little richer (even, not squared, so shaded bark doesn't sink to black), most in the fold grooves, the drip runs (tdDrk) staying dark longest.
+- Scars: bare wood drinks the rain, darkening 45 % more. Knot holes hold water (roughness .28 while raining), fold grooves get a sheen (roughness to .5). Rust runs go deep red-brown when wet.
+- Key |treedress13. Shader only.
+
+## Round 34 — the trunk base read as pale grey stone
+- Split with Tree (agreed): treedress = colour/tone, Tree = the flare's facets and silhouette. Tree keeps its two map_fragment colour lines as they are while this is tuned.
+- Normal block (after Tree's wash): below ~1-3.2 m (ragged edge), not on moss or inside scars: saturation x1.4, tint (.8,.7,.58), and the photo flutes deepened again (grooves -50 %, ridges +15 %). Key |treedress14. Shader only.
+
+## Round 35 — fresh-eyes review of the whole oak (day, night, rain; phone and desktop)
+- Found: from the home view the root scars read as painted pale ovals and the root knot as a target ring (worst in the rain, with the water glint in the hole). Fix: `sFar` (1 → .38 from 9 to 24 m) scales the scar wood, the lip/crease rings, the knot ring and the lip relief; the knot hole keeps most of its darkness. Root knots smaller (.2 → .16 / .15). The scar on the right root's flat top (3.84, .79, .2) read as a grey puddle: dropped (6 spots live).
+- No conflicts seen between the layers (nails, wet, drips, base tone, flutes) at home distance; night and the desktop view were clean. Key |treedress15.
+
+## Round 36 — big limbs and the fork up close
+- Weakest thing up close: the limb grooves in tree.js (the R27 block, with Tree's OK) drew ~180 even crisp pinstripes per turn at the fork and on the limbs (th*90 with abs(sin)): a painted corduroy. Now 36 per turn, one groove per period with a wandering width, broken into long lengths that start and stop (long cracks, not dashes). Key 'oakBark-grooves3-fold'. Limb junctions, folds and moss otherwise read fine against the photo (the photo's limbs carry no visible moss).

@@ -253,7 +253,7 @@ function makeMaterials(renderer) {
     mattress: std({ color: 0xE6DFCF, roughness: .9 }),
     quilt: std({ map: qt, roughness: .95, side: THREE.DoubleSide }),
     clothBlue: std({ color: 0x7E9CB6, roughness: .95, side: THREE.DoubleSide }),
-    felt: std({ color: 0x9A5A3A, roughness: 1 }),
+    felt: std({ color: 0x5E5048, roughness: 1 }),
     paper: std({ map: pg, roughness: .9, side: THREE.DoubleSide }),
     pageEdge: std({ map: texOf(pageEdgeCanvas()), roughness: .9 }),
     plan: std({ map: texOf(paperPlanCanvas()), roughness: .9 }),
@@ -439,10 +439,10 @@ function bunkBed() {
 function slippers() { const g = new THREE.Group();
   const sole = new THREE.Shape(); sole.moveTo(0, -.12); sole.bezierCurveTo(.05, -.12, .055, -.04, .05, .02); sole.bezierCurveTo(.05, .09, .03, .13, 0, .13); sole.bezierCurveTo(-.03, .13, -.05, .09, -.05, .02); sole.bezierCurveTo(-.055, -.04, -.05, -.12, 0, -.12);
   const soleG = EX(sole, .014, .004); soleG.rotateX(Math.PI / 2); soleG.translate(0, .009, 0);
-  const capG = new THREE.SphereGeometry(1, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2); const lining = std2(0xE8D8B8);
-  for (const [x, a] of [[-.07, .25], [.08, -.1]]) { const s = new THREE.Group(); s.position.set(x, 0, 0); s.rotation.y = a; g.add(s); add(s, soleG, M.rubber); add(s, soleG, M.felt, 0, .012, 0).scale.set(.94, .5, .94);
-    const cap = add(s, capG, M.felt, 0, .02, .055); cap.scale.set(.052, .045, .075); const hole = add(s, new THREE.CircleGeometry(1, 18), lining, 0, .0215, -.02, -Math.PI / 2); hole.scale.set(.04, .05, 1);
-    add(s, new THREE.TorusGeometry(.045, .006, 6, 20, Math.PI), M.felt, 0, .022, -.02, -Math.PI / 2, 0, 0).scale.set(1, 1.15, 1); }
+  const capG = new THREE.SphereGeometry(1, 20, 10, 0, Math.PI, 0, Math.PI / 2); const lining = std2(0xC9B98F); M.felt.side = THREE.DoubleSide; // front quarter-dome: open heel like a real backless slipper
+  for (const [x, a] of [[-.07, .25], [.08, -.1]]) { const s = new THREE.Group(); s.position.set(x, 0, 0); s.rotation.y = a; g.add(s); add(s, soleG, M.rubber, 0, .001, 0).scale.set(1, .6, 1); add(s, soleG, lining, 0, .012, 0).scale.set(.9, .25, .9);
+    const cap = add(s, capG, M.felt, 0, .013, .03); cap.scale.set(.054, .036, .09);
+    add(s, new THREE.TorusGeometry(.0535, .0045, 6, 20, Math.PI), M.felt, 0, .013, .03).scale.set(1, .67, 1.4); }
   return bake(g); }
 function basket() { const g = new THREE.Group();
   // real wicker relief (close zoom: the flat dotted texture read as printed): the outer wall is cut into 1.6 cm rows of strands
@@ -848,7 +848,7 @@ function workbench() {
   // things on the lower shelf
   { const b = new THREE.Group(); b.position.set(.35, .23, 0); g.add(b); W(b, .36, .14, .22, 0, .07, 0, { mat: M.woodDark }); add(b, new THREE.CylinderGeometry(.01, .01, .3, 8), M.iron, 0, .2, 0, 0, 0, Math.PI / 2); for (const s of [-1, 1]) W(b, .02, .2, .02, s * .15, .15, 0, { mat: M.woodDark, grain: 1 }); }
   { const t = nailTin(); t.position.set(-.4, .228, .02); g.add(t); } /* Critic P10: was a bare steel puck that glowed at night */
-  // front vice at the left end
+  { const parts = []; let sd = 7; const rn = () => (sd = (sd * 16807) % 2147483647) / 2147483647; for (let i = 0; i < 150; i++) { const a = rn() * 6.28, d = rn() * rn() + .15 * rn(), q = new THREE.BoxGeometry(.004 + rn() * .007, .0015 + rn() * .002, .004 + rn() * .007); q.rotateY(rn() * 3); q.translate(-L / 2 + .32 + Math.cos(a) * d * .2, .001 + Math.max(0, .5 - d) * .012 * rn(), D / 2 - .1 + Math.sin(a) * d * .13); parts.push(q); } add(g, mergeGeometries(parts), std2(0xC9A878), 0, 0, 0); } // front vice at the left end. [PROPS] sawdust on the floor under the cut, mostly under the top's front edge where his feet never go: flat loose crumbs (own seeded stream: the shared random stream stays as it was; merged, no draw call)
   { const v = new THREE.Group(); v.position.set(-L / 2 + .22, H - .06, D / 2); g.add(v); add(v, rb(.24, .11, .05, .01), M.iron, 0, -.02, .025); W(v, .26, .1, .045, 0, -.02, .08, { mat: M.woodDark }); add(v, new THREE.CylinderGeometry(.014, .014, .18, 10), M.steel, 0, -.03, .14, Math.PI / 2); add(v, new THREE.CylinderGeometry(.01, .01, .22, 8), M.steel, 0, -.03, .23, 0, 0, Math.PI / 2); for (const s of [-1, 1]) add(v, new THREE.SphereGeometry(.018, 10, 8), M.steel, s * .11, -.03, .23); }
   // on top: plans, a tin of screwdrivers, a box of nails, a block plane
   add(g, new THREE.PlaneGeometry(.42, .3), M.plan, -.05, H + .002, .05, -Math.PI / 2, 0, .12);
@@ -856,12 +856,12 @@ function workbench() {
   { const b = new THREE.Group(); b.position.set(.35, H, -.18); g.add(b); W(b, .16, .05, .1, 0, .025, 0, { mat: M.woodDark, r: .006 }); for (let i = 0; i < 10; i++) add(b, new THREE.CylinderGeometry(.002, .002, .05, 5), M.steel, rr(-.06, .06), .05, rr(-.035, .035), rr(-.6, .6), 0, Math.PI / 2 + rr(-.3, .3)); }
   { const p = new THREE.Group(); p.position.set(-.5, H, -.15); p.rotation.y = .4; g.add(p); W(p, .22, .05, .06, 0, .025, 0, { mat: M.woodRed, r: .012 }); add(p, rb(.12, .04, .05, .015), M.iron, -.01, .065, 0); add(p, new THREE.SphereGeometry(.02, 10, 8), M.woodRed, .07, .07, 0); }
   // curled shavings from the plane
-  { const sm = std2(0xD8BC8E); sm.side = THREE.DoubleSide; sm.roughness = .8; for (let i = 0; i < 9; i++) { const r0 = rr(.009, .014), L = rr(.06, .11), wd = rr(.012, .02), pg = new THREE.PlaneGeometry(L, wd, 18, 1), P = pg.attributes.position; for (let j = 0; j < P.count; j++) { const u = (P.getX(j) + L / 2) / L, th = u * L / r0, r = r0 * (1 + .9 * (1 - u)); P.setXYZ(j, r * Math.sin(th), P.getY(j) + u * wd * .6, r * Math.cos(th)); } pg.computeVertexNormals(); add(g, pg, sm, -.38 + rr(-.08, .1), H + .016, -.1 + rr(-.08, .1), Math.PI / 2 + rr(-.4, .4), rr(0, 6), 0); } } /* [workshop round] thin, wide plane shavings rolled into loose spirals (round tori read as macaroni) */
+  { const sm = std2(0xD8BC8E); sm.side = THREE.DoubleSide; sm.roughness = .8; for (let i = 0; i < 9; i++) { const r0 = rr(.009, .014), L = rr(.06, .11), wd = rr(.012, .02), pg = new THREE.PlaneGeometry(L, wd, 18, 1), P = pg.attributes.position; for (let j = 0; j < P.count; j++) { const u = (P.getX(j) + L / 2) / L; const sl = u * L, Lf = L * .45, R = r0 * 1.15 * (1 - .25 * Math.max(0, u - .45)), th = Math.max(0, sl - Lf) / R; P.setXYZ(j, sl < Lf ? sl : Lf + R * Math.sin(th), sl < Lf ? .0012 * Math.abs(Math.sin(sl * 90)) * (1 - sl / Lf) + .0004 : R * (1 - Math.cos(th)), P.getY(j) * (1 - .3 * u) + u * u * wd * .25); } pg.computeVertexNormals(); add(g, pg, sm, -.38 + rr(-.08, .1), H + .0006, -.1 + rr(-.08, .1), .02 * rr(-.4, .4), rr(0, 6), 0); } } /* [workshop round] plane shavings lie on the bench: a flat ribbon whose end curls up loosely (upright rings floated) */
   // more bench clutter like the photo: offcut blocks, tape measure, a carpenter's pencil, a C-clamp at the front edge
   for (const [x, z, w, h, a] of [[.22, .16, .2, .05, .3], [.3, .2, .12, .04, -.2], [.26, .17, .09, .09, .5]]) W(g, w, h, .07, x, H + h / 2 + (h > .06 ? .0 : 0), z, { mat: M.woodLight, ry: a, r: .006 });
   { const t = new THREE.Group(); t.position.set(.72, H, .16); t.rotation.y = -.4; g.add(t); add(t, rb(.07, .07, .035, .012), M.gripYellow, 0, .018, 0, Math.PI / 2); add(t, new THREE.CylinderGeometry(.012, .012, .036, 12), M.iron, 0, .036, 0); add(t, rb(.12, .002, .018, .0008), M.gripYellow, .09, .002, .0); }
   { const p = add(g, rb(.16, .008, .014, .003), M.gripRed, .02, H + .006, .12, 0, .5); void p; }
-  { const c = new THREE.Group(); c.position.set(-.3, H - .03, D / 2 - .02); g.add(c); const cs = new THREE.Shape(); cs.moveTo(0, .09); cs.lineTo(.07, .09); cs.lineTo(.07, -.09); cs.lineTo(0, -.09); cs.lineTo(0, -.07); cs.lineTo(.05, -.07); cs.lineTo(.05, .07); cs.lineTo(0, .07); add(c, EX(cs, .02), M.gripRed, -.01, 0, .02, 0, -Math.PI / 2, 0); add(c, new THREE.CylinderGeometry(.006, .006, .12, 8), M.steel, 0, -.06, 0); add(c, rb(.05, .01, .01, .003), M.steel, 0, -.12, 0); }
+  { const c = new THREE.Group(); c.position.set(-.3, H, D / 2 - .002); g.add(c); const cs = new THREE.Shape(); cs.moveTo(-.045, .015); cs.lineTo(.025, .015); cs.lineTo(.025, -.11); cs.lineTo(-.035, -.11); cs.lineTo(-.035, -.095); cs.lineTo(.008, -.095); cs.lineTo(.008, 0); cs.lineTo(-.045, 0); add(c, EX(cs, .018, .002), M.gripRed, 0, 0, 0, 0, -Math.PI / 2, 0); add(c, new THREE.CylinderGeometry(.006, .006, .07, 8), M.steel, 0, -.1, -.02); add(c, new THREE.CylinderGeometry(.014, .014, .006, 12), M.steel, 0, -.0685, -.02); add(c, rb(.07, .008, .008, .003), M.steel, 0, -.134, -.02); } // C-clamp really gripping the top's front edge: fixed jaw resting on the top, screw pad pressing the underside (it used to stand out in front of the edge, both jaws in the air)
   bake(g); g.userData.info = { top: H }; return g;
 }
 function stool(S = .48) { const g = new THREE.Group(); add(g, lathe([[0, 0], [.15, 0], [.165, .008], [.172, .024], [.166, .04], [.15, .048], [0, .048]], 32), M.wood, 0, S - .048, 0);
@@ -1384,7 +1384,7 @@ export function buildProps(ctx) {
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   // [PROPS] the kitchen lantern hangs on a wall bracket on the right wall just past the fridge, wick ~1.58 m over the floor, so he
   // lights it with a match from his hand (it hung from the ceiling over the walk line in front of the counter, 32 cm out of reach)
-  { const kg = new THREE.Group(), lh = lanternHousing(.32); kg.add(lh); add(kg, new THREE.CylinderGeometry(.035, .045, .02, 12), M.iron, 0, .51, 0); bake(kg); place('klamp', kg, -2.27, KT + 1.83, 1.34, { solid: false, wall: true }); kg.traverse(o => { if (o.isMesh && o.material === M.iron) o.castShadow = true; }); } /* photo: the kitchen lantern hangs from the ceiling on a short rod between the two back windows (Tree 14c50a6), over the counter's back edge, in front of the plank between the windows and the dish shelf, low enough to show under the bedroom's front beam from the home view (Lights); he never stands there, so it can hang below head height (bottom KT+1.72), he walks under it; its iron cap casts the point shadow, so the ceiling stays dim above it (Lights) */
+  { const kg = new THREE.Group(), lh = lanternHousing(.32); kg.add(lh); add(kg, new THREE.CylinderGeometry(.035, .045, .02, 12), M.iron, 0, .51, 0); bake(kg); place('klamp', kg, -2.36, KT + 1.83, 1.34, { solid: false, wall: true }); kg.traverse(o => { if (o.isMesh && o.material === M.iron) o.castShadow = true; }); } /* photo: the kitchen lantern hangs from the ceiling on a short rod between the two back windows (Tree 14c50a6), over the counter's back edge, in front of the plank between the windows and the dish shelf, low enough to show under the bedroom's front beam from the home view (Lights); he never stands there, so it can hang below head height (bottom KT+1.72), he walks under it; its iron cap casts the point shadow, so the ceiling stays dim above it (Lights) */
 
   // ---------- bedroom ----------
   // layout: bunk, reading table and chair sit 25 cm toward +x so the walk from the bedroom ladder top passes the bunk's end post
@@ -1443,7 +1443,7 @@ export function buildProps(ctx) {
   // lights.js builds only the wick, flame and light at out.lights.bedroomLamp.pos (own: true); hero.js reaches the lamp
   // itself now that out.switches has no 'bedroom'.
   out.switches = {}; out.switchN = {};
-  place('blamp', bracketLantern(), -.95, BD + 1.62, .99 + .192, { ry: Math.PI / 2, solid: false, wall: true }); /* photo: on the back wall over the bunk ladder's end, in view (by the door it hid behind the door leaf and the front post from every camera); he lights it from in front of the crate */
+  { const bg = new THREE.Group(); bg.add(lanternHousing(.72)); add(bg, new THREE.CylinderGeometry(.035, .045, .02, 12), M.iron, 0, .91, 0); place('blamp', bg, -.3, BD + 1.82, 1.6, { solid: false, wall: true }); } /* hangs from the roof over the reading table's front edge, where he never walks (Lights: only a lamp in front of the bunk throws the bunk's shadow onto the back wall, as in the photo); he lights it from in front of the table */
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   place('crock', bake(crock()), -3.52, BD, 1.24, { ry: .5 });
   place('pegrail', bake(pegRail()), -3.8, BD + 1.5, 1.0, { solid: false, wall: true }); /* photo round 2: the bare wall left of the bunk, above the crock (nothing walks there) */
