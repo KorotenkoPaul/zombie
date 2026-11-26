@@ -3092,7 +3092,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   for(const sd of ['Left','Right']){const A=bones[sd+'Arm'],Fa=bones[sd+'ForeArm'],Hn=bones[sd+'Hand'];if(!Hn)continue;const out=lft.clone().multiplyScalar(sd==='Left'?1:-1);
    const t=V(),pole=V();const add=(tt,pp,ww)=>{if(ww<1e-4)return;t.addScaledVector(tt,ww);pole.addScaledVector(pp.normalize(),ww);};
    if(sB>0){const tt=nk.clone().addScaledVector(out,.24).addScaledVector(ax,-.02);tt.y=mat+.06;add(tt,out.clone().add(V(0,-.3,0)).addScaledVector(ax,-.5),sB);}
-   if(sS>0){if(sd===down){const tt=nk.clone().addScaledVector(front,.2).addScaledVector(ax,.06);tt.y=mat+.1;add(tt,ax.clone().negate().add(V(0,-.4,0)),sS);}
+   if(sS>0){if(sd===down){const tt=nk.clone().addScaledVector(front,.22).addScaledVector(ax,-.05);{const bt=bedTopAt(tt.x,tt.z);tt.y=(bt!=null?bt:mat)+.035;}/* the lower hand in front of the chin, resting on the pillow or mattress under it: 6 cm up the face toward the head, 10 cm over the mattress, it sat over his eyes and nose (Pavel's close look) */add(tt,ax.clone().negate().add(V(0,-.4,0)),sS);}
     else{const tt=ch.clone().addScaledVector(front,.26).addScaledVector(ax,-.08);tt.y=mat+.07;add(tt,out.clone().add(ax.clone().multiplyScalar(-.4)),sS);}}
    if(sK>0){let tt;if(sd==='Left'){tt=hp.clone().addScaledVector(out,.24).addScaledVector(ax,.06);tt.y=mat+.05;}else{tt=hp.clone().addScaledVector(ax,.2).addScaledVector(out,.04);tt.y=hp.y+.12;}add(tt,out.clone().add(V(0,-.3,0)),sK);}
    if(pole.lengthSq()<1e-6)pole.copy(out);ik2(A,Fa,Hn,t,pole.normalize(),k,false);
