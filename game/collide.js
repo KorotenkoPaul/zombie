@@ -508,9 +508,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       // while walking the gait belongs to hero.js / motion matching: no body shove (it reads as a surge or a stall); a sole is
       // only lifted straight up out of a board (never moved sideways); arms and head give way. Walking into things is the walk graph's job.
       if (hero.path && hero.path.length && !hero.lad) { pd[0] = 0; anyP = pd.some(v => v > 0); }
-      // a foot / shin graze left after its first push this frame (under 4 mm) waits for the next frame: a second IK lift in the
+      // a foot / shin or hand / forearm graze left after its first push this frame (under 4 mm) waits for the next frame (hands: the same
+      // repush flicked the arm at wash / water, 5-7 Hz): a second IK lift in the
       // same frame swung the knee 1.4 cm and back the next frame, every 6-9 frames (13 Hz knee jitter at the chopping block)
-      if (it > 0 && !(window.__colX && window.__colX.legRepush)) { let cut = false; for (const c of [4, 5]) if (pd[c] > 0 && pd[c] < .004) { pd[c] = 0; cut = true; } if (cut) anyP = pd.some(v => v > 0); }
+      if (it > 0) { const X = window.__colX || {}; let cut = false; for (const c of [2, 3, 4, 5]) if (pd[c] > 0 && pd[c] < .004 && !(c >= 4 ? X.legRepush : X.armRepush)) { pd[c] = 0; cut = true; } if (cut) anyP = pd.some(v => v > 0); }
       { const X = window.__colOff; if (X) { if (X.root) pd[0] = 0; if (X.head) pd[1] = 0; if (X.arms) pd[2] = pd[3] = 0; if (X.legs) pd[4] = pd[5] = 0; anyP = pd.some(v => v > 0); } }
       if (!anyP) break; st.pushes++; lastTouch = frameNo; liveMask = 0; for (let c = 0; c < 6; c++) if (pd[c] > 0) liveMask |= 1 << c; if (!liveMask) break; for (let c = 0; c < 6; c++) if (pd[c] > 0) hold[c] = c >= 4 ? (window.__colX && window.__colX.hardRel || hero.state !== "work" || hero.trans ? 0 : .15) : .35; for (let c = 2; c < 6; c++) if (pd[c] > 0) relV[c].set(0, 0, 0);
       // root: sideways (and up while seated / lying); a push straight down or up while standing goes to the head / spine instead
