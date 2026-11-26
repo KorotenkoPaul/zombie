@@ -270,3 +270,18 @@ Debug: `__treedress.stats()`.
 ## Round 43 (fresh phone sweep vs photo: night roots)
 - Phone home view day / dusk / night / rain vs the photo. Most visible in my area: at night the roots sank into one flat dark mass; in the photo each root reads as its own rounded limb with a cool moonlit top ridge and dark flanks.
 - New global tdRT (root tops: up-facing, rd 1.7-2.8+, below y ~2) and a cool moonlight emissive on them at night only, broken by the bark ridges (tdH), less on moss. Key |treedress20. No draw calls.
+
+## Round 44 (oak leaf overdraw, in tree.js with Tree's OK)
+- The phone alpha measure counts card area (override material, no alpha test). The ROS sprig card was a convex 12-gon hull, 28% empty bays between the leaves.
+- Now the rosette's own concave outline (38 points, alpha 0.4 + ~1% margin, morphological close r16, DP eps 7 px on the 512 map), ear-cut with THREE.ShapeUtils, winding matched to the old clockwise fan, dome normals set analytically (no centre vertex). Non-ROS hull / circle untouched.
+- Day home phone: oak cards 1.204 -> 0.988 screens; total alpha 1.48 -> 1.28; +4k tris; calls unchanged. budget.js all 5 views ok. Close-ups and home view look identical.
+
+## Round 45 (upper limbs inside the crown)
+- Crown density: the oak cards are at 0.99 screens after R44, so no headroom for more cards under ~1.0; not changed.
+- Close zoom on the upper limbs (y 13-18): the bark read pale grey-pink and flat like plastic. The day ground-bounce fill emissive reached up into the crown, and nothing shaded the limbs under the leaves.
+- Now the fill fades out above y 12-15. Inside the crown (y 12-15.5, ragged) the bark is darker and slightly greener (light through leaves), with the furrows darker. Key |treedress21. No draw calls.
+
+## Round 46 (trunk and roots at the hero's eye level)
+- Eye-level shots (1.4 m) by the door, the ladder foot, the pond side and the west roots. Note: the game camera never gets this close (closest zoom ~10.7 m), and tdNear only turns on within 9 m of the axis.
+- Most visible: beside the trunk door, the door-moss cushions (6-9 cm) sat on the 45° flare (sampler n.y >= 0.4) and stood out of the bare bark like green stickers.
+- Door moss now only on the near-flat threshold corners (n.y >= 0.75), smaller (2.5-5.5 cm), taller domes leaning up. Own rng stream (7071): nothing else moves.
