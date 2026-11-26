@@ -255,7 +255,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   if(m&&q.i-m.i1<=30){m.i1=q.i;m.count++;if(q.value>m.value&&q.type!=='detour'){Object.assign(m,{...q,i1:q.i,count:m.count,first:m.first});}}else{const n={...q,i1:q.i,count:1,first:q.f};merged.push(n);last[k]=n;}}
  // priority
  for(const q of merged){const r=q.limit?q.value/q.limit:2;let P=3;
-  if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2))?1:q.value>=2?2:3;
+  if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2)||(q.value>=3&&/^work:(fix_|clear_roof)/.test(q.act||'')))?1:q.value>=2?2:3;/* Pavel 2026-11-25: he must never sink into what he repairs: at a repair 3 cm is already P1 */
   else if(q.type==='joint')P=/broken|next to the head|past the hip|folded flat/.test(q.what)?1:2;
   else if(q.type==='jump'||q.type==='snap-turn')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;

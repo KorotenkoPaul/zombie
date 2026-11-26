@@ -420,7 +420,7 @@ export function buildTree(THREE, o) {
         const kd = Math.min(1, d / 1.4);
         h += wt * kd * -(0.17 * cut + 0.055 * fur + 0.04 * plate + 0.012 * hsh(Math.round(an * 40), Math.round(y * 5)));
       }
-      GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
+      if (w > 0 && h < 0) { h = Math.max(h, -0.45 * Math.max(0.04, y + 0.15)); if (ny > 0.2) h = Math.max(h, -Math.max(0, y - 0.3) / ny); } /* [TREE] Ground: a thin root tip carved deeper than it is thick turned inside out and the ground showed through as a flat green triangle: carving stays within the root and above the ground */ GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
       P[i * 3] += nx * h; P[i * 3 + 1] += ny * h; P[i * 3 + 2] += nz * h; }
     // the big twisting folds (model pass above) shade dark in their troughs too, so the fluted trunk reads from the home view
     // like the photo's, not as a flat brown wall (same phase as the folds; off near the hollow)
@@ -500,6 +500,16 @@ export function buildTree(THREE, o) {
   vec3 u=normalize(cross(ax,vec3(0.,1.,0.))+vec3(1e-4,0.,0.));vec3 w=cross(ax,u);float an=atan(dot(wn,w),dot(wn,u));float al=dot(wp,ax);
   float ph=an*7.+1.4*sin(al*.8+an*2.)+.7*sin(al*2.1-an*3.);float gr=smoothstep(.55,.97,abs(sin(ph)));float aa=1.-smoothstep(.6,1.6,fwidth(an*7.));
   float k=bw*aa;diffuseColor.rgb*=1.-.42*gr*k;diffuseColor.rgb*=1.+.1*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
+    // [TREE] trunk bark up close (Pavel: smooth oak with irregular folds; phones at the closest zoom read as a soft brown wall):
+    // the painted wavy-fold bark (bark3) laid over the trunk in world space, two side projections blended by the normal (no
+    // seams), fading in only near the camera so the home view keeps its painted look. Diffuse only; no relief maps touched.
+    if (barkT) { sh.uniforms.barkD = { value: barkT };
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D barkD;')
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+{vec3 wp=vOkW;float dT=length(wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));float tk=(1.-smoothstep(3.2,4.4,dT))*(1.-smoothstep(10.,11.5,wp.y))*smoothstep(-.4,.5,wp.y);
+ vec3 wn=normalize((vec4(normal,0.)*viewMatrix).xyz);float wsx=texture2D(barkD,vec2(wp.z*.38+.31,wp.y*.21)).r,wsz=texture2D(barkD,vec2(wp.x*.38,wp.y*.21+.47)).r;
+ float d=mix(wsz,wsx,smoothstep(.3,.7,abs(wn.x)/(abs(wn.x)+abs(wn.z)+1e-3)));float nr=1.-smoothstep(13.,28.,length(vViewPosition));
+ diffuseColor.rgb*=1.+(d-.4)*1.5*tk*nr;}`); }
     // rain: wet bark darkens and gets a sheen (Env's env.wet, like the forest: roughness x(1-.55w), colour x(1-.35w)),
     // most on the up-facing, rain-exposed sides, less under the crown and the house
     const WET = (o.env || window.__env || {}).wet;
@@ -531,7 +541,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
     }
   };
   mat.userData.doorGlow = { value: 0 };
-  mat.customProgramCacheKey = () => 'oakBark-grooves1'; /* [ENV] explicit key (SHADERS rule) */
+  mat.customProgramCacheKey = () => 'oakBark-grooves1-fold'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
 
   // ---------- leaves: clumps of painted oak-leaf cards, facing outwards like the painted crown ----------
