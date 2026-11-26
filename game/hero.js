@@ -12,7 +12,7 @@
 //    (measured on the furniture), whatever height the clip assumed. Leg IK keeps the soles on the boards.
 //  * Code refines the clips to the scene: hands hold the real book and turn its pages, take the hammer off the
 //    bench, grip the oven handle while the door opens; the head looks at what the hero is busy with.
-import * as THREE from 'three';
+import * as THREE from 'three';import { mergeGeometries as mergeGeosOD } from 'three/addons/utils/BufferGeometryUtils.js';
 import { createWorkshop } from './workshop.js';
 import { armsFreeAt } from './stretchroom.js';
 
@@ -333,7 +333,7 @@ export function createHero(ctx){
   const M=LSK.m;if(!M)return [];if(LSK.f===FRN)return LSK.p;/* once a frame: the swing search measures up to 21 poses of the load against the same legs */const out=[];for(const i of LSK.ix){const v=M.getVertexPosition(i,new THREE.Vector3());out.push(v.applyMatrix4(M.matrixWorld));}LSK.f=FRN;LSK.p=out;return out;}
  // how deep the legs' skin is in a load (m, inside > 0), each mesh of the load in its own frame as the gate sees it: a round one as a cylinder, the rest as its box
  function loadPen(load){const P=legSkin();let need=-1;
-     load.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(V());if(sz.length()<.03)return;
+     load.traverse(m=>{if(!m.isMesh||!m.visible||!m.geometry)return;const g=m.geometry;if(!g.boundingBox)g.computeBoundingBox();const bb=g.boundingBox;const sz=bb.getSize(V());if(sz.length()<.03||Math.min(sz.x,sz.y,sz.z)<1e-4)return;/* a flat sheet (the water surface inside a full pail, a 2x2 plane scaled to 0.32 m) has no inside: read as a prism it reached 16 cm above and below itself and the pail was swung out 55 deg off every leg (watch R65-2) */
       const I=m.matrixWorld.clone().invert();const sc=new THREE.Vector3().setFromMatrixScale(m.matrixWorld);const k=Math.min(sc.x,sc.y,sc.z)||1;const cx=(bb.min.x+bb.max.x)/2,cz=(bb.min.z+bb.max.z)/2;const round=Math.abs(sz.x-sz.z)<.15*Math.max(sz.x,sz.z);const L=V();
       for(const q of P){L.copy(q).applyMatrix4(I);if(L.y<bb.min.y||L.y>bb.max.y)continue;let sd;
        if(round)sd=Math.min(sz.x,sz.z)/2-Math.hypot(L.x-cx,L.z-cz);else{const ox=Math.max(bb.min.x-L.x,0,L.x-bb.max.x),oz=Math.max(bb.min.z-L.z,0,L.z-bb.max.z);const out=Math.hypot(ox,oz);sd=out>0?-out:Math.min(L.x-bb.min.x,bb.max.x-L.x,L.z-bb.min.z,bb.max.z-L.z);}
@@ -641,7 +641,7 @@ export function createHero(ctx){
   // still seated when a task without its own leave ends (or is cut short): stand up properly first, never slide off in a sitting pose
   if(H.seated&&!H.inBed&&!H.bedB&&!H.swing&&H.fit){const sp=H.seated;act=null;H.trans=true;standUp(sp,()=>{H.node=sp.node||nearNode(root.position.clone().add(V(0,.3,0)))||H.node;startTask(name,opts);});return;}
   if(H.sqJob){H.squat=0;H.sqJob=false;}/* GRAB: a job's knee bend never carries over into the next task */
-  act=null;H.then=null;/* a walk left over from the task that was cut short must not fire its arrival (QA: the old 'read' sat him down in the middle of a stretch) */H.task=name;actT=0;const A=ACT[name]||{};actDur=A.dur?rnd(A.dur[0],A.dur[1]):8;lastAct.unshift(name);lastAct.length=3;H.look=null;H.lookW=0;
+  act=null;H.then=null;if(!window.__keepSlide)H.slide=null;/* a step onto the old task's spot is dropped too (the light switch's 48 cm slide ran on under the walk to bed: crab 154 deg up from the reading chair) *//* a walk left over from the task that was cut short must not fire its arrival (QA: the old 'read' sat him down in the middle of a stretch) */H.task=name;actT=0;const A=ACT[name]||{};actDur=A.dur?rnd(A.dur[0],A.dur[1]):8;lastAct.unshift(name);lastAct.length=3;H.look=null;H.lookW=0;
   const mk=MAKE[name];if(!mk)return;act=mk(opts||{});act.name=name;}
  // ===== BRAIN HOOK state: setBrain / gait / onTaskEnd =====
  let brain=null;let motion=null;let climb=null;/* CLIMB HOOK: game/climb.js, see setClimb *//* MOTION HOOK: game/motion.js, see setMotion */const gait={speed:1,turn:1};const endCbs=[];
@@ -2313,7 +2313,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  // a sawn round (bark round the side, pale end grain) and the half of one (flat split face)
  function roundMesh(){splGuard();const g=new THREE.Group();g.userData.splRound=1;const c=new THREE.Mesh(new THREE.CylinderGeometry(SPL_RR*.97,SPL_RR,SPL_RH,14),[SPLM.bark,SPLM.wood,SPLM.wood]);c.position.y=SPL_RH/2;g.add(c);c.castShadow=true;return g;}
  function halfMesh(){const g=new THREE.Group();const c=new THREE.Mesh(new THREE.CylinderGeometry(SPL_RR*.97,SPL_RR,SPL_RH,10,1,false,0,Math.PI),[SPLM.bark,SPLM.wood,SPLM.wood]);c.position.y=SPL_RH/2;g.add(c);
-  const f=new THREE.Mesh(new THREE.PlaneGeometry(SPL_RR*1.96,SPL_RH*.99),SPLM.wood);f.rotation.y=-Math.PI/2;f.position.y=SPL_RH/2;g.add(f);c.castShadow=true;return g;}
+  const f=new THREE.Mesh(new THREE.PlaneGeometry(SPL_RR*1.96,SPL_RH*.99),SPLM.wood);f.rotation.y=-Math.PI/2;f.position.y=SPL_RH/2;g.add(f);c.castShadow=true;return g;} /* PERF (Props soak: up to 12 halves by the block, ~4 draw calls and a shadow each, ~50 calls): a half that has landed is baked into     one pile mesh for the block (bark + wood: 2 calls and their shadow), rebuilt only when a half lands or the oldest is taken away */  let SPLT=null;function splTpl(){if(SPLT)return SPLT;const cy=new THREE.CylinderGeometry(SPL_RR*.97,SPL_RR,SPL_RH,10,1,false,0,Math.PI);cy.translate(0,SPL_RH/2,0);   const sub=gr=>{const ix=cy.index.array.slice(gr.start,gr.start+gr.count);const g=new THREE.BufferGeometry();for(const k of ['position','normal','uv'])g.setAttribute(k,cy.attributes[k]);g.setIndex(Array.from(ix));return g.toNonIndexed();};   const G=cy.groups;const bark=sub(G[0]);const pl=new THREE.PlaneGeometry(SPL_RR*1.96,SPL_RH*.99);pl.rotateY(-Math.PI/2);pl.translate(0,SPL_RH/2,0);   const wood=mergeGeosOD([sub(G[1]),sub(G[2]),pl.toNonIndexed()]);SPLT={bark,wood};return SPLT;}  function splPile(S){if(!S)return;const T=splTpl();const B=[],W=[];for(const h of S.halves){const M=h.userData.splM;if(!M)continue;B.push(T.bark.clone().applyMatrix4(M));W.push(T.wood.clone().applyMatrix4(M));}   if(S.pile){scene.remove(S.pile);S.pile.geometry.dispose();S.pile=null;}if(!B.length)return;   const g=mergeGeosOD([mergeGeosOD(B),mergeGeosOD(W)],true);B.concat(W).forEach(x=>x.dispose());const m=new THREE.Mesh(g,[SPLM.bark,SPLM.wood]);m.castShadow=true;m.name='splitHalves';scene.add(m);S.pile=m;}  function splBake(S,h){if(window.__noSplPile||!S)return;h.updateMatrixWorld(true);h.userData.splM=h.matrixWorld.clone();scene.remove(h);splPile(S);}
  // where things are round the block: its top, the stack of rounds at his left, the halves on the ground
  function splitState(blk){if(blk.userData.split)return blk.userData.split;const b=blk.userData.box||new THREE.Box3().setFromObject(blk);
   const S={blk,top:V(blk.position.x,b.max.y,blk.position.z),stack:[],halves:[]};blk.userData.split=S;return S;}
@@ -2354,7 +2354,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    for(let k=0;k<Math.round(L/.13);k++){const b=new THREE.Mesh(new THREE.BoxGeometry(.54,.035,.1),M);b.position.set(0,.09+.0175,-L/2+.065+k*((L-.13)/Math.max(1,Math.round(L/.13)-1)));b.castShadow=b.receiveShadow=true;g.add(b);}
    g.position.copy(pc);g.rotation.y=Math.atan2(d.x,d.z);scene.add(g);S.pallet=g;S.pc=pc;S.pd=d.clone();S.pL=L;S.ptop=pc.y+.125;}
   while(S.stack.length<n+1){const i=S.stack.length;const m=roundMesh();const p=st.clone().addScaledVector(r,.3+(i%2)*.24).addScaledVector(d,.42-Math.floor(i/2)*.24);/* in front, to his left: the squat reaches it */p.y=S.ptop;m.position.copy(p);m.rotation.y=Math.random()*6;scene.add(m);S.stack.push(m);}
-  while(S.halves.length>12){const h=S.halves.shift();scene.remove(h);}}
+  {let rb=0;while(S.halves.length>12){const h=S.halves.shift();scene.remove(h);if(h.userData.splM)rb=1;}if(rb)splPile(S);}}
  /* a round never rides along out of the split job: if the task was cut off (or ended) with it in the hand, it is set down on the
     ground under the hand (integrator gate, orig: 'held passes through the shins' x137 on ladders and seats after splitwood) */
  let splGuardOn=0;function splGuard(){if(splGuardOn)return;splGuardOn=1;stage('pre',()=>{const hb=bones.LeftHand;if(!hb)return;
@@ -2495,11 +2495,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  function splitRound(a,S,d,r){const rd=a.rd;if(!rd)return;a.rd=null;a.split++;const p=rd.position.clone();const yaw=Math.atan2(d.x,d.z);scene.remove(rd);
   AU('chop',p);for(const s of [-1,1]){const h=halfMesh();h.position.copy(p);h.rotation.set(0,yaw+(s<0?Math.PI:0)+Math.PI/2,0);scene.add(h);S.halves.push(h);
    const G=window.__ground;const land=p.clone().addScaledVector(r,s*rnd(.3,.45)).addScaledVector(d,rnd(-.12,.12));land.y=G&&G.heightAt?G.heightAt(land.x,land.z):p.y-.42;
-   SPLF.push({h,t:0,p0:p.clone(),land,s,yaw:h.rotation.y,spin:rnd(-.6,.6)});}}
+   SPLF.push({h,S,t:0,p0:p.clone(),land,s,yaw:h.rotation.y,spin:rnd(-.6,.6)});}}
  const SPLF=[];function splitFall(dt){for(let i=SPLF.length-1;i>=0;i--){const f=SPLF[i];f.t+=dt;const k=Math.min(1,f.t/.55);
   // tips over its outer bottom edge first, then drops to the ground lying on its bark
   const tip=smooth(0,.35,f.t/.55);const drop=k*k;const pos=f.p0.clone().lerp(f.land,smooth(.1,1,k));pos.y=f.p0.y+(f.land.y-f.p0.y)*drop+.06*Math.sin(Math.PI*k);
-  f.h.position.copy(pos);f.h.rotation.set(0,f.yaw+f.spin*k,0);f.h.rotateZ(-(Math.PI/2)*Math.min(1,tip+drop*.6));f.h.updateMatrixWorld(true);if(k>=1){SPLF.splice(i,1);AU('wood',f.land);}}}
+  f.h.position.copy(pos);f.h.rotation.set(0,f.yaw+f.spin*k,0);f.h.rotateZ(-(Math.PI/2)*Math.min(1,tip+drop*.6));f.h.updateMatrixWorld(true);if(k>=1){SPLF.splice(i,1);AU('wood',f.land);splBake(f.S,f.h);}}}
  // OUTDOOR: filling the bucket at the pond. Real mocap squat (hy_pickground) down to the waterline, held at the bottom while the
  // right fist pushes the bucket under (it tips, fills, a splash and the ripples), then a slow, heavy rise with the full bucket.
  // The bucket hangs from the real fist all the time; he shuffles so the fist comes over the water, not the bank.
@@ -2540,11 +2540,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   if(t>PF.down+PF.hold-.2&&!a.s2){a.s2=1;try{PD&&PD.splash&&PD.splash(F.x,F.z,.6);}catch(e){}AU('slosh',F);}
   a.dip=smooth(PF.down-.1,PF.down+.5,t)*(1-smooth(PF.down+PF.hold-.4,PF.down+PF.hold+.1,t));a.lv=lv;H.squat=(window.__pondSq??.1)*smooth(PF.down-.3,PF.down+.4,t)*(1-smooth(PF.down+PF.hold-.5,PF.down+PF.hold+.2,t));/* down on his heels for the scoop: from the clip's crouch the fist stopped ~30 cm above his feet and the pail only wet its rim */
   if(t>=end){a.step='rise';H.squat=0;if(A)A.timeScale=1;H.carry=BUCKET();a.fdone();}}
- function pondFillPost(a){const P=PP();const bk=P&&P.tools&&P.tools.waterBucket;if(!bk||!a.dip)return;
+ function pondRisePost(a){/* watch R65-2: up from the scoop the full pail comes back beside his right boot, outside the knee, and rises with him (the clip's fist came up between his knees) */   const R=odPalm('Right');if(!a.rp0){a.rp0=(a.rpLast||R).clone();a.rt=0;}/* from where the scoop left the fist (the clip's own fist was between his knees) */a.rt+=1/60;const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());   const u=smooth(0,window.__pondRiseT??.7,a.rt);const t=hp.clone().addScaledVector(r,window.__pondRiseLat??.34).addScaledVector(f,(window.__pondRiseFw??.42)*(1-smooth(.5,1.5,a.rt)));/* out ahead of the knee first, then back beside the boot as he stands */t.y=R.y;   let g=t.y-1;try{g=gVis(t.x,t.z);}catch(e){}t.y=Math.max(t.y,g+.4);const want=a.rp0.clone().lerp(t,u);want.y=Math.max(want.y,g+.4*u+(a.rp0.y-g)*(1-u));   const RL=REACH_LEAN;REACH_LEAN=0;try{odReach('Right',want,1);}finally{REACH_LEAN=RL;}} function pondFillPost(a){const P=PP();const bk=P&&P.tools&&P.tools.waterBucket;if(!bk||!a.dip)return;
   // the fist goes down to the water: the bucket's rim just under the surface, tipped toward the pond so it fills
   const R=odPalm('Right');const want=R.clone();const rimBelow=.35;/* fist to bucket bottom when hanging */const yFist=a.lv-(window.__pondFist??.06);/* tipped on its side the pail lies beside the fist, not under it: with the fist at the surface it only wet its rim (2 cm) *//* the fist at the surface: the whole bucket under */
   // going down the bucket stays out at the side and ahead of the knee (frame by frame it went through his right thigh)
-  {const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const d=R.clone().sub(bones.Hips.getWorldPosition(V()));const k=Math.min(1,a.dip*2);want.addScaledVector(r,(.08-d.dot(r))*k).addScaledVector(f,Math.max(0,.5*k-d.dot(f)));}/* ahead of both knees, which splay in the squat */
+  {const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const d=R.clone().sub(bones.Hips.getWorldPosition(V()));if(a.dip>.95)a.dipPk=1;const k=a.dipPk&&!window.__pondRiseOld?1:Math.min(1,a.dip*2);/* coming up full it stays out ahead of his knees (back at the clip's fist it went into the knee: watch R65-2) */want.addScaledVector(r,(.08-d.dot(r))*k).addScaledVector(f,Math.max(0,.5*k-d.dot(f)));}/* ahead of both knees, which splay in the squat */
   // ...and at the bottom out over the water at the fill point (he squats on the bank; the arm and a forward lean reach it),
   // never sunk into the bank: over ground the bucket's bottom stays on top of it
   const PD=window.__ground&&window.__ground.pond;const F0=a.tgt||(PD&&PD.fill);if(F0){const F=F0;const u=smooth(.25,1,a.dip);want.x=lerp(want.x,F.x,u);want.z=lerp(want.z,F.z,u);}
@@ -2555,19 +2555,19 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   {/* a steady bend forward over the water (the reach's own lean shrinks as the hand gets closer and settled with the fist ~35 cm over his boots: the pail only wet its rim) */const bend=(window.__pondBend??.55)*smooth(0,1,a.dip);if(bend>.002){const f=fwd(root.rotation.y);const ax=V(0,1,0).cross(f).normalize();rotW(bones.Spine,ax,bend*.45);rotW(bones.Spine1,ax,bend*.35);rotW(bones.Spine2,ax,bend*.2);}}
   if(want.distanceTo(R)>.005){const RL=REACH_LEAN;REACH_LEAN=window.__pondLean??0;/* he leans out over the water from the crouch: with the usual 0.6 the fist stopped ~30 cm over the ground and the pail hung 2-8 cm above the surface the whole hold (it only touched the water as he rose) */try{odReach('Right',want,1);}finally{REACH_LEAN=RL;}}
   const L=odPalm('Left');if(!lanternLeft())odReach('Left',odPalm('Right').addScaledVector(V(-fwd(root.rotation.y).z,0,fwd(root.rotation.y).x),-.14),.7*a.dip);else if(!window.__pondLanternDown){/* the lantern held up out to his left over the water, lighting the scoop: the crouch clip put that fist (and the lantern) down on the stones by his boot */const f=fwd(root.rotation.y),l=V(f.z,0,-f.x);const hp=bones.Hips.getWorldPosition(V());const lt=hp.clone().addScaledVector(l,.26).addScaledVector(f,.22);lt.y=Math.max(hp.y+.12,root.position.y+.5);odReach('Left',lt,smooth(0,.6,a.dip));}/* the other hand on the rim too (not with the lantern in it: one-handed, the lantern held up beside) */
-  odHang('waterBucket',(window.__pondTilt??1.3)*a.dip);
+  odHang('waterBucket',(window.__pondTilt??1.3)*a.dip);a.rpLast=odPalm('Right');
 }
  // a bucket in the fist hangs plumb from its handle (world upright, turned with him), tipped only when he tips it; never
  // follows the wrist's twist (it was swinging out at the hip or upside down at the feet)
- function odHang(n,tilt=0,free=false){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o)return;
+ function odHang(n,tilt=0,free=false,hw=1){const P=PP();const o=P&&P.tools&&P.tools[n];if(!o)return;
   if(o.parent!==bones.RightHand)return;const hb=bones.RightHand;
   // a full bucket is never inside his leg: the straight arm holds the fist out at the side, level with the hip, and the
   // heavy bucket hardly swings (frame by frame the rim went through the thigh at every step)
   if(!tilt&&!free){const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const hp=bones.Hips.getWorldPosition(V());const R=odPalm('Right');const d=R.clone().sub(hp);
-   const lat=d.dot(r),fw=d.dot(f);const want=R.clone().addScaledVector(r,Math.max(0,.26-lat)).addScaledVector(f,clamp(fw,-.06,.06)-fw);if(want.distanceTo(R)>.005)odReach('Right',want,1);
+   const lat=d.dot(r),fw=d.dot(f);const want=R.clone().addScaledVector(r,Math.max(0,.26-lat)).addScaledVector(f,clamp(fw,-.06,.06)-fw);if(want.distanceTo(R)>.005)odReach('Right',want,hw);
    // the free left arm only balances the weight: a little out from the hip, relaxed and swinging, never a stiff wing
    const l=r.clone().negate();const L=odPalm('Left');const dl=L.clone().sub(hp);const sw=clamp(bones.RightFoot.getWorldPosition(V()).sub(bones.LeftFoot.getWorldPosition(V())).dot(f)*.18,-.07,.07);
-   const nat=hp.clone().addScaledVector(l,.27).addScaledVector(f,.04+sw).add(V(0,-.1,0));if(dl.y>-.1||dl.dot(l)>.3)odReach('Left',L.lerp(nat,.75),1);}
+   const nat=hp.clone().addScaledVector(l,.27).addScaledVector(f,.04+sw).add(V(0,-.1,0));if(dl.y>-.1||dl.dot(l)>.3)odReach('Left',L.lerp(nat,.75),hw);}
   hangLate={n,tilt,free};if(!hangLateOn){hangLateOn=1;lateFn(()=>{const L=hangLate;hangLate=null;if(L)hangPlace(L.n,L.tilt,L.free);});}/* again last: the grab tween (grab.js) still turned the bucket toward the fist's frame after this (gate: it lay on its side through his shins) */
   hangPlace(n,tilt,free);}
  let hangLate=null,hangLateOn=0;
@@ -2870,7 +2870,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
     if(N.g_pond){goTo('g_pond',()=>{H.face=N.g_pond.face;a.step='turn';a.t=0;a.next=fill;a.adur=.6;a.step='approach';});return;}
     if(spot){const nn=nearNode(spot)||'g_exit1';goTo(nn,()=>approachTo(a,spot,.5,fill));}else fill();});}
    a.update=dt=>{if(a.step==='fill'){pondFill(a,dt);return;}if(!stepTick(a,dt)){carryOv();if(H.carry&&H.path.length){a.sl=(a.sl||0)+dt;if(a.sl>.55){a.sl=0;AU('slosh',root.position);}}}};
-   a.post=()=>{if(a.step==='fill'&&a.dip){H.bucketTilt=true;pondFillPost(a);}else if(!shelfPath(a))odHang('waterBucket',0);};
+   a.post=()=>{if(a.step==='fill'&&a.dip){H.bucketTilt=true;pondFillPost(a);a.hw=0;}else if(a.step==='fill'&&a.hw!=null&&!window.__pondRiseOld){H.bucketTilt=true;/* led clear of the knees by hand (loadClear found no clean swing beside the crouched knee and threw it out 55 deg) */pondRisePost(a);odHang('waterBucket',0,true);}/* watch R65-2: rising from the scoop the full pail comes up plumb on its bail from the fist where the clip has it, ahead of his knee: pulled out to his side at once it hit the crouched thigh and was knocked out 66 deg */else if(!shelfPath(a)){if(a.hw!=null&&a.hw<1)a.hw=Math.min(1,a.hw+1/60/.6);odHang('waterBucket',0,false,a.hw!=null?smooth(0,1,a.hw):1);}};
    /* OUTDOOR: called away with the bucket on him (in the fist, or on the rope up a ladder) he first carries it to the sink and sets
       it down there by hand: dropped back onto the shelf in one frame, or left on the rope, it rode along into the next jobs for hours
       (critic W3) and then jumped home */
