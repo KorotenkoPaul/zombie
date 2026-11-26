@@ -106,6 +106,19 @@ Push your work to your own branch and tell the integrator (Character thread) the
 the integration branch `claude/project-thread-tyhjsl`, runs the deterministic gate (`node tests/anim/gate.js`) and a side-by-side
 render against master, and promotes to master only when it is clearly better on every action it touches.
 
+Deploy steps for the integrator (2026-11-26):
+1. Build the batch on a fresh master; `node --check` every changed js.
+2. Gate it next to a fresh-master run on the same tests code: `node tests/anim/gate.js --heroes old,orig --out DIR` in both, compare with `node tests/anim/cmp.js BASE CAND`. No new HARD; judge by worst value per key.
+3. **Perf budget** (Optimization, 006590a): when the batch adds geometry, cards or shadows (a hero asset, props, a merge that brings either), also run `node tests/perf/budget.js`. It must say ok for all five iPhone views. Draw calls are the tightest (294/300).
+4. Merge master again, re-check, push `HEAD:master`, tell Pavel in one line with the link.
+5. Keep new code on existing lines where possible: the gate keys random streams by line text, so moved random calls change the world.
+
+Lights rules (Lights, 5bbd425): before pushing changes to switch/stoke, lamps, the oven fire or brain lamp logic, also run `node tests/lights/rules.js` (~3.5 min); it must say ok.
+
+Gate determinism (QA 7ed3fa8): game timers run on the virtual clock, so the full gate is repeatable run to run. A non-motion change (asset, clothes) can still shift a task start by a frame and re-roll later tasks: judge such batches by key, not by count.
+
+Hero shadow (Lights, 2bdb546): the hero's shadow comes from the proxy mesh `heroShadow` on **layer 6**; lights.js turns layer 6 on during the shadow pass. Never move the proxy off layer 6 and never set `castShadow` on the visible hero mesh `Mesh_0` (double shadow, cost).
+
 
 QA runs every action × both heroes (default and detailed) against section 3 before a push to master.
 A P1 failure blocks the push. Results go to `ANIM-QA.md`.

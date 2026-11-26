@@ -71,7 +71,9 @@ export function createHouseWind({ wind, scene, ladders = [] }) {
       // ---- telescope: shiver in the gusts, creep a little on its mount ----
       if (!tele && scene && (teleT -= dt) <= 0) { teleT = 2; const t = scene.getObjectByName('telescope'); const tube = t && t.userData.tube;
         if (tube) tele = { tube, rz: tube.rotation.z, ry: tube.rotation.y, a: 0, v: 0, b: 0, w: 0, lvx: 0, lvz: 0, peak: 0, pos: t.getWorldPosition(t.position.clone()).setY(t.position.y + 1.2) }; }
-      if (tele) {
+      /* LEISURE (integrator, full gate): the tube moved with no hand on it (palms 0.5-1.6 m away) and the hero's pan then fought these writes.
+         Moved only by hand now; __teleWind brings the gust shiver back for a look */
+      if (tele && window.__teleWind) {
         const w = wind.sample(tele.pos), s = w.s || 0, g = w.gust || 0, hold = busy();
         const f = hold ? 0 : (Math.sin(now * 19) * 0.5 + Math.sin(now * 31) * 0.5) * g * 0.012 + s * s * 0.004;
         tele.v += (f * 60 - tele.a * 60 - tele.v * 4) * dt; tele.a += tele.v * dt;       // the tube's tilt (quick, small)

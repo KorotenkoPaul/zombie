@@ -30,8 +30,8 @@ async function simulate(p,{drain=null,only=null,start=6.5,hours=25,dt=1/60,tour=
   }
  if(tour||gate){
   // every other body task hero.js knows (HH.hasTask), at an hour that suits it
-  const EXTRA=(gate?[['read',11],['cook',8],['wash',9],['tea',13],['craft',10],['look',16],['sleep',22.5]]:[]).concat([['trip',9,{kind:'hunt',jacket:true,lantern:true},240],['store',10],['cook',12,{fromFridge:true}],['eat',13],['fetchwater',9],['dumpwater',9.5],
-   ['trip',15,{kind:'wood',jacket:false},240],['trip',9,{kind:'hunt',hit:true},240,'hunt'],['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
+  const EXTRA=(gate?[['read',11],['cook',8],['wash',9],['tea',13],['craft',10],['look',16],['sleep',22.5]]:[]).concat([['trip',9,{kind:'hunt',jacket:true,lantern:true},240],['store',10],['cook',12,{fromFridge:true},undefined,'cookfridge'],['eat',13],['fetchwater',9],['dumpwater',9.5],
+   ['trip',15,{kind:'wood',jacket:false},240,'tripwood'],['trip',9,{kind:'hunt',hit:true},240,'hunt'],['hatch',10],['bolt',21],['chop',9],['pot',8],['stoke',7],['dishes',9],['supplies',11],['saw',10],['hammer',10],['sharpen',10],['fixlamp',11],
    ['stretch',8],['diary',20],['sweep',10],['water',9],['listen',21],['radio',20],['telescope',18],['ledge',17],['firewood',10],['splitwood',10],
    ['fix_shingle',10],['fix_board',10],['fix_wall',10],['fix_rope',10],['fix_hinge',17],['fix_window',10],['fix_railing',10],['clear_roof',10],['fix_chimney',11]]);
   for(const [t,h,opts,maxS,label] of EXTRA){const L=label||t;if(only&&!only.test(L))continue;const ok=await p.evaluate(t=>!!(__dbg.HH.hasTask&&__dbg.HH.hasTask(t)),t);if(!ok){log('tour',t,'not available');continue;}
@@ -41,7 +41,7 @@ async function simulate(p,{drain=null,only=null,start=6.5,hours=25,dt=1/60,tour=
     if(g&&t==='sleep')Math.random=()=>.995;try{if(B&&B.command)B.command(t,o||undefined);else __th.task(t);}finally{Math.random=MR;}},[t,opts||null,!!gate]);
    if(gate){// isolated: every task starts from the same seeded state (reading at the table, hatch open, needs primed for that hour)
     await p.evaluate(([t,h])=>{let x=2166136261;for(const c of t)x=Math.imul(x^c.charCodeAt(0),16777619)>>>0;__qa.reseed(x);__th.setHour(h);const B=window.__brain;if(B&&B.prime)B.prime(h);
-     __dbg.HH.spawn('read');const ht=window.__house&&window.__house.hatch;if(ht&&ht.open)ht.open();},[L,h]);await runFrames(30,'tour:'+L);}
+     if(__dbg.HH.qaReset)__dbg.HH.qaReset();/* hero modules drop every filter/smoothing state carried from the last task (check with tests/anim/carry.js) */__dbg.HH.spawn('read');const ht=window.__house&&window.__house.hatch;if(ht&&ht.open)ht.open();},[L,h]);await runFrames(30,'tour:'+L);}
    else await p.evaluate(h=>__th.setHour(h),h);
    await ask();let n=0,seen=false,idle=0;
    const cap=gate?60*(t==='sleep'?gate+35:L==='hunt'?gate+75:gate):60*(maxS||90);

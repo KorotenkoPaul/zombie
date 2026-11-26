@@ -147,8 +147,8 @@ export function createWind(opt = {}) {
     dist = dist ?? rr(1.5, 7); const k = Math.min(1, 2.2 / dist) * rr(0.7, 1);
     const n = 1 + Math.floor(R() * 3); let t = T; for (let i = 0; i < n; i++) { pulses.push([t, k * (i ? rr(0.4, 0.9) : 1)]); t += rr(0.06, 0.25); }
     const az = ang + Math.PI + rr(-1.2, 1.2);  // mostly upwind: the storm is coming
-    emit('lightning', { dist: dist * 1000, distKm: dist, strength: k, k, dir: [Math.cos(az), Math.sin(az)] });   // dist in metres (Sound)
-    thunders.push({ t: T + dist / 0.343, dist, loud: Math.min(1, 1.6 / dist), dir: [Math.cos(az), Math.sin(az)] });
+    emit('lightning', { dist: dist * 1000, distKm: dist, strength: k, k, dir: [Math.cos(az), Math.sin(az)] });   // dist in metres (Sound); [ENV] the thunder event (hero flinch, brain) at the same min(12 s, dist/343) as audio.js plays the rumble: it came up to 8 s (storm) / 29 s (far rumble) after the sound
+    thunders.push({ t: T + Math.min(12, dist / 0.343), dist, loud: Math.min(1, 1.6 / dist), dir: [Math.cos(az), Math.sin(az)] });
   }
   // calm, still evenings: once the sun is down the wind usually settles (unless it rains)
   let hourNow = null, eveDone = -1, dayN = 0, lastHr = null;
@@ -214,7 +214,7 @@ export function createWind(opt = {}) {
       if (rainOn) { rainLeft -= dt; if (rainLeft <= 0) setRain(false); } else { /* game hours: from the clock when index gives it, else the old 20 s per hour */ let dh = dt / 20; if (hour != null) { dh = rainHr == null ? 0 : hour - rainHr; if (dh < -12) dh += 24; if (dh < 0 || dh > 2) dh = 0; rainHr = hour; } rainWait -= dh; if (rainWait <= 0) setRain(true); }
       // lightning and thunder
       if (rainOn && rainKind === 'storm') { nextStrike -= dt; if (nextStrike <= 0) { strike(); nextStrike = rr(15, 50); } }
-      else if (rainOn && rainKind === 'rain') { rumbleWait -= dt; if (rumbleWait <= 0) { rumbleWait = rr(120, 300); if (R() < 0.35) { const d = rr(8, 14); emit('lightning', { dist: d * 1000, distKm: d, strength: 0.1, k: 0, dir: [-Math.cos(ang), -Math.sin(ang)], unseen: true }); thunders.push({ t: T + d / 0.343, dist: d, loud: 0.15, dir: [-Math.cos(ang), -Math.sin(ang)] }); } } }
+      else if (rainOn && rainKind === 'rain') { rumbleWait -= dt; if (rumbleWait <= 0) { rumbleWait = rr(120, 300); if (R() < 0.35) { const d = rr(8, 14); emit('lightning', { dist: d * 1000, distKm: d, strength: 0.1, k: 0, dir: [-Math.cos(ang), -Math.sin(ang)], unseen: true }); thunders.push({ t: T + Math.min(12, d / 0.343), dist: d, loud: 0.15, dir: [-Math.cos(ang), -Math.sin(ang)] }); } } }
       for (let i = thunders.length - 1; i >= 0; i--) if (T >= thunders[i].t) { const th = thunders.splice(i, 1)[0]; lastThunder = T; emit('thunder', { dist: th.dist * 1000, distKm: th.dist, loud: th.loud, dir: th.dir }); }
       flashV = 0; for (let i = pulses.length - 1; i >= 0; i--) { const a = T - pulses[i][0]; if (a < 0) continue; if (a > 0.6) { pulses.splice(i, 1); continue; } flashV += pulses[i][1] * Math.exp(-a * 14); }
       flashV = Math.min(1, flashV);
@@ -282,7 +282,7 @@ export function createWind(opt = {}) {
     setRain(on, kind) { setRain(!!on, false, kind); },
     // how hard it rains now (index.html eases rainK towards this): 0, drizzle .35, rain .75, storm 1
     rainAmt() { return rainOn ? RAIN[rainKind].amt : 0; },
-    cloud() { return cl.k; },   // [ENV] 0 clear .. 1 fully overcast (rain), eased
+    cloud() { return cl.k; }, setGrey(h = 4, snap = true) { cl.grey = +h || 0; if (snap) cl.k = cl.grey > 0 ? Math.max(cl.k, 0.75) : (rainOn ? cl.k : 0); },   // [ENV] cloud 0 clear .. 1 fully overcast (rain), eased; setGrey(h, snap): a dry grey (overcast) spell for h game hours from now (0 clears it), for tests and the debug panel
     rainKind() { return rainKind; },
     // lightning flash 0..1 right now (W.applyFlash lights the scene with it); strike(distKm) for tests
     flash() { return flashV; },

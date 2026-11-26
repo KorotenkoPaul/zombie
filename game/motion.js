@@ -202,7 +202,7 @@ export function createMotion({ hero, db, opts = {} }) {
     for (let j = 0; j < 3; j++) { const t = (j + 1) / 3; const k = (1 - Math.exp(-t * 3)) / 3; const da = wrapA(target - yaw); const turn = clamp(da, -3.2 * t, 3.2 * t);
       out[j] = { x: p.x + v.x * k, z: p.z + v.z * k, yaw: yaw + turn }; } }
 
-  function blocked() { if (H.fit || H.seated || H.inBed || H.bedB || H.swing || H.edgeHold) return true;
+  function blocked() { if (H.fit || H.seated || H.inBed || H.bedB || H.swing || H.edgeHold || (H.tTurn && !window.__ttMM)) return true; // H.tTurn: hero.js steps a turn on the spot
     if (H.lad && !(H.lad.phase === 'mount' || (H.lad.phase === 'over' && !H.lad.start))) return true; return false; }
 
   function buildQuery(traj) { const g = gidx(); const o = g * NF; for (let k = 0; k < 15; k++) Qv[k] = F[o + k];

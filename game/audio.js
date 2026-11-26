@@ -221,11 +221,11 @@ export function createAudio(ctx) {
     W.on('lightning', e => {
       if (!loaded || muted || !e) return; let d = e.dist;
       if (d == null && e.pos) { const q = e.pos, x = q.x ?? q[0], y = q.y ?? q[1], z = q.z ?? q[2]; d = Math.hypot(x, (y || 0) * .3, z); }
-      thunder(d ?? rnd(400, 3000), e.strength ?? .7); thunderNext = now + rnd(25, 60);
+      thunder(d ?? rnd(400, 3000), e.strength ?? .7, e.dir); thunderNext = now + rnd(25, 60);
     });
   }
   // procedural thunder: a crack (only when close) and a long rumble of low-passed noise with a few swells
-  function thunder(dist, strength) {
+  function thunder(dist, strength, dir) {
     if (!A || muted) return;
     if (!noiseBuf) { const n = A.sampleRate * 2; noiseBuf = A.createBuffer(1, n, A.sampleRate); const d = noiseBuf.getChannelData(0); let b = 0; for (let i = 0; i < n; i++) { b = b * .6 + (Math.random() * 2 - 1) * .4; d[i] = b; } }
     const t = A.currentTime + Math.min(12, dist / 343), near = clamp01(1 - dist / 2500), len = 3.5 + 5 * (1 - near) + rnd(0, 2);
@@ -237,7 +237,7 @@ export function createAudio(ctx) {
     let tt = t + (near > .6 ? .4 : 1.2);                                    // a few rolling swells
     for (let i = 0; i < 2 + Math.floor(rnd(0, 3)); i++) { g.gain.linearRampToValueAtTime(peak * rnd(.25, .5), tt); tt += rnd(.5, 1.2); g.gain.linearRampToValueAtTime(peak * rnd(.5, .9), tt); tt += rnd(.4, 1); }
     g.gain.linearRampToValueAtTime(peak * .2, Math.min(t + len - 1, tt + .5)); g.gain.exponentialRampToValueAtTime(.0005, t + len);
-    const sp = A.createStereoPanner ? A.createStereoPanner() : null; if (sp) sp.pan.value = rnd(-.6, .6);
+    const sp = A.createStereoPanner ? A.createStereoPanner() : null; if (sp) { let pn = rnd(-.6, .6); const c = ctx.camera; if (dir && c && c.matrixWorld) { const m = c.matrixWorld.elements, l = Math.hypot(m[0], m[2]) || 1; pn = clamp01(.5 + .4 * (dir[0] * m[0] + dir[1] * m[2]) / l) * 2 - 1 + rnd(-.08, .08); } sp.pan.value = Math.max(-.8, Math.min(.8, pn)); }   // [ENV] the rumble comes from the strike's side (the flash's side of the sky), not a random one
     src.connect(lp).connect(g); (sp ? g.connect(sp) : g).connect(outBus); const s2 = A.createGain(); s2.gain.value = .6; g.connect(s2).connect(revIn);
     src.start(t, rnd(0, 1.5)); src.stop(t + len + .1);
     if (near > .6) {                                                         // the crack of a close strike
@@ -462,7 +462,9 @@ export function createAudio(ctx) {
     const a = rnd(0, Math.PI * 2), r = rnd(5, 16);
     voice(pick(gustClips(env)), { pos: { x: Math.cos(a) * r, y: rnd(6, 14), z: Math.sin(a) * r }, gain: Math.min(.55, .1 + .32 * amp) * rnd(.8, 1.1), rate: rnd(.9, 1.08), fadeIn: rnd(.5, 1.2), fadeOut: 1.2, rev: .15, ref: 12 });
   }
-  let envNow = { season: 'summer', rain: 0, wind: .3, awake: true };
+  let envNow = { season: 'summer', rain: 0, wind: .3, awake: true }; let wb = null;   // [ENV] the crown's continuous wind bed: soft leaf-hiss noise that follows the wind (base + the gust passing the oak), between the gust one-shots (in a steady wind and in a storm the crown went silent between them). One looped noise source, gain/filter eased: no clicks
+  function windBed(env) { if (!wb) { const n = A.sampleRate * 3, buf = A.createBuffer(1, n, A.sampleRate), d = buf.getChannelData(0); let b0 = 0, b1 = 0; for (let i = 0; i < n; i++) { const w = Math.random() * 2 - 1; b0 = .97 * b0 + w * .03; b1 = .6 * b1 + w * .4; d[i] = (b1 - b0) * .9; } for (let i = 0; i < 2000; i++) { const k = i / 2000; d[i] = d[i] * k + d[n - 2000 + i] * (1 - k); } const src = A.createBufferSource(); src.buffer = buf; src.loop = true; src.loopEnd = (n - 2000) / A.sampleRate; const bp = A.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = .55; bp.frequency.value = 900; const g = A.createGain(); g.gain.value = 0; src.connect(bp).connect(g).connect(outBus); src.start(); wb = { bp, g }; }
+    const t = A.currentTime, s = clamp01(wind), lv = Math.max(0, s - .12) / .88, leaf = SEASON_K(env.season, { winter: .35 }), k = (wState === 'calm' ? .45 : 1) * leaf * Math.pow(lv, 1.3); wb.g.gain.setTargetAtTime(.13 * k * (1 - .35 * (env.rain || 0)), t, .7); wb.bp.frequency.setTargetAtTime(650 + 1100 * lv, t, .9); }
   function hookWind() {
     const W = window.__wind; if (windHooked || !W || typeof W.on !== 'function') return;
     windHooked = true;
@@ -674,13 +676,13 @@ export function createAudio(ctx) {
     lastH = h;
     { const P = pondGeo(), sig = P.x + P.z * 7 + P.r * 13; if (sig !== pondSig) { if (pondSig !== null) for (const k in L) if (L[k].pondy && ind[k]) for (const I of ind[k]) I.pos = place('pond'); pondSig = sig; } }
     layerAcc += dt; if (layerAcc >= .1) { tickLayers(h, env, layerAcc); layerAcc = 0; }   // creatures decide 10x a second, not every frame
-    gusts(env);
+    gusts(env); if (/[?&]windbed/.test(location.search)) windBed(env);/* [ENV] off by default: no constant noise bed (Pavel removed exactly this hiss before); ?windbed to audition */
     // rain on leaves and roof
     // rain: leaves all around, and drumming on the roof when the camera (or hero) is near one
     const R = window.__rain, cp = ctx.camera ? ctx.camera.position : null;
     let roof = .35; if (R && typeof R.roofNear === 'function' && cp) { try { roof = clamp01(R.roofNear(cp)); } catch (e) {} }
     const rk = wState === 'drizzle' ? .55 : wState === 'storm' ? 1.35 : 1;   // drizzle: a fine whisper; storm: heavy
-    bed('rain', ['rain_a'], rain * rk, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
+    bed('rain', ['rain_a', 'rain_b'], rain * rk, l => ({ gain: .34 * l, pan: rnd(-.5, .5), offset: rnd(0, 3), rev: .1, rate: wState === 'drizzle' ? 1.1 : wState === 'storm' ? .92 : 1 }));
     // the roofs are slate: hard, dense tapping. Inside a room it is right above us (house bus, not muffled with the forest)
     bed('roof', ['rain_slate_a', 'rain_slate_b'], rain * Math.min(1, .15 + .85 * Math.max(roof, inK)), l => ({ gain: (.3 + .25 * inK) * l, pan: rnd(-.3, .3), offset: rnd(0, 3), rev: .05, indoor: true }));
     rainMem = rain > .3 ? 1 : Math.max(0, rainMem - dt / 120);   // the ground stays wet ~2 game hours after rain
@@ -712,7 +714,7 @@ export function createAudio(ctx) {
       frameDt = frameDt * .8 + Math.min(.5, rawDt) * .2;
       dbgF = [+mv.toFixed(2), +vy.toFixed(2), +frameDt.toFixed(3), +p.y.toFixed(2)];
       if (autoFeet) feet(p, mv, vy, env);
-      houseWatch(hero, mv); toolSync(hero);
+      houseWatch(hero, mv); toolSync(hero, mv);
       // (no idle breathing sound: Pavel 2026-11-25 asked to remove his breathing entirely)
       if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
     }
@@ -729,11 +731,11 @@ export function createAudio(ctx) {
     if (!e || !loaded || muted) return; if (!internal) toolAuto = false;
     if (window.__feetLog) window.__feetLog.push(['TC', +gnow.toFixed(3), e.tool || e.kind, +(e.dur || 0).toFixed(2)]);
     const q = toPos(e.pos), k = clamp01(e.strength ?? .8), t = e.tool;
-    if (t === 'hammer' || e.kind === 'hit') { TS.last = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); if (Math.random() < .5) playAct('nails', q, { gain: .35 * k, delay: .012, internal: 1 }); return; }
+    if (t === 'hammer' || e.kind === 'hit') { TS.last = now; if (now - (TS.hitT ?? -9) < .2) return; TS.hitT = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); return; }   // one sample per blow (critic pass 27: a nail layer on the same frame read as two hits)
     if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); vplay(c, o); TS.last = now; return; }
     if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); vplay(c, o); TS.last = now; }
   }
-  function toolSync(hero) {
+  function toolSync(hero, mv = 0) {
     if (!toolAuto || !hero || !hero.hold || !ctx.bones || !ctx.bones.RightHand) { TS.tool = null; return; }
     const h = hero.hold.Right, tool = TOOLK(h && (h.tool || h.name || (typeof h === 'string' ? h : '')));
     if (tool !== TS.tool) { TS.tool = tool; TS.ls = null; TS.vy = 0; TS.sp = TS.lsp = 0; TS.ext = TS.ext0 = null; TS.lt = 0; TS.pk = 0; }
@@ -747,7 +749,7 @@ export function createAudio(ctx) {
     if (tool === 'hammer') {                                        // the head comes down fast, then stops on the nail
       // impact: after a downswing (peak < -1 m/s) the hand brakes hard on the nail; the hit is when its speed falls under
       // 40 % of the peak, interpolated inside the frame
-      if (vy < -1) TS.pk = Math.min(TS.pk || 0, vy);
+      if (mv > .15 || hero.path && hero.path.length) { TS.pk = 0; TS.vy = vy; return; }   // walking with the hammer: the arm swing is no blow if (vy < -1) TS.pk = Math.min(TS.pk || 0, vy);
       if ((TS.pk || 0) < -1 && vy > .4 * TS.pk) { const k = clamp01((.4 * TS.pk - TS.vy) / Math.max(1e-3, vy - TS.vy)), dl = Math.max(0, (1 - k) * fdt) * 0;
         if (gnow - (TS.hitG ?? -9) > .25) { TS.hitG = gnow; contact({ tool: 'hammer', kind: 'hit', pos: at, strength: clamp01(-TS.pk / 3) }, true); } TS.pk = 0; }
       if (vy > .3) TS.pk = 0;                                        // lifted again without a hit
@@ -776,13 +778,13 @@ export function createAudio(ctx) {
   const HW = { hatch: null, bolt: null, rack: null, task: null, taskT: 0, next: 0, loop: null, hatchT: -9 };
   // task foley while he works (standing at the job, not walking): [action or clip, every [a,b] s, gain, rate]
   const TASKF = {
-    fix_rope: [['rope_ladder', [1.8, 3.2], .7, .9], ['fs_rope_a', [2.5, 4.5], .8, .85]],
-    fix_hinge: [['@squeak', [1.6, 3], 1, 1.45]],
-    fix_window: [['window', [3.5, 6], .7, 1], ['plank', [5, 8], .6, 1.1]],
-    clear_roof: [['leaves_a', [1.4, 2.6], .5, 1], ['sweep', [2.5, 4], .7, 1.05]],
-    fix_chimney: [['logs_stack', [2.4, 4], .45, 1.35], ['grunt', [8, 14], 1, 1]],
-    fix_shingle: [['plank', [4, 7], .6, 1.15], ['saw_shingle', [9, 15], .8, 1]],
-    fix_board: [['plank', [4, 7], .7, 1]], fix_wall: [['plank', [5, 8], .6, 1.05]], fix_railing: [['plank', [4, 7], .6, .95]],
+    // repairs (fix_*, clear_roof) have NO timer foley (Pavel 2026-11-25: a constant scraping from the moment he took the hammer,
+    // even walking to the job). hero.js sends each repair sound on its own animation event instead: a hammer hit exactly when
+    // the face meets the nail (__audio.contact), a rag / rope / hinge sound at each stroke of the hands (wipeWindow), the
+    // clear_roof sweep at each peak of the raking hand's speed. Nothing plays while he walks or stands.
+    //
+    //
+    //
     dishes: [['plate', [3.5, 6], .55, 1.05], ['cup', [6, 10], .5, 1]],
   };
   function houseWatch(hero, mv) {
@@ -1006,7 +1008,7 @@ export function createAudio(ctx) {
     on: (k, f) => { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     setSeason: s => { season0 = s || null; populate(Object.keys(L), { season: season(), rain: 0, wind }); },
     state: () => { const cp = ctx.camera ? ctx.camera.position : P0; const tb = ctx.bones && (ctx.bones.LeftToeBase || ctx.bones.LeftFoot), hr = ctx.hero && ctx.hero.root; const toe = tb && hr ? +(tb.getWorldPosition(new tb.position.constructor()).y - hr.position.y).toFixed(3) : null;
-      const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
+      const ext = { quiet: +(now - lastLife).toFixed(1), w: wState, toe, autoFeet, feet: dbgF, indoor: +inK.toFixed(2), cam: [+cp.x.toFixed(1), +cp.y.toFixed(1), +cp.z.toFixed(1)], decodedS: Math.round(decodedS), decoded: Object.keys(B).length }; const h = ctx.hour ? ctx.hour() : 12, env = { season: season(), rain: ctx.rain ? ctx.rain() : 0, wind, awake: true }; const layers = {}; for (const k in L) layers[k] = +(L[k].act(h, env) * (mult[k] ?? 0)).toFixed(2); return { ...ext, loaded, season: env.season, wind: +wind.toFixed(2), windBed: wb ? +wb.g.gain.value.toFixed(3) : null, rain: +env.rain.toFixed(2), voices: [...voices].map(v => v.name), layers }; },
     node: () => master, log: () => LOG.slice(),
     play: playAct, thunder: (d = 800, s = .8) => thunder(d, s), weather: () => wState, sway: swaySound, critter, contact: e => contact(e), _task: t => { HW.force = t || null; },
   };

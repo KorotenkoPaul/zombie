@@ -18,7 +18,10 @@ const PORT = 8131;
   const step = n => p.evaluate(n => { for (let i = 0; i < n; i++) window.__th.rig.update(1 / 60, {}); }, n);
   const st = () => p.evaluate(() => { const d = window.__th.rig.debug; return { y: d.cy, p: d.cp, d: d.cd, t: d.ct, follow: d.follow }; });
   await p.evaluate(() => { const r = window.__th.rig, T = window.__dbg.THREE; r.set({ target: new T.Vector3(-1, 7.5, 2.3), yaw: 0.3, pitch: 0.2, dist: 9, snap: true }); });
-  await step(30);
+  // requestAnimationFrame is frozen here, so the loading screen never gets its reveal frames: hide it by hand
+  // (otherwise it catches every touch); and let the classic camera's soft framing settle before measuring
+  await p.evaluate(() => { const l = document.getElementById('load'); if (l) l.classList.add('hide'); });
+  await step(900);
   const ids = await p.evaluate(() => [...document.querySelectorAll('button')].filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && getComputedStyle(e).visibility !== 'hidden'; }).map(e => e.id || e.className));
   let fail = 0;
   for (const id of ids) {
