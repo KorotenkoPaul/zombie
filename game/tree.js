@@ -65,7 +65,7 @@ export function buildTree(THREE, o) {
     let vy = (y - door.y0) / (door.y1 - door.y0);
     // arch: full width below 65% height, round top above
     let inside;
-    if (vy < 0 || vy > 1) inside = 99; else if (vy < 0.62) inside = da; else { const k = (vy - 0.62) / 0.38; inside = Math.hypot(da, k * 1.05); }
+    if (vy < 0 || vy > 1) inside = 99; else if (vy < 0.74) inside = da; else { const k = (vy - 0.74) / 0.26; inside = da + k; } /* [TREE, photo] the photo's door is a five-sided opening: plumb sides and a low gable top, not a round arch */
     return inside;
   }
   const trunkR = (t, ang, c) => {
@@ -218,7 +218,7 @@ export function buildTree(THREE, o) {
       const rx = x - ccx, rz = z - ccz, u = rx * ddx + rz * ddz, v = -rx * ddz + rz * ddx;
       if (u < 0.2 || u > 3) return 99;
       const da = Math.abs(v) / (door.w / 2), vy = (y - door.y0) / (door.y1 - door.y0);
-      if (vy < 0 || vy > 1) return 99; if (vy < 0.62) return da; return Math.hypot(da, (vy - 0.62) / 0.38 * 1.05);
+      if (vy < 0 || vy > 1) return 99; if (vy < 0.74) return da; return da + (vy - 0.74) / 0.26;
     };
     const RA = new Array(17).fill(9);
     for (let i = 0; i < P.length; i += 3) { const y = P[i + 1]; if (y < door.y0 - 0.1 || y > door.y1 + 0.5) continue;
@@ -289,7 +289,7 @@ export function buildTree(THREE, o) {
   for (const rf of o.roofs || []) {
     const CS = 0.4, PAD = 2.4, gx0 = rf.x0 - PAD, gz0 = rf.z0 - PAD, nx = Math.ceil((rf.x1 - rf.x0 + 2 * PAD) / CS) + 1, nz = Math.ceil((rf.z1 - rf.z0 + 2 * PAD) / CS) + 1;
     let L = new Float32Array(nx * nz); const xc = (rf.x0 + rf.x1) / 2, hw = (rf.x1 - rf.x0) / 2;
-    const surf = x => rf.yb + rf.h * Math.max(0, 1 - Math.abs(x - xc) / hw) + rf.top;
+    const surf = x => rf.yb + rf.h * (rf.shed ? Math.min(1, Math.max(0, 1 - (x - rf.x0 - 0.45) / (rf.x1 - rf.x0 - 0.9))) : Math.max(0, 1 - Math.abs(x - xc) / hw)) + rf.top; /* shed: high at x0 (?gables=open) */
     const wood = (x, y, z) => Math.hypot(x - AX, z - AZ) > R(Math.min(Math.max(y, 0), 14)) + 0.35;
     for (let i = 0; i < P.length; i += 3) { const x = P[i], y = P[i + 1], z = P[i + 2];
       if (x < rf.x0 || x > rf.x1 || z < rf.z0 || z > rf.z1 || y < rf.yb - 0.25 || !wood(x, y, z)) continue;
@@ -311,12 +311,17 @@ export function buildTree(THREE, o) {
   // sinuous, arching out of the ground and spreading wide). Round tubes, flattened a little, tapering to a tip that dives
   // into the ground; part of the bark mesh (no new draw call). Bark UVs come from the nearest model root vertex so the
   // painted bark carries on. Kept off the walk to the woodpile, the ladder foot, the pond and the hollow's door.
+  let nModelV = P.length / 3;
   if (o.model && o.longRoots !== false && P.length) {
     { /* the model's own roots past the flare (long faceted slabs) sink smoothly under the ground: the tubes are the roots
       now. (Cutting their faces left a ragged toothed edge at the flare and thin triangles hanging under the arches.) */
       const c0 = o.rootCut ?? 2.9, c1 = c0 + 1.0;
       for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i] - AX, P[i + 2] - AZ), y = P[i + 1]; if (d <= c0 || y > 1.6) continue;
-        let k = Math.min(1, (d - c0) / (c1 - c0)); k = k * k * (3 - 2 * k); k *= Math.min(1, (1.6 - y) / 0.5); P[i + 1] = y - k * (y + 0.45); } }
+        let k = Math.min(1, (d - c0) / (c1 - c0)); k = k * k * (3 - 2 * k); k *= Math.min(1, (1.6 - y) / 0.5); P[i + 1] = y - k * (y + 0.45); }
+      /* [PERF] faces now wholly under the ground are dropped (were refined and drawn for nothing: ~phone tris budget) */
+      const keep = []; for (let t = 0; t < I.length; t += 3) { if (P[I[t] * 3 + 1] < -0.3 && P[I[t + 1] * 3 + 1] < -0.3 && P[I[t + 2] * 3 + 1] < -0.3) continue; keep.push(I[t], I[t + 1], I[t + 2]); }
+      I.length = 0; for (const q of keep) I.push(q); }
+    nModelV = P.length / 3; /* the tubes come after: the flare smoothing below leaves them alone */
     let rS = 4241; const rr = (a, b) => { rS = (rS * 16807) % 2147483647; return a + (b - a) * (rS / 2147483647); };
     const MOBR = MOB(o), SEG = MOBR ? 18 : 28, RING = MOBR ? 8 : 12;
     const pa = o.rootPath || [-4.9, 0.6, 3.5, 5.5], inPath = (x, z) => x > pa[0] - 0.4 && x < pa[1] + 0.4 && z > pa[2] - 0.4 && z < pa[3] + 0.4;
@@ -346,12 +351,13 @@ export function buildTree(THREE, o) {
         for (let j = 0; j < RING; j++) { const a = base + (path.length - 1) * RING + j, b = base + (path.length - 1) * RING + (j + 1) % RING; I.push(a, tip, b); } }
     }
   }
+  const nTubeEnd = P.length / 3;
   // ---------- smooth limbs (critic / trunk thread: up close the big limbs were faceted, flat faces and hard kinks at the
   // forks; the photo's are round and flowing). Long limb edges are split (positions linear, so nothing moves yet), then a
   // Taubin smooth (shrink-free) rounds the faces and forks. Coincident vertices (UV seams) are welded for it, so no cracks.
   // Only away from the trunk's foot and the hollow; the room-avoid push below runs after, so the house stays clear.
   if (o.model && o.smoothLimbs !== false && P.length) {
-    const MOBL = MOB(o), Lm = MOBL ? 0.7 : 0.38, nPass = MOBL ? 1 : 2;
+    const MOBL = MOB(o), Lm = MOBL ? 0.7 : 0.38, nPass = MOBL ? 0 : 2; /* [PERF] phones: smoothing only, no extra faces (tri budget) */
     const limbW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (y - 2.6) / 1.2)) * Math.min(1, Math.max(0, (d - 1.2) / 1.0)); };
     for (let pass = 0; pass < nPass; pass++) {
       const mid = new Map(), out = [];
@@ -374,6 +380,38 @@ export function buildTree(THREE, o) {
     const W = new Float32Array(nv); for (const i of adj.keys()) W[i] = limbW(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
     const Q = new Float32Array(P);
     for (let it = 0; it < (o.limbSmoothIt ?? 8); it++) for (const lam of [0.5, -0.53]) {
+      const D = new Float32Array(nv * 3);
+      for (const [i, s] of adj) { if (W[i] <= 0) continue; let x = 0, y = 0, z = 0; for (const j of s) { x += Q[j * 3]; y += Q[j * 3 + 1]; z += Q[j * 3 + 2]; } const n = s.size;
+        D[i * 3] = (x / n - Q[i * 3]) * lam * W[i]; D[i * 3 + 1] = (y / n - Q[i * 3 + 1]) * lam * W[i]; D[i * 3 + 2] = (z / n - Q[i * 3 + 2]) * lam * W[i]; }
+      for (const i of adj.keys()) { Q[i * 3] += D[i * 3]; Q[i * 3 + 1] += D[i * 3 + 1]; Q[i * 3 + 2] += D[i * 3 + 2]; } }
+    for (let i = 0; i < nv; i++) { const r = rep[i]; P[i * 3] = Q[r * 3]; P[i * 3 + 1] = Q[r * 3 + 1]; P[i * 3 + 2] = Q[r * 3 + 2]; }
+  }
+  // ---------- smooth flare (Env / trunk thread: the flare's big flat facets read as pale cut stone from the home view; the
+  // photo's foot is soft rounded wood). Same split + Taubin pass on the model's flare and root stubs (not the tubes, not the hollow).
+  if (o.model && o.smoothFlare !== false && P.length) {
+    const MOBL = MOB(o), Lm = MOBL ? 0.6 : 0.36, nPass = 1;
+    const limbW = (x, y, z, i) => { if (i !== undefined && i >= nModelV && i < nTubeEnd) return 0; const d = Math.hypot(x - AX, z - AZ), an = Math.atan2(z - AZ, x - AX); if (Math.abs(angDiff(an, doorAng)) < 0.7 && y > -0.2) return 0; /* the hollow's mouth keeps its shape */ return Math.min(1, Math.max(0, (2.4 - y) / 0.8)) * Math.min(1, Math.max(0, (y + 0.3) / 0.4)) * Math.min(1, Math.max(0, (d - 1.3) / 0.6)) * Math.min(1, Math.max(0, (4.2 - d) / 0.6)); };
+    for (let pass = 0; pass < nPass; pass++) {
+      const mid = new Map(), out = [];
+      const split = (a, b) => { const k = a < b ? a * 4194304 + b : b * 4194304 + a; let m = mid.get(k); if (m !== undefined) return m;
+        const ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2], bx = P[b * 3], by = P[b * 3 + 1], bz = P[b * 3 + 2], mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
+        if (Math.hypot(ax - bx, ay - by, az - bz) < Lm || limbW(mx, my, mz) <= 0) { mid.set(k, -1); return -1; }
+        m = P.length / 3; P.push(mx, my, mz); UV.push((UV[a * 2] + UV[b * 2]) / 2, (UV[a * 2 + 1] + UV[b * 2 + 1]) / 2); G.push((G[a] + G[b]) / 2); mid.set(k, m); return m; };
+      for (let t = 0; t < I.length; t += 3) { const v = [I[t], I[t + 1], I[t + 2]], m = [split(v[0], v[1]), split(v[1], v[2]), split(v[2], v[0])], n = (m[0] >= 0) + (m[1] >= 0) + (m[2] >= 0);
+        if (!n) { out.push(v[0], v[1], v[2]); continue; }
+        if (n === 3) { out.push(v[0], m[0], m[2], m[0], v[1], m[1], m[2], m[1], v[2], m[0], m[1], m[2]); continue; }
+        const r = m[0] >= 0 && (n === 1 || m[2] < 0) ? 0 : m[1] >= 0 && (n === 1 || m[0] < 0) ? 1 : 2;
+        const A = v[r], B = v[(r + 1) % 3], C = v[(r + 2) % 3], mAB = m[r], mBC = m[(r + 1) % 3];
+        if (n === 1) out.push(A, mAB, C, mAB, B, C); else out.push(A, mAB, C, mAB, B, mBC, mAB, mBC, C); }
+      I.length = 0; for (const q of out) I.push(q);
+    }
+    const nv = P.length / 3, rep = new Int32Array(nv), wm = new Map();
+    for (let i = 0; i < nv; i++) { const k = Math.round(P[i * 3] * 2e3) + ',' + Math.round(P[i * 3 + 1] * 2e3) + ',' + Math.round(P[i * 3 + 2] * 2e3); const j = wm.get(k); if (j === undefined) { wm.set(k, i); rep[i] = i; } else rep[i] = j; }
+    const adj = new Map(), link = (a, b) => { let s = adj.get(a); if (!s) adj.set(a, s = new Set()); s.add(b); };
+    for (let t = 0; t < I.length; t += 3) { const a = rep[I[t]], b = rep[I[t + 1]], c = rep[I[t + 2]]; link(a, b); link(b, a); link(b, c); link(c, b); link(c, a); link(a, c); }
+    const W = new Float32Array(nv); for (const i of adj.keys()) W[i] = limbW(P[i * 3], P[i * 3 + 1], P[i * 3 + 2], i);
+    const Q = new Float32Array(P);
+    for (let it = 0; it < (o.flareSmoothIt ?? 10); it++) for (const lam of [0.5, -0.53]) {
       const D = new Float32Array(nv * 3);
       for (const [i, s] of adj) { if (W[i] <= 0) continue; let x = 0, y = 0, z = 0; for (const j of s) { x += Q[j * 3]; y += Q[j * 3 + 1]; z += Q[j * 3 + 2]; } const n = s.size;
         D[i * 3] = (x / n - Q[i * 3]) * lam * W[i]; D[i * 3 + 1] = (y / n - Q[i * 3 + 1]) * lam * W[i]; D[i * 3 + 2] = (z / n - Q[i * 3 + 2]) * lam * W[i]; }
@@ -428,9 +466,12 @@ export function buildTree(THREE, o) {
   // ground and carve irregular folds running out along each root, a few sharp cuts across them, and bark lumps, all
   // deep enough to read from the normal camera. Edges are split by a rule that depends only on the edge itself
   // (length + where its midpoint is), so neighbours always agree: no cracks, UV seams included. Phones: coarser.
+  /* [PERF] the bark before the root/trunk carving refinement: the sun and lamp shadow passes cast from this (perf.js reads
+     bark.userData.shadowGeo; the carving only cuts inwards, the casters are back faces, so the silhouette stays on or outside) */
+  const shadowP = new Float32Array(P), shadowI = I.slice();
   let GR = null;
   if (o.model && o.rootDetail !== false) {
-    const MOBI = MOB(o), Lmax = MOBI ? 0.5 : 0.28, LmaxT = MOBI ? 0.38 : 0.2, passes = 2; /* phones: coarser (day budget) */
+    const MOBI = MOB(o), Lmax = MOBI ? 0.5 : 0.28, LmaxT = MOBI ? 0.44 : 0.2, passes = 2; /* phones: coarser (day budget) */
     const rootW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (d - 2.3) / 0.8)) * Math.min(1, Math.max(0, (2.0 - y) / 0.8)) * Math.min(1, Math.max(0, (y + 0.6) / 0.4)) * Math.min(1, Math.max(0, (11 - d) / 2)); };
     // the trunk itself (Pavel: too smooth from the normal view): long irregular cuts and bark plates, carved inwards only
     // (the house's beams and landings sit against it), never round the hollow's mouth
@@ -615,12 +656,13 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vAW;uniform vec2 aC;uniform vec2 aD;uniform vec3 aY;')
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
 {vec2 r=vAW.xz-aC;float u=dot(r,aD),v=-r.x*aD.y+r.y*aD.x,da=abs(v)/(aY.z*.45),vy=(vAW.y-aY.x)/(aY.y-aY.x);
- if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.62?da:length(vec2(da,(vy-.62)/.38*1.16)))<1.)discard;}`);
+ if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.74?da:da+(vy-.74)/.26*1.1)<1.)discard;}`);
     }
   };
   mat.userData.doorGlow = { value: 0 };
   mat.customProgramCacheKey = () => 'oakBark-grooves2-fold'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
+  { const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(shadowP, 3)); sg.setIndex(shadowI); sg.computeBoundingSphere(); bark.userData.shadowGeo = sg; }
 
   // ---------- leaves: clumps of painted oak-leaf cards, facing outwards like the painted crown ----------
   const LA = o.avoidLeaves || [];
@@ -650,9 +692,9 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
  transformed.z+=r2*(a*sin(position.x*7.+uWT*3.1+h*9.)+b*sin(position.y*6.+uWT*2.4+h*13.)+.5*(a+b)*sin((position.x+position.y)*9.+uWT*4.3))*.3;
  transformed+=windLocal(vec3(wv.x,wv.x*.15,wv.y)+windBranch(ip,vec2(${AX.toFixed(3)},${AZ.toFixed(3)})));}`);
     }
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <color_fragment>', '#include <color_fragment>\n'+(SPR ? '/* autumn sprigs: a warm-tinted card turns its leaves gold, orange or rust (the green sprig art only went olive under a plain multiply) */\n#ifdef USE_COLOR\n{vec3 ic=vColor.rgb;float w=smoothstep(.55,.9,ic.r-ic.b);float l=dot(diffuseColor.rgb,vec3(.3,.59,.11))/max(dot(ic,vec3(.3,.59,.11)),.01);diffuseColor.rgb=mix(diffuseColor.rgb,l*ic*2.6,w);}\n#endif' : '')).replace('#include <lights_fragment_begin>', SPR ? /* [TREE] critic T28: up close the sun's shadow of one sprig on the next read as a ghost leaf seen through it; on the leaves the sun shadow is softened to 55% (the crown keeps its depth) */ THREE.ShaderChunk.lights_fragment_begin.replace('? getShadow( directionalShadowMap', '? .45+.55*getShadow( directionalShadowMap') : '#include <lights_fragment_begin>').replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n'+(SPR ? 'normal*=faceDirection;/* clump normals face out on both sides of a card */' : '')).replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\ndiffuseColor.a*=vFacing*vDep;\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;\n/* [TREE] like the photo, the crown reads as layered leaves lit from the sky (sage tops, darker inside), not a near-black mass: a sky-fill term from the hemisphere light, stronger on upward-facing and outer (vShade) cards; it dims with the sky at night and under rain */\n#if NUM_HEMI_LIGHTS>0\n{vec3 up=normalize((viewMatrix*vec4(0.,1.,0.,0.)).xyz);float uf=.45+.55*max(dot(normal,up),0.);totalEmissiveRadiance+=diffuseColor.rgb*hemisphereLights[0].skyColor*('+(o.leafSky ?? 0.5).toFixed(2)+')*uf*vShade*vShade;}\n#endif\n/* [TREE] golden hour: a low warm sun shines through and along the leaves (they stayed noon-green next to the glowing bark and walls). Only a warm sun counts (noon white, blue night fill and rim: none), so it fades by itself under cloud, rain and at night */\n#if NUM_DIR_LIGHTS>0\n{vec3 vc=normalize(vViewPosition);for(int i=0;i<NUM_DIR_LIGHTS;i++){vec3 lc=directionalLights[i].color;float gw=smoothstep(.5,.85,(lc.r-lc.b)/max(lc.r,.001));vec3 L=directionalLights[i].direction;float fr=max(dot(normal,L),0.),bk=max(-dot(vc,L),0.);totalEmissiveRadiance+=diffuseColor.rgb*lc*gw*vShade*(.1*fr+.22*bk*bk);}}\n#endif');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vShade;varying float vFacing;varying float vDep;').replace('#include <color_fragment>', '#include <color_fragment>\n'+(SPR ? '/* autumn sprigs: a warm-tinted card turns its leaves gold, orange or rust (the green sprig art only went olive under a plain multiply) */\n#ifdef USE_COLOR\n{vec3 ic=vColor.rgb;float w=smoothstep(.55,.9,ic.r-ic.b);float l=dot(diffuseColor.rgb,vec3(.3,.59,.11))/max(dot(ic,vec3(.3,.59,.11)),.01);diffuseColor.rgb=mix(diffuseColor.rgb,l*ic*2.6,w);}\n#endif' : '')+'\n/* [TREE, Env night match] under the moon the photo crown is a dark cool blue-green (~19/35/29), ours stayed bright yellow-green: when the direct light is moon-blue the leaf albedo goes dark and cool. By day and in the golden hour (white or warm sun) nothing changes */\n#if NUM_DIR_LIGHTS>0\n{vec3 ls=vec3(0.);for(int i=0;i<NUM_DIR_LIGHTS;i++)ls+=directionalLights[i].color;float nb=smoothstep(.05,.35,(ls.b-ls.r)/max(ls.b,.001));float gy=dot(diffuseColor.rgb,vec3(.3,.59,.11));diffuseColor.rgb=mix(diffuseColor.rgb,gy*vec3(.42,.86,.5),nb*.9);}\n#endif').replace('#include <lights_fragment_begin>', SPR ? /* [TREE] critic T28: up close the sun's shadow of one sprig on the next read as a ghost leaf seen through it; on the leaves the sun shadow is softened to 55% (the crown keeps its depth) */ THREE.ShaderChunk.lights_fragment_begin.replace('? getShadow( directionalShadowMap', '? .45+.55*getShadow( directionalShadowMap') : '#include <lights_fragment_begin>').replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n'+(SPR ? 'normal*=faceDirection;/* clump normals face out on both sides of a card */' : '')).replace('#include <alphatest_fragment>', '/* oblique cards shrink towards their centre instead of showing a flat sheet; cards right at the camera fade out */\ndiffuseColor.a*=vFacing*vDep;\n#include <alphatest_fragment>').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=vShade;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance+=diffuseColor.rgb*vec3(.06,.09,.08)*vShade;\n/* [TREE] like the photo, the crown reads as layered leaves lit from the sky (sage tops, darker inside), not a near-black mass: a sky-fill term from the hemisphere light, stronger on upward-facing and outer (vShade) cards; it dims with the sky at night and under rain */\n#if NUM_HEMI_LIGHTS>0\n{vec3 up=normalize((viewMatrix*vec4(0.,1.,0.,0.)).xyz);float uf=.45+.55*max(dot(normal,up),0.);totalEmissiveRadiance+=diffuseColor.rgb*hemisphereLights[0].skyColor*('+(o.leafSky ?? 0.5).toFixed(2)+')*uf*vShade*vShade;}\n#endif\n/* [TREE] golden hour: a low warm sun shines through and along the leaves (they stayed noon-green next to the glowing bark and walls). Only a warm sun counts (noon white, blue night fill and rim: none), so it fades by itself under cloud, rain and at night */\n#if NUM_DIR_LIGHTS>0\n{vec3 vc=normalize(vViewPosition);for(int i=0;i<NUM_DIR_LIGHTS;i++){vec3 lc=directionalLights[i].color;float gw=smoothstep(.5,.85,(lc.r-lc.b)/max(lc.r,.001));vec3 L=directionalLights[i].direction;float fr=max(dot(normal,L),0.),bk=max(-dot(vc,L),0.);totalEmissiveRadiance+=diffuseColor.rgb*lc*gw*vShade*(.1*fr+.22*bk*bk);}}\n#endif');
   };
-  lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2-gold-sky' + (SPR ? '-sprig4' : ''); /* [ENV] explicit key (SHADERS rule) */
+  lmat.customProgramCacheKey = () => 'oakLeaf-cardFade2-gold-sky-night1' + (SPR ? '-sprig4' : ''); /* [ENV] explicit key (SHADERS rule) */
   // Pavel (2026-11-23): like the photo, big clearly drawn leaves: few large cards (each card is a painted clump of ~35 oak
   // leaves, so at this size a leaf is ~0.5 m like the photo's), not hundreds of small ones that read as mush
   const total = SPR ? (MOB(o) ? (o.leafCards || (ROS ? 400 : 520)) : 4200) : MOB(o) ? (o.leafCards || 110) : 430; /* x0.55 count at x1.38 size (Env vs photo: a leaf ~0.85 m) plus the side clumps */ // [PERF] round cards (below) and fewer: overdraw <= 1 screen on phones
