@@ -1088,7 +1088,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     samplePose();
     // cooking, or stoking (the log goes in while the little door is open): the fire is fed
     const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
-    cookT = cooking ? 78 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s)
+    // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s). Stoked with logs (an evening fire for
+    // warmth, photo: the oven window glows) it burns ~4 game hours: he feeds it again when it runs low (brain: stoke when ovenLow)
+    const stoking = task === 'stoke' && cooking;
+    cookT = stoking ? Math.max(cookT, 240) : cooking ? Math.max(cookT, 78) : Math.max(0, cookT - dt);
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     /* the first frames after load, and any jump of the clock (setHour, a skip): automatic sources take their state at once.

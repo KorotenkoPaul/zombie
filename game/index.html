@@ -943,7 +943,7 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  const R0=surf(D.ang+(D.w/2+.2)/2.2,D.y0+.6)||surf(D.ang-(D.w/2+.2)/2.2,D.y0+.6)||2.2;
  const at=(side,y,inset)=>{let r=surf(D.ang+Math.sign(side||1)*(Math.abs(side)+.12)/R0,y)||R0;const a=D.ang+side/r;r=(surf(a+Math.sign(side||1)*.05/r,y)||r)-inset;return V(ax+Math.cos(a)*r,y,az+Math.sin(a)*r);};
  const out=V(Math.cos(D.ang),0,Math.sin(D.ang)),sideV=V(-Math.sin(D.ang),0,Math.cos(D.ang));
- const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();const ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex))).normalize();const ey=ez.clone().cross(ex);
+ const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();let ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex)));/* [treedress, door round] a piece running along out (the cave floor boards) left ez zero: a degenerate basis drew each board as a thin orange stake standing up from the sill. Those lie flat: thickness up */if(ez.lengthSq()<1e-4)ez.set(0,1,0);ez.normalize();const ey=ez.clone().cross(ex);
   const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(tn||rnd(.85,1)));
    const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
  const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
@@ -954,7 +954,7 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  // a keystone block on top
  {const p=at(0,yS+ah+.02,.05);piece(p.clone().addScaledVector(V(0,1,0),-.12),p.clone().addScaledVector(V(0,1,0),.12),.2,.34,'beam');}
  // threshold: a thick worn board across the foot of the opening, flush with the landing
- {const a=at(-hw-.06,D.y0+.02,.04),b=at(hw+.06,D.y0+.02,.04);piece(a,b,.24,.08,'board');}
+ let thM=null;{const a=at(-hw-.06,D.y0+.02,.04),b=at(hw+.06,D.y0+.02,.04);thM=a.clone().add(b).multiplyScalar(.5);piece(a,b,.08,.24,'board');/* [treedress, door round] lying flat (8 cm thick, 24 cm deep): on edge it stood as a 12 cm bar slanting across the doorway */}
  // the reveal: the doorway runs ~1 m through the bark into the cave. Its sides and top were open, so from the side the lit
  // cave showed through between the jamb and the bark as an orange slit (critic T25). Lined with planks like a real passage.
  {const dep=[.2,.46],dd=.27;/* shallow and dark like old weathered wood: from the home view the lit planks of a 1 m lining read as boards leaning in the doorway */
@@ -962,7 +962,7 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
   for(const ins of dep){let pv=at(-(D.w/2+.03),yS,ins);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*(D.w/2+.03),yS+Math.sin(t)*(ah-fw*.45+.03),ins);
    piece(pv.clone().addScaledVector(pv.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(pv).normalize(),.03),.045,dd,'board',rnd(.42,.5));pv=p;}}}
  // plank floor into the cave, boards running inward, slightly lower than the threshold
- {const c0=at(0,D.y0+.03,.14);for(let k=-2;k<=2;k++){const a=c0.clone().addScaledVector(sideV,k*.205),b=a.clone().addScaledVector(out,-.95);piece(b,a,.19,.05,'board');}}
+ {/* [treedress, door round] from just behind the threshold inwards: at(0,..) measured the flared foot beside the opening, so the boards began ~.5 m out on the landing */const c0=thM.clone().addScaledVector(out,-.13);c0.y=D.y0+.03;for(let k=-2;k<=2;k++){const a=c0.clone().addScaledVector(sideV,k*.205),b=a.clone().addScaledVector(out,-.95);piece(b,a,.19,.05,'board');}}
  boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
 // left low landing
 floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});/* photo: a short ladder down to the small left platform (the barrel had no way up there). A plain nailed wooden ladder from its
