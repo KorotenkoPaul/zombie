@@ -133,3 +133,15 @@ Debug: `__treedress.stats()`.
 - **Grass tufts** now read Wind as well (`windSway` freq 1.7, like Ground's grass), via `mat.userData.wind`, which makes swayMat call `W.hook`.
 - **Ivy** (FLUTTER, windSway 2.6) and the **hanging lichen** (windRope + windBranch) already used Wind; they are unchanged.
 - The old sine sway stays as a `#else` fallback for when Wind is missing. No new draws.
+
+## Round 21: autumn touches on the trunk
+- **Drip lines under the landings** (bark shader, `tdDrip[8]`, key `|treedress6`).
+  - Sources: bark faces right under a board or beam, clustered and ranked by bark area. The side facing the home view counts 3x.
+  - Excluded: the door lintel and anything above y=11. See `__treedress.drips`.
+  - Look: dark, water-stained vertical runs. Faint when dry, stronger and glossy when wet or in rain.
+  - Cost: arithmetic noise only, an 8-iteration loop, no texture reads.
+- **Fold leaves**: about 16 more leaves (9 on phones) in the trunk's bark folds between the landings (y 4.5–8.5, near the axis).
+  - They use their own rng (7073), so nothing else moves. They sit in the litter mesh's extra capacity.
+- **Board leaves** (the piles on the landings): now baked into Ground's litter mesh (atlas cell 0, Ground's own leaf) on phone and desktop.
+  - Saves one draw. Falls back to their own mesh if the atlas or attributes don't match.
+- Budget: 286/282/285 calls, tris up to 447k (yaw limit).

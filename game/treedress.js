@@ -90,6 +90,7 @@ export function createTreeDress(C) {
     // world space so nothing stretches on the sculpted model. barkN = normal, barkH = height / cavity / fine detail.
     const TL = new THREE.TextureLoader(), AS = window.__ASSET || '';
     const ldT = n => { const t = TL.load(AS + n); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.NoColorSpace; t.anisotropy = MOBILE ? 4 : 8; return t; };
+    D.dripU = { value: Array.from({ length: 8 }, () => new THREE.Vector4(0, -100, 0, 0.5)) }; /* [autumn round] filled once the oak is sampled */
     D.barkU = tdWetU.U = { mossAmt: { value: 1 }, footDark: { value: 1 }, wet: { value: 0 }, damp: { value: 0 }, frost: { value: 0 }, day: { value: 1 }, near: { value: 0 }, rimK: { value: 1 },
       nrm: { value: ldT('barkN.jpg') }, hao: { value: ldT('barkH.jpg') }, relief: { value: 0.45 }, scale: { value: 0.55 }, cool: { value: 0.5 } };
     // rain from Wind (window.__wind.raining(), the weather spells); the old U.wind scalar is only the wind strength now
@@ -160,7 +161,7 @@ export function createTreeDress(C) {
     }
     mat.onBeforeCompile = (sh, r) => {
       if (prev) prev.call(mat, sh, r);
-      sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
+      sh.uniforms.tdDrip = D.dripU; sh.uniforms.tdMoss = D.barkU.mossAmt; sh.uniforms.tdFoot = D.barkU.footDark; sh.uniforms.tdWet = D.barkU.wet; sh.uniforms.tdDamp = D.barkU.damp; sh.uniforms.tdFrost = D.barkU.frost; sh.uniforms.tdDay = D.barkU.day; sh.uniforms.tdNear = D.barkU.near; sh.uniforms.tdRimK = D.barkU.rimK;
       sh.uniforms.tdNrm = D.barkU.nrm; sh.uniforms.tdHao = D.barkU.hao; sh.uniforms.tdRelief = D.barkU.relief; sh.uniforms.tdScale = D.barkU.scale; sh.uniforms.tdCool = D.barkU.cool;
       sh.uniforms.tdRimC = ENVR.color; sh.uniforms.tdRimS = ENVR.strength; sh.uniforms.tdRimD = ENVR.dir;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 tdP;varying vec3 tdN;attribute vec3 tdJ;varying vec3 vTdJ;attribute float tdGr;varying float vTdGr;attribute vec4 tdB1,tdB2;flat varying vec4 vB1,vB2;')
@@ -171,7 +172,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;
+uniform vec4 tdDrip[8];varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -355,6 +356,13 @@ uniform float tdCool;` + NOISE)
             float hold=run*.62+(1.-tdH)*.28+foot*.3-mm*.25;
             float dm=smoothstep(1.02-tdDamp*.85,1.2-tdDamp*.85,hold)*smoothstep(0.,.25,tdDamp);
             diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*diffuseColor.rgb*2.2,dm*.45); diffuseColor.rgb*=1.-dm*.32; tdDM=dm; }
+          // [autumn round] drip lines under the landings: where a landing meets the trunk the rain runs off the boards and down
+          // the bark, leaving dark water-stained runs (a faint stain always, soaked and glossy in the rain). tdDrip: (x, y of the
+          // landing's underside, z, reach); arithmetic noise only, no texture reads in the loop.
+          { float dr=0.; for(int i=0;i<8;i++){ vec4 s=tdDrip[i]; float h=s.y-tdP.y; float hl=.9+1.7*td_n(vec3(tdP.x*2.3,s.y,tdP.z*2.3));
+              dr=max(dr,(1.-smoothstep(s.w*.45,s.w,length(tdP.xz-s.xz)))*smoothstep(-.02,.06,h)*(1.-smoothstep(hl*.5,hl,h))); }
+            if(dr>.001){ float run=smoothstep(.38,.68,td_n(vec3(tdP.x*11.,tdP.y*.7,tdP.z*11.)))*(.6+.4*td_n(vec3(tdP.x*4.,tdP.y*2.,tdP.z*4.)));
+              float k=dr*run*(1.-mm*.6)*(.6+.4*tdDamp); diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*vec3(.5,.52,.47),k*.8); tdWM=max(tdWM,k*tdWet); } }
           // hoar frost: white rime on the upward faces of the roots near the ground, on the ridges first (furrows stay dark)
           if(tdFrost>.003){ float fm=tdFrost*smoothstep(.55,.9,wn.y)*(1.-smoothstep(.6,2.2,y))*smoothstep(.45,.8,tdH+ha.b*.3+(big-.5)*.6)*(1.-mm*.5);
             diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.34,.37,.42)*(.7+.6*ha.b),fm*.5); tdFM=fm; } // a light dusting, not snow
@@ -398,7 +406,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress5';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress6';
     mat.needsUpdate = true;
   }
 
@@ -428,7 +436,18 @@ uniform float tdCool;` + NOISE)
   function sampler(filter, rnd = R) {
     const L = tri.filter(filter); let sum = 0; const cum = L.map(q => (sum += q.ar));
     return () => { if (!L.length) return null; const x = rnd() * sum; let lo = 0, hi = cum.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < x) lo = m + 1; else hi = m; } const q = L[lo]; return { p: pointOn(q, rnd), n: q.n }; };
-  }
+  }  // [autumn round] drip sources for the bark shader: bark faces right under a board or beam (a landing against the trunk), clustered
+  // to at most 8. Deterministic (no rng), so nothing else moves.
+  { const cand = [];
+    for (const q of tri) { if (Math.abs(q.n.y) > 0.6 || q.c.y < 2) continue;
+      for (const dy of [0.08, 0.2, 0.35]) if (inBox(boxes, q.c.x + q.n.x * 0.06, q.c.y + dy, q.c.z + q.n.z * 0.06, 0.02)) { cand.push([q.c.x, q.c.y + dy - 0.04, q.c.z, q.ar]); break; } }
+    // cluster (0.9 m across, 1.2 m tall), rank by how much bark sits under that landing; the crown tops (above the house) are left out
+    const cl = []; for (const c of cand) { if (c[1] > 11) continue; const k = cl.find(s => Math.hypot(s[0] - c[0], s[2] - c[2]) < 0.9 && Math.abs(s[1] - c[1]) < 1.2); if (k) { k[3] += c[3]; if (c[1] > k[1]) k[1] = c[1]; } else cl.push(c.slice()); }
+    // the side facing the home view counts 3x (that is where they are seen); none over the trunk door (its lintel is not a landing)
+    for (const c of cl) { const ang = Math.atan2(c[2] - AZ, c[0] - AX); c[3] *= 1 + 2 * Math.max(0, Math.sin(ang)); if (Math.abs(angDiff(ang, doorAng)) < 0.55 && c[1] < 3.6) c[3] = 0; }
+    cl.sort((a, b) => b[3] - a[3]); const src = cl.filter(c => c[3] > 0.05).slice(0, 8);
+    src.forEach((c, i) => D.dripU.value[i].set(c[0], c[1], c[2], 0.7)); D.drips = src.map(c => c.map(v => +v.toFixed(2))); }
+
   const radial = (x, z) => Math.hypot(x - AX, z - AZ);
   const nearDoor = (x, y, z) => Math.abs(angDiff(Math.atan2(z - AZ, x - AX), doorAng)) < 0.5 && y < 4.8;
   const Q = new THREE.Quaternion(), M4 = new THREE.Matrix4(), S = V(), UP = V(0, 1, 0), col = new THREE.Color();
@@ -605,7 +624,7 @@ uniform float tdCool;` + NOISE)
     // fallen leaves: oak-leaf cards lying in the pockets, mostly brown and ochre, a few still green, some leaning on the roots
     const lg = new THREE.PlaneGeometry(1, 1); lg.rotateX(-Math.PI / 2);
     const lmat = new THREE.MeshStandardMaterial({ map: leafT, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.95 });
-    const NCAUGHT = Math.round(90 * MUL), NL = Math.round(420 * MUL), lit = new THREE.InstancedMesh(lg, lmat, NL + NCAUGHT); let nl = 0;
+    const NCAUGHT = Math.round(90 * MUL), NL = Math.round(420 * MUL), lit = new THREE.InstancedMesh(lg, lmat, NL + NCAUGHT + Math.round(16 * MUL)) /* + the fold leaves (autumn round) */; let nl = 0;
     const tints = [[0.62, 0.38, 0.2], [0.5, 0.3, 0.16], [0.75, 0.52, 0.22], [0.42, 0.3, 0.2], [0.55, 0.6, 0.3]];
     for (let k = 0; nl < NL && k < NL * 3; k++) {
       const s = spots[Math.floor(R() * spots.length)]; if (!s) break;
@@ -631,6 +650,15 @@ uniform float tdCool;` + NOISE)
         const c = tints[Math.floor(R() * 4)], v = rr(0.8, 1.15); col.setRGB(c[0] * v * 1.25, c[1] * v * 1.2, c[2] * v * 1.1); lit.setColorAt(nl++, col); nc++;
       }
       D.caughtLeaves = nc;
+      // [autumn round] a few more higher up, in the bark folds of the trunk between the landings (where a gust drops them), own rng
+      // so nothing placed after this moves. Trunk only (near the axis): out on the limbs they would not follow the limb sway.
+      { const R2 = rng(7073), folds = sampler(q => q.n.y > 0.3 && q.c.y > 4.5 && q.c.y < 8.5 && radial(q.c.x, q.c.z) < 2.4, R2); let nu = 0; const NU = Math.round(16 * MUL);
+        for (let k = 0; k < NU * 8 && nu < NU && nl < lit.count; k++) { const s0 = folds(); if (!s0) break; const p = s0.p;
+          if (blocked(p.x, p.y + 0.05, p.z, 0.08)) continue;
+          const up = s0.n.clone().lerp(UP, 0.4).normalize(), q = orient(up, R2() * 6.28);
+          const sz = 0.12 + R2() * 0.08; M4.compose(p.clone().addScaledVector(s0.n, 0.012), q, S.setScalar(sz)); lit.setMatrixAt(nl, M4);
+          const c = tints[Math.floor(R2() * 4)], v = 0.8 + R2() * 0.3; col.setRGB(c[0] * v * 1.25, c[1] * v * 1.2, c[2] * v * 1.1); lit.setColorAt(nl++, col); nu++; }
+        D.foldLeaves = nu; }
     }
     lit.count = nl; lit.receiveShadow = true; D.group.add(lit); D.litter = lit; D.pockets = spots.length;
     // [draw-call round] one draw less on phones (298/300 there): bake these leaves into Ground's litter mesh instead of drawing them
@@ -1048,6 +1076,18 @@ uniform float tdCool;` + NOISE)
     const GL = window.__ground && window.__ground.leaves;
     const boardsIM = (C.blockers || [])[0];
     D.boardLeaves = null;
+    const bakeToLitter = im => { const G = window.__ground, gl = G && G.litter, gm = gl && gl.material && gl.material.map, cv = gm && gm.image, og = gl && gl.geometry, A = og && og.attributes;
+      if (!cv || !(cv.width === 384 || cv.width === 512) || cv.height !== 128 || !A || Object.keys(A).length !== 6 || !A.aCap || !A.aFl || !im.geometry.attributes.uv) return false;
+      const cells = cv.width / 128, g0 = im.geometry.index ? im.geometry.toNonIndexed() : im.geometry, P = g0.attributes.position, Nn = g0.attributes.normal, Uv = g0.attributes.uv, Cv = g0.attributes.color, k0 = P.count;
+      const tot = k0 * im.count, pos = new Float32Array(tot * 3), nor = new Float32Array(tot * 3), uv = new Float32Array(tot * 2), cl = new Float32Array(tot * 3), afl = new Float32Array(tot * 4), m4 = new THREE.Matrix4(), nm = new THREE.Matrix3(), ic = new THREE.Color(), v = V();
+      for (let i = 0; i < im.count; i++) { im.getMatrixAt(i, m4); nm.getNormalMatrix(m4); if (im.instanceColor) im.getColorAt(i, ic); else ic.setRGB(1, 1, 1);
+        for (let k = 0; k < k0; k++) { const o = i * k0 + k; v.fromBufferAttribute(P, k).applyMatrix4(m4); pos.set([v.x, v.y, v.z], o * 3); v.fromBufferAttribute(Nn, k).applyMatrix3(nm).normalize(); nor.set([v.x, v.y, v.z], o * 3);
+          uv[o * 2] = Math.min(0.98, Math.max(0.02, Uv.getX(k))) / cells; uv[o * 2 + 1] = Uv.getY(k); cl.set([ic.r * (Cv ? Cv.getX(k) : 1), ic.g * (Cv ? Cv.getY(k) : 1), ic.b * (Cv ? Cv.getZ(k) : 1)], o * 3); afl.set([0, 0, 0, -1], o * 4); } }
+      const add = new THREE.BufferGeometry(); add.setAttribute('position', new THREE.BufferAttribute(pos, 3)); add.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); add.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+      add.setAttribute('color', new THREE.BufferAttribute(cl, 3)); add.setAttribute('aCap', new THREE.BufferAttribute(new Float32Array(tot), 1)); add.setAttribute('aFl', new THREE.BufferAttribute(afl, 4));
+      if (og.index) { const ix = new Uint32Array(tot); for (let k = 0; k < tot; k++) ix[k] = k; add.setIndex(new THREE.BufferAttribute(ix, 1)); }
+      const merged = mergeGeometries([og, add]); if (g0 !== im.geometry) g0.dispose(); add.dispose(); if (!merged) return false;
+      gl.geometry = merged; og.dispose(); return true; };
     D.placeBoardLeaves = () => {
       const dbg = window.__dbg; if (D.boardLeaves || !GL || !boardsIM || !dbg || !dbg.N || !dbg.E) return false;
       const N = dbg.N, E = dbg.E;
@@ -1073,7 +1113,11 @@ uniform float tdCool;` + NOISE)
           const c = pal[Math.floor(R() * pal.length)]; col.setHSL(c[0] + rr(-0.02, 0.02), c[1], c[2] + rr(-0.05, 0.05)); im.setColorAt(n++, col);
         }
       }
-      im.count = n; im.receiveShadow = true; D.group.add(im); D.boardLeaves = im; D.boardPiles = piles; D.pileAt = centres.map(c => c.toArray().map(v => +v.toFixed(2))); return true;
+      im.count = n; im.receiveShadow = true;
+      // [autumn round] no draw of their own: same leaf picture as Ground's litter (its atlas cell 0), so they are baked into that
+      // mesh (works whether or not the atlas has grown its 4th cell). If that is not possible they draw on their own as before.
+      if (!bakeToLitter(im)) D.group.add(im); else D.boardLeavesBaked = true;
+      D.boardLeaves = im; D.boardPiles = piles; D.pileAt = centres.map(c => c.toArray().map(v => +v.toFixed(2))); return true;
     };
   }
 
