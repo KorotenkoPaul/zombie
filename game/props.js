@@ -5,7 +5,7 @@
 // Local convention for every builder: floor at y=0, front of the object faces +z, centred on x/z.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 let seed = 7; const R = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
@@ -401,7 +401,7 @@ function drapeGeo(len, wid, drop, { r = .05, wrinkle = .01, endDrop = 0, puff = 
   }
   geo.computeVertexNormals(); return geo;
 }
-function pillowGeo(w, h, d) { const g = rb(w, h, d, Math.min(w, h, d) * .45, 3); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const nx = p.getX(i) / (w / 2), nz = p.getZ(i) / (d / 2); const k = 1 - .55 * Math.pow(Math.max(Math.abs(nx), Math.abs(nz)), 3); p.setY(i, p.getY(i) * k); p.setZ(i, p.getZ(i) * (1 + .04 * Math.sin(nx * 3)));
+function pillowGeo(w, h, d) { /* [PROPS photo] a welded, evenly subdivided rounded box: the RoundedBox had one quad per flat face, so the creases and the head dent showed as hard facets */ const r0 = Math.min(w, h, d) * .45; let g = new THREE.BoxGeometry(w, h, d, 8, 3, 11); g.deleteAttribute('normal'); g.deleteAttribute('uv'); g = mergeVertices(g); { const q = g.attributes.position, hw = [w / 2 - r0, h / 2 - r0, d / 2 - r0], v = new THREE.Vector3(), c = new THREE.Vector3(); for (let i = 0; i < q.count; i++) { v.fromBufferAttribute(q, i); c.set(Math.max(-hw[0], Math.min(hw[0], v.x)), Math.max(-hw[1], Math.min(hw[1], v.y)), Math.max(-hw[2], Math.min(hw[2], v.z))); v.sub(c); if (v.lengthSq() > 1e-12) v.setLength(r0); v.add(c); q.setXYZ(i, v.x, v.y, v.z); } g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(q.count * 2), 2)); } const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const nx = p.getX(i) / (w / 2), nz = p.getZ(i) / (d / 2); const k = 1 - .55 * Math.pow(Math.max(Math.abs(nx), Math.abs(nz)), 3); p.setY(i, p.getY(i) * k); p.setZ(i, p.getZ(i) * (1 + .04 * Math.sin(nx * 3)));
     /* cloth, not a moulded block: creases fanning in from the corners and edges, a soft dent where the head lay */
     const y = p.getY(i), top = y > 0 ? 1 : .35, an = Math.atan2(nz, nx), e = Math.min(1, Math.max(Math.abs(nx), Math.abs(nz)));
     const cr = Math.pow(Math.max(0, Math.sin(an * 9 + Math.sin(an * 3) * 1.3)), 6) * Math.pow(e, 2.5) * .018 + Math.sin(nx * 7.3 + nz * 4.1) * Math.sin(nz * 6.2 - nx * 2.3) * .005;
@@ -417,9 +417,9 @@ function bunkBed() {
     for (const sz of [-1, 1]) W(g, L - 2 * p + .01, .13, .055, 0, y, sz * (D / 2 - .035));
     for (const sx of [-1, 1]) W(g, .055, .13, D - 2 * p + .01, sx * (L / 2 - .035), y, 0);
     for (let i = 0; i < 9; i++) W(g, .13, .022, D - .12, -L / 2 + .16 + i * (L - .32) / 8, y + .03, 0, { mat: M.woodDark, r: 0, grain: 2 }); // slats under the mattress: plain boxes
-    const top = y + .045 + .15; add(g, rb(L - .17, .15, D - .15, .055, 2), M.mattress, 0, y + .045 + .075, 0);
+    const top = y + .045 + .15; add(g, rb(L - .17, .15, D - .15, .055, 2), M.mattress, 0, y + .045 + .075, 0); { const sh = add(g, rb(L - .162, .022, D - .142, .008), M.linen, 0, top - .009, 0); sh.castShadow = false; } /* [PROPS photo] a sheet over the mattress top, tucked 1.5 cm down its sides: between the quilt and the pillow the bare ticking read unmade */
     // pillow at the head end (+x)
-    add(g, pillowGeo(.36, .16, .6), M.linen, L / 2 - .28, top + .05, 0, 0, 0, -.12);
+    add(g, pillowGeo(.36, .16, .6), M.linen, L / 2 - .28, top + .05, 0, 0, 0, -.12).castShadow = false;
     // quilt over the foot two-thirds, folded sheet edge at its head
     const qL = L - .62; const q = add(g, drapeGeo(qL, D - .15, .12, { wrinkle: .008, puff: .026 }), M.quilt, -L / 2 + .08 + qL / 2, top + .012, 0); q.castShadow = false;
     add(g, rb(.09, .05, D - .12, .024, 3), M.linen, -L / 2 + .08 + qL + .02, top + .02, 0);
