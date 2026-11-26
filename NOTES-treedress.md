@@ -249,3 +249,7 @@ Debug: `__treedress.stats()`.
 - Now the ridge moonlight runs up to y ~11 and is ×2.4 stronger from y 3.5–5.5 up (where only moonlight reaches), fading out under the crown at 10.5–12. Key '|treedress16'. No new draw calls.
 - Checked phone landing leaf piles after Ground's 3d9fd01 litter fix: baked, 7 piles, lie flat on the boards, look natural; no change.
 - Warm night trunk tone vs photo (71,40,28) is a Lights/Env matter, not bark colour.
+
+## Round 39 (day, closest zoom: the scar at the trunk foot)
+- At the closest real zoom (~10.7 m) by day, the bare-bark scar at (-1.14,0.94,2.62) on the root flare read as a pale grey-blue plate stuck on the bark.
+- Scars now go dark, damp and slightly algae-green near the ground (fades out by y≈2.4, ragged by noise), darker still at their lower end. Higher scars keep the weathered silver wood. Key '|treedress17'. No new draw calls.

@@ -434,6 +434,8 @@ uniform float tdCool;` + NOISE)
             float ck=smoothstep(.93,1.,abs(sin(gp*.23+1.7*sin(tdSa*3.1))))*gk; // a few deep checks along the grain
             vec3 wd=vec3(1.24,1.,.74)*(g*.98+.012)*(1.-.2*gk*smoothstep(.2,1.,sin(gp)))*(1.-.55*ck)*mix(1.,.75,smoothstep(0.,-.9,tdSa)) // runs stain its lower end
               *(1.-.42*smoothstep(.6,.95,tdSe)*smoothstep(-.2,.6,tdSa))*(1.-.18*smoothstep(.4,.95,tdSe)); // sunk below the bark: the lip above shades the inside
+            { float dz=1.-smoothstep(.9,2.4,tdP.y+(td_n(tdP*3.1)-.5)*.5); // [day base round] a scar down at the foot is not silver: ground damp soaks it dark, greenish with algae from below
+              wd=mix(wd,mix(vec3(dot(wd,vec3(.33))),wd,.6)*vec3(.5,.52,.4)*(1.-.25*smoothstep(.3,-.6,tdSa)),dz); }
             diffuseColor.rgb=mix(diffuseColor.rgb,wd,in_*sFar);
             diffuseColor.rgb*=(1.+.18*sFar*exp(-pow((tdSe-1.06)/.09,2.)))*(1.-.6*sFar*exp(-pow((tdSe-.95)/.045,2.))); }
           else if(tdSty>.5){ // old broken stub: a dark rotten hole with end-grain rings, a crease, and the swollen lip of bark round it
@@ -522,7 +524,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress16';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress17';
     mat.needsUpdate = true;
   }
 
