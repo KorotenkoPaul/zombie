@@ -420,7 +420,7 @@ export function buildTree(THREE, o) {
         const kd = Math.min(1, d / 1.4);
         h += wt * kd * -(0.17 * cut + 0.055 * fur + 0.04 * plate + 0.012 * hsh(Math.round(an * 40), Math.round(y * 5)));
       }
-      GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
+      if (w > 0 && h < 0) { h = Math.max(h, -0.45 * Math.max(0.04, y + 0.15)); if (ny > 0.2) h = Math.max(h, -Math.max(0, y - 0.3) / ny); } /* [TREE] Ground: a thin root tip carved deeper than it is thick turned inside out and the ground showed through as a flat green triangle: carving stays within the root and above the ground */ GR[i] = Math.min(1, Math.max(0, -h - 0.03) / 0.14); /* how deep in a groove: the bark shader darkens it (reads from afar) */
       P[i * 3] += nx * h; P[i * 3 + 1] += ny * h; P[i * 3 + 2] += nz * h; }
     // the big twisting folds (model pass above) shade dark in their troughs too, so the fluted trunk reads from the home view
     // like the photo's, not as a flat brown wall (same phase as the folds; off near the hollow)
