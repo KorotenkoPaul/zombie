@@ -312,14 +312,17 @@ export function buildTree(THREE, o) {
   // into the ground; part of the bark mesh (no new draw call). Bark UVs come from the nearest model root vertex so the
   // painted bark carries on. Kept off the walk to the woodpile, the ladder foot, the pond and the hollow's door.
   if (o.model && o.longRoots !== false && P.length) {
-    { /* the model's own roots past the flare (long faceted slabs) go: the tubes are the roots now */ const keep = [], far = i => Math.hypot(P[i * 3] - AX, P[i * 3 + 2] - AZ) > (o.rootCut ?? 3.6) && P[i * 3 + 1] < 1.5;
-      for (let t = 0; t < I.length; t += 3) { if (far(I[t]) && far(I[t + 1]) && far(I[t + 2])) continue; keep.push(I[t], I[t + 1], I[t + 2]); } I.length = 0; for (const q of keep) I.push(q); }
+    { /* the model's own roots past the flare (long faceted slabs) sink smoothly under the ground: the tubes are the roots
+      now. (Cutting their faces left a ragged toothed edge at the flare and thin triangles hanging under the arches.) */
+      const c0 = o.rootCut ?? 2.9, c1 = c0 + 1.0;
+      for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i] - AX, P[i + 2] - AZ), y = P[i + 1]; if (d <= c0 || y > 1.6) continue;
+        let k = Math.min(1, (d - c0) / (c1 - c0)); k = k * k * (3 - 2 * k); k *= Math.min(1, (1.6 - y) / 0.5); P[i + 1] = y - k * (y + 0.45); } }
     let rS = 4241; const rr = (a, b) => { rS = (rS * 16807) % 2147483647; return a + (b - a) * (rS / 2147483647); };
     const MOBR = MOB(o), SEG = MOBR ? 18 : 28, RING = MOBR ? 8 : 12;
     const pa = o.rootPath || [-4.9, 0.6, 3.5, 5.5], inPath = (x, z) => x > pa[0] - 0.4 && x < pa[1] + 0.4 && z > pa[2] - 0.4 && z < pa[3] + 0.4;
     const pond = o.pond || [-1.4, 7.6, 2.2], nearPond = (x, z) => Math.hypot(x - pond[0], z - pond[1]) < pond[2];
     // UV donors: model vertices low on the trunk and on its roots
-    const don = []; for (let i = 0; i < P.length; i += 3) { const y = P[i + 1], d = Math.hypot(P[i] - AX, P[i + 2] - AZ); if (y > 0.9 && y < 2.6 && d > 1.4 && d < 3.4) don.push(i); /* clean bark up the flare: lower down the model's paint fades to soil */ }
+    const don = []; for (let i = 0; i < P.length; i += 3) { const y = P[i + 1], d = Math.hypot(P[i] - AX, P[i + 2] - AZ); if (y > 0.6 && y < 1.4 && d > 1.4 && d < 3.0) don.push(i); /* the flare's own darker bark band (higher up the paint is paler, lower down it fades to soil) */ }
     const roots = o.longRootList || [[0.2, 6.8], [0.55, 6.2], [1.25, 4.6], [-0.4, 7.2], [-0.95, 6.0], [3.05, 7.2], [3.55, 6.4], [2.45, 5.6], [4.3, 5.8]]; // [angle, length]
     for (const [an0, len] of roots) {
       if (Math.abs(angDiff(an0, doorAng)) < 0.35) continue;
@@ -329,11 +332,12 @@ export function buildTree(THREE, o) {
         const r = r0 * Math.pow(1 - t, 0.7) + 0.07, yc = 0.8 * (1 - t) * (1 - t) + 0.34 * Math.sin(Math.PI * Math.min(1, t * 1.15)) + 0.07 * Math.sin(t * 9 + ph) - r * 0.3 - 0.2 * t * t;
         path.push([x, yc, z, r, an, t]); }
       if (path.length < 6) continue;
+      // one bark donor per tube (the atlas is islands: donors that change ring to ring interpolate a triangle across the atlas,
+      // colour bands and streaks); treedress lays its world-space bark furrows over it
+      let bi = 0, bd = 1e9; { const [x, yc, z] = path[0]; for (const di of don) { const dd = (P[di] - x) ** 2 + (P[di + 1] - yc) ** 2 + (P[di + 2] - z) ** 2; if (dd < bd) { bd = dd; bi = di / 3; } } }
       for (let k = 0; k < path.length; k++) { const [x, yc, z, r, an] = path[k], q = path[Math.min(path.length - 1, k + 1)], pq = path[Math.max(0, k - 1)];
         let tx = q[0] - pq[0], ty = q[1] - pq[1], tz = q[2] - pq[2]; const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
         let sx = -tz, sz = tx; const sl = Math.hypot(sx, sz) || 1; sx /= sl; sz /= sl; // sideways (horizontal)
-        // one bark donor per ring (the model's atlas is islands: per-vertex donors spread a triangle across the whole atlas = mud)
-        let bi = 0, bd = 1e9; for (let m = 0; m < don.length; m += 3) { const di = don[m], dd = (P[di] - x) ** 2 + (P[di + 1] - yc - r) ** 2 + (P[di + 2] - z) ** 2; if (dd < bd) { bd = dd; bi = di / 3; } }
         for (let j = 0; j < RING; j++) { const a = j / RING * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), wob = 1 + 0.08 * Math.sin(a * 3 + k * 0.7 + an * 5);
           const px = x + sx * ca * r * 1.12 * wob, py = yc + sa * r * 0.98 * wob, pz = z + sz * ca * r * 1.12 * wob; P.push(px, py, pz); G.push(0);
           UV.push(UV[bi * 2] + 0.0015 * Math.sin(a), UV[bi * 2 + 1] + 0.0015 * Math.cos(a)); } }
