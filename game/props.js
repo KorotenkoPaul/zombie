@@ -448,11 +448,11 @@ function basket() { const g = new THREE.Group();
   // real wicker relief (close zoom: the flat dotted texture read as printed): the outer wall is cut into 1.6 cm rows of strands
   // that go over and under 18 upright stakes, so each strand bulges out between the stakes, row by row offset
   { const prof = [[0, 0], [.17, 0], [.2, .05]]; for (let y = .06; y <= .3001; y += .008) prof.push([.2 + (y - .05) / .25 * .02, y]); prof.push([.215, .34], [.2, .34], [.19, .06], [0, .06]);
-    const lg = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 72); const P = lg.attributes.position; /* lathe() caps at 16 around: too few for the stakes */
+    const lg = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 36); const P = lg.attributes.position; /* lathe() caps at 16 around: too few for the stakes. [PROPS perf] 36 around = 4 samples per bulge period, still a bulge between every stake pair (72 cost 5.3k tris a basket, unseen at game zoom) */
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), r = Math.hypot(x, z); if (y < .055 || y > .305 || r < .195) continue; const a = Math.atan2(z, x);
       const row = Math.floor((y - .055) / .016), fy = ((y - .055) / .016) % 1, ph = a * 9 / Math.PI + (row % 2) * 1; // 18 stakes
       const k = 1 + .028 * Math.max(0, Math.sin(ph * Math.PI)) * Math.sin(fy * Math.PI) - .012 * (fy < .12 || fy > .88 ? 1 : 0); P.setX(i, x * k); P.setZ(i, z * k); }
-    lg.computeVertexNormals(); add(g, lg, M.weave); } add(g, new THREE.TorusGeometry(.218, .018, 8, 32), M.weave, 0, .34, 0, Math.PI / 2);
+    lg.computeVertexNormals(); add(g, lg, M.weave); } add(g, new THREE.TorusGeometry(.218, .018, 6, 36), M.weave, 0, .34, 0, Math.PI / 2);
   // a checked cloth thrown over the contents: humped over what is inside, sagging over the rim in soft folds (was a smooth white dome)
   { const cg = new THREE.PlaneGeometry(.52, .52, 26, 26); cg.rotateX(-Math.PI / 2); const P = cg.attributes.position;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), a = Math.atan2(z, x); let y;
@@ -1384,7 +1384,7 @@ export function buildProps(ctx) {
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   // [PROPS] the kitchen lantern hangs on a wall bracket on the right wall just past the fridge, wick ~1.58 m over the floor, so he
   // lights it with a match from his hand (it hung from the ceiling over the walk line in front of the counter, 32 cm out of reach)
-  { const kg = new THREE.Group(), lh = lanternHousing(.035); kg.add(lh); add(kg, new THREE.CylinderGeometry(.035, .045, .02, 12), M.iron, 0, .225, 0); bake(kg); place('klamp', kg, -2.27, KT + 2.12, 1.7, { solid: false, wall: true }); kg.traverse(o => { if (o.isMesh && o.material === M.iron) o.castShadow = true; }); } /* photo: the kitchen lantern hangs from the ceiling on a short rod between the two back windows (Tree 14c50a6), in front of the dish shelf: bottom at KT+2.01, he walks under it; its iron cap casts the point shadow, so the ceiling stays dim above it (Lights) */
+  { const kg = new THREE.Group(), lh = lanternHousing(.32); kg.add(lh); add(kg, new THREE.CylinderGeometry(.035, .045, .02, 12), M.iron, 0, .51, 0); bake(kg); place('klamp', kg, -2.27, KT + 1.83, 1.34, { solid: false, wall: true }); kg.traverse(o => { if (o.isMesh && o.material === M.iron) o.castShadow = true; }); } /* photo: the kitchen lantern hangs from the ceiling on a short rod between the two back windows (Tree 14c50a6), over the counter's back edge, in front of the plank between the windows and the dish shelf, low enough to show under the bedroom's front beam from the home view (Lights); he never stands there, so it can hang below head height (bottom KT+1.72), he walks under it; its iron cap casts the point shadow, so the ceiling stays dim above it (Lights) */
 
   // ---------- bedroom ----------
   // layout: bunk, reading table and chair sit 25 cm toward +x so the walk from the bedroom ladder top passes the bunk's end post
