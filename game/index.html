@@ -286,10 +286,10 @@ float pN(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(pH2(i
 uniform float uLod;uniform sampler2D tWoodA,tWoodB,tWear;uniform vec3 uTintA,uTintB;uniform float uNails,uBump;uniform float uLv[7];uniform vec4 uRoomA[3],uRoomB[3];uniform float uHoney[3];
 // [LIGHTS] the room-side faces of the wall boards in the kitchen and workshop: the photo's lighter honey wood (the outside
 // faces stay weathered). vn = the view-space normal; the face counts as inside when it faces the room's centre
-vec3 pHoney(vec3 c,vec3 vn,float sd){if(sd<99.5||sd>399.5)return c;vec3 wn=(vec4(vn,0.)*viewMatrix).xyz;float h=0.;
+vec3 pHoney(vec3 c,vec3 vn,float sd){if(sd>399.5)return c;vec3 wn=(vec4(vn,0.)*viewMatrix).xyz;float h=0.,hf=0.;bool wl=sd>99.5;
  for(int i=0;i<3;i++){vec4 A=uRoomA[i],R=uRoomB[i];if(uHoney[i]>0.&&vW.y>R.x-.15&&vW.y<R.y+.3&&vW.x>A.x-.35&&vW.x<A.y+.35&&vW.z>A.z-.35&&vW.z<A.w+.2){
-  vec3 cc=vec3((A.x+A.y)*.5,vW.y,(A.z+A.w)*.5);if(dot(wn,normalize(cc-vW))>.3)h=max(h,uHoney[i]);}}
- float l=dot(c,vec3(.3,.59,.11));vec3 hn=mix(c,vec3(l)*vec3(1.3,1.,.66),.15)*vec3(1.5,1.72,1.7);return mix(c,hn,h);}
+  vec3 cc=vec3((A.x+A.y)*.5,vW.y,(A.z+A.w)*.5);if(wl&&dot(wn,normalize(cc-vW))>.3)h=max(h,uHoney[i]);if(!wl&&wn.y>.7&&vW.y<R.x+.12&&vW.x>A.x&&vW.x<A.y&&vW.z>A.z&&vW.z<A.w)hf=max(hf,uHoney[i]);}}/* [ENV] photo night (kitchen wall 223/161/89, floor 245/146/54 against ours 68/42/23 and 107/60/29): the honey walls a step lighter and the room floors (up faces inside the room box) a warm orange honey too */
+ float l=dot(c,vec3(.3,.59,.11));vec3 hn=mix(c,vec3(l)*vec3(1.3,1.,.66),.15)*vec3(1.5,1.72,1.7)*1.28;return mix(mix(c,hn,h),c*vec3(1.65,1.4,1.0),hf);}
 vec2 pDH=vec2(0.);float pRgh=.8;
 vec3 pnArb(vec3 sp,vec3 sn,vec2 dH,float fd){vec3 sx=dFdx(sp),sy=dFdy(sp);vec3 r1=cross(sy,sn),r2=cross(sn,sx);float det=dot(sx,r1)*fd;vec3 g=sign(det)*(dH.x*r1+dH.y*r2);vec3 pn=abs(det)*sn-g;return dot(pn,pn)>1e-20?normalize(pn):sn;}/* [SAFETY] no NaN on degenerate pixels */
 // nail heads over every joist / batten: two per crossing. returns (dome height 0..1, rust halo 0..1, distance)
@@ -439,7 +439,8 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  function sunBark(){const b=TREE&&TREE.bark;if(SBOFF||window.__sunBarkOff||!b||!b.castShadow||!plainCaster(b))return null;const sd=b.material.shadowSide;const sg=sd===null||sd===undefined?(b.material.side===THREE.FrontSide?-1:b.material.side===THREE.BackSide?1:0):(sd===THREE.BackSide?-1:sd===THREE.FrontSide?1:0);if(!sg)return null;
   sun.getWorldPosition(_sl);sun.target.getWorldPosition(_st2);_sl.sub(_st2).normalize();
   const sc0=sun.shadow.camera,key=[sc0.left,sc0.right,sc0.top,sc0.bottom,sc0.near,sc0.far,_st2.x,_st2.y,_st2.z].map(v=>v.toFixed(3)).join();
-  if(!sunSt||sunSt.g!==b.geometry||sunSt.L.dot(_sl)<.999||sunSt.key!==key){const g=b.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=b.matrixWorld;
+  const bg=(!window.__noShadowGeo&&b.userData.shadowGeo)||b.geometry;/* Tree's coarse bark for the shadow only (userData.shadowGeo, bark-local, indexed) */
+  if(!sunSt||sunSt.g!==bg||sunSt.L.dot(_sl)<.999||sunSt.key!==key){const g=bg,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=b.matrixWorld;
    if(!sunSt||sunSt.g!==g){/* world face normals, once */const FN=new Float32Array(n),SP=new Float32Array(n/3*4|0);const a=new THREE.Vector3(),c=new THREE.Vector3(),d=new THREE.Vector3(),m=new THREE.Vector3();for(let t=0;t+2<n;t+=3){a.fromBufferAttribute(pa,ix?ix[t]:t).applyMatrix4(mw);c.fromBufferAttribute(pa,ix?ix[t+1]:t+1).applyMatrix4(mw);d.fromBufferAttribute(pa,ix?ix[t+2]:t+2).applyMatrix4(mw);m.copy(a).add(c).add(d).multiplyScalar(1/3);const q=t/3*4;SP[q]=m.x;SP[q+1]=m.y;SP[q+2]=m.z;SP[q+3]=Math.sqrt(Math.max(m.distanceToSquared(a),m.distanceToSquared(c),m.distanceToSquared(d)))+.01;c.sub(a);d.sub(a);c.cross(d).normalize();FN[t]=c.x;FN[t+1]=c.y;FN[t+2]=c.z;}
     if(sunSt&&sunSt.pm){sunSt.pm.parent&&sunSt.pm.parent.remove(sunSt.pm);sunSt.pm.geometry.dispose();sunSt.pm.material.dispose();}
     if(mw.determinant()<0)return null;
@@ -537,7 +538,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  const readMap=l=>{const m=l.shadow.map;if(!m)return null;const b=new Uint8Array(m.width*m.height*4);renderer.readRenderTargetPixels(m,0,0,m.width,m.height,b);return b;};
  const _cv=new THREE.Vector3(),_cb=new THREE.Box3();
  // the caster's triangles that touch the lamp's shadow frustum (sharing its vertex buffer); null = none touch, 'full' = all do
- function cropOf(c,fr){const g=c.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=c.matrixWorld,I=[];
+ function cropOf(c,fr){const g=(!window.__noShadowGeo&&c.userData.shadowGeo)||c.geometry,pa=g.attributes.position,ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,mw=c.matrixWorld,I=[];
   const mg=c.name==='curtains'?1.2:0;for(let t=0;t+2<n;t+=3){_cb.makeEmpty();for(let k=0;k<3;k++){_cv.fromBufferAttribute(pa,ix?ix[t+k]:t+k).applyMatrix4(mw);_cb.expandByPoint(_cv);}if(mg){if(_cb.min.lengthSq()<1e-12&&_cb.max.lengthSq()<1e-12)_cb.set(_cv.set(-1e4,-1e4,-1e4),new THREE.Vector3(1e4,1e4,1e4));/* not placed yet: keep */else _cb.expandByScalar(mg);}if(fr.intersectsBox(_cb))I.push(ix?ix[t]:t,ix?ix[t+1]:t+1,ix?ix[t+2]:t+2);}
   if(!I.length)return null;if(I.length===n)return 'full';
   const cg=new THREE.BufferGeometry();cg.setAttribute('position',pa);cg.setIndex(I);
