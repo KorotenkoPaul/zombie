@@ -55,6 +55,11 @@ export function createWorkshop(K) {
 
   // ---------- the board (and the kerf in it) ----------
   let WB = null, MIR = false; const toWB = (x, y, z) => toW(MIR ? 2 * VICE.x - x : x, y, z);
+  // [PERF] merge indexed geometries that share attribute layouts (boxes, cylinders): one draw instead of several, same triangles
+  function mergeIdx(gs) { const names = Object.keys(gs[0].attributes); let nv = 0, ni = 0; for (const g of gs) { nv += g.attributes.position.count; ni += g.index.count; }
+    const out = new THREE.BufferGeometry(), I = new (nv > 65535 ? Uint32Array : Uint16Array)(ni); let vo = 0, io = 0;
+    for (const k of names) { const sz = gs[0].attributes[k].itemSize, A = new Float32Array(nv * sz); let o = 0; for (const g of gs) { const a = g.attributes[k]; for (let i = 0; i < a.count; i++) for (let c = 0; c < sz; c++) A[o++] = a.array[i * sz + c]; } out.setAttribute(k, new THREE.BufferAttribute(A, sz)); }
+    for (const g of gs) { const ix = g.index.array; for (let i = 0; i < g.index.count; i++) I[io++] = ix[i] + vo; vo += g.attributes.position.count; } out.setIndex(new THREE.BufferAttribute(I, 1)); return out; }
   function buildBoard() {
     if (WB) return WB; const b = bench(); if (!b) return null;
     let map = null; b.traverse(o => { if (!map && o.isMesh && o.material && o.material.map) map = o.material.map; }); // the bench's own wood grain
@@ -90,7 +95,22 @@ export function createWorkshop(K) {
     try { window.__audio && window.__audio.contact && window.__audio.contact({ tool: 'hammer', kind: 'hit', pos: toWB(XC - OFF / 2, BD.y0, BD.z).toArray(), strength: .25 }); } catch (e) { }
   }
   function tickOffcuts(dt) { if (!WB) return; for (const s of WB.offs) { if (s.done) continue; s.v += 9.8 * dt; s.y -= s.v * dt; const k = 1 - Math.exp(-dt * 7); s.rx += (s.rxT - s.rx) * k;
-      if (s.y <= s.floorY) { s.y = s.floorY; s.rx = s.rxT; s.done = true; } s.o.position.set(s.x, s.y, s.z); s.o.rotation.set(s.rx, s.ry, 0, 'YXZ'); } }
+      if (s.y <= s.floorY) { s.y = s.floorY; s.rx = s.rxT; s.done = true; } s.o.position.set(s.x, s.y, s.z); s.o.rotation.set(s.rx, s.ry, 0, 'YXZ'); }
+    /* [PERF] whatever lies still on the bench and floor draws as one mesh per material */
+    stillMerge(WB.sm || (WB.sm = {}), WB.g, [WB.main, WB.off, ...WB.offs.map(s => s.o)], WB.mat, dt);
+    if (CR) stillMerge(CR.sm || (CR.sm = {}), CR.g, CR.nails.map(n => n.o.children[0]), CR.iron, dt); }
+  // [PERF] parts that have not moved for 0.6 s are drawn by one merged mesh; each part is parked on layer 30 (no camera or shadow camera
+  // renders it) instead of being hidden, so the game's own .visible switches stay authoritative and any change (moved, shown, hidden, added) unmerges at once
+  const _rel = new THREE.Matrix4(), _inv = new THREE.Matrix4();
+  function stillMerge(st, root, parts, mat, dt) {
+    const show = window.__wsNoMerge ? [] : parts.filter(p => p && p.parent && (p.visible && (p.parent === root || p.parent.visible))); let sig = '';
+    for (const p of show) { const q = p.parent === root ? p : p.parent; sig += p.id + ':' + q.position.toArray() + q.quaternion.toArray() + q.scale.toArray() + ';'; }
+    if (sig !== st.sig) { st.sig = sig; st.t = 0; if (st.m) { root.remove(st.m); st.m.geometry.dispose(); st.m = null; for (const p of st.parts) p.layers.set(0); } return; }
+    if (st.m || show.length < 2 || (st.t += dt) < .6) return;
+    root.updateWorldMatrix(true, false); _inv.copy(root.matrixWorld).invert();
+    const gs = show.map(p => { p.updateWorldMatrix(true, false); _rel.multiplyMatrices(_inv, p.matrixWorld); const g = p.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!/^(position|normal|uv)$/.test(k)) g.deleteAttribute(k); return g.applyMatrix4(_rel); });
+    const m = new THREE.Mesh(mergeIdx(gs), mat); gs.forEach(g => g.dispose()); m.castShadow = show[0].castShadow; m.receiveShadow = show[0].receiveShadow; m.name = root.name + 'Still'; root.add(m);
+    st.m = m; st.parts = show; for (const p of show) p.layers.set(30); }
 
   // ---------- tools taken from the bench: clones of the tool wall's (same look, real size) ----------
   function cloneTool(src, name) { const P = PP(); if (!P || !P.tools) return null; if (P.tools[name]) return P.tools[name]; const s = P.tools[src]; if (!s) return null;
@@ -322,8 +342,8 @@ export function createWorkshop(K) {
     const g = new THREE.Group(); g.name = 'wsCraft'; b.add(g); if (rs < 0) { g.scale.x = -1; } // built for his right hand at +x
     const bar = new THREE.Mesh(new THREE.BoxGeometry(.07, .035, .26), wood); bar.position.set(.67, .9 + .0175, .2); bar.visible = false; const pl = new THREE.Mesh(new THREE.BoxGeometry(.34, .02, .1), wood); pl.position.set(.66, .9 + .01, .28); // flat on the top: he is small (shoulder 26 cm over the bench), a raised piece put his fist above the shoulder
     for (const m of [bar, pl]) { m.castShadow = true; m.receiveShadow = true; g.add(m); }
-    const nails = []; for (const x of [.645, .69, .62, .71]) { const n = new THREE.Group(); const sh = new THREE.Mesh(new THREE.CylinderGeometry(.0018, .0018, .05, 6), iron); sh.position.y = .025; const hd = new THREE.Mesh(new THREE.CylinderGeometry(.0045, .0045, .0015, 10), iron); hd.position.y = .05; n.add(sh, hd); n.position.set(x, .9, .28 + (nails.length % 2 ? -.018 : .012)); n.visible = false; g.add(n); nails.push({ o: n, sunk: 0 }); }
-    CR = { g, nails, top: .92 }; return CR; }
+    const nails = []; for (const x of [.645, .69, .62, .71]) { const n = new THREE.Group(); const sh = new THREE.Mesh(new THREE.CylinderGeometry(.0018, .0018, .05, 6), iron); sh.position.y = .025; const hd = new THREE.Mesh(new THREE.CylinderGeometry(.0045, .0045, .0015, 10), iron); hd.position.y = .05; if (window.__wsNoMerge) n.add(sh, hd); else { /* [PERF] shank + head: one mesh (the nail only ever moves as a whole) */ sh.geometry.translate(0, .025, 0); hd.geometry.translate(0, .05, 0); const one = new THREE.Mesh(mergeIdx([sh.geometry, hd.geometry]), iron); sh.geometry.dispose(); hd.geometry.dispose(); one.castShadow = sh.castShadow; one.receiveShadow = sh.receiveShadow; n.add(one); } n.position.set(x, .9, .28 + (nails.length % 2 ? -.018 : .012)); n.visible = false; g.add(n); nails.push({ o: n, sunk: 0 }); }
+    CR = { g, nails, top: .92, iron }; return CR; }
   const toWC = (x, y, z) => { const sx = CR && CR.g.scale.x < 0 ? -1 : 1; return toW(x * sx, y, z); };
   // the bench hammer lives on the bench's front edge from the moment the world loads (its peg on the toolwall is out of his
   // reach): placed once, before anyone can see it, so no task ever makes it fly from the wall to the bench without a hand
@@ -371,5 +391,7 @@ export function createWorkshop(K) {
       result: () => ({ ok: true }) });
   }
 
+  // nothing called tick() (hero.js only keeps H.workshop), so the offcuts froze where they were cut off: drive it from the frame loop here
+  { let t0 = 0; const loop = t => { requestAnimationFrame(loop); const dt = t0 ? Math.min(.1, (t - t0) / 1000) : 0; t0 = t; if (dt > 0) try { tickOffcuts(dt); } catch (e) { } }; requestAnimationFrame(loop); }
   return { saw, sharpen, fixlamp, chop, craft, tick: tickOffcuts, setupSaw, layoutDbg: () => WB, sawGeom: (d, s) => sawGeom(d, s) };
 }

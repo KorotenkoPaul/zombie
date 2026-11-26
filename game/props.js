@@ -448,11 +448,11 @@ function basket() { const g = new THREE.Group();
   // real wicker relief (close zoom: the flat dotted texture read as printed): the outer wall is cut into 1.6 cm rows of strands
   // that go over and under 18 upright stakes, so each strand bulges out between the stakes, row by row offset
   { const prof = [[0, 0], [.17, 0], [.2, .05]]; for (let y = .06; y <= .3001; y += .008) prof.push([.2 + (y - .05) / .25 * .02, y]); prof.push([.215, .34], [.2, .34], [.19, .06], [0, .06]);
-    const lg = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 72); const P = lg.attributes.position; /* lathe() caps at 16 around: too few for the stakes */
+    const lg = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 36); const P = lg.attributes.position; /* lathe() caps at 16 around: too few for the stakes. [PROPS perf] 36 around = 4 samples per bulge period, still a bulge between every stake pair (72 cost 5.3k tris a basket, unseen at game zoom) */
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), r = Math.hypot(x, z); if (y < .055 || y > .305 || r < .195) continue; const a = Math.atan2(z, x);
       const row = Math.floor((y - .055) / .016), fy = ((y - .055) / .016) % 1, ph = a * 9 / Math.PI + (row % 2) * 1; // 18 stakes
       const k = 1 + .028 * Math.max(0, Math.sin(ph * Math.PI)) * Math.sin(fy * Math.PI) - .012 * (fy < .12 || fy > .88 ? 1 : 0); P.setX(i, x * k); P.setZ(i, z * k); }
-    lg.computeVertexNormals(); add(g, lg, M.weave); } add(g, new THREE.TorusGeometry(.218, .018, 8, 32), M.weave, 0, .34, 0, Math.PI / 2);
+    lg.computeVertexNormals(); add(g, lg, M.weave); } add(g, new THREE.TorusGeometry(.218, .018, 6, 36), M.weave, 0, .34, 0, Math.PI / 2);
   // a checked cloth thrown over the contents: humped over what is inside, sagging over the rim in soft folds (was a smooth white dome)
   { const cg = new THREE.PlaneGeometry(.52, .52, 26, 26); cg.rotateX(-Math.PI / 2); const P = cg.attributes.position;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), z = P.getZ(i), r = Math.hypot(x, z), a = Math.atan2(z, x); let y;
@@ -745,11 +745,11 @@ function can(h, r, mat) { const g = new THREE.Group(); const ci = M.cans.indexOf
 function picture(w, h) { const g = new THREE.Group(); for (const [ww, hh, x, y] of [[w, .035, 0, h / 2], [w, .035, 0, -h / 2], [.035, h, w / 2, 0], [.035, h, -w / 2, 0]]) W(g, ww, hh, .03, x, y, .015, { mat: M.woodDark, r: .008 }); add(g, new THREE.PlaneGeometry(w - .03, h - .03), M.picture, 0, 0, .012); return bake(g); }
 function lanternHousing(rod) { const g = new THREE.Group(); const s = .17, h = .2; add(g, new THREE.CylinderGeometry(.02, s * .78, .08, 4), M.iron, 0, h / 2 + .04, 0, 0, Math.PI / 4); add(g, new THREE.CylinderGeometry(s * .5, s * .5, .02, 4), M.iron, 0, -h / 2 - .01, 0, 0, Math.PI / 4);
   for (const [x, z] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) add(g, new THREE.BoxGeometry(.012, h, .012), M.iron, x * s * .35, 0, z * s * .35);
-  { const pg = []; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2, q = new THREE.PlaneGeometry(s * .7, h * .95); q.rotateY(a); q.translate(Math.sin(a) * s * .35, 0, Math.cos(a) * s * .35); pg.push(q); } add(g, mergeGeometries(pg, false), M.glass, 0, 0, 0); pg.forEach(q => q.dispose()); } /* [PROPS perf] the four panes as one mesh (they share the pane material): the bedroom lantern drew them as 4 calls */
+  { const pg = []; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2, q = new THREE.PlaneGeometry(s * .7, h * .95); q.rotateY(a); q.translate(Math.sin(a) * s * .35, 0, Math.cos(a) * s * .35); pg.push(q); } add(g, mergeGeometries(pg, false), M.glass, 0, 0, 0).userData.live = true; pg.forEach(q => q.dispose()); } /* [PROPS perf] the four panes as one mesh (they share the pane material): the bedroom lantern drew them as 4 calls */
   add(g, new THREE.TorusGeometry(.025, .005, 6, 16), M.iron, 0, h / 2 + .09, 0); add(g, new THREE.CylinderGeometry(.006, .006, rod, 6), M.iron, 0, h / 2 + .1 + rod / 2, 0); return g; }
 function domeShade(rod) { const g = new THREE.Group(); const m = add(g, lathe([[.2, 0], [.19, .03], [.14, .1], [.07, .15], [.035, .17], [0, .18]], 28), M.enamelDark); m.material = M.enamelDark; const inner = add(g, lathe([[.19, .002], [.14, .095], [.07, .145], [0, .17]], 28), new THREE.MeshStandardMaterial({ color: 0xF0E2C0, roughness: .6, side: THREE.BackSide, emissive: 0xFFC27A, emissiveIntensity: 0 }));
   g.userData.inner = inner.material; inner.userData.live = true; // hangs on a chain of small links up to the roof beam, with a ceiling rose at the top
-  { const n = Math.max(2, Math.round(rod / .035)); const lg = new THREE.TorusGeometry(.011, .0028, 5, 10); for (let i = 0; i < n; i++) add(g, lg, M.iron, 0, .185 + i * rod / n + .012, 0, 0, (i % 2) * Math.PI / 2, 0).scale.set(1, 1.5, 1);
+  { const ch = Math.min(rod, .42), n = Math.max(2, Math.round(ch / .035)); const lg = new THREE.TorusGeometry(.011, .0028, 5, 10); for (let i = 0; i < n; i++) add(g, lg, M.iron, 0, .185 + i * ch / n + .012, 0, 0, (i % 2) * Math.PI / 2, 0).scale.set(1, 1.5, 1); if (rod > ch) add(g, new THREE.CylinderGeometry(.004, .004, rod - ch, 5), M.iron, 0, .185 + ch + (rod - ch) / 2, 0); /* a long drop: the last 42 cm are chain, the rest a cord (57 links cost 5.7k tris) */
     add(g, new THREE.CylinderGeometry(.03, .04, .025, 14), M.iron, 0, .18 + rod + .012, 0); }
   add(g, new THREE.TorusGeometry(.2, .008, 6, 32), M.iron, 0, 0, 0, Math.PI / 2); return g; }
 // plank door in its frame. The leaf hangs on a live pivot at its hinge edge (local x = +w/2), so it can swing;
@@ -971,7 +971,7 @@ function telescope() {
   add(tube, new THREE.CylinderGeometry(.012, .012, .14, 8), TB, 0, 0, 0, Math.PI / 2);
   add(tube, lathe([[0, 0], [.024, 0], [.026, .012], [.022, .05], [0, .05]], 18), M.rubber, -.47, 0, 0, 0, 0, Math.PI / 2); // eyepiece cup
   { const f = lathe([[0, -.09], [.011, -.09], [.011, .07], [.016, .08], [.016, .1], [0, .1]], 14); f.rotateZ(-Math.PI / 2); add(tube, f, TB, .1, .07, 0); for (const x of [.04, .16]) add(tube, rb(.012, .025, .01, .003), TB, x, .052, 0); }
-  bake(tube); bake(g); g.userData.tube = tube; return g;
+  bake(tube); tube.scale.set(1, 1.3, 1.3); /* photo: a fat brass barrel that reads from the home view (13 cm across looked like a stick); length and eyepiece axis unchanged */ bake(g); g.userData.tube = tube; return g;
 }
 
 // ================= round 6: things the hero handles (food, wood, gear, chores) =================
@@ -1384,7 +1384,7 @@ export function buildProps(ctx) {
   place('krug', rug(1.7, 1.0, 'orange'), -2.6, KT, 2.72, { solid: false });
   // [PROPS] the kitchen lantern hangs on a wall bracket on the right wall just past the fridge, wick ~1.58 m over the floor, so he
   // lights it with a match from his hand (it hung from the ceiling over the walk line in front of the counter, 32 cm out of reach)
-  place('klamp', bake(bracketLantern()), -.93 - .192, KT + 1.64, 1.92, { solid: false, wall: true }); // beside the window, not in front of it; high enough to walk under
+  { const kg = new THREE.Group(), lh = lanternHousing(.32); kg.add(lh); add(kg, new THREE.CylinderGeometry(.035, .045, .02, 12), M.iron, 0, .51, 0); bake(kg); place('klamp', kg, -2.27, KT + 1.83, 1.34, { solid: false, wall: true }); kg.traverse(o => { if (o.isMesh && o.material === M.iron) o.castShadow = true; }); } /* photo: the kitchen lantern hangs from the ceiling on a short rod between the two back windows (Tree 14c50a6), over the counter's back edge, in front of the plank between the windows and the dish shelf, low enough to show under the bedroom's front beam from the home view (Lights); he never stands there, so it can hang below head height (bottom KT+1.72), he walks under it; its iron cap casts the point shadow, so the ceiling stays dim above it (Lights) */
 
   // ---------- bedroom ----------
   // layout: bunk, reading table and chair sit 25 cm toward +x so the walk from the bedroom ladder top passes the bunk's end post
@@ -1443,7 +1443,7 @@ export function buildProps(ctx) {
   // lights.js builds only the wick, flame and light at out.lights.bedroomLamp.pos (own: true); hero.js reaches the lamp
   // itself now that out.switches has no 'bedroom'.
   out.switches = {}; out.switchN = {};
-  place('blamp', bracketLantern(), .18, BD + 1.65, 1.95, { solid: false, wall: true });
+  place('blamp', bracketLantern(), -.95, BD + 1.62, .99 + .192, { ry: Math.PI / 2, solid: false, wall: true }); /* photo: on the back wall over the bunk ladder's end, in view (by the door it hid behind the door leaf and the front post from every camera); he lights it from in front of the crate */
   place('brug', rug(1.8, 1.05, 'check', '#D8CFBD'), -2.0, BD, 2.85, { solid: false });
   place('crock', bake(crock()), -3.52, BD, 1.24, { ry: .5 });
   place('pegrail', bake(pegRail()), -3.8, BD + 1.5, 1.0, { solid: false, wall: true }); /* photo round 2: the bare wall left of the bunk, above the crock (nothing walks there) */
@@ -1470,7 +1470,7 @@ export function buildProps(ctx) {
   place('wbarrel', barrel(.8), 1.55, WS, 1.55);
   place('wbucket', bucket(.36, true), 4.05, WS, 3.4);
   place('wrug', rug(1.6, .95, 'green', '#D9C99A'), 2.8, WS, 3.05, { solid: false });
-  place('wlamp', bake(domeShade(1.2)), 3.75, WS + 1.44, 2.45, { solid: false, wall: true });
+  place('wlamp', bake(domeShade(8.105 - WS - 1.30 - .2)), 2.75, WS + 1.30, 1.72, { solid: false, wall: true }); /* photo: the big shade hangs from the ridge over the workbench, low enough to show under the front eave from the home view; over the bench he never walks under it */
   place('sidebench', sideBench(), 4.12, WS, 2.45, { ry: -Math.PI / 2 }); place('cornerbench', cornerBench(), 3.975, WS, 1.73);
 
   // ---------- deck and landings ----------
@@ -1825,7 +1825,7 @@ export function buildProps(ctx) {
     const st = placed.stove, kl = placed.klamp, wl = placed.wlamp, bl = placed.blamp;
     out.lights = {
       oven: { pos: wp(st, 0, .3, .05), obj: st, mats: [M.fire, M.ovenGlass, out.oven.flameMat], setHeat: out.oven.setHeat },
-      kitchenLamp: { pos: wp(kl, 0, 0, 0), obj: kl, mats: [M.glass] },
+      kitchenLamp: { pos: wp(kl, 0, 0, 0), obj: kl, mats: [M.glass], pendant: true },
       bedroomLamp: { pos: wp(bl, 0, 0, 0), obj: bl, mats: [M.glass], own: true },
       workshopLamp: { pos: wp(wl, 0, .06, 0), obj: wl, mats: [wl.userData.inner] },
       candle: { pos: wp(candleObj, 0, .13, 0), obj: candleObj, mats: [candleObj.userData.flame] },
@@ -1838,7 +1838,7 @@ export function buildProps(ctx) {
   // perf: phones get a stricter shadow budget (only furniture-sized parts cast)
   const MOB = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); const CAST_R = MOB ? .35 : .2; out.mobile = MOB;
   const NOMERGE = /[?&]nomerge/.test(location.search); /* debug: keep every prop as built (support checks) */
-  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed', 'klamp', 'wlamp', 'blamp']); /* stove merged too: its door, fire and pots are live */
+  if (!NOMERGE) { const KEEP = new Set(['chair', 'bunkbed']); /* [PROPS perf] the lamps' iron and shades join the static merge (-4 calls at night); their panes (live: lights.js swaps the pane material by distance) and the workshop shade's inner glow stay their own meshes */ /* stove merged too: its door, fire and pots are live */
     const roots = []; for (let i = nScene0; i < scene.children.length; i++) { const o = scene.children[i]; if (KEEP.has(o.name) || o.userData.live || o.userData.book || Object.values(out.tools).includes(o)) continue; roots.push(o); }
     const by = new Map(); const kill = []; const MST = out._mergeStats = {}; out._liveMats = new Set(Object.values(out.materials || {}).filter(Boolean));
     for (const r of roots) { r.updateMatrixWorld(true); r.traverse(o => { if (!o.isMesh || o.userData.live || o.isSkinnedMesh) return; let p = o.parent; while (p && p !== r) { if (p.userData.live) return; p = p.parent; } if (o.material.transparent && o.material.depthWrite === false) return;

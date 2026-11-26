@@ -316,7 +316,10 @@ export function buildTree(THREE, o) {
       now. (Cutting their faces left a ragged toothed edge at the flare and thin triangles hanging under the arches.) */
       const c0 = o.rootCut ?? 2.9, c1 = c0 + 1.0;
       for (let i = 0; i < P.length; i += 3) { const d = Math.hypot(P[i] - AX, P[i + 2] - AZ), y = P[i + 1]; if (d <= c0 || y > 1.6) continue;
-        let k = Math.min(1, (d - c0) / (c1 - c0)); k = k * k * (3 - 2 * k); k *= Math.min(1, (1.6 - y) / 0.5); P[i + 1] = y - k * (y + 0.45); } }
+        let k = Math.min(1, (d - c0) / (c1 - c0)); k = k * k * (3 - 2 * k); k *= Math.min(1, (1.6 - y) / 0.5); P[i + 1] = y - k * (y + 0.45); }
+      /* [PERF] faces now wholly under the ground are dropped (were refined and drawn for nothing: ~phone tris budget) */
+      const keep = []; for (let t = 0; t < I.length; t += 3) { if (P[I[t] * 3 + 1] < -0.3 && P[I[t + 1] * 3 + 1] < -0.3 && P[I[t + 2] * 3 + 1] < -0.3) continue; keep.push(I[t], I[t + 1], I[t + 2]); }
+      I.length = 0; for (const q of keep) I.push(q); }
     let rS = 4241; const rr = (a, b) => { rS = (rS * 16807) % 2147483647; return a + (b - a) * (rS / 2147483647); };
     const MOBR = MOB(o), SEG = MOBR ? 18 : 28, RING = MOBR ? 8 : 12;
     const pa = o.rootPath || [-4.9, 0.6, 3.5, 5.5], inPath = (x, z) => x > pa[0] - 0.4 && x < pa[1] + 0.4 && z > pa[2] - 0.4 && z < pa[3] + 0.4;
@@ -351,7 +354,7 @@ export function buildTree(THREE, o) {
   // Taubin smooth (shrink-free) rounds the faces and forks. Coincident vertices (UV seams) are welded for it, so no cracks.
   // Only away from the trunk's foot and the hollow; the room-avoid push below runs after, so the house stays clear.
   if (o.model && o.smoothLimbs !== false && P.length) {
-    const MOBL = MOB(o), Lm = MOBL ? 0.7 : 0.38, nPass = MOBL ? 1 : 2;
+    const MOBL = MOB(o), Lm = MOBL ? 0.7 : 0.38, nPass = MOBL ? 0 : 2; /* [PERF] phones: smoothing only, no extra faces (tri budget) */
     const limbW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (y - 2.6) / 1.2)) * Math.min(1, Math.max(0, (d - 1.2) / 1.0)); };
     for (let pass = 0; pass < nPass; pass++) {
       const mid = new Map(), out = [];
@@ -428,9 +431,12 @@ export function buildTree(THREE, o) {
   // ground and carve irregular folds running out along each root, a few sharp cuts across them, and bark lumps, all
   // deep enough to read from the normal camera. Edges are split by a rule that depends only on the edge itself
   // (length + where its midpoint is), so neighbours always agree: no cracks, UV seams included. Phones: coarser.
+  /* [PERF] the bark before the root/trunk carving refinement: the sun and lamp shadow passes cast from this (perf.js reads
+     bark.userData.shadowGeo; the carving only cuts inwards, the casters are back faces, so the silhouette stays on or outside) */
+  const shadowP = new Float32Array(P), shadowI = I.slice();
   let GR = null;
   if (o.model && o.rootDetail !== false) {
-    const MOBI = MOB(o), Lmax = MOBI ? 0.5 : 0.28, LmaxT = MOBI ? 0.38 : 0.2, passes = 2; /* phones: coarser (day budget) */
+    const MOBI = MOB(o), Lmax = MOBI ? 0.5 : 0.28, LmaxT = MOBI ? 0.44 : 0.2, passes = 2; /* phones: coarser (day budget) */
     const rootW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (d - 2.3) / 0.8)) * Math.min(1, Math.max(0, (2.0 - y) / 0.8)) * Math.min(1, Math.max(0, (y + 0.6) / 0.4)) * Math.min(1, Math.max(0, (11 - d) / 2)); };
     // the trunk itself (Pavel: too smooth from the normal view): long irregular cuts and bark plates, carved inwards only
     // (the house's beams and landings sit against it), never round the hollow's mouth
@@ -621,6 +627,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
   mat.userData.doorGlow = { value: 0 };
   mat.customProgramCacheKey = () => 'oakBark-grooves2-fold'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
+  { const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(shadowP, 3)); sg.setIndex(shadowI); sg.computeBoundingSphere(); bark.userData.shadowGeo = sg; }
 
   // ---------- leaves: clumps of painted oak-leaf cards, facing outwards like the painted crown ----------
   const LA = o.avoidLeaves || [];
