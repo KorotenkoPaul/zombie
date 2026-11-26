@@ -387,7 +387,12 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   // on a ladder the head bends away too (the neck only, the hands stay where climb.js holds them on the rungs). Old: __colX.noLadHead
   const ladHead = () => hero.lad && !(window.__colX && window.__colX.noLadHead);
   // on a ladder only the neck turns (the spine stays: bending it moved the shoulders, and putting the hands back on the rungs made them jump 8.7 cm)
-  function bendLad(delta) { if (!ladHead()) { bendHead(delta); return; } const Hd = bones.Head, Nk = bones.Neck; if (!Hd || !Nk) return; const h = Hd.getWorldPosition(V()); turnBone(Nk, h, h.clone().add(delta), 1, .3); }
+  // what the neck leaves (orig's bigger head: 28 frames still 3 cm in the rim beam) the top of the chest takes, Spine2 at most 3 deg, the hands
+  // put back on the rungs (a 3 deg chest tilt moves them ~1 cm: no visible jump). Old: __colX.noLadChest
+  function bendLad(delta) { if (!ladHead()) { bendHead(delta); return; } const Hd = bones.Head, Nk = bones.Neck; if (!Hd || !Nk) return; const h = Hd.getWorldPosition(V()), goal = h.clone().add(delta); turnBone(Nk, h, goal, 1, .3);
+    const S2 = bones.Spine2; if (!S2 || (window.__colX && window.__colX.noLadChest)) return; const h2 = Hd.getWorldPosition(V()); if (h2.distanceTo(goal) < .003) return;
+    const keep = [2, 3].map(c => LIMB[c].C ? LIMB[c].C.getWorldPosition(V()) : null); turnBone(S2, h2, goal, 1, .052);
+    [2, 3].forEach((c, i) => { const L = LIMB[c]; if (keep[i]) ik2(L.A, L.B, L.C, keep[i], false); }); }
   function bendHead(delta) { // move the head by delta, shared down the spine
     const Hd = bones.Head; if (!Hd || !SPINE.length) return; const goal = Hd.getWorldPosition(V()).add(delta);
     // each bone turns only a little per call (spine 12 deg, neck 20 deg): with its short lever the neck took the whole remainder
