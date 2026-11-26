@@ -257,7 +257,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const hg = BL && BL.own ? null : housing(bPos); lastHang = null; if (!(BL && BL.own)) hang(bPos, .23, !BL); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const fo = oilFlame(bPos, hg);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra,
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 10.4 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra,
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -534,7 +534,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // Light also leaves through the back windows onto the trunk (desktop: a small spill light; phones: halo only).
   const ROOMS = {
     kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: 2.0 },   // toward the stove: the lamp now hangs by the fridge
-    bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: .9 },   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
+    bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: MOBILE ? .9 : .36 },   /* desktop: at .9 this shadowless all-room fill washed out the lamp's shadows (the bunk frame's on the back wall, his own); the lamp's cone takes the light back */   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
     workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
   };
   const glows = [];
@@ -603,7 +603,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     for (const side of [-1, 1]) { curParts.push({ c, kind: 'panel', side, n: CNV, seed: c.idx * 2.3 + side * .9 });
       for (let k = 0; k <= c.nf; k++) curParts.push({ c, kind: 'ring', side, k, geo: ringGeo }); }
     const rg = new THREE.CylinderGeometry(.008, .008, W + .16, 6); rg.rotateZ(Math.PI / 2); rg.translate(0, H / 2 + .085, sz * .075);
-    curParts.push({ c, kind: 'rod', side: 0, geo: rg });
+    curParts.push({ c, kind: 'rod', side: 0, geo: rg }); /* [PROPS] nothing floats: a forged bracket at each end holds the rod off the wall (plate with a nail, arm, a cup round the rod) and a knob closes each rod end */ for (const s of [-1, 1]) { const bx = s * (W / 2 + .055), ry = H / 2 + .085; const arm = new THREE.BoxGeometry(.01, .012, .07); arm.translate(bx, ry - .004, sz * .035); const pl = new THREE.BoxGeometry(.028, .07, .006); pl.translate(bx, ry - .012, sz * .003); const cup = new THREE.TorusGeometry(.0125, .0032, 4, 8); cup.rotateY(Math.PI / 2); cup.translate(bx, ry, sz * .075); const nl = new THREE.CylinderGeometry(.005, .005, .004, 5, 1, true); nl.rotateX(Math.PI / 2); nl.translate(bx, ry - .03, sz * .007); const kb = new THREE.SphereGeometry(.014, 6, 4); kb.translate(s * (W / 2 + .092), ry, sz * .075); for (const geo of [arm, pl, cup, nl, kb]) curParts.push({ c, kind: 'rod', side: 0, geo }); }
     w.leak = 1;
   }
   let curMesh = null, curPosA = null, curNorA = null, curGlowA = null, curAOA = null;
@@ -729,7 +729,8 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   // outdoor lanterns reach further. Lit with a soft wrap toward the source, so the bark keeps its relief.
   const wgSrc = wgWins.map(w => ({ p: w.glowAt, r: 3.4, k: () => Math.min(1, warm[w.room] || 0) * 4.5 * (w.leak ?? 1) }));
   for (const [room, R] of Object.entries(ROOMS)) wgSrc.push({ p: R.c, r: 5.5, k: () => Math.min(1, warm[room] || 0) * 3.2 * (1 - .7 * lockK) });
-  for (const [n, r, I] of [['landing', 3.6, 6], ['door', 3.2, 5]]) { const s0 = src.get(n); if (s0) wgSrc.push({ p: s0.pos, r, k: () => s0.level * I }); }
+  /* tighter (were 3.6 m and 3.2 m): on phones this glow alone painted the whole lower trunk orange from the ladder to the lantern, the door's warm pool stopped being a pool (Env, coordinator: ~35% of the bark by the door; base fill 57%, the door light 8%) */
+  for (const [n, r, I] of [['landing', 2.1, 6], ['door', 1.9, 6]]) { const s0 = src.get(n); if (s0) wgSrc.push({ p: s0.pos, r, k: () => s0.level * I }); }
   wgSrc.length = Math.min(wgSrc.length, WG_N);
   wgSrc.forEach((w, i) => wgP.value[i].set(w.p.x, w.p.y, w.p.z, w.r));
   let wgOn = true; const wgMats = [];
