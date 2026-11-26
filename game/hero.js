@@ -727,7 +727,7 @@ export function createHero(ctx){
     a.step='approach';a.t=0;const dx=sp.x-p.x,dz=sp.z-p.z,d=Math.hypot(dx,dz);const yaw=Math.atan2(dx,dz);H.face=yaw;
     a.knob=a.low||plate?sp.clone().add(V(-.03,0,0)):(()=>{/* GRAB: the lamp's own side toward him: at the wick to light it, at the knob under the font to put it out */const k=sp.clone();const h=V(p.x-sp.x,0,p.z-sp.z);if(h.lengthSq()>1e-6)k.addScaledVector(h.normalize(),.07);k.y-=lighting?.04:.09;return k;})();
     const move=Math.max(0,Math.min(.9,d-(a.low?.45:.27)));const q=p.clone().add(V(dx/d*move,0,dz/d*move));pushOut(q);
-    a.adur=Math.max(.35,move/.8);a.next=reach;H.slide={x:q.x-p.x,z:q.z-p.z,yaw:0,k:0,d:a.adur};if(move>.1)play('30',{fade:.3,speed:1.1});};
+    const dyw=window.__oldSwYaw?0:wrapA(yaw-root.rotation.y);a.adur=Math.max(.35,move/.8,Math.abs(dyw)/2.4);a.next=reach;H.slide={x:q.x-p.x,z:q.z-p.z,yaw:dyw,k:0,d:a.adur};/* LEISURE (gate: left boot 5.5 mm jitter at the lamp): he turns to the lamp inside the step; turned after it, the turn-step's walk clip ran on the spot for 1.3 s while his hand was at the wick */if(move>.1)play('30',{fade:.3,speed:1.1});};
    {/* PLATE close by on the same floor (the reading chair is 60 cm from it): straight there, no loop out to the door node and back */const p=root.position;const near=plate&&Math.hypot(sp.x-p.x,sp.z-p.z)<1.8&&Math.abs(sp.y-1.15-p.y)<.15&&!H.path.length;if(near||!node)approach();else{a.viaNode=true;goTo(node,approach);}}
    a.update=dt=>{a.t+=dt;if(a.back)H.look=null;else{H.look=sp.clone();H.lookW=a.step==='reach'?1:.55;/* while he turns to it, the eyes lead and the head follows half way (gate owl-head 74 deg on orig) */}
     if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
