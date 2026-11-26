@@ -1528,7 +1528,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const mouth=()=>{const o=OV();const h=o.handle(V());const c=ovp.clone();return c.add(V(h.x-c.x,0,h.z-c.z).multiplyScalar(-.15)).setY(ovp.y+.02);};// inside the opening, above the embers
    a.ik=[];
    const toOven=()=>{const nn=nearNode(ovp)||'stove';goTo(nn,()=>approachTo(a,ovp,.62,()=>ovenSpot(a,()=>{a.step='ovsq';a.t=0;H.carry=null;play(IDLE(),{fade:.4});})));};
-   const nn=nearNode(wp)||'kmid';goTo(nn,()=>approachTo(a,wp,.5,()=>{a.step='pksq';a.t=0;AU('grunt');}));
+   const nn=nearNode(wp)||'kmid';goTo(nn,()=>{a.pushR=.33;/* KITCHEN: clear of the stove's side (his right hand hung into it as he rose with the logs, 4.2 cm) */approachTo(a,wp,.5,()=>{a.step='pksq';a.t=0;AU('grunt');});a.pushR=undefined;});
    a.update=dt=>{a.t+=dt;if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
     const o=OV();a.ik=[];kSlow(/^(pksq|ovsq|open|let|log|shut|up)$/.test(a.step)&&(H.squat||0)>.05);
     if(a.step==='pksq'){// squat down to the pile, both hands onto the top logs
