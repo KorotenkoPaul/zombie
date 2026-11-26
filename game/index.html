@@ -495,9 +495,9 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
    let redo=ids!==cur;if(!redo)for(const e of st.m)if(!spStill(e.m,e.s,lay)){const pv=st.prev.get(e.m);if(pv&&e.m.matrixWorld.equals(pv)){redo=true;break;}}
    st.prev=new Map(C.map(m=>[m,m.matrixWorld.clone()]));if(redo)spBuild(st,C);}
   if(st.m.length<2)return null;const off=[],H=spH.value;
-  st.m.forEach((e,i)=>{const ok=spStill(e.m,e.s,lay);H[i>>2].setComponent(i&3,ok?0:1);if(ok){e.m.castShadow=false;off.push(e.m);}});
+  const shw=[];st.m.forEach((e,i)=>{const ok=spStill(e.m,e.s,lay);H[i>>2].setComponent(i&3,ok?0:1);if(ok){e.m.castShadow=false;off.push(e.m);}else if(!e.m.visible&&e.m.castShadow&&spSeen(e.m)){e.m.visible=true;shw.push(e.m);}/* hidden but baked-for-shadow (shadowBake) and not (yet) in the bake as it is now: it casts itself this pass */});
   for(const p of st.pm)p.visible=true;
-  return ()=>{for(const m of off)m.castShadow=true;for(const p of st.pm)p.visible=false;};}
+  return ()=>{for(const m of off)m.castShadow=true;for(const m of shw)m.visible=false;for(const p of st.pm)p.visible=false;};}
  window.__sunProxy=()=>[...spAll].map(([l,st])=>({light:l.type,parts:st.m.length,baked:st.m.filter(e=>spStill(e.m,e.s,l.shadow.camera.layers)).length,draws:st.pm.length,tris:st.pm.reduce((a,p)=>a+p.geometry.attributes.position.count/3,0)}));
 /* [PERF] sun/moon pass, boards and beams (2026-11-26): the depth pass draws only the faces of a box that are turned AWAY from the
    light (shadowSide), and a directional light comes from one direction, so per board only 3 of the 6 faces of its 12-tri proxy can
