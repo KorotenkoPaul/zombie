@@ -196,7 +196,18 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (PL.kitchenLamp && !PL.kitchenLamp.pendant) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
     const panes = claimHousing(kPos);
     const fo = oilFlame(kPos, null);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
+    /* phones: no point-light shadows there (6 passes), so the room the hero is in most had none at all (Props). A shadowed
+       downward cone from the pendant, like the bedroom's and the workshop's: one 512 map, the static room cached (lampCache),
+       redrawn only for his own casters while he is in reach. The pooled point keeps the walls and ceiling lit. */
+    let ks = null;
+    if (MOBILE && !window.__noKitchenShadow) {
+      ks = new THREE.SpotLight(0xFFC373, 0, 5.5, 1.15, .8, 1.4); ks.position.copy(kPos).add(V(0, -.05, 0));
+      ks.target.position.set(kPos.x - .35, KT, kPos.z + 1.0); scene.add(ks, ks.target);
+      ks.castShadow = true; ks.shadow.camera.layers.enable(6); ks.shadow.mapSize.set(512, 512); ks.shadow.camera.near = .08; ks.shadow.camera.far = 5;
+      ks.shadow.bias = -.008; ks.shadow.normalBias = .1; ks.shadow.radius = 4; ks.shadow.autoUpdate = false;
+      floorClip(ks, KT); ks.userData.lampCache = true;
+    }
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: ks ? [{ l: ks, I: 8.5 }, { l, I: 4.8 }] : [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
