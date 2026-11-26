@@ -5,7 +5,7 @@
 // Local convention for every builder: floor at y=0, front of the object faces +z, centred on x/z.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 let seed = 7; const R = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
@@ -401,7 +401,7 @@ function drapeGeo(len, wid, drop, { r = .05, wrinkle = .01, endDrop = 0, puff = 
   }
   geo.computeVertexNormals(); return geo;
 }
-function pillowGeo(w, h, d) { const g = rb(w, h, d, Math.min(w, h, d) * .45, 3); const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const nx = p.getX(i) / (w / 2), nz = p.getZ(i) / (d / 2); const k = 1 - .55 * Math.pow(Math.max(Math.abs(nx), Math.abs(nz)), 3); p.setY(i, p.getY(i) * k); p.setZ(i, p.getZ(i) * (1 + .04 * Math.sin(nx * 3)));
+function pillowGeo(w, h, d) { /* [PROPS photo] a welded, evenly subdivided rounded box: the RoundedBox had one quad per flat face, so the creases and the head dent showed as hard facets */ const r0 = Math.min(w, h, d) * .45; let g = new THREE.BoxGeometry(w, h, d, 8, 3, 11); g.deleteAttribute('normal'); g.deleteAttribute('uv'); g = mergeVertices(g); { const q = g.attributes.position, hw = [w / 2 - r0, h / 2 - r0, d / 2 - r0], v = new THREE.Vector3(), c = new THREE.Vector3(); for (let i = 0; i < q.count; i++) { v.fromBufferAttribute(q, i); c.set(Math.max(-hw[0], Math.min(hw[0], v.x)), Math.max(-hw[1], Math.min(hw[1], v.y)), Math.max(-hw[2], Math.min(hw[2], v.z))); v.sub(c); if (v.lengthSq() > 1e-12) v.setLength(r0); v.add(c); q.setXYZ(i, v.x, v.y, v.z); } g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(q.count * 2), 2)); } const p = g.attributes.position; for (let i = 0; i < p.count; i++) { const nx = p.getX(i) / (w / 2), nz = p.getZ(i) / (d / 2); const k = 1 - .55 * Math.pow(Math.max(Math.abs(nx), Math.abs(nz)), 3); p.setY(i, p.getY(i) * k); p.setZ(i, p.getZ(i) * (1 + .04 * Math.sin(nx * 3)));
     /* cloth, not a moulded block: creases fanning in from the corners and edges, a soft dent where the head lay */
     const y = p.getY(i), top = y > 0 ? 1 : .35, an = Math.atan2(nz, nx), e = Math.min(1, Math.max(Math.abs(nx), Math.abs(nz)));
     const cr = Math.pow(Math.max(0, Math.sin(an * 9 + Math.sin(an * 3) * 1.3)), 6) * Math.pow(e, 2.5) * .018 + Math.sin(nx * 7.3 + nz * 4.1) * Math.sin(nz * 6.2 - nx * 2.3) * .005;
@@ -417,9 +417,9 @@ function bunkBed() {
     for (const sz of [-1, 1]) W(g, L - 2 * p + .01, .13, .055, 0, y, sz * (D / 2 - .035));
     for (const sx of [-1, 1]) W(g, .055, .13, D - 2 * p + .01, sx * (L / 2 - .035), y, 0);
     for (let i = 0; i < 9; i++) W(g, .13, .022, D - .12, -L / 2 + .16 + i * (L - .32) / 8, y + .03, 0, { mat: M.woodDark, r: 0, grain: 2 }); // slats under the mattress: plain boxes
-    const top = y + .045 + .15; add(g, rb(L - .17, .15, D - .15, .055, 2), M.mattress, 0, y + .045 + .075, 0);
+    const top = y + .045 + .15; add(g, rb(L - .17, .15, D - .15, .055, 2), M.mattress, 0, y + .045 + .075, 0); { const sh = add(g, rb(L - .162, .022, D - .142, .008), M.linen, 0, top - .009, 0); sh.castShadow = false; } /* [PROPS photo] a sheet over the mattress top, tucked 1.5 cm down its sides: between the quilt and the pillow the bare ticking read unmade */
     // pillow at the head end (+x)
-    add(g, pillowGeo(.36, .16, .6), M.linen, L / 2 - .28, top + .05, 0, 0, 0, -.12);
+    add(g, pillowGeo(.36, .16, .6), M.linen, L / 2 - .28, top + .05, 0, 0, 0, -.12).castShadow = false;
     // quilt over the foot two-thirds, folded sheet edge at its head
     const qL = L - .62; const q = add(g, drapeGeo(qL, D - .15, .12, { wrinkle: .008, puff: .026 }), M.quilt, -L / 2 + .08 + qL / 2, top + .012, 0); q.castShadow = false;
     add(g, rb(.09, .05, D - .12, .024, 3), M.linen, -L / 2 + .08 + qL + .02, top + .02, 0);
@@ -1870,22 +1870,22 @@ export function buildProps(ctx) {
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
       pm.customProgramCacheKey = () => ck + '|toolProxy'; prox.set(m, pm); return pm; };
     names.forEach((name, i) => { const o = out.tools[name], h = o.userData.home; if (!h || !o.visible || o.userData.noProxy) return; o.updateMatrixWorld(true); const ms = [];
-      o.traverse(c => { if (!c.isMesh || c.castShadow || Array.isArray(c.material) || c.isInstancedMesh || c.isSkinnedMesh || !c.visible) return; const m = c.material; if (m.transparent || m.userData.keep || !m.isMeshStandardMaterial) return;
+      o.traverse(c => { if (!c.isMesh || c.castShadow || Array.isArray(c.material) || c.isInstancedMesh || c.isSkinnedMesh || !c.visible) return; const m0 = c.material; if (m0.transparent || m0.userData.keep || !m0.isMeshStandardMaterial || (c.castShadow && m0.alphaTest)) return; const pm = out._liveMats && out._liveMats.has(m0) ? null : plainOf(m0), m = pm || m0; /* [PROPS perf] casting parts join too (the proxy casts through dMat/pMat), and plain colours join the house's shared plain mesh, as in the static merge: fewer draws */
         if (c !== o && c.userData.live) return; for (let q = c.parent; q && q !== o; q = q.parent) if (q.userData.live || !q.visible) return;
         let g0 = lodGeo(c), g = g0.index ? g0.toNonIndexed() : g0.clone(); if (g0 !== c.geometry) g0.dispose(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'vmet'].includes(k)) g.deleteAttribute(k); if (g.attributes.color && !m.vertexColors) g.deleteAttribute('color'); if (m.vertexColors && !g.attributes.color) colorize(g, new THREE.Color(1, 1, 1), m.userData.plainV ? 1 : undefined, m.userData.plainV ? 0 : undefined);
-        if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(c.matrixWorld); g.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1));
-        const key = m.uuid + (g.attributes.color ? g.attributes.color.itemSize : 0); if (!by.has(key)) by.set(key, { m, gs: [] }); by.get(key).gs.push(g); ms.push(c); });
+        if (pm) { colorize(g, m0.color, m0.roughness, m0.metalness); if (m0.flatShading) g.computeVertexNormals(); } if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2)); g.applyMatrix4(c.matrixWorld); g.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1));
+        const cast = !!c.castShadow, key = m.uuid + (g.attributes.color ? g.attributes.color.itemSize : 0) + (cast ? 's' : 'n'); if (!by.has(key)) by.set(key, { m, cast, gs: [] }); by.get(key).gs.push(g); ms.push(c); });
       if (ms.length) { ms.forEach(c => c.visible = false); o.parent.updateMatrixWorld(true); TP.push({ i, o, h, ms, at: true, mw: ms.map(c => c.matrixWorld.clone()) }); } });
     // where the house's static merge already has a mesh of the same material, the tools join it (static parts get tool id 63, never masked)
     const injD = sh => { sh.uniforms.uHide = uHide; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float tid; uniform float uHide[64];').replace('#include <project_vertex>', '#include <project_vertex>\nif (uHide[int(tid + .5)] > .5) gl_Position = vec4(2., 2., 2., 1.);'); };
     const dMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }); dMat.onBeforeCompile = injD; dMat.customProgramCacheKey = () => 'toolProxyD'; const pMat = new THREE.MeshDistanceMaterial(); pMat.onBeforeCompile = injD; pMat.customProgramCacheKey = () => 'toolProxyP';
-    const pg = new THREE.Group(); pg.name = 'toolProxy'; for (const { m, gs } of by.values()) {
-      const cands = out.staticGroup ? out.staticGroup.children.filter(t => t.material === m && !t.customDepthMaterial) : []; const tg = cands.find(t => !t.castShadow) || cands[0];
-      const need = Object.keys(gs[0].attributes).filter(k => k !== 'tid').sort().join(); if (tg && Object.keys(tg.geometry.attributes).sort().join() === need && (!tg.geometry.attributes.color || tg.geometry.attributes.color.itemSize === gs[0].attributes.color.itemSize)) {
-        const sgG = tg.geometry; sgG.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(sgG.attributes.position.count).fill(63), 1)); const mg = mergeGeometries([sgG, ...gs], false);
-        if (mg) { tg.geometry = mg; sgG.dispose(); tg.material = proxMat(m); if (tg.castShadow) { tg.customDepthMaterial = dMat; tg.customDistanceMaterial = pMat; } gs.forEach(g => g.dispose()); continue; } sgG.deleteAttribute('tid'); }
-      const mesh = new THREE.Mesh(mergeGeometries(gs, false), proxMat(m)); mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = false; pg.add(mesh); gs.forEach(g => g.dispose()); }
-    scene.add(pg); out.toolProxy = pg;
+    const pg = new THREE.Group(); pg.name = 'toolProxy'; for (const { m, cast, gs } of [...by.values()].sort((a, b) => a.cast - b.cast)) {
+      const cands = out.staticGroup ? out.staticGroup.children.filter(t => (t.material === m || t.material === prox.get(m)) && (!t.customDepthMaterial || t.customDepthMaterial === dMat)) : []; const tg = cast ? cands.find(t => t.castShadow) : (cands.find(t => !t.castShadow) || cands[0]);
+      const need = Object.keys(gs[0].attributes).filter(k => k !== 'tid').sort().join(); if (tg && Object.keys(tg.geometry.attributes).filter(k => k !== 'tid').sort().join() === need && (!tg.geometry.attributes.color || tg.geometry.attributes.color.itemSize === gs[0].attributes.color.itemSize)) {
+        const sgG = tg.geometry, had = !!sgG.attributes.tid; if (!had) sgG.setAttribute('tid', new THREE.Float32BufferAttribute(new Float32Array(sgG.attributes.position.count).fill(63), 1)); const mg = mergeGeometries([sgG, ...gs], false);
+        if (mg) { tg.geometry = mg; sgG.dispose(); tg.material = proxMat(m); if (tg.castShadow) { tg.customDepthMaterial = dMat; tg.customDistanceMaterial = pMat; } gs.forEach(g => g.dispose()); continue; } if (!had) sgG.deleteAttribute('tid'); }
+      const mesh = new THREE.Mesh(mergeGeometries(gs, false), proxMat(m)); mesh.castShadow = cast; if (cast) { mesh.customDepthMaterial = dMat; mesh.customDistanceMaterial = pMat; } mesh.receiveShadow = true; mesh.frustumCulled = false; pg.add(mesh); gs.forEach(g => g.dispose()); }
+    scene.add(pg); out.toolProxy = pg; if (out.staticGroup) out.wetMats = out.staticGroup.children.map(m => m.material).filter(m => m && m.isMeshStandardMaterial && !m.transparent); /* the proxy swapped some static meshes' materials: rain wets what is drawn */
     const vis = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
     out._toolProxyInfo = () => TP.map(t => t.o === undefined ? '' : (t.at ? 1 : 0)).join(''); out._toolProxyTick = () => { for (const t of TP) { const { o, h } = t; const at = o.parent === h.parent && !homing.has(o) && o.position.distanceToSquared(h.pos) < 1e-8 && Math.abs(o.quaternion.dot(h.quat)) > .999999 && Math.abs(o.scale.x - (h.scale || 1)) < 1e-5 && vis(o) && t.ms.every((c, k) => c.matrixWorld.equals(t.mw[k])); /* any part moved (parent, covers, lids) -> the tool draws itself */
         if (at !== t.at) { t.at = at; uHide.value[t.i] = at ? 0 : 1; for (const c of t.ms) c.visible = !at; } } }; }
