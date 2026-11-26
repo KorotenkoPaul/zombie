@@ -384,10 +384,10 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     { A: bones.LeftUpLeg, B: bones.LeftLeg, C: bones.LeftFoot }, { A: bones.RightUpLeg, B: bones.RightLeg, C: bones.RightFoot }];
   const SPINE = ['Spine', 'Spine1', 'Spine2', 'Neck'].map(n => bones[n]).filter(Boolean), SPF = [.3, .45, .65, 1];
   // LADDER HEAD (gate: orig/new 30+ frames, the head 3.4 cm into the bedroom floor's rim beam at the ladder top, the kitchen hatch beam):
-  // on a ladder the head bends away too, and the hands are put back where climb.js holds them on the rungs. Old: __colX.noLadHead
+  // on a ladder the head bends away too (the neck only, the hands stay where climb.js holds them on the rungs). Old: __colX.noLadHead
   const ladHead = () => hero.lad && !(window.__colX && window.__colX.noLadHead);
-  function bendLad(delta) { const keep = ladHead() ? [2, 3].map(c => LIMB[c].C ? LIMB[c].C.getWorldPosition(V()) : null) : null; bendHead(delta);
-    if (keep) [2, 3].forEach((c, i) => { const L = LIMB[c]; if (keep[i]) ik2(L.A, L.B, L.C, keep[i], false); }); }
+  // on a ladder only the neck turns (the spine stays: bending it moved the shoulders, and putting the hands back on the rungs made them jump 8.7 cm)
+  function bendLad(delta) { if (!ladHead()) { bendHead(delta); return; } const Hd = bones.Head, Nk = bones.Neck; if (!Hd || !Nk) return; const h = Hd.getWorldPosition(V()); turnBone(Nk, h, h.clone().add(delta), 1, .3); }
   function bendHead(delta) { // move the head by delta, shared down the spine
     const Hd = bones.Head; if (!Hd || !SPINE.length) return; const goal = Hd.getWorldPosition(V()).add(delta);
     // each bone turns only a little per call (spine 12 deg, neck 20 deg): with its short lever the neck took the whole remainder
