@@ -430,7 +430,7 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
   const ps=[];if(PSG&&!window.__psSun&&L.includes(sun))PSG.traverse(m=>{if(m.isMesh&&m.castShadow)ps.push(m);});
   const nu=sm.needsUpdate,rest=L.filter(l=>l!==sun);
   if(L.includes(sun)){for(const m of ps)m.castShadow=false;const sb=sunBark();let spr=null;try{spr=spFor(sun);}catch(e){console.warn('sun proxy off',e);window.__sunProxyOff=true;}let bsr=null;try{sun.getWorldPosition(_sl);sun.target.getWorldPosition(_st2);bsr=boardsSun(_sl.sub(_st2).normalize());}catch(e){console.warn('board sun off',e);window.__boardSunOff=true;}try{r0([sun],sc,cam);}finally{for(const m of ps)m.castShadow=true;if(sb){sb.visible=false;TREE.bark.castShadow=true;}if(spr)spr();if(bsr)bsr();}}
-  for(const l of rest){sm.needsUpdate=nu;let spr=null;if(l.shadow&&(l.shadow.needsUpdate||l.shadow.autoUpdate)){try{spr=spFor(l);}catch(e){console.warn('shadow proxy off',e);window.__sunProxyOff=true;}}try{if(l.shadow&&l.shadow.needsUpdate&&!l.shadow.autoUpdate&&!window.__lampSkipOff){try{lampDraw(l,sc,cam);}catch(e){/* never break the frame: plain draw */console.warn('lamp shadow skip',e);window.__lampSkipOff=true;l.shadow.needsUpdate=true;r0([l],sc,cam);}}else r0([l],sc,cam);}finally{if(spr)spr();}}};
+  for(const l of rest){sm.needsUpdate=nu;let spr=null;if(l.shadow&&(l.shadow.needsUpdate||l.shadow.autoUpdate)){try{spr=spFor(l);}catch(e){console.warn('shadow proxy off',e);window.__sunProxyOff=true;}}try{if(l.shadow&&l.shadow.needsUpdate&&!l.shadow.autoUpdate&&!window.__lampSkipOff){try{const LC=window.__lights&&window.__lights.lampCache;/* [LIGHTS] lamp shadow cache (Perf OK 05:26Z): the room cached, only the hero redrawn */if(!(LC&&LC(l,sc,cam,r0,()=>lampDraw(l,sc,cam))))lampDraw(l,sc,cam);}catch(e){/* never break the frame: plain draw */console.warn('lamp shadow skip',e);window.__lampSkipOff=true;l.shadow.needsUpdate=true;r0([l],sc,cam);}}else r0([l],sc,cam);}finally{if(spr)spr();}}};
 /* [PERF] sun/moon shadow, bark (2026-11-25): the depth pass draws the bark's back faces only (shadowSide), so the triangles that face the
    light are culled by the GPU anyway. They are left out before the draw: a hidden mesh sharing the bark's vertices holds the triangles
    with n.L < 0.05 whose bounding sphere touches the map's box, rebuilt when the light turns by 2.5 deg (every ~10 s at night) or
@@ -943,7 +943,7 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  const R0=surf(D.ang+(D.w/2+.2)/2.2,D.y0+.6)||surf(D.ang-(D.w/2+.2)/2.2,D.y0+.6)||2.2;
  const at=(side,y,inset)=>{let r=surf(D.ang+Math.sign(side||1)*(Math.abs(side)+.12)/R0,y)||R0;const a=D.ang+side/r;r=(surf(a+Math.sign(side||1)*.05/r,y)||r)-inset;return V(ax+Math.cos(a)*r,y,az+Math.sin(a)*r);};
  const out=V(Math.cos(D.ang),0,Math.sin(D.ang)),sideV=V(-Math.sin(D.ang),0,Math.cos(D.ang));
- const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();const ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex))).normalize();const ey=ez.clone().cross(ex);
+ const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();let ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex)));/* [treedress, door round] a piece running along out (the cave floor boards) left ez zero: a degenerate basis drew each board as a thin orange stake standing up from the sill. Those lie flat: thickness up */if(ez.lengthSq()<1e-4)ez.set(0,1,0);ez.normalize();const ey=ez.clone().cross(ex);
   const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(tn||rnd(.85,1)));
    const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
  const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
@@ -954,7 +954,7 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  // a keystone block on top
  {const p=at(0,yS+ah+.02,.05);piece(p.clone().addScaledVector(V(0,1,0),-.12),p.clone().addScaledVector(V(0,1,0),.12),.2,.34,'beam');}
  // threshold: a thick worn board across the foot of the opening, flush with the landing
- {const a=at(-hw-.06,D.y0+.02,.04),b=at(hw+.06,D.y0+.02,.04);piece(a,b,.24,.08,'board');}
+ let thM=null;{const a=at(-hw-.06,D.y0+.02,.04),b=at(hw+.06,D.y0+.02,.04);thM=a.clone().add(b).multiplyScalar(.5);piece(a,b,.08,.24,'board');/* [treedress, door round] lying flat (8 cm thick, 24 cm deep): on edge it stood as a 12 cm bar slanting across the doorway */}
  // the reveal: the doorway runs ~1 m through the bark into the cave. Its sides and top were open, so from the side the lit
  // cave showed through between the jamb and the bark as an orange slit (critic T25). Lined with planks like a real passage.
  {const dep=[.2,.46],dd=.27;/* shallow and dark like old weathered wood: from the home view the lit planks of a 1 m lining read as boards leaning in the doorway */
@@ -962,7 +962,7 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
   for(const ins of dep){let pv=at(-(D.w/2+.03),yS,ins);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*(D.w/2+.03),yS+Math.sin(t)*(ah-fw*.45+.03),ins);
    piece(pv.clone().addScaledVector(pv.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(pv).normalize(),.03),.045,dd,'board',rnd(.42,.5));pv=p;}}}
  // plank floor into the cave, boards running inward, slightly lower than the threshold
- {const c0=at(0,D.y0+.03,.14);for(let k=-2;k<=2;k++){const a=c0.clone().addScaledVector(sideV,k*.205),b=a.clone().addScaledVector(out,-.95);piece(b,a,.19,.05,'board');}}
+ {/* [treedress, door round] from just behind the threshold inwards: at(0,..) measured the flared foot beside the opening, so the boards began ~.5 m out on the landing */const c0=thM.clone().addScaledVector(out,-.13);c0.y=D.y0+.03;for(let k=-2;k<=2;k++){const a=c0.clone().addScaledVector(sideV,k*.205),b=a.clone().addScaledVector(out,-.95);piece(b,a,.19,.05,'board');}}
  boards.instanceMatrix.needsUpdate=true;aRow.needsUpdate=aWx.needsUpdate=true;if(boards.instanceColor)boards.instanceColor.needsUpdate=true;}
 // left low landing
 floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45,.4]});/* photo: a short ladder down to the small left platform (the barrel had no way up there). A plain nailed wooden ladder from its
@@ -1189,7 +1189,7 @@ vec4 mv=modelViewMatrix*vec4(p,1.);float bl=pow(max(0.,sin(t*1.4+ph*5.)),3.);a=(
 {const n=260,pos=new Float32Array(n*3),ph=new Float32Array(n);for(let i=0;i<n;i++){pos[i*3]=rnd(-14,14);pos[i*3+1]=rnd(.3,14);pos[i*3+2]=rnd(-6,8);ph[i]=rnd(0,100);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(pos,3));g.setAttribute('ph',new THREE.BufferAttribute(ph,1));const p=new THREE.Points(g,motesMat);p.frustumCulled=false;WIND.hookRaw(motesMat);scene.add(p);}
 // [WIND] fireflies drift and leaves fall with the wind (game/wind.js)
 if(ENV.fireflies)WIND.hookRaw(ENV.fireflies.material);
-{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:gH,avoid:LEAF_AVOID,MOBILE,surfaceH:(x,z)=>window.__rain&&__rain.ready?__rain.heightAt(x,z):null,hero:()=>({pos:hero.root.position,task:hero.task,still:!hero.path.length})});}
+{const {groundH:gH}=await import(new URL(ASSET+'env.js',document.baseURI).href);WIND.addFallingLeaves({THREE,scene,crown:TREE.leaves,groundH:(x,z)=>window.__ground&&__ground.heightAt?__ground.heightAt(x,z):gH(x,z)/* [GROUND] the visible floor (root mounds, relief): on the base height a third of the leaves lay under the ground or inside roots */,avoid:LEAF_AVOID,MOBILE,surfaceH:(x,z)=>window.__rain&&__rain.ready?__rain.heightAt(x,z):null,hero:()=>({pos:hero.root.position,task:hero.task,still:!hero.path.length})});}
 // god rays: soft beams through the canopy
 const rayMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{t:{value:0},o:{value:0},col:{value:new THREE.Color(1,.86,.6)}},
  vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
