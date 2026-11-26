@@ -461,6 +461,14 @@ uniform float tdCool;` + NOISE)
             { float l=dot(diffuseColor.rgb,vec3(.3,.59,.11)); diffuseColor.rgb=max(mix(vec3(l),diffuseColor.rgb,1.+.3*w),0.)*(1.-.3*w); } // darker and richer, evenly (squaring sank the shaded bark to black)
             if(tdSty>1.5)diffuseColor.rgb*=1.-.45*wt*(1.-smoothstep(.88,.98,tdSe));
             diffuseColor.rgb*=mix(vec3(1.),vec3(.72,.62,.58),tdRu*wt); }
+          // [base round] the trunk's flare base read as pale grey stone from the home view (by day ~(90,65,44) against the mid
+          // trunk's (77,47,27)): Tree's map code desaturates and halves every colour after treedress's map block, and the up-facing
+          // flare faces escape the damp-foot darkening. Here, after that: warmer, richer and a little darker low down, and the
+          // photo's folds there deepened again. Not on the moss or inside the scars; a ragged upper edge.
+          { float bz=(1.-smoothstep(1.,3.2,tdP.y+(td_n(tdP*.7)-.5)*.8))*(1.-tdMM)*(tdSty>0.?smoothstep(1.,1.3,tdSe):1.);
+            float l=dot(diffuseColor.rgb,vec3(.3,.59,.11));
+            diffuseColor.rgb=mix(diffuseColor.rgb,max(mix(vec3(l),diffuseColor.rgb,1.4),0.)*vec3(.8,.7,.58),bz);
+            diffuseColor.rgb*=(1.-.5*bz*tdFlK*smoothstep(.1,.9,-tdFl))*(1.+.15*bz*tdFlK*smoothstep(.2,.9,tdFl)); }
           tdBias=1.2; // the normal reads a little blurred too: single-texel pits lit from the side drew black pepper up close
 #ifdef TD_LITE
           vec3 dn=tdTriN(1.,vec3(0.),wn,tdScale,3.);
@@ -513,7 +521,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress13';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress14';
     mat.needsUpdate = true;
   }
 

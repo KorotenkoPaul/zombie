@@ -228,3 +228,7 @@ Debug: `__treedress.stats()`.
 - The wet darkening (rain sheen mask tdWM, the soak-after-rain tdDM, the drip runs under the landings) was all in the map block, so Tree's map code mixed it halfway back to dry brown: in heavy rain the oak looked dry. It is re-applied at the start of the normal block: darker by up to 30 % and a little richer (even, not squared, so shaded bark doesn't sink to black), most in the fold grooves, the drip runs (tdDrk) staying dark longest.
 - Scars: bare wood drinks the rain, darkening 45 % more. Knot holes hold water (roughness .28 while raining), fold grooves get a sheen (roughness to .5). Rust runs go deep red-brown when wet.
 - Key |treedress13. Shader only.
+
+## Round 34 — the trunk base read as pale grey stone
+- Split with Tree (agreed): treedress = colour/tone, Tree = the flare's facets and silhouette. Tree keeps its two map_fragment colour lines as they are while this is tuned.
+- Normal block (after Tree's wash): below ~1-3.2 m (ragged edge), not on moss or inside scars: saturation x1.4, tint (.8,.7,.58), and the photo flutes deepened again (grooves -50 %, ridges +15 %). Key |treedress14. Shader only.
