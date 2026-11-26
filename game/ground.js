@@ -71,7 +71,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   for(let z=GS-1;z>=0;z--)for(let x=GS-1;x>=0;x--){const i=z*GS+x;let d=dist[i];if(x<GS-1)d=Math.min(d,dist[i+1]+d1);if(z<GS-1){d=Math.min(d,dist[i+GS]+d1);if(x<GS-1)d=Math.min(d,dist[i+GS+1]+d2);if(x>0)d=Math.min(d,dist[i+GS-1]+d2);}dist[i]=d;}}
  // WALK (exact): the bark's top SURFACE, rasterised from the root/trunk triangles on a 10 cm grid (the vertex-max map
  // above is ~25 cm coarse and misses between vertices: feet floated up to 37 cm or sank up to 58 cm on the big roots)
- const TS=320,TC=GE*2/TS,topS=new Float32Array(TS*TS).fill(-99);
+ const TS=320,TC=GE*2/TS,topS=new Float32Array(TS*TS).fill(-99),wallS=new Float32Array(TS*TS).fill(-99);/* wallS: the same up to 1.8 m (the trunk's bulging foot), for the grass check */
  {const w=new THREE.Vector3();
   for(const o of obstacles)o.traverse(m=>{if(!m.isMesh||m.isInstancedMesh||!m.geometry)return;const p=m.geometry.attributes.position;if(!p)return;m.updateWorldMatrix(true,false);
    const P=new Float32Array(p.count*3);for(let i=0;i<p.count;i++){w.fromBufferAttribute(p,i).applyMatrix4(m.matrixWorld);P[i*3]=w.x;P[i*3+1]=w.y;P[i*3+2]=w.z;}
@@ -79,12 +79,13 @@ export function createGround(C){const __before=new Set(C.scene.children);
    for(let t=0;t<nt;t++){const i0=idx?idx[t*3]:t*3,i1=idx?idx[t*3+1]:t*3+1,i2=idx?idx[t*3+2]:t*3+2;
     const ax=P[i0*3],ay=P[i0*3+1],az=P[i0*3+2],bx=P[i1*3],by=P[i1*3+1],bz=P[i1*3+2],cx=P[i2*3],cy=P[i2*3+1],cz=P[i2*3+2];
     const x0=Math.min(ax,bx,cx),x1=Math.max(ax,bx,cx),z0=Math.min(az,bz,cz),z1=Math.max(az,bz,cz);if(x1<=-GE||x0>=GE||z1<=-GE||z0>=GE)continue;
-    if(Math.min(ay,by,cy)>groundH0((ax+bx+cx)/3,(az+bz+cz)/3)+1.1)continue;
+    if(Math.min(ay,by,cy)>groundH0((ax+bx+cx)/3,(az+bz+cz)/3)+1.8)continue;
     const den=(bz-cz)*(ax-cx)+(cx-bx)*(az-cz);if(Math.abs(den)<1e-7)continue;
     const gx0=Math.max(0,Math.ceil((x0+GE)/TC-.5)),gx1=Math.min(TS-1,Math.floor((x1+GE)/TC-.5)),gz0=Math.max(0,Math.ceil((z0+GE)/TC-.5)),gz1=Math.min(TS-1,Math.floor((z1+GE)/TC-.5));
     for(let gz=gz0;gz<=gz1;gz++){const zc=(gz+.5)*TC-GE;for(let gx=gx0;gx<=gx1;gx++){const xc=(gx+.5)*TC-GE;
      const l1=((bz-cz)*(xc-cx)+(cx-bx)*(zc-cz))/den,l2=((cz-az)*(xc-cx)+(ax-cx)*(zc-cz))/den,l3=1-l1-l2;if(l1<-1e-4||l2<-1e-4||l3<-1e-4)continue;
-     const y=l1*ay+l2*by+l3*cy;const g0=groundH0(xc,zc);if(y>g0+1.1)continue;const k=gz*TS+gx;if(y>topS[k])topS[k]=y;}}}});}
+     const y=l1*ay+l2*by+l3*cy;const g0=groundH0(xc,zc);if(y>g0+1.8)continue;const k=gz*TS+gx;if(y>wallS[k])wallS[k]=y;if(y>g0+1.1)continue;if(y>topS[k])topS[k]=y;}}}});}
+ G._wallAt=(x,z)=>{const ix=Math.round((x+GE)/TC-.5),iz=Math.round((z+GE)/TC-.5);if(ix<0||iz<0||ix>=TS||iz>=TS)return null;const v=wallS[iz*TS+ix];return v>-90?v:null;};
  // top of the wood under (x,z) in world y, or null where there is none (nearest-cell inside a root, bilinear where all 4 are wood)
  G.barkTop=(x,z)=>{const fx=(x+GE)/TC-.5,fz=(z+GE)/TC-.5;const ix=Math.floor(fx),iz=Math.floor(fz);if(ix<0||iz<0||ix>=TS-1||iz>=TS-1)return null;
   const a=topS[iz*TS+ix],b=topS[iz*TS+ix+1],c=topS[(iz+1)*TS+ix],d=topS[(iz+1)*TS+ix+1];const tx=fx-ix,tz=fz-iz;
@@ -364,6 +365,10 @@ export function createGround(C){const __before=new Set(C.scene.children);
  // Grass is cut into 14 m chunks (24 m far out), one InstancedMesh per chunk and detail level, so the camera's frustum culls what is
  // off screen, and chunks far from the camera swap to a cheaper tuft (fewer blades and segments) or switch off.
  const CH=MOBILE?32:14,CHF=MOBILE?64:24,grassChunks=[];// phones: fewer, bigger chunks (draw-call budget)
+ // [treedress, root round] a tuft right at a root's foot fanned its blades into the root: they came out of the bark (12-25 cm of
+ // root rising within the blades' reach). Measured on the wood's surface up to 1.8 m (G._wallAt, the trunk's bulging foot included), 8 directions at the blades' reach.
+ const nearRootWall=(x,z,sz)=>{if(!G._wallAt)return false;const g=meshH(x,z);for(let k=0;k<8;k++){const a=k*.785,r1=.11*sz,r2=.22*sz;
+   const t1=G._wallAt(x+Math.cos(a)*r1,z+Math.sin(a)*r1),t2=G._wallAt(x+Math.cos(a)*r2,z+Math.sin(a)*r2);if((t1!=null&&t1>g+.06)||(t2!=null&&t2>g+.14))return true;}return false;};
  function scatterGrass(geo,lo,N,gen,size,name,far,one){const pts=[];let guard=0;
   while(pts.length<N&&guard++<N*40){// clumps: a seed spot, a few tufts around it
    const s=gen();const cnt=2+Math.floor(R()*6);
@@ -375,7 +380,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
     // trodden: squashed low and pushed over, away from the track (a worn edge, not a mown lawn)
     if(tr>0){const e=.05;const gx=trackD(x+e,z)-trackD(x-e,z),gz=trackD(x,z+e)-trackD(x,z-e);const ax=V(gz,0,-gx).normalize();if(ax.lengthSq()>.5)q=new THREE.Quaternion().setFromAxisAngle(ax,.75*tr).multiply(q);}
     const m=new THREE.Matrix4().compose(V(x,meshH(x,z)-.02,z),q,V(sz*rr(.85,1.2),sz*rr(.8,1.25)*(1-.55*tr),sz*rr(.85,1.2)));
-    const hsh=(Math.sin(x*127.1+z*311.7)*43758.5453)%1,hs=Math.abs(hsh);/* [ENV] per-tuft variety from a position hash (the shared R() stream stays as it was) */const dry=Math.max(smooth(.48,.78,fbm2(x*.4,z*.4+20)),hs<.16?.55+hs*2.5:0);/* autumn: wider straw and olive patches, and single dry tufts in the green */const c=new THREE.Color().setHSL(rr(.27,.38)-dry*.16,rr(.22,.38)+dry*.04,rr(.33,.47)+dry*.1);if(hs>.8)c.multiplyScalar(.72+(hs-.8)*1.2);/* some tufts in shade-dark green */pts.push({x,z,m,c});}}
+    const hsh=(Math.sin(x*127.1+z*311.7)*43758.5453)%1,hs=Math.abs(hsh);/* [ENV] per-tuft variety from a position hash (the shared R() stream stays as it was) */const dry=Math.max(smooth(.48,.78,fbm2(x*.4,z*.4+20)),hs<.16?.55+hs*2.5:0);/* autumn: wider straw and olive patches, and single dry tufts in the green */const c=new THREE.Color().setHSL(rr(.27,.38)-dry*.16,rr(.22,.38)+dry*.04,rr(.33,.47)+dry*.1);if(hs>.8)c.multiplyScalar(.72+(hs-.8)*1.2);/* some tufts in shade-dark green */if(!far&&nearRootWall(x,z,sz))continue;/* [treedress, root round] after every R() draw, so the layout before it stays */pts.push({x,z,m,c});}}
   const buckets=new Map();for(const p of pts){const cs=far?CHF:CH;const k=one?'all':Math.floor(p.x/cs)+','+Math.floor(p.z/cs);if(!buckets.has(k))buckets.set(k,[]);buckets.get(k).push(p);}
   for(const list of buckets.values()){const mk=g=>{if(!g)return null;const im=new THREE.InstancedMesh(g,grassMat,list.length);list.forEach((p,i)=>{im.setMatrixAt(i,p.m);im.setColorAt(i,p.c);});
     im.computeBoundingSphere();im.receiveShadow=true;im.castShadow=false;im.name=name;im.visible=false;scene.add(im);return im;};
