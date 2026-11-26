@@ -280,3 +280,8 @@ Debug: `__treedress.stats()`.
 - Crown density: the oak cards are at 0.99 screens after R44, so no headroom for more cards under ~1.0; not changed.
 - Close zoom on the upper limbs (y 13-18): the bark read pale grey-pink and flat like plastic. The day ground-bounce fill emissive reached up into the crown, and nothing shaded the limbs under the leaves.
 - Now the fill fades out above y 12-15. Inside the crown (y 12-15.5, ragged) the bark is darker and slightly greener (light through leaves), with the furrows darker. Key |treedress21. No draw calls.
+
+## Round 46 (trunk and roots at the hero's eye level)
+- Eye-level shots (1.4 m) by the door, the ladder foot, the pond side and the west roots. Note: the game camera never gets this close (closest zoom ~10.7 m), and tdNear only turns on within 9 m of the axis.
+- Most visible: beside the trunk door, the door-moss cushions (6-9 cm) sat on the 45° flare (sampler n.y >= 0.4) and stood out of the bare bark like green stickers.
+- Door moss now only on the near-flat threshold corners (n.y >= 0.75), smaller (2.5-5.5 cm), taller domes leaning up. Own rng stream (7071): nothing else moves.
