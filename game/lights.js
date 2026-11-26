@@ -924,7 +924,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const AO = (() => {
     const TOP = .035;   // board tops sit ~3.5 cm above the level
     const RM = [
-      { room: 'kitchen', y: KT, x0: -4.4, x1: -.9, z0: 1.0, z1: 4.6, holes: [[-1.5, -.92, 3.0, 3.9]] },
+      { room: 'kitchen', y: KT, x0: -4.4, x1: -.9, z0: 1.0, z1: 4.6, holes: [[-1.5, -.92, 3.0, 4.08]] },
       { room: 'bedroom', y: BD, x0: -4.2, x1: .4, z0: .95, z1: 3.95, holes: [[-4.3, -3.55, 2.32, 3.25]] },
       { room: 'workshop', y: WS, x0: .9, x1: 4.6, z0: 1.2, z1: 5.3, holes: [] },
       // outside: the deck and the three round landings (index.html floorBoards with disc(cx, cz, r, zmin) shapes)
@@ -1074,6 +1074,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     heroBlob.material.opacity = .5 * blobK;
   }
 
+  let lastDK = -1;
   function update({ dt, T, lampOn = 0, dayK = 0, task = null, state = null, asleep = false }) {
     t += dt; frame++;
     if (EMBERS) {
@@ -1087,6 +1088,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     cookT = cooking ? 78 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s)
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
+    /* the first frames after load, and any jump of the clock (setHour, a skip): automatic sources take their state at once.
+       Fading in at the kind's 'on' time (door 1.5 s) read on phones as "dark at load, lights up later", because the first
+       seconds there are spent compiling at a few fps (Env / critic). Real switches still fade and flare. */
+    const snap = frame <= 3 || (lastDK >= 0 && Math.abs(dayK - lastDK) > .12); lastDK = dayK;
     for (const s of src.values()) {
       // Pavel: a lamp or candle never goes out by itself. If the hero forgot it, it keeps burning until he puts it out.
       // The candle lights when he sits down to read in the dark and then stays lit (manual) until set('candle', false).
@@ -1094,6 +1099,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       const want = s.manual !== null ? s.manual : !!s.autoFn(ctx);
       setOn(s, want);
       const K = KINDS[s.kind];
+      if (snap && s.manual === null && !(s.ign && s.ign.hand)) { s.level = s.on ? 1 : 0; s.flare = 0; s.ign = null; }
       if (s.ign) updateMatch(s, dt);
       const lighting = s.on && s.ign && s.ign.t < MATCH.catch;   // the match is still on its way to the wick: nothing burns yet
       s.level = lighting ? s.level : s.on ? Math.min(1, s.level + dt / K.on) : Math.max(0, s.level - dt / K.off);

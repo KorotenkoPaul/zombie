@@ -248,10 +248,11 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes,o=1.2
  const sheetMat=new THREE.ShaderMaterial({defines:FOGDEF,transparent:true,depthWrite:false,fog:false,uniforms:fogU,
   vertexShader:`varying vec3 vW;void main(){vec4 w=modelMatrix*vec4(position,1.);vW=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
   fragmentShader:`uniform float t,op,trunkK,rootK;uniform vec3 col,cam,pond;uniform vec4 hl;uniform vec2 drift;varying vec3 vW;${FOG_NOISE}${SOFT_GLSL}
+   /* [ENV] cameraPosition, not the cam uniform: cam is set once a frame from the game camera, so any other camera (QA shots, probes) kept the game camera's height and an eye-level sheet showed as a hard line */
    void main(){vec2 p=(vW.xz-drift)*.075+vec2(vW.y*1.7,0.);vec2 q=nz2(p+vec2(t*.018,t*.007));
     vec2 r=nz2(p+3.*q+vec2(1.7,9.2)+t*.02);float d=fbm(p+3.4*r);
-    float dist=length(vW.xz-cam.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK*mix(1.,smoothstep(.4,.75,d)*1.4,rootK),1.,smoothstep(5.+rootK*(1.5+2.*smoothstep(2.,5.,vW.z)),10.+rootK*(2.+4.*smoothstep(2.,5.,vW.z)),length(vW.xz)))*/* camera side (pond, path) broken up out to ~r 14 (Ground) *//* [ENV] Ground/photo night: near the oak's feet the bank breaks into patches in the hollows, root tops and moss show */mix(.1,1.,smoothstep(pond.z+.2,pond.z+2.2,length(vW.xz-pond.xy)));
-    float graze=smoothstep(.04,.45,abs(normalize(cam-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6)*smoothstep(.35,1.8,cam.y-vW.y);/* a sheet near eye height reads as a hard horizontal line: it fades out as the camera comes down to it */vec2 hd=vW.xz-hl.xz;float hk=hl.w*exp(-dot(hd,hd)*.16);a*=1.-.6*hk;gl_FragColor=vec4(col*(.82+.4*d)+vec3(1.,.6,.28)*hk*.7,a);}`});
+    float dist=length(vW.xz-cameraPosition.xz);float edge=smoothstep(95.,55.,length(vW.xz))*smoothstep(3.,9.,dist)*mix(trunkK*mix(1.,smoothstep(.4,.75,d)*1.4,rootK),1.,smoothstep(5.+rootK*(1.5+2.*smoothstep(2.,5.,vW.z)),10.+rootK*(2.+4.*smoothstep(2.,5.,vW.z)),length(vW.xz)))*/* camera side (pond, path) broken up out to ~r 14 (Ground) *//* [ENV] Ground/photo night: near the oak's feet the bank breaks into patches in the hollows, root tops and moss show */mix(.1,1.,smoothstep(pond.z+.2,pond.z+2.2,length(vW.xz-pond.xy)));
+    float graze=smoothstep(.04,.45,abs(normalize(cameraPosition-vW).y));float a=smoothstep(.3,.85,d)*op*edge*graze*softK(.6)*smoothstep(.35,1.8,cameraPosition.y-vW.y);/* a sheet near eye height reads as a hard horizontal line: it fades out as the camera comes down to it */vec2 hd=vW.xz-hl.xz;float hk=hl.w*exp(-dot(hd,hd)*.16);a*=1.-.6*hk;gl_FragColor=vec4(col*(.82+.4*d)+vec3(1.,.6,.28)*hk*.7,a);}`});
  const sheets=[];(MOBILE?[[.3,1.1],[.9,.85]]:[[.25,1],[.7,.8],[1.3,.6]]).forEach(([y,k])=>{const m=new THREE.Mesh(new THREE.CircleGeometry(97,40).rotateX(-Math.PI/2)/* the sheets fade out by r 95: a disc, not a 200 m square */,sheetMat.clone());m.material.uniforms=Object.assign({},fogU,{op:{value:.5}});m.position.y=y;m.renderOrder=4;m.userData.k=k;scene.add(m);sheets.push(m);});
  // (2) rolling puffs: camera-facing soft clouds that churn in place and drift around the tree
  const PB=MOBILE?12:22;/* low billows at the root feet (photo: fog in soft heaps between the roots, moss showing) */const PN=(MOBILE?46:80)+PB;const puffU={...hlU,tNoise:{value:fogNoise},t:U.t,col:fogU.col,op:{value:.5},night:{value:1},frontK:{value:.7},rootK:fogU.rootK,...softU,...windU,lp:{value:Array.from({length:6},()=>new THREE.Vector4())},...pondU};
@@ -319,7 +320,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes,o=1.2
     gl_FragColor=vec4(col*(.9+.35*n)+vec3(1.,.6,.28)*hk*.35,a);}`});
  bankMat.customProgramCacheKey=()=>'envCornerBank2';
  const bank=new THREE.Mesh(bg,bankMat);bank.frustumCulled=false;bank.renderOrder=6;scene.add(bank);env.cornerBank=bank;
- env.mist=[...mistBands,bank];env.lampPts=puffU.lp;/* the 6 lowest lit lamps (world xyz, w = strength), for rain.js */
+ env.mist=[...mistBands,bank];env.lampPts=puffU.lp;/* [ENV] the see-through fog, haze and backdrop geometry never takes a raycast (taps, probes, tooling hit what is behind it) */for(const o of [...sheets,puffs,...mistBands,bank,env.backdrop,...farRings])if(o)o.raycast=()=>{};/* the 6 lowest lit lamps (world xyz, w = strength), for rain.js */
 
  // ================= fireflies =================
  // a few soft yellow-green lights that wander low between the roots and the forest edge and blink slowly (dusk and night)
