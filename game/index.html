@@ -1743,6 +1743,22 @@ const PERFX=/[?&]perfx/.test(location.search);
 // shadow uniforms on the CPU.
 if(MOBILE&&PERFX){const RP=renderer.properties;const pid=m=>{const q=RP.get(m).currentProgram;return q?q.id:0;};
  renderer.setOpaqueSort((a,b)=>a.groupOrder!==b.groupOrder?a.groupOrder-b.groupOrder:a.renderOrder!==b.renderOrder?a.renderOrder-b.renderOrder:pid(a.material)!==pid(b.material)?pid(a.material)-pid(b.material):a.material.id!==b.material.id?a.material.id-b.material.id:a.z-b.z);}
+// [PERF] the frame-rate governor's light steps (LIGHTS.degrade) turn lamp shadows off: that changes the shadow count in every
+// lit shader, so ~70 programs recompiled in one frame, a long stall at the very moment the phone was already struggling.
+// degWarm compiles those variants too (lantern shadows off, then all lamp shadows off) and puts the lights straight back:
+// nothing is drawn in between, so nothing changes on screen. Not behind the loading screen (it made the load ~20% longer):
+// in the background once the game shows, a few meshes at a time (under ~6 ms a tick), and again whenever new programs have
+// appeared (things built later). Off: ?degwarm=off / __noDegWarm. Stats: __perf.degWarm
+if(!window.__noDegWarm&&!/degwarm=off/.test(location.search)){let lastN=-1,lastScan=0,Q=null,qi=0,chunk=24;const D=PERF.degWarm={runs:0,maxMs:0,progs:0,ticks:0};
+ const part={traverseVisible(){},traverse(cb){for(const o of part.list)cb(o);},list:[]};/* compile() walks this list for materials; the lights come from the real scene */
+ setInterval(()=>{if(document.hidden||!$('load').classList.contains('hide')||(LIGHTS.quality&&LIGHTS.quality()<2))return;const n0=renderer.info.programs.length,now=performance.now();
+  if(!Q){if(n0===lastN||now-lastScan<5000)return;Q=[];scene.traverse(o=>{if(o.material)Q.push(o);});qi=0;lastScan=now;D.runs++;}
+  const L=[];scene.traverse(o=>{if(o.isLight&&o.castShadow&&(o.isSpotLight||o.isPointLight))L.push(o);});
+  part.list=Q.slice(qi,qi+chunk);qi+=chunk;const rt0=renderer.getRenderTarget(),t=performance.now();renderer.setRenderTarget(composer.readBuffer);/* the frame's own target: same program keys */
+  try{const pt=L.filter(l=>l.isPointLight);if(pt.length){for(const l of pt)l.castShadow=false;renderer.compile(part,camera,scene);}if(L.length){for(const l of L)l.castShadow=false;renderer.compile(part,camera,scene);}}catch(e){console.warn('degwarm',e);}
+  finally{for(const l of L)l.castShadow=true;renderer.setRenderTarget(rt0);part.list=[];}
+  const ms=performance.now()-t;chunk=ms>8?Math.max(4,chunk>>1):ms<3?Math.min(400,chunk*2):chunk;D.ticks++;D.maxMs=Math.max(D.maxMs,Math.round(ms));D.progs+=renderer.info.programs.length-n0;
+  if(qi>=Q.length){Q=null;lastN=renderer.info.programs.length;}},150);}
 {const T0=performance.now();$('loadTx').textContent='Готовим картинку…';$('loadBar').style.width='95%';if(PERFX)scene.traverse(o=>{for(const m of [].concat(o.material||[]))for(const k in m){const t=m[k];if(t&&t.isTexture&&!t.isRenderTargetTexture)try{renderer.initTexture(t);}catch(e){}}});
  if(renderer.compileAsync){const hid=[];scene.traverse(o=>{if(!o.visible&&!o.isLight){hid.push(o);o.visible=true;}});const rt0=renderer.getRenderTarget();renderer.setRenderTarget(composer.readBuffer);
   try{await Promise.race([renderer.compileAsync(scene,camera),new Promise(r=>setTimeout(r,15000))]);}catch(e){}
