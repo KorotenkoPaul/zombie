@@ -205,9 +205,9 @@ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);float hk=smoothstep(78.,36.
       float d=length(vec2(x/w,(y-yc)/cr));float e=texture2D(tNoise,vec2(u*.23,y*.19)+seed).r;
       float crown=1.-step(1.+(e-.5)*.55,d);float trunk=step(abs(x+(y/yc-.5)*(hs(c+11.)-.5)*.6),(.25+.25*hs(c+9.))*(1.25-.5*clamp(y/yc,0.,1.)))*step(y,yc);/* tapered, a slight lean: not rectangles */return max(crown,trunk);}
      void main(){float u=atan(vW.z,vW.x)*R;float y=vW.y;
-      float s=max(max(tree(u,y,4.2,0.),tree(u,y-1.2,3.4,1.9)),tree(u,y+.8,2.9,3.3));/* a ragged band of undergrowth and far trunks closes the bottom of each ring: the pale backdrop fog never shows through as white slivers */float ub=4.5+k*3.+3.*texture2D(tNoise,vec2(u*.031,.5)+seed*.7).r;s=max(s,step(y,ub));if(s<.5||y>40.)discard;
+      float s=max(max(tree(u,y,4.2,0.),tree(u,y-1.2,3.4,1.9)),tree(u,y+.8,2.9,3.3));/* a ragged band of undergrowth and far trunks closes the bottom of each ring: the pale backdrop fog never shows through as white slivers */float ub=4.5+k*3.+3.*texture2D(tNoise,vec2(u*.031,.5)+seed*.7).r;s=max(s,step(y,ub));
       // the bottom of each ring sinks into the ground fog; a faint vertical gradient and leaf noise keep the flat colour alive
-      float n=texture2D(tNoise,vec2(u*.05,y*.05)+seed*.3).g;vec3 c=col*(.9+.2*n)*(.92+.1*smoothstep(0.,25.,y));
+      float n=texture2D(tNoise,vec2(u*.05,y*.05)+seed*.3).g;/* [ENV] read before the discard: a mipmapped read after a per-pixel discard has undefined derivatives on Apple GPUs */if(s<.5||y>40.)discard;vec3 c=col*(.9+.2*n)*(.92+.1*smoothstep(0.,25.,y));
       c=mix(c,haze,k*.55+smoothstep(8.,-1.,y)*(1.-k*.4)*.6);gl_FragColor=vec4(c,1.);
       #include <colorspace_fragment>
      }`}));m.renderOrder=-2;m.frustumCulled=false;scene.add(m);farRings.push(m);}}
@@ -427,7 +427,7 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes,o=1.2
   mistU.rain.value=rainK;if(rainK>0){fogU.col.value.lerp(rainC,rainK*.7);for(const m of mistBands)m.material.uniforms.op.value*=1+rainK*.6;}
   ffU.on.value=eve*Math.max(0,1-rainK*2.5);/* [ENV] fireflies hide from real rain (a drizzle keeps a few) */if(env.fireflies)env.fireflies.visible=ffU.on.value>.01;/* by day the points are fully transparent: don't draw them */const g=env.gradePass.uniforms;g.night.value=eve;g.morn.value=mornK*(1-rainK);g.sat.value=(1.2+eve*.08)*(1-rainK*.3);g.satW.value=1.2+eve*.08;g.con.value=1.08+eve*.05-rainK*.06;/* rain: greyer, flatter, like looking through wet air */
   warmBounce(eve,rainK,nightK);
-  if(env.interiorOn){inProbe.sh.coefficients[0].x=eve*env.interiorK;}/* .y = warm tint inside, set by lights.js */
+  if(env.interiorOn){inProbe.sh.coefficients[0].x=eve*env.interiorK;inProbe.sh.coefficients[0].z=MOBILE?eve*env.trunkK:0;}/* .y = warm tint inside, set by lights.js */
   if(MOBILE){phoneNight(eve,rainK);foldLights();}else{litForest();fogU.trunkK.value=.8-.35*eve;puffU.frontK.value=.35+.35*eve;/* [ENV] day: mist over the roots in front too; night unchanged (.45 / .7) */}
   if(env.forestHaze&&scene.fog){env.forestHaze.hz.value.copy(scene.fog.color);env.forestHaze.hzK.value=.38-.08*(1-eve)*(1-rainK)+.25*rainK;/* [ENV] by day the autumn crowns show through a little more (night unchanged) */}if(scene.fog){trunkHz.hz.value.copy(scene.fog.color);trunkHz.hzK.value=.5+.25*rainK;}};
  // phone night look (reference photo): the half-res fog pass and the smaller layer set leave the phone darker and thinner than
@@ -474,10 +474,14 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes,o=1.2
  // irradiance term is dropped, so the probe is a pure parameter. The mask uses the world position from the fog chunk (vFogW).
  const inProbe=new THREE.LightProbe();inProbe.name='envInteriorK';
  env.setInterior=rooms=>{env.interiorBoxes=rooms;/* [HERO] read by hero.js: no breath vapour indoors */const box=rooms.map((r,i)=>`{float q=ib(p,vec3(${r[0].toFixed(3)},${r[2].toFixed(3)},${r[4].toFixed(3)}),vec3(${r[1].toFixed(3)},${r[3].toFixed(3)},${r[5].toFixed(3)}));k=max(k,q);kw=max(kw,q*${i<3?`lightProbe[1][${i}]`:'1.'});}`).join('');/* [LIGHTS] kw: per-room share of the warm tint (lightProbe[1].xyz = rooms 0..2): warm only in the room the hero is in or a lamp lights; an empty dark room keeps the cool moonlit fill, so from outside it no longer reads lamp-lit */
+  /* [ENV] phones: the moon fill is folded into a flat ambient (no direction), so the oak's bark caught it all round and read a
+     warm lit red-brown at night even with every lamp off (Lights' breakdown: base [72,44,39] vs desktop [52,30,23]) and the
+     door's warm pool had no cold bark around it. The fill is cut on the trunk (lightProbe[0].z, phones at night only) */
+  const T=env.trunk,trk=(T&&MOBILE)?`{float tr=mix(${T.r0.toFixed(3)},${T.r1.toFixed(3)},clamp((p.y-1.5)/4.5,0.,1.));float kt=smoothstep(tr+1.,tr+.3,length(p.xz-vec2(${T.x.toFixed(3)},${T.z.toFixed(3)})))*smoothstep(9.,7.,p.y);irradiance*=1.-kt*lightProbe[0].z;}`:'';
   const c=THREE.ShaderChunk;c.lights_fragment_begin=c.lights_fragment_begin.replace('irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );','')
-   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.,kw=0.;'+box+'irradiance*=1.-k*lightProbe[0].x;/* [LIGHTS] inside, the moon-blue fill turns warm (no brighter on screen: warm reads brighter after the grade, so it is scaled down): lightProbe[0].y = how much */irradiance=mix(irradiance,vec3(dot(irradiance,vec3(.3,.59,.11)))*mix(vec3(.5,.53,.58),vec3(.66,.5,.37),kw),k*lightProbe[0].y);/* [LIGHTS] same dimming for every room (luminance of both tints ~.53); kw only picks warm vs a cool moonlit grey */}\n#endif');
+   .replace(/(#if \( NUM_HEMI_LIGHTS > 0 \)[\s\S]*?#pragma unroll_loop_end\s*#endif)/,'$1\n#if defined( USE_LIGHT_PROBES ) && defined( USE_FOG )\n{vec3 p=vFogW;float k=0.,kw=0.;'+box+trk+'irradiance*=1.-k*lightProbe[0].x;/* [LIGHTS] inside, the moon-blue fill turns warm (no brighter on screen: warm reads brighter after the grade, so it is scaled down): lightProbe[0].y = how much */irradiance=mix(irradiance,vec3(dot(irradiance,vec3(.3,.59,.11)))*mix(vec3(.5,.53,.58),vec3(.66,.5,.37),kw),k*lightProbe[0].y);/* [LIGHTS] same dimming for every room (luminance of both tints ~.53); kw only picks warm vs a cool moonlit grey */}\n#endif');
   c.lights_pars_begin=c.lights_pars_begin+'\nfloat ib(vec3 p,vec3 a,vec3 b){vec3 d=min(p-a,b-p);return smoothstep(-.13,-.06,min(d.x,min(d.y,d.z)));}';
-  scene.add(inProbe);env.interiorOn=true;};env.interiorK=.75;/* share of the fill cut inside at full night (Lights: ~25% left) */
+  scene.add(inProbe);env.interiorOn=true;};env.interiorK=.75;env.trunkK=.85;/* [ENV] phones: share of the folded fill cut on the oak's trunk at night *//* share of the fill cut inside at full night (Lights: ~25% left) */
  // desktop: the forest impostors are unlit too; give them what a lit leaf card would get from the scene's lights (same as foldLights)
  function litForest(){if(!env.canopy||!env.canopy.material.isMeshBasicMaterial)return;if(!LH){scene.traverse(o=>{if(o.isHemisphereLight&&o!==sky&&!LH)LH=o;else if(o.isAmbientLight&&!LA)LA=o;else if(o.isDirectionalLight&&o.castShadow&&!LS)LS=o;});if(!LH||!LA)return;}
   const c=env.canopy.material.color;cA.copy(LH.groundColor).lerp(LH.color,.6).multiplyScalar(LH.intensity);cA.add(cB.copy(sky.groundColor).lerp(sky.color,.6).multiplyScalar(sky.intensity));

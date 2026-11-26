@@ -993,7 +993,7 @@ barricade('Забор кухни',V(-3.0,KT+.55,3.88),2.8);
 barricade('Забор мастерской',V(3.0,WS+.55,4.43),3.15);
 boards.instanceMatrix.needsUpdate=true;beams.instanceMatrix.needsUpdate=true;aRow.needsUpdate=true;aTile.needsUpdate=true;dRow.needsUpdate=true;dTile.needsUpdate=true;
 const ROOMS=[[KX0+.05,KX1-.05,KT+.05,BD-.1,1.05,4.6],[BX0+.05,BX1-.05,BD+.05,BD+4.75,1.0,4.2]/* up to the gable peak: at BD+3.5 the moonlit fill lit a hard-edged triangle in the bedroom's gable at night (Lights) */,[WX0+.05,WX1-.05,WS+.05,WS+3.8,1.25,5.3]];
-if(ENV.setInterior)ENV.setInterior(ROOMS);/* [ENV] interior night ambient cut (Lights) */
+ENV.trunk={x:TAX[0],z:TAX[1],r0:TREE.R(1.5),r1:TREE.R(6)};/* [ENV] the trunk's footprint for the phone night fill cut */if(ENV.setInterior)ENV.setInterior(ROOMS);/* [ENV] interior night ambient cut (Lights) */
 // ---- age (round 3): which face of each board is outside. Floors inside a room are sheltered, landings/deck are not;
 // a wall's outer face is the one facing away from its room; beams, posts and frames are out in the weather.
 ROOMS.forEach((r,k)=>{WEAR.ra[k].set(r[0],r[1],r[4],r[5]);WEAR.rb[k].set(r[2],r[3],0,0);});
