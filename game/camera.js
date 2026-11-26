@@ -40,7 +40,12 @@ export function createCameraRig(o) {
   let awayK = 0, zoomEff = 1, nfHero = null; const nfHeroV = new THREE.Vector3();
   let zoomK = 1;
   const look = new THREE.Vector3(0, 7.4, 2.4), lookT = new THREE.Vector3();
-  function classicZoom(f) { zoomK = clamp(zoomK * f, ZMIN, ZMAX); atHome = Math.abs(zoomK - 1) < 0.001; }
+  function classicZoom(f) {
+    // ease into the zoom limits like the rotation does: the last stretch gets gradually stiffer, so a pinch slows down
+    // and settles at the closest / farthest view instead of stopping dead (the limits themselves do not change)
+    const lf = Math.log(f), room = lf < 0 ? Math.log(zoomK / ZMIN) : Math.log(ZMAX / zoomK);
+    f = Math.exp(lf * clamp(room / 0.22, 0.15, 1));
+    zoomK = clamp(zoomK * f, ZMIN, ZMAX); atHome = Math.abs(zoomK - 1) < 0.001; }
   // zoom-out as it was originally (Pavel 20:52): soft limit 1.25x home with a rubber band up to 1.5x
   const maxD = () => home.dist * 1.25, hardD = () => home.dist * 1.5;
 
@@ -245,6 +250,8 @@ export function createCameraRig(o) {
     idle = 0; stopCine(); stopInertia(); recording = true;
     stopFollow();                      // following the hero ends on any touch: the fingers take over from where it is
     if (ptrs.size === 2 && CLASSIC) {
+      // the second finger came right after the first: it is a pinch, so take back the bit of rotation the first finger made
+      if (mode === 'orbit' && down && performance.now() - down.t < 220 && down.yaw !== undefined) { goal.yaw = down.yaw; goal.pitch = down.pitch; }
       const [a, b] = [...ptrs.values()];
       pinch = { d: Math.max(10, Math.hypot(a.x - b.x, a.y - b.y)) }; mode = 'pinch'; down = null; return;
     }
@@ -259,7 +266,7 @@ export function createCameraRig(o) {
     panBtn = e.button === 1 || e.button === 2 || e.shiftKey || e.ctrlKey || e.metaKey;
     mode = panBtn && !CLASSIC ? 'pan' : 'orbit';
     last = { x: e.clientX, y: e.clientY };
-    down = { x: e.clientX, y: e.clientY, t: performance.now() };
+    down = { x: e.clientX, y: e.clientY, t: performance.now(), yaw: goal.yaw, pitch: goal.pitch, dz: 6 };
   });
   dom.addEventListener('pointermove', e => {
     if (!ptrs.has(e.pointerId)) return;
@@ -282,7 +289,7 @@ export function createCameraRig(o) {
     if (!last) return;
     const dx = e.clientX - last.x, dy = e.clientY - last.y;
     last = { x: e.clientX, y: e.clientY };
-    if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 6) return; // tap jitter
+    if (down && down.dz) { if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < down.dz) return; down.dz = 0; } // tap jitter (and the finger left after a pinch); once past it, every move counts
     if (mode === 'orbit') orbit(dx, dy);
     else if (mode === 'pan') pan(dx, dy);
   });
@@ -290,7 +297,9 @@ export function createCameraRig(o) {
     ptrs.delete(e.pointerId);
     if (mode === 'pinch') {
       if (ptrs.size === 1) {               // one finger left: continue as orbit without a jump
-        const p = [...ptrs.values()][0]; last = { x: p.x, y: p.y }; mode = 'orbit'; down = null;
+        const p = [...ptrs.values()][0]; last = { x: p.x, y: p.y }; mode = 'orbit';
+        // fingers rarely lift together: the one left behind must move on purpose before it turns the view (no twitch, no tap)
+        down = { x: p.x, y: p.y, t: -1e9, dz: 18 };
       } else if (ptrs.size === 0) { mode = null; if (CLASSIC) stopInertia(); else startInertia(); }
       return;
     }
@@ -695,7 +704,9 @@ export function createCameraRig(o) {
       for (const mt of (Array.isArray(m.material) ? m.material : [m.material])) {
         if (!mt || seen.has(mt) || !test(mt, m) || mt.userData.nearFade || !(mt.alphaTest > 0)) continue;
         seen.add(mt); mt.userData.nearFade = true;
-        const prev = mt.onBeforeCompile, key = prev ? prev.toString() : '';
+        // chain the material's own program key (explicit keys tell apart materials whose onBeforeCompile text is the same;
+        // dropping them made different materials share one program, the white boards on iPhone). Read it before the hook changes.
+        const prev = mt.onBeforeCompile, key = (typeof mt.customProgramCacheKey === 'function' ? String(mt.customProgramCacheKey.call(mt)) : '') + '|' + (prev ? prev.toString() : '');
         mt.onBeforeCompile = (sh, rd) => {
           if (prev) prev.call(mt, sh, rd);
           sh.uniforms[name] = uni; sh.uniforms.uNFFocus = focusU; sh.uniforms.uNFCut = cutU; sh.uniforms.uNFF = focusPU;
