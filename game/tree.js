@@ -431,6 +431,9 @@ export function buildTree(THREE, o) {
   // ground and carve irregular folds running out along each root, a few sharp cuts across them, and bark lumps, all
   // deep enough to read from the normal camera. Edges are split by a rule that depends only on the edge itself
   // (length + where its midpoint is), so neighbours always agree: no cracks, UV seams included. Phones: coarser.
+  /* [PERF] the bark before the root/trunk carving refinement: the sun and lamp shadow passes cast from this (perf.js reads
+     bark.userData.shadowGeo; the carving only cuts inwards, the casters are back faces, so the silhouette stays on or outside) */
+  const shadowP = new Float32Array(P), shadowI = I.slice();
   let GR = null;
   if (o.model && o.rootDetail !== false) {
     const MOBI = MOB(o), Lmax = MOBI ? 0.5 : 0.28, LmaxT = MOBI ? 0.44 : 0.2, passes = 2; /* phones: coarser (day budget) */
@@ -624,6 +627,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
   mat.userData.doorGlow = { value: 0 };
   mat.customProgramCacheKey = () => 'oakBark-grooves2-fold'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
+  { const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(shadowP, 3)); sg.setIndex(shadowI); sg.computeBoundingSphere(); bark.userData.shadowGeo = sg; }
 
   // ---------- leaves: clumps of painted oak-leaf cards, facing outwards like the painted crown ----------
   const LA = o.avoidLeaves || [];
