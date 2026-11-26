@@ -236,3 +236,6 @@ Debug: `__treedress.stats()`.
 ## Round 35 — fresh-eyes review of the whole oak (day, night, rain; phone and desktop)
 - Found: from the home view the root scars read as painted pale ovals and the root knot as a target ring (worst in the rain, with the water glint in the hole). Fix: `sFar` (1 → .38 from 9 to 24 m) scales the scar wood, the lip/crease rings, the knot ring and the lip relief; the knot hole keeps most of its darkness. Root knots smaller (.2 → .16 / .15). The scar on the right root's flat top (3.84, .79, .2) read as a grey puddle: dropped (6 spots live).
 - No conflicts seen between the layers (nails, wet, drips, base tone, flutes) at home distance; night and the desktop view were clean. Key |treedress15.
+
+## Round 36 — big limbs and the fork up close
+- Weakest thing up close: the limb grooves in tree.js (the R27 block, with Tree's OK) drew ~180 even crisp pinstripes per turn at the fork and on the limbs (th*90 with abs(sin)): a painted corduroy. Now 36 per turn, one groove per period with a wandering width, broken into long lengths that start and stop (long cracks, not dashes). Key 'oakBark-grooves3-fold'. Limb junctions, folds and moss otherwise read fine against the photo (the photo's limbs carry no visible moss).
