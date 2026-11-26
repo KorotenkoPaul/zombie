@@ -48,7 +48,7 @@ export function dressHero({ THREE, root }) {
      a mesh's positions -> the body's space, through the hips */
   const hipsI = m => m.skeleton.bones.findIndex(x => /Hips$/.test(x.name));
   const toBody = m => hipsI(m) < 0 || hipsI(meshes.body) < 0 ? m.bindMatrix.clone() : meshes.body.bindMatrix.clone().multiply(meshes.body.skeleton.boneInverses[hipsI(meshes.body)].clone().invert()).multiply(m.skeleton.boneInverses[hipsI(m)]).multiply(m.bindMatrix);
-  const uVest = { value: 1 }, uCoat = { value: 0 };
+  const uVest = { value: 1 }, uCoat = { value: 0 }, uBoot = { value: 1 }; let bootL = null;
   const jointSet = m => m === meshes.body || m.name === 'heroHull' ? ['LeftUpLeg', 'LeftLeg', 'RightUpLeg', 'RightLeg'] : m === meshes.boots || m.name === 'bootsHull' ? ['LeftLeg', 'LeftFoot', 'RightLeg', 'RightFoot'] : null;
   const mbi = (m, n) => m.skeleton.bones.findIndex(b => b.name.replace('mixamorig', '').replace(':', '') === n);
   const v = new THREE.Vector3(), n3 = new THREE.Vector3(), nm = new THREE.Matrix3();
@@ -140,12 +140,12 @@ float hcTwill(float t,float s){return .5+.5*sin(6.28318*(s+t)/.0024);}
     attrs(mesh, cls); const KUm = JOINTS_U(mesh);
     const m = mesh.material;
     m.onBeforeCompile = sh => {
-      sh.uniforms.uVestOn = uVest; sh.uniforms.uCoatOn = uCoat; Object.assign(sh.uniforms, KUm);
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 kp;attribute vec3 kn;attribute vec3 kx;' + JOINTS_DECL(mesh) + 'varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;' + (cls === 0 ? 'attribute float kc;varying float vKc;' : '') + '')
+      sh.uniforms.uVestOn = uVest; sh.uniforms.uCoatOn = uCoat; sh.uniforms.uBootOn = uBoot; Object.assign(sh.uniforms, KUm);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 kp;attribute vec3 kn;attribute vec3 kx;uniform float uBootOn;' + JOINTS_DECL(mesh) + 'varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;' + (cls === 0 ? 'attribute float kc;varying float vKc;' : '') + '')
         .replace('#include <skinning_vertex>', '#include <skinning_vertex>\n' + JOINTS_GLSL(mesh)).replace('#include <begin_vertex>', '#include <begin_vertex>\nvKp=kp;vKn=kn;vKx=kx;' + (cls === 0 ? (mesh === meshes.body ? 'vKc=kc;' : 'vKc=0.;') : ''))
         // the vest lies a few mm over the body (same triangles): where a coarse collar or hem triangle tilts, the body won the depth
         // test and showed through as dark teeth / sweater patches. Depth-only nudge of the vest 12 mm toward the eye (screen xy unchanged).
-        .replace('#include <project_vertex>', '#include <project_vertex>\n' + (cls === 1 ? '{vec4 q=mvPosition;q.xyz+=normalize(-q.xyz)*'+(+(new URLSearchParams(location.search).get('vestz')||.012)).toFixed(4)+';vec4 c=projectionMatrix*q;gl_Position.z=c.z/c.w*gl_Position.w;}' : ''));
+        .replace('#include <project_vertex>', '#include <project_vertex>\n' + (cls === 1 ? '{vec4 q=mvPosition;q.xyz+=normalize(-q.xyz)*'+(+(new URLSearchParams(location.search).get('vestz')||.012)).toFixed(4)+';vec4 c=projectionMatrix*q;gl_Position.z=c.z/c.w*gl_Position.w;}' : mesh === meshes.body ? /* the bare feet lie on the boots' inner skin: at the tongue and sole seams they won the depth test as dark slits. While the boots are on, push the feet 12 mm back in depth only */ 'if(uBootOn>.5&&kx.x>2.5){vec4 q=mvPosition;q.xyz-=normalize(-q.xyz)*.012;vec4 c=projectionMatrix*q;gl_Position.z=c.z/c.w*gl_Position.w;}' : ''));
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uVestOn;varying vec3 vKp;varying vec3 vKn;varying vec3 vKx;' + (cls === 0 ? 'uniform float uCoatOn;varying float vKc;' : '') + GLSL_NOISE + '\nfloat hcHgt=0.;float hcAmp=0.;float hcRough=-1.;')
         .replace('#include <map_fragment>', '#include <map_fragment>\n' + (cls === 0 ? 'bool hcCoat=uCoatOn>.5&&vKc>.5;\n/* behind the neck, while the vest is on, the body\'s collar band (saw-toothed against the neck) is not drawn: the vest\'s smoothed collar and the neck skin show */if(uVestOn>.5&&uCoatOn<.5&&vKc>1.5)discard;\n' : '') + '{' +
           `vec3 sc=pow(max(diffuseColor.rgb,vec3(0.)),vec3(1./2.2));float mx=max(sc.r,max(sc.g,sc.b)),mn=min(sc.r,min(sc.g,sc.b)),sat=mx>0.?(mx-mn)/mx:0.;
@@ -202,6 +202,8 @@ if(hcAmp>0.){vec3 dpx=dFdx(-vViewPosition),dpy=dFdy(-vViewPosition);float dhx=dF
     m.customProgramCacheKey = () => 'heroCloth3-' + cls + (mesh === meshes.body ? 'b' : '') + (hipSet(mesh) ? 'h' : '');
     m.needsUpdate = true;
   }
+  { const prev = meshes.body.onBeforeRender; meshes.body.onBeforeRender = function (...a) { if (!bootL || !bootL.length) { bootL = []; root.traverse(o => { if (o.isMesh && /^boots(Left|Right)?$/.test(o.name)) bootL.push(o); }); }
+    let on = 0; for (const o of bootL) { let v = true; for (let q = o; q; q = q.parent) if (!q.visible) { v = false; break; } if (v) on = 1; } uBoot.value = on; if (prev) prev.apply(this, a); }; }
   hook(meshes.body, 0); hook(meshes.vest, 1); if (meshes.boots) hook(meshes.boots, 2); if (meshes.under) hook(meshes.under, 0);
   // game style's outline hulls (herolook.js) skin from the same weights: without the knee turn their knee folded into the flat
   // wedge the body no longer has, drawn as a dark outline around the crouching thigh (critic 24, style=game). Same turn for them.
