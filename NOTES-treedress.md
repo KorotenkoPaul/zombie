@@ -187,3 +187,13 @@ Debug: `__treedress.stats()`.
   - Before, the lower trunk and roots sank into one dark brown mass; in the photo they read in cool moonlight.
 - Key: `|treedress9`. Arithmetic only, no reads, no draws.
 - **Still off versus the photo (geometry, not shader).** The roots are faceted low-poly planes. The photo's roots are long, round and sinuous and spread wider.
+
+## Round 26: autumn greenery (ivy, ferns)
+- Photo check: the photo trunk is clean bark with only grass at the foot; ours keeps the sparse sprigs (no count change), but now in autumn colours.
+- Ivy: 32% of leaves low down rising to 52% at 7 m turn wine red / rust / butter yellow, picked by `tdHash` of the leaf position (no R() draw, layout unchanged: 373 phone / 602 desktop).
+- Ferns: 30% copper, 20% straw, the rest a tired green.
+- Shader (`mat.userData.autumn`, key `|tdAut1`): instance colour red > 1.5 marks a turned leaf and holds 4x the target colour; the green map only supplies luminance, so turned leaves are clean colours with lighter veins, not muddy tinted green.
+
+## Round 27: oak limbs close up
+- The limbs showed a camouflage blotch up close. Cause: tree.js's limb grooves took their phase from the shading normal, which carries treedress's bark normal map (same bug as the root cork speckle in R24).
+- Fix in tree.js (key `oakBark-grooves2-fold`): the phase now comes from the position (angle round the trunk x90, height x13 on the limbs fading to 0 up the trunk, plus smooth wander), so the grooves run along each limb and are noise-free. Home view unchanged.
