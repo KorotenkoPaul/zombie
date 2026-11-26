@@ -285,10 +285,10 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;G.ground=ground;
   const patch=new THREE.Mesh(pg,mat);patch.receiveShadow=true;G.groundPatch=patch;
   /* one draw for the floor: the big coarse mesh and the fine 32 m patch share the material, so they are drawn as one merged mesh.
-     G.ground / G.groundPatch stay (off-scene) as the height grids meshH and treedress read */
+     G.ground / G.groundPatch stay (off-scene) as the height grids meshH and treedress read; the per-frame tick runs on the drawn floor */
   {const fl=new THREE.Mesh(mergeGeometries([g,pg]),mat);fl.name='groundFloor';fl.receiveShadow=true;scene.add(fl);G.floor=fl;}
   let lastT=performance.now();
-  ground.onBeforeRender=(r,sc,cam)=>{const now=performance.now(),dt=Math.min(.1,(now-lastT)/1000);lastT=now;
+  G.floor.onBeforeRender=(r,sc,cam)=>{const now=performance.now(),dt=Math.min(.1,(now-lastT)/1000);lastT=now;
    // wet: dusk and night dew, morning dew, rain; puddles fill in rain and dry slowly after it
    // a faint dew at night and in the morning; really wet only in rain (Wind's wet(): soaks in ~8 s, dries over ~2 min, same as bark and ropes)
    const rw=C.wind&&C.wind.wet?C.wind.wet():ST.rainK;const want=Math.max(Math.min(1,glowU.value/1.8)*.1,ST.mornK*.35,rw);wetU.value+=(want-wetU.value)*Math.min(1,dt*1.5);
