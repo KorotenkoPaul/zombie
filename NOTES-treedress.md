@@ -197,3 +197,15 @@ Debug: `__treedress.stats()`.
 ## Round 27: oak limbs close up
 - The limbs showed a camouflage blotch up close. Cause: tree.js's limb grooves took their phase from the shading normal, which carries treedress's bark normal map (same bug as the root cork speckle in R24).
 - Fix in tree.js (key `oakBark-grooves2-fold`): the phase now comes from the position (angle round the trunk x90, height x13 on the limbs fading to 0 up the trunk, plus smooth wander), so the grooves run along each limb and are noise-free. Home view unchanged.
+
+## Round 28: trunk door and bark joints
+- Thin orange stakes stood up out of the door sill: the cave floor boards ran along `out`, so `piece()` (index.html door frame) got a zero ez and a degenerate basis. Fixed: such pieces take ez = up (lie flat). The boards now start just behind the threshold (they began ~.5 m out on the landing because `at(0,..)` measured the flared foot).
+- Threshold board lies flat (8 cm x 24 cm) instead of on edge (a 12 cm bar slanting across the doorway).
+- Joints: board ends vs bark checked by raycast and shots; no floating joints (room floors stop at their own back walls by design).
+- Anim gate (tests/anim/gate.js) did not finish within 25 min in this container; not run to completion.
+
+## Round 29: roots where the hero walks
+- Grass through bark: a raycast check of every tuft (base / middle / tip inside the bark?) found ~30 tufts and ferns whose blades fanned into a root or the trunk's bulging foot. Ground (ground.js `nearRootWall`, after every R() draw) and treedress (fern fronds checked along their own 7 directions, tufts in 8) now drop those. Ground got `G._wallAt` (wood surface up to 1.8 m, same raster as barkTop). After: 0 piercing.
+- treedress placements use the ground as drawn (`gH`: Ground's meshH, then heightAt) instead of env's base groundH (missed the humps by up to ~15 cm).
+- Voids under roots: Ground's soil mounds already fill them; the remaining pockets under the trunk's flare are hidden from every normal view.
+- Steps: standAt sampled every 5 cm over the trodden path: one 6-18 cm step where a root crosses the path at x -3.3..-1.7, z 4.3..5.3 (reported, terrain not changed).

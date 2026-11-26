@@ -556,7 +556,7 @@ export function buildTree(THREE, o) {
         // Pavel: smooth painted bark like the photo, the character in the forms: the texture's fine noise is toned down
         diffuseColor.rgb=mix(vec3(.13,.08,.052),diffuseColor.rgb,.5);
 `)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);diffuseColor.rgb*=mix(vec3(.38,.37,.47),vec3(1.06,1.05,1.02),pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*diffuseColor.rgb*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nfloat fac=max(dot(normal,normalize(vViewPosition)),0.);vec3 dgC=diffuseColor.rgb;diffuseColor.rgb*=mix(vec3(.38,.37,.47),vec3(1.06,1.05,1.02),pow(fac,.7));\ntotalEmissiveRadiance+=vec3(1.,.5,.18)*vGlow*dgC*doorGlow*1.6+diffuseColor.rgb*vec3(.05,.065,.09)*fac;');
     sh.uniforms.doorGlow = mat.userData.doorGlow;
     // [ENV] limbs (Pavel / photo: smooth bark with long folds following the wood): the trunk's folds are carved in the mesh, the
     // limbs only had the painted crackle. Shading-only grooves that run along each limb (axis estimated from the trunk outwards),
