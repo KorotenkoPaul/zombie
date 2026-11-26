@@ -2514,7 +2514,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const ch=bones.Spine2.getWorldPosition(V());let c;
   if(inHand){c=ch.clone().addScaledVector(f,.27).add(V(0,-.16,0));const lo=V(0,-.08,0);odReach('Left',c.clone().addScaledVector(r,-.18).add(lo),1);odReach('Right',c.clone().addScaledVector(r,.18).add(lo),1);}
   else c=ch.clone().addScaledVector(f,-.21).add(V(0,.03,0));
-  const up=V(0,1,0);const X=up.clone().cross(r).normalize();const q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,up,r));const hs=(o.userData.home&&o.userData.home.scale)||1;
+  const up=V(0,1,0);const X=up.clone().cross(r).normalize();const q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,up,r));if(back){const lw=(H.lad||ladNear())?1:0;odArmful.w=(odArmful.w||0)+(lw-(odArmful.w||0))*Math.min(1,4/60);if(odArmful.w>.001){const b=f.clone().negate();q.slerp(new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(b.clone().cross(up).normalize(),b,up)),smooth(0,1,odArmful.w));c.addScaledVector(f,.05*smooth(0,1,odArmful.w));}}/* CLIMB HOOK: on a ladder the bundle stands upright along his back (lying across it, its ends went 6 cm into the kitchen hatch's corner post, loads.js) */const hs=(o.userData.home&&o.userData.home.scale)||1;
   const par=o.parent;par.updateWorldMatrix(true,false);const M=new THREE.Matrix4().compose(c,q,V(hs,hs,hs));M.premultiply(par.matrixWorld.clone().invert());M.decompose(o.position,o.quaternion,o.scale);o.updateMatrixWorld(true);}
  // OUTDOOR: a full bucket is carried like real weight: real mocap of a heavy case in the right hand (body leans away), else the sack carry
  const BUCKET=()=>has('hy_carrybucket')?'hy_carrybucket':'hy_carrysack';
@@ -2558,11 +2558,11 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
  /* CLIMB HOOK: a lantern hung on the hip for a climb hangs plumb from its bail just behind the hip, every frame (as the hand left it the housing
     stuck out 16 cm in front of the hip: 2.3 cm into the hatch ladder's lowest rung at the mount, loads.js) */
  function lanternHang(){const P=PP();const o=P&&P.tools&&P.tools.lantern;if(!o||o.parent!==bones.Hips)return;const Hp=bones.Hips;root.updateMatrixWorld(true);const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);
-  const side=Hp.worldToLocal(o.getWorldPosition(V())).x>=0?1:-1;const hw=Hp.getWorldPosition(V());const rs=Hp.localToWorld(V(side,0,0)).sub(hw).dot(r)>=0?1:-1;const gw=hw.addScaledVector(r,rs*.24).addScaledVector(f,-.09).add(V(0,-.04,0));
+  const side=Hp.worldToLocal(o.getWorldPosition(V())).x>=0?1:-1;const hw=Hp.getWorldPosition(V());const rs=Hp.localToWorld(V(side,0,0)).sub(hw).dot(r)>=0?1:-1;const gw=hw.addScaledVector(r,rs*.17).addScaledVector(f,-.13).add(V(0,-.04,0));
   o.quaternion.copy(Hp.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(new THREE.Quaternion().setFromAxisAngle(V(0,1,0),root.rotation.y)));o.updateMatrixWorld(true);const g2=o.localToWorld(V(0,.24,0));o.position.add(Hp.worldToLocal(gw.clone()).sub(Hp.worldToLocal(g2.clone())));o.updateMatrixWorld(true);}
  function stowPost(dt){if(!STW)return;STW.t+=dt;const P=PP();const G=window.__grab;const t=STW.t;let all=true;
   for(const it of STW.items){const o=P.tools[it.n];if(!o){continue;}const sp2=bones.Spine2;
-   if(STW.mode==='off'){root.updateMatrixWorld(true);const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const lt=it.n==='lantern';const tg=bones.Hips.getWorldPosition(V()).addScaledVector(r,(it.h==='Right'?1:-1)*(lt?.24:.21)).addScaledVector(f,lt?-.09:.03).add(V(0,-.04,0));/* CLIMB HOOK: the lantern hangs 25 cm down from its bail: at the side-front of the hip it swung into the hatch ladder's lowest rung (loads.js, 1.9 cm); it goes a little behind the hip */
+   if(STW.mode==='off'){root.updateMatrixWorld(true);const f=fwd(root.rotation.y),r=V(-f.z,0,f.x);const lt=it.n==='lantern';const tg=bones.Hips.getWorldPosition(V()).addScaledVector(r,(it.h==='Right'?1:-1)*(lt?.17:.21)).addScaledVector(f,lt?-.13:.03).add(V(0,-.04,0));/* CLIMB HOOK: the lantern hangs 25 cm down from its bail: at the side-front of the hip it swung into the hatch ladder's lowest rung (loads.js, 1.9 cm); it goes a little behind the hip */
     const w=smooth(0,.4,t)*(1-smooth(.6,.95,t));if(w>.01)reachGrip(it.h,tg,w);
     if(!it.set&&t>.45&&(palmTo(it.h,tg)<.06||t>.6)){it.set=1;root.updateMatrixWorld(true);bones.Hips.attach(o);if(H.hold[it.h]&&H.hold[it.h].tool===it.n)H.hold[it.h]=null;AU('cloth');}
     if(t<.95)all=false;}
