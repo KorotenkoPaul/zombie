@@ -282,7 +282,7 @@ export function createWind(opt = {}) {
     setRain(on, kind) { setRain(!!on, false, kind); },
     // how hard it rains now (index.html eases rainK towards this): 0, drizzle .35, rain .75, storm 1
     rainAmt() { return rainOn ? RAIN[rainKind].amt : 0; },
-    cloud() { return cl.k; },   // [ENV] 0 clear .. 1 fully overcast (rain), eased
+    cloud() { return cl.k; }, setGrey(h = 4, snap = true) { cl.grey = +h || 0; if (snap) cl.k = cl.grey > 0 ? Math.max(cl.k, 0.75) : (rainOn ? cl.k : 0); },   // [ENV] cloud 0 clear .. 1 fully overcast (rain), eased; setGrey(h, snap): a dry grey (overcast) spell for h game hours from now (0 clears it), for tests and the debug panel
     rainKind() { return rainKind; },
     // lightning flash 0..1 right now (W.applyFlash lights the scene with it); strike(distKm) for tests
     flash() { return flashV; },
