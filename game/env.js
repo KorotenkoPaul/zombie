@@ -354,19 +354,19 @@ float softK(float range){if(soft<.5)return 1.;vec2 su=gl_FragCoord.xy/uRes,o=1.2
  const GRADE_BODY=`float l=dot(x,vec3(.2126,.7152,.0722));
     // warm/cold split like the painting: warm (orange) pixels get extra saturation and glow, cold ones lean to moonlit teal-blue
     float wk=clamp((x.r-x.b)*2.5,0.,1.),ck=clamp((x.b-x.r)*3.,0.,1.);
-    x=mix(vec3(l),x,mix(sat,max(sat,satW),wk)+wk*.12*night);/* [LIGHTS] rain greys the cold night (sat), the lamp-lit rooms keep their dry saturation (satW): cosy against the storm */
+    x=mix(vec3(l),x,mix(sat,mix(max(sat,satW),.86,night),wk));/* [ENV] photo night (Lights' measure): the lamp-lit rooms are cream-peach (b/r ~.36), not orange (b/r .06-.18): at night warm pixels are a little desaturated instead of boosted (the grade took the blue out) *//* [LIGHTS] rain greys the cold night (sat), the lamp-lit rooms keep their dry saturation (satW): cosy against the storm */
     // lamp-lit wood toward the photo's golden amber, not red-orange: warm pixels' green is pulled a little toward their red
     // (hue ~20 -> ~30 deg) and the warm glow added on the bright ones is gold
-    x.g+=(x.r-x.g)*.14*wk*night;x+=vec3(.045,.035,0.)*wk*hi0(l)*night;x=mix(x,x*vec3(.9,.98,1.2),ck*.4*night);x=mix(x,vec3(l)*vec3(.92,1.,1.1),ck*.25*night);x*=1.+.14*ck*night*(1.-smoothstep(.3,.7,l));/* the photo's night blues are lighter: lift the cold mid/darks, not the warm rooms *//* cold darks less saturated (the photo's night blues are muted, not deep teal) */
+    x.g+=(x.r-x.g)*.14*wk*night;x+=vec3(.045,.038,.022)*wk*hi0(l)*night;x=mix(x,x*vec3(.9,.98,1.2),ck*.4*night);x=mix(x,vec3(l)*vec3(.92,1.,1.1),ck*.25*night);x*=1.+.34*ck*night*(1.-smoothstep(.45,.9,l));/* the photo's night blues are lighter: lift the cold mid/darks, not the warm rooms *//* cold darks less saturated (the photo's night blues are muted, not deep teal) */
     // night greens (oak leaves, grass, moss) muted toward the photo's dark blue-teal instead of bright leaf green
     float gk=clamp((x.g-max(x.r,x.b))*4.,0.,1.);x=mix(x,vec3(l)*vec3(.8,1.02,1.12),gk*.3*night);{float gkN=clamp((x.g-max(x.r,x.b))*10.,0.,1.);x=mix(x,vec3(dot(x,vec3(.3,.59,.11)))*vec3(.86,1.06,1.04),gkN*.75*night);}/* [ENV] photo night crown: leaf green measured ~half as saturated as ours (sat .25 vs .5, same hue and lightness) */
     // autumn daylight: leaf greens lean a little to yellow-olive (night keeps the blue-teal above)
     x.r+=(x.g-x.r)*.24*gk*(1.-night);x.b*=1.-.15*gk*(1.-night);
     x=(x-.5)*con+.5;
     // split toning: cold teal shadows, warm highlights (lamp light pops against the blue night)
-    float sh=1.-smoothstep(0.,.45,l),hi=smoothstep(.45,1.,l);x+=lift*sh*(.6+.6*night);x=mix(x,x*warm*1.15,hi*.45*night);{float mk=clamp((x.r-x.g)*25.,0.,1.)*clamp((x.b-x.g)*25.+.3,0.,1.)*night*(1.-smoothstep(.25,.45,l));x.b=mix(x.b,x.g*.9,mk*.8);}/* [ENV] night bark: the blue lift and fog on dark red-brown wood made it lilac-pink (hue ~345); the photo's trunk is brown (hue ~10) or blue, never magenta: dark warm pixels drop their blue to below green */
+    float sh=1.-smoothstep(0.,.45,l),hi=smoothstep(.45,1.,l);x+=lift*sh*(.6+.6*night);x=mix(x,x*warm*1.15,hi*.45*night);{float mk=clamp((x.r-x.g)*25.,0.,1.)*clamp((x.b-x.g)*25.+.3,0.,1.)*night*(1.-smoothstep(.25,.45,l));x=mix(x,vec3(dot(x,vec3(.3,.59,.11)))*vec3(.86,1.,1.16),mk*.7);}/* [ENV] photo night trunk is cool blue-grey (30/35/40, Lights): the lilac goes to grey-blue now, not back to red-brown *//* [ENV] night bark: the blue lift and fog on dark red-brown wood made it lilac-pink (hue ~345); the photo's trunk is brown (hue ~10) or blue, never magenta: dark warm pixels drop their blue to below green */
     x=mix(x,x*vec3(1.08,1.0,.88),morn*.6*smoothstep(.3,.8,l));/* [ENV] dawn: warm only in the lit parts; the shadows and the mist stay cool (a warm lift in the shadows turned the whole morning into brown smog) */
-    vec2 d=vUv-.5;x*=1.-vig*dot(d,d)*2.2;`;
+    vec2 d=vUv-.5;x*=1.-vig*(1.-.5*night)*dot(d,d)*2.2;/* [ENV] the photo's night is lighter at the edges (sky, fog): half the vignette at night */`;
  env.gradePass=new ShaderPass({uniforms:{tDiffuse:{value:null},sat:{value:1.22},satW:{value:1.22},con:{value:1.08},lift:{value:new THREE.Color(0x0c1e36)},warm:{value:new THREE.Color(0xFFE2A8)},vig:{value:.32},night:{value:1},morn:{value:0},gOn:{value:1}},
   vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
   fragmentShader:`uniform sampler2D tDiffuse;uniform float sat,satW,con,vig,night,morn;uniform vec3 lift,warm;varying vec2 vUv;
