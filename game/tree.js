@@ -307,6 +307,75 @@ export function buildTree(THREE, o) {
       if (y < rf.yb - 1.2 || !wood(x, y, z)) continue;
       const w = Math.min(1, (y - (rf.yb - 1.2)) / 1.0); P[i + 1] = y + at(x, z) * w; }
   }
+  // ---------- long roots (photo / trunk thread: the model's roots read as faceted slabs; the photo's are long, round and
+  // sinuous, arching out of the ground and spreading wide). Round tubes, flattened a little, tapering to a tip that dives
+  // into the ground; part of the bark mesh (no new draw call). Bark UVs come from the nearest model root vertex so the
+  // painted bark carries on. Kept off the walk to the woodpile, the ladder foot, the pond and the hollow's door.
+  if (o.model && o.longRoots !== false && P.length) {
+    { /* the model's own roots past the flare (long faceted slabs) go: the tubes are the roots now */ const keep = [], far = i => Math.hypot(P[i * 3] - AX, P[i * 3 + 2] - AZ) > (o.rootCut ?? 3.6) && P[i * 3 + 1] < 1.5;
+      for (let t = 0; t < I.length; t += 3) { if (far(I[t]) && far(I[t + 1]) && far(I[t + 2])) continue; keep.push(I[t], I[t + 1], I[t + 2]); } I.length = 0; for (const q of keep) I.push(q); }
+    let rS = 4241; const rr = (a, b) => { rS = (rS * 16807) % 2147483647; return a + (b - a) * (rS / 2147483647); };
+    const MOBR = MOB(o), SEG = MOBR ? 18 : 28, RING = MOBR ? 8 : 12;
+    const pa = o.rootPath || [-4.9, 0.6, 3.5, 5.5], inPath = (x, z) => x > pa[0] - 0.4 && x < pa[1] + 0.4 && z > pa[2] - 0.4 && z < pa[3] + 0.4;
+    const pond = o.pond || [-1.4, 7.6, 2.2], nearPond = (x, z) => Math.hypot(x - pond[0], z - pond[1]) < pond[2];
+    // UV donors: model vertices low on the trunk and on its roots
+    const don = []; for (let i = 0; i < P.length; i += 3) { const y = P[i + 1], d = Math.hypot(P[i] - AX, P[i + 2] - AZ); if (y > 0.9 && y < 2.6 && d > 1.4 && d < 3.4) don.push(i); /* clean bark up the flare: lower down the model's paint fades to soil */ }
+    const roots = o.longRootList || [[0.2, 6.8], [0.55, 6.2], [1.25, 4.6], [-0.4, 7.2], [-0.95, 6.0], [3.05, 7.2], [3.55, 6.4], [2.45, 5.6], [4.3, 5.8]]; // [angle, length]
+    for (const [an0, len] of roots) {
+      if (Math.abs(angDiff(an0, doorAng)) < 0.35) continue;
+      const tw = rr(-1, 1), wig = rr(0.5, 0.9), ph = rr(0, 6.28), r0 = rr(0.44, 0.54), d0 = 2.1, base = P.length / 3; const path = [];
+      for (let k = 0; k <= SEG; k++) { const t = k / SEG, an = an0 + tw * 0.25 * t + wig * 0.12 * Math.sin(t * 7 + ph) * t, d = d0 + len * t;
+        const x = AX + Math.cos(an) * d, z = AZ + Math.sin(an) * d; if (k > 2 && (inPath(x, z) || nearPond(x, z))) break;
+        const r = r0 * Math.pow(1 - t, 0.7) + 0.07, yc = 0.8 * (1 - t) * (1 - t) + 0.34 * Math.sin(Math.PI * Math.min(1, t * 1.15)) + 0.07 * Math.sin(t * 9 + ph) - r * 0.3 - 0.2 * t * t;
+        path.push([x, yc, z, r, an, t]); }
+      if (path.length < 6) continue;
+      for (let k = 0; k < path.length; k++) { const [x, yc, z, r, an] = path[k], q = path[Math.min(path.length - 1, k + 1)], pq = path[Math.max(0, k - 1)];
+        let tx = q[0] - pq[0], ty = q[1] - pq[1], tz = q[2] - pq[2]; const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+        let sx = -tz, sz = tx; const sl = Math.hypot(sx, sz) || 1; sx /= sl; sz /= sl; // sideways (horizontal)
+        // one bark donor per ring (the model's atlas is islands: per-vertex donors spread a triangle across the whole atlas = mud)
+        let bi = 0, bd = 1e9; for (let m = 0; m < don.length; m += 3) { const di = don[m], dd = (P[di] - x) ** 2 + (P[di + 1] - yc - r) ** 2 + (P[di + 2] - z) ** 2; if (dd < bd) { bd = dd; bi = di / 3; } }
+        for (let j = 0; j < RING; j++) { const a = j / RING * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), wob = 1 + 0.08 * Math.sin(a * 3 + k * 0.7 + an * 5);
+          const px = x + sx * ca * r * 1.12 * wob, py = yc + sa * r * 0.98 * wob, pz = z + sz * ca * r * 1.12 * wob; P.push(px, py, pz); G.push(0);
+          UV.push(UV[bi * 2] + 0.0015 * Math.sin(a), UV[bi * 2 + 1] + 0.0015 * Math.cos(a)); } }
+      for (let k = 0; k < path.length - 1; k++) for (let j = 0; j < RING; j++) { const a = base + k * RING + j, b = base + k * RING + (j + 1) % RING, c = a + RING, d = b + RING; I.push(a, c, b, b, c, d); }
+      { const tip = P.length / 3, last = path[path.length - 1]; P.push(last[0] + Math.cos(last[4]) * 0.3, last[1] - 0.1, last[2] + Math.sin(last[4]) * 0.3); G.push(0); UV.push(UV[(base + (path.length - 1) * RING) * 2], UV[(base + (path.length - 1) * RING) * 2 + 1]);
+        for (let j = 0; j < RING; j++) { const a = base + (path.length - 1) * RING + j, b = base + (path.length - 1) * RING + (j + 1) % RING; I.push(a, tip, b); } }
+    }
+  }
+  // ---------- smooth limbs (critic / trunk thread: up close the big limbs were faceted, flat faces and hard kinks at the
+  // forks; the photo's are round and flowing). Long limb edges are split (positions linear, so nothing moves yet), then a
+  // Taubin smooth (shrink-free) rounds the faces and forks. Coincident vertices (UV seams) are welded for it, so no cracks.
+  // Only away from the trunk's foot and the hollow; the room-avoid push below runs after, so the house stays clear.
+  if (o.model && o.smoothLimbs !== false && P.length) {
+    const MOBL = MOB(o), Lm = MOBL ? 0.7 : 0.38, nPass = MOBL ? 1 : 2;
+    const limbW = (x, y, z) => { const d = Math.hypot(x - AX, z - AZ); return Math.min(1, Math.max(0, (y - 2.6) / 1.2)) * Math.min(1, Math.max(0, (d - 1.2) / 1.0)); };
+    for (let pass = 0; pass < nPass; pass++) {
+      const mid = new Map(), out = [];
+      const split = (a, b) => { const k = a < b ? a * 4194304 + b : b * 4194304 + a; let m = mid.get(k); if (m !== undefined) return m;
+        const ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2], bx = P[b * 3], by = P[b * 3 + 1], bz = P[b * 3 + 2], mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2;
+        if (Math.hypot(ax - bx, ay - by, az - bz) < Lm || limbW(mx, my, mz) <= 0) { mid.set(k, -1); return -1; }
+        m = P.length / 3; P.push(mx, my, mz); UV.push((UV[a * 2] + UV[b * 2]) / 2, (UV[a * 2 + 1] + UV[b * 2 + 1]) / 2); G.push((G[a] + G[b]) / 2); mid.set(k, m); return m; };
+      for (let t = 0; t < I.length; t += 3) { const v = [I[t], I[t + 1], I[t + 2]], m = [split(v[0], v[1]), split(v[1], v[2]), split(v[2], v[0])], n = (m[0] >= 0) + (m[1] >= 0) + (m[2] >= 0);
+        if (!n) { out.push(v[0], v[1], v[2]); continue; }
+        if (n === 3) { out.push(v[0], m[0], m[2], m[0], v[1], m[1], m[2], m[1], v[2], m[0], m[1], m[2]); continue; }
+        const r = m[0] >= 0 && (n === 1 || m[2] < 0) ? 0 : m[1] >= 0 && (n === 1 || m[0] < 0) ? 1 : 2;
+        const A = v[r], B = v[(r + 1) % 3], C = v[(r + 2) % 3], mAB = m[r], mBC = m[(r + 1) % 3];
+        if (n === 1) out.push(A, mAB, C, mAB, B, C); else out.push(A, mAB, C, mAB, B, mBC, mAB, mBC, C); }
+      I.length = 0; for (const q of out) I.push(q);
+    }
+    const nv = P.length / 3, rep = new Int32Array(nv), wm = new Map();
+    for (let i = 0; i < nv; i++) { const k = Math.round(P[i * 3] * 2e3) + ',' + Math.round(P[i * 3 + 1] * 2e3) + ',' + Math.round(P[i * 3 + 2] * 2e3); const j = wm.get(k); if (j === undefined) { wm.set(k, i); rep[i] = i; } else rep[i] = j; }
+    const adj = new Map(), link = (a, b) => { let s = adj.get(a); if (!s) adj.set(a, s = new Set()); s.add(b); };
+    for (let t = 0; t < I.length; t += 3) { const a = rep[I[t]], b = rep[I[t + 1]], c = rep[I[t + 2]]; link(a, b); link(b, a); link(b, c); link(c, b); link(c, a); link(a, c); }
+    const W = new Float32Array(nv); for (const i of adj.keys()) W[i] = limbW(P[i * 3], P[i * 3 + 1], P[i * 3 + 2]);
+    const Q = new Float32Array(P);
+    for (let it = 0; it < (o.limbSmoothIt ?? 8); it++) for (const lam of [0.5, -0.53]) {
+      const D = new Float32Array(nv * 3);
+      for (const [i, s] of adj) { if (W[i] <= 0) continue; let x = 0, y = 0, z = 0; for (const j of s) { x += Q[j * 3]; y += Q[j * 3 + 1]; z += Q[j * 3 + 2]; } const n = s.size;
+        D[i * 3] = (x / n - Q[i * 3]) * lam * W[i]; D[i * 3 + 1] = (y / n - Q[i * 3 + 1]) * lam * W[i]; D[i * 3 + 2] = (z / n - Q[i * 3 + 2]) * lam * W[i]; }
+      for (const i of adj.keys()) { Q[i * 3] += D[i * 3]; Q[i * 3 + 1] += D[i * 3 + 1]; Q[i * 3 + 2] += D[i * 3 + 2]; } }
+    for (let i = 0; i < nv; i++) { const r = rep[i]; P[i * 3] = Q[r * 3]; P[i * 3 + 1] = Q[r * 3 + 1]; P[i * 3 + 2] = Q[r * 3 + 2]; }
+  }
   // the model's limbs are big triangles: a vertex pushed out of a room drags long faces that still cut across it (a limb lay
   // diagonally through the bedroom behind the bunk, in front of the back wall). Split the faces near a room first, so the
   // pushed surface folds round the room's sides instead of cutting through it.

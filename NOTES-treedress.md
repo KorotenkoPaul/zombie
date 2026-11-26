@@ -203,3 +203,9 @@ Debug: `__treedress.stats()`.
 - Threshold board lies flat (8 cm x 24 cm) instead of on edge (a 12 cm bar slanting across the doorway).
 - Joints: board ends vs bark checked by raycast and shots; no floating joints (room floors stop at their own back walls by design).
 - Anim gate (tests/anim/gate.js) did not finish within 25 min in this container; not run to completion.
+
+## Round 29: roots where the hero walks
+- Grass through bark: a raycast check of every tuft (base / middle / tip inside the bark?) found ~30 tufts and ferns whose blades fanned into a root or the trunk's bulging foot. Ground (ground.js `nearRootWall`, after every R() draw) and treedress (fern fronds checked along their own 7 directions, tufts in 8) now drop those. Ground got `G._wallAt` (wood surface up to 1.8 m, same raster as barkTop). After: 0 piercing.
+- treedress placements use the ground as drawn (`gH`: Ground's meshH, then heightAt) instead of env's base groundH (missed the humps by up to ~15 cm).
+- Voids under roots: Ground's soil mounds already fill them; the remaining pockets under the trunk's flare are hidden from every normal view.
+- Steps: standAt sampled every 5 cm over the trodden path: one 6-18 cm step where a root crosses the path at x -3.3..-1.7, z 4.3..5.3 (reported, terrain not changed).
