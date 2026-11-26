@@ -293,7 +293,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // a shelter in the apocalypse: nobody leaves it in the dark (critic B1). Trips only set off 7:00-15:00, home well before dusk;
     // a hungry night is sat out at home (tea, the last of the supplies) and the hunt waits for the morning
     if (JOBS[n].task === 'trip' && (h < 7 || h > (n === 'hunt' ? 14.5 : 15))) return { name: n, s: -50, top };
-    if (n === 'hunt') { if (stock.meat >= 2 || (stock.meal && stock.meat)) s = -9;   /* one portion left and the fridge empty: tomorrow's meat is today's hunt */ if (!day && !(emergency && !raining())) s -= 3; else if (!day && !dawnDusk) s -= .4; }
+    // a full larder needs no hunt; a thin one does, hungry or not (props soak: 2 -> 1 -> 0 portions in 3 days and never a hunt,
+    // because the hunt only answered hunger and he was never hungry at hunting time): the fewer portions, the stronger the pull
+    if (n === 'hunt') { const prov = stock.meat + (stock.meal || 0) * .5;
+      if (stock.meat >= 2) s = -9; else s += prov <= .5 ? 1.6 : prov <= 1.5 ? .9 : .3;   /* one portion left and the fridge empty: tomorrow's meat is today's hunt */ if (!day && !(emergency && !raining())) s -= 3; else if (!day && !dawnDusk) s -= .4; }
     if (n === 'wood') { if (stock.logs > 2) s = -9; if (!day) s -= 3;
       // meat in the fridge but nothing to cook it on: the wood is the way to the meal (3-day watch: hungry all day, hunted twice, never cooked)
       else if (!stock.logs && stock.meat && !stock.meal) s += value({ hunger: .5 }).s; }
