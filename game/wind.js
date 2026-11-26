@@ -74,7 +74,7 @@ vec3 windRope(vec3 p,float t,float len){vec2 w=windSwayS(p,1.1)*.05*len*t*t*(1.-
 // ax = the trunk axis (x,z). Still near the trunk and the house; the far limbs and the top of the crown move a few cm,
 // ~15 cm in a strong gust. Leaf cards add the same offset at their centre, so they stay on their branch.
 vec3 windBranch(vec3 p,vec2 ax){float d=length(p.xz-ax);float a=.09*max(smoothstep(5.5,10.,d),smoothstep(14.,19.,p.y));
- float s=windStrength(p);vec2 dd=uWind.xy,q=vec2(-dd.y,dd.x);float ph=uWT*.7-dot(p.xz,dd)*.12,sh=.1+.6*s;
+ vec2 dd=uWind.xy,q=vec2(-dd.y,dd.x);/* [ENV] heavy limbs lag a gust: they feel it as if ~6 m further downwind (~0.7 s late), the leaves at once */float s=windStrength(p+vec3(dd.x,0.,dd.y)*6.);float ph=uWT*.7-dot(p.xz,dd)*.12,sh=.1+.6*s;
  vec2 o=dd*(.4*s*s+sin(ph)*sh*.6)+q*sin(ph*1.37+1.)*sh*.3;return vec3(o.x,0.,o.y)*a;}
 vec3 windLocal(vec3 w){
 #ifdef USE_INSTANCING
@@ -100,7 +100,7 @@ vec2 waterSlope(vec3 p){float s=windStrength(p);vec2 d=uWind.xy;
 vec3 waterNormal(vec3 p){vec2 sl=waterSlope(p);return normalize(vec3(-sl.x,1.,-sl.y));}`;
 
 export function createWind(opt = {}) {
-  let seed = opt.seed || 9071;
+  let seed = opt.seed || (1 + Math.floor(Math.random() * 2147483645));   // [ENV] was a fixed 9071: every session had the very same weather (first rain always day 2, 15:00). The QA harness seeds Math.random, so tests stay repeatable
   const R = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const rr = (a, b) => a + R() * (b - a);
 
@@ -127,7 +127,7 @@ export function createWind(opt = {}) {
   // morning fog bank: on most mornings a light breeze carries a bank of mist in from the forest, it rolls through the
   // clearing along the wind and lifts as the sun comes up. fogBank = {front (m along dir), k 0..1}
   const fb = { front: -1e4, k: 0, on: false, tried: false };
-  let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(18, 54), rainKind = 'none', rainHr = null;
+  const cl = { k: 0, grey: 0, hr: null, day: -1 }; let rainOn = false, rainLeft = 0, rainWait = opt.firstRain ?? rr(3, 36), rainKind = 'none', rainHr = null;
   // three kinds of rain: a fine drizzle (light, long, no wind change), a proper rain, and a rare storm (windy, heavy,
   // distant thunder and lightning lighting up the fog)
   const RAIN = { drizzle: { p: 0.45, dur: [270, 630], amt: 0.35 }, rain: { p: 0.4, dur: [180, 450], amt: 0.75 }, storm: { p: 0.15, dur: [225, 500], amt: 1 } };   // real s (x1.5 for the 24-min day)
@@ -137,7 +137,7 @@ export function createWind(opt = {}) {
       rainKind = kind; rainLeft = rr(...RAIN[kind].dur);
       if (!forced) { if (kind === 'storm') { mode = 'windy'; target = rr(0.75, 0.95); spellLeft = rainLeft; nextStrike = rr(6, 20); }
         else if (kind === 'rain' && mode === 'calm') { mode = 'breeze'; target = rr(...MODES.breeze.base); spellLeft = rainLeft * 0.6; } } }
-    else { rainWait = rr(18, 54); rainKind = 'none'; }
+    else { rainWait = rr(14, 46); rainKind = 'none'; if (R() < 0.5) cl.grey = rr(1.5, 5); }   // [ENV] after a rain the sky often stays grey a while
     if (!quiet) emit('rain', { on, kind: rainKind });
   }
   // lightning: a storm strikes every 15-50 s, kilometres away. Each strike is two or three quick flickers (W.flash()),
@@ -147,8 +147,8 @@ export function createWind(opt = {}) {
     dist = dist ?? rr(1.5, 7); const k = Math.min(1, 2.2 / dist) * rr(0.7, 1);
     const n = 1 + Math.floor(R() * 3); let t = T; for (let i = 0; i < n; i++) { pulses.push([t, k * (i ? rr(0.4, 0.9) : 1)]); t += rr(0.06, 0.25); }
     const az = ang + Math.PI + rr(-1.2, 1.2);  // mostly upwind: the storm is coming
-    emit('lightning', { dist: dist * 1000, distKm: dist, strength: k, k, dir: [Math.cos(az), Math.sin(az)] });   // dist in metres (Sound)
-    thunders.push({ t: T + dist / 0.343, dist, loud: Math.min(1, 1.6 / dist), dir: [Math.cos(az), Math.sin(az)] });
+    emit('lightning', { dist: dist * 1000, distKm: dist, strength: k, k, dir: [Math.cos(az), Math.sin(az)] });   // dist in metres (Sound); [ENV] the thunder event (hero flinch, brain) at the same min(12 s, dist/343) as audio.js plays the rumble: it came up to 8 s (storm) / 29 s (far rumble) after the sound
+    thunders.push({ t: T + Math.min(12, dist / 0.343), dist, loud: Math.min(1, 1.6 / dist), dir: [Math.cos(az), Math.sin(az)] });
   }
   // calm, still evenings: once the sun is down the wind usually settles (unless it rains)
   let hourNow = null, eveDone = -1, dayN = 0, lastHr = null;
@@ -198,18 +198,23 @@ export function createWind(opt = {}) {
         if (!dawn) fb.tried = false;
         if (dawn && !fb.on && !fb.tried && hour < 6.4) { fb.tried = true;
           if (R() < 0.6 + 0.35 * U.uWet.value) { /* most mornings, nearly always after a wet night */ fb.on = true; fb.front = -SPAN; if (mode === 'calm' && !forced) { mode = 'breeze'; target = rr(0.25, 0.4); spellLeft = rr(90, 160); } emit('fogbank', { on: true }); } }
-        if (fb.on) { fb.front += dt * (0.35 + base * 0.6); fb.k += ((hour < 7.6 ? 1 : 0) - fb.k) * Math.min(1, dt / (hour < 7.6 ? 20 : 40));
-          if (hour >= 9 || (hour > 7.6 && fb.k < 0.02)) { fb.on = false; fb.k = 0; fb.front = -1e4; emit('fogbank', { on: false }); } }
+        if (fb.on) { fb.front += dt * (0.35 + base * 0.6); fb.k += ((hour < 7.3 ? 1 : 0) - fb.k) * Math.min(1, dt / (hour < 7.3 ? 20 : 26));   // [ENV] burns off from 7.3 h, mostly gone by ~8.2 (it lingered as a milky veil past 8.5 h)
+          if (hour >= 9 || (hour > 7.3 && fb.k < 0.02)) { fb.on = false; fb.k = 0; fb.front = -1e4; emit('fogbank', { on: false }); } }
         U.uFogBank.value.set ? U.uFogBank.value.set(fb.front, fb.k) : (U.uFogBank.value[0] = fb.front, U.uFogBank.value[1] = fb.k);
       }
       if (hour != null) { if (lastHr != null && hour < lastHr - 12) dayN++; lastHr = hour; hourNow = hour;
         // the evening settles: soon after sunset the current spell gives way (mostly to calm, see pickNext)
         if (evening() && eveDone !== dayN && !rainOn && !forced) { eveDone = dayN; spellLeft = Math.min(spellLeft, rr(8, 30)); } }
+      // [ENV] cloud cover 0..1: the sky clouds over in the last ~2 game hours before a rain, clears slowly after it, and
+      // some dry spells are simply overcast (after a rain, or a grey day from the morning)
+      if (hour != null) { const h0 = cl.hr ?? hour; let dh = hour - h0; if (dh < -12) dh += 24; if (dh < 0 || dh > 2) dh = 0; cl.hr = hour; cl.grey -= dh;
+        if (hour >= 6 && hour < 7 && cl.day !== dayN) { cl.day = dayN; if (R() < 0.28) cl.grey = rr(3, 9); } }
+      { const want = rainOn ? 1 : Math.max(Math.min(1, Math.max(0, 1 - rainWait / 2)) * 0.9, cl.grey > 0 ? 0.75 : 0); cl.k += (want - cl.k) * Math.min(1, dt / (want > cl.k ? 45 : 70)); }
       // rain spells
       if (rainOn) { rainLeft -= dt; if (rainLeft <= 0) setRain(false); } else { /* game hours: from the clock when index gives it, else the old 20 s per hour */ let dh = dt / 20; if (hour != null) { dh = rainHr == null ? 0 : hour - rainHr; if (dh < -12) dh += 24; if (dh < 0 || dh > 2) dh = 0; rainHr = hour; } rainWait -= dh; if (rainWait <= 0) setRain(true); }
       // lightning and thunder
       if (rainOn && rainKind === 'storm') { nextStrike -= dt; if (nextStrike <= 0) { strike(); nextStrike = rr(15, 50); } }
-      else if (rainOn && rainKind === 'rain') { rumbleWait -= dt; if (rumbleWait <= 0) { rumbleWait = rr(120, 300); if (R() < 0.35) { const d = rr(8, 14); emit('lightning', { dist: d * 1000, distKm: d, strength: 0.1, k: 0, dir: [-Math.cos(ang), -Math.sin(ang)], unseen: true }); thunders.push({ t: T + d / 0.343, dist: d, loud: 0.15, dir: [-Math.cos(ang), -Math.sin(ang)] }); } } }
+      else if (rainOn && rainKind === 'rain') { rumbleWait -= dt; if (rumbleWait <= 0) { rumbleWait = rr(120, 300); if (R() < 0.35) { const d = rr(8, 14); emit('lightning', { dist: d * 1000, distKm: d, strength: 0.1, k: 0, dir: [-Math.cos(ang), -Math.sin(ang)], unseen: true }); thunders.push({ t: T + Math.min(12, d / 0.343), dist: d, loud: 0.15, dir: [-Math.cos(ang), -Math.sin(ang)] }); } } }
       for (let i = thunders.length - 1; i >= 0; i--) if (T >= thunders[i].t) { const th = thunders.splice(i, 1)[0]; lastThunder = T; emit('thunder', { dist: th.dist * 1000, distKm: th.dist, loud: th.loud, dir: th.dir }); }
       flashV = 0; for (let i = pulses.length - 1; i >= 0; i--) { const a = T - pulses[i][0]; if (a < 0) continue; if (a > 0.6) { pulses.splice(i, 1); continue; } flashV += pulses[i][1] * Math.exp(-a * 14); }
       flashV = Math.min(1, flashV);
@@ -277,6 +282,7 @@ export function createWind(opt = {}) {
     setRain(on, kind) { setRain(!!on, false, kind); },
     // how hard it rains now (index.html eases rainK towards this): 0, drizzle .35, rain .75, storm 1
     rainAmt() { return rainOn ? RAIN[rainKind].amt : 0; },
+    cloud() { return cl.k; }, setGrey(h = 4, snap = true) { cl.grey = +h || 0; if (snap) cl.k = cl.grey > 0 ? Math.max(cl.k, 0.75) : (rainOn ? cl.k : 0); },   // [ENV] cloud 0 clear .. 1 fully overcast (rain), eased; setGrey(h, snap): a dry grey (overcast) spell for h game hours from now (0 clears it), for tests and the debug panel
     rainKind() { return rainKind; },
     // lightning flash 0..1 right now (W.applyFlash lights the scene with it); strike(distKm) for tests
     flash() { return flashV; },
@@ -286,17 +292,20 @@ export function createWind(opt = {}) {
     applyFlash({ hemi, fog, sky, fogMats } = {}) {
       const f = flashV; if (f < 0.002) return;
       const c = W._fc || (W._fc = fog && fog.color.clone());
-      if (fog) { c.setRGB(0.72, 0.78, 0.92); fog.color.lerp(c, f * 0.55); }
-      if (hemi) hemi.intensity += f * 1.4;
+      if (fog) { c.setRGB(0.72, 0.78, 0.92); fog.color.lerp(c, f * 0.3); }
+      if (hemi) hemi.intensity += f * 1.0;   // [ENV] less flat wash (was fog .55, hemi 1.4: a milky grey frame); index.html adds the hard shadowed key light and lights the clouds
       if (sky && sky.hor) sky.hor.value.lerp(c, f * 0.6);
       if (fogMats) { const seen = new Set(); for (const m of fogMats) { const u = m.material && m.material.uniforms; const cv = u && u.col && u.col.value;
-        if (cv && cv.lerp && !seen.has(cv)) { seen.add(cv); cv.lerp(c, f * 0.6); } } }
+        if (cv && cv.lerp && !seen.has(cv)) { seen.add(cv); cv.lerp(c, f * 0.38); } } }
     },
     emit(k, e) { emit(k, e); },   // other wind-thread modules (housewind.js) raise events here too
     on(k, f) { (LS[k] = LS[k] || []).push(f); return () => { LS[k] = LS[k].filter(x => x !== f); }; },
     state() { return { mode: forced || mode, base: +base.toFixed(3), dir: [+Math.cos(ang).toFixed(3), +Math.sin(ang).toFixed(3)], gust: gust ? { front: +gust.front.toFixed(1), amp: +gust.amp.toFixed(2) } : null, spellLeft: +spellLeft.toFixed(0) }; },
     set(m) { if (m === 'auto') { forced = null; spellLeft = 0; return; } if (!MODES[m]) return; forced = m; mode = m; target = rr(...MODES[m].base); },
-    gust(amp) { startGust(amp); },
+    // [ENV] gust(amp) starts a gust; gust() with no argument only READS how windy it is (0..1). Brain and housewear call
+    // w.gust() as a getter every frame, which restarted the gust at the edge each frame: gusts never reached the tree.
+    gust(amp) { if (amp === undefined) return W.strength(); startGust(amp); },
+    strength() { return Math.max(0, Math.min(1, W.level() / 1.5)); },
 
     // a small tiling noise texture (fbm baked once): one or two texture reads instead of 4-5 octaves of procedural
     // noise per pixel. Shared by the fog layers (fogbank.js; Environment may use it too): __wind.noiseTexture(THREE)
@@ -334,10 +343,10 @@ export function createWind(opt = {}) {
         const px = Math.sin(t) * 13 * r * (0.75 + 0.25 * Math.cos(t)), py = -Math.cos(t) * 26; i ? x.lineTo(px, py) : x.moveTo(px, py); }
       x.fill(); x.strokeStyle = 'rgba(90,70,40,.55)'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(0, 30); x.lineTo(0, -24); x.stroke();
       const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-      const geo = new THREE.PlaneGeometry(0.09, 0.11);
+      const geo = new THREE.PlaneGeometry(0.17, 0.21);   // [ENV] was 9x11 cm: from the home view (~35 m) a falling leaf was 1-2 px, never seen; now about the size of the oak's own leaves
       const mat = new THREE.MeshStandardMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.85 });
       const im = new THREE.InstancedMesh(geo, mat, N); im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      const cols = [0x6E8A3A, 0x8C9A3C, 0xB49A3A, 0xA8742E, 0x7A5A2E];
+      const cols = [0xC8902C, 0xD8A838, 0xB86A26, 0xA8742E, 0x8C9A3C, 0xC0502A]; /* autumn: orange, gold, rust, one green in six */
       const c = new THREE.Color(); for (let i = 0; i < N; i++) im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.8, 1.1)));
       o.scene.add(im); im.matrixAutoUpdate = false;   // per-instance matrices move, the mesh itself never does
       // spawn points: the leaf cards of the crown (their centres)
@@ -358,7 +367,7 @@ export function createWind(opt = {}) {
       let cap = N;
       fall = dt => {
         const s0 = W.level();
-        acc += dt * (0.12 + 0.8 * s0 * s0);                     // a few leaves are always in the air; more as the wind grows
+        acc += dt * (0.2 + 0.8 * s0 * s0);   // [ENV] calm autumn: a leaf about every 5 s (was 8)                     // a few leaves are always in the air; more as the wind grows
         // a gust reaching the crown shakes a handful loose at once
         { const g = W.gustAt(0, 0); if (!gIn && g > 0.2) { gIn = true; acc += 2 + Math.min(5, g * 5); } else if (gIn && g < 0.08) gIn = false; }
         while (acc >= 1) { acc -= 1; if (L.reduce((n, l) => n + (l.on ? 1 : 0), 0) >= cap) { acc = 0; break; } const l = L.find(l => !l.on); if (!l) break;
@@ -391,7 +400,7 @@ export function createWind(opt = {}) {
             if (wh != null && wh > g - 0.015 && p[1] <= wh + 0.01) { p[1] = wh; l.water = wh; l.rest = 0.001; l.life = rr(50, 90); l.r[0] = -Math.PI / 2; l.r[1] = 0; }
             else if (p[1] <= g) { p[1] = g; l.rest = 0.001; l.built = g > gH(p[0], p[2]) + 0.5; if (l.built) l.life = Math.max(l.life, rr(12, 30)); l.r[0] = -Math.PI / 2 + rr(-0.2, 0.2); l.r[1] = 0; }
             // never through a room: a leaf that drifts into one is gone (the roof hides it)
-            if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5])) { l.on = false; im.setMatrixAt(i, zero); continue; }
+            if (rooms.some(b => p[0] > b[0] && p[0] < b[1] && p[1] > b[2] - 0.35 && p[1] < b[3] + 0.6 && p[2] > b[4] && p[2] < b[5]))/* [ENV] down to the floor boards too: none settles on a rug */ { l.on = false; im.setMatrixAt(i, zero); continue; }
             if (Math.abs(p[0]) > 60 || Math.abs(p[2]) > 60) { l.on = false; im.setMatrixAt(i, zero); continue; }
           }
           q.setFromEuler(e.set(l.r[0], l.r[1], l.r[2])); m4.compose(v.set(p[0], p[1], p[2]), q, sc.setScalar(l.k)); im.setMatrixAt(i, m4);
@@ -418,7 +427,7 @@ export function createWind(opt = {}) {
     const im = new THREE.InstancedMesh(geo, mat, LN); im.frustumCulled = false; im.name = 'leafLitter';
     const P = new Float32Array(LN * 3), on = new Uint8Array(LN); let n = 0, head = 0, dirty = false, seeded = false, seedT = 0, sweepT = 0;
     const zero = new THREE.Matrix4().makeScale(0, 0, 0), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
-    const cols = [0x8A5A26, 0xA0682A, 0x7A4E22, 0xB0823A, 0x6E5A2C, 0x94602C], c = new THREE.Color();
+    const cols = [0xA8682A, 0xC0802E, 0x8A5426, 0xC89A3A, 0xB0582A, 0x94602C], c = new THREE.Color(); /* autumn: orange-gold */
     for (let i = 0; i < LN; i++) { im.setMatrixAt(i, zero); im.setColorAt(i, c.setHex(cols[i % cols.length]).multiplyScalar(rr(0.7, 1.0))); }
     o.scene.add(im); im.matrixAutoUpdate = false;
     const put = (i, x, y, z, yaw) => {
@@ -426,7 +435,9 @@ export function createWind(opt = {}) {
       // flat on the boards with a little curl (a dry oak leaf never lies dead flat), random turn and size
       q.setFromEuler(e.set(-Math.PI / 2 + rr(-0.25, 0.25), rr(-0.2, 0.2), yaw)); m4.compose(v.set(x, y + 0.006, z), q, sc.setScalar(rr(1.0, 1.5))); im.setMatrixAt(i, m4); dirty = true; };
     const kill = i => { if (!on[i]) return; on[i] = 0; n--; im.setMatrixAt(i, zero); dirty = true; };
-    const add = (p, yaw) => { let i = -1; for (let k = 0; k < LN; k++) { const j = (head + k) % LN; if (!on[j]) { i = j; break; } }
+    // [ENV] never inside a room (the open cutaway side let them settle on the bedroom rug as flat brown blots)
+    const rooms = o.avoid || [], inRoom = (x, y, z) => rooms.some(b => x > b[0] && x < b[1] && y > b[2] - 0.35 && y < b[3] + 0.6 && z > b[4] && z < b[5]);
+    const add = (p, yaw) => { if (inRoom(p[0], p[1], p[2])) return false; let i = -1; for (let k = 0; k < LN; k++) { const j = (head + k) % LN; if (!on[j]) { i = j; break; } }
       if (i < 0) { i = head; on[i] = 0; n--; }                         // full: the oldest goes
       head = (i + 1) % LN; n++; put(i, p[0], p[1], p[2], yaw); return true; };
     // a little litter to start with, where leaves would really be: under the crown, on top surfaces well above the ground
@@ -478,7 +489,7 @@ export function createWind(opt = {}) {
       const st = rainOn ? rainKind : fb.k > 0.25 ? 'mist' : (forced || mode) === 'calm' ? 'calm' : 'clear';
       return { state: st, intensity: +(rainOn ? amt : st === 'mist' ? fb.k : Math.min(1, lv)).toFixed(2), wind: forced || mode, windLevel: +lv.toFixed(2), gust: gustIn, rain: rainKind, rainAmt: amt, wet: +wet.toFixed(2),
         mist: +fb.k.toFixed(2), storm: rainOn && rainKind === 'storm', stillEvening: evening() && mode === 'calm' && !rainOn,
-        sinceThunder: Math.min(9999, +(T - lastThunder).toFixed(1)), temp: +temp.toFixed(1), feels: +feels.toFixed(1), cold: feels < 6 };
+        sinceThunder: Math.min(9999, +(T - lastThunder).toFixed(1)), cloud: +cl.k.toFixed(2), overcast: !rainOn && cl.k > 0.5, temp: +temp.toFixed(1), feels: +feels.toFixed(1), cold: feels < 6 };
     },
     on: (k, f) => W.on(k, f), setRain: (on, kind) => W.setRain(on, kind), strike: d => W.strike(d), set: m => W.set(m)
   };

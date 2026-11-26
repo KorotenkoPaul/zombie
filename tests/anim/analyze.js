@@ -14,12 +14,13 @@ const LIMITS={
  slideCm:2.5,      // planted foot drifting more than this during one contact
  jitterMm:1.5,     // RMS of the high-frequency part of a joint path while seated / idle
  jitterHz:5,       // ... and it must oscillate (direction reversals) at least this often
+ jitterWorkMm:6,   // above this RMS a working hand is doing strokes (scrub/stir/saw), not shaking
  turnRateDeg:240,  // heading change of the walking direction per second
  crabDeg:40,       // body facing vs walking direction
  detour:1.35,      // walked length / straight distance for one walk
  // tempo: normal adult values (indoor walking 1.0-1.4 m/s, cadence 1.6-2.0 steps/s; sit down / stand up 1.0-1.8 s;
  // ladder 0.3-0.5 m/s vertical; turning on the spot 180-360 deg/s)
- walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:70,ankleUp:30,ankleDown:55,toeBend:70,footRoll:30,touchCm:5,gripCm:3.5,propBodyCm:3,supportCm:3,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
+ walkMin:.85,stayMin:20,neckYaw:60,headTilt:70,headHips:70,ankleUp:30,ankleDown:55,ankleMinAbs:30,ankleSnap:30,toeBend:70,footRoll:30,touchCm:5,gripCm:3.5,propBodyCm:3,supportCm:3,accelMax:.9,decelMax:.9,pauseMax:.6,cadenceMin:1.5,sitMax:2.0,ladderMin:.25,clipScaleMin:.8,
 };
 const BI={};['Hips','Spine2','Neck','Head','HeadTop_End','LeftUpLeg','LeftLeg','LeftFoot','LeftToeBase','LeftToe_End','RightUpLeg','RightLeg','RightFoot','RightToeBase','RightToe_End','LeftArm','LeftForeArm','LeftHand','RightArm','RightForeArm','RightHand'].forEach((n,i)=>BI[n]=i);
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],len=a=>Math.hypot(a[0],a[1],a[2]),dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
@@ -37,7 +38,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  const M=F.map((f,i)=>{const hip=bone(f,'Hips'),head=bone(f,'HeadTop_End');const up=qrot(f.hq,[0,1,0]),right=qrot(f.hq,[1,0,0]);const m={};
   for(const s of ['Left','Right']){const U=bone(f,s+'UpLeg'),K=bone(f,s+'Leg'),A=bone(f,s+'Foot'),Tt=bone(f,s+'ToeBase');const th=sub(K,U),sh=sub(A,K);
    const sl=dot(sh,sh)||1e-9,pp=v=>sub(v,sh.map(x=>x*dot(v,sh)/sl)),o=pp(sub(U,K)),t=pp(sub(Tt,A));// a real knee: the hip sits on the calf side of the shin, the toes on the shin side (both measured perpendicular to the shin). No bone axes, facing or mirroring involved; holds for deep folds
-   m[s]={knee:180-ang(th,sh),bend:-dot(o,t)/((len(o)*len(t))+1e-9)*Math.min(1,len(t)/.03),footUp:dot(sub(A,U),up),footHead:Math.min(len(sub(A,head)),len(sub(Tt,head)))};}
+   m[s]={knee:180-ang(th,sh),bend:-dot(o,t)/((len(o)*len(t))+1e-9)*Math.min(1,len(t)/.03),footUp:dot(sub(A,U),up),footHead:Math.min(len(sub(A,head)),len(sub(Tt,head))),ank:ang(sh,sub(Tt,A))};}
   return m;});
  // calibrate the natural knee-bend direction from walking frames
  let sgn=0;F.forEach((f,i)=>{if(f.fl.includes('P'))for(const s of ['Left','Right'])if(M[i][s].knee<160)sgn+=Math.sign(M[i][s].bend);});const sgnWalk=Math.sign(sgn)||1;sgn=1;// geometric (hip vs toes around the shin), no calibration; sgnWalk only reported
@@ -59,7 +60,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   F.forEach((f,i)=>{const d=f.dp;if(!d){if(ev&&i-ev.i1>18)flush();return;}const [nm,g,cm]=d;if(ev&&(ev.nm!==nm||ev.g!==g)&&i-ev.i1>18)flush();if(ev&&ev.nm===nm&&ev.g===g){ev.i1=i;if(cm>ev.cm){ev.cm=cm;ev.ip=i;}}else{flush();ev={nm,g,cm,i0:i,i1:i,ip:i};}});flush();}
  // ---- 2. jumps (second difference spikes) ----
  const J=['Hips','Head','HeadTop_End','LeftHand','RightHand','LeftFoot','RightFoot','LeftLeg','RightLeg'];
- for(let i=2;i<F.length;i++){if(F[i].tag!==F[i-1].tag)continue;
+ for(let i=2;i<F.length;i++){if(F[i].tag!==F[i-1].tag||F[i].f<30)continue;
   for(const n of J){const a=bone(F[i],n),b=bone(F[i-1],n),c=bone(F[i-2],n);const d2=len([a[0]-2*b[0]+c[0],a[1]-2*b[1]+c[1],a[2]-2*b[2]+c[2]])*100;
    if(d2>lim.jumpCm)add('jump',i,{bone:n,value:+d2.toFixed(1),unit:'cm/frame²',limit:lim.jumpCm,step:+(len(sub(a,b))*100).toFixed(1)});}
   const r2=len([F[i].root[0]-2*F[i-1].root[0]+F[i-2].root[0],F[i].root[1]-2*F[i-1].root[1]+F[i-2].root[1],F[i].root[2]-2*F[i-1].root[2]+F[i-2].root[2]])*100;
@@ -71,8 +72,11 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   if(m.knee<lim.kneeMin)add('joint',i,{bone:s+'Leg',value:+m.knee.toFixed(0),unit:'deg knee',limit:lim.kneeMin,what:'knee folded too far'});
   // deep squats (interior < 60 deg) make the side test ill-conditioned: there only a flat fold counts (Pose: interior < 20 deg or ankle within 10 cm of the hip)
   {const U=bone(F[i],s+'UpLeg'),A=bone(F[i],s+'Foot');const ah=len(sub(A,U))*100;if(m.knee<20||ah<10)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg folded flat',limit:160,what:'leg folded flat (knee interior '+m.knee.toFixed(0)+' deg, ankle '+ah.toFixed(0)+' cm from the hip)'});}
-  if(m.knee>=60&&m.knee<150&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
-  if(m.footHead<lim.footHeadM&&!f.fl.includes('B'))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
+  /* a foot pointed in line with the shin (ankle < 35 deg) leaves the toe-side test without a side: that is the ankle's fault, reported in section 10 */
+  if(m.knee>=60&&m.knee<150&&m.ank>=35&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
+  /* seated with that foot planted on the floor and the head bowed toward it (pulling a vest off) is not a leg up by the head: the posture check judges the bow */
+  const footDown=f.fl.includes('S')&&f.gnd&&f.gnd[s==='Left'?0:2]!=null&&bone(f,s+'Foot')[1]-f.gnd[s==='Left'?0:2]<.3&&m.footHead>.35;
+  if(m.footHead<lim.footHeadM&&!f.fl.includes('B')&&!footDown&&!(f.fl.includes('S')&&/boots?(off|on)/i.test(f.clip)&&m.footHead>.35))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
   if(m.footUp>lim.footUpM)add('joint',i,{bone:s+'Foot',value:+(m.footUp*100).toFixed(0),unit:'cm along body above hip',limit:lim.footUpM*100,what:'leg folded up past the hip'});}});
  // ---- 4. foot sliding while planted ----
  for(const [s,fi,ti,gi] of [['Left','LeftFoot','LeftToeBase',0],['Right','RightFoot','RightToeBase',2]]){let c=null;
@@ -82,14 +86,20 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    else if(c){if(i-c.i0>=6&&c.max*100>lim.slideCm)add('foot-slide',c.im,{bone:s+'Foot',value:+(c.max*100).toFixed(1),unit:'cm drift while planted',limit:lim.slideCm,dur:+((i-c.i0)*lim.dt).toFixed(2),from:F[c.i0].f,to:F[i-1].f});c=null;}}}
  // ---- 5. jitter while seated / idle / working in place ----
  const W=30;const JB=['HeadTop_End','LeftHand','RightHand','LeftFoot','RightFoot','LeftLeg','RightLeg'];
- for(let i0=0;i0+W<F.length;i0+=W){const seg=F.slice(i0,i0+W);if(seg.some(f=>f.fl.includes('P')||f.fl.includes('L')||f.fl.includes('W')||f.tag!==seg[0].tag))continue;
+ // sliding 30-frame windows (step 5), one issue per burst per bone: the verdict does not depend on where a burst falls against a fixed block grid
+ const JL={};// bone -> [issue, last window start]
+ for(let i0=0;i0+W<F.length;i0+=5){const seg=F.slice(i0,i0+W);if(seg.some(f=>f.fl.includes('P')||f.fl.includes('L')||f.fl.includes('W')||f.tag!==seg[0].tag))continue;
   const still=seg.every((f,k)=>k===0||len(sub(f.root,seg[k-1].root))<.002);if(!still)continue;
   for(const n of JB){let ss=0,c=0;for(let k=3;k<W-3;k++){const p=bone(seg[k],n);let m=[0,0,0];for(let j=-3;j<=3;j++){const q=bone(seg[k+j],n);m[0]+=q[0]/7;m[1]+=q[1]/7;m[2]+=q[2]/7;}const r=len(sub(p,m));ss+=r*r;c++;}
    const rms=Math.sqrt(ss/c)*1000;
    // real jitter oscillates: count direction reversals of the per-frame step (steps > 0.25 mm) on the main axis
    let rev=0;for(const ax of [0,1,2]){let prev=0,r=0;for(let k=1;k<W;k++){const d=bone(seg[k],n)[ax]-bone(seg[k-1],n)[ax];if(Math.abs(d)<.00025)continue;const sg=Math.sign(d);if(prev&&sg!==prev)r++;prev=sg;}rev=Math.max(rev,r);}
    const hz=rev/2/(W*lim.dt);
-   if(rms>lim.jitterMm&&hz>=lim.jitterHz)add('jitter',i0+W/2,{bone:n,value:+rms.toFixed(1),unit:'mm RMS (7-frame high-pass)',hz:+hz.toFixed(1),limit:lim.jitterMm,dur:W*lim.dt,from:seg[0].f,to:seg[W-1].f});}}
+   // a hand working a tool (scrub, stir, saw: cm-sized strokes at 5-10 Hz) is deliberate motion, not jitter; small shakes still count
+   const deliberate=/Hand/.test(n)&&seg[0].state==='work'&&rms>lim.jitterWorkMm;
+   if(rms>lim.jitterMm&&hz>=lim.jitterHz&&!deliberate){const L=JL[n];
+    if(L&&i0-L[1]<=W){L[1]=i0;L[0].to=seg[W-1].f;L[0].dur=+((L[0].to-L[0].from+1)*lim.dt).toFixed(2);if(rms>L[0].value){L[0].value=+rms.toFixed(1);L[0].hz=+hz.toFixed(1);}}
+    else{add('jitter',i0+W/2,{bone:n,value:+rms.toFixed(1),unit:'mm RMS (7-frame high-pass)',hz:+hz.toFixed(1),limit:lim.jitterMm,dur:W*lim.dt,from:seg[0].f,to:seg[W-1].f});JL[n]=[iss[iss.length-1],i0];}}}}
  // ---- 6. walks: sharp turns, crab-walking, detours ----
  const walks=[];let w=null;for(let i=1;i<F.length;i++){const mv=F[i].fl.includes('P')&&!F[i].fl.includes('L');if(mv&&!w)w={i0:i};if(!mv&&w){w.i1=i-1;walks.push(w);w=null;}}
  for(const wk of walks){const pts=F.slice(wk.i0,wk.i1+1).map(f=>f.root);if(pts.length<10)continue;let L=0;for(let k=1;k<pts.length;k++)L+=Math.hypot(pts[k][0]-pts[k-1][0],pts[k][2]-pts[k-1][2]);
@@ -143,7 +153,7 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    if(Math.max(before,after)>.05&&Math.max(before,after)/Math.max(.02,Math.min(before,after))>2.5)add('robot',i,{bone:'root',value:+(Math.max(before,after)/Math.max(.02,Math.min(before,after))).toFixed(1),unit:'x speed change at the ladder ('+before.toFixed(2)+' -> '+after.toFixed(2)+' m/s)',limit:2.5,what:'ladder '+(b?'entry':'exit')+': '+(after>before?'speeds up':'slows down')+' abruptly'});}}
  // ---- 9b. posture: torso lean (hips -> neck) forward/back and sideways, from positions only (no bone axes).
  // Walking or standing upright should not hunch or tilt; tasks that bend (sweep, chop, wash ...) get a looser forward limit.
- {const BEND=/sweep|chop|wash|dishes|fetchwater|dumpwater|water|saw|hammer|sharpen|fix_|stoke|firewood|cook|pot|store|craft|hatch|trip|eat|tea/;let ev=null;
+ {const BEND=/sweep|chop|wash|dishes|fetchwater|dumpwater|water|saw|hammer|sharpen|fix_|stoke|firewood|splitwood|cook|pot|store|craft|hatch|trip|eat|tea/;let ev=null;
   const flush=()=>{if(ev&&ev.i1-ev.i0>=12)add('posture',ev.ip,{bone:'Spine',value:ev.v,unit:'deg '+ev.k,limit:ev.lim,dur:+((ev.i1-ev.i0+1)*lim.dt).toFixed(2),from:F[ev.i0].f,to:F[ev.i1].f,what:ev.k+' lean while '+ev.a});ev=null;};
   F.forEach((f,i)=>{if(f.fl.includes('B')||f.fl.includes('S')||f.fl.includes('L')||f.fl.includes('W')||f.fl.includes('F')||f.fl.includes('T')){flush();return;}
    const hp=bone(f,'Hips'),nk=bone(f,'Neck'),lt=sub(bone(f,'LeftUpLeg'),bone(f,'RightUpLeg'));const v=sub(nk,hp);const L=len(v)||1;
@@ -158,16 +168,17 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  if(F[0].q){const QI={Spine2:0,Neck:1,Head:2,LeftFoot:3,RightFoot:4,LeftToeBase:5,RightToeBase:6};const Q=(f,n)=>f.q.slice(QI[n]*4,QI[n]*4+4);const qi=q=>[-q[0],-q[1],-q[2],q[3]];
   const fw=f=>[Math.sin(f.ry),0,Math.cos(f.ry)],rt=f=>[Math.cos(f.ry),0,-Math.sin(f.ry)],up=()=>[0,1,0];
   const cal=F.filter((f,i)=>i%7===0&&f.fl==='P'&&!f.fl.includes('L'));// walking frames: body faces where he goes
+  const calOK=cal.length>=5;// no walking in the window (e.g. gate --only read): no head calibration, so no head angle checks
   const loc=(get,wv)=>{let a=[0,0,0];for(const f of cal){const v=qrot(qi(get(f)),wv(f));a=[a[0]+v[0],a[1]+v[1],a[2]+v[2]];}return n3(a);};
   const aH=loc(f=>Q(f,'Head'),fw),aC=loc(f=>Q(f,'Spine2'),fw),uC=loc(f=>Q(f,'Spine2'),up),aP=loc(f=>f.hq,fw),uP=loc(f=>f.hq,up);
   const yaw=(qa,a,qb,b,ub)=>{const h=qrot(qa,a),c=qrot(qb,b),u=n3(qrot(qb,ub));const pr=v=>{const d=dot(v,u);return [v[0]-u[0]*d,v[1]-u[1]*d,v[2]-u[2]*d];};const hp=pr(h),cp=pr(c);const sg=dot(cross(cp,hp),u)>=0?1:-1;return sg*angd(hp,cp);};
   const neck=F.map(f=>yaw(Q(f,'Head'),aH,Q(f,'Spine2'),aC,uC)),body=F.map(f=>/[WBST]/.test(f.fl)||qrot(f.hq,uP)[1]<.85||qrot(Q(f,'Spine2'),uC)[1]<.7?0:yaw(Q(f,'Head'),aH,f.hq,aP,uP));
   const uH=loc(f=>Q(f,'Head'),up);const tilt=F.map(f=>angd(qrot(Q(f,'Head'),uH),qrot(Q(f,'Spine2'),uC)));
-  runs(i=>tilt[i]>lim.headTilt?tilt[i]:null,2,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head tipped vs chest (nod/side bend)',limit:lim.headTilt,what:'head bent further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]>lim.headTilt?tilt[i]:null,2,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head tipped vs chest (nod/side bend)',limit:lim.headTilt,what:'head bent further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
   const pct=(a,p)=>{const b=a.map(Math.abs).sort((x,y)=>x-y);return +b[Math.floor((b.length-1)*p)].toFixed(1);};
   tempo.anatomy.neckYaw={p50:pct(neck,.5),p99:pct(neck,.99),max:pct(neck,1)};tempo.anatomy.headVsHips={p50:pct(body,.5),p99:pct(body,.99),max:pct(body,1)};
-  runs(i=>tilt[i]<50&&Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
-  runs(i=>tilt[i]<50&&Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]<50&&Math.abs(neck[i])>lim.neckYaw?neck[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs chest',limit:lim.neckYaw,what:'head twists further than a neck can',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
+  runs(i=>calOK&&tilt[i]<50&&Math.abs(body[i])>lim.headHips?body[i]:null,4,(a,b,i,v)=>add('owl-head',i,{bone:'Head',value:+v.toFixed(0),unit:'° head turned vs pelvis',limit:lim.headHips,what:'head turned round past the shoulder (owl)',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));
   // feet: ankle angle (shin vs foot) against his own neutral, toe bend, roll of a planted foot
   for(const sd of ['Left','Right']){const ank=F.map(f=>angd(sub(bone(f,sd+'Foot'),bone(f,sd+'Leg')),sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot'))));
    const toe=F.map(f=>angd(sub(bone(f,sd+'ToeBase'),bone(f,sd+'Foot')),sub(bone(f,sd+'Toe_End'),bone(f,sd+'ToeBase'))));
@@ -178,6 +189,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
    tempo.anatomy[sd+'Ankle']={neutral:+a0.toFixed(1)};
    runs(i=>/[LWB]/.test(F[i].fl)?null:ank[i]-a0>lim.ankleUp?ank[i]-a0:null,3,(a,b,i)=>add('foot-bend',i,{bone:sd+'Foot',value:+(ank[i]-a0).toFixed(0),unit:'° foot bent up past neutral',limit:lim.ankleUp,what:'ankle bent up further than a person can',from:F[a].f,to:F[b].f}));
    runs(i=>/[LWB]/.test(F[i].fl)?null:a0-ank[i]>lim.ankleDown?a0-ank[i]:null,3,(a,b,i)=>add('foot-bend',i,{bone:sd+'Foot',value:+(a0-ank[i]).toFixed(0),unit:'° foot pointed down past neutral',limit:lim.ankleDown,what:'ankle pointed further than a person can',from:F[a].f,to:F[b].f}));
+   // absolute: a foot in line with the shin (en pointe; a person's ankle stops ~40 deg short of that), and an ankle that snaps > 30 deg in one frame
+   runs(i=>/[LWB]/.test(F[i].fl)?null:ank[i]<lim.ankleMinAbs?ank[i]:null,3,(a,b,i)=>add('foot-bend',i,{bone:sd+'Foot',value:+ank[i].toFixed(0),unit:'° shin to foot (foot in line with the shin)',limit:lim.ankleMinAbs,abs:1,what:'foot pointed straight down like a ballet pointe',from:F[a].f,to:F[b].f}));
+   for(let i=1;i<F.length;i++){if(F[i].f<30||F[i].f-F[i-1].f!==1||F[i].tag!==F[i-1].tag||/[LWB]/.test(F[i].fl+F[i-1].fl))continue;const d=Math.abs(ank[i]-ank[i-1]);if(d>lim.ankleSnap)add('foot-bend',i,{bone:sd+'Foot',value:+d.toFixed(0),unit:'° ankle snap in one frame',limit:lim.ankleSnap,abs:1,what:'foot pops to another angle in one frame',from:F[i-1].f,to:F[i].f});}
    runs(i=>toe[i]>lim.toeBend?toe[i]:null,3,(a,b,i)=>add('foot-bend',i,{bone:sd+'ToeBase',value:+toe[i].toFixed(0),unit:'° toes bent',limit:lim.toeBend,what:'toes folded',from:F[a].f,to:F[b].f}));
    runs(i=>roll[i]!=null&&Math.abs(roll[i])>lim.footRoll?roll[i]:null,3,(a,b,i,v)=>add('foot-bend',i,{bone:sd+'Foot',value:+v.toFixed(0),unit:'° planted foot rolled onto its edge',limit:lim.footRoll,what:'foot twisted over on the floor',from:F[a].f,to:F[b].f}));}
  }
@@ -186,10 +200,12 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   const near=p=>{let m=9;for(const r of R){if(Math.abs(r.c[1]-p[1])>.6||Math.abs(r.c[0]-p[0])>1||Math.abs(r.c[2]-p[2])>1)continue;const d=dseg(p,r);if(d<m)m=d;}return m;};
   const palm=(f,sd)=>{const h=bone(f,sd+'Hand'),a=bone(f,sd+'ForeArm');const v=n3(sub(h,a));return [h[0]+v[0]*.07,h[1]+v[1]*.07,h[2]+v[2]*.07];};
   const LIMB=[['LeftHand',f=>palm(f,'Left'),.09],['RightHand',f=>palm(f,'Right'),.09],['LeftFoot',f=>bone(f,'LeftToeBase'),.09],['RightFoot',f=>bone(f,'RightToeBase'),.09]];
+  /* a foot still on the floor at the ladder's foot (before the first rung, after the last) stands on the boards, not on air: its gap is to the floor there (planted-boot toe height ~.12) */
+  const onFloor=(f,nm)=>{const g=f.gnd&&f.gnd[nm==='LeftFoot'?1:nm==='RightFoot'?3:-1];if(g==null)return false;const y=bone(f,nm==='LeftFoot'?'LeftToeBase':'RightToeBase')[1]-g;return y>-.03&&y<.13;};
   tempo.ladderGrip=[];let s0=-1;
   for(let i=0;i<=F.length;i++){const on=i<F.length&&F[i].fl.includes('L')&&/^43[57]$/.test(String(F[i].clip));if(on&&s0<0)s0=i;if(!on&&s0>=0){const i1=i-1;if(i1-s0>30){
      const row={f:F[s0].f,dur:+((i1-s0)*lim.dt).toFixed(1)};
-     for(const [nm,pt,tol] of LIMB){const ds=[];for(let k=s0+2;k<=i1;k++){const p=pt(F[k]),q=pt(F[k-2]);if(len(sub(p,q))/(2*lim.dt)<.12)ds.push(near(p));}
+     for(const [nm,pt,tol] of LIMB){const ds=[];for(let k=s0+2;k<=i1;k++){const p=pt(F[k]),q=pt(F[k-2]);if(len(sub(p,q))/(2*lim.dt)<.12){const dn=near(p);ds.push(nm.includes('Foot')&&dn>.15&&onFloor(F[k],nm)?0:dn);}}
       ds.sort((x,y)=>x-y);const med=ds.length?ds[ds.length>>1]:null;row[nm]=med==null?'never still':+(med*100).toFixed(1);
       if(med!=null&&med<5&&med>tol)add('ladder-grip',s0+((i1-s0)>>1),{bone:nm,value:+(med*100).toFixed(1),unit:'cm from the nearest rung while holding still',limit:tol*100,what:nm.includes('Hand')?'hand grips air, not the rung':'foot stands on air, not on a rung',from:F[s0].f,to:F[i1].f,dur:row.dur,still:ds.length});
       if(ds.length<.1*(i1-s0))add('ladder-grip',s0,{bone:nm,value:ds.length,unit:'still frames on the whole climb',limit:Math.round(.1*(i1-s0)),what:nm+' never rests on a rung (slides with the canned clip)',from:F[s0].f,to:F[i1].f,dur:row.dur});}
@@ -204,10 +220,14 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
  // support: lying, every part rests on the mattress / floor; sitting, the pelvis on the seat (and feet down unless he dangles them)
  {const gi=n=>GN.indexOf(n);const need=f=>f.fl.includes('B')?['head','hips','torso','shins','feet']:f.task==='ledge'?['hips']:['hips','feet'];
   for(const G of ['head','hips','torso','shins','feet']){const g=gi(G);if(g<0)continue;
-   runs(i=>{const f=F[i];if(!f.sup||/[WT]/.test(f.fl)||!need(f).includes(G))return null;return f.sup[g]>=lim.supportCm?f.sup[g]:null;},30,(a,b,i,v)=>add('unsupported',i,{bone:G,value:v,unit:'cm gap under it ('+(F[i].fl.includes('B')?'lying':'sitting')+')',limit:lim.supportCm,what:G+' hangs in the air instead of resting on the bed/seat/floor',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}}
+   runs(i=>{const f=F[i];if(!f.sup||i<30||F[i].f<30||/[WT]/.test(f.fl)||!need(f).includes(G))return null;return f.sup[g]>=lim.supportCm?f.sup[g]:null;},30,(a,b,i,v)=>add('unsupported',i,{bone:G,value:v,unit:'cm gap under it ('+(F[i].fl.includes('B')?'lying':'sitting')+')',limit:lim.supportCm,what:G+' hangs in the air instead of resting on the bed/seat/floor',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}}
  // standing: at least one foot on the floor (rule 3.1): both toes > 4 cm above whatever is under them while not walking/climbing/seated
- {runs(i=>{const f=F[i];if(f.fl!==''||i<1)return null;const g1=f.gnd[1],g3=f.gnd[3];if(g1==null||g3==null)return null;const l=bone(f,'LeftToeBase')[1]-g1,r=bone(f,'RightToeBase')[1]-g3;const m=Math.min(l,r);return m>.04?+(m*100).toFixed(1):null;},20,
-   (a,b,i,v)=>add('unsupported',i,{bone:'feet',value:v,unit:'cm both feet above the floor (standing)',limit:4,what:'stands on air',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}
+ // the ToeBase joint of a planted boot sits ~7 cm above the floor (boot sole + toe joint): calibrate that rest height per hero (10th percentile
+ // of the lower toe over all standing frames) and measure the gap above it, so a normal stance is 0
+ {const toeH=f=>{const g1=f.gnd[1],g3=f.gnd[3];if(g1==null||g3==null)return null;return Math.min(bone(f,'LeftToeBase')[1]-g1,bone(f,'RightToeBase')[1]-g3);};
+  const hs=F.filter(f=>f.fl==='').map(toeH).filter(v=>v!=null).sort((a,b)=>a-b);const toe0=hs.length>100?Math.max(0,Math.min(.1,hs[hs.length*.1|0])):0;tempo.toeRest=+(toe0*100).toFixed(1);
+  runs(i=>{const f=F[i];if(f.fl!==''||i<1)return null;const t=toeH(f);if(t==null)return null;const m=t-toe0;return m>.04?+(m*100).toFixed(1):null;},20,
+   (a,b,i,v)=>add('unsupported',i,{bone:'feet',value:v,unit:'cm both feet above the floor (standing, above the planted-boot rest height)',limit:4,what:'stands on air',from:F[a].f,to:F[b].f,dur:+((b-a+1)*lim.dt).toFixed(2)}));}
  // held tools: the palm holding it should be on it (< 5 cm from the tool's mesh) the whole time it is held
  {const ev={};F.forEach((f,i)=>{for(const [nm,k,d] of f.grip||[]){const key=nm+'|'+k;let e=ev[key]&&ev[key][ev[key].length-1];if(!e||i-e.i1>3){e={i0:i,i1:i,d:[]};(ev[key]=ev[key]||[]).push(e);}e.i1=i;e.d.push(d);}});
   tempo.grip=[];for(const key in ev)for(const e of ev[key]){if(e.d.length<10)continue;const s2=e.d.slice().sort((a,b)=>a-b);const med=s2[s2.length>>1];const [nm,k]=key.split('|');
@@ -235,14 +255,14 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   if(m&&q.i-m.i1<=30){m.i1=q.i;m.count++;if(q.value>m.value&&q.type!=='detour'){Object.assign(m,{...q,i1:q.i,count:m.count,first:m.first});}}else{const n={...q,i1:q.i,count:1,first:q.f};merged.push(n);last[k]=n;}}
  // priority
  for(const q of merged){const r=q.limit?q.value/q.limit:2;let P=3;
-  if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2))?1:q.value>=2?2:3;
+  if(q.type==='penetration')P=(q.value>=4||(q.bone==='head'&&q.value>=2)||(q.value>=3&&/^work:(fix_|clear_roof)/.test(q.act||'')))?1:q.value>=2?2:3;/* Pavel 2026-11-25: he must never sink into what he repairs: at a repair 3 cm is already P1 */
   else if(q.type==='joint')P=/broken|next to the head|past the hip|folded flat/.test(q.what)?1:2;
   else if(q.type==='jump'||q.type==='snap-turn')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='jitter')P=r>=3?1:r>=1.6?2:3;
   else if(q.type==='foot-slide')P=q.value>=8?1:q.value>=4?2:3;
   else if(q.type==='detour')P=q.unit.startsWith('deg')?(q.value>80?1:2):(q.value>1.7?1:2);
   else if(q.type==='owl-head')P=q.value>=(q.limit+20)?1:2;
-  else if(q.type==='foot-bend')P=Math.abs(q.value)>=q.limit+15?1:2;
+  else if(q.type==='foot-bend')P=q.abs?(q.unit.includes('snap')?(q.value>=40?1:2):(q.value<=20?1:2)):Math.abs(q.value)>=q.limit+15?1:2;
   else if(q.type==='ladder-grip')P=q.unit.startsWith('cm')?(q.value>=q.limit*1.6?1:2):2;
   else if(q.type==='unsupported')P=q.value>=8?1:2;
   else if(q.type==='no-touch'||q.type==='grip')P=q.value>=15?1:2;
