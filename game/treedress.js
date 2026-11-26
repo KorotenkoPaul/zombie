@@ -434,6 +434,8 @@ uniform float tdCool;` + NOISE)
             float ck=smoothstep(.93,1.,abs(sin(gp*.23+1.7*sin(tdSa*3.1))))*gk; // a few deep checks along the grain
             vec3 wd=vec3(1.24,1.,.74)*(g*.98+.012)*(1.-.2*gk*smoothstep(.2,1.,sin(gp)))*(1.-.55*ck)*mix(1.,.75,smoothstep(0.,-.9,tdSa)) // runs stain its lower end
               *(1.-.42*smoothstep(.6,.95,tdSe)*smoothstep(-.2,.6,tdSa))*(1.-.18*smoothstep(.4,.95,tdSe)); // sunk below the bark: the lip above shades the inside
+            { float dz=1.-smoothstep(.9,2.4,tdP.y+(td_n(tdP*3.1)-.5)*.5); // [day base round] a scar down at the foot is not silver: ground damp soaks it dark, greenish with algae from below
+              wd=mix(wd,mix(vec3(dot(wd,vec3(.33))),wd,.6)*vec3(.5,.52,.4)*(1.-.25*smoothstep(.3,-.6,tdSa)),dz); }
             diffuseColor.rgb=mix(diffuseColor.rgb,wd,in_*sFar);
             diffuseColor.rgb*=(1.+.18*sFar*exp(-pow((tdSe-1.06)/.09,2.)))*(1.-.6*sFar*exp(-pow((tdSe-.95)/.045,2.))); }
           else if(tdSty>.5){ // old broken stub: a dark rotten hole with end-grain rings, a crease, and the swollen lip of bark round it
@@ -522,7 +524,7 @@ uniform float tdCool;` + NOISE)
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress16';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress17';
     mat.needsUpdate = true;
   }
 
@@ -1303,14 +1305,20 @@ uniform float tdCool;` + NOISE)
   // each leaf's cut-out edge (the map's alpha), most on the clump side facing the moon and on clump silhouettes. No glow.
   if (TREE.leaves && TREE.leaves.material) { const lm = TREE.leaves.material, prevL = lm.onBeforeCompile, MR = (C.env || window.__env || {}).moonRim;
     if (MR) { lm.onBeforeCompile = (sh, r) => { if (prevL) prevL.call(lm, sh, r);
-        sh.uniforms.tdLRc = MR.color; sh.uniforms.tdLRs = MR.strength; sh.uniforms.tdLRd = MR.dir;
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 tdLRc,tdLRd;uniform float tdLRs;')
+        sh.uniforms.tdLRc = MR.color; sh.uniforms.tdLRs = MR.strength; sh.uniforms.tdLRd = MR.dir; sh.uniforms.tdLWt = D.barkU.wet; sh.uniforms.tdLDy = D.barkU.day;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 tdLRc,tdLRd;uniform float tdLRs,tdLWt,tdLDy;')
           .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 #ifdef USE_MAP
 { float ea=texture2D(map,vMapUv,2.5).a; float edge=1.-smoothstep(.5,.92,ea); // a blurred read of the map (bias, uniform flow): a soft band inside each leaf's edge, no aliased sparkle
   vec3 md=normalize((viewMatrix*vec4(tdLRd,0.)).xyz); float tw=max(dot(normal,md),0.); float fr=1.-abs(dot(normal,normalize(vViewPosition)));
   totalEmissiveRadiance+=mix(tdLRc,diffuseColor.rgb*4.,.45)*tdLRs*edge*(.2+.8*max(tw,fr*fr))*.2; } // subtle and leaf-tinted: Tree's leaf code already cools the night crown, the two must not add up to a glow
-#endif`); };
-      const pk = lm.customProgramCacheKey ? lm.customProgramCacheKey.bind(lm) : () => ''; lm.customProgramCacheKey = () => pk() + '|tdRim3'; lm.needsUpdate = true; D.leafRim = true; } }
+#endif
+// [crown rain round] the crown is matte Lambert, so in the rain it looked dry. Wet leaves mirror the grey sky: a cool sheen on the
+// up-facing leaves and at grazing angles (clump silhouettes), strongest by day, none in dry weather. Arithmetic only.
+if(tdLWt>.01){ vec3 upV=normalize((viewMatrix*vec4(0.,1.,0.,0.)).xyz); float nv=abs(dot(normal,normalize(vViewPosition)));
+  float lt=dot(diffuseColor.rgb,vec3(.3,.59,.11)); float sk=pow(1.-nv,5.)*smoothstep(-.2,.8,dot(normal,upV))*smoothstep(.04,.2,lt); // glints on the lighter leaf blades, not a film over the shadowed ones
+  diffuseColor.rgb=max(mix(vec3(lt),diffuseColor.rgb,1.2),0.)*(1.-.18*tdLWt); // soaked: darker and richer, as wet bark
+  totalEmissiveRadiance+=vec3(.5,.56,.62)*sk*tdLWt*(.25+.75*tdLDy)*.35; }`); };
+      const pk = lm.customProgramCacheKey ? lm.customProgramCacheKey.bind(lm) : () => ''; lm.customProgramCacheKey = () => pk() + '|tdRim5'; lm.needsUpdate = true; D.leafRim = true; } }
   return D;
 }
