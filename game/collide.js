@@ -280,15 +280,23 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
     }
     if ((cr & 1) !== 1) return -1; const d = Math.sqrt(best); if (d < 1e-6) return -1; OUT.n.set(bx / d, 0, bz / d); return d;
   }
+  const BEDS = (P3 && P3.surfaces && P3.surfaces.bed) || [];
+  const onBed = p => { for (const L of BEDS) if (p.x > L.x0 - .02 && p.x < L.x1 + .02 && p.z > L.z0 - .02 && p.z < L.z1 + .02 && p.y < L.top + .2) return true; return false; };
+  const inBedEdge = p => { for (const L of BEDS) if (p.x > L.x0 - .03 && p.x < L.x1 + .03 && p.z > L.z1 - .08 && p.z < L.z1 + .04 && p.y > L.top - .10 && p.y < L.top + .03) return true; return false; };
   // deepest shape at p: returns depth beyond the allowance for this body part, OUT.n = way out
   const nB = V();
-  function probe(p, part, lying, list, nt = true) { const GR = window.__grab; let a = list; const noTight = !list && window.__colNoTight;
+  function probe(p, part, lying, list, nt = true, hv = false) { const GR = window.__grab; let a = list; const noTight = !list && window.__colNoTight;
     if (!a) { const kk = key(Math.floor(p.x / CS), Math.floor(p.y / CS), Math.floor(p.z / CS)); a = G.get(kk); } let best = 0;
     if (a) for (const n of a) {
       const s = S[n]; if (s.dead) continue; if (!list && !refresh(s)) continue; if (navMode && OPENS.test(s.name)) continue; if (!noTight) { const t = s.t; if (p.x < t[0] || p.y < t[1] || p.z < t[2] || p.x > t[3] || p.y > t[4] || p.z > t[5]) continue; } if ((part === 1 || part === 2) && GR && GR.held(s.obj)) continue;
       // POSE (poses thread): asleep, hero.js lays the body on the measured mattress itself; the bed's voxels (mattress, quilt mound,
       // pillow, all one 'bunkbed' grid) pushed the root up ~20-50 cm and made the head twitch on the pillow every ~0.3 s
       if (s.cls >= 2 && lying && hero.inBed && !hero.bedB) continue;
+      // the head volume and the pillow / quilt / mattress (within 20 cm over a bed's top): how the head lies there is the bed pose's (bending
+      // the neck to lift a lying head out of the pillow took 10 cm of chin-to-chest and still left 4 cm); the bunk frame, the upper bunk and beams are ours
+      if (hv && s.cls >= 2 && onBed(p)) continue;
+      // BED EDGE (with Bed): seated or lying, the fingers wrap the mattress' front edge, 6-8 cm under its top; that band is the hand's
+      if (s.cls >= 2 && (part === 1 || part === 2) && inBedEdge(p)) continue;
      /* a hand is never pushed out of what it holds (game/grab.js) */ if (!refresh(s)) continue;
       // the floor is hero.js's (support slot puts the soles on hero.floorY): a sole within 6 cm of the floor level is not 'in' a floor
       // board. Uneven planks are boxes here, thicker than the visible board; lifting the foot out of them made him hover 10 cm.
@@ -318,11 +326,19 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       PTS.push({ m: mIdx, b, w, v, part: partOf(bn), chain: chainOf(bn), p: V() });
     }
   });
+  // V6 HEAD (hero look thread): the 1.5x head and its hair as an ellipsoid on the Head bone (x side, y up, z front), centre
+  // (.004, .10, .034), radii (.165, .19, .16). The skin samples (1 vertex in ~N) missed the back of the head and the hair: in bed
+  // they went 3-5 cm into the pillow and the bunk unseen. Back, top and sides only (the face has its own skin points and is meant to
+  // come close: eyepiece, cup, pot); never below the skull base (the neck lies on the pillow).
+  if (bones.Head && !/[?&]hero=(orig|new)\b/.test(String((window.location || {}).search || ''))) for (let i = 0; i < 16; i++) for (let j = 1; j < 9; j++) {
+    const th = i / 16 * 2 * Math.PI, ph = j / 9 * Math.PI, o = V(Math.sin(ph) * Math.cos(th) * .165 + .004, Math.cos(ph) * .19 + .10, Math.sin(ph) * Math.sin(th) * .16 + .034);
+    if (o.z < .08 && o.y > -.06) PTS.push({ hv: o, part: 0, chain: 1, p: V() }); }
   const KM = sk.map(M => M.skeleton.bones.map(() => new THREE.Matrix4())); const tmpM = new THREE.Matrix4(), base = new THREE.Matrix4();
   function skin(mask = 0) {
     for (let m = 0; m < sk.length; m++) { const M = sk[m]; base.multiplyMatrices(M.matrixWorld, M.bindMatrixInverse); const bs = M.skeleton.bones, inv = M.skeleton.boneInverses;
       for (let i = 0; i < bs.length; i++) KM[m][i].multiplyMatrices(base, tmpM.multiplyMatrices(bs[i].matrixWorld, inv[i])); }
     for (const P of PTS) { if (mask && !(mask & (1 << P.chain))) continue;
+      if (P.hv) { P.p.copy(P.hv).applyMatrix4(bones.Head.matrixWorld); continue; }
       const K = KM[P.m]; const v = P.v; let x = 0, y = 0, z = 0;
       for (let k = 0; k < 4; k++) { const w = P.w[k]; if (w <= 0) continue; const e = K[P.b[k]].elements; x += w * (e[0] * v.x + e[4] * v.y + e[8] * v.z + e[12]); y += w * (e[1] * v.x + e[5] * v.y + e[9] * v.z + e[13]); z += w * (e[2] * v.x + e[6] * v.y + e[10] * v.z + e[14]); }
       P.p.set(x, y, z);
@@ -467,7 +483,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       // shapes whose box overlaps that chain's box (gathered once per frame); a chain with nothing near it costs nothing
       const mask = it === 0 ? 0 : liveMask; skin(mask); if (it === 0) gather(); pd.fill(0); let anyP = false; sumN[0].set(0, 0, 0); sumN[1].set(0, 0, 0); sumW[0] = sumW[1] = 0;
       for (const P of PTS) { if (mask && !(mask & (1 << P.chain))) continue; const L = LC[P.chain]; if (!L.length && !nearTrunk[P.chain]) continue;
-        const ex = probe(P.p, P.part, lying, L, nearTrunk[P.chain]); if (ex <= 0) continue; if (it === 0 && ex > worst) worst = ex;
+        const ex = probe(P.p, P.part, lying, L, nearTrunk[P.chain], !!P.hv); if (ex <= 0) continue; if (it === 0 && ex > worst) worst = ex;
         anyP = true;
         // body and head: the excess-weighted mean way out (contacts on opposite sides cancel instead of bouncing between them);
         // a shin or foot caught at the side (bed rail, bench) also moves the body away, like a step aside

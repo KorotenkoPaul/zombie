@@ -597,7 +597,7 @@ export function createAudio(ctx) {
     const B2 = ctx.bones; if (!B2) return;
     const FL = window.__feetLog;                                            // QA only: per-frame foot heights and step times
     // climbing: a rung sound when a foot settles on the next rung (its world speed drops after a lift), from the bones
-    if (Math.abs(vy) > .25 && mv < .35) { if (vy > 0 && gnow > breathNext) { playAct('breath_climb'); breathNext = gnow + rnd(2.2, 3.4); }
+    if (Math.abs(vy) > .25 && mv < .35) { /* Pavel 2026-11-25: no breathing sounds at all */
       const surf = ctx.ropeAt && ctx.ropeAt(p) ? 'rope' : 'ladder', fdt = Math.max(1e-3, frameDtG);
       for (const [side, bn] of [['L', B2.LeftFoot || B2.LeftToeBase], ['R', B2.RightFoot || B2.RightToeBase]]) {
         if (!bn) continue; const w = bn.getWorldPosition(ctx.v3 || (ctx.v3 = new bn.position.constructor())), st = footSt[side];
@@ -612,7 +612,7 @@ export function createAudio(ctx) {
     // clothes rustle as he sets off, and now and then on the way; heavier breath when carrying something
     if (!moving || gnow > clothNext) { if (!moving && Math.random() < .55 || moving) playAct('cloth', { x: p.x, y: p.y + 1.1, z: p.z }); clothNext = gnow + rnd(4, 9); }
     moving = true;
-    if (carrying && gnow > breathNext) { playAct('breath_heavy'); breathNext = gnow + rnd(2.8, 4.5); }
+    // (no heavy breathing when carrying: Pavel 2026-11-25, he does not want to hear him breathe)
     // slow frames (a weak phone, a background tab): the toe lift falls between frames, so walk by cadence instead
     if (frameDt > .08 && !window.__feetBones) { if (gnow > cadNext) { cadSide = cadSide === 'L' ? 'R' : 'L'; step(cadSide, p, surfaceAt(p, env), Math.min(1.2, .6 + mv * .4)); cadNext = gnow + .62 / Math.max(.6, mv); } return; }
     // foot contact from the bones: a foot in swing travels at 2-3x walking speed, a planted foot stands still. The strike is
@@ -700,7 +700,7 @@ export function createAudio(ctx) {
       // a night has its own sleeper: some nights he snores in spells, some nights only breathes; between snores, slow breaths
       if (!wasAsleepS) { sleepNight = { snorer: Math.random() < .55, spellEnd: now + rnd(60, 200), snoring: false }; }
       const SN = sleepNight; if (now > SN.spellEnd) { SN.snoring = SN.snorer && !SN.snoring && Math.random() < .7; SN.spellEnd = now + (SN.snoring ? rnd(90, 300) : rnd(120, 420)); }
-      if (now > snoreNext) { if (snoreNext > 0) { if (SN.snoring) playAct('snore', at); else if (nearCam(at, 8)) voice('syn_breath_' + Math.floor(Math.random() * 2), { pos: at, gain: .07, rate: rnd(.92, 1.05), ref: 1.5, roll: 1.4, rev: .1, indoor: true, fadeIn: .05, fadeOut: .3 }); }
+      if (now > snoreNext) { if (snoreNext > 0) { if (SN.snoring) playAct('snore', at); /* between snores: silence, no breathing (Pavel 2026-11-25) */ }
         snoreNext = now + (SN.snoring ? rnd(4.5, 7) : rnd(4.2, 5.6)); }
       if (now > turnNext) { if (turnNext > 0) playAct('bed_turn', at); turnNext = now + rnd(35, 90); }
     } else { snoreNext = now + rnd(4, 9); turnNext = now + rnd(25, 60); }
@@ -713,7 +713,7 @@ export function createAudio(ctx) {
       dbgF = [+mv.toFixed(2), +vy.toFixed(2), +frameDt.toFixed(3), +p.y.toFixed(2)];
       if (autoFeet) feet(p, mv, vy, env);
       houseWatch(hero, mv); toolSync(hero, mv);
-      if (!asleep && mv < .1 && Math.abs(vy) < .1 && now > idleBreath) { idleBreath = now + rnd(3, 4.2); const at = { x: p.x, y: p.y + 1.5, z: p.z }; if (nearCam(at, 3.5)) voice('syn_breath_' + Math.floor(Math.random() * 2), { pos: at, gain: .045, rate: rnd(1.3, 1.45), ref: 1, roll: 1.6, rev: .08, indoor: true, fadeIn: .05, fadeOut: .25 }); }
+      // (no idle breathing sound: Pavel 2026-11-25 asked to remove his breathing entirely)
       if (mv > .4 && p.y > 1.2 && now > creakNext) { voice('creak_a', { pos: { x: p.x, y: p.y, z: p.z }, gain: rnd(.12, .22), rate: rnd(.85, 1.15), dur: rnd(.5, 1.1), offset: rnd(0, 1), ref: 2.5, roll: 1.2, rev: .2, indoor: true }); creakNext = now + rnd(4, 14); }
     }
   }
@@ -729,7 +729,7 @@ export function createAudio(ctx) {
     if (!e || !loaded || muted) return; if (!internal) toolAuto = false;
     if (window.__feetLog) window.__feetLog.push(['TC', +gnow.toFixed(3), e.tool || e.kind, +(e.dur || 0).toFixed(2)]);
     const q = toPos(e.pos), k = clamp01(e.strength ?? .8), t = e.tool;
-    if (t === 'hammer' || e.kind === 'hit') { TS.last = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); if (Math.random() < .5) playAct('nails', q, { gain: .35 * k, delay: .012, internal: 1 }); return; }
+    if (t === 'hammer' || e.kind === 'hit') { TS.last = now; if (now - (TS.hitT ?? -9) < .2) return; TS.hitT = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); return; }   // one sample per blow (critic pass 27: a nail layer on the same frame read as two hits)
     if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); vplay(c, o); TS.last = now; return; }
     if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); vplay(c, o); TS.last = now; }
   }
@@ -874,7 +874,7 @@ export function createAudio(ctx) {
   function holdGain(p, t) { if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else { const v = p.value; p.cancelScheduledValues(t); p.setValueAtTime(v, t); } }
   function stopVoice(v, f) { if (!v || !A) return; try { const t = A.currentTime; holdGain(v.g.gain, t); v.g.gain.linearRampToValueAtTime(0, t + f); v.src.stop(t + f + .05); } catch (e) {} }
   function playAct(name, pos, o = {}) {
-    if (!A || muted || !loaded) return null;
+    if (!A || muted || !loaded || /^breath/.test(name)) return null; // no breathing sounds (Pavel 2026-11-25)
     if (L[name]) { const I = ind[name] && ind[name][0]; if (I) call(name, I, 1, envNow); return null; }
     if (name === 'bolt') return null;
     if (!o.internal && TS.tool && toolAuto && ((TS.tool === 'hammer' && /^(hammer|nails)$/.test(name)) || (TS.tool === 'saw' && name === 'saw') || (TS.tool === 'spoon' && name === 'stir'))) return null;   // contact-synced instead                                  // houseWatch plays lock / unlock from the door's real bolt

@@ -74,7 +74,9 @@ function analyze(D,lim=LIMITS){const F=D.frames,names=D.names,GN=D.GN;const iss=
   {const U=bone(F[i],s+'UpLeg'),A=bone(F[i],s+'Foot');const ah=len(sub(A,U))*100;if(m.knee<20||ah<10)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg folded flat',limit:160,what:'leg folded flat (knee interior '+m.knee.toFixed(0)+' deg, ankle '+ah.toFixed(0)+' cm from the hip)'});}
   /* a foot pointed in line with the shin (ankle < 35 deg) leaves the toe-side test without a side: that is the ankle's fault, reported in section 10 */
   if(m.knee>=60&&m.knee<150&&m.ank>=35&&Math.sign(m.bend)!==sgn&&Math.abs(m.bend)>.25)add('joint',i,{bone:s+'Leg',value:+(180-m.knee).toFixed(0),unit:'deg bent the wrong way',limit:0,what:'knee bends forward (broken leg)'});
-  if(m.footHead<lim.footHeadM&&!f.fl.includes('B')&&!(f.fl.includes('S')&&/boots?(off|on)/i.test(f.clip)&&m.footHead>.35))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
+  /* seated with that foot planted on the floor and the head bowed toward it (pulling a vest off) is not a leg up by the head: the posture check judges the bow */
+  const footDown=f.fl.includes('S')&&f.gnd&&f.gnd[s==='Left'?0:2]!=null&&bone(f,s+'Foot')[1]-f.gnd[s==='Left'?0:2]<.3&&m.footHead>.35;
+  if(m.footHead<lim.footHeadM&&!f.fl.includes('B')&&!footDown&&!(f.fl.includes('S')&&/boots?(off|on)/i.test(f.clip)&&m.footHead>.35))add('joint',i,{bone:s+'Foot',value:+(m.footHead*100).toFixed(0),unit:'cm from head',limit:lim.footHeadM*100,what:'foot next to the head'});
   if(m.footUp>lim.footUpM)add('joint',i,{bone:s+'Foot',value:+(m.footUp*100).toFixed(0),unit:'cm along body above hip',limit:lim.footUpM*100,what:'leg folded up past the hip'});}});
  // ---- 4. foot sliding while planted ----
  for(const [s,fi,ti,gi] of [['Left','LeftFoot','LeftToeBase',0],['Right','RightFoot','RightToeBase',2]]){let c=null;
