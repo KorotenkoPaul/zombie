@@ -384,7 +384,7 @@ export function createWorkshop(K) {
             try { window.__audio && window.__audio.contact ? window.__audio.contact({ tool: 'hammer', kind: 'hit', pos: N.toArray(), strength: full ? rnd(.7, 1) : .35 }) : AU('hammer', N); } catch (e) { }
             if (n.sunk >= .028) { S.ni++; S.ph = S.ni >= 3 ? 'rest' : 'set'; S.t = 0; S.from = S.last; } } void c; return; }
         if (S.ph === 'rest') { hold('Right', 'benchHammer', glide(guardFace(swing(nailHead(S.ni - 1), .4)), .6), g); leftOn(1 - smooth(.6, 1.2, S.t), false); if (S.t > 1.3) { S.ph = 'put'; S.t = 0; } return; }
-        if (S.ph === 'put') { if (put(a, 'benchHammer', 'Right', dt)) { S.ph = 'done'; a.T = 1e9; } return; }
+        if (S.ph === 'put') { if (S.last && !(a.pk && a.pk.rel) && !window.__wsNoGlide) hold('Right', 'benchHammer', S.last, g); /* the put eases from where the rest held it, not from the idle clip (11 cm in a frame) */ if (put(a, 'benchHammer', 'Right', dt)) { S.ph = 'done'; a.T = 1e9; } return; }
       },
       end: a => { const g = G(); if (g) { g.free('Left'); g.free('Right'); } if (H.hold.Right && H.hold.Right.tool === 'benchHammer') relTool('Right', 'benchHammer', .3); a.held.length = 0;
         if (CR) for (const n of CR.nails) { if (n.sunk < .028) n.o.visible = false; } }, // a nail left half in is pulled again next time
