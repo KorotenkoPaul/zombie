@@ -253,3 +253,8 @@ Debug: `__treedress.stats()`.
 ## Round 39 (day, closest zoom: the scar at the trunk foot)
 - At the closest real zoom (~10.7 m) by day, the bare-bark scar at (-1.14,0.94,2.62) on the root flare read as a pale grey-blue plate stuck on the bark.
 - Scars now go dark, damp and slightly algae-green near the ground (fades out by y≈2.4, ragged by noise), darker still at their lower end. Higher scars keep the weathered silver wood. Key '|treedress17'. No new draw calls.
+
+## Round 40 (crown in the rain; branch sweep)
+- Branch / crown-base close-zoom sweep: a boxy bark limb stub passes through the bedroom roof at ~(-1.1,13,1.8). Shape = tree.js, reported to Tree (image r40_limb_through_roof.jpg). Wet darkening on the limbs works.
+- The oak crown is matte Lambert, so in the rain it looked bone dry. The leaf chain (key |tdRim5) now, while it rains (barkU.wet): leaves darker and richer (luminance-based, like the bark), plus a cool grey-sky glint at grazing angles on up-facing lighter blades. Strongest by day. Arithmetic only, no texture reads, no new draw calls.
+- Forest trunks at the home view are thin uniform rods (env.js, the forest thread's) - reported, not touched.
