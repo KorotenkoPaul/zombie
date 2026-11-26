@@ -32,7 +32,7 @@ const VIEWS = [
     await p.goto(`http://localhost:${PORT}/index.html?t=${v.hour}`);
     await p.waitForFunction(() => window.__th && document.getElementById('load').classList.contains('hide'), null, { timeout: 600000 });
     await p.evaluate(h => window.__th.setHour(h), v.hour); await p.waitForTimeout(8000);
-    if (v.cam) { await p.evaluate(c => window.__camera.rig.set({ target: new window.__dbg.THREE.Vector3(...c.t), dist: c.d, yaw: c.y, pitch: 0.13, snap: true }), v.cam); await p.waitForTimeout(4000); }
+    if (v.cam) { await p.evaluate(c => { window.__resortSync = true; /* the bark/props back-face re-sort runs in one go here (on a phone it takes ~1 s of 3 ms slices) */ }); await p.evaluate(c => window.__camera.rig.set({ target: new window.__dbg.THREE.Vector3(...c.t), dist: c.d, yaw: c.y, pitch: 0.13, snap: true }), v.cam); await p.waitForTimeout(4000); }
     const r = await p.evaluate(() => new Promise(res => { const R = window.__perf.renderer, o = R.renderBufferDirect; let root = window.__dbg.hero.root; while (root.parent) root = root.parent;
       const F = []; let cur = null;
       R.renderBufferDirect = function (camera, scene, g, m, obj, group) { if (cur) { let n = Math.min(g.index ? g.index.count : g.attributes.position.count, g.drawRange.count) / 3; if (group) n = Math.min(n, group.count / 3); if (obj.isInstancedMesh) n *= obj.count; else if (g.isInstancedBufferGeometry) n *= g.instanceCount;

@@ -206,6 +206,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     sp.target.position.copy(wPos).add(V(-.35, -2, -.25)); scene.add(sp, sp.target);
     sp.castShadow = true; sp.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ sp.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); sp.shadow.camera.near = .08; sp.shadow.camera.far = 6;
     sp.shadow.bias = -.002; sp.shadow.normalBias = .03; sp.shadow.radius = 3; sp.shadow.autoUpdate = false;
+    floorClip(sp, WS);
     claimHousing(wPos, .3);
     // no power anywhere in the world (no wire, no generator), so this is a hanging kerosene lamp under the enamel shade, as
     // old workshops had: a brass font below the shade on its burner, a glass chimney rising into the shade, a flame in the
@@ -251,6 +252,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (BL) bs.target.position.set(-2.0, BD + .75, 2.05); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
+    floorClip(bs, BD);   // nothing below the bedroom floor: the kitchen wall under it caught a stepped leak through the boards
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
     // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
     const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
@@ -1206,6 +1208,21 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const upgrade = () => quality < 2 && setQuality(quality + 1) !== null;
 
   const view = s => ({ name: s.name, room: s.room, kind: s.kind, on: s.on, level: +s.level.toFixed(2), auto: s.manual === null, pos: s.pos.clone() });
+  // ---------- floor clips in the spot shader (both platforms) ----------
+  // decay >= 100: a shadowed room spot (bedroom, workshop) lights nothing below its own floor: world height of the light
+  // above the fragment (view-space up from viewMatrix) beyond h goes dark. 100 + 10*round(decay*10) + h, h < 9.9. The 512
+  // shadow map alone let the bedroom lantern leak through the floor boards onto the kitchen wall as a stepped warm patch.
+  // 10 <= decay < 100: the phone pool's slot clip along the slot's own (vertical) axis, see updatePool.
+  {
+    const SC = THREE.ShaderChunk, LINE = 'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spotLight.decay );';
+    if (SC.lights_pars_begin.includes(LINE)) SC.lights_pars_begin = SC.lights_pars_begin.replace(LINE,
+      'float spDec = spotLight.decay;\n' +
+      'if ( spDec > 99.5 ) { float k = floor( ( spDec - 100.0 ) / 10.0 ); if ( dot( lVector, ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ) > spDec - 100.0 - 10.0 * k ) light.color = vec3( 0.0 ); spDec = k / 10.0; }\n' +
+      'else if ( spDec > 9.5 ) { float k = floor( ( spDec - 10.0 ) / 4.0 ); if ( dot( lVector, spotLight.direction ) > spDec - 10.0 - 4.0 * k ) light.color = vec3( 0.0 ); spDec = k / 4.0; }\n' +
+      'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spDec );');
+    else console.warn('lights: spot floor clip not installed (three changed)');
+  }
+  function floorClip(l, fy) { l.decay = 100 + 10 * Math.round(l.decay * 10) + Math.min(9.8, Math.max(0, l.position.y - fy + .06)); }
   // ---------- phones: a small pool of real point lights ----------
   // Every lit shader on a phone loops over all lights in the scene. So on phones the sources' point lights are only
   // bookkeeping (kept invisible: three.js leaves invisible lights out of the shaders, and their .intensity still drives
@@ -1219,12 +1236,6 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // the ceiling boards into the room above (phones have no point shadows, so a plain point light bled through floors).
     // Every unshadowed source joins: room lanterns, oven, hand lantern, the landing cone and the door spill. The
     // workshop dome keeps its own shadowed spot. Four slots cover a normal night without swaps.
-    const SC = THREE.ShaderChunk, LINE = 'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spotLight.decay );';
-    if (SC.lights_pars_begin.includes(LINE)) SC.lights_pars_begin = SC.lights_pars_begin.replace(LINE,
-      'float spDec = spotLight.decay;\n' +
-      'if ( spDec > 9.5 ) { float k = floor( ( spDec - 10.0 ) / 4.0 ); if ( dot( lVector, spotLight.direction ) > spDec - 10.0 - 4.0 * k ) light.color = vec3( 0.0 ); spDec = k / 4.0; }\n' +
-      'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spDec );');
-    else console.warn('lights: spot floor clip not installed (three changed)');
     const virt = [];
     for (const s of src.values()) for (const L of s.lights) if ((L.l.isPointLight || (L.l.isSpotLight && !L.l.castShadow)) && L.l !== doorCave) virt.push(L.l);
     for (const g of glows) if (g.bounce) virt.push(g.l);
