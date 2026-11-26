@@ -145,3 +145,21 @@ Debug: `__treedress.stats()`.
 - **Board leaves** (the piles on the landings): now baked into Ground's litter mesh (atlas cell 0, Ground's own leaf) on phone and desktop.
   - Saves one draw. Falls back to their own mesh if the atlas or attributes don't match.
 - Budget: 286/282/285 calls, tris up to 447k (yaw limit).
+
+## Round 22: deterministic placement
+- **Cause.** The house build in index.html (boards, cutRun splits, wall planks, shingles) used Math.random. The blockers therefore shifted by millimetres between loads.
+  - One flipped sample then shifted the single shared rng stream and every draw after it. On the same build the ivy count ranged 356–422, and moss on boards and roofs varied too.
+- **Fix 1 (index.html).** Math.random is seeded for the synchronous house build, from just after the slate/moss texture await up to just before createTreeDress, and restored after.
+  - The house is now the same on every load and still irregular.
+- **Fix 2 (treedress).** `RSEED(key)` reseeds each candidate loop per iteration, each vine, and each beam bite (keyed by position). Each section also starts from its own seed.
+  - A future difference in the blockers now changes only that one candidate.
+  - This changes the current layout once; the look is statistically the same.
+- **Verified.** Instance positions are identical across loads: phone 3 loads, desktop 2 loads. That covers moss, ivy, litter, ferns, hanging and the board leaves.
+
+## Round 23: bark close-up (1.4 m zoom)
+- **Moss cushions.** The stem bump now uses the noise's analytic gradient (`td_nd`) instead of screen derivatives, so it is no longer blocky pixel camouflage up close. Key: `tdMossCushion6`.
+- **Phone bark when the camera is near the trunk** (tdNear, a uniform branch). Key: `|treedress7`.
+  - The fine octave's normal map replaces the screen-derivative micro bump, which drew sandpaper grain on sunlit roots.
+  - A second macro read at 15/11 scale breaks the roughly 1.8 m repeat, as on desktop.
+  - Cost: 2 extra triplanar reads, only while zoomed near.
+- **Desktop lichen** sits on the bark ridges (tdH), so the furrows break its rim; it no longer reads as a sticker.
