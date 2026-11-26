@@ -752,11 +752,12 @@ export function createGround(C){const __before=new Set(C.scene.children);
  {const nut=new THREE.SphereGeometry(1,MOBILE?6:10,MOBILE?4:8).scale(.62,.62,1);const cap=new THREE.SphereGeometry(1,MOBILE?6:10,MOBILE?3:6,0,Math.PI*2,0,Math.PI*.55).scale(.72,.72,.55).rotateX(-Math.PI/2).translate(0,0,-.42);
   const stalk=new THREE.CylinderGeometry(.06,.08,.3,MOBILE?3:5,1,MOBILE).rotateX(Math.PI/2).translate(0,0,-1.05);
   const paint=(g,c)=>{const n=g.attributes.position.count;const a=new Float32Array(n*3);for(let i=0;i<n;i++)a.set(c,i*3);g.setAttribute('color',new THREE.BufferAttribute(a,3));g.deleteAttribute('uv');return g.toNonIndexed();};
-  const g=mergeGeometries([paint(nut,[.55,.36,.2]),paint(cap,[.36,.3,.22]),paint(stalk,[.3,.24,.18])]);g.translate(0,.62,0);
+  const g=mergeGeometries([paint(nut,[.2,.095,.035]),paint(cap,[.11,.085,.055]),paint(stalk,[.09,.07,.05])/* linear: the old values read as pale beige beads */]);g.translate(0,.62,0);
   const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.45});mat.onBeforeCompile=s=>addWet(s,'.6');
   const N=MOBILE?30:110;const im=new THREE.InstancedMesh(g,mat,N);let n=0;
-  for(let i=0;i<N*20&&n<N;i++){const s=pick(ring(2.2,9),(x,z)=>rootD(x,z)>.04&&pathD(x,z)>0,5);if(!s)continue;const [x,z]=s;const sz=rr(.011,.016);
-   E.set(rr(-.3,.3),rr(0,6.28),rr(-.15,.15));Q.setFromEuler(E);M.compose(V(x,meshH(x,z)-.004,z),Q,Sc.set(sz,sz,sz));im.setMatrixAt(n,M);Col.setScalar(rr(.75,1.15));im.setColorAt(n,Col);n++;}
+  for(let i=0;i<N*20&&n<N;i++){const s=pick(ring(2.2,9),(x,z)=>rootD(x,z)>.04&&pathD(x,z)>0,5);if(!s)continue;const k=1+Math.floor(R()*3);/* they drop in twos and threes, not one by one */
+   for(let j=0;j<k&&n<N;j++){const x=s[0]+(j?rr(-.09,.09):0),z=s[1]+(j?rr(-.09,.09):0);if(rootD(x,z)<.04)continue;const sz=rr(.013,.018);
+   E.set(rr(-.3,.3),rr(0,6.28),rr(-.15,.15));Q.setFromEuler(E);M.compose(V(x,meshH(x,z)-.004,z),Q,Sc.set(sz,sz,sz));im.setMatrixAt(n,M);Col.setScalar(rr(.8,1.2));im.setColorAt(n,Col);n++;}}
   im.count=n;im.receiveShadow=true;scene.add(im);G.acorns=im;}
 
  // ================= ferns =================
@@ -786,7 +787,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
   const geos=MOBILE?[mk(8,.7,3)]:[mk(7,.75,3),mk(9,.6,8)];// phones: one variant (one draw call)
   geos.forEach((fg,vi)=>{const NF=MOBILE?32:80;const im=new THREE.InstancedMesh(fg,fm,NF);let n=0;
    for(let i=0;i<NF*30&&n<NF;i++){const s=pick(R()<.5?ring(2.6,8):ring(10,24),(x,z)=>{const d=rootD(x,z);return d>.25&&d<(Math.hypot(x,z)>10?99:2.2)&&pathD(x,z)>.2;},6);if(!s)continue;const [x,z]=s;
-    const sz=rr(.8,1.4)*(Math.hypot(x,z)>10?rr(1.3,1.8):1);M.compose(V(x,meshH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz*rr(.85,1.1),sz));im.setMatrixAt(n,M);
+    const sz=rr(.8,1.4)*(Math.hypot(x,z)>10?rr(1.3,1.8):1);if(pathD(x,z)<.12+.36*sz)continue;/* the fronds (~0.36 m x size) stay off the trodden ways: he passed through the edge of two by the ladder path */M.compose(V(x,meshH(x,z)-.02,z),slopeQ(x,z,rr(0,6.28)),Sc.set(sz,sz*rr(.85,1.1),sz));im.setMatrixAt(n,M);
     Col.setHSL(rr(.3,.38),rr(.3,.45),rr(.6,.75));im.setColorAt(n,Col);n++;}
    im.count=n;im.receiveShadow=true;scene.add(im);});
   G.ferns=true;}
