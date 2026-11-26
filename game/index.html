@@ -464,11 +464,12 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  spDepth.customProgramCacheKey=()=>'sunProxyDepth';
  const spAll=new Map();
  const spOK=m=>plainCaster(m)&&!m.material.alphaHash&&!m.material.wireframe&&m.material.visible!==false&&!(m.material.clippingPlanes&&m.material.clippingPlanes.length)&&m.onBeforeRender===THREE.Object3D.prototype.onBeforeRender&&!m.geometry.isInstancedBufferGeometry&&m.geometry.attributes.position&&m.geometry.drawRange.start===0&&Math.min(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count,m.geometry.drawRange.count)/3<=SP_TRIS;
- const spSeen=o=>{let q=o;for(;q;q=q.parent){if(!q.visible)return false;if(q===scene)return true;}return false;};
+ const spBake=o=>{const f=o.userData.shadowBake;try{return typeof f==='function'&&!!f();}catch(e){return false;}};/* a part another system hides from the main pass but whose shadow must stay (props.js tool proxy: userData.shadowBake = () => tool at home) */
+ const spSeen=o=>{let q=o;for(;q;q=q.parent){if(!q.visible&&!(q===o&&spBake(o)))return false;if(q===scene)return true;}return false;};
  const _spS=new THREE.Sphere();
  /* a lamp's set: only the parts whose bounding sphere touches its shadow frustum (the others never reach its map) */
  const spCands=(l,fr)=>{const C=[];let hr=null;try{hr=hero&&hero.root;}catch(e){}/* the hero and what he holds move all the time */
-  const skip=new Set([PSG,hr,...shProxy].filter(Boolean)),lay=l.shadow.camera.layers;const walk=o=>{if(skip.has(o)||!o.visible||o.userData.lampCrop)return;
+  const skip=new Set([PSG,hr,...shProxy].filter(Boolean)),lay=l.shadow.camera.layers;const walk=o=>{if(skip.has(o)||(!o.visible&&!spBake(o))||o.userData.lampCrop)return;
    if(o.isMesh&&o.castShadow&&o.layers.mask===1&&spOK(o)&&C.length<SP_MAX){let inF=true;if(fr){const g=o.geometry;if(!g.boundingSphere)g.computeBoundingSphere();_spS.copy(g.boundingSphere).applyMatrix4(o.matrixWorld);inF=fr.intersectsSphere(_spS);}if(inF)C.push(o);}
    for(const c of o.children)walk(c);};walk(scene);return C;};
  const spState=m=>({mw:m.matrixWorld.clone(),mat:m.material,g:m.geometry,v:m.geometry.attributes.position.version,iv:m.geometry.index?m.geometry.index.version:0,S:m.material.shadowSide!==null&&m.material.shadowSide!==undefined?m.material.shadowSide:spSide[m.material.side]});
