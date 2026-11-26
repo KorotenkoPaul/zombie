@@ -998,7 +998,7 @@ function barricade(name,center,len){const g={name,boards:[],center};groups[name]
 const LG=LG_,LL=2.45,LC=3.4+HY,WS=3.6+HY,KT=5.0+HY,BD=7.4+HY,DK=9.0+HY;
 // hollow landing (right, low) with the glowing doorway in the trunk
 floorBoards(.4,2.9,LG,.9,3.2,{shape:disc(1.62,1.95,1.05,.9),radial:[1.62,1.95,1.05,.9]});
-for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,pz-.03),.13);/* short posts down into the soil */
+for(const [px,pz,py] of [[2.3,2.55,.55],[1.15,2.8,.5]])brace(V(px-.05,py,frontZ(px-.05,py)-.05),V(px+.05,LG-.12,pz),.13);/* [TREE, photo] knee brackets into the trunk flare (the landing hangs off the oak; the old posts down to the soil were not in the photo) */
 /* a short open-tread stair from the soil up to the door landing: a door and a landing in the air with no way up made no sense */
 {const c0=V(1.62,LG,1.95),dir=V(.68,0,.8).normalize(),side=V(-dir.z,0,dir.x),T=c0.clone().addScaledVector(dir,.96);T.y=LG-.03;
  /* the real surface under the stair (the big root in front of the landing is bark, not soil; standAt only guessed it and the
@@ -1053,9 +1053,9 @@ floorBoards(-3.5,-.5,LL,.4,2.4,{shape:disc(-2.0,.9,1.45,.4),radial:[-2.0,.9,1.45
  for(const sd of [-1,1])board(B.clone().add(T).multiplyScalar(.5).addScaledVector(ez,sd*.23),L,.075,.05,eu,{tint:rnd(.7,.8)});
  const ru=new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(ez,ey.clone().negate(),ex));
  for(let y=LL+.3;y<LC-.05;y+=.3){const t=(y-B.y)/(T.y-B.y);board(B.clone().lerp(T,t).addScaledVector(ey,.058),.56,.045,.07,ru,{tint:rnd(.8,.95)});}}
-brace(V(-1.4,.4,frontZ(-1.4,.7)-.05),V(-2.9,LL-.12,1.6),.13);
+brace(V(-1.45,LL-1.0,frontZ(-1.45,LL-1.0)-.05),V(-1.7,LL-.12,2.15),.13,.95);brace(V(-1.85,LL-.95,frontZ(-1.85,LL-.95)-.05),V(-2.9,LL-.12,1.45),.13,.88);/* [TREE, photo] two short knee brackets into the trunk, not one long strut from the roots (same rnd draws: tinted) */
 // center landing (half disc around the trunk front) + gate over the ground ladder
-floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-1.0,3.0,frontZ(-1.0,3.0)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(-.15,1.3,frontZ(-.15,1.3)-.08),V(-.05,LC-.13,3.45),.15);/* critic T19: kept left of the hollow's mouth */
+floorBoards(-3.3,.9,LC,.5,4.0,{shape:disc(-.5,1.2,2.7,.5),radial:[-.5,1.2,2.7,.5]});brace(V(-1.0,3.0,frontZ(-1.0,3.0)-.08),V(-2.4,LC-.13,2.6),.15);brace(V(.35,LC-1.1,frontZ(.35,LC-1.1)-.08),V(.45,LC-.13,2.7),.15);/* critic T19: clear of the hollow's mouth. [TREE, photo] a short knee bracket under the right end, not a 3 m pole from the roots behind the ladder */
 if(BARRICADES){post(-.62,LC,LC+1.1,3.84);post(.62,LC,LC+1.1,3.84);}
 ropeLadder(0,0,LC+.05,4.0);
 // kitchen (left, middle)
@@ -1607,7 +1607,7 @@ let noPost=false;
  let prW=1;PERF.addTest('пикселей ×¼',()=>{prW=PR;renderer.setPixelRatio(PR/2);resize();},()=>{renderer.setPixelRatio(prW);resize();});}
 let trauma=0;function shake(a){trauma=Math.min(1,trauma+a);}
 const look=V(0,7.4,2.4);let camDist=30;let camOv=null;
-function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
+window.__resize=()=>resize();function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h);{const cp=Math.max(renderer.getPixelRatio(),window.__compMin||0);if(composer._pixelRatio!==cp)composer._pixelRatio=cp;}/* [PERF] the composer kept the pixel ratio it was made with (2.2 on phones): when the governor stepped the canvas down, the scene still rendered (MSAA) at 2.2 and was scaled down, so the px steps saved nothing */composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();const vf=THREE.MathUtils.degToRad(camera.fov)/2;camDist=Math.max(8.2/Math.tan(vf),5.3/(Math.tan(vf)*camera.aspect));rig.setHome({dist:camDist});}
 addEventListener('resize',resize);
 
 // ================= main loop =================
