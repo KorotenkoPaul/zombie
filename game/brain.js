@@ -70,7 +70,7 @@ const JOBS = {
 const EXTRA = {
   chop:      { room: 'kitchen',  give: { hunger: -.03, fun: -.1 }, label: 'режет на доске',      when: h => (h >= 11 && h < 13) || (h >= 17 && h < 19) ? .2 : -.3 },
   // OUTDOOR: splitting rounds with the axe at the chopping block by the oak (hero.js MAKE.splitwood)
-  splitwood: { room: 'outside',  give: { fun: -.15, comfort: -.05 }, label: 'колет дрова',          when: (h, c) => (h >= 9 && h < 17 ? .2 : -1) + (c.logs <= 2 ? .3 : 0) },
+  splitwood: { room: 'outside',  give: { fun: -.15, comfort: -.05 }, label: 'колет дрова',          dur: [220, 260] /* the walk out from the house alone takes 45-80 s: with the 90 s watchdog he took the axe, put it straight back and went home (Props soak: rounds gone, no halves) */, when: (h, c) => (h >= 9 && h < 17 ? .2 : -1) + (c.logs <= 2 ? .3 : 0) + ((c.halves || 0) >= 4 ? -.6 : 0) + (c.pile === 0 ? -3 : 0) },   // split ones still lying there go up first; nothing to split with the pile empty
   pot:       { room: 'kitchen',  give: { hunger: -.05, comfort: -.12 }, label: 'помешивает в котелке', when: h => (h >= 17 && h < 20 ? .25 : 0) },
   stoke:     { room: 'kitchen',  give: { comfort: -.3 }, label: 'подкладывает дрова в печь', when: (h, c) => (c.ovenLow ? .6 : -.5) + (isN(h) ? .2 : 0), needLogs: true },
   dishes:    { room: 'kitchen',  give: { tidy: -.4 }, label: 'моет посуду',               when: (h, c) => (c.dirty >= 2 ? .8 : c.dirty === 1 ? (c.justAte ? .3 : -.2) : c.dirty === 0 ? -1.5 : (c.justAte ? .7 : 0)) },
@@ -98,7 +98,7 @@ const EXTRA = {
   fix_railing: { room: 'outside',  give: { wear: -.2, safety: -.05 }, label: 'чинит перила',    when: h => (h >= 9 && h < 17 ? .05 : -1.2) },
   clear_roof:  { room: 'outside',  give: { wear: -.15, tidy: -.05 }, label: 'сметает листья с крыши', when: h => (h >= 9 && h < 17 ? .3 : -1.5) },
   fix_chimney: { room: 'outside',  give: { wear: -.25, comfort: -.05 }, label: 'чистит трубу',  when: (h, c) => (h >= 10 && h < 16 && !c.ovenLit ? .1 : -2) },
-  firewood:  { room: 'outside',  give: { comfort: -.05 }, label: 'носит дрова снизу',     when: (h, c) => (c.logs <= 1 ? .5 : c.logs <= 3 ? 0 : -.4) + (h >= 8 && h < 18 ? 0 : -1) },   // a few logs up before the stack runs low
+  firewood:  { room: 'outside',  give: { comfort: -.05 }, label: 'носит дрова снизу',     dur: [200, 240], when: (h, c) => (c.logs <= 1 ? .5 : c.logs <= 3 ? 0 : -.4) + ((c.halves || 0) >= 2 && c.logs <= 6 ? .7 : 0) + (h >= 8 && h < 18 ? 0 : -1) },   // halves lying by the block are carried up   // a few logs up before the stack runs low
 };
 const isN = h => !(h >= 6 && h < 20);
 // graph node -> room (for lights and "where am I")
@@ -328,7 +328,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   const canDo = n => { const E = EXTRA[n]; if (E.task) return true; return !!(HH.hasTask && HH.hasTask(n)); };
   // the evening fire (Lights; photo: the oven window glows at night): lit at dusk once a day, then fed when it runs low (~4 h a load)
   const eveFire = h => h >= 18.6 && h < 21.2;
-  const habitCtx = h => ({ logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && (isN(h) || eveFire(h)), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
+  /* OUTDOOR (Props soak): what lies in the yard: split halves by the block, logs in the pile by the oak */const woodYard = () => { try { const o = window.__props.objects; const S = o.chopblock.userData.split; return { halves: S ? S.halves.filter(x => x.userData.splM && !x.userData.taken).length : 0, pile: o.logpile.userData.logs.count }; } catch (e) { return { halves: 0, pile: 20 }; } };  const habitCtx = h => ({ logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && (isN(h) || eveFire(h)), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2), ...woodYard() });
   function extraScore(n, h) {
     if (!canDo(n)) return null;
     const E = EXTRA[n];
@@ -769,7 +769,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // it got dark while he is busy in an unlit room: get up and light it, then carry on
     // (habits and room-less acts too, which ACTS does not list: on a dark rainy afternoon he sat 70 s at the radio in the unlit
     // bedroom, rules.js seed 3 at 9ae1d7b)
-    if (lampDark(h) && ROOM_LAMP[here] && !lampOn(ROOM_LAMP[here]) && cur && ((ACTS[cur.name] && ACTS[cur.name].room) || here) === here && v.task !== 'sleep' && !plan.length && v.step !== 'go') {
+    if (lampDark(h) && ROOM_LAMP[here] && !lampOn(ROOM_LAMP[here]) && cur && ((ACTS[cur.name] && ACTS[cur.name].room) || here) === here && v.task !== 'sleep' && !plan.length && v.step !== 'go' && !(cur.name === 'firewood' && !window.__fwCut)) {   // OUTDOOR: not with an armful of firewood on the way up (cut there, the halves he picked up were lost: Props soak day 4)
       tr('darkLamp');
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[here], on: true }, why: 'стемнело — включает свет' });
       plan.push({ task: cur.name, opts: {}, why: 'продолжает' });
@@ -788,7 +788,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const A = ACTS[cur.name];
     // a chore (ends by itself): only bedtime or exhaustion cuts it short, and only once he has been at it a while
     // rain caught him at an outdoor chore: he finishes the stroke and goes under the roof
-    if (!A && raining() && ['deck', 'ground'].includes(area(cur.name)) && EXTRA[cur.name] && cur.t > 3 && !plan.length) { why = 'дождь — уходит под крышу'; choose(h, 'rain'); return; }
+    if (!A && raining() && ['deck', 'ground'].includes(area(cur.name)) && EXTRA[cur.name] && cur.t > 3 && !plan.length && !(cur.name === 'firewood' && H.carry)) { why = 'дождь — уходит под крышу'; choose(h, 'rain'); return; }
     // watchdog: a chore the body never ends by itself (hammer is the open-ended craft clip) stops after its stay,
     // and any chore stuck past ~1.5 game hours at the spot is dropped (QA: 8 h of hammering, 2026-11-23)
     if (!A && EXTRA[cur.name] && !cur.cmd) { const E = EXTRA[cur.name]; if (cur.cap == null) cur.cap = E.dur ? rnd(E.dur[0], E.dur[1]) : 90;
@@ -935,7 +935,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if (extra === 'bolt') day.bolted = true; if (extra === 'stretch') day.justWoke = false; if (extra === 'dishes') day.justAte = false;
       if (extra === 'stoke' && eveFire(hour())) day.eveFire = true;
       if (extra === 'stoke' && ECON) { stock.logs = Math.max(0, stock.logs - 1); showStock(); }
-      if (extra === 'firewood' && ECON) { stock.logs += 2; showStock(); }
+      if (extra === 'firewood' && ECON) { stock.logs = Math.min(10, stock.logs + ((res && res.logs) || 2)); showStock(); }
       extra = null; }
     if (!job || res === false || (res && res.ok === false)) { job = null; return; }
     if (job === 'hunt') { stock.meat += 2; plan.unshift({ task: 'store', opts: { item: 'meat' }, why: 'кладёт мясо в холодильник' }); }
