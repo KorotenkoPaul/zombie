@@ -1002,6 +1002,18 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const hidden = [], _bx = new THREE.Box3(), _sz = V();
     // rugs, mats, papers: flat things lying on the boards cast no occlusion (from below they would cover the whole floor)
     const thin = o => { if (!o.isMesh || o.isInstancedMesh || !o.geometry) return false; if (o.userData.aoThin === undefined) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); _bx.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld).getSize(_sz); o.userData.aoThin = _sz.y < .05 && _sz.x * _sz.z > .02; } return o.userData.aoThin; };
+    // [PERF] the bake's camera sees one room, but meshes that are not frustum-culled (ground, grass, forest, the merged props...) were
+    // still submitted: ~120 draws per bake, the worst frame of the game. A mesh whose world box misses the room's bake box can't
+    // write a texel, so it sits out. __aoCullOff=true bakes as before.
+    const _bb = new THREE.Box3(), _rb = new THREE.Box3();
+    function bakeCull(o, R, fy) {
+      if (window.__aoCullOff || !(o.isMesh || o.isInstancedMesh) || !o.geometry || !o.geometry.attributes || !o.geometry.attributes.position) return false;
+      try { if (o.isInstancedMesh) { o.computeBoundingBox(); _bb.copy(o.boundingBox).applyMatrix4(o.matrixWorld); }
+        else { const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox(); _bb.copy(g.boundingBox).applyMatrix4(o.matrixWorld); }
+      } catch (e) { return false; }
+      if (_bb.isEmpty() || !isFinite(_bb.min.x) || !isFinite(_bb.max.x)) return false;
+      _rb.min.set(R.x0 - .35, fy - .7, R.z0 - .35); _rb.max.set(R.x1 + .35, fy + H + .3, R.z1 + .35);
+      return !_bb.intersectsBox(_rb); }
     function bake(r, i) {
       const R = RM[i], fy = R.y + TOP, cx = (R.x0 + R.x1) / 2, cz = (R.z0 + R.z1) / 2, hw = (R.x1 - R.x0) / 2 + .05, hd = (R.z1 - R.z0) / 2 + .05;
       bc.left = -hw; bc.right = hw; bc.top = hd; bc.bottom = -hd; bc.near = 0; bc.far = H + .4; bc.updateProjectionMatrix();
@@ -1009,7 +1021,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
       mats[i].multiplyMatrices(bc.projectionMatrix, bc.matrixWorldInverse);
       uF.value = fy;
       const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root;
-      hidden.length = 0; scene.traverseVisible(o => { if (o === mesh || o === hr || o === heroBlob || o.name === 'groundAO' || o.isSprite || o.isPoints || o.isLine || (o.material && o.material.transparent && !o.isSkinnedMesh) || thin(o)) hidden.push(o); });
+      hidden.length = 0; scene.traverseVisible(o => { if (o === mesh || o === hr || o === heroBlob || o.name === 'groundAO' || o.isSprite || o.isPoints || o.isLine || (o.material && o.material.transparent && !o.isSkinnedMesh) || thin(o)) hidden.push(o); else if (bakeCull(o, R, fy)) hidden.push(o); });
       for (const o of hidden) o.visible = false;
       const prevRT = r.getRenderTarget(), ov = scene.overrideMaterial, bg = scene.background, fog = scene.fog, su = r.shadowMap.autoUpdate, ac = r.autoClear, cc = r.getClearColor(new THREE.Color()), ca = r.getClearAlpha();
       const obr = scene.onBeforeRender, oar = scene.onAfterRender; scene.onBeforeRender = scene.onAfterRender = () => {};
