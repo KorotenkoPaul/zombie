@@ -2228,7 +2228,7 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
   const cx=(()=>{const ax=h0.x,az=h0.z,bx=h5.x,bz=h5.z,qx=h1.x,qz=h1.z;const d=2*(ax*(bz-qz)+bx*(qz-az)+qx*(az-bz));if(Math.abs(d)<1e-6)return null;
    const ux=((ax*ax+az*az)*(bz-qz)+(bx*bx+bz*bz)*(qz-az)+(qx*qx+qz*qz)*(az-bz))/d,uz=((ax*ax+az*az)*(qx-bx)+(bx*bx+bz*bz)*(ax-qx)+(qx*qx+qz*qz)*(bx-ax))/d;return V(ux,h0.y,uz);})();
   const nrm=V(h0.x-ins.x,0,h0.z-ins.z).normalize();const lat=cx?V(h0.x-cx.x,0,h0.z-cx.z).normalize():V();
-  const S=h0.clone().addScaledVector(nrm,.28).addScaledVector(lat,.1);S.y=F.obj?F.obj.getWorldPosition(V()).y:h0.y-.9;{const fy=floorAt(S.x,S.y+.3,S.z,.6);if(fy!=null)S.y=fy;}
+  const S=h0.clone().addScaledVector(nrm,.28).addScaledVector(lat,.16);/* KITCHEN: 6 cm further past the door's free edge (at .1 he stood right at the edge of its swing: boots 3.8-4.6 cm into the opening door, store) */S.y=F.obj?F.obj.getWorldPosition(V()).y:h0.y-.9;{const fy=floorAt(S.x,S.y+.3,S.z,.6);if(fy!=null)S.y=fy;}
   const nn=nearNode(S);const run=()=>approachTo(a,S.clone().addScaledVector(nrm,.01),.01,()=>{H.face=Math.atan2(h0.x-root.position.x,h0.z-root.position.z);play(IDLE(),{fade:.4});
     a.step='fridge';a.t=0;a.fr={st:'reachO',w:0,t:0,k:F.open,mode,then,ins,nrm,hc:cx,hr:cx?Math.hypot(h0.x-cx.x,h0.z-cx.z):0,th0:cx?Math.atan2(h0.z-cx.z,h0.x-cx.x):0,th1:cx?Math.atan2(h1.z-cx.z,h1.x-cx.x):0};});
   if(nn)goTo(nn,run);else run();}
