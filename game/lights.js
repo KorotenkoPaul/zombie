@@ -527,7 +527,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // the warm wedge that falls out of the doorway onto the landing, the roots and the path below it
     const spill = new THREE.SpotLight(0xFFA04C, 0, 9, .75, 1, 1.4);
     spill.position.set(ax[0] + dd.x * (r - .2), LG + 1.25, ax[1] + dd.z * (r - .2));
-    spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target);
+    spill.target.position.set(ax[0] + dd.x * (r + 2.6), 0, ax[1] + dd.z * (r + 2.6)); scene.add(spill, spill.target); if (ENV) ENV.doorSpill = spill; /* [ENV] env.js thins and warms the ground mist over this pool */
     /* phones: the doorway's warm wedge on the doorstep is the brightest warm spot at the foot of the photo and always in the
        home view; scored on the hero's distance alone it lost its pool slot whenever he was up in the house (doorstep 82 vs
        the photo's 118). It counts x3 in the slot race (only while lit, and a lantern by the hero still wins its slot back) */
