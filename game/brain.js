@@ -166,7 +166,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
   const hasCandle = !!(lights && lights.get && lights.get('candle'));
   const candleOn = () => hasCandle && lights.get('candle').on;
   const lampOn = n => !!(lights && lights.get(n) && lights.get(n).on);
-  const dark = h => (h >= 19.2 || h < 6.6), gloomy = () => { const s = weather(); return !!s && ((s.rain && s.rain !== 'none' && (s.rainAmt || 0) >= .5) || s.storm || (s.overcast && (s.cloud || 0) > .7)); }, lampDark = h => dark(h) || gloomy();   // [ENV] a grey rain / storm / heavy overcast: the rooms are dim by day too, so he lights the lamp of the room he is in and puts it out leaving, as at night (lamps only; one line so the QA random streams keep their lines)
+  const dark = h => (h >= 19.2 || h < 6.6), gloomy = () => { const s = weather(); return !!s && ((s.rain && s.rain !== 'none' && (s.rainAmt || 0) >= .5) || s.storm || (s.overcast && (s.cloud || 0) > .7)); }, lampDark = h => dark((h + .5) % 24) || gloomy();   // [ENV] room lamps come on half an hour before full dark (an evening chair job started at 19.1 h sat in the dark till 20.75); a grey rain / storm / heavy overcast: the rooms are dim by day too, so he lights the lamp of the room he is in and puts it out leaving, as at night (lamps only; one line so the QA random streams keep their lines)
 
   // ---------- clock ----------
   let jumped = false;

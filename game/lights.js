@@ -196,7 +196,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (PL.kitchenLamp) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
     const panes = claimHousing(kPos);
     const fo = oilFlame(kPos, null);
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 5.2 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -206,7 +206,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     sp.target.position.copy(wPos).add(V(-.35, -2, -.25)); scene.add(sp, sp.target);
     sp.castShadow = true; sp.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ sp.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); sp.shadow.camera.near = .08; sp.shadow.camera.far = 6;
     sp.shadow.bias = -.002; sp.shadow.normalBias = .03; sp.shadow.radius = 3; sp.shadow.autoUpdate = false;
-    floorClip(sp, WS);
+    floorClip(sp, WS); sp.userData.lampCache = true;
     claimHousing(wPos, .3);
     // no power anywhere in the world (no wire, no generator), so this is a hanging kerosene lamp under the enamel shade, as
     // old workshops had: a brass font below the shade on its burner, a glass chimney rising into the shade, a flame in the
@@ -230,7 +230,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // phones: light bounced off the bench and floor travels UP (walls, pegboard, the hero's body and face), so its pool cone
     // looks up and stops at the ceiling; a down cone lit only the floor under the bench and left him and the walls dark
     wb.userData.poolUp = WS + 3.3;
-    add('workshop', 'workshop', 'oil', wPos, { lights: [{ l: sp, I: 11.5 }, { l: wb, I: MOBILE ? 2.9 : 2.6 }], emis, opac: [[fm, 1]], extra: k => { wfl.visible = k > .02; const g = Math.min(1.35, k); wfl.scale.set(1.5 * (.3 + .7 * Math.min(1, g)), 1.1 * (.1 + .9 * g), .67 * (.3 + .7 * Math.min(1, g))); }, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
+    add('workshop', 'workshop', 'oil', wPos, { lights: [{ l: sp, I: 11.5 }, { l: wb, I: MOBILE ? 5.2 : 2.6 }], emis, opac: [[fm, 1]], extra: k => { wfl.visible = k > .02; const g = Math.min(1.35, k); wfl.scale.set(1.5 * (.3 + .7 * Math.min(1, g)), 1.1 * (.1 + .9 * g), .67 * (.3 + .7 * Math.min(1, g))); }, halo: sp, haloSize: 1.3, autoFn: c => c.lamps > .55 });
   }
 
   // ---------- bedroom: wall lantern + the candle on the reading table ----------
@@ -252,7 +252,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (BL) bs.target.position.set(-2.0, BD + .75, 2.05); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
-    floorClip(bs, BD);   // nothing below the bedroom floor: the kitchen wall under it caught a stepped leak through the boards
+    floorClip(bs, BD); bs.userData.lampCache = true;   // nothing below the bedroom floor: the kitchen wall under it caught a stepped leak through the boards
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
     // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
     const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
@@ -521,9 +521,16 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
        home view; scored on the hero's distance alone it lost its pool slot whenever he was up in the house (doorstep 82 vs
        the photo's 118). It counts x3 in the slot race (only while lit, and a lantern by the hero still wins its slot back) */
     spill.userData.poolPri = 3;
-    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }], haloSize: 2.0, haloTint: 0xFF9E52,
+    /* the plank frame round the doorway (coordinator round 06:38Z): it faces out, away from the cave light and the spill,
+       so it read near black against the lit hollow; in the photo the jambs and lintel catch the warm light thrown back
+       off the doorstep boards and the glowing hollow. A short warm bounce just outside the mouth, near lintel height
+       (phones: a downward pool cone, so it sits high enough to reach the jambs and the doorstep) */
+    const frame = new THREE.PointLight(0xFF9A4A, 0, MOBILE ? 2.8 : 2.4, 2);
+    /* square in front of the frame: its boards face +z (the home view), not along the trunk radius, which put the light right of the opening and left the left jamb dark on phones */
+    const fo = MOBILE ? .95 : .75; frame.position.set(ax[0] + dd.x * r, LG + 1.55, ax[1] + dd.z * r + fo); frame.userData.poolPri = 2; scene.add(frame);
+    add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }, { l: frame, I: MOBILE ? 5.5 : 3.6, sway: .02 }], haloSize: 2.0, haloTint: 0xFF9E52,
       // the photo's brightest warm spot at the foot of the tree (door moved down into view, ab2ddf4): a hotter hollow and spill
-      extra: (k, f) => { if (glow) glow.value = 4.6 * k * f; }, autoFn: c => c.lamps > .3 });
+      extra: (k, f) => { if (glow) glow.value = (MOBILE ? 9 : 6) * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
@@ -534,10 +541,13 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // A lit room is warm all over (walls, ceiling, corners), not just a hotspot by the lamp: a soft unshadowed
   // bounce light in the middle of the room stands in for the light the warm planks throw back.
   // Light also leaves through the back windows onto the trunk (desktop: a small spill light; phones: halo only).
+  /* phones, night (Env, 2026-11-26): the photo's kitchen and workshop read 1.5-2x brighter and deeper orange than ours
+     (kitchen 189/124/70 vs 132/92/53, workshop 169/96/46 vs 114/72/38 with the hero in them); the bedroom stays dim (Pavel) */
+  const KWB = 2.4;
   const ROOMS = {
-    kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: 2.0 },   // toward the stove: the lamp now hangs by the fridge
+    kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: MOBILE ? 2.0 * KWB : 2.0 },   // toward the stove: the lamp now hangs by the fridge
     bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: MOBILE ? .9 : .36 },   /* desktop: at .9 this shadowless all-room fill washed out the lamp's shadows (the bunk frame's on the back wall, his own); the lamp's cone takes the light back */   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
-    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
+    workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: MOBILE ? 2.6 * KWB : 2.6 },
   };
   const glows = [];
   // the camera, captured as the scene renders: a window's outside halo must not shine into the room through the glass
@@ -550,7 +560,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     // darker than desktop and the photo's warm-tan wall-to-wall glow. A pool light is a downward half-space, so on phones
     // it sits higher (near head height) to reach the walls as well as the floor.
     // creamy: the light off warm-tan planks (the lamps' own orange made the rooms read deep orange; photo: cream-tan)
-    const b = new THREE.PointLight(MOBILE ? 0xFFDDBA : 0xFFD6A8, 0, 3.6, 0); b.position.copy(R.c); if (MOBILE) b.position.y += .9; scene.add(b);
+    const b = new THREE.PointLight(MOBILE ? (room === 'bedroom' ? 0xFFDDBA : 0xFFB878) : 0xFFD6A8, 0, 3.6, 0); b.position.copy(R.c); if (MOBILE) b.position.y += .9; scene.add(b);
     glows.push({ room, l: b, I: R.bounce * .5, bounce: true });
   }
   for (const w of windows) {
@@ -1088,7 +1098,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     samplePose();
     // cooking, or stoking (the log goes in while the little door is open): the fire is fed
     const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
-    cookT = cooking ? 78 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s)
+    // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s). Stoked with logs (an evening fire for
+    // warmth, photo: the oven window glows) it burns ~4 game hours: he feeds it again when it runs low (brain: stoke when ovenLow)
+    const stoking = task === 'stoke' && cooking;
+    cookT = stoking ? Math.max(cookT, 240) : cooking ? Math.max(cookT, 78) : Math.max(0, cookT - dt);
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     /* the first frames after load, and any jump of the clock (setHour, a skip): automatic sources take their state at once.
@@ -1309,7 +1322,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const own = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey.bind(m) : null;
     m.onBeforeCompile = (sh, r) => { if (prev) prev.call(m, sh, r); sh.uniforms.uRimC = rimU.uRimC; sh.uniforms.uRimW = rimU.uRimW; sh.uniforms.uFill = rimU.uFill; sh.uniforms.uHue = rimU.uHue; sh.uniforms.uKnee = rimU.uKnee;
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uRimC, uRimW, uFill; uniform float uHue, uKnee;')
-        .replace('#include <opaque_fragment>', '{ float hl = dot(outgoingLight, vec3(.3, .59, .11)), al = max(dot(diffuseColor.rgb, vec3(.3, .59, .11)), .02); outgoingLight = mix(outgoingLight, diffuseColor.rgb * hl / al, uHue); } /* night: a lamp a hand breadth from him (his own lantern, a lamp he lights) blew his jacket and trousers to white; above a knee his light rolls off (hero only, the rest of the frame keeps its exposure) */ { float L = dot(outgoingLight, vec3(.3, .59, .11)); if (uKnee > 0. && L > .5) { float Lc = .5 + (L - .5) / (1. + (L - .5) * 2.); outgoingLight *= mix(1., Lc / L, uKnee); } }\n#include <opaque_fragment>')
+        .replace('#include <opaque_fragment>', '{ float hl = dot(outgoingLight, vec3(.3, .59, .11)), al = max(dot(diffuseColor.rgb, vec3(.3, .59, .11)), .02); outgoingLight = mix(outgoingLight, diffuseColor.rgb * hl / al, uHue); } /* night: a lamp a hand breadth from him (his own lantern, a lamp he lights) blew his jacket and trousers to white; above a knee his light rolls off (hero only, the rest of the frame keeps its exposure) */ { float L = dot(outgoingLight, vec3(.3, .59, .11)); if (uKnee > 0. && L > .28) { float Lc = .28 + (L - .28) / (1. + (L - .28) * 3.); outgoingLight *= mix(1., Lc / L, uKnee); } }\n#include <opaque_fragment>')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 { float rv = 1. - clamp(dot(normalize(normal), normalize(vViewPosition)), 0., 1.); float rim = rv * rv * rv;
   float lum = dot(diffuseColor.rgb, vec3(.3, .59, .11));
@@ -1328,11 +1341,86 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   let smHooked = false;
   const sceneBR = scene.onBeforeRender;
   scene.onBeforeRender = function (renderer, ...a) {
+    if (renderer) rdrLC = renderer;
     if (!smHooked && renderer && renderer.shadowMap) { smHooked = true; const sm = renderer.shadowMap, prev = sm.render;
       sm.render = function (L, sc, cam) { const had = cam && cam.layers.isEnabled(6); if (cam && !had) cam.layers.enable(6);
         try { return prev.call(this, L, sc, cam); } finally { if (cam && !had) cam.layers.disable(6); } }; }
     return sceneBR.call(this, renderer, ...a);
   };
+  /* [PERF with Perf's OK] lamp shadow cache: a lamp's map = the static room (drawn once, kept in a copy) + the hero, who is the
+     only thing that moves under a lamp. A redraw draws only the hero's casters (proxy, vest, boots, what he holds) through three's
+     own shadow pass, then lays the cached room over it with a full-screen pass that writes the packed depth and gl_FragDepth with
+     a LESS test: per texel the nearer of the two, the same map a full draw gives. The room is drawn again (Perf's lampDraw, crops
+     and bakes) whenever anything static that can cast into the lamp's reach changed (moved, shown/hidden, other geometry or material,
+     edited vertices), or the lamp / its map changed. ~60k tris / 15-35 calls per redraw -> the hero only. ?lampcache=0 or
+     window.__lampCacheOff = true: every redraw draws everything, as before. Stats: __lights.lampCacheStats(). */
+  let rdrLC = null;
+  const LC_OFF = (() => { try { return new URLSearchParams(location.search).get('lampcache') === '0'; } catch (e) { return false; } })();
+  const lcStats = { hits: 0, rebuilds: 0, off: 0, why: [] }, lcAll = new Map(); let lcWhy = null;
+  let lcQuad = null;
+  function lcQuadGet() {
+    if (lcQuad) return lcQuad;
+    const g = new THREE.PlaneGeometry(2, 2), vs = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }';
+    const copy = new THREE.ShaderMaterial({ uniforms: { tMap: { value: null } }, vertexShader: vs, depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+      fragmentShader: 'uniform sampler2D tMap; varying vec2 vUv; void main() { gl_FragColor = texture2D(tMap, vUv); }' });
+    const comp = new THREE.ShaderMaterial({ uniforms: { tMap: { value: null } }, vertexShader: vs, depthTest: true, depthWrite: true, depthFunc: THREE.LessDepth, blending: THREE.NoBlending,
+      fragmentShader: '#include <packing>\nuniform sampler2D tMap; varying vec2 vUv; void main() { vec4 c = texture2D(tMap, vUv); gl_FragDepth = unpackRGBAToDepth(c); gl_FragColor = c; }' });
+    copy.customProgramCacheKey = () => 'lampCacheCopy'; comp.customProgramCacheKey = () => 'lampCacheComp';
+    const mesh = new THREE.Mesh(g, copy); mesh.frustumCulled = false; const sc = new THREE.Scene(); sc.add(mesh);
+    lcQuad = { mesh, sc, copy, comp, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
+    return lcQuad;
+  }
+  function lcPass(target, mat, tex) {
+    const Q = lcQuadGet(), r = rdrLC, prevT = r.getRenderTarget(), ac = r.autoClear, xr = r.xr.enabled, ar = r.info.autoReset;
+    mat.uniforms.tMap.value = tex; Q.mesh.material = mat; r.autoClear = false; r.xr.enabled = false; r.info.autoReset = false;   // the frame's shadow-pass counts stay (Perf's budget gate reads them)
+    try { r.setRenderTarget(target); r.render(Q.sc, Q.cam); } finally { r.setRenderTarget(prevT); r.autoClear = ac; r.xr.enabled = xr; r.info.autoReset = ar; mat.uniforms.tMap.value = null; }
+  }
+  const _lcS = new THREE.Sphere(), _lcP = V();
+  function lcSig(l, hero) {   // everything static that can cast into this lamp's reach, as one flat list of numbers
+    l.getWorldPosition(_lcP); const R = (l.shadow.camera.far || l.distance || 6) + .5, out = [];
+    scene.traverse(o => {
+      if (!(o.isMesh || o.isInstancedMesh) || !o.castShadow || hero.has(o)) return;
+      let v = true; for (let q = o; q; q = q.parent) if (!q.visible) { v = false; break; } if (!v) return;
+      const g = o.geometry; if (!g) return;
+      if (o.isInstancedMesh) { if (!o.boundingSphere) o.computeBoundingSphere(); _lcS.copy(o.boundingSphere).applyMatrix4(o.matrixWorld); }
+      else { if (!g.boundingSphere) g.computeBoundingSphere(); _lcS.copy(g.boundingSphere).applyMatrix4(o.matrixWorld); }
+      if (_lcS.center.distanceTo(_lcP) - _lcS.radius > R) return;
+      const m = Array.isArray(o.material) ? o.material.map(x => x.id).join('.') : o.material && o.material.id;
+      if (lcWhy) lcWhy.push([out.length, o]);
+      out.push(o.id, g.id, m, g.attributes.position ? g.attributes.position.version : 0, g.index ? g.index.version : 0, g.drawRange.start, g.drawRange.count,
+        o.isInstancedMesh ? o.instanceMatrix.version * 1e3 + o.count : 0, ...o.matrixWorld.elements);
+    });
+    const c = l.shadow.camera; l.target.getWorldPosition(_lcS.center);
+    out.push(_lcP.x, _lcP.y, _lcP.z, _lcS.center.x, _lcS.center.y, _lcS.center.z, l.angle, l.distance, c.near, c.far, l.shadow.map ? l.shadow.map.texture.id : -1);
+    return out;
+  }
+  function lampCache(l, sc, cam, r0, drawStatic) {
+    if (LC_OFF || window.__lampCacheOff || !l.userData.lampCache || !rdrLC || !l.shadow.map || !rdrLC.capabilities.isWebGL2) { lcStats.off++; return false; }
+    const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; if (!hr) { lcStats.off++; return false; }
+    const hero = new Set(), dyn = []; hr.traverse(o => { hero.add(o); if ((o.isMesh || o.isSkinnedMesh) && o.castShadow) dyn.push(o); });
+    const map = l.shadow.map, W = map.width, H = map.height;
+    let e = lcAll.get(l); lcWhy = []; const sig = lcSig(l, hero); const objs = lcWhy; lcWhy = null;
+    let same = !!(e && e.rt.width === W && e.rt.height === H && e.sig.length === sig.length);
+    let bad = -1; if (same) for (let i = 0; i < sig.length; i++) if (e.sig[i] !== sig[i]) { same = false; bad = i; break; }
+    if (e && e.sig && lcStats.why.length < 20) { let nm = bad < 0 ? 'count ' + (e.sig.length + '->' + sig.length) : 'lamp'; if (bad >= 0 && e.objs) for (const [k, o] of e.objs) if (k <= bad) nm = (o.name || o.parent && o.parent.name || o.type) + '#' + (bad - k); if (!same) lcStats.why.push(nm); }
+    if (!same) {
+      // the room alone (hero's casters off), through Perf's lampDraw, copied aside
+      if (!e || e.rt.width !== W || e.rt.height !== H) { if (e) e.rt.dispose(); e = { rt: new THREE.WebGLRenderTarget(W, H, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false, depthBuffer: false }), sig: null }; lcAll.set(l, e); }
+      const was = dyn.map(o => o.castShadow); dyn.forEach(o => { o.castShadow = false; });
+      const nu = rdrLC.shadowMap.needsUpdate;
+      const i0 = [rdrLC.info.render.calls, rdrLC.info.render.triangles];
+      try { l.shadow.needsUpdate = true; drawStatic(); lcStats.room = [rdrLC.info.render.calls - i0[0], rdrLC.info.render.triangles - i0[1]]; } finally { dyn.forEach((o, i) => { o.castShadow = was[i]; }); }
+      lcPass(e.rt, lcQuadGet().copy, map.texture); e.sig = sig; e.objs = objs; lcStats.rebuilds++;
+      rdrLC.shadowMap.needsUpdate = nu;
+    } else lcStats.hits++;
+    // the hero alone (three's own depth materials: skinning, alphaTest), then the cached room merged in per texel
+    const masks = dyn.map(o => o.layers.mask), cm = cam.layers.mask;
+    dyn.forEach(o => o.layers.enable(6)); cam.layers.mask = 1 << 6;
+    const j0 = [rdrLC.info.render.calls, rdrLC.info.render.triangles];
+    try { l.shadow.needsUpdate = true; r0([l], sc, cam); } finally { dyn.forEach((o, i) => { o.layers.mask = masks[i]; }); cam.layers.mask = cm; }
+    lcPass(map, lcQuadGet().comp, e.rt.texture); lcStats.redraw = [rdrLC.info.render.calls - j0[0], rdrLC.info.render.triangles - j0[1]];
+    return true;
+  }
   function fixShadowProxy(r) {
     const h = r.getObjectByName('heroShadow'); if (!h) return;
     h.traverse(o => { if (!o.isMesh || o.userData.lightsShadowFix) return; o.userData.lightsShadowFix = true; o.userData.noRim = true; o.castShadow = true; });
@@ -1376,6 +1464,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
+    lampCache, lampCacheStats: () => ({ ...lcStats }),
     _dbg: () => ({ match, scene, cam, pool, shadowDraws, shadowChances, rimU, AO, GAO, heroBlob, emberK: () => emberK }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,
