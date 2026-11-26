@@ -40,3 +40,10 @@ Lamp housings near a source get castShadow=false and their own pane material (gl
 ## Round 5 (2026-11-23)
 - Pavel: lamps and candles NEVER go out by themselves. If the hero forgot one, it keeps burning until he switches it off. Removed the 45 s daylight burn-out and the candle's 90 s timeout. The candle lights when he sits down to read in the dark (becomes manual) and only `set('candle', false)` puts it out. Outdoor landing lantern and trunk door still follow dusk/dawn (nobody carries them).
 - Window glow on the oak: no lights. lights.js chains onto Tree's bark and leaf onBeforeCompile and adds uniforms wgP[6] (window point + radius 2.6 m) / wgC[6] (warm colour × room warmth × night): a soft emissive warm spot on bark/leaves next to each lit window.
+
+## Light rules gate (2026-11-26)
+`node tests/lights/rules.js` (~3.5 min, seeds 3,7 in parallel; `--seeds 3,7,11`, `--grace 45`). Headless, virtual clock, no rendering.
+Checks Pavel's rules: night lamps only where the hero is (a room lit without him > 45 s fails), no lamp goes out by itself
+(every on->off with him in that room), dark rainy day: a stay of 45 s+ in a room sees its lamp lit, and a stoked oven burns
+and lights the kitchen and still burns 3 game hours later. `--self-test` leaves a workshop lamp on at night: the gate must fail.
+Run it before pushing changes to lights.js, brain.js, the hero's switch/stoke tasks or the day/weather code.
