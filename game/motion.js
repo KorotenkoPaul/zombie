@@ -202,7 +202,7 @@ export function createMotion({ hero, db, opts = {} }) {
     for (let j = 0; j < 3; j++) { const t = (j + 1) / 3; const k = (1 - Math.exp(-t * 3)) / 3; const da = wrapA(target - yaw); const turn = clamp(da, -3.2 * t, 3.2 * t);
       out[j] = { x: p.x + v.x * k, z: p.z + v.z * k, yaw: yaw + turn }; } }
 
-  function blocked() { if (H.fit || H.seated || H.inBed || H.bedB || H.swing || H.edgeHold) return true;
+  function blocked() { if (H.fit || H.seated || H.inBed || H.bedB || H.swing || H.edgeHold || (H.tTurn && !window.__ttMM)) return true; // H.tTurn: hero.js steps a turn on the spot
     if (H.lad && !(H.lad.phase === 'mount' || (H.lad.phase === 'over' && !H.lad.start))) return true; return false; }
 
   function buildQuery(traj) { const g = gidx(); const o = g * NF; for (let k = 0; k < 15; k++) Qv[k] = F[o + k];
@@ -221,7 +221,7 @@ export function createMotion({ hero, db, opts = {} }) {
   function legIK(s, target, w) { const [ui, li, fi] = legs[s]; const U = HB[ui], L = HB[li], Fb = HB[fi]; const endQ = Fb.getWorldQuaternion(new THREE.Quaternion());
     const a = U.getWorldPosition(new THREE.Vector3()), b = L.getWorldPosition(new THREE.Vector3()), c = Fb.getWorldPosition(new THREE.Vector3()); const l1 = a.distanceTo(b), l2 = b.distanceTo(c);
     const goal = c.clone().lerp(target, w); const tv = goal.clone().sub(a); const dd = clamp(tv.length(), Math.abs(l1 - l2) + .01, l1 + l2 - .002); const dir = tv.normalize();
-    let pole = b.clone().sub(a.clone().add(c).multiplyScalar(.5)); pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pole.lengthSq() < 1e-8) pole.set(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)); pole.normalize();
+    let pole = b.clone().sub(a.clone().add(c).multiplyScalar(.5)); if (!window.__noPoleBias) pole.x += Math.sin(root.rotation.y) * .03, pole.z += Math.cos(root.rotation.y) * .03; /* WALK (integrator: fixlamp/sharpen slide, knee 5 cm sideways in one frame): a near-straight leg's knee offset is a few mm and its direction swung frame to frame; the knee leans forward a little like a person's */ pole.sub(dir.clone().multiplyScalar(pole.dot(dir))); if (pole.lengthSq() < 1e-8) pole.set(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y)); pole.normalize();
     const ca = clamp((l1*l1 + dd*dd - l2*l2) / (2*l1*dd), -1, 1), sa = Math.sqrt(1 - ca*ca); const knee = a.clone().addScaledVector(dir, ca*l1).addScaledVector(pole, sa*l1);
     turnBone(U, b, knee, 1); turnBone(L, Fb.getWorldPosition(new THREE.Vector3()), a.clone().addScaledVector(dir, dd), 1);
     Fb.parent.getWorldQuaternion(_pq); Fb.quaternion.copy(_pq.invert().multiply(endQ)); Fb.updateMatrixWorld(true); }

@@ -767,7 +767,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
       startNext(); return;
     }
     // it got dark while he is busy in an unlit room: get up and light it, then carry on
-    if (lampDark(h) && ROOM_LAMP[here] && !lampOn(ROOM_LAMP[here]) && cur && ACTS[cur.name] && ACTS[cur.name].room === here && v.task !== 'sleep' && !plan.length && v.step !== 'go') {
+    // (habits and room-less acts too, which ACTS does not list: on a dark rainy afternoon he sat 70 s at the radio in the unlit
+    // bedroom, rules.js seed 3 at 9ae1d7b)
+    if (lampDark(h) && ROOM_LAMP[here] && !lampOn(ROOM_LAMP[here]) && cur && ((ACTS[cur.name] && ACTS[cur.name].room) || here) === here && v.task !== 'sleep' && !plan.length && v.step !== 'go') {
       tr('darkLamp');
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[here], on: true }, why: 'стемнело — включает свет' });
       plan.push({ task: cur.name, opts: {}, why: 'продолжает' });

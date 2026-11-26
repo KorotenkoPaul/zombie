@@ -6,7 +6,7 @@ const {open}=require('./lib');const install=require('./sampler.js');const {analy
 const arg=(k,d)=>{const i=process.argv.indexOf('--'+k);return i<0?d:process.argv[i+1];};
 const T=arg('task','fix_shingle'),HERO=arg('hero','old'),N=+arg('n',8),WORK=+arg('work',8),K={fix_board:'floor',fix_wall:'wall',fix_railing:'post',fix_shingle:'shingle'}[T];
 (async()=>{const {b,p}=await open({seed:1,query:(HERO==='old'?'?':'?hero='+HERO+'&')+'wear&noplcull',vp:{width:+arg('px',240),height:+arg('px',240)}});
- await p.evaluate(`(${install})({})`);await p.evaluate(f=>{for(const k of f.split(',').filter(Boolean))window[k]=true;},arg('flags',''));
+ await p.evaluate(`(${install})({})`);await p.evaluate(f=>{for(const k of f.split(',').filter(Boolean)){const [n,v]=k.split('=');window[n]=v===undefined?true:+v;}},arg('flags',''));
  await p.evaluate(()=>{__qa.start();__qa.reseed(12345);__th.setHour(10);});
  const ids=await p.evaluate(k=>{const W=window.__wear;W.set('__init',0);return W.candidates(k);},K);
  const pick=arg('ids','')?arg('ids').split(',').map(Number):ids.filter((_,i)=>i%Math.max(1,Math.floor(ids.length/N))===0).slice(0,N);console.log(T,HERO,ids.length,'candidates, testing',pick.join(','));
