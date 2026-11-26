@@ -193,3 +193,22 @@ Debug: `__treedress.stats()`.
 - Ivy: 32% of leaves low down rising to 52% at 7 m turn wine red / rust / butter yellow, picked by `tdHash` of the leaf position (no R() draw, layout unchanged: 373 phone / 602 desktop).
 - Ferns: 30% copper, 20% straw, the rest a tired green.
 - Shader (`mat.userData.autumn`, key `|tdAut1`): instance colour red > 1.5 marks a turned leaf and holds 4x the target colour; the green map only supplies luminance, so turned leaves are clean colours with lighter veins, not muddy tinted green.
+
+## Round 27: oak limbs close up
+- The limbs showed a camouflage blotch up close. Cause: tree.js's limb grooves took their phase from the shading normal, which carries treedress's bark normal map (same bug as the root cork speckle in R24).
+- Fix in tree.js (key `oakBark-grooves2-fold`): the phase now comes from the position (angle round the trunk x90, height x13 on the limbs fading to 0 up the trunk, plus smooth wander), so the grooves run along each limb and are noise-free. Home view unchanged.
+
+## Round 28: trunk door and bark joints
+- Thin orange stakes stood up out of the door sill: the cave floor boards ran along `out`, so `piece()` (index.html door frame) got a zero ez and a degenerate basis. Fixed: such pieces take ez = up (lie flat). The boards now start just behind the threshold (they began ~.5 m out on the landing because `at(0,..)` measured the flared foot).
+- Threshold board lies flat (8 cm x 24 cm) instead of on edge (a 12 cm bar slanting across the doorway).
+- Joints: board ends vs bark checked by raycast and shots; no floating joints (room floors stop at their own back walls by design).
+- Anim gate (tests/anim/gate.js) did not finish within 25 min in this container; not run to completion.
+
+## Round 29: roots where the hero walks
+- Grass through bark: a raycast check of every tuft (base / middle / tip inside the bark?) found ~30 tufts and ferns whose blades fanned into a root or the trunk's bulging foot. Ground (ground.js `nearRootWall`, after every R() draw) and treedress (fern fronds checked along their own 7 directions, tufts in 8) now drop those. Ground got `G._wallAt` (wood surface up to 1.8 m, same raster as barkTop). After: 0 piercing.
+- treedress placements use the ground as drawn (`gH`: Ground's meshH, then heightAt) instead of env's base groundH (missed the humps by up to ~15 cm).
+- Voids under roots: Ground's soil mounds already fill them; the remaining pockets under the trunk's flare are hidden from every normal view.
+- Steps: standAt sampled every 5 cm over the trodden path: one 6-18 cm step where a root crosses the path at x -3.3..-1.7, z 4.3..5.3 (reported, terrain not changed).
+
+## Round 30 — upper trunk and limb bases vs the photo
+- Above the house (y 5.6..9.6, under 3.3 m off the axis) nothing carved the bark: treedress's flutes stopped at 4.2..5.6 and Tree's limb grooves start at 3.3 m out / 9.6 m up, so the visible upper trunk read flat. The flutes now run on up to the fork (fade 9.4..10.8) and out onto the limb bases, handing over to Tree's grooves at 3.3..4.4 m; below the house unchanged. Crotches keep 40 % of the flute (was cut to 0). Shader only, no triangles. Key |treedress10.
