@@ -49,14 +49,14 @@ export function createRain({ THREE, scene, wind, groundH = () => 0, skip = [], c
   const ND = MOBILE ? 1600 : 3200;
   const dA = new Float32Array(ND * 4); for (let i = 0; i < ND; i++) dA.set([Math.random(), Math.random(), Math.random(), Math.random()], i * 4);
   const drops = new THREE.Mesh(quadGeo(ND, { aD: dA }), mk(`attribute vec4 aD;uniform float uKeep;uniform vec4 uLp[6];varying float vA;varying vec2 vQ;varying float vL;
-    void main(){float spd=11.+aD.w*3.;float fall=mod(uFT*spd+aD.z*uTop*3.,uTop);/* uFT: fall clock, slower in a drizzle (no jumps when it changes) */vec3 p=vec3(uBox.x+aD.x*uBox.z,uTop-fall,uBox.y+aD.y*uBox.w);
+    void main(){float spd=11.+aD.w*3.;float fall=mod(uFT*spd+aD.z*uTop*3.,uTop);/* uFT: fall clock, slower in a drizzle (no jumps when it changes) */vec3 p=vec3(uBox.x+aD.x*uBox.z,uTop-fall,uBox.y+aD.y*uBox.w);bool nr=float(gl_InstanceID)>=${ND - (MOBILE ? 160 : 300)}.;if(nr){/* [ENV] the last few hundred drops fall in a box just in front of the lens (3-10 m), whatever the camera does: in real rain the near streaks read bigger and softer than the far ones, and the box round the tree alone left the air by the camera empty. Same draw, same count */vec3 fw=-vec3(viewMatrix[0][2],0.,viewMatrix[2][2]);fw=length(fw)>1e-4?normalize(fw):vec3(0.,0.,-1.);vec3 rt=vec3(-fw.z,0.,fw.x);fall=mod(uFT*spd+aD.z*24.,8.);p=cameraPosition+rt*(aD.x*9.-4.5)+fw*(3.+aD.y*7.)+vec3(0.,4.-fall,0.);}
      vec2 wv=windVel(p);p.xz+=wv*(fall/(spd*uSF)-1.);
      float on=step(fract(aD.w*7.31+aD.x*3.1),uK)*step(topAt(p.xz),p.y)*step(float(gl_InstanceID)+.5,uKeep*${ND}.);/* quality step: thinned from the end, one drop at a time */
      vec3 tail=p+vec3(wv.x,spd*uSF,wv.y)*.065;/* [ENV] critic E13: long thin streaks (a 1/15 s exposure), not stubby blocks */
      vec4 a=viewMatrix*vec4(p,1.),b=viewMatrix*vec4(tail,1.);vec2 d=b.xy-a.xy;float L=length(d);d=L>1e-5?d/L:vec2(0.,1.);
-     vec4 v=mix(a,b,position.y);v.xy+=vec2(d.y,-d.x)*position.x*max(.004,-a.z*.0017);/* about 1 px on screen at any distance, soft across */vQ=position.xy;
+     vec4 v=mix(a,b,position.y);v.xy+=vec2(d.y,-d.x)*position.x*max(.004,-a.z*.0017)*(nr?2.6:1.);/* about 1 px on screen at any distance, soft across */vQ=position.xy;
      /* [ENV] drops passing a lit window or lantern catch its warm light (night rain is seen where the light is) */vL=0.;for(int i=0;i<6;i++){vL+=min(1.,uLp[i].w*15.)*smoothstep(3.5,.3,distance(p,uLp[i].xyz));}vL=min(vL,1.5);
-     vA=on*(.14+.16*position.y)*(.55+.45*uSF)*smoothstep(1.,4.,-v.z)*${MOBILE ? '1.25' : '1.0'};gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
+     vA=on*(nr?.32:1.)/* near: wider, out of focus, fainter */*(.14+.16*position.y)*(.55+.45*uSF)*smoothstep(1.,4.,-v.z)*${MOBILE ? '1.25' : '1.0'};gl_Position=projectionMatrix*v;if(on<.5)gl_Position=vec4(2.,2.,2.,1.);}`,
     `varying float vA;varying vec2 vQ;varying float vL;void main(){/* soft across the width, fading up the tail: a streak, never a flat white bar */float a=vA*(1.-vQ.x*vQ.x)*smoothstep(0.,.12,vQ.y)*(1.-.75*vQ.y);gl_FragColor=vec4(uCol+vec3(1.,.66,.34)*vL*1.4,min(1.,a*1.15*(1.+vL*1.8)));}`));
   drops.material.uniforms.uKeep = { value: 1 }; drops.material.uniforms.uLp = { value: [0, 1, 2, 3, 4, 5].map(() => new THREE.Vector4(0, -99, 0, 0)) }; drops.frustumCulled = false; drops.renderOrder = 8; drops.visible = false; scene.add(drops); drops.matrixAutoUpdate = false;
 
