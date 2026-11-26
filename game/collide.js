@@ -510,7 +510,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
       if (hero.path && hero.path.length && !hero.lad) { pd[0] = 0; anyP = pd.some(v => v > 0); }
       // a foot / shin graze left after its first push this frame (under 4 mm) waits for the next frame (not for the arms: no gain, and a hand jumped at the sink): a second IK lift in the
       // same frame swung the knee 1.4 cm and back the next frame, every 6-9 frames (13 Hz knee jitter at the chopping block)
-      if (it > 0) { const X = window.__colX || {}; let cut = false; for (const c of [4, 5]) if (pd[c] > 0 && pd[c] < .004 && !X.legRepush) { pd[c] = 0; cut = true; } if (cut) anyP = pd.some(v => v > 0); }
+      if (it > 0) { const X = window.__colX || {}; let cut = false; if (!hero.lad) for (const c of [4, 5]) if (pd[c] > 0 && pd[c] < .004 && !X.legRepush) { pd[c] = 0; cut = true; } if (cut) anyP = pd.some(v => v > 0); }
       { const X = window.__colOff; if (X) { if (X.root) pd[0] = 0; if (X.head) pd[1] = 0; if (X.arms) pd[2] = pd[3] = 0; if (X.legs) pd[4] = pd[5] = 0; anyP = pd.some(v => v > 0); } }
       if (!anyP) break; st.pushes++; lastTouch = frameNo; liveMask = 0; for (let c = 0; c < 6; c++) if (pd[c] > 0) liveMask |= 1 << c; if (!liveMask) break; for (let c = 0; c < 6; c++) if (pd[c] > 0) hold[c] = c >= 4 ? (window.__colX && window.__colX.hardRel || hero.state !== "work" || hero.trans || footMv[c] > .003 ? 0 : .15) : .35; for (let c = 2; c < 6; c++) if (pd[c] > 0) relV[c].set(0, 0, 0);
       // root: sideways (and up while seated / lying); a push straight down or up while standing goes to the head / spine instead
@@ -564,7 +564,7 @@ export function createCollide({ scene, HH, P3 = null, trunk = null, perf = null,
   const relV = [0, 0, 0, 0, 0, 0].map(() => V()), _rv = V();
   // the animated foot's travel last frame (m): a foot that steps (a shuffle at the sink) is never held lifted
   const footMv = [0, 0, 0, 0, 0, 0], footP = [0, 0, 0, 0, 0, 0].map(() => V(1e9, 0, 0));
-  function relLimb(c, k) { const o = off.limb[c]; if (c < 4 || (window.__colX && window.__colX.hardRel)) { o.multiplyScalar(k); return; } /* arms: the plain exponential (eased, a hand at the sink jumped 8 cm/frame²) */
+  function relLimb(c, k) { const o = off.limb[c]; if (c < 4 || hero.lad || hero.state !== 'work' || hero.trans || (window.__colX && window.__colX.hardRel)) { o.multiplyScalar(k); relV[c].set(0, 0, 0); return; } /* arms: the plain exponential (eased, a hand at the sink jumped 8 cm/frame²) */
     if (o.lengthSq() < 1e-10) { o.set(0, 0, 0); relV[c].set(0, 0, 0); return; }
     _rv.copy(o).multiplyScalar(k - 1).sub(relV[c]); const a = ACC[c] * .5; if (_rv.length() > a) _rv.setLength(a); relV[c].add(_rv); o.add(relV[c]);
     if (o.dot(relV[c]) > 0 || o.lengthSq() < 1e-8) { if (o.lengthSq() < 1e-8) o.set(0, 0, 0); relV[c].set(0, 0, 0); } }
