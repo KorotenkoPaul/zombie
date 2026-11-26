@@ -257,7 +257,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     const hg = BL && BL.own ? null : housing(bPos); lastHang = null; if (!(BL && BL.own)) hang(bPos, .23, !BL); const panes = claimHousing(bPos);
     if (lastHang && lastHang.chain && fuse(hg, lastHang.chain)) lastHang.chain = null;   // chain + hook + body: one draw
     const fo = oilFlame(bPos, hg);
-    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 8 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra,
+    add('bedroom', 'bedroom', 'oil', bPos, { lights: [{ l: bs, I: MOBILE ? 9 : 10.4 }, { l, I: MOBILE ? 1.3 : 1.7 }, ...(MOBILE ? [] : [{ l: bb, I: 1.25 }])], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra,
       autoFn: c => c.lamps > .4 && !(c.task === 'sleep' && c.asleep) });
   }
   if (PL.candle) {
@@ -534,7 +534,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // Light also leaves through the back windows onto the trunk (desktop: a small spill light; phones: halo only).
   const ROOMS = {
     kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: 2.0 },   // toward the stove: the lamp now hangs by the fridge
-    bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: .9 },   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
+    bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: MOBILE ? .9 : .36 },   /* desktop: at .9 this shadowless all-room fill washed out the lamp's shadows (the bunk frame's on the back wall, his own); the lamp's cone takes the light back */   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
     workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: 2.6 },
   };
   const glows = [];
