@@ -971,11 +971,11 @@ for(const [px,pz] of [[2.3,2.55],[1.15,2.8]])brace(V(px,-.25,pz),V(px+.02,LG-.1,
  const piece=(a,b,wd,dp,kind,tn)=>{const d=b.clone().sub(a);const L=d.length();const ex=d.normalize();let ez=out.clone().sub(ex.clone().multiplyScalar(out.dot(ex)));/* [treedress, door round] a piece running along out (the cave floor boards) left ez zero: a degenerate basis drew each board as a thin orange stake standing up from the sill. Those lie flat: thickness up */if(ez.lengthSq()<1e-4)ez.set(0,1,0);ez.normalize();const ey=ez.clone().cross(ex);
   const m=new THREE.Matrix4().makeBasis(ex,ey,ez).setPosition(a.clone().add(b).multiplyScalar(.5)).multiply(new THREE.Matrix4().makeScale(L,wd,dp));if(kind==='beam')beamInst(m,'door');else{const i=boards.count++;boards.setMatrixAt(i,m);aRow.setX(i,rnd(0,97));aWx.setXY(i,.2,0);boards.setColorAt(i,new THREE.Color().setScalar(tn||rnd(.85,1)));
    const p=V(),q=new THREE.Quaternion(),sc=V();m.decompose(p,q,sc);PL.push({mesh:boards,i,kind:'door',c:p,q});}};
- const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.62*H,ah=.38*H/1.05+fw*.45;
+ const fw=.22,hw=D.w/2+fw*.3,yS=D.y0+.74*H,ah=.26*H+fw*.45;
  // jambs, a little proud of the bark and sunk into it
  for(const sd of [-1,1]){const tp=at(sd*hw,yS+.02,.1),bt=at(sd*hw,D.y0-.04,.1);/* [TREE] plumb jambs like the photo's frame: the bottom keeps the top's line (the flaring trunk foot pushed it out, so both jambs leaned outwards) and is sunk a little into the bark */piece(V(tp.x*.7+bt.x*.3,bt.y,tp.z*.7+bt.z*.3),tp,fw,.34,'beam');}
  // arch: short chunky pieces round the top
- const N=7;let prev=at(-hw,yS,.08);for(let k=1;k<=N;k++){const t=Math.PI*(1-k/N);const p=at(Math.cos(t)*hw,yS+Math.sin(t)*ah,.08);piece(prev.clone().addScaledVector(prev.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(prev).normalize(),.03),fw,.3,'beam');prev=p;}
+ const N=7;let prev=at(-hw,yS,.08);for(let k=1;k<=N;k++){const xx=-hw+2*hw*k/N;/* [TREE, photo] two straight rafters to a low peak (the photo's five-sided door), was a round arch */const p=at(xx,yS+ah*(1-Math.abs(xx)/hw),.08);piece(prev.clone().addScaledVector(prev.clone().sub(p).normalize(),.03),p.clone().addScaledVector(p.clone().sub(prev).normalize(),.03),fw,.3,'beam');prev=p;}
  // a keystone block on top
  {const p=at(0,yS+ah+.02,.05);piece(p.clone().addScaledVector(V(0,1,0),-.12),p.clone().addScaledVector(V(0,1,0),.12),.2,.34,'beam');}
  // threshold: a thick worn board across the foot of the opening, flush with the landing
