@@ -212,3 +212,23 @@ Debug: `__treedress.stats()`.
 
 ## Round 30 — upper trunk and limb bases vs the photo
 - Above the house (y 5.6..9.6, under 3.3 m off the axis) nothing carved the bark: treedress's flutes stopped at 4.2..5.6 and Tree's limb grooves start at 3.3 m out / 9.6 m up, so the visible upper trunk read flat. The flutes now run on up to the fork (fade 9.4..10.8) and out onto the limb bases, handing over to Tree's grooves at 3.3..4.4 m; below the house unchanged. Crotches keep 40 % of the flute (was cut to 0). Shader only, no triangles. Key |treedress10.
+
+## Round 31 — knots and bark scars (Pavel: smooth oak with irregular folds and cuts)
+- `tdScar[8]` uniform (D.scarU, D.scars): hand-placed spots where the home view sees bark, snapped to the bark along the line to the home camera; skipped under boards (blocked) and near beam bites. size > 0 = old broken-off stub (dark hole, darkest under the overhanging top lip, faint end-grain rings, swollen lip), size < 0 = torn-off bark (warm weathered wood with fine grain and a few checks, sunk under a rolled callus lip, stained at the lower end). Ellipses in the surface frame, long along the folds (up the trunk, out along roots); the photo flutes part and flow round them. Normal: lip tilt, sunken hole, smooth bare wood.
+- GOTCHA: tree.js's map_fragment code runs AFTER treedress's map block and mixes every bark colour halfway to one brown (`mix(vec3(.13,.08,.052),c,.5)`), which washed the first version out. The scar colour is applied at the start of treedress's normal_fragment_maps block instead. fwidth taken in uniform flow.
+- 7 live: knots on the trunk at 6 m and 8.8 m and on the right limb at 10.5 m; on the roots two knots and two scars (an 8th spot, left of the door, is skipped: a board covers it). Shader only. Key |treedress11.
+
+## Round 32 — traces of the hero's life on the trunk
+- `tdWear[4]` (D.wearU, D.wear): beside the trunk door's jambs, snapped onto the bark. w > 0 = hand polish at hand height (darker, greasy, smoothed, roughness down to ~.75), w < 0 = boot scuffs just above the landing (the ridges rubbed pale). The rope ladders hang from the landings and never touch the bark, so the door is the only place he touches the trunk.
+- Nails: a pair of forged spike heads (~4.5 cm) beside about two in three beam ends, each with a thin rust run down the bark. Only where the beam's end shows: bites whose end is buried in the bark get none (JS flags them by adding 4 to the bite's w in tdB1/tdB2; the bite loop strips it).
+- No rope wraps: there is no place where a rope meets the bark, and a lashing would be new geometry and a draw call (night home is at 292/300).
+- Shader only. Key |treedress12.
+
+## Round 33 — rain on the new roots and scars
+- The wet darkening (rain sheen mask tdWM, the soak-after-rain tdDM, the drip runs under the landings) was all in the map block, so Tree's map code mixed it halfway back to dry brown: in heavy rain the oak looked dry. It is re-applied at the start of the normal block: darker by up to 30 % and a little richer (even, not squared, so shaded bark doesn't sink to black), most in the fold grooves, the drip runs (tdDrk) staying dark longest.
+- Scars: bare wood drinks the rain, darkening 45 % more. Knot holes hold water (roughness .28 while raining), fold grooves get a sheen (roughness to .5). Rust runs go deep red-brown when wet.
+- Key |treedress13. Shader only.
+
+## Round 34 — the trunk base read as pale grey stone
+- Split with Tree (agreed): treedress = colour/tone, Tree = the flare's facets and silhouette. Tree keeps its two map_fragment colour lines as they are while this is tuned.
+- Normal block (after Tree's wash): below ~1-3.2 m (ragged edge), not on moss or inside scars: saturation x1.4, tint (.8,.7,.58), and the photo flutes deepened again (grooves -50 %, ridges +15 %). Key |treedress14. Shader only.

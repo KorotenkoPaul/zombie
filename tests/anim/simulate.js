@@ -41,7 +41,7 @@ async function simulate(p,{drain=null,only=null,start=6.5,hours=25,dt=1/60,tour=
     if(g&&t==='sleep')Math.random=()=>.995;try{if(B&&B.command)B.command(t,o||undefined);else __th.task(t);}finally{Math.random=MR;}},[t,opts||null,!!gate]);
    if(gate){// isolated: every task starts from the same seeded state (reading at the table, hatch open, needs primed for that hour)
     await p.evaluate(([t,h])=>{let x=2166136261;for(const c of t)x=Math.imul(x^c.charCodeAt(0),16777619)>>>0;__qa.reseed(x);__th.setHour(h);const B=window.__brain;if(B&&B.prime)B.prime(h);
-     __dbg.HH.spawn('read');const ht=window.__house&&window.__house.hatch;if(ht&&ht.open)ht.open();},[L,h]);await runFrames(30,'tour:'+L);}
+     if(__dbg.HH.qaReset)__dbg.HH.qaReset();/* hero modules drop every filter/smoothing state carried from the last task (check with tests/anim/carry.js) */__dbg.HH.spawn('read');const ht=window.__house&&window.__house.hatch;if(ht&&ht.open)ht.open();},[L,h]);await runFrames(30,'tour:'+L);}
    else await p.evaluate(h=>__th.setHour(h),h);
    await ask();let n=0,seen=false,idle=0;
    const cap=gate?60*(t==='sleep'?gate+35:L==='hunt'?gate+75:gate):60*(maxS||90);

@@ -293,7 +293,10 @@ export function createBrain({ HH, lights, hour, isNight }) {
     // a shelter in the apocalypse: nobody leaves it in the dark (critic B1). Trips only set off 7:00-15:00, home well before dusk;
     // a hungry night is sat out at home (tea, the last of the supplies) and the hunt waits for the morning
     if (JOBS[n].task === 'trip' && (h < 7 || h > (n === 'hunt' ? 14.5 : 15))) return { name: n, s: -50, top };
-    if (n === 'hunt') { if (stock.meat >= 2 || (stock.meal && stock.meat)) s = -9;   /* one portion left and the fridge empty: tomorrow's meat is today's hunt */ if (!day && !(emergency && !raining())) s -= 3; else if (!day && !dawnDusk) s -= .4; }
+    // a full larder needs no hunt; a thin one does, hungry or not (props soak: 2 -> 1 -> 0 portions in 3 days and never a hunt,
+    // because the hunt only answered hunger and he was never hungry at hunting time): the fewer portions, the stronger the pull
+    if (n === 'hunt') { const prov = stock.meat + (stock.meal || 0) * .5;
+      if (stock.meat >= 2) s = -9; else s += prov <= .5 ? 1.6 : prov <= 1.5 ? .9 : .3;   /* one portion left and the fridge empty: tomorrow's meat is today's hunt */ if (!day && !(emergency && !raining())) s -= 3; else if (!day && !dawnDusk) s -= .4; }
     if (n === 'wood') { if (stock.logs > 2) s = -9; if (!day) s -= 3;
       // meat in the fridge but nothing to cook it on: the wood is the way to the meal (3-day watch: hungry all day, hunted twice, never cooked)
       else if (!stock.logs && stock.meat && !stock.meal) s += value({ hunger: .5 }).s; }
@@ -323,17 +326,22 @@ export function createBrain({ HH, lights, hour, isNight }) {
   // 19:15, then 1-2 h downstairs with the hatch open). The sleep chain bolts the door and shuts the hatch on the way to bed anyway
   const bedSoon = h => h >= bedTime - .6 || h < 5;
   const canDo = n => { const E = EXTRA[n]; if (E.task) return true; return !!(HH.hasTask && HH.hasTask(n)); };
-  const habitCtx = h => ({ logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && isN(h), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
+  // the evening fire (Lights; photo: the oven window glows at night): lit at dusk once a day, then fed when it runs low (~4 h a load)
+  const eveFire = h => h >= 18.6 && h < 21.2;
+  const habitCtx = h => ({ logs: ECON ? stock.logs : 5, ovenLow: lights && lights.level && lights.level('oven') < .3 && (isN(h) || eveFire(h)), justWoke: day.justWoke, justAte: day.justAte, bolted: day.bolted, hadTea: day.hadTea, dirty: dirty(), ovenLit: !!(lights && lights.level && lights.level('oven') > .2) });
   function extraScore(n, h) {
     if (!canDo(n)) return null;
     const E = EXTRA[n];
     if (E.needLogs && ECON && (!stock.logs || (stock.logs < 2 && stock.meat && !stock.meal))) return null;   // the last log is kept for the stew
     if (E.room === 'outside' && raining()) return null;
-    if (ROOF.includes(n) && windS > .4) return null;   // not up on the roof, the rail or the rope ladder in a windy spell
+    if (ROOF.includes(n) && windS > .4) return null;
+    let eve = 0; if (n === 'stoke' && eveFire(h) && !day.eveFire && !day.bolted) eve = 1.6 + (h - 18.6) * .9 + (lights && lights.level && lights.level('oven') < .3 ? .4 : 0);   /* the later, the surer: done before he shuts the house */   // also after a supper: a log on for the night (a cooking fire is out in ~1.3 h)
+    // the logs for tonight's fire are brought in by day (firewood from the pile below, splitting)
+    if ((n === 'firewood' || n === 'splitwood') && ECON && stock.logs < 2 && h >= 12 && h < 17.5) eve = .6;   // not up on the roof, the rail or the rope ladder in a windy spell
     // the door bolt is a before-bed thing (Pavel; critic B2: bolted at 13:00): only in the evening / night, or in a lockdown
     if (n === 'bolt' && !locked && !bedSoon(h)) return null;
     let { s, top } = value(effOf(n));
-    s += E.when(h, habitCtx(h));
+    s += E.when(h, habitCtx(h)); s += eve;
     s += weatherBonus(n, h);
     // Pavel's 20 approved actions: each one is part of his life, not a rare chance. The longer since he last did it, the more
     // it calls him, but only at an hour that suits it (its habit bonus is not negative) - 3-day watch: sweep, the plant,
@@ -409,7 +417,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
     const from = ROOM_OF(H.node), A = ACTS[name] || EXTRA[name] || { room: name === 'eat' ? 'kitchen' : 'outside' };
     const to = A.room || from;
     // leaving a lit room: usually switch it off (sometimes he forgets, and the lamp burns on: lamps never go out by themselves)
-    if (from !== to && ROOM_LAMP[from] && lampOn(ROOM_LAMP[from]) && Math.random() < .8)
+    if (from !== to && ROOM_LAMP[from] && lampOn(ROOM_LAMP[from]) && (lateHours(h) || Math.random() < .8))   /* late in the evening never forgotten (Lights rules: no lamp left burning in an empty room at night) */
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[from], on: false }, why: dark(h) ? 'уходит — гасит свет' : 'светло — уходя, гасит лампу' });
     // a lamp forgotten earlier in a room he walks through: he notices it on the way and puts it out (usually)
     // the bedroom door (props door, bdoor <-> ledge) shut or bolted and his way goes through it: he unbolts and opens it by hand
@@ -418,7 +426,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       // MAKE.bolt {lock:false, open:true}: unbolt, then the leaf swung open by hand (e45ad15). The body also stops any walk at a
       // shut leaf (H.doorBlocked, hero.js goTo); tick() then puts this same step in front of the stopped one (wake-ups, exits)
       if (D && HH.hasTask && HH.hasTask('bolt') && (D.bolt > .1 || D.open < .4) && throughDoor(tgt)) plan.push({ task: 'bolt', opts: { lock: false, open: true }, why: 'отпирает и открывает дверь' }); }
-    for (const r of roomsOnWay(A.node || AREA_NODE[area(name)] || AREA_NODE[to])) if (r !== from && r !== to && ROOM_LAMP[r] && lampOn(ROOM_LAMP[r]) && Math.random() < .85)
+    for (const r of roomsOnWay(A.node || AREA_NODE[area(name)] || AREA_NODE[to])) if (r !== from && r !== to && ROOM_LAMP[r] && lampOn(ROOM_LAMP[r]) && (lateHours(h) || Math.random() < .85))
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[r], on: false }, why: 'по пути: забытая лампа — гасит' });
     // the floor hatch is closed and the way goes through it: open it first (without a hatch task the ladder climb opens it by hand)
     { const H8 = house(); const up = r => r === 'bedroom';
@@ -737,7 +745,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
       if ((h >= wake && h < 12 && need.energy > .6) || (h >= wake + 1.2 && h < 12) || nap) {
         wake = rnd(5.6, 6.6); bedTime = rnd(20.8, 21.6);
         if (locked && h < 12) brain.lockdown(false);   // morning: the night is over (not after an evening nap)
-        if (h < 12) { day.hadTea = false; day.bolted = false; day.retried = {}; day.teas = 0; day.justWoke = true; day.wokeAt = h; day.justAte = false; }   // a new day (not after a nap)
+        if (h < 12) { day.hadTea = false; day.bolted = false; day.retried = {}; day.teas = 0; day.eveFire = false; day.justWoke = true; day.wokeAt = h; day.justAte = false; }   // a new day (not after a nap)
         tr('wake'); const d = decide(h); planFor(d.name, h, 'проснулся, хочет: ' + reasonOf(d));
         if (locked) { const rest = plan.splice(0); lockSteps(); plan.push(...rest); }
         // morning: the night is over, he opens the house (critic W6): the bolt drawn and the bedroom door swung open by hand,
@@ -759,7 +767,9 @@ export function createBrain({ HH, lights, hour, isNight }) {
       startNext(); return;
     }
     // it got dark while he is busy in an unlit room: get up and light it, then carry on
-    if (lampDark(h) && ROOM_LAMP[here] && !lampOn(ROOM_LAMP[here]) && cur && ACTS[cur.name] && ACTS[cur.name].room === here && v.task !== 'sleep' && !plan.length && v.step !== 'go') {
+    // (habits and room-less acts too, which ACTS does not list: on a dark rainy afternoon he sat 70 s at the radio in the unlit
+    // bedroom, rules.js seed 3 at 9ae1d7b)
+    if (lampDark(h) && ROOM_LAMP[here] && !lampOn(ROOM_LAMP[here]) && cur && ((ACTS[cur.name] && ACTS[cur.name].room) || here) === here && v.task !== 'sleep' && !plan.length && v.step !== 'go') {
       tr('darkLamp');
       plan.push({ task: 'switch', opts: { light: ROOM_LAMP[here], on: true }, why: 'стемнело — включает свет' });
       plan.push({ task: cur.name, opts: {}, why: 'продолжает' });
@@ -923,6 +933,7 @@ export function createBrain({ HH, lights, hour, isNight }) {
         if (!R[name]) { R[name] = true; plan.unshift(name === 'bolt' ? { task: 'bolt', opts: { lock: true }, why: 'засов не задвинулся — ещё раз', extra: 'bolt' } : { task: 'hatch', opts: { ...lastOpts }, why: 'люк не закрылся — ещё раз' }); } } }
     if (extra && EXTRA[extra] && res !== false) { const E = EXTRA[extra]; if (PLANK_KIND[extra]) markRepaired(lastOpts); for (const k in E.give) need[k] = clamp(need[k] + E.give[k] * (E.give[k] < 0 ? XS : 1));
       if (extra === 'bolt') day.bolted = true; if (extra === 'stretch') day.justWoke = false; if (extra === 'dishes') day.justAte = false;
+      if (extra === 'stoke' && eveFire(hour())) day.eveFire = true;
       if (extra === 'stoke' && ECON) { stock.logs = Math.max(0, stock.logs - 1); showStock(); }
       if (extra === 'firewood' && ECON) { stock.logs += 2; showStock(); }
       extra = null; }
