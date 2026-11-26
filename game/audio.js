@@ -729,7 +729,7 @@ export function createAudio(ctx) {
     if (!e || !loaded || muted) return; if (!internal) toolAuto = false;
     if (window.__feetLog) window.__feetLog.push(['TC', +gnow.toFixed(3), e.tool || e.kind, +(e.dur || 0).toFixed(2)]);
     const q = toPos(e.pos), k = clamp01(e.strength ?? .8), t = e.tool;
-    if (t === 'hammer' || e.kind === 'hit') { TS.last = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); if (Math.random() < .5) playAct('nails', q, { gain: .35 * k, delay: .012, internal: 1 }); return; }
+    if (t === 'hammer' || e.kind === 'hit') { TS.last = now; if (now - (TS.hitT ?? -9) < .2) return; TS.hitT = now; playAct('hammer', q, { gain: .55 + .5 * k, internal: 1 }); return; }   // one sample per blow (critic pass 27: a nail layer on the same frame read as two hits)
     if (t === 'saw' || e.kind === 'stroke') { const d = Math.max(.15, Math.min(1.2, e.dur || .45)); const a = ACT.saw, o = actOpts(a, q, {}); o.gain *= .45 + .55 * k; o.rate = (e.dir < 0 ? .92 : 1.04) * rnd(.97, 1.03); o.dur = d; o.offset = rnd(0, 1.5); o.fadeIn = .03; o.fadeOut = Math.min(.12, d * .3); const c = pick(a.c); vplay(c, o); TS.last = now; return; }
     if (t === 'spoon' || e.kind === 'scrape') { const d = Math.max(.15, Math.min(.8, e.dur || .35)); const a = ACT.stir, o = actOpts(a, q, {}); o.gain *= .35 + .6 * k; o.dur = d; o.offset = rnd(0, 2); o.fadeIn = .04; o.fadeOut = d * .4; const c = pick(a.c); vplay(c, o); TS.last = now; }
   }

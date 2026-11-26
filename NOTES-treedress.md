@@ -125,3 +125,11 @@ Debug: `__treedress.stats()`.
 - **Rain.**
   - Moss: the cushions get a wet sheen while it rains (the tips more than the hollows) and the earth humps soak darker. Key: `tdMossCushion5`.
   - Ivy and ferns: they darken a little when soaked and glisten in rain, using the same `barkU.wet`/`damp` uniforms as the bark. Key suffix: `|tdWet1`.
+
+## Round 20: wind
+- **Ferns** now sway with Wind's shared `windSway` (freq 1.5), so the same gust front that moves the crown reaches them too.
+  - Calm: about 1 cm at the frond tip. Breeze: about 3 cm. Gust: about 13 cm.
+  - On top of that, a faint leaflet shiver that grows with the gust.
+- **Grass tufts** now read Wind as well (`windSway` freq 1.7, like Ground's grass), via `mat.userData.wind`, which makes swayMat call `W.hook`.
+- **Ivy** (FLUTTER, windSway 2.6) and the **hanging lichen** (windRope + windBranch) already used Wind; they are unchanged.
+- The old sine sway stays as a `#else` fallback for when Wind is missing. No new draws.

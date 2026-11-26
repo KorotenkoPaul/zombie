@@ -45,6 +45,7 @@ const tdWetU = m => { m.userData.wetU = tdWetU.U; return m; };
 function swayMat(mat, U, amp, chunk) {
   mat.onBeforeCompile = s => {
     if (mat.userData.AX !== undefined) branchHook(s, mat.userData.AX, mat.userData.AZ);
+    else if (mat.userData.wind && window.__wind && !s.vertexShader.includes('windSway')) window.__wind.hook(s); /* [wind round] ground things read Wind's gusts too */
     s.uniforms.uT = U.t; s.uniforms.uW = U.wind;
     s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nuniform float uT,uW;' + (s.vertexShader.includes('windSway') ? '\n#define WIND_GLSL_ON' : ''))
       .replace('#include <begin_vertex>', `#include <begin_vertex>\n{const float SW=${amp.toFixed(3)};${chunk}}`);
@@ -832,8 +833,16 @@ uniform float tdCool;` + NOISE)
       return mergeGeometries(parts);
     })();
     const fmat = swayMat(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex }))), U, 0.06,
-      `{vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float k=clamp(uv.y,0.,1.);k*=k;float gust=.6+.4*sin(uT*.35+ip.x*.05);
-       transformed.x+=sin(uT*1.6+ip.x*.7+ip.z*.4)*SW*k*uW*gust;transformed.z+=sin(uT*1.2+ip.z*.9)*SW*.7*k*uW*gust;}`);
+      // [wind round] the fronds bend with Wind's shared gusts (the same front that runs through the crown, so a gust reaches them
+      // on its way to the tree), a slow nod in calm; plus a faint leaflet shiver that grows with the gust. Old sine sway as fallback.
+      `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);float k=clamp(uv.y,0.,1.);k*=k;
+#ifdef WIND_GLSL_ON
+       vec2 w=windSway(ip,1.5);float sh=sin(uT*6.1+position.x*9.+ip.z*5.)*.05*min(length(w),1.5);
+       transformed+=windLocal(vec3(w.x,0.,w.y)*SW*k*1.1+vec3(0.,sh*SW*k,0.));
+#else
+       float gust=.6+.4*sin(uT*.35+ip.x*.05);transformed.x+=sin(uT*1.6+ip.x*.7+ip.z*.4)*SW*k*uW*gust;transformed.z+=sin(uT*1.2+ip.z*.9)*SW*.7*k*uW*gust;
+#endif
+      }`);
     // grass tuft: a fan of narrow curved blades
     const tuftG = (() => {
       const parts = [];
@@ -844,8 +853,16 @@ uniform float tdCool;` + NOISE)
       }
       return mergeGeometries(parts);
     })();
-    const tmat = swayMat(new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, roughness: 0.9 }), U, 0.05,
-      `{vec3 ip=vec3(instanceMatrix[3][0],0.,instanceMatrix[3][2]);float k=clamp(position.y/.5,0.,1.);k*=k;transformed.x+=sin(uT*2.+ip.x*1.7+ip.z)*SW*k*uW;transformed.z+=sin(uT*1.5+ip.z*1.9)*SW*.6*k*uW;}`);
+    const tmat = new THREE.MeshStandardMaterial({ color: 0xffffff, side: THREE.DoubleSide, roughness: 0.9 }); tmat.userData.wind = true;
+    // [wind round] grass blades: Wind's grass sway (freq 1.7), so the gust front that runs through the crown passes over them too
+    swayMat(tmat, U, 0.05,
+      `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);float k=clamp(position.y/.5,0.,1.);k*=k;
+#ifdef WIND_GLSL_ON
+       vec2 w=windSway(ip,1.7);transformed+=windLocal(vec3(w.x,0.,w.y))*SW*k*1.3;
+#else
+       transformed.x+=sin(uT*2.+ip.x*1.7+ip.z)*SW*k*uW;transformed.z+=sin(uT*1.5+ip.z*1.9)*SW*.6*k*uW;
+#endif
+      }`);
     tmat.onBeforeCompile = (prev => (s, r) => { prev(s, r); s.fragmentShader = s.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb*=mix(.35,1.15,tdH);'); s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nvarying float tdH;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntdH=clamp(position.y/.45,0.,1.);'); s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying float tdH;'); })(tmat.onBeforeCompile);
     { const k0 = tmat.customProgramCacheKey; tmat.customProgramCacheKey = () => k0() + '|tdTufts1'; }
 
