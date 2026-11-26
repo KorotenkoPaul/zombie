@@ -273,6 +273,11 @@ export function createGround(C){const __before=new Set(C.scene.children);
       pathK=ao.b*smoothstep(.35,.75,ao.b+(fbm(vGW*2.3)-.5)*.8)*(.55+.25*fbm(vGW*.8))*(1.-.35*clamp(uGlow/1.8,0.,1.));pathC=vec3(.17,.135,.1)*(.6+.7*fbm(vGW*7.))*(.65+.7*lum)*(1.-ao.r*.4);pathC*=1.+.55*clamp(uGlow/1.8,0.,1.);/* [ENV] night: the packed earth catches the moonlight more than the moss, so the way out stays readable */
       // grit and small pebbles pressed into the packed earth
       {vec2 pq=vGW*9.;vec2 pi=floor(pq),pf=fract(pq)-.5;float ph=fract(sin(dot(pi,vec2(41.3,289.1)))*43758.5);vec2 po=vec2(fract(ph*13.),fract(ph*71.))-.5;vec2 pe=(pf-po*.6)*vec2(1.,1.6+fract(ph*3.));float pb=smoothstep(.09,.05,length(pe)*(.8+.4*fract(ph*11.)))*step(.9,ph);pathC=mix(pathC,vec3(.22,.2,.17)*(.7+.5*fract(ph*7.)),pb*.6);pathC*=.85+.3*fbm(vGW*22.);}
+      /* the line his boots actually take: a darker, compacted strip down the middle of each track (drier and paler toward the frayed
+         edges), with crushed leaf bits trodden into it, dark and broken, not lying loose */
+      {float cw=smoothstep(.62,.96,ao.b+(fbm(vGW*3.7+1.)-.5)*.3);pathC*=mix(1.,.68,cw);pathC=mix(pathC,pathC*vec3(1.12,1.08,1.),(1.-cw)*smoothstep(.2,.5,ao.b)*.5);
+       vec2 lq=vGW*13.;vec2 li=floor(lq);float lh=fract(sin(dot(li,vec2(12.9898,78.233)))*43758.5);vec2 lf=fract(lq)-.5-(vec2(fract(lh*31.),fract(lh*57.))-.5)*.4;float la=lh*6.283;lf=mat2(cos(la),-sin(la),sin(la),cos(la))*lf;
+       float fl=smoothstep(.2,.1,length(lf*vec2(1.,1.9+lh)))*step(.8,lh)*smoothstep(.4,.6,fbm(vGW*31.+lh));pathC=mix(pathC,vec3(.15,.075,.03)*(.55+.9*fract(lh*7.)),fl*.6);}
       // the pond bank: dark wet mud, glossy, ragged at its outer edge; trodden earth turns to mud where the track meets the water
       {float m=smoothstep(.0,.55,ao.a+(fbm(vGW*3.1+5.)-.5)*.45);/* damp brown earth (not a black hole up close), darker and glossy only in the soaked strip at the waterline */float wt=smoothstep(.8,.97,ao.a+(fbm(vGW*7.3)-.5)*.12);diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.085,.066,.045)*(.6+.8*fbm(vGW*9.))*mix(1.,.62,wt),m*.88);pathK*=1.-m*.75;pondMud=m;pondWet=wt*m;}
       /* the bucket spot: the moss trodden off into a ragged patch of bare damp earth from the track's end down to the water, worn into a darker hollow where he stands */
@@ -306,7 +311,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
       /* far off the single leaves melt into their average: keep the drifts and their colour mix (rust, ochre, brown) there too, so the home view shows leaf beds and bare moss, not an even orange wash */float dr0=smoothstep(.36,.62,fbm(vGW*.55+13.)+(fbm(vGW*2.9+8.)-.5)*.3);float hu=fbm(vGW*1.3+31.);avg=mix(vec3(.56,.26,.08),vec3(.62,.42,.13),smoothstep(.35,.65,hu))*mix(.65,1.1,fbm(vGW*4.1+2.));
       float k=mix(lm,clamp(litA*mix(.2,1.6,dr0),0.,.9)*mix(.6,.85,forK),far)*ff;diffuseColor.rgb=mix(diffuseColor.rgb,mix(lcol*vec3(2.3,1.45,1.15),avg*vec3(1.6,1.3,1.2),far)*(.75+.6*lum),k);}`);};
   {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addWet(s,'.35');s.uniforms.uDrip={value:dripTex};s.uniforms.uDripB=dripB;s.uniforms.uSteps=stepsU;s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nuniform sampler2D uDrip;uniform vec4 uDripB;'+STEP_GLSL);s.fragmentShader=s.fragmentShader.replace('#include <roughnessmap_fragment>','#include <roughnessmap_fragment>\n{float sp=stepPress(vGW,.15);diffuseColor.rgb*=1.-.16*sp;roughnessFactor=mix(roughnessFactor,.6,sp*.35);}roughnessFactor=mix(roughnessFactor,.5,fCrev*.55);/* where a boot just came down the moss is pressed flat (a darker, smoother patch) and fluffs up again over ~7 s, with the grass */\nroughnessFactor=mix(roughnessFactor,.3,pondMud*.8);roughnessFactor=mix(roughnessFactor,.1,pondWet);{vec2 dq=texture2D(uDrip,(vGW-uDripB.xy)*uDripB.zw).rg;float dr=min(dq.r*1.5,1.)*uWet;diffuseColor.rgb*=1.-.5*dr;roughnessFactor=mix(roughnessFactor,.3,dr*.85);/* drip lines: the soil right outside every landing and deck edge, where the eaves drop their water, is soaked dark; under the cover it stays drier */float wm=uWet*(1.-.75*dq.g)*clamp(pathK*1.2+smoothstep(.56,.9,texture2D(uAO,(vGW+uGE)/(2.*uGE)).r)*.6,0.,1.);diffuseColor.rgb*=1.-.4*wm;roughnessFactor=mix(roughnessFactor,.38,wm*.8);}/* rain: the trodden paths and the soil at the roots turn to dark, slick mud */');};}
-  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addLan(s,'1.3');};}mat.customProgramCacheKey=()=>'groundFloor-bank1-crev1-tuck2-chips2-crown1-ao42-pfray-edge1-scuff1-drip1-mp2-far2-soft1-step1';/* [ENV] explicit key (SHADERS rule) */
+  {const ob=mat.onBeforeCompile;mat.onBeforeCompile=s=>{ob(s);addLan(s,'1.3');};}mat.customProgramCacheKey=()=>'groundFloor-wear1-bank1-crev1-tuck2-chips2-crown1-ao42-pfray-edge1-scuff1-drip1-mp2-far2-soft1-step1';/* [ENV] explicit key (SHADERS rule) */
   const ground=new THREE.Mesh(g,mat);ground.receiveShadow=true;G.ground=ground;
   const patch=new THREE.Mesh(pg,mat);patch.receiveShadow=true;G.groundPatch=patch;
   /* one draw for the floor: the big coarse mesh and the fine 32 m patch share the material, so they are drawn as one merged mesh.
@@ -512,6 +517,21 @@ export function createGround(C){const __before=new Set(C.scene.children);
   // baked into one static mesh (one draw call for every stick in the clearing)
   const all=[];per.forEach((list,k)=>list.forEach(m=>{const g=shapes[k].clone().applyMatrix4(m);const n=g.attributes.position.count;const c=rr(.75,1.2),sd=rr(0,50);
    g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(n*3).fill(c),3));g.setAttribute('aSeed',new THREE.BufferAttribute(new Float32Array(n).fill(sd),1));all.push(g);}));
+  // fallen dead branches by the roots: forked limbs dropped from the oak in the autumn storms, 0.6-1.1 m long, draped over the
+  // ground's bumps vertex by vertex (no floating ends, no buried middles). Own rng: the R() stream above must not shift.
+  {const rb=rng(61907),q=(a,b)=>a+rb()*(b-a);const NB=MOBILE?5:11;let nb=0;
+   for(let t=0;t<NB*80&&nb<NB;t++){const a=q(0,6.283),rad=q(2.6,7.5);const x=Math.cos(a)*rad,z=1.5+Math.sin(a)*rad;const d=rootD(x,z);
+    if(d<.12||d>.7||pathD(x,z)<.45||pondD(x,z)<.5)continue;/* clear of the chopping corner (block, sawhorse, stack: Props) and the door stairs */if(Math.hypot(x+4.2,z-4.1)<2.1||(x>1.7&&x<4.7&&z>2.2&&z<5.5))continue;const L=q(.6,1.1),yaw=q(0,6.283),c=Math.cos(yaw),sn=Math.sin(yaw);
+    // the whole limb must lie clear of the roots and paths
+    let ok=true;for(const u of [-.5,-.25,0,.25,.5]){const px=x+c*L*u,pz=z-sn*L*u;if(rootD(px,pz)<.06||pathD(px,pz)<.3||(G._stones||[]).some(q=>Math.hypot(q[0]-px,q[1]-pz)<q[2]+.12)){ok=false;break;}}if(!ok)continue;
+    const P=[];const r0=q(.016,.026);const bend=q(-.08,.08);
+    branch(P,[V(-L/2,r0*.8,0),V(-L/6,r0*.8,bend),V(L/6,r0*.7,-bend*.5),V(L/2,r0*.5,bend*.3)],r0,.3);
+    const nf=2+Math.floor(rb()*2);for(let f=0;f<nf;f++){const u=q(-.3,.35)*L,sd=f%2?1:-1,fl=q(.18,.38)*L,ang=q(.4,.9);
+     branch(P,[V(u,r0*.7,0),V(u+fl*.45*Math.cos(ang),r0*.6,sd*fl*.45*Math.sin(ang)),V(u+fl*Math.cos(ang),r0*.4,sd*fl*Math.sin(ang))],r0*.45,.3);}
+    const g=mergeGeometries(P);M.compose(V(x,0,z),Q.setFromAxisAngle(V(0,1,0),yaw),Sc.set(1,1,1));g.applyMatrix4(M);
+    {const pp=g.attributes.position;for(let i=0;i<pp.count;i++){const vx=pp.getX(i),vz=pp.getZ(i);pp.setY(i,pp.getY(i)+(meshH(vx,vz)??groundH(vx,vz))-r0*.35);}g.computeVertexNormals();}
+    const n=g.attributes.position.count;g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(n*3).fill(q(.6,.85)),3));g.setAttribute('aSeed',new THREE.BufferAttribute(new Float32Array(n).fill(q(0,50)),1));all.push(g);nb++;(G._fallenBranchPts=G._fallenBranchPts||[]).push([+x.toFixed(2),+z.toFixed(2)]);}
+   G._fallenBranches=nb;}
   mat.customProgramCacheKey=()=>'groundTwigs1';/* Apple rule: explicit key */const tw=new THREE.Mesh(mergeGeometries(all),mat);tw.receiveShadow=true;tw.name='twigs';scene.add(tw);G.twigs=tw;}
 
  // ================= stumps, a fallen log and the firewood pile by the way out =================
