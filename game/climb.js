@@ -513,7 +513,9 @@ export function createClimb() {
     const roll = Math.asin(Math.max(-1, Math.min(1, u.dot(sd)))); const RM = .09; const ex = roll > RM ? roll - RM : roll < -RM ? roll + RM : 0; if (Math.abs(ex) > 1e-3) rotWorld(Hd, f2.normalize(), -ex * w);
   }
 
-  return { init, begin, tick, post, topStand, get active() { return !!S.act; }, get weight() { return S.W; }, state: S, M,
+  // tests only (HH.qaReset): no climb, no IK weight, the flags it set handed back
+  const qaReset = () => { if (S.gwOff) window.__noGameWalk = false; if (S.npOff) window.__noPops = false; for (const k of Object.keys(S)) delete S[k]; Object.assign(S, { W: 0, wTarget: 0, act: null }); };
+  return { qaReset, init, begin, tick, post, topStand, get active() { return !!S.act; }, get weight() { return S.W; }, state: S, M,
     // for tests: where each limb should be now
     targets: () => S.last && S.last.tg };
 }

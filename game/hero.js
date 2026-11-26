@@ -3841,9 +3841,21 @@ stage('grab',dt=>{lieSettle(dt);headPillow(dt);quiltHandTick(dt);vestReachTick(d
   const P=N[from].p;root.position.set(P.x,P.y,P.z);const f=floorAt(P.x,P.y,P.z,.4);if(f!=null)root.position.y=f;H.floorY=root.position.y;
   root.rotation.y=N[from].face??rnd(-Math.PI,Math.PI);H.face=root.rotation.y;H.node=from;play(IDLE(),{fade:0});startTask(task,o.opts);}
  // default start: reading at the table (a brain can call spawn() for a random start)
- spawn('read');
+ const qaRef=v=>v&&typeof v==='object'&&(v.isObject3D||v.isMaterial||v.isTexture||v.isBufferGeometry||v.isAnimationAction||v.isAnimationMixer);
+ const qaSnap=v=>v==null||typeof v!=='object'||qaRef(v)?v:(v.isVector2||v.isVector3||v.isQuaternion||v.isEuler||v.isMatrix4)?{qaC:v.clone()}:Array.isArray(v)?{qaA:v.map(qaSnap)}:Object.getPrototypeOf(v)===Object.prototype?{qaO:Object.fromEntries(Object.entries(v).map(([k,x])=>[k,qaSnap(x)]))}:v;
+ const qaBuild=s=>s&&typeof s==='object'?(s.qaC?s.qaC.clone():s.qaA?s.qaA.map(qaBuild):s.qaO?Object.fromEntries(Object.entries(s.qaO).map(([k,x])=>[k,qaBuild(x)])):s):s;
+ /* restore a state object in place: plain data (numbers, flags, vectors, nested data) back to load time; scene references it picked up since (meshes, materials, actions) are kept */
+ const qaLoad=(o,s)=>{if(Array.isArray(o)){o.length=0;o.push(...s.qaA.map(qaBuild));return;}for(const k of Object.keys(o))if(!(k in s.qaO)&&!qaRef(o[k]))delete o[k];for(const [k,x] of Object.entries(s.qaO)){if(qaRef(o[k]))continue;o[k]=qaBuild(x);}};
+ const QA_ST=[KOT,SOLE,TF,ROLL,RAI,LB,LSW,QB,SP,HU,BL,BRC,BSEQ,SFG,VRG,VD,VR,KN,BHG,BCF,QH,FZ,BPL,BON,LS,HPW,EWR,HOB,HLV,LOB,BTW,BFALL,GT,LATE,FACE,tdL,plantS];
+ spawn('read');const QA0={keys:new Set(Object.keys(H)),H:Object.fromEntries(Object.entries(H).filter(([,v])=>v==null||typeof v!=='object')),bones:fkList.map(b=>[b.position.clone(),b.quaternion.clone(),b.scale.clone()]),BL:{...BL},FACE:Object.fromEntries(Object.entries(FACE).filter(([,v])=>v==null||typeof v!=='object')),HPW:{...HPW},st:QA_ST.map(qaSnap)};
+ /* tests only (gate, between tasks; check with tests/anim/carry.js): every filter, smoothing and previous-frame state of the hero and its modules back to a fresh page, the mixer stopped, the bones in the load pose. spawn() follows */
+ function qaReset(){try{if(motion&&motion.qaReset)motion.qaReset();}catch(e){console.error('qaReset motion',e);}for(const m of [window.__poseGuard,window.__grab,window.__collide,climb])try{if(m&&m.qaReset)m.qaReset();}catch(e){console.error('qaReset',e);}
+  resetBody();mixer.stopAllAction();mixer.setTime(0);for(const k in actions){const a=actions[k];if(a){a.reset();a.stop();a.timeScale=1;a.weight=1;a._effectiveWeight=0;a._effectiveTimeScale=1;}}H.cur=null;
+  for(let i=0;i<fkList.length;i++){const [p,q,sc]=QA0.bones[i];fkList[i].position.copy(p);fkList[i].quaternion.copy(q);fkList[i].scale.copy(sc);}fkSnap=null;root.updateMatrixWorld(true);
+  for(const k of Object.keys(H))if(!QA0.keys.has(k))delete H[k];Object.assign(H,QA0.H);H.path=[];H.hold={};
+  QA_ST.forEach((o,i)=>{try{qaLoad(o,QA0.st[i]);}catch(e){console.error('qaReset state',i,e);}});sqA=null;HPB=[];HPF=-1;STW=null;FRN=0;lifeS=12345;slAge=0;slLad=0;act=null;lastAct=[];actT=0;actDur=8;}
 
- return {spawn,openEdge,H,hero:H,qh:QH,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
+ return {qaReset,spawn,openEdge,H,hero:H,qh:QH,bones,actions,play,once,N,E,route,goTo,startTask,update,navCheck,FIT,need,gait,
   setBrain:b=>{brain=b||null;},hasTask:n=>!!MAKE[n],stage,SLOTS,inv:INV,get act(){return act;},setMotion:m=>{motion=m||null;},setClimb:m=>{climb=m||null;if(climb){climb.init({THREE,bones,ik2,turnBone,root,H,actions,play,floorAt,idle:()=>IDLE()||'0'});if(!climb._staged)climb._staged=stage('contacts',dt=>{if(climb&&!window.__noClimb)climb.post(dt);});}},/* CLIMB HOOK: ladders in the contacts slot */root,onTaskEnd:cb=>{endCbs.push(cb);},
   ray:(x,y,z,dx,dy,dz,len)=>{const r=new RAPIER.Ray({x,y,z},{x:dx,y:dy,z:dz});const h=world.castRay(r,len,true,undefined,undefined,undefined,undefined,c=>{const u=c.userData;return !(u&&(u.loose||u.zombie));});return h?(h.toi??h.timeOfImpact):null;},
   label:()=>H.linger?'':(ACT[H.task]||{}).label||'',node:()=>H.node,walkSpeed:()=>walkSpeed,floorAt,items:{book:bookObj,mug,spoon,plate,pot}};
