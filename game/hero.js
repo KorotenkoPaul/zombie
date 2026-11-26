@@ -1757,18 +1757,18 @@ gripNoLean('Left',T.gripL(),w*.95);gripNoLean('Right',T.gripR(),w);};
    const polar=p=>{const l=D.obj.worldToLocal(p.clone());const w=D.width||.77;const x=w/2-l.x;return [Math.atan2(l.z,x),Math.hypot(x,l.z)];};
    const route=(p,q)=>{if(D.open<=.02)return q;const thL=D.open*1.66,[thW]=polar(q),[thP,rP]=polar(p);if(thW<=thL||thP>thL+.12)return q;
     if(rP<1.03)return spot(Math.min(Math.max(thP,.12),Math.max(.12,thL-.12)),1.1);return spot(Math.min(thP+.6,thL+.3),1.1);};
-   const follow=(a,dt)=>{const p=root.position,q=route(p,want());const dx=q.x-p.x,dz=q.z-p.z,m=Math.hypot(dx,dz);a.v=Math.min(.75,Math.max(0,(a.v||0)+(m>.03?2:-3)*dt),Math.sqrt(2*2*m));const st=Math.min(m,a.v*dt);/* eased start and stop: no jerk in the feet */if(m>1e-4){p.x+=dx/m*st;p.z+=dz/m*st;}
+   const follow=(a,dt)=>{const p=root.position,q=route(p,want());const dx=q.x-p.x,dz=q.z-p.z,m=Math.hypot(dx,dz);a.v=Math.min(.75,Math.max(0,(a.v||0)+(m>.03?2:-3)*dt),Math.sqrt(2*2*m));const st=Math.min(m,a.v*dt);/* eased start and stop: no jerk in the feet */if(m>1e-4){p.x+=dx/m*st;p.z+=dz/m*st;if(st>1e-5)a.dir={x:dx/m,z:dz/m};}
     const lk=D.open>.02?spot(D.open*1.66,.62):D.boltKnob(V());const yF=Math.atan2(lk.x-p.x,lk.z-p.z);const dy=wrapA(yF-root.rotation.y);root.rotation.y+=Math.sign(dy)*Math.min(Math.abs(dy),2.4*dt);H.face=root.rotation.y;
     const mv=st/dt>.12;if(mv&&!a.walk){a.walk=1;play('30',{fade:.25,speed:.8});}else if(!mv&&a.walk&&m<.03){a.walk=0;play(IDLE(),{fade:.4});}return m;};
    return job({pt:()=>D&&D.boltKnob?D.boltKnob(V()):null,stand:.42,node:'bdoor'/* W7: always from the room side (the knob's nearest node is bdoor2 in the doorway: he walked into the shut leaf to x .55) */,clip:null,dur:[14,14],vary:false,
    look:a=>D.open>.02?spot(D.open*1.66,.62).setY(root.position.y+.95):D.boltKnob(V()),
    start:a=>{a.ds=wantOpen&&D.bolt<1e-3?'open':'shut';a.dt=0;},
-   tick:(a,dt)=>{a.dt+=dt;const m=follow(a,dt);
+   tick:(a,dt)=>{a.dt+=dt;/* WALK (integrator, free-day f41664): once done he brakes out of the follow walk (3 m/s^2, along his last heading) and the task ends only when he stands; it ended at 0.75 m/s and the next task stood him still in one frame */if(a.ds==='done'&&!window.__boltNoBrake){const p=root.position;if(a.v>0&&a.dir){const v0=a.v;a.v=Math.max(0,a.v-3*dt);const st=(v0+a.v)*.5*dt;p.x+=a.dir.x*st;p.z+=a.dir.z*st;if(a.walk&&a.v<.12){a.walk=0;play(IDLE(),{fade:.4});}}if(a.dt>.6&&!(a.v>.01)||a.dt>2.5)a.T=1e3;return;}const m=follow(a,dt);
     if(a.ds==='shut'){if(m<.12&&D.target!==0)D.openTo(0);if(D.open<=1e-3&&m<.05){D.openTo(D.open);D.boltTo(to);a.ds='bolt';a.dt=0;}else if(a.dt>11){D.openTo(D.open);a.ds='done';a.dt=0;/* not shut in time: the bolt is never pushed on an open door */}return;}
     if(a.ds==='bolt'){if(Math.abs(D.bolt-to)<1e-3){AU('bolt',D.boltKnob(V()));a.ds=wantOpen?'open':'done';a.dt=0;}else if(a.dt>3){D.boltTo(D.bolt);a.ds='done';a.dt=0;}return;}
     /* the reverse of the shut stage: his palm on the leaf (grab.js doorDrive), he backs round the sweep as it comes toward him; the door moves only under the palm */
     if(a.ds==='open'){if(D.open<OPEN-1e-3){if(D.target!==OPEN&&D.bolt<1e-3)D.openTo(OPEN);if(a.dt>11){D.openTo(D.open);a.ds='done';a.dt=0;}}else{D.openTo(D.open);a.ds='done';a.dt=0;}return;}
-    if(a.ds==='done'&&a.dt>.6)a.T=1e3;}});},
+    if(a.ds==='done'&&a.dt>.6&&(window.__boltNoBrake||!(a.v>.01)))a.T=1e3;}});},
   radio:(o)=>{const P=window.__props||P3;const R=P&&P.radio;if(!R||!R.knob)return job({pt:()=>PT('radio'),stand:.45,clip:'hy_radio',loop:true,dur:[30,60]});
    // LEISURE: the radio sits low on the crate by the bed. He bends his knees to it, switches it on and turns the dial with his
    // right hand ON the knob (it only turns while the fingers are there), straightens up and listens, now and then bends again
