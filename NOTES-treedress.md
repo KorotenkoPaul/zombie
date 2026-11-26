@@ -285,3 +285,8 @@ Debug: `__treedress.stats()`.
 - Eye-level shots (1.4 m) by the door, the ladder foot, the pond side and the west roots. Note: the game camera never gets this close (closest zoom ~10.7 m), and tdNear only turns on within 9 m of the axis.
 - Most visible: beside the trunk door, the door-moss cushions (6-9 cm) sat on the 45° flare (sampler n.y >= 0.4) and stood out of the bare bark like green stickers.
 - Door moss now only on the near-flat threshold corners (n.y >= 0.75), smaller (2.5-5.5 cm), taller domes leaning up. Own rng stream (7071): nothing else moves.
+
+## Round 47 (crown sky gaps prototype, ?crowngaps=1, default unchanged)
+- The photo's crown is a ring of separate clumps with the limbs outlined against the sky; ours is a dense wall (deliberate: Pavel asked for density). For Pavel to choose.
+- tree.js (agreed with Tree): with ?crowngaps=1, leaf cards and inner-crown impostors whose ray from the home camera crosses z=0 inside 4 ragged holes (left edge, top above the trunk, right of the deck, upper left) are skipped after all their rnd() draws, so everything else keeps its place.
+- budget.js with the flag: all 5 views ok, day alpha 0.92. Comparison: /mnt/project-files/tree/decisions/5_okna_neba_kompyuter.jpg, 6_okna_neba_telefon.jpg.

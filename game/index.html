@@ -360,7 +360,7 @@ vec3 plank(vec3 lp,vec3 sz,float sd){sd=floor(sd*4.+.5)*.25;/* [speckle fix] the
  col=mix(col,grey*mix(1.05,1.2,uNails),e*.72);pRgh=mix(pRgh,.93,e);dH*=1.+e*1.2;
  // upright outside boards: rain runs down from their top end (under the eaves, under a sill) in dark streaks; splash at the foot
  if(abs(vUpX)>.7){float tp=lp.x*sign(vUpX);float st=pow(pN(vec2(m.y*38.+sd*5.,m.x*.9)),3.)*smoothstep(-.4,.45,tp);float spl=smoothstep(-.32,-.5,tp);
-  col*=1.-ex*old*(.5*st+.2*spl);}
+  col*=1.-ex*old*(.62*st+.2*spl);/* [TREE wear round] the foot stays damp: darker, with a thin film of moss in the grain; the end grain at both ends is checked with short splits */float fb=spl*(.45+.55*pN(m.xy*vec2(1.5,7.)+sd*3.));col=mix(col,col*vec3(.62,.68,.5),ex*old*fb*.55);pRgh=mix(pRgh,.96,ex*old*fb);float ck=smoothstep(.36,.49,abs(tp))*smoothstep(.86,.95,pN(vec2(m.y*55.+sd*9.,m.x*1.6)));col*=1.-.45*ck*ex*old;}else if(abs(vUpX)<.3&&face==0.&&wall<.5&&uNails>.5){/* [TREE wear round] outside deck and landing tops: grime packed into the board edges at the gaps, and faint tannin stains where wet leaves lay */float eg=smoothstep(sz.y*.5-.03,sz.y*.5,abs(m.y));col*=1.-.32*eg*ex*old;float ls=smoothstep(.7,.8,pN(m.xy*2.3+sd*5.))*smoothstep(.45,.85,pN(vW.xz*.7+3.));col=mix(col,col*vec3(.66,.54,.44),ls*.4*ex*old);}
  if(wall<.5&&uNails>.5&&face==0.&&vN0.z>0.){
   // where he walks most the boards are worn pale and smooth (wear map from his paths, stamped as he walks)
   int li=0;float bd=9.;for(int i=0;i<7;i++){float d=abs(vW.y-.035-uLv[i]);if(d<bd){bd=d;li=i;}}
@@ -387,7 +387,7 @@ plankShader(boardMat);
 // explicit program keys: hooks chained on later (rain wetBoards, ...) build their key from ours; without one three.js falls back to
 // onBeforeCompile.toString(), which is the *wrapper's* source and the same for every wrapped material, so the boards could get
 // another material's program (the plain-white boards/slates on phones, 2026-11-23)
-boardMat.customProgramCacheKey=()=>'plank';
+boardMat.customProgramCacheKey=()=>'plank3';
 const darkBoard=boardMat.clone();darkBoard.color.set(0xffffff);plankShader(darkBoard,{a:woodDarkT,b:woodDarkT,ta:new THREE.Vector3(.95,.55,.34),tb:new THREE.Vector3(.95,.55,.34),nails:0,bump:.0002});darkBoard.customProgramCacheKey=()=>'plank';
 // a board solid with rounded edges: 24 vertices / 44 triangles. position = the unit box corner, aBev = the inset
 // direction (the shader scales it by the bevel radius in metres, whatever the board size), normal = face normal,
