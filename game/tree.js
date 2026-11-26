@@ -715,6 +715,12 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
   // cupped cards (not flat planes): seen from the side a card is a soft curve, never a straight sheet
   const qg = SPR ? (() => { /* the sprig's outline (convex hull of its leaves): no empty corners to shade */ const H = ROS ? [[.036,.604],[.324,.908],[.452,.951],[.628,.926],[.817,.831],[.929,.411],[.798,.152],[.666,.086],[.579,.08],[.214,.134],[.111,.227],[.047,.388]] : [[.019,.541],[.175,.824],[.565,1],[.583,1],[.856,.859],[.967,.662],[.977,.379],[.879,.053],[.631,0],[.28,.033],[.226,.061],[.021,.525]], pos = [0, 0, 0], uv = [.5, .5], ix = []; for (const [u, v] of H) { pos.push(u - .5, v - .5, 0); uv.push(u, v); } for (let i = 1; i <= H.length; i++) ix.push(0, i, i % H.length + 1); if (ROS) { /* [treedress, overdraw round] the rosette's own concave outline (leaf lobes + ~1% margin, alpha 0.4), not its convex hull: the hull was 28% empty bays between the leaves, and every card pixel costs on a phone (day home oak alpha 1.20 -> ~0.99 screens). Ear-cut, no centre vertex; the dome normals are set analytically below so the shading stays the same. */ const TO = [[0.457,0.9316],[0.4219,0.8887],[0.3242,0.8848],[0.3086,0.7832],[0.2559,0.7754],[0.207,0.7383],[0.209,0.6992],[0.1699,0.6406],[0.0586,0.6016],[0.0762,0.5293],[0.1172,0.4922],[0.0684,0.3887],[0.123,0.3438],[0.1289,0.2383],[0.1855,0.2266],[0.2285,0.1504],[0.3262,0.1836],[0.4141,0.1191],[0.4609,0.1406],[0.5293,0.1328],[0.5742,0.0977],[0.666,0.1094],[0.6836,0.166],[0.7891,0.1738],[0.8008,0.2402],[0.8867,0.2969],[0.8691,0.3477],[0.9102,0.4316],[0.832,0.4961],[0.8477,0.5898],[0.8047,0.6211],[0.8145,0.6641],[0.7871,0.6934],[0.8066,0.8125],[0.7383,0.8301],[0.6797,0.8145],[0.627,0.9043],[0.5566,0.8828]]; pos.length = 0; uv.length = 0; ix.length = 0; for (const [u, v] of TO) { pos.push(u - .5, v - .5, 0); uv.push(u, v); } for (const t of THREE.ShapeUtils.triangulateShape(TO.map(([u, v]) => new THREE.Vector2(u, v)), [])) { const [A, B, C] = t.map(k => TO[k]); /* same winding as the old clockwise fan (front face and lighting unchanged) */ if ((B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0]) > 0) ix.push(t[0], t[2], t[1]); else ix.push(t[0], t[1], t[2]); } } const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(ix); return g; })() : new THREE.CircleGeometry(0.5, MOB(o) ? 10 : 12); // round like the painted clump: no empty quad corners to shade // [PERF] 8 / 18 tris a card: still cupped, a quarter of the old cost
   { const pa = qg.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i); pa.setZ(i, (SPR ? 0.2 : 0.28) * (0.5 - (x * x + y * y))); } qg.computeVertexNormals(); if (SPR && ROS) { const na = qg.attributes.normal, v3 = new THREE.Vector3(); for (let i = 0; i < pa.count; i++) { v3.set(0.4 * pa.getX(i), 0.4 * pa.getY(i), 1).normalize().multiplyScalar(Math.sign(na.getZ(i)) || -1); na.setXYZ(i, v3.x, v3.y, v3.z); } /* the dome's normals (z = .2(.5 - r^2)): the ear-cut outline has no centre vertex to give them */ } }
+  // [treedress, crown gaps prototype] ?crowngaps=1 only (default unchanged): the photo's crown is a ring of separate clumps with
+  // the limbs outlined against the sky. Cards whose ray from the home camera crosses the z=0 plane inside one of a few ragged
+  // holes are skipped (their rnd() calls still run, so every other card keeps its place).
+  const GAPS = /[?&]crowngaps=1/.test(location.search) ? [[-6.4, 13.4, 2.4], [6.2, 15.4, 2.1], [2.4, 19.8, 2.2], [-3.4, 19.2, 1.9]] : null;
+  const gapAt = (p, ex = 0) => { const cz = 28.4, cy = 10.5, t = cz / (cz - p.z); if (t <= 0) return false; const X = p.x * t, Y = cy + (p.y - cy) * t;
+    for (const [gx, gy, gr] of GAPS) { const a = Math.atan2(Y - gy, X - gx), r = gr * (1 + 0.22 * Math.sin(a * 3 + gx) + 0.12 * Math.sin(a * 7 + gy)); if ((X - gx) ** 2 + (Y - gy) ** 2 < (r + ex) * (r + ex)) return true; } return false; };
   let im = new THREE.InstancedMesh(qg, lmat, total);
   const shade = new Float32Array(total), cc = new Float32Array(total * 3);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = V(1, 1, 1), col = new THREE.Color();
@@ -737,6 +743,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
         if (rr > 0.8 && d0.y > -0.2 && rnd(0, 1) < 0.6) col.multiply(new THREE.Color(1.14, 1.12, 0.84));
         { const smooth01 = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); }; const edge = rr > 0.8 && d0.y > -0.3 ? 0.12 : 0, trr = smooth01((p.x - AX) / 6) * smooth01((p.y - 13) / 5) * 0.2;
           if (rnd(0, 1) < 0.17 + edge + trr) { const k = rnd(0, 1); if (k < 0.5) col.setRGB(1.5, 1.08, 0.22); else if (k < 0.85) col.setRGB(1.6, 0.78, 0.2); else col.setRGB(1.3, 0.5, 0.18); /* saturated gold, orange, rust (Env: the sprigs went tan) */ col.multiplyScalar(rnd(0.85, 1.05)); } }
+        if (GAPS && gapAt(p)) continue; /* after all of this card's draws */
         im.setColorAt(n, col); shade[n] = (0.45 + 0.55 * rr) * (0.72 + 0.4 * Math.max(0, d0.y)); n++; continue; }
       // [PERF] phones: only the outer shell of each clump (inner cards are hidden but still shaded: overdraw)
       const dir = V(dx, dy, dz); const rr = MOB(o) ? rnd(0.8, 1.0) : Math.max(0.35, dir.length()); dir.normalize();
@@ -761,6 +768,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
       // photo: gold, orange and a few rust; the crown stays mostly green
       { const smooth01 = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); }; const edge = rs > 0.8 && dir.y > -0.3 ? 0.22 : 0, tr = smooth01((p.x - AX) / 6) * smooth01((p.y - 13) / 5) * 0.22;
         const w = rnd(0, 1); if (w < 0.14 + edge + tr) { const k = rnd(0, 1); if (k < 0.5) col.setRGB(1.5, 1.22, 0.42); else if (k < 0.85) col.setRGB(1.6, 0.98, 0.38); else col.setRGB(1.3, 0.68, 0.32); col.multiplyScalar(rnd(0.85, 1.05)); } }
+      if (GAPS && gapAt(p)) continue; /* after all of this card's draws: the rest keeps its place */
       im.setColorAt(n, col);
       shade[n] = (0.5 + 0.5 * Math.min(1, rs)) * (0.7 + 0.5 * Math.max(0, dir.y));
       n++;
@@ -831,6 +839,7 @@ vec3 objectTangent=vec3(tangent.xyz);
         const rr = rnd(0.15, 0.4), Q = s2.s * QS * rnd(0.85, 1.1);
         const p = s2.p.clone().add(V(dx * s2.s * rr, dy * s2.s * 0.6 * rr, dz * s2.s * rr));
         if (inB(p.x, p.y, p.z, Q * 0.42)) continue;
+        if (GAPS && gapAt(p, Q * 0.5)) continue; /* the inner-crown impostors too, or the gaps show their dark backing, not sky */
         imps.push([p, Q]);
       }
       const ig = new THREE.CircleGeometry(0.5, 8) /* octagon: the round clump without the empty quad corners */, imp = new THREE.InstancedMesh(ig, imat, imps.length), av = new Float32Array(imps.length);

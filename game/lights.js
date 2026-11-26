@@ -190,7 +190,9 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
   // ---------- kitchen: hanging lantern over the counter (the old front lantern hung in mid-air and was removed) ----------
   const kPos = PL.kitchenLamp ? PL.kitchenLamp.pos.clone() : V(-2.3, KT + 1.78, 1.75);
   {
-    const l = new THREE.PointLight(0xFFC373, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 1.25 : 1.6); l.position.copy(kPos); scene.add(l); pointShadow(l, 5.5);
+    /* phones: the walls read flat and clipped (Env's wall probes, 2026-11-26): decay 2 and 30 cm out from the back wall,
+       so the light rolls off from the lamp into darker corners as in the photo instead of burning by the hood */
+    const l = new THREE.PointLight(0xFFC373, 0, MOBILE ? 6.5 : 5.5, MOBILE ? 2 : 1.6); l.position.copy(kPos); if (MOBILE) l.position.z += .3; scene.add(l); pointShadow(l, 5.5);
     // on Props' wall bracket by the fridge the light sat 15 cm off the wall and burned it white beside the fridge while the stove
     // side (the photo's warmest corner) stayed dim: the light's centre a little out into the room, as the glass throws it
     if (PL.kitchenLamp && !PL.kitchenLamp.pendant) { const c = V(-2.65, kPos.y, 2.5).sub(kPos); c.y = 0; l.position.addScaledVector(c.normalize(), .3); }
@@ -207,7 +209,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
       ks.shadow.bias = -.008; ks.shadow.normalBias = .1; ks.shadow.radius = 4; ks.shadow.autoUpdate = false;
       floorClip(ks, KT); ks.userData.lampCache = true;
     }
-    add('kitchen', 'kitchen', 'oil', kPos, { lights: ks ? [{ l: ks, I: 8.5 }, { l, I: 4.8 }] : [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
+    add('kitchen', 'kitchen', 'oil', kPos, { lights: ks ? [{ l: ks, I: 8.5 }, { l, I: 7.7 }] : [{ l, I: MOBILE ? 8.5 : 4.6 }], emis: panes.map(m => [m, .24]), opac: [[fo.m, 1]], extra: fo.extra, autoFn: c => c.lamps > .45 });
   }
 
   // ---------- workshop: dome lamp, a real downward cone with a soft shadow, plus a faint bounce off the bench ----------
@@ -558,7 +560,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
      (kitchen 189/124/70 vs 132/92/53, workshop 169/96/46 vs 114/72/38 with the hero in them); the bedroom stays dim (Pavel) */
   const KWB = 2.4;
   const ROOMS = {
-    kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: MOBILE ? 2.0 * KWB : 2.0 },   // toward the stove: the lamp now hangs by the fridge
+    kitchen:  { c: V(-2.85, KT + 1.05, 2.5), bounce: 2.0 },   // phones: no KWB lift any more, the flat bounce clipped the walls cream-white (the lamp carries the room)   // toward the stove: the lamp now hangs by the fridge
     bedroom:  { c: V(-2.2, BD + 1.1, 2.3), bounce: MOBILE ? .65 : .36 },   /* desktop: at .9 this shadowless all-room fill washed out the lamp's shadows (the bunk frame's on the back wall, his own); the lamp's cone takes the light back */   // centred on the bunk side: the lamp now hangs by the door   // cosy: little bounce, the corners stay dusky
     workshop: { c: V(2.75, WS + 1.1, 2.9), bounce: MOBILE ? 2.6 * KWB : 2.6 },
   };
