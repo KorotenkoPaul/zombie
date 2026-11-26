@@ -846,7 +846,7 @@ export function createGround(C){const __before=new Set(C.scene.children);
      parts.push(mk(new THREE.CapsuleGeometry(.016,.1,MOBILE?1:2,MOBILE?5:6).translate(ox,H-.08,oz),t=>[.72,.4,.2]));}
     return mergeGeometries(parts);})();const NR=MOBILE?9:14;const im=new THREE.InstancedMesh(reedG,grassMat,NR);let n=0;
    for(let t=0;t<600&&n<NR;t++){const x=POND.x+rr(-3.4,3.4),z=POND.z+rr(-2.6,2.6);const d=pondD(x,z);if(d<-.3||d>.25||x>POND.x+1.2||z>POND.z+.3||rootD(x,z)<.5)continue;// back and left banks: the camera side stays open
-    const sz=rr(.8,1.25);M.compose(V(x,Math.max(level-.05,groundH(x,z)-.02),z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(.7,1),sz,sz*rr(.7,1)));im.setMatrixAt(n,M);Col.setHSL(rr(.2,.27),rr(.2,.32),rr(.48,.58));im.setColorAt(n,Col);n++;}
+    const sz=rr(.8,1.25)*(.4+.45*smooth(-.5,-1.9,x));/* photo sweep: from the home view a 1.3 m wall of cattails stood right across the trunk's foot and the ladder (the photo's roots and mossy floor): the clump keeps to the left bank at knee height, only low rushes behind the water */M.compose(V(x,Math.max(level-.05,groundH(x,z)-.02),z),Q.setFromAxisAngle(V(0,1,0),rr(0,6.28)),Sc.set(sz*rr(.7,1),sz,sz*rr(.7,1)));im.setMatrixAt(n,M);Col.setHSL(rr(.2,.27),rr(.2,.32),rr(.48,.58));im.setColorAt(n,Col);n++;}
    im.count=n;im.receiveShadow=true;scene.add(im);G.reeds=im;}
   // stones on the bank, half in the mud
   if(G.stones){const NS=MOBILE?7:10;const im=G.stones;let n=im.count;const n0=n;
