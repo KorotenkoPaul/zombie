@@ -495,7 +495,7 @@ export function buildTree(THREE, o) {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vOkW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvOkW=(modelMatrix*vec4(transformed,1.)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vOkW;')
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-{vec3 wp=vOkW;float dT=length(wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));float bw=max(smoothstep(3.3,4.4,dT),smoothstep(9.6,10.8,wp.y));
+{vec3 wp=vOkW;float dT=length(wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));float bw=max(smoothstep(3.3,4.4,dT)*smoothstep(1.8,3.,wp.y),smoothstep(9.6,10.8,wp.y)); /* [treedress, root ripple round] not on the roots: there the phase follows the shading normal, which carries treedress's bark normal map, and its pores turned these grooves into a cork speckle up close; the roots have treedress's own furrows */
  if(bw>0.){vec3 wn=normalize((vec4(normal,0.)*viewMatrix).xyz);vec3 ax=normalize(wp-vec3(${AX.toFixed(3)},wp.y*.6,${AZ.toFixed(3)}));
   vec3 u=normalize(cross(ax,vec3(0.,1.,0.))+vec3(1e-4,0.,0.));vec3 w=cross(ax,u);float an=atan(dot(wn,w),dot(wn,u));float al=dot(wp,ax);
   float ph=an*7.+1.4*sin(al*.8+an*2.)+.7*sin(al*2.1-an*3.);float gr=smoothstep(.55,.97,abs(sin(ph)));float aa=1.-smoothstep(.6,1.6,fwidth(an*7.));
