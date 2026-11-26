@@ -65,7 +65,7 @@ export function buildTree(THREE, o) {
     let vy = (y - door.y0) / (door.y1 - door.y0);
     // arch: full width below 65% height, round top above
     let inside;
-    if (vy < 0 || vy > 1) inside = 99; else if (vy < 0.62) inside = da; else { const k = (vy - 0.62) / 0.38; inside = Math.hypot(da, k * 1.05); }
+    if (vy < 0 || vy > 1) inside = 99; else if (vy < 0.74) inside = da; else { const k = (vy - 0.74) / 0.26; inside = da + k; } /* [TREE, photo] the photo's door is a five-sided opening: plumb sides and a low gable top, not a round arch */
     return inside;
   }
   const trunkR = (t, ang, c) => {
@@ -218,7 +218,7 @@ export function buildTree(THREE, o) {
       const rx = x - ccx, rz = z - ccz, u = rx * ddx + rz * ddz, v = -rx * ddz + rz * ddx;
       if (u < 0.2 || u > 3) return 99;
       const da = Math.abs(v) / (door.w / 2), vy = (y - door.y0) / (door.y1 - door.y0);
-      if (vy < 0 || vy > 1) return 99; if (vy < 0.62) return da; return Math.hypot(da, (vy - 0.62) / 0.38 * 1.05);
+      if (vy < 0 || vy > 1) return 99; if (vy < 0.74) return da; return da + (vy - 0.74) / 0.26;
     };
     const RA = new Array(17).fill(9);
     for (let i = 0; i < P.length; i += 3) { const y = P[i + 1]; if (y < door.y0 - 0.1 || y > door.y1 + 0.5) continue;
@@ -616,9 +616,12 @@ export function buildTree(THREE, o) {
   the height the one down its sides; moving out along a limb changes neither, so the grooves run along it. Up the trunk (no limb)
   the height term fades out and they run vertically. */
   vec2 rv=wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)});float th=atan(rv.y,rv.x);float lb=smoothstep(2.2,3.6,dT);
-  float ph=th*90.+wp.y*13.*lb+1.5*sin(dT*.9+th*5.+wp.y*.7)+.8*sin(dT*2.3-wp.y*2.6*lb+th*11.);
-  float gr=smoothstep(.5,.97,abs(sin(ph)));float aa=1.-smoothstep(.5,1.4,fwidth(ph));
-  float k=bw*aa;diffuseColor.rgb*=1.-.36*gr*k;diffuseColor.rgb*=1.+.09*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
+  /* [treedress, branch close-up round] 90 per turn with abs(sin) drew ~180 even pinstripes round the fork: a corduroy that read
+  as painted up close. Now 36 per turn, one groove per period, of varying width, broken into lengths that start and stop. */
+  float ph=th*36.+wp.y*5.2*lb+1.5*sin(dT*.9+th*5.+wp.y*.7)+.8*sin(dT*2.3-wp.y*2.6*lb+th*11.);
+  float sp=sin(ph);float wv=.55+.25*sin(th*7.+dT*1.7+wp.y*.9);
+  float gr=smoothstep(wv,wv+.3,sp)*smoothstep(-.3,.4,sin(wp.y*.85+dT*.7+th*9.+2.2*sin(th*4.-wp.y*.5)));float aa=1.-smoothstep(.5,1.4,fwidth(ph));
+  float k=bw*aa;diffuseColor.rgb*=1.-.34*gr*k;diffuseColor.rgb*=1.+.08*k*smoothstep(.2,.8,-sp);}}`);
     // [TREE] trunk bark up close (Pavel: smooth oak with irregular folds; phones at the closest zoom read as a soft brown wall):
     // the painted wavy-fold bark (bark3) laid over the trunk in world space, two side projections blended by the normal (no
     // seams), fading in only near the camera so the home view keeps its painted look. Diffuse only; no relief maps touched.
@@ -656,11 +659,11 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vAW;uniform vec2 aC;uniform vec2 aD;uniform vec3 aY;')
         .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
 {vec2 r=vAW.xz-aC;float u=dot(r,aD),v=-r.x*aD.y+r.y*aD.x,da=abs(v)/(aY.z*.45),vy=(vAW.y-aY.x)/(aY.y-aY.x);
- if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.62?da:length(vec2(da,(vy-.62)/.38*1.16)))<1.)discard;}`);
+ if(u>.2&&u<2.1&&vy>0.&&vy<1.&&(vy<.74?da:da+(vy-.74)/.26*1.1)<1.)discard;}`);
     }
   };
   mat.userData.doorGlow = { value: 0 };
-  mat.customProgramCacheKey = () => 'oakBark-grooves2-fold'; /* [ENV] explicit key (SHADERS rule) */
+  mat.customProgramCacheKey = () => 'oakBark-grooves3-fold'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
   { const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(shadowP, 3)); sg.setIndex(shadowI); sg.computeBoundingSphere(); bark.userData.shadowGeo = sg; }
 
