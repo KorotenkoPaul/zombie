@@ -565,6 +565,27 @@ let PSG=null,psT=0;window.__psSun=/[?&]psSun/.test(location.search);
  sm.render=(L,sc,cam)=>{const held=[];const D=L.filter(due);if(D.length>1){D.sort((a,b)=>(waitN.get(b)||0)-(waitN.get(a)||0)||(a===sun?-1:b===sun?1:0));
    const go=D[0]===sun?[sun]:[D[0]];for(const l of D){if(go.includes(l)){waitN.set(l,0);continue;}l.shadow.needsUpdate=false;held.push(l);waitN.set(l,(waitN.get(l)||0)+1);}}
   for(const p of shProxy){p.count=p.userData.shSrc.count;p.visible=!p.userData.off;}const PV=window.__plView||[];for(const v of PV)if(v.hid){v.S.visible=true;v.D.visible=false;}/* the shadow passes see the real plank meshes */try{draw(L,sc,cam);}finally{for(const v of PV)if(v.hid){v.S.visible=false;v.D.visible=true;}for(const p of shProxy)p.visible=false;for(const l of held)l.shadow.needsUpdate=true;}};}
+/* [PERF] lamp halos in one draw: Environment's halo sprites (env.addHalo: additive, no depth write, so their order among
+   themselves does not matter) were one draw call each (7-9 at night). Here they are camera-facing quads of one mesh,
+   rebuilt per render from the sprites' own state (position, scale, colour, opacity, visible); the sprites themselves are
+   parked on layer 30 so the game keeps driving them. ?halobatch=off or __haloBatchOff draws the sprites as before. */
+{const HBOFF=/[?&]halobatch=off/.test(location.search);let HS=[],hT=-1e9,hm=null,cap=0;const _hp=new THREE.Vector3(),_hr=new THREE.Vector3(),_hu=new THREE.Vector3();
+ const hvis=o=>{for(let q=o;q;q=q.parent){if(!q.visible)return false;if(q===scene)return true;}return false;};
+ const scan=()=>{const by=new Map();scene.traverse(o=>{if(o.isSprite&&o.material.blending===THREE.AdditiveBlending&&!o.material.depthWrite&&o.material.fog===false&&o.material.map&&o.material.rotation===0&&o.center.x===.5&&o.center.y===.5&&o.onBeforeRender===THREE.Object3D.prototype.onBeforeRender){const k=o.material.map;if(!by.has(k))by.set(k,[]);by.get(k).push(o);}});
+  let b=null;for(const a of by.values())if(!b||a.length>b.length)b=a;return b&&b.length>=3?b:[];};
+ const prevSB=scene.onBeforeRender;scene.onBeforeRender=function(r,sc,cam,...a){if(prevSB)prevSB.call(this,r,sc,cam,...a);
+  try{const off=HBOFF||window.__haloBatchOff;const now=performance.now();
+   if(off){if(hm)hm.visible=false;for(const s of HS)s.layers.set(0);HS=[];hT=-1e9;return;}
+   if(now-hT>2000){hT=now;const N=scan();for(const s of HS)if(!N.includes(s))s.layers.set(0);HS=N;for(const s of HS)s.layers.set(30);}
+   if(!HS.length){if(hm)hm.visible=false;return;}
+   if(!hm||cap<HS.length){cap=HS.length+4;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(cap*12),3).setUsage(THREE.DynamicDrawUsage));g.setAttribute('color',new THREE.BufferAttribute(new Float32Array(cap*16),4).setUsage(THREE.DynamicDrawUsage));
+    const uv=new Float32Array(cap*8),ix=new Uint16Array(cap*6);for(let i=0;i<cap;i++){uv.set([0,0,1,0,1,1,0,1],i*8);ix.set([0,1,2,0,2,3].map(v=>v+i*4),i*6);}g.setAttribute('uv',new THREE.BufferAttribute(uv,2));g.setIndex(new THREE.BufferAttribute(ix,1));
+    if(hm){hm.geometry.dispose();hm.geometry=g;}else{const m0=HS[0].material;hm=new THREE.Mesh(g,new THREE.MeshBasicMaterial({map:m0.map,vertexColors:true,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));hm.frustumCulled=false;hm.matrixAutoUpdate=false;hm.raycast=()=>{};hm.name='haloBatch';scene.add(hm);}}
+   hm.material.map=HS[0].material.map;const P=hm.geometry.attributes.position,C=hm.geometry.attributes.color,pa=P.array,ca=C.array,e=cam.matrixWorld.elements;_hr.set(e[0],e[1],e[2]).normalize();_hu.set(e[4],e[5],e[6]).normalize();let n=0;
+   for(const s of HS){const m=s.material;if(!hvis(s)||!(m.opacity>0)||m.visible===false)continue;s.updateWorldMatrix(true,false);const w=s.matrixWorld.elements;_hp.set(w[12],w[13],w[14]);
+    const sx=Math.hypot(w[0],w[1],w[2])*.5,sy=Math.hypot(w[4],w[5],w[6])*.5;const o=n*12;
+    for(let k=0;k<4;k++){const ax=(k===0||k===3)?-sx:sx,ay=k<2?-sy:sy;pa[o+k*3]=_hp.x+_hr.x*ax+_hu.x*ay;pa[o+k*3+1]=_hp.y+_hr.y*ax+_hu.y*ay;pa[o+k*3+2]=_hp.z+_hr.z*ax+_hu.z*ay;ca.set([m.color.r,m.color.g,m.color.b,m.opacity],n*16+k*4);}n++;}
+   hm.geometry.setDrawRange(0,n*6);hm.visible=n>0;P.needsUpdate=true;C.needsUpdate=true;}catch(err){console.error('haloBatch',err);}};}
 /* [PERF] chunked draw ranges: the bark (43k tris), the merged house props (propsStatic, ~66k), the forest trunks (18k) and the
    ground litter (8.5k) are single meshes, so even
    zoomed in on one room the whole of them was drawn (~340k tris at the closest zoom vs ~355k at home). Their triangles are
