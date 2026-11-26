@@ -176,3 +176,14 @@ Debug: `__treedress.stats()`.
   - Key: `|treedress8`.
 - **Night and rain walk** (door, door side and ladder root): nothing painted-looking found in treedress.
   - One thing for Env: a straight horizontal seam crosses the ladder root at about 1 m. It is the low fog sheet, not the bark.
+
+## Round 25: photo folds on the trunk and roots
+- **Flutes.** Long smooth flutes run down the trunk and on out along every root. In the photo they are the trunk's main character.
+  - One phase by angle round the axis (17 per turn) does both, because the roots radiate from the axis.
+  - The phase wanders with height and distance (`tdFl`, `tdFlK`, `tdFlD`).
+  - Grooves are narrow and dark, ridges broad and a little lighter, and the normal tilts across them.
+  - They stay below the house (fade out at y 4.2–5.6, where Tree's limb grooves take over) and off the crotches. They fade before a flute gets under about 2 px.
+- **Night moon fill.** A cool grey-blue fill on the trunk and roots (below 5–9 m) at night: the ridges and root tops catch it, the grooves stay dark.
+  - Before, the lower trunk and roots sank into one dark brown mass; in the photo they read in cool moonlight.
+- Key: `|treedress9`. Arithmetic only, no reads, no draws.
+- **Still off versus the photo (geometry, not shader).** The roots are faceted low-poly planes. The photo's roots are long, round and sinuous and spread wider.
