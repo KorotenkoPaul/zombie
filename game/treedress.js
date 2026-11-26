@@ -47,6 +47,10 @@ const FLUTTER = `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanc
 #endif
 }`;
 // [rain round] ivy and ferns get wet with the bark (D.barkU.wet / damp), see swayMat
+// [greenery round] a position hash in [0,1) for per-leaf tints (integer mixing of the millimetre grid; neighbours decorrelate)
+const tdHash = (p, k) => { let h = Math.imul(Math.round(p.x * 1000) | 0, 0x27d4eb2d) ^ Math.imul(Math.round(p.y * 1000) | 0, 0x165667b1) ^ Math.imul(Math.round(p.z * 1000) | 0, 0x9E3779B1) ^ Math.imul(k + 7, 0x85ebca6b);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; h = Math.imul(h, 0x297a2d39); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
+const tdAut = m => { m.userData.autumn = true; return m; };
 const tdWetU = m => { m.userData.wetU = tdWetU.U; return m; };
 function swayMat(mat, U, amp, chunk) {
   mat.onBeforeCompile = s => {
@@ -61,10 +65,17 @@ function swayMat(mat, U, amp, chunk) {
       s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nuniform float tdWet,tdDamp;')
         .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb*=1.-.2*tdDamp;')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(roughnessFactor,.32,tdWet*.85);'); }
+    // [greenery round] autumn leaves: an instance colour with red > 1.5 means "turned" and holds 4x the target colour; the green
+    // leaf map then only gives the shading (its luminance), so a turned leaf is a clean red or yellow with lighter veins, not a
+    // muddy brown from tinting green. Arithmetic only.
+    if (mat.userData.autumn) s.fragmentShader = s.fragmentShader.replace('#include <color_fragment>', `#include <color_fragment>
+#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )
+  if(vColor.r>1.5){vec3 tb=diffuseColor.rgb/max(vColor.rgb,vec3(1e-3));diffuseColor.rgb=vColor.rgb*.25*min(dot(tb,vec3(.2126,.7152,.0722))*${(1 / 0.15).toFixed(3)},1.8);}
+#endif`);
   };
   // SHADERS rule: an explicit key. The default (the hook's source text) is the same for every swayMat, so the ivy and the
   // ferns could share one compiled program with the other's sway chunk
-  const key = 'tdSway|' + amp.toFixed(3) + '|' + chunk + (mat.userData.wetU ? '|tdWet1' : '');
+  const key = 'tdSway|' + amp.toFixed(3) + '|' + chunk + (mat.userData.wetU ? '|tdWet1' : '') + (mat.userData.autumn ? '|tdAut1' : '');
   mat.customProgramCacheKey = () => key;
   return mat;
 }
@@ -182,7 +193,7 @@ ${MOBILE ? '#define TD_LITE' : ''}
 #define TDBK ${MOBILE ? 1 : 2}
 #define TDR ${(11 / (2 * Math.PI * 0.55 * 0.68)).toFixed(5)}
 varying vec3 vTdJ;varying float vTdGr;flat varying vec4 vB1,vB2;float tdCr=0.,tdCo=0.,tdBC=0.,tdBR=0.,tdBW=0.,tdBT=0.;vec3 tdBD=vec3(0.);
-uniform vec4 tdDrip[8];varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;
+uniform vec4 tdDrip[8];varying vec3 tdP;varying vec3 tdN;uniform float tdMoss,tdFoot,tdWet,tdDamp,tdFrost,tdDay,tdNear,tdRimK,tdRimS;uniform vec3 tdRimC,tdRimD;float tdMM=0.,tdWM=0.,tdDM=0.,tdFM=0.,tdHB=0.,tdL=0.,tdFade=0.,tdH=.5;float tdFl=0.,tdFlK=0.,tdFlD=0.;
 uniform sampler2D tdNrm,tdHao;uniform float tdRelief,tdScale;
 // triplanar in a frame: A = the way the furrows run (stretched), B and C across. Trunk: A=up, B=x, C=z (fixed world axes).
 // Roots and limbs: A = outwards from the trunk (they radiate from it), B = up, C = the horizontal tangent.
@@ -280,8 +291,19 @@ uniform float tdCool;` + NOISE)
 #endif
           tdH=ha.r;float cav=ha.g*mix(1.,.8+.2*hb.g,tdFade);
           float rel=min(1.,tdRelief*(1.+1.2*tdLf)); // roots: furrows darker too (T22)
-          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel); // pores softer: close up they read as black pepper (smooth photo bark)
-          diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf)); // fine octave: a hint only (its cork pattern read as black pepper up close)
+          diffuseColor.rgb*=mix(1.,mix(.55,1.15,smoothstep(.05,.95,tdH))*mix(.74,1.,smoothstep(.05,.75,cav)),rel);
+          diffuseColor.rgb*=mix(1.,.93+.14*hb.b,tdFade*rel*(1.-.6*tdLf));
+          // [photo folds round] the photo's oak: long smooth flutes run down the trunk and on out along every root (its roots radiate
+          // from the axis, so one fluting by angle round the axis does both: vertical on the trunk, lengthwise on the roots). They
+          // wander with height and distance, the grooves narrow and dark, the ridges broad. Below the house only (the limbs have
+          // Tree's own grooves); fades out before a flute gets under ~2 px.
+          { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); float fr=length(fv), fa=atan(fv.y,fv.x);
+            float ph=fa*17.+1.3*sin(y*.55+fa*3.)+.9*sin(fr*1.15-fa*2.)+.5*sin(y*1.7-fr*.8+fa*5.);
+            float aa=1.-smoothstep(.35,.9,fwidth(ph));
+            tdFlK=aa*(1.-smoothstep(4.2,5.6,y))*smoothstep(.75,1.,fr)*(1.-smoothstep(7.,9.,fr))*(1.-vTdJ.x);
+            tdFl=sin(ph); tdFlD=cos(ph)*17./max(fr,.8);
+            float gv=smoothstep(.3,.95,-tdFl), rg=smoothstep(0.,.9,tdFl);
+            diffuseColor.rgb*=mix(1.,.42+.1*hb.g,gv*tdFlK*.9)*mix(1.,1.14,rg*tdFlK); } // fine octave: a hint only (its cork pattern read as black pepper up close)
           { float g=dot(diffuseColor.rgb,vec3(.33)); diffuseColor.rgb=mix(diffuseColor.rgb,vec3(g*1.05,g*1.03,g*1.0),smoothstep(.62,.92,tdH)*.35*rel);
             // the photo's oak is a cooler grey-brown than the warm model texture, with violet-blue in the furrows and shadows
             diffuseColor.rgb=mix(diffuseColor.rgb,g*vec3(1.08,.97,.9),.35*tdCool);
@@ -315,6 +337,10 @@ uniform float tdCool;` + NOISE)
 #ifdef TD_LITE
           float big=texture2D(tdHao,vec2(tdP.x+tdP.y*.55,tdP.z-tdP.y*.45)*.09).g*1.4-.35; // a skewed planar read that varies across every face (the old (x+z, y) one was constant along flat root tops: stripes)
           float fine=ha.b;
+          // [root ripple round] ha.b is the bark map's cork detail: as the moss's colour breakup it printed that cork pattern onto
+          // the moss on the sunlit roots as a speckle up close. Within ~6 m it hands over to a soft world-space noise (arithmetic
+          // only, so the per-pixel branch is safe); further out the cork is sub-pixel and stays as it was
+          { float cd=length(cameraPosition-tdP); if(cd<6.){ fine=mix(td_f(tdP*3.1+vec3(0.,big*2.,0.)),fine,smoothstep(3.5,6.,cd)); } }
 #else
           float big=td_f(tdP*vec3(.55,.35,.55));
           float fine=td_f(tdP*3.1+vec3(0.,big*2.,0.));
@@ -396,12 +422,18 @@ uniform float tdCool;` + NOISE)
           if(brk>.01)dn=mix(dn,tdTriN(15./11.,vec3(3.1,1.7,5.3),wn,tdScale,3.*1.37),brk);
           if(tdFade>.01)dn+=tdTriN(36./11.,vec3(7.3),wn,tdScale,1.1)*tdFade*(1.-.3*tdLf); // on roots the fine octave read as wood grain
 #endif
+          // the flutes in the light too: tilt across them (the horizontal tangent round the axis), steeper in the narrow grooves
+          { vec2 fv=tdP.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}); vec3 tg=normalize(vec3(-fv.y,0.,fv.x)+1e-5); tg-=wn*dot(tg,wn);
+            dn-=tg*tdFlD*.03*(1.+1.4*smoothstep(.3,.9,-tdFl))*tdFlK/max(tdRelief,.05); }
           tdBias=0.;
           dn*=1.+.6*smoothstep(.45,.9,wn.y); // tops of the limbs: as rough as the sides
           dn*=1.-tdBC*.6;                    // crushed bark is flattened
           dn+=tdBD*tdBR*.9;                   // the callus roll round a beam
           dn*=1.+tdCo*.5;                     // collar: deeper squeezed folds
-          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf)); // roots: deeper relief (Critic T22: they read smooth up close)
+          // [root ripple round] up close in the sun the roots' tripled relief lit every cork pore of the map as a speckle: under ~5 m it
+          // eases back towards the trunk's (the furrows still read, the pores stop sparkling)
+          float spkN=tdLf*(1.-smoothstep(2.,5.5,length(cameraPosition-tdP)));
+          vec3 nw=normalize(wn+dn*tdRelief*(1.-tdMM*.7)*(1.+2.*tdLf*(1.-.7*spkN))); // roots: deeper relief (Critic T22: they read smooth up close)
           vec3 nv=normalize((viewMatrix*vec4(nw,0.)).xyz);
           normal=normalize(mix(normal,nv,.92));
         }`)
@@ -417,10 +449,14 @@ uniform float tdCool;` + NOISE)
           // daylight bounced off the ground, the roots and the house's planks: warm fill so the trunk in the house's shade reads
           // as brown bark, not a black hole (weaker in the furrows and the deep crotches)
           totalEmissiveRadiance+=diffuseColor.rgb*vec3(1.1,.95,.8)*tdDay*.5*(.45+.55*tdH)*(1.-tdCr*.7);
+          // [photo folds round] night: the photo's trunk and roots read in a cool moonlit grey-blue, the flute ridges and the root
+          // tops catching it, the grooves and undersides dark (before, below the house they sank into one dark brown mass)
+          { float up=.45+.55*smoothstep(-.2,.8,wn.y); float rdg=(.35+.65*smoothstep(.3,.8,tdH))*mix(1.,.25+.95*smoothstep(-.3,.8,tdFl),tdFlK);
+            totalEmissiveRadiance+=diffuseColor.rgb*vec3(.42,.58,1.)*(1.-tdDay)*.42*up*rdg*(1.-tdCr*.7)*(1.-smoothstep(5.,9.,tdP.y)); }
         }`);
     };
     const prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
-    mat.customProgramCacheKey = () => prevKey() + '|treedress7';
+    mat.customProgramCacheKey = () => prevKey() + '|treedress9';
     mat.needsUpdate = true;
   }
 
@@ -742,18 +778,24 @@ uniform float tdCool;` + NOISE)
       const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
     })();
     const leafG = new THREE.PlaneGeometry(1, 1); leafG.translate(0, 0.5, 0);
-    const imat = swayMat(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex }))), U, 0.05, FLUTTER);
+    const imat = swayMat(tdAut(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: ivyTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xb8c4b0, emissive: 0x050c07, emissiveMap: ivyTex })))), U, 0.05, FLUTTER);
     const NLV = Math.round(900 * MUL), leaves = new THREE.InstancedMesh(leafG, imat, NLV); let nl = 0;
     const stems = [];
     // a few vines: mostly on the sides and the back, one wandering across the front-left under the kitchen landing
     const vines = [[2.05, 4.6], [2.6, 3.4], [3.3, 5.6], [-2.4, 4.2], [-1.2, 3.0], [-0.35, 2.4], [0.25, 4.8]];
+    // [greenery round] autumn: about a third of the ivy turns, by a hash of the leaf's spot (no R() draw, so the layout stays):
+    // rust and wine red on the leaves that get the most light (higher up, the outer side), a few butter-yellow, the rest stays
+    // a deep evergreen. The tint multiplies the green leaf map, so the factors are large in red and small in green and blue.
+    const autumnIvy = p => { const h = tdHash(p, 0), g = tdHash(p, 1);
+      const turn = 0.32 + 0.2 * Math.min(1, Math.max(0, (p.y - 1.0) / 6)); if (h > turn) return;
+      const v = 0.9 + 0.22 * g; if (h < turn * 0.5) col.setRGB(1.75 * v, 0.3 * v, 0.15 * v); else if (h < turn * 0.82) col.setRGB(2.0 * v, 0.75 * v, 0.17 * v); else col.setRGB(2.1 * v, 1.35 * v, 0.26 * v); }; // x4: wine red, rust orange, butter yellow (linear)
     const addLeaf = (p, out, size) => {
       if (nl >= NLV || blocked(p.x, p.y, p.z, 0.06)) return;
       const n = out.clone().add(V(rr(-0.35, 0.35), rr(0.05, 0.5), rr(-0.35, 0.35))).normalize();
       const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), n);
       q.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), rr(-0.9, 0.9)));
       M4.compose(p.clone().addScaledVector(out, 0.02), q, S.setScalar(size)); leaves.setMatrixAt(nl, M4);
-      const v = rr(0.75, 1.2); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); leaves.setColorAt(nl, col); nl++;
+      const v = rr(0.75, 1.2); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); autumnIvy(p); leaves.setColorAt(nl, col); nl++;
     };
     const climb = (a, y, top, depth) => {
       const pts = []; let wob = rr(0, 6);
@@ -821,7 +863,7 @@ uniform float tdCool;` + NOISE)
     { D.joinIvy = 0; const sideV = V(0, 0, 0); let made = 0;
       const put = (p, out, size) => { if (nl >= NLV || inBox(avoid, p.x, p.y, p.z, 0.03)) return; const q = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), out.clone().add(V(rr(-0.3, 0.3), rr(0, 0.3), rr(-0.3, 0.3))).normalize());
         q.multiply(new THREE.Quaternion().setFromAxisAngle(V(0, 0, 1), rr(-0.9, 0.9))); M4.compose(p, q, S.setScalar(size)); leaves.setMatrixAt(nl, M4);
-        const v = rr(0.75, 1.15); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); leaves.setColorAt(nl++, col); D.joinIvy++; };
+        const v = rr(0.75, 1.15); col.setRGB(v * rr(0.9, 1.05), v, v * rr(0.85, 1)); if (R() < 0.08) col.setRGB(1.35, 1.1, 0.6); autumnIvy(p); leaves.setColorAt(nl++, col); D.joinIvy++; };
       for (const b of D.bites) { if (made >= (MOBILE ? 10 : 22)) break; RSEED(808000 + ((Math.round(b.x * 20) * 7349 + Math.round(b.y * 20) * 3389 + Math.round(b.z * 20) * 1531) & 0xfffff)); if (R() < 0.5) continue; if (inBox(avoid, b.x, b.y + 0.1, b.z, 0.05) || nearDoor(b.x, b.y + 0.3, b.z)) continue; made++; (D.joinAt = D.joinAt || []).push([+b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2)]);
         const out = V(b.x - AX, 0, b.z - AZ).normalize(); const ax = b.ax, vert = Math.abs(ax.y) > 0.7;
         // horizontal wood (landing boards, joists, braces): creep along a side face, never on the top people walk on; posts: the outer face
@@ -880,7 +922,7 @@ uniform float tdCool;` + NOISE)
       }
       return mergeGeometries(parts);
     })();
-    const fmat = swayMat(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex }))), U, 0.06,
+    const fmat = swayMat(tdAut(tdWetU(onTree(new THREE.MeshStandardMaterial({ map: fernTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.85, emissive: 0x0a1a12, emissiveMap: fernTex })))), U, 0.06,
       // [wind round] the fronds bend with Wind's shared gusts (the same front that runs through the crown, so a gust reaches them
       // on its way to the tree), a slow nod in calm; plus a faint leaflet shiver that grows with the gust. Old sine sway as fallback.
       `{vec3 ip=vec3(instanceMatrix[3][0],instanceMatrix[3][1],instanceMatrix[3][2]);float k=clamp(uv.y,0.,1.);k*=k;
@@ -951,6 +993,10 @@ uniform float tdCool;` + NOISE)
       M4.compose(p.clone().addScaledVector(s0.n, -0.03), orient(s0.n.clone().lerp(UP, 0.7).normalize(), rr(0, 6.28)), S.setScalar(rr(0.3, 0.5))); ferns.setMatrixAt(nf, M4); ferns.setColorAt(nf++, col.setRGB(0.95, 0.95, 0.95));
       D.forkFerns = (D.forkFerns || 0) + 1;
     }
+    // [greenery round] autumn bracken: about half the ferns turn copper or straw by a hash of their spot (no R() draw), the rest
+    // keep a tired late-season green; their colour multiplies the green frond map, hence the big red factor
+    for (let i = 0; i < nf; i++) { ferns.getMatrixAt(i, M4); const e = M4.elements, h = tdHash({ x: e[12], y: e[13], z: e[14] }, 2); ferns.getColorAt(i, col); let v = col.r; if (h < 0.5) v = Math.max(v, 0.95); /* a turned frond needs red > 1.5 (the flag) */
+      if (h < 0.3) col.setRGB(1.7 * v, 0.55 * v, 0.14 * v); else if (h < 0.5) col.setRGB(2.0 * v, 1.25 * v, 0.35 * v); else col.setRGB(1.12 * v, 0.95 * v, 0.7 * v); ferns.setColorAt(i, col); }
     ferns.count = nf; tufts.count = nt; ferns.receiveShadow = tufts.receiveShadow = true; D.group.add(ferns); if (!MOBILE) D.group.add(tufts); /* phones: the root-crevice grass tufts covered ~0.1% of the screen (Ground's grass is right there) - not worth a draw call */ D.ferns = ferns; D.tufts = tufts;
   }
 

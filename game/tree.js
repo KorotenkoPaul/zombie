@@ -495,11 +495,16 @@ export function buildTree(THREE, o) {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vOkW;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvOkW=(modelMatrix*vec4(transformed,1.)).xyz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vOkW;')
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-{vec3 wp=vOkW;float dT=length(wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));float bw=max(smoothstep(3.3,4.4,dT),smoothstep(9.6,10.8,wp.y));
- if(bw>0.){vec3 wn=normalize((vec4(normal,0.)*viewMatrix).xyz);vec3 ax=normalize(wp-vec3(${AX.toFixed(3)},wp.y*.6,${AZ.toFixed(3)}));
-  vec3 u=normalize(cross(ax,vec3(0.,1.,0.))+vec3(1e-4,0.,0.));vec3 w=cross(ax,u);float an=atan(dot(wn,w),dot(wn,u));float al=dot(wp,ax);
-  float ph=an*7.+1.4*sin(al*.8+an*2.)+.7*sin(al*2.1-an*3.);float gr=smoothstep(.55,.97,abs(sin(ph)));float aa=1.-smoothstep(.6,1.6,fwidth(an*7.));
-  float k=bw*aa;diffuseColor.rgb*=1.-.42*gr*k;diffuseColor.rgb*=1.+.1*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
+{vec3 wp=vOkW;float dT=length(wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)}));float bw=max(smoothstep(3.3,4.4,dT)*smoothstep(1.8,3.,wp.y),smoothstep(9.6,10.8,wp.y)); /* [treedress, root ripple round] not on the roots: there the phase follows the shading normal, which carries treedress's bark normal map, and its pores turned these grooves into a cork speckle up close; the roots have treedress's own furrows */
+ if(bw>0.){ /* [treedress, branch round] the groove phase from the position, not the shading normal: the normal carries
+  treedress's bark normal map, and its pores broke these grooves into a camouflage blotch all over the limbs up close. The limbs
+  radiate from the trunk, so the angle round the trunk (x a whole number, no seam at -pi/pi) is the coordinate across a limb and
+  the height the one down its sides; moving out along a limb changes neither, so the grooves run along it. Up the trunk (no limb)
+  the height term fades out and they run vertically. */
+  vec2 rv=wp.xz-vec2(${AX.toFixed(3)},${AZ.toFixed(3)});float th=atan(rv.y,rv.x);float lb=smoothstep(2.2,3.6,dT);
+  float ph=th*90.+wp.y*13.*lb+1.5*sin(dT*.9+th*5.+wp.y*.7)+.8*sin(dT*2.3-wp.y*2.6*lb+th*11.);
+  float gr=smoothstep(.5,.97,abs(sin(ph)));float aa=1.-smoothstep(.5,1.4,fwidth(ph));
+  float k=bw*aa;diffuseColor.rgb*=1.-.36*gr*k;diffuseColor.rgb*=1.+.09*(1.-gr)*k*smoothstep(0.,.5,cos(ph));}}`);
     // [TREE] trunk bark up close (Pavel: smooth oak with irregular folds; phones at the closest zoom read as a soft brown wall):
     // the painted wavy-fold bark (bark3) laid over the trunk in world space, two side projections blended by the normal (no
     // seams), fading in only near the camera so the home view keeps its painted look. Diffuse only; no relief maps touched.
@@ -541,7 +546,7 @@ outgoingLight+=diffuseColor.rgb*bwC*bwS*.8*smoothstep(-.3,.8,vBW.y)*mix(.75,1.,s
     }
   };
   mat.userData.doorGlow = { value: 0 };
-  mat.customProgramCacheKey = () => 'oakBark-grooves1-fold'; /* [ENV] explicit key (SHADERS rule) */
+  mat.customProgramCacheKey = () => 'oakBark-grooves2-fold'; /* [ENV] explicit key (SHADERS rule) */
   const bark = new THREE.Mesh(g, mat); bark.castShadow = true; bark.receiveShadow = true; group.add(bark);
 
   // ---------- leaves: clumps of painted oak-leaf cards, facing outwards like the painted crown ----------

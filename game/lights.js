@@ -206,6 +206,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     sp.target.position.copy(wPos).add(V(-.35, -2, -.25)); scene.add(sp, sp.target);
     sp.castShadow = true; sp.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ sp.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); sp.shadow.camera.near = .08; sp.shadow.camera.far = 6;
     sp.shadow.bias = -.002; sp.shadow.normalBias = .03; sp.shadow.radius = 3; sp.shadow.autoUpdate = false;
+    floorClip(sp, WS); sp.userData.lampCache = true;
     claimHousing(wPos, .3);
     // no power anywhere in the world (no wire, no generator), so this is a hanging kerosene lamp under the enamel shade, as
     // old workshops had: a brass font below the shade on its burner, a glass chimney rising into the shade, a flame in the
@@ -251,6 +252,7 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
     if (BL) bs.target.position.set(-2.0, BD + .75, 2.05); else bs.target.position.set(-2.1, BD + .6, 2.2); scene.add(bs, bs.target);
     bs.castShadow = true; bs.shadow.camera.layers.enable(6); /* layer 6: the hero's shadow proxy */ bs.shadow.mapSize.set(MOBILE ? 512 : 1024, MOBILE ? 512 : 1024); bs.shadow.camera.near = .1; bs.shadow.camera.far = 5;
     bs.shadow.bias = -.008; bs.shadow.normalBias = .1; bs.shadow.radius = 4; bs.shadow.autoUpdate = false;
+    floorClip(bs, BD); bs.userData.lampCache = true;   // nothing below the bedroom floor: the kitchen wall under it caught a stepped leak through the boards
     // bounce: the cone's light comes back off the rug and the boards in front of the bunk (the photo has that floor lit, ours
     // sat in the upper bunk's shadow). Low, short and unshadowed, so it lifts only the floor strip and the bunk's foot.
     const bb = new THREE.PointLight(0xFFAE62, 0, 2.2, 2); bb.position.set(-2.0, BD + .4, 2.85); if (!MOBILE) scene.add(bb);   // phones: the room bounce (pooled) lights this floor strip; a 5th pooled light here pushed the landing lantern out of the pool
@@ -1086,7 +1088,10 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     samplePose();
     // cooking, or stoking (the log goes in while the little door is open): the fire is fed
     const cooking = (task === 'cook' && state === 'work') || (task === 'stoke' && P3 && P3.oven && (P3.oven.open || 0) > .3);
-    cookT = cooking ? 78 : Math.max(0, cookT - dt);     // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s)
+    // fed while cooking, then burns down in ~1.3 game hours (24-minute day: an hour is 60 s). Stoked with logs (an evening fire for
+    // warmth, photo: the oven window glows) it burns ~4 game hours: he feeds it again when it runs low (brain: stoke when ovenLow)
+    const stoking = task === 'stoke' && cooking;
+    cookT = stoking ? Math.max(cookT, 240) : cooking ? Math.max(cookT, 78) : Math.max(0, cookT - dt);
     const ctx = { lamps: lampOn, dayK, task, state, asleep, cookT };
     for (const r in warm) warm[r] = 0;
     /* the first frames after load, and any jump of the clock (setHour, a skip): automatic sources take their state at once.
@@ -1206,6 +1211,21 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const upgrade = () => quality < 2 && setQuality(quality + 1) !== null;
 
   const view = s => ({ name: s.name, room: s.room, kind: s.kind, on: s.on, level: +s.level.toFixed(2), auto: s.manual === null, pos: s.pos.clone() });
+  // ---------- floor clips in the spot shader (both platforms) ----------
+  // decay >= 100: a shadowed room spot (bedroom, workshop) lights nothing below its own floor: world height of the light
+  // above the fragment (view-space up from viewMatrix) beyond h goes dark. 100 + 10*round(decay*10) + h, h < 9.9. The 512
+  // shadow map alone let the bedroom lantern leak through the floor boards onto the kitchen wall as a stepped warm patch.
+  // 10 <= decay < 100: the phone pool's slot clip along the slot's own (vertical) axis, see updatePool.
+  {
+    const SC = THREE.ShaderChunk, LINE = 'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spotLight.decay );';
+    if (SC.lights_pars_begin.includes(LINE)) SC.lights_pars_begin = SC.lights_pars_begin.replace(LINE,
+      'float spDec = spotLight.decay;\n' +
+      'if ( spDec > 99.5 ) { float k = floor( ( spDec - 100.0 ) / 10.0 ); if ( dot( lVector, ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ) > spDec - 100.0 - 10.0 * k ) light.color = vec3( 0.0 ); spDec = k / 10.0; }\n' +
+      'else if ( spDec > 9.5 ) { float k = floor( ( spDec - 10.0 ) / 4.0 ); if ( dot( lVector, spotLight.direction ) > spDec - 10.0 - 4.0 * k ) light.color = vec3( 0.0 ); spDec = k / 4.0; }\n' +
+      'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spDec );');
+    else console.warn('lights: spot floor clip not installed (three changed)');
+  }
+  function floorClip(l, fy) { l.decay = 100 + 10 * Math.round(l.decay * 10) + Math.min(9.8, Math.max(0, l.position.y - fy + .06)); }
   // ---------- phones: a small pool of real point lights ----------
   // Every lit shader on a phone loops over all lights in the scene. So on phones the sources' point lights are only
   // bookkeeping (kept invisible: three.js leaves invisible lights out of the shaders, and their .intensity still drives
@@ -1219,12 +1239,6 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     // the ceiling boards into the room above (phones have no point shadows, so a plain point light bled through floors).
     // Every unshadowed source joins: room lanterns, oven, hand lantern, the landing cone and the door spill. The
     // workshop dome keeps its own shadowed spot. Four slots cover a normal night without swaps.
-    const SC = THREE.ShaderChunk, LINE = 'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spotLight.decay );';
-    if (SC.lights_pars_begin.includes(LINE)) SC.lights_pars_begin = SC.lights_pars_begin.replace(LINE,
-      'float spDec = spotLight.decay;\n' +
-      'if ( spDec > 9.5 ) { float k = floor( ( spDec - 10.0 ) / 4.0 ); if ( dot( lVector, spotLight.direction ) > spDec - 10.0 - 4.0 * k ) light.color = vec3( 0.0 ); spDec = k / 4.0; }\n' +
-      'light.color *= getDistanceAttenuation( lightDistance, spotLight.distance, spDec );');
-    else console.warn('lights: spot floor clip not installed (three changed)');
     const virt = [];
     for (const s of src.values()) for (const L of s.lights) if ((L.l.isPointLight || (L.l.isSpotLight && !L.l.castShadow)) && L.l !== doorCave) virt.push(L.l);
     for (const g of glows) if (g.bounce) virt.push(g.l);
@@ -1298,7 +1312,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
     const own = Object.prototype.hasOwnProperty.call(m, 'customProgramCacheKey') ? m.customProgramCacheKey.bind(m) : null;
     m.onBeforeCompile = (sh, r) => { if (prev) prev.call(m, sh, r); sh.uniforms.uRimC = rimU.uRimC; sh.uniforms.uRimW = rimU.uRimW; sh.uniforms.uFill = rimU.uFill; sh.uniforms.uHue = rimU.uHue; sh.uniforms.uKnee = rimU.uKnee;
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uRimC, uRimW, uFill; uniform float uHue, uKnee;')
-        .replace('#include <opaque_fragment>', '{ float hl = dot(outgoingLight, vec3(.3, .59, .11)), al = max(dot(diffuseColor.rgb, vec3(.3, .59, .11)), .02); outgoingLight = mix(outgoingLight, diffuseColor.rgb * hl / al, uHue); } /* night: a lamp a hand breadth from him (his own lantern, a lamp he lights) blew his jacket and trousers to white; above a knee his light rolls off (hero only, the rest of the frame keeps its exposure) */ { float L = dot(outgoingLight, vec3(.3, .59, .11)); if (uKnee > 0. && L > .5) { float Lc = .5 + (L - .5) / (1. + (L - .5) * 2.); outgoingLight *= mix(1., Lc / L, uKnee); } }\n#include <opaque_fragment>')
+        .replace('#include <opaque_fragment>', '{ float hl = dot(outgoingLight, vec3(.3, .59, .11)), al = max(dot(diffuseColor.rgb, vec3(.3, .59, .11)), .02); outgoingLight = mix(outgoingLight, diffuseColor.rgb * hl / al, uHue); } /* night: a lamp a hand breadth from him (his own lantern, a lamp he lights) blew his jacket and trousers to white; above a knee his light rolls off (hero only, the rest of the frame keeps its exposure) */ { float L = dot(outgoingLight, vec3(.3, .59, .11)); if (uKnee > 0. && L > .28) { float Lc = .28 + (L - .28) / (1. + (L - .28) * 3.); outgoingLight *= mix(1., Lc / L, uKnee); } }\n#include <opaque_fragment>')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
 { float rv = 1. - clamp(dot(normalize(normal), normalize(vViewPosition)), 0., 1.); float rim = rv * rv * rv;
   float lum = dot(diffuseColor.rgb, vec3(.3, .59, .11));
@@ -1317,11 +1331,86 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   let smHooked = false;
   const sceneBR = scene.onBeforeRender;
   scene.onBeforeRender = function (renderer, ...a) {
+    if (renderer) rdrLC = renderer;
     if (!smHooked && renderer && renderer.shadowMap) { smHooked = true; const sm = renderer.shadowMap, prev = sm.render;
       sm.render = function (L, sc, cam) { const had = cam && cam.layers.isEnabled(6); if (cam && !had) cam.layers.enable(6);
         try { return prev.call(this, L, sc, cam); } finally { if (cam && !had) cam.layers.disable(6); } }; }
     return sceneBR.call(this, renderer, ...a);
   };
+  /* [PERF with Perf's OK] lamp shadow cache: a lamp's map = the static room (drawn once, kept in a copy) + the hero, who is the
+     only thing that moves under a lamp. A redraw draws only the hero's casters (proxy, vest, boots, what he holds) through three's
+     own shadow pass, then lays the cached room over it with a full-screen pass that writes the packed depth and gl_FragDepth with
+     a LESS test: per texel the nearer of the two, the same map a full draw gives. The room is drawn again (Perf's lampDraw, crops
+     and bakes) whenever anything static that can cast into the lamp's reach changed (moved, shown/hidden, other geometry or material,
+     edited vertices), or the lamp / its map changed. ~60k tris / 15-35 calls per redraw -> the hero only. ?lampcache=0 or
+     window.__lampCacheOff = true: every redraw draws everything, as before. Stats: __lights.lampCacheStats(). */
+  let rdrLC = null;
+  const LC_OFF = (() => { try { return new URLSearchParams(location.search).get('lampcache') === '0'; } catch (e) { return false; } })();
+  const lcStats = { hits: 0, rebuilds: 0, off: 0, why: [] }, lcAll = new Map(); let lcWhy = null;
+  let lcQuad = null;
+  function lcQuadGet() {
+    if (lcQuad) return lcQuad;
+    const g = new THREE.PlaneGeometry(2, 2), vs = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }';
+    const copy = new THREE.ShaderMaterial({ uniforms: { tMap: { value: null } }, vertexShader: vs, depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+      fragmentShader: 'uniform sampler2D tMap; varying vec2 vUv; void main() { gl_FragColor = texture2D(tMap, vUv); }' });
+    const comp = new THREE.ShaderMaterial({ uniforms: { tMap: { value: null } }, vertexShader: vs, depthTest: true, depthWrite: true, depthFunc: THREE.LessDepth, blending: THREE.NoBlending,
+      fragmentShader: '#include <packing>\nuniform sampler2D tMap; varying vec2 vUv; void main() { vec4 c = texture2D(tMap, vUv); gl_FragDepth = unpackRGBAToDepth(c); gl_FragColor = c; }' });
+    copy.customProgramCacheKey = () => 'lampCacheCopy'; comp.customProgramCacheKey = () => 'lampCacheComp';
+    const mesh = new THREE.Mesh(g, copy); mesh.frustumCulled = false; const sc = new THREE.Scene(); sc.add(mesh);
+    lcQuad = { mesh, sc, copy, comp, cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1) };
+    return lcQuad;
+  }
+  function lcPass(target, mat, tex) {
+    const Q = lcQuadGet(), r = rdrLC, prevT = r.getRenderTarget(), ac = r.autoClear, xr = r.xr.enabled, ar = r.info.autoReset;
+    mat.uniforms.tMap.value = tex; Q.mesh.material = mat; r.autoClear = false; r.xr.enabled = false; r.info.autoReset = false;   // the frame's shadow-pass counts stay (Perf's budget gate reads them)
+    try { r.setRenderTarget(target); r.render(Q.sc, Q.cam); } finally { r.setRenderTarget(prevT); r.autoClear = ac; r.xr.enabled = xr; r.info.autoReset = ar; mat.uniforms.tMap.value = null; }
+  }
+  const _lcS = new THREE.Sphere(), _lcP = V();
+  function lcSig(l, hero) {   // everything static that can cast into this lamp's reach, as one flat list of numbers
+    l.getWorldPosition(_lcP); const R = (l.shadow.camera.far || l.distance || 6) + .5, out = [];
+    scene.traverse(o => {
+      if (!(o.isMesh || o.isInstancedMesh) || !o.castShadow || hero.has(o)) return;
+      let v = true; for (let q = o; q; q = q.parent) if (!q.visible) { v = false; break; } if (!v) return;
+      const g = o.geometry; if (!g) return;
+      if (o.isInstancedMesh) { if (!o.boundingSphere) o.computeBoundingSphere(); _lcS.copy(o.boundingSphere).applyMatrix4(o.matrixWorld); }
+      else { if (!g.boundingSphere) g.computeBoundingSphere(); _lcS.copy(g.boundingSphere).applyMatrix4(o.matrixWorld); }
+      if (_lcS.center.distanceTo(_lcP) - _lcS.radius > R) return;
+      const m = Array.isArray(o.material) ? o.material.map(x => x.id).join('.') : o.material && o.material.id;
+      if (lcWhy) lcWhy.push([out.length, o]);
+      out.push(o.id, g.id, m, g.attributes.position ? g.attributes.position.version : 0, g.index ? g.index.version : 0, g.drawRange.start, g.drawRange.count,
+        o.isInstancedMesh ? o.instanceMatrix.version * 1e3 + o.count : 0, ...o.matrixWorld.elements);
+    });
+    const c = l.shadow.camera; l.target.getWorldPosition(_lcS.center);
+    out.push(_lcP.x, _lcP.y, _lcP.z, _lcS.center.x, _lcS.center.y, _lcS.center.z, l.angle, l.distance, c.near, c.far, l.shadow.map ? l.shadow.map.texture.id : -1);
+    return out;
+  }
+  function lampCache(l, sc, cam, r0, drawStatic) {
+    if (LC_OFF || window.__lampCacheOff || !l.userData.lampCache || !rdrLC || !l.shadow.map || !rdrLC.capabilities.isWebGL2) { lcStats.off++; return false; }
+    const hr = window.__dbg && window.__dbg.hero && window.__dbg.hero.root; if (!hr) { lcStats.off++; return false; }
+    const hero = new Set(), dyn = []; hr.traverse(o => { hero.add(o); if ((o.isMesh || o.isSkinnedMesh) && o.castShadow) dyn.push(o); });
+    const map = l.shadow.map, W = map.width, H = map.height;
+    let e = lcAll.get(l); lcWhy = []; const sig = lcSig(l, hero); const objs = lcWhy; lcWhy = null;
+    let same = !!(e && e.rt.width === W && e.rt.height === H && e.sig.length === sig.length);
+    let bad = -1; if (same) for (let i = 0; i < sig.length; i++) if (e.sig[i] !== sig[i]) { same = false; bad = i; break; }
+    if (e && e.sig && lcStats.why.length < 20) { let nm = bad < 0 ? 'count ' + (e.sig.length + '->' + sig.length) : 'lamp'; if (bad >= 0 && e.objs) for (const [k, o] of e.objs) if (k <= bad) nm = (o.name || o.parent && o.parent.name || o.type) + '#' + (bad - k); if (!same) lcStats.why.push(nm); }
+    if (!same) {
+      // the room alone (hero's casters off), through Perf's lampDraw, copied aside
+      if (!e || e.rt.width !== W || e.rt.height !== H) { if (e) e.rt.dispose(); e = { rt: new THREE.WebGLRenderTarget(W, H, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false, depthBuffer: false }), sig: null }; lcAll.set(l, e); }
+      const was = dyn.map(o => o.castShadow); dyn.forEach(o => { o.castShadow = false; });
+      const nu = rdrLC.shadowMap.needsUpdate;
+      const i0 = [rdrLC.info.render.calls, rdrLC.info.render.triangles];
+      try { l.shadow.needsUpdate = true; drawStatic(); lcStats.room = [rdrLC.info.render.calls - i0[0], rdrLC.info.render.triangles - i0[1]]; } finally { dyn.forEach((o, i) => { o.castShadow = was[i]; }); }
+      lcPass(e.rt, lcQuadGet().copy, map.texture); e.sig = sig; e.objs = objs; lcStats.rebuilds++;
+      rdrLC.shadowMap.needsUpdate = nu;
+    } else lcStats.hits++;
+    // the hero alone (three's own depth materials: skinning, alphaTest), then the cached room merged in per texel
+    const masks = dyn.map(o => o.layers.mask), cm = cam.layers.mask;
+    dyn.forEach(o => o.layers.enable(6)); cam.layers.mask = 1 << 6;
+    const j0 = [rdrLC.info.render.calls, rdrLC.info.render.triangles];
+    try { l.shadow.needsUpdate = true; r0([l], sc, cam); } finally { dyn.forEach((o, i) => { o.layers.mask = masks[i]; }); cam.layers.mask = cm; }
+    lcPass(map, lcQuadGet().comp, e.rt.texture); lcStats.redraw = [rdrLC.info.render.calls - j0[0], rdrLC.info.render.triangles - j0[1]];
+    return true;
+  }
   function fixShadowProxy(r) {
     const h = r.getObjectByName('heroShadow'); if (!h) return;
     h.traverse(o => { if (!o.isMesh || o.userData.lightsShadowFix) return; o.userData.lightsShadowFix = true; o.userData.noRim = true; o.castShadow = true; });
@@ -1365,6 +1454,7 @@ if (aWin > -.5) { int wi = int(aWin + .5); float k = uCK[wi], sd = uCS[wi];
   const api = {
     names: [...src.keys()],
     list: () => [...src.values()].map(view),
+    lampCache, lampCacheStats: () => ({ ...lcStats }),
     _dbg: () => ({ match, scene, cam, pool, shadowDraws, shadowChances, rimU, AO, GAO, heroBlob, emberK: () => emberK }),
     get: n => src.has(n) ? view(src.get(n)) : null,
     pos: n => src.has(n) ? src.get(n).pos.clone() : null,

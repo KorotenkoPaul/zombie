@@ -163,3 +163,43 @@ Debug: `__treedress.stats()`.
   - A second macro read at 15/11 scale breaks the roughly 1.8 m repeat, as on desktop.
   - Cost: 2 extra triplanar reads, only while zoomed near.
 - **Desktop lichen** sits on the bark ridges (tdH), so the furrows break its rim; it no longer reads as a sticker.
+
+## Round 24: the cork speckle on the sunlit roots
+- **Cause.** Found by layer debugging (an albedo capture at each stage).
+  - It was not the bark map's colour. It came from tree.js's limb-groove shading, which reached the roots (dT > 3.3 m, at any height) and took its phase from the shading normal.
+  - That normal already carries treedress's bark normal map, so its pores turned the grooves into a cork speckle.
+- **Fix (tree.js, one factor).** The limb grooves now start above y 1.8–3 m. Roots keep treedress's own triplanar furrows.
+  - The home view loses the dark painted groove lines on the front roots; they read smoother, like the photo.
+- **treedress.**
+  - Root relief eases back towards the trunk's within about 5 m of the camera (spkN).
+  - The phone moss breakup uses a world noise instead of the map's cork channel within 6 m.
+  - Key: `|treedress8`.
+- **Night and rain walk** (door, door side and ladder root): nothing painted-looking found in treedress.
+  - One thing for Env: a straight horizontal seam crosses the ladder root at about 1 m. It is the low fog sheet, not the bark.
+
+## Round 25: photo folds on the trunk and roots
+- **Flutes.** Long smooth flutes run down the trunk and on out along every root. In the photo they are the trunk's main character.
+  - One phase by angle round the axis (17 per turn) does both, because the roots radiate from the axis.
+  - The phase wanders with height and distance (`tdFl`, `tdFlK`, `tdFlD`).
+  - Grooves are narrow and dark, ridges broad and a little lighter, and the normal tilts across them.
+  - They stay below the house (fade out at y 4.2–5.6, where Tree's limb grooves take over) and off the crotches. They fade before a flute gets under about 2 px.
+- **Night moon fill.** A cool grey-blue fill on the trunk and roots (below 5–9 m) at night: the ridges and root tops catch it, the grooves stay dark.
+  - Before, the lower trunk and roots sank into one dark brown mass; in the photo they read in cool moonlight.
+- Key: `|treedress9`. Arithmetic only, no reads, no draws.
+- **Still off versus the photo (geometry, not shader).** The roots are faceted low-poly planes. The photo's roots are long, round and sinuous and spread wider.
+
+## Round 26: autumn greenery (ivy, ferns)
+- Photo check: the photo trunk is clean bark with only grass at the foot; ours keeps the sparse sprigs (no count change), but now in autumn colours.
+- Ivy: 32% of leaves low down rising to 52% at 7 m turn wine red / rust / butter yellow, picked by `tdHash` of the leaf position (no R() draw, layout unchanged: 373 phone / 602 desktop).
+- Ferns: 30% copper, 20% straw, the rest a tired green.
+- Shader (`mat.userData.autumn`, key `|tdAut1`): instance colour red > 1.5 marks a turned leaf and holds 4x the target colour; the green map only supplies luminance, so turned leaves are clean colours with lighter veins, not muddy tinted green.
+
+## Round 27: oak limbs close up
+- The limbs showed a camouflage blotch up close. Cause: tree.js's limb grooves took their phase from the shading normal, which carries treedress's bark normal map (same bug as the root cork speckle in R24).
+- Fix in tree.js (key `oakBark-grooves2-fold`): the phase now comes from the position (angle round the trunk x90, height x13 on the limbs fading to 0 up the trunk, plus smooth wander), so the grooves run along each limb and are noise-free. Home view unchanged.
+
+## Round 28: trunk door and bark joints
+- Thin orange stakes stood up out of the door sill: the cave floor boards ran along `out`, so `piece()` (index.html door frame) got a zero ez and a degenerate basis. Fixed: such pieces take ez = up (lie flat). The boards now start just behind the threshold (they began ~.5 m out on the landing because `at(0,..)` measured the flared foot).
+- Threshold board lies flat (8 cm x 24 cm) instead of on edge (a 12 cm bar slanting across the doorway).
+- Joints: board ends vs bark checked by raycast and shots; no floating joints (room floors stop at their own back walls by design).
+- Anim gate (tests/anim/gate.js) did not finish within 25 min in this container; not run to completion.
