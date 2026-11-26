@@ -114,7 +114,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
     } else if (p.mode === 'wall') {
       const out = thin.dot(away) >= 0 ? thin.clone() : thin.clone().negate();   // away from the room's walkway
       const u = long.clone().multiplyScalar(p.sgn), pivot = p.c.clone().addScaledVector(u, -hl);
-      about(m, pivot, u.clone().cross(out).normalize(), .025 * d / (2 * hl));
+      about(m, pivot, u.clone().cross(out).normalize(), .042 * d / (2 * hl));   /* [PROPS round] the free end springs out ~4 cm (centre ~2 cm: the hammer still lands): 2.5 cm did not read from the game camera */
       about(m, p.c, u, .03 * d * p.sgn2);
     } else if (p.mode === 'post') {
       const pivot = p.c.clone().addScaledVector(UP, -hl);                       // the foot stays nailed, the top leans out
@@ -215,7 +215,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
     const qx = rnd() < .5 ? -1 : 1, qy = rnd() < .5 ? -1 : 1, mb = .018, X0 = qx < 0 ? -pw / 2 : mb, X1 = qx < 0 ? -mb : pw / 2, Y0 = qy < 0 ? -ph / 2 : mb, Y1 = qy < 0 ? -mb : ph / 2;
     const ix = (X0 + X1) / 2 + rnd(-.25, .25) * (X1 - X0), iy = (Y0 + Y1) / 2 + rnd(-.25, .25) * (Y1 - Y0), nr = 6 + Math.floor(rnd() * 3), ang = []; for (let k = 0; k < nr; k++) ang.push((k + rnd(-.3, .3)) / nr * Math.PI * 2);
     const toEdge = a => { const dx = Math.cos(a), dy = Math.sin(a); let t = 1e9; if (Math.abs(dx) > 1e-6) t = Math.min(t, ((dx > 0 ? X1 : X0) - ix) / dx); if (Math.abs(dy) > 1e-6) t = Math.min(t, ((dy > 0 ? Y1 : Y0) - iy) / dy); return t; };
-    const r1 = Math.min(X1 - X0, Y1 - Y0) * rnd(.14, .2), pos = [], crk = [], gone = Math.floor(rnd() * nr);
+    const r1 = Math.min(X1 - X0, Y1 - Y0) * rnd(.22, .3), pos = [], crk = [], gone = Math.floor(rnd() * nr);
     const pt = (a, r) => [ix + Math.cos(a) * r, iy + Math.sin(a) * r];
     for (let k = 0; k < nr; k++) {
       const a0 = ang[k], a1 = ang[(k + 1) % nr] + (k === nr - 1 ? Math.PI * 2 : 0), tilt = [rnd(-.012, .012), rnd(-.012, .012)];
@@ -229,7 +229,7 @@ export function createHouseWear({ THREE, planks, N, E = [], floorAt = null, rayP
       for (let j = 1; j < poly.length - 1; j++) for (const q of [poly[0], poly[j], poly[j + 1]]) pos.push(q[0], q[1], zf(q));
       if (k !== gone) for (const q of [[ix, iy], pt(a0, r1), pt(a1, r1)]) pos.push(q[0], q[1], zf(q) * .5);   // inner shard (one is gone: a hole)
       // the fracture faces catch the light: thin pale lines along each crack, a few mm proud
-      const line = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l * .0008, ny = dx / l * .0008; for (const q of [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] - nx, a[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]]) crk.push(q[0], q[1], .002); };
+      const line = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, nx = -dy / l * .0016, ny = dx / l * .0016; for (const q of [[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] - nx, a[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]]) crk.push(q[0], q[1], .002); };
       // [PROPS round] a real crack wanders and forks; straight spokes and a full ring read as a cobweb drawn on the glass
       const jag = (a, b, amp) => { const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1, n = Math.max(2, Math.ceil(l / .018)), px = -dy / l, py = dx / l; let prev = a, off = 0;
         for (let i = 1; i <= n; i++) { off = i === n ? 0 : off * .5 + rnd(-amp, amp); const q = [a[0] + dx * i / n + px * off, a[1] + dy * i / n + py * off]; line(prev, q); prev = q;
