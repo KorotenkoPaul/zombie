@@ -1411,7 +1411,7 @@ window.__planks={meshes:{boards,beams,shingles:SHING},part:id=>PL[id]/* [PROPS] 
    spawnOld() asks up to ~190 spots in one frame and the full raycasts made one 290 ms frame (iPhone profile). Same triangles, same
    side rule as Raycaster (front faces only unless the material is double/back-sided), same near/far: the answer doesn't change.
    ?barkdown=off / __barkDownOff: the plain Raycaster. Rebuilt if the bark's geometry or matrix changes. */
-let BDG=null;function barkDown(x,y,z,far){const b=TREE&&TREE.bark;if(!b)return false;const g=b.geometry,pa=g.attributes.position,mw=b.matrixWorld;
+window.__barkDownOff=/[?&]barkdown=off/.test(location.search);let BDG=null;function barkDown(x,y,z,far){const b=TREE&&TREE.bark;if(!b)return false;const g=b.geometry,pa=g.attributes.position,mw=b.matrixWorld;
  if(!BDG||BDG.g!==g||BDG.v!==pa.version||!BDG.mw.equals(mw)){const ix=g.index?g.index.array:null,n=ix?ix.length:pa.count,W=new Float32Array(pa.count*3),v=new THREE.Vector3();for(let i=0;i<pa.count;i++){v.fromBufferAttribute(pa,i).applyMatrix4(mw);W[i*3]=v.x;W[i*3+1]=v.y;W[i*3+2]=v.z;}
   let x0=1e9,z0=1e9,x1=-1e9,z1=-1e9;for(let i=0;i<pa.count;i++){x0=Math.min(x0,W[i*3]);x1=Math.max(x1,W[i*3]);z0=Math.min(z0,W[i*3+2]);z1=Math.max(z1,W[i*3+2]);}
   const C=.25,nx=Math.max(1,Math.ceil((x1-x0)/C)+1),nz=Math.max(1,Math.ceil((z1-z0)/C)+1),cells=new Map();
