@@ -526,10 +526,11 @@ export function createLights({ scene, ENV, P3, TREE, MOBILE, LV, windows = [] })
        off the doorstep boards and the glowing hollow. A short warm bounce just outside the mouth, near lintel height
        (phones: a downward pool cone, so it sits high enough to reach the jambs and the doorstep) */
     const frame = new THREE.PointLight(0xFF9A4A, 0, MOBILE ? 2.8 : 2.4, 2);
-    const fo = MOBILE ? 1.15 : .75; frame.position.set(ax[0] + dd.x * (r + fo), LG + 1.55, ax[1] + dd.z * (r + fo)); frame.userData.poolPri = 2; scene.add(frame);
+    /* square in front of the frame: its boards face +z (the home view), not along the trunk radius, which put the light right of the opening and left the left jamb dark on phones */
+    const fo = MOBILE ? .95 : .75; frame.position.set(ax[0] + dd.x * r, LG + 1.55, ax[1] + dd.z * r + fo); frame.userData.poolPri = 2; scene.add(frame);
     add('door', 'outside', 'door', doorLight.position, { lights: [{ l: cave, I: 5.5, sway: .02 }, { l: spill, I: 13 }, { l: frame, I: MOBILE ? 5.5 : 3.6, sway: .02 }], haloSize: 2.0, haloTint: 0xFF9E52,
       // the photo's brightest warm spot at the foot of the tree (door moved down into view, ab2ddf4): a hotter hollow and spill
-      extra: (k, f) => { if (glow) glow.value = 6 * k * f; }, autoFn: c => c.lamps > .3 });
+      extra: (k, f) => { if (glow) glow.value = (MOBILE ? 9 : 6) * k * f; }, autoFn: c => c.lamps > .3 });
   }
 
   // ---------- windows: warm only while their room is lit; otherwise a faint cold sky reflection ----------
