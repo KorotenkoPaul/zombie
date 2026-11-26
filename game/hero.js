@@ -816,7 +816,7 @@ export function createHero(ctx){
        rest of the cooking start from exactly where they always did */
     const PO=PP();if(co.meat&&PO&&PO.pan&&PO.tools&&PO.tools.meatBag&&PO.tools.meatBag.parent===bones.RightHand){a.p0=root.position.clone();a.y0=root.rotation.y;a.mApp=1;
      a.meatDone=()=>{a.mApp=0;toOven();};/* KITCHEN: from the pan straight on to the oven (walking back to where he came in first was a turn away and back: Pavel, no going somewhere and turning straight back) */
-     approachTo(a,PO.pan.obj.getWorldPosition(V()),.42,()=>{a.step='meatin';a.t=0;});}else toOven();});
+     approachTo(a,PO.pan.obj.getWorldPosition(V()),.5,()=>{a.step='meatin';a.t=0;});}else toOven();});
    const oven=()=>P3&&P3.oven?P3.oven:(ctx.ovenDoor&&ctx.ovenDoor());
    a.update=dt=>{if(a.step==='approach'){if(a.pot2||a.ovh||a.mApp){stepTick(a,dt);return;}}a.t+=dt;
     if(a.step==='meatin'){const PO=PP();const pan=PO.pan.obj.getWorldPosition(V()).add(V(0,.19,0));H.look=pan;H.lookW=1;/* the fist over the pan, the meat let down into it (lower, the fist went into the pan) */
@@ -1066,7 +1066,7 @@ export function createHero(ctx){
   // 1) to the stove, the left hand takes the plate
   // he stands facing the middle between the plate and the pan: the plate a little to his right, the pan a little to his left
   const mid=home.clone().lerp(pan,.5);const plateHold=()=>{const me=root.position;const tw=V(me.x-mid.x,0,me.z-mid.z).normalize();return pan.clone().lerp(home,.55).addScaledVector(tw,.16).setY(pan.y+.1);};
-  const nn=nearNode(mid);const go1=()=>approachTo(a,mid,.5,()=>{say('take');H.look=home;H.lookW=.9;});if(nn)goTo(nn,go1);else go1();
+  const nn=nearNode(mid);const go1=()=>approachTo(a,mid,.58,()=>{say('take');H.look=home;H.lookW=.9;});if(nn)goTo(nn,go1);else go1();
   const upd=dt=>{a.t+=dt;
    if(a.step==='approach'){if(a.t>=a.adur)a.next();return;}
    if(a.step==='take'){if(a.t>.7&&a.plate==='home'){a.plate='hand';AU('cloth');}if(a.t>1.3){say('spoon');}return;}
